@@ -1,0 +1,22 @@
+{
+  "name": "communicator-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Workers microservices monorepo",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter ingestor dev",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write \"**/*.{ts,js,json,md}\""
+  },
+  "engines": {
+    "node": ">=16",
+    "pnpm": ">=7"
+  },
+  "devDependencies": {
+    "@types/node": "^18.15.11",
+    "prettier": "^2.8.7",
+    "typescript": "^5.0.4"
+  }
+}

@@ -1,0 +1,13 @@
+name = "ingestor"
+main = "src/index.ts"
+compatibility_date = "2023-04-15"
+
+[vars]
+ENVIRONMENT = "development"
+
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+vars = { ENVIRONMENT = "staging" }
+command = "pnpm build"

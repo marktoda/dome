@@ -1,0 +1,11 @@
+.env
+node_modules/
+.pnpm-store/
+target/
+*.session
+logs/
+.direnv/
+.next/
+.railway/
+k8s/infra/values.secrets.yaml
+dist/
