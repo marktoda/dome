@@ -100,6 +100,7 @@ graph TD
 
 2. **Cloudflare Workers**:
    - **Ingestor Worker**: Periodically polls external APIs to fetch new messages and places them in the Ingestion Queue.
+   - **Push Message Ingestor Worker**: Accepts messages pushed from external sources and publishes them to the Ingestion Queue.
    - **Conversations Worker**: Groups messages into conversations based on various criteria and stores them in D1.
    - **Analysis Worker**: Processes conversations using Workers AI for categorization, prioritization, and summarization.
    - **Messages Worker**: Drafts and sends responses back to the original platforms.
@@ -122,10 +123,16 @@ graph TD
 ### Data Flow
 
 1. **Message Ingestion Flow**:
-   - Ingestor Worker polls external APIs at configured intervals
-   - Messages are normalized into a common structure
-   - Message metadata is stored in D1 and attachments in R2
-   - Normalized messages are pushed to the Ingestion Queue
+   - **Pull-based ingestion**:
+     - Ingestor Worker polls external APIs at configured intervals
+     - Messages are normalized into a common structure
+     - Message metadata is stored in D1 and attachments in R2
+     - Normalized messages are pushed to the Ingestion Queue
+   - **Push-based ingestion**:
+     - Push Message Ingestor Worker provides endpoints for external systems to push messages
+     - Incoming messages are validated and normalized
+     - Messages are published directly to the Ingestion Queue
+     - Supports multiple platforms (currently Telegram, with extensibility for others)
 
 2. **Conversation Processing Flow**:
    - Conversations Worker groups messages based on thread IDs, time proximity, etc.
@@ -168,9 +175,19 @@ communicator-cloudflare/
 │       ├── package.json
 │       └── tsconfig.json
 ├── services/                         # Microservices
-│   └── ingestor/                     # Ingestor service
+│   ├── ingestor/                     # Ingestor service (pull-based)
+│   │   ├── src/
+│   │   │   └── index.ts              # Service entry point
+│   │   ├── wrangler.toml             # Wrangler configuration
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   └── push-message-ingestor/        # Push-based message ingestor service
 │       ├── src/
-│       │   └── index.ts              # Service entry point
+│       │   ├── index.ts              # Service entry point
+│       │   ├── types.ts              # Type definitions
+│       │   ├── controllers/          # Request handlers
+│       │   ├── models/               # Data models
+│       │   └── services/             # Business logic
 │       ├── wrangler.toml             # Wrangler configuration
 │       ├── package.json
 │       └── tsconfig.json

@@ -10,11 +10,16 @@ Welcome to the documentation for the Communicator Cloudflare project. This docum
 
 ## Overview
 
-The Communicator Cloudflare project is designed to scrape messages from various platforms (Telegram, Twitter, Slack, etc.), process them through an LLM pipeline to categorize, prioritize, summarize, and generate responses based on user feedback. The system is built as a microservices monorepo using Cloudflare Workers, with infrastructure managed by Pulumi.
+The Communicator Cloudflare project is designed to ingest messages from various platforms (Telegram, Twitter, Slack, etc.), process them through an LLM pipeline to categorize, prioritize, summarize, and generate responses based on user feedback. The system is built as a microservices monorepo using Cloudflare Workers, with infrastructure managed by Pulumi.
+
+The project supports two methods of message ingestion:
+1. **Pull-based ingestion**: The ingestor service periodically polls external APIs to fetch new messages
+2. **Push-based ingestion**: The push-message-ingestor service provides endpoints that external systems can push messages to directly
 
 ## Key Features
 
-- Message ingestion from multiple platforms
+- Message ingestion from multiple platforms (both pull and push-based)
+- Support for various messaging platforms (Telegram, with extensibility for others)
 - Conversation grouping and analysis
 - LLM-based processing for categorization and prioritization
 - Response generation and delivery

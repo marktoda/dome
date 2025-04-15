@@ -10,6 +10,17 @@
         "--key",
         "45fae926-d171-4cd3-bc48-075340adb219"
       ]
+    },
+    "desktop-commander": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@smithery/cli@latest",
+        "run",
+        "@wonderwhy-er/desktop-commander",
+        "--config",
+        "{}"
+      ]
     }
   }
 }

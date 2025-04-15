@@ -29,15 +29,11 @@ build-deploy:
 
 # Build a specific package
 build-pkg PACKAGE:
-    pnpm --filter {{PACKAGE}} build
+    pnpm --filter {{ PACKAGE }} build
 
 # Run development server for a specific service
 dev SERVICE="ingestor":
-    pnpm --filter {{SERVICE}} dev
-
-# Run all services in development mode
-dev-all:
-    pnpm run dev
+    wrangler dev -c ./services/{{ SERVICE }}/wrangler.toml
 
 # Run tests for all packages
 test:
@@ -45,7 +41,7 @@ test:
 
 # Run tests for a specific package
 test-pkg PACKAGE:
-    pnpm --filter {{PACKAGE}} test
+    pnpm --filter {{ PACKAGE }} test
 
 # Run linting for all packages
 lint:
@@ -61,42 +57,42 @@ format:
 
 # Preview Pulumi changes for a specific environment
 pulumi-preview ENV="dev":
-    cd infrastructure && pnpm exec pulumi preview --stack {{ENV}}
+    cd infrastructure && pnpm exec pulumi preview --stack {{ ENV }}
 
 # Deploy with Pulumi to a specific environment
 pulumi-up ENV="dev":
-    cd infrastructure && pnpm exec pulumi up --stack {{ENV}} --yes
+    cd infrastructure && pnpm exec pulumi up --stack {{ ENV }} --yes
 
 # Destroy Pulumi resources for a specific environment
 pulumi-destroy ENV="dev":
-    cd infrastructure && pnpm exec pulumi destroy --stack {{ENV}} --yes
+    cd infrastructure && pnpm exec pulumi destroy --stack {{ ENV }} --yes
 
 # Create a new TypeScript service with Hono
 new-service NAME:
-    @echo "Creating new service: {{NAME}}"
+    @echo "Creating new service: {{ NAME }}"
     # Create directory structure
-    mkdir -p services/{{NAME}}/src
+    mkdir -p services/{{ NAME }}/src
     # Copy the service template and update the name
-    cat templates/service-template.json | sed 's/"service-template"/"{{NAME}}"/g' > services/{{NAME}}/package.json
-    cp -r services/ingestor/tsconfig.json services/ingestor/wrangler.toml services/{{NAME}}/
-    sed -i 's/name = "ingestor"/name = "{{NAME}}"/g' services/{{NAME}}/wrangler.toml
+    cat templates/service-template.json | sed 's/"service-template"/"{{ NAME }}"/g' > services/{{ NAME }}/package.json
+    cp -r services/ingestor/tsconfig.json services/ingestor/wrangler.toml services/{{ NAME }}/
+    sed -i 's/name = "ingestor"/name = "{{ NAME }}"/g' services/{{ NAME }}/wrangler.toml
     # Copy the TypeScript template and replace the service name
-    cp templates/typescript-service-template.ts services/{{NAME}}/src/index.ts
-    sed -i 's/SERVICE_NAME/{{NAME}}/g' services/{{NAME}}/src/index.ts
-    @echo "Service {{NAME}} created successfully!"
+    cp templates/typescript-service-template.ts services/{{ NAME }}/src/index.ts
+    sed -i 's/SERVICE_NAME/{{ NAME }}/g' services/{{ NAME }}/src/index.ts
+    @echo "Service {{ NAME }} created successfully!"
 
 # Create a new Rust service (WebAssembly)
 new-rust-service NAME:
-    @echo "Creating new Rust service: {{NAME}}"
+    @echo "Creating new Rust service: {{ NAME }}"
     # Create directory structure and copy templates
-    mkdir -p services/{{NAME}}
-    cp -r templates/rust-worker/* services/{{NAME}}/
+    mkdir -p services/{{ NAME }}
+    cp -r templates/rust-worker/* services/{{ NAME }}/
     # Update service name in configuration files
-    sed -i 's/rust-worker-template/{{NAME}}/g' services/{{NAME}}/Cargo.toml
-    sed -i 's/rust-worker-template/{{NAME}}/g' services/{{NAME}}/wrangler.toml
-    sed -i 's/rust_worker.wasm/{{NAME}}.wasm/g' services/{{NAME}}/wrangler.toml
-    sed -i 's/"rust-worker-template"/"{{NAME}}"/g' services/{{NAME}}/src/lib.rs
-    @echo "Rust service {{NAME}} created successfully!"
+    sed -i 's/rust-worker-template/{{ NAME }}/g' services/{{ NAME }}/Cargo.toml
+    sed -i 's/rust-worker-template/{{ NAME }}/g' services/{{ NAME }}/wrangler.toml
+    sed -i 's/rust_worker.wasm/{{ NAME }}.wasm/g' services/{{ NAME }}/wrangler.toml
+    sed -i 's/"rust-worker-template"/"{{ NAME }}"/g' services/{{ NAME }}/src/lib.rs
+    @echo "Rust service {{ NAME }} created successfully!"
 
 # Setup local development environment
 setup-local:
@@ -107,7 +103,7 @@ setup-local:
 
 # Generate D1 database migrations
 db-migrate NAME:
-    wrangler d1 migrations create communicator {{NAME}}
+    wrangler d1 migrations create communicator {{ NAME }}
 
 # Apply D1 database migrations locally
 db-migrate-local:
@@ -119,36 +115,35 @@ db-migrate-prod:
 
 # Create a new KV namespace
 kv-create NAME:
-    wrangler kv:namespace create {{NAME}}
+    wrangler kv:namespace create {{ NAME }}
 
 # Create a new R2 bucket
 r2-create NAME:
-    wrangler r2 bucket create {{NAME}}
+    wrangler r2 bucket create {{ NAME }}
 
 # Create a new Queue
 queue-create NAME:
-    wrangler queues create {{NAME}}
+    wrangler queues create {{ NAME }}
 
 # Deploy all services
 deploy-all ENV="dev":
-    just pulumi-up {{ENV}}
+    just pulumi-up {{ ENV }}
 
 # Deploy a specific service
 deploy SERVICE ENV="dev":
     # First build TypeScript
-    pnpm --filter {{SERVICE}} build
+    pnpm --filter {{ SERVICE }} build
     # Then deploy with wrangler
-    cd services/{{SERVICE}} && wrangler deploy
+    cd services/{{ SERVICE }} && wrangler deploy
 
 # Generate a new Pulumi stack
 pulumi-stack-init ENV:
-    cd infrastructure && pnpm exec pulumi stack init {{ENV}}
+    cd infrastructure && pnpm exec pulumi stack init {{ ENV }}
 
 # Show logs for a service
 logs SERVICE:
-    cd services/{{SERVICE}} && wrangler tail
+    cd services/{{ SERVICE }} && wrangler tail
 
 # Run a one-off command in a specific package
 run PACKAGE COMMAND:
-    pnpm --filter {{PACKAGE}} {{COMMAND}}
-
+    pnpm --filter {{ PACKAGE }} {{ COMMAND }}
