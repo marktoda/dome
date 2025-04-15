@@ -3,12 +3,12 @@
 // export dynamically through wrangler, or we can potentially let users directly
 // add them as a sort of "plugin" system.
 
-import ENTRY, { __INTERNAL_WRANGLER_MIDDLEWARE__ } from "/home/toda/dev/misc/communicator-cloudflare/services/auth-telegram/.wrangler/tmp/bundle-u3lQF9/middleware-insertion-facade.js";
+import ENTRY, { __INTERNAL_WRANGLER_MIDDLEWARE__ } from "/home/toda/dev/misc/communicator-cloudflare/services/auth-telegram/.wrangler/tmp/bundle-stC6jx/middleware-insertion-facade.js";
 import { __facade_invoke__, __facade_register__, Dispatcher } from "/nix/store/pzq38mrcdgrmr169hwvf9hm2xjrsm9fk-wrangler-3.80.1/lib/packages/wrangler/templates/middleware/common.ts";
-import type { WorkerEntrypointConstructor } from "/home/toda/dev/misc/communicator-cloudflare/services/auth-telegram/.wrangler/tmp/bundle-u3lQF9/middleware-insertion-facade.js";
+import type { WorkerEntrypointConstructor } from "/home/toda/dev/misc/communicator-cloudflare/services/auth-telegram/.wrangler/tmp/bundle-stC6jx/middleware-insertion-facade.js";
 
 // Preserve all the exports from the worker
-export * from "/home/toda/dev/misc/communicator-cloudflare/services/auth-telegram/.wrangler/tmp/bundle-u3lQF9/middleware-insertion-facade.js";
+export * from "/home/toda/dev/misc/communicator-cloudflare/services/auth-telegram/.wrangler/tmp/bundle-stC6jx/middleware-insertion-facade.js";
 
 class __Facade_ScheduledController__ implements ScheduledController {
 	readonly #noRetry: ScheduledController["noRetry"];

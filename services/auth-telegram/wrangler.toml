@@ -5,11 +5,19 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "development"
-TELEGRAM_API_ID = ""
-TELEGRAM_API_HASH = ""
-SESSION_SECRET = ""
-API_KEY = ""
-ADMIN_API_KEY = ""
+# Sensitive values are stored as secrets
+# TELEGRAM_API_ID = ""
+# TELEGRAM_API_HASH = ""
+# SESSION_SECRET = ""
+# API_KEY = ""
+# ADMIN_API_KEY = ""
+
+# These secrets need to be set using wrangler secret commands
+# wrangler secret put TELEGRAM_API_ID
+# wrangler secret put TELEGRAM_API_HASH
+# wrangler secret put SESSION_SECRET
+# wrangler secret put API_KEY
+# wrangler secret put ADMIN_API_KEY
 
 # D1 Database
 [[d1_databases]]
@@ -28,3 +36,4 @@ vars = { ENVIRONMENT = "production" }
 # Staging environment
 [env.staging]
 vars = { ENVIRONMENT = "staging" }
+
