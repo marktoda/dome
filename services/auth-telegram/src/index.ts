@@ -24,6 +24,9 @@ type Bindings = {
   DB: D1Database;
   API_KEY: string;
   ADMIN_API_KEY: string;
+  TELEGRAM_PROXY_URL?: string;
+  TELEGRAM_PROXY_API_KEY?: string;
+  USE_TELEGRAM_PROXY?: string;
 };
 
 /**

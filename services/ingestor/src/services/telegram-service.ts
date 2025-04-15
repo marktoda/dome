@@ -1,4 +1,5 @@
 import { TelegramAuthClient, TelegramSession } from '../clients/telegram-auth-client';
+import { ITelegramService } from './telegram-service-interface';
 
 /**
  * Interface for Telegram service configuration
@@ -14,7 +15,7 @@ export interface TelegramServiceConfig {
 /**
  * Service for interacting with Telegram using authenticated sessions
  */
-export class TelegramService {
+export class TelegramService implements ITelegramService {
   private config: TelegramServiceConfig;
   
   /**

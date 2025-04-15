@@ -6,9 +6,9 @@ import { zValidator } from '@hono/zod-validator';
 import { TelegramAuthHandler } from '../handlers/auth-handler';
 import { SessionManager } from '../lib/session-manager';
 import { ApiResponse } from '@communicator/common';
-import { 
-  sendCodeRequestSchema, 
-  verifyCodeRequestSchema 
+import {
+  sendCodeRequestSchema,
+  verifyCodeRequestSchema
 } from '../utils/validation';
 import { rateLimit } from '../middleware/auth';
 
@@ -20,6 +20,9 @@ type Bindings = {
   TELEGRAM_API_HASH: string;
   SESSION_SECRET: string;
   DB: D1Database;
+  TELEGRAM_PROXY_URL?: string;
+  TELEGRAM_PROXY_API_KEY?: string;
+  USE_TELEGRAM_PROXY?: string;
 };
 
 /**
@@ -40,9 +43,18 @@ router.use('*', rateLimit(10, 60 * 1000));
 router.post('/send-code', zValidator('json', sendCodeRequestSchema), async (c) => {
   const { phoneNumber } = c.req.valid('json');
   
+  // Create auth handler with proxy configuration if enabled
+  const useProxy = c.env.USE_TELEGRAM_PROXY === 'true';
   const authHandler = new TelegramAuthHandler(
     c.env.TELEGRAM_API_ID,
-    c.env.TELEGRAM_API_HASH
+    c.env.TELEGRAM_API_HASH,
+    undefined,
+    undefined,
+    {
+      useProxy,
+      proxyUrl: c.env.TELEGRAM_PROXY_URL || 'http://telegram-proxy-service',
+      apiKey: c.env.TELEGRAM_PROXY_API_KEY
+    }
   );
   
   try {
@@ -76,11 +88,18 @@ router.post('/send-code', zValidator('json', sendCodeRequestSchema), async (c) =
 router.post('/verify-code', zValidator('json', verifyCodeRequestSchema), async (c) => {
   const { phoneNumber, phoneCodeHash, code } = c.req.valid('json');
   
+  // Create auth handler with proxy configuration if enabled
+  const useProxy = c.env.USE_TELEGRAM_PROXY === 'true';
   const authHandler = new TelegramAuthHandler(
     c.env.TELEGRAM_API_ID,
     c.env.TELEGRAM_API_HASH,
     c.env.DB,
-    c.env.SESSION_SECRET
+    c.env.SESSION_SECRET,
+    {
+      useProxy,
+      proxyUrl: c.env.TELEGRAM_PROXY_URL || 'http://telegram-proxy-service',
+      apiKey: c.env.TELEGRAM_PROXY_API_KEY
+    }
   );
   
   try {

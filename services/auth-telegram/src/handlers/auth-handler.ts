@@ -2,6 +2,7 @@
  * Authentication Handler
  */
 import { TelegramClientWrapper, SendCodeResult, VerifyCodeResult } from '../lib/telegram-client';
+import { TelegramProxyClient, ErrorType, TelegramProxyError } from '../lib/telegram-proxy-client';
 import { SessionManager } from '../lib/session-manager';
 import { TelegramUser, TelegramUserDTO, fromDTO as userFromDTO } from '../models/user';
 
@@ -9,7 +10,7 @@ import { TelegramUser, TelegramUserDTO, fromDTO as userFromDTO } from '../models
  * Authentication Handler class
  */
 export class TelegramAuthHandler {
-  private telegramClient: TelegramClientWrapper;
+  private telegramClient: TelegramProxyClient | TelegramClientWrapper;
   private sessionManager?: SessionManager;
   private db?: D1Database;
   
@@ -24,9 +25,29 @@ export class TelegramAuthHandler {
     apiId: string,
     apiHash: string,
     db?: D1Database,
-    sessionSecret?: string
+    sessionSecret?: string,
+    proxyConfig?: {
+      proxyUrl: string;
+      apiKey?: string;
+      useProxy: boolean;
+    }
   ) {
-    this.telegramClient = new TelegramClientWrapper(apiId, apiHash);
+    // Use the proxy client if configured, otherwise fall back to direct client
+    if (proxyConfig?.useProxy) {
+      this.telegramClient = new TelegramProxyClient(apiId, apiHash, {
+        proxyUrl: proxyConfig.proxyUrl,
+        apiKey: proxyConfig.apiKey,
+        maxRetries: 3,
+        retryDelay: 1000,
+        circuitBreaker: {
+          failureThreshold: 5,
+          resetTimeout: 30000 // 30 seconds
+        }
+      });
+    } else {
+      // Fallback to direct client if proxy is not enabled
+      this.telegramClient = new TelegramClientWrapper(apiId, apiHash);
+    }
     
     if (db && sessionSecret) {
       this.db = db;
@@ -44,9 +65,28 @@ export class TelegramAuthHandler {
       // Send the code via Telegram client
       return await this.telegramClient.sendAuthCode(phoneNumber);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Error sending auth code: ${errorMessage}`);
-      throw new Error(`Failed to send authentication code: ${errorMessage}`);
+      // Enhanced error handling to distinguish between proxy and Telegram errors
+      if (error instanceof TelegramProxyError) {
+        console.error(`Proxy error sending auth code: [${error.type}] ${error.message}`);
+        
+        // Rethrow with more specific error message based on type
+        switch (error.type) {
+          case ErrorType.RATE_LIMIT:
+            throw new Error(`Rate limited by Telegram. Please try again later.`);
+          case ErrorType.NETWORK:
+            throw new Error(`Network error connecting to Telegram. Please check your connection.`);
+          case ErrorType.PROXY_SERVICE:
+            throw new Error(`Telegram proxy service error: ${error.message}`);
+          case ErrorType.TELEGRAM_API:
+            throw new Error(`Telegram API error: ${error.message}`);
+          default:
+            throw new Error(`Failed to send authentication code: ${error.message}`);
+        }
+      } else {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`Error sending auth code: ${errorMessage}`);
+        throw new Error(`Failed to send authentication code: ${errorMessage}`);
+      }
     }
   }
   
@@ -104,9 +144,30 @@ export class TelegramAuthHandler {
         expiresAt
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Error verifying auth code: ${errorMessage}`);
-      throw new Error(`Failed to verify authentication code: ${errorMessage}`);
+      // Enhanced error handling to distinguish between proxy and Telegram errors
+      if (error instanceof TelegramProxyError) {
+        console.error(`Proxy error verifying auth code: [${error.type}] ${error.message}`);
+        
+        // Rethrow with more specific error message based on type
+        switch (error.type) {
+          case ErrorType.RATE_LIMIT:
+            throw new Error(`Rate limited by Telegram. Please try again later.`);
+          case ErrorType.NETWORK:
+            throw new Error(`Network error connecting to Telegram. Please check your connection.`);
+          case ErrorType.PROXY_SERVICE:
+            throw new Error(`Telegram proxy service error: ${error.message}`);
+          case ErrorType.TELEGRAM_API:
+            throw new Error(`Telegram API error: ${error.message}`);
+          case ErrorType.AUTHENTICATION:
+            throw new Error(`Authentication error: ${error.message}`);
+          default:
+            throw new Error(`Failed to verify authentication code: ${error.message}`);
+        }
+      } else {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`Error verifying auth code: ${errorMessage}`);
+        throw new Error(`Failed to verify authentication code: ${errorMessage}`);
+      }
     }
   }
   

@@ -1,18 +1,18 @@
 import { Context } from 'hono';
 import { ApiResponse } from '@communicator/common';
-import { TelegramService } from '../services/telegram-service';
+import { ITelegramService } from '../services/telegram-service-interface';
 
 /**
  * Controller for Telegram-related endpoints
  */
 export class TelegramController {
-  private telegramService: TelegramService;
+  private telegramService: ITelegramService;
   
   /**
    * Create a new TelegramController
    * @param telegramService Telegram service
    */
-  constructor(telegramService: TelegramService) {
+  constructor(telegramService: ITelegramService) {
     this.telegramService = telegramService;
   }
 

@@ -5,12 +5,15 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "development"
+USE_TELEGRAM_PROXY = "true"
+TELEGRAM_PROXY_URL = "http://telegram-proxy-service"
 # Sensitive values are stored as secrets
 # TELEGRAM_API_ID = ""
 # TELEGRAM_API_HASH = ""
 # SESSION_SECRET = ""
 # API_KEY = ""
 # ADMIN_API_KEY = ""
+# TELEGRAM_PROXY_API_KEY = ""
 
 # These secrets need to be set using wrangler secret commands
 # wrangler secret put TELEGRAM_API_ID
@@ -18,6 +21,7 @@ ENVIRONMENT = "development"
 # wrangler secret put SESSION_SECRET
 # wrangler secret put API_KEY
 # wrangler secret put ADMIN_API_KEY
+# wrangler secret put TELEGRAM_PROXY_API_KEY
 
 # D1 Database
 [[d1_databases]]
@@ -31,9 +35,9 @@ port = 8788
 
 # Production environment
 [env.production]
-vars = { ENVIRONMENT = "production" }
+vars = { ENVIRONMENT = "production", USE_TELEGRAM_PROXY = "true" }
 
 # Staging environment
 [env.staging]
-vars = { ENVIRONMENT = "staging" }
+vars = { ENVIRONMENT = "staging", USE_TELEGRAM_PROXY = "true" }
 

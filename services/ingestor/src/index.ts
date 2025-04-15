@@ -3,7 +3,9 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { ApiResponse, ServiceInfo } from '@communicator/common';
 import { TelegramAuthClient } from './clients/telegram-auth-client';
+import { TelegramProxyClient } from './clients/telegram-proxy-client';
 import { TelegramService } from './services/telegram-service';
+import { TelegramProxyService } from './services/telegram-proxy-service';
 import { TelegramController } from './controllers/telegram-controller';
 import { getTelegramConfig } from './config/telegram-config';
 
@@ -131,14 +133,44 @@ app.use('*', async (c, next) => {
       retryDelay: telegramConfig.retryDelay
     });
     
-    // Initialize Telegram service
-    const telegramService = new TelegramService({
-      telegramApiId: telegramConfig.apiId,
-      telegramApiHash: telegramConfig.apiHash,
-      authClient: telegramAuthClient,
-      maxRetries: telegramConfig.maxRetries,
-      retryDelay: telegramConfig.retryDelay
-    });
+    // Initialize Telegram service based on proxy configuration
+    let telegramService;
+    
+    if (telegramConfig.proxy.enabled) {
+      console.log('Initializing Telegram Proxy Service integration');
+      
+      // Initialize Telegram proxy client
+      const telegramProxyClient = new TelegramProxyClient({
+        baseUrl: telegramConfig.proxy.baseUrl,
+        apiKey: telegramConfig.proxy.apiKey,
+        maxRetries: telegramConfig.maxRetries,
+        retryDelay: telegramConfig.retryDelay,
+        pollTimeout: telegramConfig.proxy.pollTimeout
+      });
+      
+      // Initialize Telegram proxy service
+      telegramService = new TelegramProxyService({
+        telegramApiId: telegramConfig.apiId,
+        telegramApiHash: telegramConfig.apiHash,
+        authClient: telegramAuthClient,
+        proxyClient: telegramProxyClient,
+        maxRetries: telegramConfig.maxRetries,
+        retryDelay: telegramConfig.retryDelay,
+        defaultPollingInterval: telegramConfig.proxy.pollingInterval,
+        useProxyService: true
+      });
+    } else {
+      console.log('Using direct Telegram integration (without proxy)');
+      
+      // Initialize regular Telegram service
+      telegramService = new TelegramService({
+        telegramApiId: telegramConfig.apiId,
+        telegramApiHash: telegramConfig.apiHash,
+        authClient: telegramAuthClient,
+        maxRetries: telegramConfig.maxRetries,
+        retryDelay: telegramConfig.retryDelay
+      });
+    }
     
     // Initialize Telegram controller
     const telegramController = new TelegramController(telegramService);
@@ -207,6 +239,77 @@ telegramRouter.get('/source/:userId/:source', async (c) => {
   }
   
   return telegramController.getSourceInfo(c);
+});
+
+// Poll for new messages from a Telegram channel or chat
+telegramRouter.get('/poll/:userId/:source', async (c) => {
+  const telegramController = c.get('telegramController');
+  
+  if (!telegramController) {
+    return c.json({
+      success: false,
+      error: {
+        code: 'TELEGRAM_NOT_CONFIGURED',
+        message: 'Telegram integration is not configured'
+      }
+    }, 500);
+  }
+  
+  try {
+    const { userId, source } = c.req.param();
+    const { timeout, limit } = c.req.query();
+    
+    // Validate parameters
+    if (!userId || !source) {
+      return c.json({
+        success: false,
+        error: {
+          code: 'INVALID_PARAMETERS',
+          message: 'Missing required parameters: userId and source'
+        }
+      }, 400);
+    }
+    
+    // Parse parameters
+    const userIdNum = parseInt(userId, 10);
+    const timeoutNum = timeout ? parseInt(timeout, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    
+    // Get the telegram service from the controller
+    const telegramService = (telegramController as any).telegramService;
+    
+    // Check if the service supports polling
+    if (telegramService.pollMessages) {
+      const messages = await telegramService.pollMessages(
+        userIdNum,
+        source,
+        { timeout: timeoutNum, limit: limitNum }
+      );
+      
+      return c.json({
+        success: true,
+        data: {
+          messages,
+          source,
+          userId: userIdNum,
+          count: messages.length
+        }
+      });
+    } else {
+      // Fallback to regular message retrieval
+      return telegramController.getMessages(c);
+    }
+  } catch (error) {
+    console.error('Error polling messages:', error);
+    
+    return c.json({
+      success: false,
+      error: {
+        code: 'TELEGRAM_ERROR',
+        message: error instanceof Error ? error.message : String(error)
+      }
+    }, 500);
+  }
 });
 
 /**

@@ -1,126 +1,99 @@
 # Telegram Authentication Service
 
-This service provides authentication with Telegram using the MTProto protocol, allowing users to authenticate with their Telegram accounts and securely storing session data for use by other services.
+This service provides authentication with Telegram using the MTProto protocol. It exposes methods for session management that can be called directly by other services using Cloudflare service bindings.
 
-## Features
+## Telegram Proxy Service Integration
 
-- Send authentication codes to Telegram users
-- Verify authentication codes
-- Securely store and manage Telegram sessions
-- Provide session data to other services
-- Track session usage and access
-- Revoke sessions
+The auth-telegram Worker now supports integration with the Telegram Proxy Service to solve WebSocket compatibility issues with Cloudflare Workers. This integration provides:
 
-## API Endpoints
+1. Reliable connection to Telegram API through a proxy service
+2. Client-side retry and circuit breaker logic for resilience
+3. Fallback mechanisms for reliability
+4. Enhanced error handling to distinguish between proxy and Telegram errors
 
-### Authentication
+## Configuration
 
-- `POST /api/telegram-auth/send-code`: Send authentication code to a phone number
-- `POST /api/telegram-auth/verify-code`: Verify authentication code and create session
-- `GET /api/telegram-auth/status`: Check authentication status
+The integration with the Telegram Proxy Service can be enabled or disabled using environment variables:
 
-### Session Management
-
-- `GET /api/telegram-auth/sessions/user/:userId`: Get session for a user (requires API key)
-- `GET /api/telegram-auth/sessions/list/:userId`: List all sessions for a user (admin only)
-- `DELETE /api/telegram-auth/sessions/:sessionId`: Revoke a session (requires API key)
-
-### Health Check
-
-- `GET /api/telegram-auth/health`: Service health check
-- `GET /health`: Service health check (root level)
-
-## Setup
-
-### Prerequisites
-
-- Telegram API ID and API Hash (obtain from https://my.telegram.org/apps)
-- Cloudflare Workers account with D1 database
-- Node.js and pnpm
+```
+USE_TELEGRAM_PROXY=true
+TELEGRAM_PROXY_URL=http://telegram-proxy-service
+TELEGRAM_PROXY_API_KEY=your-api-key
+```
 
 ### Environment Variables
 
-The following environment variables need to be set in the `wrangler.toml` file or through the Cloudflare dashboard:
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `USE_TELEGRAM_PROXY` | Enable or disable the proxy integration | `true` |
+| `TELEGRAM_PROXY_URL` | URL of the Telegram Proxy Service | `http://telegram-proxy-service` |
+| `TELEGRAM_PROXY_API_KEY` | API key for the Telegram Proxy Service | - |
 
-- `TELEGRAM_API_ID`: Your Telegram API ID
-- `TELEGRAM_API_HASH`: Your Telegram API Hash
-- `SESSION_SECRET`: Secret key for session encryption
-- `API_KEY`: API key for service-to-service authentication
-- `ADMIN_API_KEY`: API key for admin operations
+## Resilience Features
 
-### Database Setup
+### Retry Logic
 
-The service requires a D1 database with the following tables:
+The client implements retry logic for transient errors:
+- Network errors
+- Rate limiting errors
+- Temporary service unavailability
 
-1. `telegram_users`: Stores user information
-2. `telegram_sessions`: Stores encrypted session data
-3. `telegram_session_access_logs`: Tracks session access
+The retry mechanism uses exponential backoff with jitter to prevent thundering herd problems.
 
-Migration scripts are provided in the `migrations` directory.
+### Circuit Breaker
+
+The client implements a circuit breaker pattern to prevent cascading failures:
+- Tracks failure rates
+- Opens the circuit after a threshold of failures
+- Implements half-open state for recovery
+- Closes the circuit after successful requests
+
+### Fallback Mechanisms
+
+The client includes fallback mechanisms for reliability:
+- Falls back to direct Telegram connection if proxy is disabled
+- Provides detailed error information for better error handling
+
+## Error Handling
+
+The client provides enhanced error handling to distinguish between different types of errors:
+- `NETWORK`: Network connectivity issues
+- `RATE_LIMIT`: Rate limiting by Telegram or the proxy service
+- `PROXY_SERVICE`: Errors from the proxy service
+- `TELEGRAM_API`: Errors from the Telegram API
+- `AUTHENTICATION`: Authentication-related errors
+- `UNKNOWN`: Other unspecified errors
 
 ## Development
 
-### Installation
+### Local Development
+
+For local development, you can set the environment variables in the `.dev.vars` file:
+
+```
+USE_TELEGRAM_PROXY=true
+TELEGRAM_PROXY_URL=http://localhost:3000
+TELEGRAM_PROXY_API_KEY=dev-api-key
+```
+
+### Testing
+
+To test the integration, you can run the service with the proxy enabled or disabled:
 
 ```bash
-# Install dependencies
-pnpm install
+# With proxy
+wrangler dev
+
+# Without proxy (direct connection)
+USE_TELEGRAM_PROXY=false wrangler dev
 ```
 
-### Running Locally
+## Deployment
+
+When deploying to production, make sure to set the appropriate environment variables:
 
 ```bash
-# Run in development mode
-pnpm dev
+wrangler secret put TELEGRAM_PROXY_API_KEY
 ```
 
-### Building
-
-```bash
-# Build the service
-pnpm build
-```
-
-### Deployment
-
-```bash
-# Deploy to Cloudflare Workers
-pnpm deploy
-```
-
-## Integration with Other Services
-
-Other services can integrate with the Telegram Authentication Service using the provided API endpoints. Here's an example of how to get a session for a user:
-
-```typescript
-// Example integration in another service
-async function getTelegramSession(userId: number) {
-  const response = await fetch(`https://your-worker.workers.dev/api/telegram-auth/sessions/user/${userId}`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `ApiKey ${API_KEY}`,
-      'X-Service-ID': 'your-service-id',
-      'Content-Type': 'application/json'
-    }
-  });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to get session: ${response.statusText}`);
-  }
-  
-  const data = await response.json();
-  return data.data.sessionString;
-}
-```
-
-## Security Considerations
-
-- All session data is encrypted using AES-256-GCM
-- API keys are required for accessing sessions
-- Rate limiting is applied to authentication endpoints
-- Session access is logged for audit purposes
-- Sessions can be revoked if compromised
-
-## License
-
-This project is private and confidential.
+The `USE_TELEGRAM_PROXY` and `TELEGRAM_PROXY_URL` variables are set in the `wrangler.toml` file for each environment.

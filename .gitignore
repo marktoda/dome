@@ -9,3 +9,4 @@ logs/
 .railway/
 k8s/infra/values.secrets.yaml
 dist/
+.dev.vars
