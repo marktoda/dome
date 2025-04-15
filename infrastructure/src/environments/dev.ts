@@ -9,12 +9,27 @@ const accountId = config.require('cloudflare:accountId');
  * Deploy the development environment
  */
 export function dev() {
-  // Deploy the ingestor worker
+  // Deploy the auth-telegram worker
+  const authTelegramWorker = deployWorker('auth-telegram-dev', '../services/auth-telegram/dist/index.js', {
+    accountId,
+    routes: [
+      // Example route - update as needed
+      // 'auth-telegram-dev.your-domain.com/*',
+    ],
+  });
+
+  // Deploy the ingestor worker with service binding to auth-telegram
   const ingestorWorker = deployWorker('ingestor-dev', '../services/ingestor/dist/index.js', {
     accountId,
     routes: [
       // Example route - update as needed
       // 'ingestor-dev.your-domain.com/*',
+    ],
+    serviceBindings: [
+      {
+        name: 'TELEGRAM_AUTH',
+        service: authTelegramWorker.name,
+      },
     ],
   });
 
@@ -23,6 +38,9 @@ export function dev() {
 
   // Export the worker details
   return {
+    authTelegramWorker: {
+      name: authTelegramWorker.name,
+    },
     ingestorWorker: {
       name: ingestorWorker.name,
     },

@@ -17,6 +17,7 @@ export function deployWorker(
   options: {
     accountId: string;
     routes?: string[];
+    serviceBindings?: { name: string; service: pulumi.Input<string> }[];
   }
 ): cloudflare.WorkerScript {
   // Create the worker script
@@ -24,6 +25,7 @@ export function deployWorker(
     name,
     accountId: options.accountId,
     content: fs.readFileSync(scriptPath, 'utf8'),
+    serviceBindings: options.serviceBindings,
   });
 
   // Create routes for the worker if specified

@@ -2,12 +2,43 @@ name = "ingestor"
 main = "src/index.ts"
 compatibility_date = "2023-04-15"
 
+# Service bindings
+[[services]]
+binding = "TELEGRAM_AUTH"
+service = "auth-telegram"
+
 [vars]
 ENVIRONMENT = "development"
+# Telegram integration configuration
+# These are placeholder values that should be replaced with actual values in the Cloudflare dashboard
+# or through environment variables during deployment
+TELEGRAM_API_ID = ""
+TELEGRAM_API_HASH = ""
+TELEGRAM_SERVICE_ID = "ingestor-service"
+TELEGRAM_MAX_RETRIES = "3"
+TELEGRAM_RETRY_DELAY = "2000"
+TELEGRAM_SESSION_CACHE_TTL = "300000"
+
+# For local development
+[dev]
+port = 8787
+
+# For local development, specify the service binding's local port
+[[services.dev]]
+binding = "TELEGRAM_AUTH"
+port = 8788
 
 [env.production]
-vars = { ENVIRONMENT = "production" }
+vars = {
+  ENVIRONMENT = "production"
+  # Production-specific Telegram configuration
+  # These should be set in the Cloudflare dashboard for the production environment
+}
 
 [env.staging]
-vars = { ENVIRONMENT = "staging" }
+vars = {
+  ENVIRONMENT = "staging"
+  # Staging-specific Telegram configuration
+  # These should be set in the Cloudflare dashboard for the staging environment
+}
 command = "pnpm build"

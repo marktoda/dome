@@ -1,22 +1,13 @@
 {
-  "name": "communicator-cloudflare",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Cloudflare Workers microservices monorepo",
+  "name": "telegram-auth-flow",
+  "version": "1.0.0",
+  "description": "Script to walk through the Telegram authentication flow",
+  "main": "telegram-auth-flow.js",
   "scripts": {
-    "build": "pnpm -r build",
-    "dev": "pnpm --filter ingestor dev",
-    "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
-    "format": "prettier --write \"**/*.{ts,js,json,md}\""
+    "start": "node telegram-auth-flow.js"
   },
-  "engines": {
-    "node": ">=16",
-    "pnpm": ">=7"
-  },
-  "devDependencies": {
-    "@types/node": "^18.15.11",
-    "prettier": "^2.8.7",
-    "typescript": "^5.0.4"
+  "dependencies": {
+    "node-fetch": "^2.6.7",
+    "readline": "^1.3.0"
   }
 }
