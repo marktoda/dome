@@ -54,7 +54,7 @@ export function fromDTO(dto: TelegramSessionDTO): TelegramSession {
     expiresAt: dto.expires_at ? new Date(dto.expires_at) : undefined,
     isActive: dto.is_active,
     deviceInfo: dto.device_info,
-    ipAddress: dto.ip_address
+    ipAddress: dto.ip_address,
   };
 }
 
@@ -74,7 +74,7 @@ export function toDTO(session: TelegramSession): TelegramSessionDTO {
     expires_at: session.expiresAt?.toISOString(),
     is_active: session.isActive,
     device_info: session.deviceInfo,
-    ip_address: session.ipAddress
+    ip_address: session.ipAddress,
   };
 }
 
@@ -118,7 +118,7 @@ export function accessLogFromDTO(dto: SessionAccessLogDTO): SessionAccessLog {
     timestamp: new Date(dto.timestamp),
     ipAddress: dto.ip_address,
     success: dto.success,
-    errorMessage: dto.error_message
+    errorMessage: dto.error_message,
   };
 }
 
@@ -134,6 +134,6 @@ export function accessLogToDTO(log: SessionAccessLog): SessionAccessLogDTO {
     timestamp: log.timestamp.toISOString(),
     ip_address: log.ipAddress,
     success: log.success,
-    error_message: log.errorMessage
+    error_message: log.errorMessage,
   };
 }

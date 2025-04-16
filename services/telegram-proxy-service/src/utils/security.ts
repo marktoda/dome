@@ -22,13 +22,9 @@ export function generateToken(payload: JwtPayload): string {
   if (!AUTH.JWT_SECRET) {
     throw new Error('JWT_SECRET is not defined');
   }
-  return jwt.sign(
-    payload,
-    Buffer.from(AUTH.JWT_SECRET, 'utf-8'),
-    {
-      expiresIn: AUTH.JWT_EXPIRATION,
-    }
-  );
+  return jwt.sign(payload, Buffer.from(AUTH.JWT_SECRET, 'utf-8'), {
+    expiresIn: AUTH.JWT_EXPIRATION,
+  });
 }
 
 /**
@@ -49,7 +45,7 @@ export function extractTokenFromHeader(authHeader?: string): string {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new AuthenticationError('No token provided');
   }
-  
+
   return authHeader.split(' ')[1];
 }
 
@@ -64,25 +60,15 @@ export function generateRandomId(length = 32): string {
  * Create an HMAC signature for request signing
  */
 export function createSignature(data: string, secret: string): string {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(data)
-    .digest('hex');
+  return crypto.createHmac('sha256', secret).update(data).digest('hex');
 }
 
 /**
  * Verify a request signature
  */
-export function verifySignature(
-  signature: string,
-  data: string,
-  secret: string
-): boolean {
+export function verifySignature(signature: string, data: string, secret: string): boolean {
   const expectedSignature = createSignature(data, secret);
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
 }
 
 /**
@@ -96,8 +82,5 @@ export function generateSecretKey(length = 64): string {
  * Hash a string using SHA-256
  */
 export function hashString(data: string): string {
-  return crypto
-    .createHash('sha256')
-    .update(data)
-    .digest('hex');
+  return crypto.createHash('sha256').update(data).digest('hex');
 }

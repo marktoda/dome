@@ -11,15 +11,10 @@ import {
   ValidationError,
   SchemaValidationError,
   MessageFormatError,
-  BatchValidationError
+  BatchValidationError,
 } from './ValidationError';
 
-export {
-  ValidationError,
-  SchemaValidationError,
-  MessageFormatError,
-  BatchValidationError
-};
+export { ValidationError, SchemaValidationError, MessageFormatError, BatchValidationError };
 
 // Service errors
 import {
@@ -27,16 +22,10 @@ import {
   QueueError,
   MessageProcessingError,
   RateLimitError,
-  NotFoundError
+  NotFoundError,
 } from './ServiceError';
 
-export {
-  ServiceError,
-  QueueError,
-  MessageProcessingError,
-  RateLimitError,
-  NotFoundError
-};
+export { ServiceError, QueueError, MessageProcessingError, RateLimitError, NotFoundError };
 
 // For backward compatibility
 export { BaseError as AppError } from './BaseError';

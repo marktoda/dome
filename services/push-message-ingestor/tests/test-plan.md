@@ -3,6 +3,7 @@
 ## Service Overview
 
 The push-message-ingestor service is a Cloudflare Worker that:
+
 - Provides endpoints for ingesting messages from various platforms (currently only Telegram)
 - Validates incoming messages
 - Publishes valid messages to a queue called "rawmessages"
@@ -10,10 +11,12 @@ The push-message-ingestor service is a Cloudflare Worker that:
 ## Endpoints to Test
 
 1. **GET /** - Base endpoint
+
    - Returns basic service information
    - Expected response: 200 OK with service info
 
 2. **GET /health** - Health check endpoint
+
    - Returns service health status
    - Expected response: 200 OK with health info
 
@@ -26,11 +29,13 @@ The push-message-ingestor service is a Cloudflare Worker that:
 ### 1. Base Endpoint Test
 
 **Request:**
+
 ```
 GET /
 ```
 
 **Expected Response:**
+
 ```json
 {
   "success": true,
@@ -49,11 +54,13 @@ GET /
 ### 2. Health Check Endpoint Test
 
 **Request:**
+
 ```
 GET /health
 ```
 
 **Expected Response:**
+
 ```json
 {
   "status": "ok",
@@ -68,6 +75,7 @@ GET /health
 #### 3.1 Valid Message Payload
 
 **Request:**
+
 ```
 POST /publish/telegram/messages
 Content-Type: application/json
@@ -91,6 +99,7 @@ Content-Type: application/json
 ```
 
 **Expected Response:**
+
 ```json
 {
   "success": true,
@@ -102,6 +111,7 @@ Content-Type: application/json
 ```
 
 **Expected Behavior:**
+
 - Message should be validated
 - Message should be published to the "rawmessages" queue
 - Success response should be returned
@@ -109,6 +119,7 @@ Content-Type: application/json
 #### 3.2 Invalid Message Payload (Missing Required Fields)
 
 **Request:**
+
 ```
 POST /publish/telegram/messages
 Content-Type: application/json
@@ -130,6 +141,7 @@ Content-Type: application/json
 ```
 
 **Expected Response:**
+
 ```json
 {
   "success": false,
@@ -141,6 +153,7 @@ Content-Type: application/json
 ```
 
 **Expected Behavior:**
+
 - Message validation should fail
 - Error response should be returned with validation details
 - No message should be published to the queue
@@ -148,6 +161,7 @@ Content-Type: application/json
 #### 3.3 Empty Message Array
 
 **Request:**
+
 ```
 POST /publish/telegram/messages
 Content-Type: application/json
@@ -158,6 +172,7 @@ Content-Type: application/json
 ```
 
 **Expected Response:**
+
 ```json
 {
   "success": true,
@@ -169,6 +184,7 @@ Content-Type: application/json
 ```
 
 **Expected Behavior:**
+
 - Empty array should be valid
 - Success response should be returned
 - No messages should be published to the queue
@@ -176,6 +192,7 @@ Content-Type: application/json
 #### 3.4 Multiple Messages in a Single Request
 
 **Request:**
+
 ```
 POST /publish/telegram/messages
 Content-Type: application/json
@@ -211,6 +228,7 @@ Content-Type: application/json
 ```
 
 **Expected Response:**
+
 ```json
 {
   "success": true,
@@ -222,6 +240,7 @@ Content-Type: application/json
 ```
 
 **Expected Behavior:**
+
 - Both messages should be validated
 - Both messages should be published to the "rawmessages" queue
 - Success response should be returned with count of 2
@@ -229,6 +248,7 @@ Content-Type: application/json
 #### 3.5 Mixed Valid and Invalid Messages
 
 **Request:**
+
 ```
 POST /publish/telegram/messages
 Content-Type: application/json
@@ -262,6 +282,7 @@ Content-Type: application/json
 ```
 
 **Expected Response:**
+
 ```json
 {
   "success": false,
@@ -273,6 +294,7 @@ Content-Type: application/json
 ```
 
 **Expected Behavior:**
+
 - Batch validation should fail
 - Error response should be returned with validation details
 - No messages should be published to the queue
@@ -282,16 +304,19 @@ Content-Type: application/json
 Since we can't run the service locally due to NixOS limitations, here are some alternative testing approaches:
 
 1. **Unit Testing**:
+
    - Write unit tests for the service using a testing framework like Jest
    - Mock the queue binding to test the message publishing functionality
    - Test the validation logic separately
 
 2. **Integration Testing in CI/CD**:
+
    - Set up integration tests in the CI/CD pipeline
    - Deploy the service to a test environment
    - Run tests against the deployed service
 
 3. **Manual Testing in Cloudflare**:
+
    - Deploy the service to a test environment in Cloudflare
    - Use tools like curl or Postman to test the endpoints
    - Monitor the queue in the Cloudflare dashboard

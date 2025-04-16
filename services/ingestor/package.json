@@ -6,7 +6,7 @@
     "build": "tsc",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src --ext .ts,.tsx",
     "test": "echo \"No tests yet\""
   },
   "dependencies": {

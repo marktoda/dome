@@ -48,7 +48,7 @@ export function fromDTO(dto: TelegramUserDTO): TelegramUser {
     accessLevel: dto.access_level,
     isBlocked: dto.is_blocked,
     createdAt: new Date(dto.created_at),
-    updatedAt: new Date(dto.updated_at)
+    updatedAt: new Date(dto.updated_at),
   };
 }
 
@@ -66,6 +66,6 @@ export function toDTO(user: TelegramUser): TelegramUserDTO {
     access_level: user.accessLevel,
     is_blocked: user.isBlocked,
     created_at: user.createdAt.toISOString(),
-    updated_at: user.updatedAt.toISOString()
+    updated_at: user.updatedAt.toISOString(),
   };
 }

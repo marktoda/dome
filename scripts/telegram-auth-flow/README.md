@@ -29,15 +29,15 @@ Before using the script, you need to configure the telegram-auth service with yo
    ```bash
    # Navigate to the auth-telegram service directory
    cd services/auth-telegram
-   
+
    # Set the Telegram API ID secret
    npx wrangler secret put TELEGRAM_API_ID
    # Enter your API ID when prompted
-   
+
    # Set the Telegram API Hash secret
    npx wrangler secret put TELEGRAM_API_HASH
    # Enter your API Hash when prompted
-   
+
    # Set a random session secret
    npx wrangler secret put SESSION_SECRET
    # Enter a random string when prompted
@@ -100,6 +100,7 @@ pnpm dev
 ### Authentication code not received
 
 If you don't receive the authentication code:
+
 1. Make sure your phone number is correct
 2. Check that your Telegram account is active
 3. Try again after a few minutes

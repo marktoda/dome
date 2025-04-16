@@ -5,6 +5,7 @@
 The Push Message Ingestor Service is a Cloudflare Worker that serves as an entry point for external messages into the Communicator system. Unlike the polling-based ingestor service, this service provides endpoints that external systems can push messages to directly.
 
 The service is responsible for:
+
 - Receiving messages pushed from external sources (currently supporting Telegram)
 - Validating and normalizing incoming message data
 - Publishing validated messages to the `rawmessages` queue for further processing
@@ -101,6 +102,7 @@ chmod +x run-tests.sh
 ```
 
 The test scripts verify all endpoints and test various scenarios:
+
 - Base endpoint (GET /)
 - Health check endpoint (GET /health)
 - Valid message publishing
@@ -114,6 +116,7 @@ For more details on testing, see the [tests/README.md](tests/README.md) and [tes
 #### Recent Test Improvements
 
 The service has been updated to fix several issues:
+
 - Enhanced JSON parsing error handling with detailed error messages
 - Improved handling of empty message arrays
 - Added request body logging for better debugging
@@ -180,6 +183,7 @@ vars = { ENVIRONMENT = "staging" }
 Returns basic service information.
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -200,6 +204,7 @@ Returns basic service information.
 Health check endpoint.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -216,6 +221,7 @@ Health check endpoint.
 Publishes a batch of Telegram messages to the queue.
 
 **Request Body:**
+
 ```json
 {
   "messages": [
@@ -239,6 +245,7 @@ Publishes a batch of Telegram messages to the queue.
 ```
 
 **Success Response:**
+
 ```json
 {
   "success": true,
@@ -250,6 +257,7 @@ Publishes a batch of Telegram messages to the queue.
 ```
 
 **Error Response:**
+
 ```json
 {
   "success": false,
@@ -303,11 +311,13 @@ Common error codes:
 The service implements different error handling behavior based on the environment:
 
 #### Development Environment
+
 - Detailed error messages with original error information
 - Stack traces included in logs and error details
 - Comprehensive error context for debugging
 
 #### Production Environment
+
 - Generic error messages for server errors
 - No stack traces or internal details exposed in responses
 - Sensitive information automatically redacted from logs and responses
@@ -351,6 +361,7 @@ The logging system includes several security features:
 ### Log Examples
 
 #### Info Log
+
 ```json
 {
   "level": "info",
@@ -361,6 +372,7 @@ The logging system includes several security features:
 ```
 
 #### Error Log (Development)
+
 ```json
 {
   "level": "error",
@@ -376,6 +388,7 @@ The logging system includes several security features:
 ```
 
 #### Error Log (Production)
+
 ```json
 {
   "level": "error",
@@ -398,6 +411,7 @@ The service is designed to be extended to support additional platforms and featu
 To add support for a new message source (e.g., Slack):
 
 1. Create a new message model in `src/models/message.ts`:
+
    ```typescript
    export interface SlackMessage extends BaseMessage {
      platform: 'slack';
@@ -410,6 +424,7 @@ To add support for a new message source (e.g., Slack):
    ```
 
 2. Implement validators in `src/models/validators.ts`:
+
    ```typescript
    export function validateSlackMessage(message: any): { valid: boolean; errors?: string[] } {
      // Validation logic
@@ -417,14 +432,16 @@ To add support for a new message source (e.g., Slack):
    ```
 
 3. Add a new endpoint in `src/index.ts`:
+
    ```typescript
-   app.post("/publish/slack/messages", async (c: any) => {
+   app.post('/publish/slack/messages', async (c: any) => {
      const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
      return await messageController.publishSlackMessages(c);
    });
    ```
 
 4. Update the message controller in `src/controllers/messageController.ts`:
+
    ```typescript
    async publishSlackMessages(c: Context<{ Bindings: Bindings }>): Promise<Response> {
      // Controller logic

@@ -1,4 +1,5 @@
-import express, { Express, Request, Response, NextFunction } from 'express';
+import type { Express } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -27,7 +28,7 @@ export class ApiServer {
   constructor() {
     // Create Express app
     this.app = express();
-    
+
     // Validate required configuration
     try {
       validateConfig();
@@ -44,21 +45,21 @@ export class ApiServer {
     // Apply security middleware
     this.app.use(helmet()); // Security headers
     this.app.use(cors()); // CORS support
-    
+
     // Request parsing middleware
     this.app.use(express.json()); // Parse JSON request bodies
     this.app.use(express.urlencoded({ extended: true })); // Parse URL-encoded request bodies
 
     // Request logging middleware
     this.app.use(requestLogger); // Custom request logger with request ID tracking
-    
+
     // HTTP request logging (for access logs)
     if (!SERVER.IS_TEST) {
       this.app.use(
         morgan(SERVER.IS_PRODUCTION ? 'combined' : 'dev', {
           stream: logStream,
-          skip: (req) => req.url.includes('/api/v1/health'), // Skip health check logs
-        })
+          skip: req => req.url.includes('/api/v1/health'), // Skip health check logs
+        }),
       );
     }
 
@@ -88,7 +89,7 @@ export class ApiServer {
    * @returns Promise that resolves when server is listening
    */
   public async start(port = SERVER.PORT, host = SERVER.HOST): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       // Setup middleware and routes if not already done
       if (!this.server) {
         this.setupMiddleware();
@@ -99,7 +100,7 @@ export class ApiServer {
       this.server = http.createServer(this.app);
 
       // Handle server errors
-      this.server.on('error', (error) => {
+      this.server.on('error', error => {
         logger.error('Server error:', error);
       });
 
@@ -133,7 +134,7 @@ export class ApiServer {
     logger.info('Stopping server...');
 
     return new Promise((resolve, reject) => {
-      this.server!.close((err) => {
+      this.server!.close(err => {
         if (err) {
           logger.error('Error stopping server:', err);
           reject(err);
@@ -171,11 +172,11 @@ export class ApiServer {
   private setupGracefulShutdown(): void {
     // Handle process termination signals
     const signals = ['SIGINT', 'SIGTERM', 'SIGQUIT'];
-    
-    signals.forEach((signal) => {
+
+    signals.forEach(signal => {
       process.on(signal, async () => {
         logger.info(`Received ${signal}, shutting down gracefully`);
-        
+
         try {
           await this.stop();
           process.exit(0);

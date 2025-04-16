@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 /**
  * Application configuration
  * Loads and validates environment variables
- * 
+ *
  * This module provides a centralized, type-safe configuration system for the application.
  * It loads environment variables from .env files in development mode, validates required
  * values, and provides typed access to configuration values throughout the application.
@@ -217,24 +217,24 @@ export const config = {
 /**
  * Validate required configuration
  * Ensures all required environment variables are present and valid
- * 
+ *
  * @throws Error if any required configuration is missing
  */
 export function validateConfig(): void {
   // Define required variables with their validation functions
   const requiredVars = [
-    { 
-      name: 'TELEGRAM_API_ID', 
+    {
+      name: 'TELEGRAM_API_ID',
       value: TELEGRAM.API_ID,
-      validate: (value: any) => value !== undefined && value !== ''
+      validate: (value: any) => value !== undefined && value !== '',
     },
-    { 
-      name: 'TELEGRAM_API_HASH', 
+    {
+      name: 'TELEGRAM_API_HASH',
       value: TELEGRAM.API_HASH,
-      validate: (value: any) => value !== undefined && value !== ''
+      validate: (value: any) => value !== undefined && value !== '',
     },
-    { 
-      name: 'JWT_SECRET', 
+    {
+      name: 'JWT_SECRET',
       value: AUTH.JWT_SECRET,
       validate: (value: any) => {
         // In production, we must have a real JWT secret
@@ -243,14 +243,12 @@ export function validateConfig(): void {
         }
         // In non-production, we can use the default
         return value !== undefined && value !== '';
-      }
+      },
     },
   ];
 
   // Find missing or invalid variables
-  const invalidVars = requiredVars
-    .filter(v => !v.validate(v.value))
-    .map(v => v.name);
+  const invalidVars = requiredVars.filter(v => !v.validate(v.value)).map(v => v.name);
 
   if (invalidVars.length > 0) {
     throw new Error(`Missing or invalid required environment variables: ${invalidVars.join(', ')}`);
@@ -260,7 +258,7 @@ export function validateConfig(): void {
 /**
  * Get a sanitized version of the configuration for logging
  * Removes sensitive values like passwords and secrets
- * 
+ *
  * @returns A sanitized configuration object safe for logging
  */
 export function getSanitizedConfig() {

@@ -5,13 +5,8 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { SessionManager } from '../lib/session-manager';
 import { TelegramAuthHandler } from '../handlers/auth-handler';
-import { ApiResponse } from '@communicator/common';
-import { 
-  sessionIdSchema,
-  userIdSchema,
-  apiKeySchema,
-  serviceIdSchema
-} from '../utils/validation';
+import type { ApiResponse } from '@communicator/common';
+import { sessionIdSchema, userIdSchema, apiKeySchema, serviceIdSchema } from '../utils/validation';
 import { apiKeyAuth, adminAuth } from '../middleware/auth';
 
 /**
@@ -39,21 +34,20 @@ const router = new Hono<{ Bindings: Bindings; Variables: { serviceId: string } }
 router.get(
   '/user/:userId',
   // Use type assertion to work around type checking issues
-  apiKeyAuth((c) => c.env.API_KEY) as any,
+  apiKeyAuth(c => c.env.API_KEY) as any,
   zValidator('param', userIdSchema) as any,
-  async (c) => {
+  async c => {
     const userId = parseInt(c.req.param('userId'), 10);
     const serviceId = c.get('serviceId');
-    
-    const sessionManager = new SessionManager(
-      c.env.DB,
-      c.env.SESSION_SECRET
-    );
-    
+
+    const sessionManager = new SessionManager(c.env.DB, c.env.SESSION_SECRET);
+
     try {
       // Get session for user
-      const { sessionString, sessionId, expiresAt } = await sessionManager.getSessionByUserId(userId);
-      
+      const { sessionString, sessionId, expiresAt } = await sessionManager.getSessionByUserId(
+        userId,
+      );
+
       // Log access
       await sessionManager.logAccess(
         sessionId,
@@ -61,22 +55,22 @@ router.get(
         'get_session',
         true,
         undefined,
-        c.req.header('CF-Connecting-IP')
+        c.req.header('CF-Connecting-IP'),
       );
-      
+
       const response: ApiResponse = {
         success: true,
         data: {
           sessionString,
           sessionId,
-          expiresAt: expiresAt.toISOString()
-        }
+          expiresAt: expiresAt.toISOString(),
+        },
       };
-      
+
       return c.json(response);
     } catch (error: any) {
       console.error(`Error getting session: ${error.message}`);
-      
+
       // Log failed access if we have a session ID
       if (error.sessionId) {
         await sessionManager.logAccess(
@@ -85,21 +79,21 @@ router.get(
           'get_session',
           false,
           error.message,
-          c.req.header('CF-Connecting-IP')
+          c.req.header('CF-Connecting-IP'),
         );
       }
-      
+
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'SESSION_NOT_FOUND',
-          message: error.message || 'Session not found or expired'
-        }
+          message: error.message || 'Session not found or expired',
+        },
       };
-      
+
       return c.json(response, 404);
     }
-  }
+  },
 );
 
 /**
@@ -110,20 +104,17 @@ router.get(
 router.get(
   '/list/:userId',
   // Use type assertion to work around type checking issues
-  adminAuth((c) => c.env.ADMIN_API_KEY) as any,
+  adminAuth(c => c.env.ADMIN_API_KEY) as any,
   zValidator('param', userIdSchema) as any,
-  async (c) => {
+  async c => {
     const userId = parseInt(c.req.param('userId'), 10);
-    
-    const sessionManager = new SessionManager(
-      c.env.DB,
-      c.env.SESSION_SECRET
-    );
-    
+
+    const sessionManager = new SessionManager(c.env.DB, c.env.SESSION_SECRET);
+
     try {
       // Get all sessions for user
       const sessions = await sessionManager.listSessions(userId);
-      
+
       // Map to response format (without sensitive data)
       const sessionList = sessions.map(session => ({
         id: session.id,
@@ -134,31 +125,31 @@ router.get(
         expiresAt: session.expiresAt?.toISOString(),
         isActive: session.isActive,
         deviceInfo: session.deviceInfo,
-        ipAddress: session.ipAddress
+        ipAddress: session.ipAddress,
       }));
-      
+
       const response: ApiResponse = {
         success: true,
         data: {
-          sessions: sessionList
-        }
+          sessions: sessionList,
+        },
       };
-      
+
       return c.json(response);
     } catch (error: any) {
       console.error(`Error listing sessions: ${error.message}`);
-      
+
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'LIST_SESSIONS_FAILED',
-          message: error.message || 'Failed to list sessions'
-        }
+          message: error.message || 'Failed to list sessions',
+        },
       };
-      
+
       return c.json(response, 500);
     }
-  }
+  },
 );
 
 /**
@@ -169,21 +160,18 @@ router.get(
 router.delete(
   '/:sessionId',
   // Use type assertion to work around type checking issues
-  apiKeyAuth((c) => c.env.API_KEY) as any,
+  apiKeyAuth(c => c.env.API_KEY) as any,
   zValidator('param', sessionIdSchema) as any,
-  async (c) => {
+  async c => {
     const sessionId = c.req.param('sessionId');
     const serviceId = c.get('serviceId');
-    
-    const sessionManager = new SessionManager(
-      c.env.DB,
-      c.env.SESSION_SECRET
-    );
-    
+
+    const sessionManager = new SessionManager(c.env.DB, c.env.SESSION_SECRET);
+
     try {
       // Revoke the session
       await sessionManager.revokeSession(sessionId);
-      
+
       // Log access
       await sessionManager.logAccess(
         sessionId,
@@ -191,20 +179,20 @@ router.delete(
         'revoke_session',
         true,
         undefined,
-        c.req.header('CF-Connecting-IP')
+        c.req.header('CF-Connecting-IP'),
       );
-      
+
       const response: ApiResponse = {
         success: true,
         data: {
-          message: 'Session revoked successfully'
-        }
+          message: 'Session revoked successfully',
+        },
       };
-      
+
       return c.json(response);
     } catch (error: any) {
       console.error(`Error revoking session: ${error.message}`);
-      
+
       // Log failed access
       await sessionManager.logAccess(
         sessionId,
@@ -212,20 +200,20 @@ router.delete(
         'revoke_session',
         false,
         error.message,
-        c.req.header('CF-Connecting-IP')
+        c.req.header('CF-Connecting-IP'),
       );
-      
+
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'REVOKE_SESSION_FAILED',
-          message: error.message || 'Failed to revoke session'
-        }
+          message: error.message || 'Failed to revoke session',
+        },
       };
-      
+
       return c.json(response, 500);
     }
-  }
+  },
 );
 
 export default router;

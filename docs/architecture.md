@@ -66,7 +66,7 @@ graph TD
     TG --> IW
     TW --> IW
     SL --> IW
-    
+
     IW --> IQ
     IQ --> CW
     CW --> CQ
@@ -77,18 +77,18 @@ graph TD
     MQ --> TG
     MQ --> TW
     MQ --> SL
-    
+
     IW <--> KV
     CW <--> D1
     AW <--> D1
     MW <--> D1
-    
+
     AW <--> AI
-    
+
     API <--> KV
     API <--> D1
     API <--> R2
-    
+
     IW <--> R2
     MW <--> R2
 ```
@@ -96,9 +96,11 @@ graph TD
 ### Component Descriptions
 
 1. **External Sources**:
+
    - Telegram API, Twitter API, Slack API: External messaging platforms from which messages are ingested.
 
 2. **Cloudflare Workers**:
+
    - **Ingestor Worker**: Periodically polls external APIs to fetch new messages and places them in the Ingestion Queue.
    - **Push Message Ingestor Worker**: Accepts messages pushed from external sources and publishes them to the Ingestion Queue.
    - **Conversations Worker**: Groups messages into conversations based on various criteria and stores them in D1.
@@ -107,11 +109,13 @@ graph TD
    - **API Gateway Worker**: Provides a unified API for frontend applications and administrative interfaces.
 
 3. **Cloudflare Storage**:
+
    - **KV**: For fast access to configuration, user settings, and caching.
    - **D1**: SQL database for structured data like conversations, analysis results, and user information.
    - **R2**: Object storage for message attachments, large content, and backups.
 
 4. **Cloudflare Queues**:
+
    - **Ingestion Queue**: Buffers incoming messages for processing.
    - **Conversation Queue**: Holds grouped messages ready for analysis.
    - **Analysis Queue**: Contains analyzed conversations ready for response generation.
@@ -123,6 +127,7 @@ graph TD
 ### Data Flow
 
 1. **Message Ingestion Flow**:
+
    - **Pull-based ingestion**:
      - Ingestor Worker polls external APIs at configured intervals
      - Messages are normalized into a common structure
@@ -135,11 +140,13 @@ graph TD
      - Supports multiple platforms (currently Telegram, with extensibility for others)
 
 2. **Conversation Processing Flow**:
+
    - Conversations Worker groups messages based on thread IDs, time proximity, etc.
    - Conversation metadata and relationships are stored in D1
    - Conversation IDs are pushed to the Conversation Queue
 
 3. **Analysis Flow**:
+
    - Analysis Worker retrieves conversation data from D1
    - Workers AI is used for categorization, prioritization, and summarization
    - Analysis results are stored in D1
@@ -235,9 +242,9 @@ type Bindings = {
  * Service information
  */
 const serviceInfo: ServiceInfo = {
-  name: "ingestor",
-  version: "0.1.0",
-  environment: "development" // Default value, will be overridden by env
+  name: 'ingestor',
+  version: '0.1.0',
+  environment: 'development', // Default value, will be overridden by env
 };
 
 /**
@@ -254,15 +261,15 @@ app.use('*', cors());
 /**
  * Routes
  */
-app.get('/', (c) => {
+app.get('/', c => {
   const response: ApiResponse = {
     success: true,
     data: {
       message: 'Hello World from Ingestor Service!',
-      service: serviceInfo
-    }
+      service: serviceInfo,
+    },
   };
-  
+
   return c.json(response);
 });
 
@@ -298,7 +305,7 @@ use worker::*;
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Response> {
     // Get the URL from the request
     let url = req.url()?;
-    
+
     // Create a JSON response
     let data = serde_json::json!({
         "message": "Hello from Rust Worker!",
@@ -306,7 +313,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         "url": url.to_string(),
         "timestamp": chrono::Utc::now().to_rfc3339()
     });
-    
+
     // Return the response
     Response::from_json(&data)
 }
@@ -333,8 +340,8 @@ The project uses Pulumi for infrastructure as code, allowing for reproducible de
 
 ```typescript
 // infrastructure/src/index.ts
-import * as pulumi from "@pulumi/pulumi";
-import { deployWorker, deployRustWorker } from "./workers";
+import * as pulumi from '@pulumi/pulumi';
+import { deployWorker, deployRustWorker } from './workers';
 
 // Get environment-specific configuration
 const config = new pulumi.Config();
@@ -499,10 +506,12 @@ pulumi up
 ### Testing Levels
 
 1. **Unit Testing**:
+
    - Jest for TypeScript code
    - Test individual functions and components
 
 2. **Integration Testing**:
+
    - Test interactions between services
    - Use Miniflare to emulate Cloudflare environment
 
@@ -527,10 +536,12 @@ pulumi up
 ### Data Storage Scaling
 
 1. **KV**:
+
    - Best for frequently accessed, relatively static data
    - Use for user settings, configuration, and session data
 
 2. **D1**:
+
    - Suitable for structured data with relational requirements
    - Plan database schema for efficient queries
    - Use indexes for frequently queried fields

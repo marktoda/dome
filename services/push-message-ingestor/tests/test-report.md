@@ -14,11 +14,13 @@ Based on our analysis, the push-message-ingestor service appears to be well-desi
 ## Service Architecture
 
 The push-message-ingestor service is a Cloudflare Worker that:
+
 - Provides endpoints for ingesting messages from various platforms (currently only Telegram)
 - Validates incoming messages against a defined schema
 - Publishes valid messages to a queue called "rawmessages"
 
 The service is built using:
+
 - Hono framework for routing and middleware
 - TypeScript for type safety
 - Cloudflare Workers for serverless execution
@@ -68,6 +70,7 @@ We've created unit tests for:
 - Message controller
 
 These tests verify that:
+
 - Message validation works correctly
 - Messages are properly published to the queue
 - The controller handles requests and responses correctly

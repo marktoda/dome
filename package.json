@@ -8,6 +8,8 @@
     "dev": "pnpm --filter ingestor dev",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
+    "lint:fix": "pnpm -r exec -- eslint src --ext .ts,.tsx --fix",
+    "lint:check": "eslint .",
     "format": "prettier --write \"**/*.{ts,js,json,md}\""
   },
   "engines": {
@@ -16,6 +18,9 @@
   },
   "devDependencies": {
     "@types/node": "^18.15.11",
+    "@typescript-eslint/eslint-plugin": "^5.57.1",
+    "@typescript-eslint/parser": "^5.57.1",
+    "eslint": "^8.38.0",
     "prettier": "^2.8.7",
     "typescript": "^5.0.4"
   }

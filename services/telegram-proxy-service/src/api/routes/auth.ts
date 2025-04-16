@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import { Router } from 'express';
 import { body } from 'express-validator';
 import { sessionManager } from '../../telegram/sessionManager';
 import { validate } from '../middleware/validation';
@@ -20,17 +21,15 @@ router.post(
   '/send-code',
   authRateLimiter,
   validate([
-    body('phoneNumber')
-      .matches(PHONE_NUMBER_REGEX)
-      .withMessage('Invalid phone number format'),
+    body('phoneNumber').matches(PHONE_NUMBER_REGEX).withMessage('Invalid phone number format'),
   ]),
   asyncHandler(async (req: Request, res: Response) => {
     const { phoneNumber } = req.body as { phoneNumber: string };
-    
+
     const result = await sessionManager.startAuthFlow(phoneNumber);
-    
+
     sendSuccess(res as any, result);
-  })
+  }),
 );
 
 /**
@@ -42,15 +41,9 @@ router.post(
   '/verify-code',
   authRateLimiter,
   validate([
-    body('phoneNumber')
-      .matches(PHONE_NUMBER_REGEX)
-      .withMessage('Invalid phone number format'),
-    body('phoneCode')
-      .notEmpty()
-      .withMessage('Phone code is required'),
-    body('phoneCodeHash')
-      .notEmpty()
-      .withMessage('Phone code hash is required'),
+    body('phoneNumber').matches(PHONE_NUMBER_REGEX).withMessage('Invalid phone number format'),
+    body('phoneCode').notEmpty().withMessage('Phone code is required'),
+    body('phoneCodeHash').notEmpty().withMessage('Phone code hash is required'),
   ]),
   asyncHandler(async (req: Request, res: Response) => {
     const { phoneNumber, phoneCode, phoneCodeHash } = req.body as {
@@ -58,28 +51,24 @@ router.post(
       phoneCode: string;
       phoneCodeHash: string;
     };
-    
-    const result = await sessionManager.completeAuth(
-      phoneNumber,
-      phoneCode,
-      phoneCodeHash
-    );
-    
+
+    const result = await sessionManager.completeAuth(phoneNumber, phoneCode, phoneCodeHash);
+
     if (!result.success) {
       throw new AuthenticationError(result.error || 'Authentication failed');
     }
-    
+
     // Generate tokens
     const authToken = generateAuthToken(result.sessionId, result.userId || '', 'user');
     const refreshToken = generateRefreshToken(result.sessionId, result.userId || '');
-    
+
     sendSuccess(res as any, {
       sessionId: result.sessionId,
       userId: result.userId,
       authToken,
       refreshToken,
     });
-  })
+  }),
 );
 
 /**
@@ -90,35 +79,31 @@ router.post(
 router.post(
   '/refresh',
   authRateLimiter,
-  validate([
-    body('refreshToken')
-      .notEmpty()
-      .withMessage('Refresh token is required'),
-  ]),
+  validate([body('refreshToken').notEmpty().withMessage('Refresh token is required')]),
   asyncHandler(async (req: Request, res: Response) => {
     const { refreshToken } = req.body as { refreshToken: string };
-    
+
     // Verify refresh token
     const payload = verifyRefreshToken(refreshToken);
-    
+
     // Validate session
     const isValid = await sessionManager.validateSession(payload.sessionId);
-    
+
     if (!isValid) {
       throw new AuthenticationError('Session is no longer valid');
     }
-    
+
     // Generate new tokens
     const authToken = generateAuthToken(payload.sessionId, payload.userId!, 'user');
     const newRefreshToken = generateRefreshToken(payload.sessionId, payload.userId!);
-    
+
     sendSuccess(res as any, {
       sessionId: payload.sessionId,
       userId: payload.userId,
       authToken,
       refreshToken: newRefreshToken,
     });
-  })
+  }),
 );
 
 export default router;

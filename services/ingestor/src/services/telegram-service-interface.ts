@@ -13,9 +13,9 @@ export interface ITelegramService {
   collectMessages(
     userId: number,
     source: string,
-    options?: { limit?: number; offsetId?: number }
+    options?: { limit?: number; offsetId?: number },
   ): Promise<any[]>;
-  
+
   /**
    * Collect media from a Telegram channel or chat
    * @param userId User ID to use for authentication
@@ -26,9 +26,9 @@ export interface ITelegramService {
   collectMedia(
     userId: number,
     source: string,
-    options?: { limit?: number; offsetId?: number; mediaType?: string }
+    options?: { limit?: number; offsetId?: number; mediaType?: string },
   ): Promise<any[]>;
-  
+
   /**
    * Get information about a Telegram channel or chat
    * @param userId User ID to use for authentication
@@ -36,7 +36,7 @@ export interface ITelegramService {
    * @returns Channel or chat information
    */
   getSourceInfo(userId: number, source: string): Promise<any>;
-  
+
   /**
    * Poll for new messages in a Telegram channel or chat
    * This method is optional and may not be implemented by all services
@@ -48,6 +48,6 @@ export interface ITelegramService {
   pollMessages?(
     userId: number,
     source: string,
-    options?: { timeout?: number; limit?: number }
+    options?: { timeout?: number; limit?: number },
   ): Promise<any[]>;
 }

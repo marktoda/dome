@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import { Router } from 'express';
 import { redisService } from '../../storage/redis';
 import { clientPool } from '../../telegram/clientPool';
 import { sendSuccess } from '../utils/response';
@@ -17,18 +18,18 @@ router.get(
     // Check Redis health
     const redisHealth = await redisService.healthCheck();
     const redisStatus = redisService.getStatus();
-    
+
     // Check Telegram connection status
     const telegramStatus = {
       clientPool: {
         total: clientPool.getTotalCount(),
         available: clientPool.getAvailableCount(),
-      }
+      },
     };
-    
+
     // Overall system health status
     const status = redisHealth ? 'ok' : 'degraded';
-    
+
     sendSuccess(res as any, {
       status,
       timestamp: new Date().toISOString(),
@@ -36,12 +37,12 @@ router.get(
       services: {
         redis: {
           status: redisHealth ? 'ok' : 'error',
-          connectionStatus: redisStatus
+          connectionStatus: redisStatus,
         },
-        telegram: telegramStatus
-      }
+        telegram: telegramStatus,
+      },
     });
-  })
+  }),
 );
 
 /**
@@ -54,13 +55,13 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const redisHealth = await redisService.healthCheck();
     const redisStatus = redisService.getStatus();
-    
+
     sendSuccess(res as any, {
       status: redisHealth ? 'ok' : 'error',
       connectionStatus: redisStatus,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-  })
+  }),
 );
 
 /**
@@ -75,16 +76,16 @@ router.get(
       total: clientPool.getTotalCount(),
       available: clientPool.getAvailableCount(),
     };
-    
+
     // Determine status based on available clients
     const status = clientPoolStatus.available > 0 ? 'ok' : 'degraded';
-    
+
     sendSuccess(res as any, {
       status,
       clientPool: clientPoolStatus,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
-  })
+  }),
 );
 
 /**
@@ -108,11 +109,11 @@ router.get(
         uptime: process.uptime(),
         memory: process.memoryUsage(),
         timestamp: new Date().toISOString(),
-      }
+      },
     };
-    
+
     sendSuccess(res as any, metrics);
-  })
+  }),
 );
 
 export default router;

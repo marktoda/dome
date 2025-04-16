@@ -10,38 +10,38 @@
  * @returns Object containing encrypted data and IV
  */
 export async function encrypt(
-  data: string, 
-  masterKey: string, 
-  salt: string
+  data: string,
+  masterKey: string,
+  salt: string,
 ): Promise<{ encryptedData: Uint8Array; iv: string }> {
   // Import the master key
   const key = await importKey(masterKey);
-  
+
   // Derive a key for this specific encryption
   const derivedKey = await deriveKey(key, salt);
-  
+
   // Generate a random IV
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  
+
   // Encrypt the data
   const encoder = new TextEncoder();
   const dataBuffer = encoder.encode(data);
-  
+
   const encryptedBuffer = await crypto.subtle.encrypt(
     {
       name: 'AES-GCM',
-      iv
+      iv,
     },
     derivedKey,
-    dataBuffer
+    dataBuffer,
   );
-  
+
   // Convert IV to Base64 for storage
   const ivBase64 = btoa(String.fromCharCode(...iv));
-  
+
   return {
     encryptedData: new Uint8Array(encryptedBuffer),
-    iv: ivBase64
+    iv: ivBase64,
   };
 }
 
@@ -54,34 +54,34 @@ export async function encrypt(
  * @returns Decrypted data as a string
  */
 export async function decrypt(
-  encryptedData: Uint8Array, 
-  iv: string, 
-  masterKey: string, 
-  salt: string
+  encryptedData: Uint8Array,
+  iv: string,
+  masterKey: string,
+  salt: string,
 ): Promise<string> {
   // Import the master key
   const key = await importKey(masterKey);
-  
+
   // Derive the same key used for encryption
   const derivedKey = await deriveKey(key, salt);
-  
+
   // Convert IV from Base64
   const ivBytes = atob(iv);
   const ivBuffer = new Uint8Array(ivBytes.length);
   for (let i = 0; i < ivBytes.length; i++) {
     ivBuffer[i] = ivBytes.charCodeAt(i);
   }
-  
+
   // Decrypt the data
   const decryptedBuffer = await crypto.subtle.decrypt(
     {
       name: 'AES-GCM',
-      iv: ivBuffer
+      iv: ivBuffer,
     },
     derivedKey,
-    encryptedData
+    encryptedData,
   );
-  
+
   // Convert back to string
   const decoder = new TextDecoder();
   return decoder.decode(decryptedBuffer);
@@ -95,14 +95,8 @@ export async function decrypt(
 async function importKey(keyString: string): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyData = encoder.encode(keyString);
-  
-  return await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'PBKDF2' },
-    false,
-    ['deriveKey']
-  );
+
+  return await crypto.subtle.importKey('raw', keyData, { name: 'PBKDF2' }, false, ['deriveKey']);
 }
 
 /**
@@ -114,18 +108,18 @@ async function importKey(keyString: string): Promise<CryptoKey> {
 async function deriveKey(masterKey: CryptoKey, salt: string): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const saltBuffer = encoder.encode(salt);
-  
+
   return await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: saltBuffer,
       iterations: 100000,
-      hash: 'SHA-256'
+      hash: 'SHA-256',
     },
     masterKey,
     { name: 'AES-GCM', length: 256 },
     false,
-    ['encrypt', 'decrypt']
+    ['encrypt', 'decrypt'],
   );
 }
 
@@ -134,7 +128,7 @@ async function deriveKey(masterKey: CryptoKey, salt: string): Promise<CryptoKey>
  * @param length - The length of the random string
  * @returns Random string
  */
-export function generateRandomString(length: number = 16): string {
+export function generateRandomString(length = 16): string {
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   return btoa(String.fromCharCode(...bytes))
     .replace(/\+/g, '-')

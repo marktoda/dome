@@ -13,7 +13,7 @@ import {
   ValidationError,
   ServiceError,
   QueueError,
-  MessageProcessingError
+  MessageProcessingError,
 } from './errors';
 ```
 
@@ -26,7 +26,7 @@ import {
   ValidationError,
   ServiceError,
   QueueError,
-  MessageProcessingError
+  MessageProcessingError,
 } from '@communicator/common';
 ```
 
@@ -36,47 +36,48 @@ import {
 
 ```typescript
 // Importing from local middleware files
-import { pinoLogger } from "./middleware/pinoLogger";
-import { createRequestContextMiddleware } from "./middleware/requestContext";
-import { errorMiddleware } from "./middleware/errorMiddleware";
-import { responseHandlerMiddleware } from "./middleware/responseHandlerMiddleware";
+import { pinoLogger } from './middleware/pinoLogger';
+import { createRequestContextMiddleware } from './middleware/requestContext';
+import { errorMiddleware } from './middleware/errorMiddleware';
+import { responseHandlerMiddleware } from './middleware/responseHandlerMiddleware';
 
 // Using middleware
-app.use("*", createRequestContextMiddleware());
-app.use("*", pinoLogger());
-app.use("*", errorMiddleware);
-app.use("*", responseHandlerMiddleware);
+app.use('*', createRequestContextMiddleware());
+app.use('*', pinoLogger());
+app.use('*', errorMiddleware);
+app.use('*', responseHandlerMiddleware);
 ```
 
 ### After
 
 ```typescript
 // Importing from common package
-import { 
-  createRequestContextMiddleware, 
-  createErrorMiddleware, 
-  responseHandlerMiddleware, 
-  createPinoLoggerMiddleware 
-} from "@communicator/common";
+import {
+  createRequestContextMiddleware,
+  createErrorMiddleware,
+  responseHandlerMiddleware,
+  createPinoLoggerMiddleware,
+} from '@communicator/common';
 
 // Using middleware with factory functions
-app.use("*", createRequestContextMiddleware());
-app.use("*", createPinoLoggerMiddleware());
-app.use("*", createErrorMiddleware(formatZodError));
-app.use("*", responseHandlerMiddleware);
+app.use('*', createRequestContextMiddleware());
+app.use('*', createPinoLoggerMiddleware());
+app.use('*', createErrorMiddleware(formatZodError));
+app.use('*', responseHandlerMiddleware);
 ```
 
 ## Key Differences
 
 1. **Factory Functions**: Most middleware components are now exposed as factory functions that allow for customization.
-   
+
    Example:
+
    ```typescript
    // Before
-   app.use("*", errorMiddleware);
-   
+   app.use('*', errorMiddleware);
+
    // After
-   app.use("*", createErrorMiddleware(formatZodError));
+   app.use('*', createErrorMiddleware(formatZodError));
    ```
 
 2. **Consistent Error Handling**: All error classes follow a consistent pattern and are centrally maintained.

@@ -23,17 +23,18 @@ TELEGRAM_PROXY_API_KEY=your-api-key
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `USE_TELEGRAM_PROXY` | Enable or disable the proxy integration | `true` |
-| `TELEGRAM_PROXY_URL` | URL of the Telegram Proxy Service | `http://telegram-proxy-service` |
-| `TELEGRAM_PROXY_API_KEY` | API key for the Telegram Proxy Service | - |
+| Variable                 | Description                             | Default                         |
+| ------------------------ | --------------------------------------- | ------------------------------- |
+| `USE_TELEGRAM_PROXY`     | Enable or disable the proxy integration | `true`                          |
+| `TELEGRAM_PROXY_URL`     | URL of the Telegram Proxy Service       | `http://telegram-proxy-service` |
+| `TELEGRAM_PROXY_API_KEY` | API key for the Telegram Proxy Service  | -                               |
 
 ## Resilience Features
 
 ### Retry Logic
 
 The client implements retry logic for transient errors:
+
 - Network errors
 - Rate limiting errors
 - Temporary service unavailability
@@ -43,6 +44,7 @@ The retry mechanism uses exponential backoff with jitter to prevent thundering h
 ### Circuit Breaker
 
 The client implements a circuit breaker pattern to prevent cascading failures:
+
 - Tracks failure rates
 - Opens the circuit after a threshold of failures
 - Implements half-open state for recovery
@@ -51,12 +53,14 @@ The client implements a circuit breaker pattern to prevent cascading failures:
 ### Fallback Mechanisms
 
 The client includes fallback mechanisms for reliability:
+
 - Falls back to direct Telegram connection if proxy is disabled
 - Provides detailed error information for better error handling
 
 ## Error Handling
 
 The client provides enhanced error handling to distinguish between different types of errors:
+
 - `NETWORK`: Network connectivity issues
 - `RATE_LIMIT`: Rate limiting by Telegram or the proxy service
 - `PROXY_SERVICE`: Errors from the proxy service

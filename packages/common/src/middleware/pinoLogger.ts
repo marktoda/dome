@@ -1,14 +1,16 @@
-import { Context, MiddlewareHandler, Next } from 'hono';
-import { getPath } from "hono/utils/url";
-import type { Logger } from "pino";
-import pino from "pino";
+import type { Context, MiddlewareHandler, Next } from 'hono';
+import { getPath } from 'hono/utils/url';
+import type { Logger } from 'pino';
+import pino from 'pino';
 
 /**
  * Creates a Pino logger middleware for Hono
  * @param logger Optional Pino logger instance (default: creates a new logger with level "info")
  * @returns Middleware handler
  */
-export function createPinoLoggerMiddleware(logger: Logger = pino({ level: "info" })): MiddlewareHandler {
+export function createPinoLoggerMiddleware(
+  logger: Logger = pino({ level: 'info' }),
+): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     const { method } = c.req;
     const path = getPath(c.req.raw);
@@ -22,7 +24,7 @@ export function createPinoLoggerMiddleware(logger: Logger = pino({ level: "info"
           path,
         },
       },
-      "Incoming request",
+      'Incoming request',
     );
 
     const start = Date.now();
@@ -40,7 +42,7 @@ export function createPinoLoggerMiddleware(logger: Logger = pino({ level: "info"
           time: formatTime(start),
         },
       },
-      "Request completed",
+      'Request completed',
     );
   };
 }
@@ -51,8 +53,8 @@ export function createPinoLoggerMiddleware(logger: Logger = pino({ level: "info"
  * @returns Formatted time string
  */
 function humanize(times: string[]): string {
-  const [delimiter, separator] = [",", "."];
-  const orderTimes = times.map((v) => v.replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1" + delimiter));
+  const [delimiter, separator] = [',', '.'];
+  const orderTimes = times.map(v => v.replace(/(\d)(?=(\d\d\d)+(?!\d))/g, '$1' + delimiter));
 
   return orderTimes.join(separator);
 }
@@ -65,5 +67,5 @@ function humanize(times: string[]): string {
 function formatTime(start: number): string {
   const delta = Date.now() - start;
 
-  return humanize([delta < 1000 ? delta + "ms" : Math.round(delta / 1000) + "s"]);
+  return humanize([delta < 1000 ? delta + 'ms' : Math.round(delta / 1000) + 's']);
 }

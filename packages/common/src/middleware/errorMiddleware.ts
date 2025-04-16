@@ -1,13 +1,8 @@
-import { Context, MiddlewareHandler, Next } from 'hono';
+import type { Context, MiddlewareHandler, Next } from 'hono';
 import { ZodError } from 'zod';
-import { ApiResponse } from '../types';
-import {
-  BaseError,
-  ExtendedError,
-  ValidationError,
-  SchemaValidationError,
-  ServiceError,
-} from '../errors';
+import type { ApiResponse } from '../types';
+import type { ExtendedError } from '../errors';
+import { BaseError, ValidationError, SchemaValidationError, ServiceError } from '../errors';
 
 /**
  * Error handling middleware for Hono
@@ -17,7 +12,7 @@ import {
  * @returns Middleware handler
  */
 export function createErrorMiddleware(
-  formatZodError?: (error: ZodError) => any
+  formatZodError?: (error: ZodError) => any,
 ): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     try {
@@ -25,7 +20,10 @@ export function createErrorMiddleware(
     } catch (error) {
       // Log the error with request ID
       const requestId = c.get('requestId') || 'unknown';
-      console.error(`Error processing request [${requestId}]:`, error instanceof Error ? error : {});
+      console.error(
+        `Error processing request [${requestId}]:`,
+        error instanceof Error ? error : {},
+      );
 
       let errorResponse: ApiResponse;
       let status = 500;
@@ -39,29 +37,32 @@ export function createErrorMiddleware(
           message: error.message,
           requestId,
           // Only include details in non-production environments or if they don't contain sensitive info
-          ...((!isProduction || error instanceof ValidationError) && error.details && { details: error.details })
+          ...((!isProduction || error instanceof ValidationError) &&
+            error.details && { details: error.details }),
         };
 
         errorResponse = {
           success: false,
-          error: extendedError
+          error: extendedError,
         };
         status = error.status;
       } else if (error instanceof ZodError && formatZodError) {
         // Handle Zod validation errors
         const formattedErrors = formatZodError(error);
-        const schemaError = new SchemaValidationError('Validation error', { errors: formattedErrors });
+        const schemaError = new SchemaValidationError('Validation error', {
+          errors: formattedErrors,
+        });
 
         const extendedError: ExtendedError = {
           code: schemaError.code,
           message: schemaError.message,
           requestId,
-          details: schemaError.details
+          details: schemaError.details,
         };
 
         errorResponse = {
           success: false,
-          error: extendedError
+          error: extendedError,
         };
         status = schemaError.status;
       } else {
@@ -69,22 +70,24 @@ export function createErrorMiddleware(
         // In production, use a generic error message to avoid exposing sensitive information
         const errorMessage = isProduction
           ? 'An internal server error occurred'
-          : (error instanceof Error ? error.message : 'Unknown error');
+          : error instanceof Error
+          ? error.message
+          : 'Unknown error';
 
         // Create a ServiceError for unknown errors
         const serviceError = new ServiceError(
-          isProduction ? errorMessage : `Error processing request: ${errorMessage}`
+          isProduction ? errorMessage : `Error processing request: ${errorMessage}`,
         );
 
         const extendedError: ExtendedError = {
           code: serviceError.code,
           message: serviceError.message,
-          requestId
+          requestId,
         };
 
         errorResponse = {
           success: false,
-          error: extendedError
+          error: extendedError,
         };
         status = serviceError.status;
       }

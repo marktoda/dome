@@ -1,6 +1,6 @@
 /**
  * Telegram Proxy Client Wrapper
- * 
+ *
  * This client communicates with the Telegram Proxy Service instead of
  * directly connecting to Telegram, solving WebSocket compatibility issues
  * with Cloudflare Workers.
@@ -35,7 +35,7 @@ export enum ErrorType {
   PROXY_SERVICE = 'PROXY_SERVICE',
   TELEGRAM_API = 'TELEGRAM_API',
   AUTHENTICATION = 'AUTHENTICATION',
-  UNKNOWN = 'UNKNOWN'
+  UNKNOWN = 'UNKNOWN',
 }
 
 /**
@@ -44,8 +44,8 @@ export enum ErrorType {
 export class TelegramProxyError extends Error {
   type: ErrorType;
   retryable: boolean;
-  
-  constructor(message: string, type: ErrorType, retryable: boolean = false) {
+
+  constructor(message: string, type: ErrorType, retryable = false) {
     super(message);
     this.name = 'TelegramProxyError';
     this.type = type;
@@ -58,8 +58,8 @@ export class TelegramProxyError extends Error {
  */
 enum CircuitState {
   CLOSED, // Normal operation
-  OPEN,   // Failing, not allowing requests
-  HALF_OPEN // Testing if service is back
+  OPEN, // Failing, not allowing requests
+  HALF_OPEN, // Testing if service is back
 }
 
 /**
@@ -83,12 +83,12 @@ export class TelegramProxyClient {
   private config: TelegramProxyClientConfig;
   private apiId: string;
   private apiHash: string;
-  
+
   // Circuit breaker state
   private circuitState: CircuitState = CircuitState.CLOSED;
-  private failures: number = 0;
-  private nextRetry: number = 0;
-  
+  private failures = 0;
+  private nextRetry = 0;
+
   /**
    * Constructor
    * @param apiId - Telegram API ID
@@ -98,19 +98,19 @@ export class TelegramProxyClient {
   constructor(apiId: string, apiHash: string, config: TelegramProxyClientConfig) {
     this.apiId = apiId;
     this.apiHash = apiHash;
-    
+
     // Set default configuration values
     this.config = {
       maxRetries: 3,
       retryDelay: 1000,
       circuitBreaker: {
         failureThreshold: 5,
-        resetTimeout: 30000 // 30 seconds
+        resetTimeout: 30000, // 30 seconds
       },
-      ...config
+      ...config,
     };
   }
-  
+
   /**
    * Send authentication code to phone number
    * @param phoneNumber - The phone number to send code to
@@ -122,48 +122,37 @@ export class TelegramProxyClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(this.config.apiKey ? { 'Authorization': `Bearer ${this.config.apiKey}` } : {})
+          ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
         },
         body: JSON.stringify({
           phoneNumber,
           apiId: this.apiId,
-          apiHash: this.apiHash
-        })
+          apiHash: this.apiHash,
+        }),
       });
-      
-      const data = await response.json() as {
-        success: boolean;
-        error?: {
-          code: string;
-          message: string;
-        };
-        data?: {
-          phoneCodeHash: string;
-          isCodeViaApp?: boolean;
-          timeout?: number;
-        };
-      };
-      
+
+      const data = await response.json();
+
       if (!response.ok) {
         this.handleErrorResponse(response, data);
       }
-      
+
       if (!data.success || !data.data) {
         throw new TelegramProxyError(
           data.error?.message || 'Failed to send authentication code',
           this.mapErrorType(data.error?.code),
-          this.isRetryable(data.error?.code)
+          this.isRetryable(data.error?.code),
         );
       }
-      
+
       return {
         phoneCodeHash: data.data.phoneCodeHash,
         isCodeViaApp: data.data.isCodeViaApp || false,
-        timeout: data.data.timeout || 120
+        timeout: data.data.timeout || 120,
       };
     });
   }
-  
+
   /**
    * Verify authentication code
    * @param phoneNumber - The phone number
@@ -174,61 +163,48 @@ export class TelegramProxyClient {
   async verifyAuthCode(
     phoneNumber: string,
     phoneCodeHash: string,
-    code: string
+    code: string,
   ): Promise<VerifyCodeResult> {
     return this.executeWithRetry(async () => {
       const response = await fetch(`${this.config.proxyUrl}/api/v1/auth/verify-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(this.config.apiKey ? { 'Authorization': `Bearer ${this.config.apiKey}` } : {})
+          ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
         },
         body: JSON.stringify({
           phoneNumber,
           phoneCode: code,
           phoneCodeHash,
           apiId: this.apiId,
-          apiHash: this.apiHash
-        })
+          apiHash: this.apiHash,
+        }),
       });
-      
-      const data = await response.json() as {
-        success: boolean;
-        error?: {
-          code: string;
-          message: string;
-        };
-        data?: {
-          userId: number;
-          firstName?: string;
-          lastName?: string;
-          username?: string;
-          sessionString: string;
-        };
-      };
-      
+
+      const data = await response.json();
+
       if (!response.ok) {
         this.handleErrorResponse(response, data);
       }
-      
+
       if (!data.success || !data.data) {
         throw new TelegramProxyError(
           data.error?.message || 'Failed to verify authentication code',
           this.mapErrorType(data.error?.code),
-          this.isRetryable(data.error?.code)
+          this.isRetryable(data.error?.code),
         );
       }
-      
+
       return {
         userId: data.data.userId,
         firstName: data.data.firstName,
         lastName: data.data.lastName,
         username: data.data.username,
-        sessionString: data.data.sessionString
+        sessionString: data.data.sessionString,
       };
     });
   }
-  
+
   /**
    * Create a client from a session string
    * This is a placeholder that returns the session ID from the proxy service
@@ -242,42 +218,33 @@ export class TelegramProxyClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(this.config.apiKey ? { 'Authorization': `Bearer ${this.config.apiKey}` } : {})
+          ...(this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : {}),
         },
         body: JSON.stringify({
           sessionString,
           apiId: this.apiId,
-          apiHash: this.apiHash
-        })
+          apiHash: this.apiHash,
+        }),
       });
-      
-      const data = await response.json() as {
-        success: boolean;
-        error?: {
-          code: string;
-          message: string;
-        };
-        data?: {
-          sessionId: string;
-        };
-      };
-      
+
+      const data = await response.json();
+
       if (!response.ok) {
         this.handleErrorResponse(response, data);
       }
-      
+
       if (!data.success || !data.data) {
         throw new TelegramProxyError(
           data.error?.message || 'Failed to create client from session',
           this.mapErrorType(data.error?.code),
-          this.isRetryable(data.error?.code)
+          this.isRetryable(data.error?.code),
         );
       }
-      
+
       return data.data.sessionId;
     });
   }
-  
+
   /**
    * Execute a function with retry and circuit breaker logic
    * @param fn - The function to execute
@@ -290,59 +257,59 @@ export class TelegramProxyClient {
         throw new TelegramProxyError(
           'Circuit breaker is open, too many failures',
           ErrorType.PROXY_SERVICE,
-          false
+          false,
         );
       }
-      
+
       // Move to half-open state
       this.circuitState = CircuitState.HALF_OPEN;
     }
-    
+
     let lastError: Error | null = null;
-    
+
     // Try with retries
     for (let attempt = 0; attempt <= (this.config.maxRetries || 3); attempt++) {
       try {
         const result = await fn();
-        
+
         // If successful and in half-open state, close the circuit
         if (this.circuitState === CircuitState.HALF_OPEN) {
           this.closeCircuit();
         }
-        
+
         return result;
       } catch (error: any) {
         lastError = error;
-        
+
         // If the error is not retryable or we're out of retries
         if (!error.retryable || attempt === this.config.maxRetries) {
           this.recordFailure();
           throw error;
         }
-        
+
         // Wait before retry
         const delay = this.getRetryDelay(attempt);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
-    
+
     // This should never happen due to the loop structure, but TypeScript needs it
     throw lastError || new Error('Unknown error during retry');
   }
-  
+
   /**
    * Record a failure and potentially open the circuit
    */
   private recordFailure(): void {
     this.failures++;
-    
+
     const threshold = this.config.circuitBreaker?.failureThreshold || 5;
-    
+
     if (this.failures >= threshold) {
       this.openCircuit();
     }
   }
-  
+
   /**
    * Open the circuit
    */
@@ -350,7 +317,7 @@ export class TelegramProxyClient {
     this.circuitState = CircuitState.OPEN;
     this.nextRetry = Date.now() + (this.config.circuitBreaker?.resetTimeout || 30000);
   }
-  
+
   /**
    * Close the circuit
    */
@@ -358,7 +325,7 @@ export class TelegramProxyClient {
     this.circuitState = CircuitState.CLOSED;
     this.failures = 0;
   }
-  
+
   /**
    * Get the delay for a retry attempt
    * @param attempt - The current attempt number
@@ -369,25 +336,28 @@ export class TelegramProxyClient {
     const baseDelay = this.config.retryDelay || 1000;
     const exponentialDelay = baseDelay * Math.pow(2, attempt);
     const jitter = Math.random() * 0.3 * exponentialDelay;
-    
+
     return exponentialDelay + jitter;
   }
-  
+
   /**
    * Handle error response from the proxy service
    * @param response - The fetch response
    * @param data - The response data
    */
-  private handleErrorResponse(response: Response, data: {
-    success: boolean;
-    error?: {
-      code: string;
-      message: string;
-    };
-  }): never {
+  private handleErrorResponse(
+    response: Response,
+    data: {
+      success: boolean;
+      error?: {
+        code: string;
+        message: string;
+      };
+    },
+  ): never {
     let errorType = ErrorType.UNKNOWN;
     let retryable = false;
-    
+
     // Determine error type based on status code
     if (response.status === 429) {
       errorType = ErrorType.RATE_LIMIT;
@@ -402,22 +372,24 @@ export class TelegramProxyClient {
       errorType = ErrorType.TELEGRAM_API;
       retryable = false;
     }
-    
+
     throw new TelegramProxyError(
       data.error?.message || `HTTP error ${response.status}`,
       errorType,
-      retryable
+      retryable,
     );
   }
-  
+
   /**
    * Map error code to error type
    * @param code - The error code
    * @returns The error type
    */
   private mapErrorType(code?: string): ErrorType {
-    if (!code) return ErrorType.UNKNOWN;
-    
+    if (!code) {
+      return ErrorType.UNKNOWN;
+    }
+
     if (code.includes('RATE_LIMIT')) {
       return ErrorType.RATE_LIMIT;
     } else if (code.includes('NETWORK')) {
@@ -429,18 +401,20 @@ export class TelegramProxyClient {
     } else if (code.includes('TELEGRAM')) {
       return ErrorType.TELEGRAM_API;
     }
-    
+
     return ErrorType.UNKNOWN;
   }
-  
+
   /**
    * Determine if an error is retryable based on its code
    * @param code - The error code
    * @returns Whether the error is retryable
    */
   private isRetryable(code?: string): boolean {
-    if (!code) return false;
-    
+    if (!code) {
+      return false;
+    }
+
     return (
       code.includes('RATE_LIMIT') ||
       code.includes('NETWORK') ||

@@ -29,81 +29,81 @@ graph TD
 
     subgraph "Push-Message-Ingestor Service"
         API[API Layer]
-        
+
         subgraph "Middleware"
             EM[Error Middleware]
             LM[Logger Middleware]
             RL[Rate Limiter]
             CM[CORS Middleware]
         end
-        
+
         subgraph "Controllers"
             TC[Telegram Controller]
             WC[WebSocket Controller]
             FC[Future Controllers]
         end
-        
+
         subgraph "Services"
             MS[Message Service]
             QS[Queue Service]
             AS[Auth Service]
         end
-        
+
         subgraph "Validators"
             MV[Message Validator]
         end
-        
+
         subgraph "Models"
             MM[Message Models]
         end
-        
+
         subgraph "Utils"
             RU[Response Utils]
             LU[Logger Utils]
             PU[Pagination Utils]
         end
     end
-    
+
     subgraph "Cloudflare Queues"
         RQ[rawmessages Queue]
     end
-    
+
     TG --> API
     WS --> API
     FU --> API
-    
+
     API --> EM
     API --> LM
     API --> RL
     API --> CM
-    
+
     EM --> TC
     LM --> TC
     RL --> TC
     CM --> TC
-    
+
     EM --> WC
     LM --> WC
     RL --> WC
     CM --> WC
-    
+
     TC --> MS
     WC --> MS
-    
+
     TC --> MV
     WC --> MV
-    
+
     MV --> MM
     MM --> MS
-    
+
     MS --> QS
-    
+
     QS --> RQ
-    
+
     TC --> RU
     MS --> LU
     MS --> PU
-    
+
     AS --> API
 ```
 
@@ -123,27 +123,29 @@ The API layer is built using the Hono framework and is responsible for:
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Global middleware
-app.use("*", errorMiddleware);
-app.use("*", honoLogger((str) => {
-  logger.info(str);
-}));
-app.use("*", cors({
-  origin: '*',
-  allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
-  allowMethods: ['GET', 'POST', 'OPTIONS'],
-  maxAge: 86400,
-}));
-app.use("*", createRateLimitMiddleware(60000, 100));
-
-app.post(
-  "/publish/telegram/messages",
-  zValidator('json', telegramMessageBatchSchema),
-  async (c) => {
-    const validatedData = c.req.valid('json');
-    const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
-    return await messageController.publishTelegramMessages(c, validatedData);
-  }
+app.use('*', errorMiddleware);
+app.use(
+  '*',
+  honoLogger(str => {
+    logger.info(str);
+  }),
 );
+app.use(
+  '*',
+  cors({
+    origin: '*',
+    allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    maxAge: 86400,
+  }),
+);
+app.use('*', createRateLimitMiddleware(60000, 100));
+
+app.post('/publish/telegram/messages', zValidator('json', telegramMessageBatchSchema), async c => {
+  const validatedData = c.req.valid('json');
+  const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
+  return await messageController.publishTelegramMessages(c, validatedData);
+});
 ```
 
 #### Middleware (`src/middleware/`)
@@ -162,16 +164,16 @@ export const errorMiddleware: MiddlewareHandler = async (c: Context, next: Next)
     // Generate a correlation ID for request tracing
     const correlationId = crypto.randomUUID();
     c.set('correlationId', correlationId);
-    
+
     // Add correlation ID to response headers
     c.header('X-Correlation-ID', correlationId);
-    
+
     await next();
   } catch (error) {
     // Log the error with correlation ID
     const correlationId = c.get('correlationId') || 'unknown';
     logger.error(`Error processing request [${correlationId}]:`, error as Error);
-    
+
     // Format and return standardized error response
     // ...
   }
@@ -199,17 +201,24 @@ export class MessageController {
 
   async publishTelegramMessages(c: Context, body: TelegramMessageBatch): Promise<Response> {
     const correlationId = c.get('correlationId');
-    
+
     try {
       // Log the request
-      logger.info('Received request to publish Telegram messages', {
-        messageCount: body.messages?.length || 0
-      }, correlationId);
-      
+      logger.info(
+        'Received request to publish Telegram messages',
+        {
+          messageCount: body.messages?.length || 0,
+        },
+        correlationId,
+      );
+
       // Check if the batch size is too large
       const MAX_BATCH_SIZE = 1000;
       if (body.messages.length > MAX_BATCH_SIZE) {
-        return sendValidationErrorResponse(c, `Message batch too large. Maximum allowed: ${MAX_BATCH_SIZE}`);
+        return sendValidationErrorResponse(
+          c,
+          `Message batch too large. Maximum allowed: ${MAX_BATCH_SIZE}`,
+        );
       }
 
       // Publish the messages
@@ -218,7 +227,7 @@ export class MessageController {
       // Return standardized response
       return sendCreatedResponse(c, {
         message: `Successfully published ${result.count} messages to the queue`,
-        count: result.count
+        count: result.count,
       });
     } catch (error) {
       // Error handling is delegated to the error middleware
@@ -247,7 +256,10 @@ export class MessageService {
     this.queueBinding = queueBinding;
   }
 
-  async publishTelegramMessages(batch: TelegramMessageBatch, correlationId?: string): Promise<PublishResult> {
+  async publishTelegramMessages(
+    batch: TelegramMessageBatch,
+    correlationId?: string,
+  ): Promise<PublishResult> {
     // Handle empty batch gracefully
     if (!batch.messages || batch.messages.length === 0) {
       logger.info('Empty Telegram message batch received', undefined, correlationId);
@@ -256,23 +268,23 @@ export class MessageService {
 
     try {
       // Log the operation
-      logger.info(`Publishing ${batch.messages.length} Telegram messages`, undefined, correlationId);
-      
+      logger.info(
+        `Publishing ${batch.messages.length} Telegram messages`,
+        undefined,
+        correlationId,
+      );
+
       // For large batches, process in smaller chunks to avoid memory issues
       if (batch.messages.length > MAX_BATCH_SIZE) {
-        await processBatches(
-          batch.messages,
-          MAX_BATCH_SIZE,
-          async (messageBatch) => {
-            await this.queueBinding.sendBatch(messageBatch.map(message => ({ body: message })));
-            return [];
-          }
-        );
+        await processBatches(batch.messages, MAX_BATCH_SIZE, async messageBatch => {
+          await this.queueBinding.sendBatch(messageBatch.map(message => ({ body: message })));
+          return [];
+        });
       } else {
         // For smaller batches, publish all at once
         await this.queueBinding.sendBatch(batch.messages.map(message => ({ body: message })));
       }
-      
+
       // Return success result
       return { success: true, count: batch.messages.length };
     } catch (error) {
@@ -324,32 +336,36 @@ Validators ensure that incoming data meets the required format using Zod schemas
 
 ```typescript
 // Example from src/models/schemas.ts
-export const telegramMessageSchema = z.object({
-  id: z.string({
-    required_error: 'Message ID is required',
-    invalid_type_error: 'Message ID must be a string'
-  }),
-  timestamp: z.string({
-    required_error: 'Timestamp is required',
-    invalid_type_error: 'Timestamp must be a string'
-  }),
-  platform: z.literal('telegram', {
-    required_error: 'Platform is required',
-    invalid_type_error: 'Platform must be "telegram"'
-  }),
-  content: z.string({
-    required_error: 'Message body cannot be undefined',
-    invalid_type_error: 'Content must be a string'
-  }),
-  metadata: telegramMetadataSchema
-}).strict();
-
-export const telegramMessageBatchSchema = z.object({
-  messages: z.array(telegramMessageSchema, {
-    required_error: 'Messages array is required',
-    invalid_type_error: 'Messages must be an array'
+export const telegramMessageSchema = z
+  .object({
+    id: z.string({
+      required_error: 'Message ID is required',
+      invalid_type_error: 'Message ID must be a string',
+    }),
+    timestamp: z.string({
+      required_error: 'Timestamp is required',
+      invalid_type_error: 'Timestamp must be a string',
+    }),
+    platform: z.literal('telegram', {
+      required_error: 'Platform is required',
+      invalid_type_error: 'Platform must be "telegram"',
+    }),
+    content: z.string({
+      required_error: 'Message body cannot be undefined',
+      invalid_type_error: 'Content must be a string',
+    }),
+    metadata: telegramMetadataSchema,
   })
-}).strict();
+  .strict();
+
+export const telegramMessageBatchSchema = z
+  .object({
+    messages: z.array(telegramMessageSchema, {
+      required_error: 'Messages array is required',
+      invalid_type_error: 'Messages must be an array',
+    }),
+  })
+  .strict();
 ```
 
 #### Utilities (`src/utils/`)
@@ -362,18 +378,22 @@ Utilities provide reusable functionality across the service:
 
 ```typescript
 // Example from src/utils/responseUtils.ts
-export function sendSuccessResponse(c: Context, data: Record<string, any>, status: number = 200): Response {
+export function sendSuccessResponse(
+  c: Context,
+  data: Record<string, any>,
+  status: number = 200,
+): Response {
   const correlationId = c.get('correlationId');
-  
+
   if (correlationId) {
     logger.info('Success response', { data, status }, correlationId);
   }
-  
+
   const response = {
     success: true,
-    data
+    data,
   };
-  
+
   return c.json(response, status);
 }
 
@@ -426,7 +446,7 @@ async publishMessages(messages: BaseMessage[], correlationId?: string): Promise<
     // For large batches, process in smaller chunks to avoid memory issues
     if (messages.length > MAX_BATCH_SIZE) {
       logger.info(`Processing large batch of ${messages.length} messages in chunks`, undefined, correlationId);
-      
+
       await processBatches(
         messages,
         MAX_BATCH_SIZE,
@@ -436,7 +456,7 @@ async publishMessages(messages: BaseMessage[], correlationId?: string): Promise<
           return []; // Return empty array as we don't need results
         }
       );
-      
+
       logger.info(`Successfully published ${messages.length} messages in batches`, undefined, correlationId);
     } else {
       // For smaller batches, publish all at once
@@ -497,16 +517,16 @@ export interface SlackMessageBatch extends MessageBatch<SlackMessage> {}
 ```typescript
 export function validateSlackMessage(message: any): { valid: boolean; errors?: string[] } {
   const errors: string[] = [];
-  
+
   // Slack-specific validation rules
   if (!message.metadata?.channelId) errors.push('Channel ID is required in metadata');
-  
+
   // Common validation rules
   if (!message.id) errors.push('Message ID is required');
-  
+
   return {
     valid: errors.length === 0,
-    errors: errors.length > 0 ? errors : undefined
+    errors: errors.length > 0 ? errors : undefined,
   };
 }
 
@@ -538,7 +558,7 @@ async publishSlackMessages(c: Context<{ Bindings: Bindings }>): Promise<Response
   try {
     const body = await c.req.json() as SlackMessageBatch;
     const result = await this.messageService.publishSlackMessages(body);
-    
+
     // Format and return response
     if (!result.success) {
       const response: ApiResponse = {
@@ -568,7 +588,7 @@ async publishSlackMessages(c: Context<{ Bindings: Bindings }>): Promise<Response
 5. **Add a new endpoint** in `src/index.ts`:
 
 ```typescript
-app.post("/publish/slack/messages", async (c: any) => {
+app.post('/publish/slack/messages', async (c: any) => {
   const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
   return await messageController.publishSlackMessages(c);
 });
@@ -583,78 +603,86 @@ To add WebSocket support for real-time message ingestion:
 ```typescript
 export class WebSocketController {
   private messageService: MessageService;
-  
+
   constructor(queueBinding: Bindings['RAW_MESSAGES_QUEUE']) {
     this.messageService = new MessageService(queueBinding);
   }
-  
+
   handleConnection(c: Context<{ Bindings: Bindings }>): Response {
     // Upgrade the connection to WebSocket
     const upgradeHeader = c.req.header('Upgrade');
     if (!upgradeHeader || upgradeHeader !== 'websocket') {
       return c.json({ error: 'Expected Upgrade: websocket' }, 426);
     }
-    
+
     const webSocket = new WebSocketPair();
     const [client, server] = Object.values(webSocket);
-    
+
     // Set up event handlers
     server.accept();
-    server.addEventListener('message', async (event) => {
+    server.addEventListener('message', async event => {
       try {
         const message = JSON.parse(event.data as string);
         // Process the message based on its platform
         if (message.platform === 'telegram') {
           await this.handleTelegramMessage(server, message);
         } else {
-          server.send(JSON.stringify({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: `Unsupported platform: ${message.platform}`
-            }
-          }));
+          server.send(
+            JSON.stringify({
+              success: false,
+              error: {
+                code: 'VALIDATION_ERROR',
+                message: `Unsupported platform: ${message.platform}`,
+              },
+            }),
+          );
         }
       } catch (error) {
         // Handle errors
-        server.send(JSON.stringify({
-          success: false,
-          error: {
-            code: 'SERVER_ERROR',
-            message: error instanceof Error ? error.message : 'Unknown error'
-          }
-        }));
+        server.send(
+          JSON.stringify({
+            success: false,
+            error: {
+              code: 'SERVER_ERROR',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            },
+          }),
+        );
       }
     });
-    
+
     return new Response(null, {
       status: 101,
       webSocket: client,
     });
   }
-  
+
   private async handleTelegramMessage(socket: WebSocket, message: any): Promise<void> {
     // Validate and publish the message
     const validation = validateTelegramMessage(message);
     if (!validation.valid) {
-      socket.send(JSON.stringify({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: validation.errors?.join(', ') || 'Invalid message'
-        }
-      }));
+      socket.send(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: validation.errors?.join(', ') || 'Invalid message',
+          },
+        }),
+      );
       return;
     }
-    
+
     await this.messageService.publishMessage(message);
-    socket.send(JSON.stringify({
-      success: true,
-      data: {
-        message: 'Message published successfully',
-        id: message.id
-      }
-    }));
+    socket.send(
+      JSON.stringify({
+        success: true,
+        data: {
+          message: 'Message published successfully',
+          id: message.id,
+        },
+      }),
+    );
   }
 }
 ```
@@ -662,7 +690,7 @@ export class WebSocketController {
 2. **Add a WebSocket endpoint** in `src/index.ts`:
 
 ```typescript
-app.get("/ws", (c: any) => {
+app.get('/ws', (c: any) => {
   const websocketController = new WebSocketController(c.env.RAW_MESSAGES_QUEUE);
   return websocketController.handleConnection(c);
 });
@@ -686,23 +714,23 @@ export class AuthService {
     if (!token) {
       return false;
     }
-    
+
     try {
       // Validate the token using Cloudflare Access JWT verification
       // This is a simplified example - actual implementation would verify
       // the token signature, expiration, and claims
-      
+
       // For development environments, you might want to bypass authentication
       if (process.env.ENVIRONMENT === 'development') {
         return true;
       }
-      
+
       // In production, verify the token with Cloudflare Access
       // const response = await fetch('https://your-team.cloudflareaccess.com/cdn-cgi/access/get-identity', {
       //   headers: { 'Cookie': `CF_Authorization=${token}` }
       // });
       // return response.status === 200;
-      
+
       return true; // Placeholder
     } catch (error) {
       console.error('Error validating token:', error);
@@ -722,17 +750,20 @@ import { Bindings } from '../types';
 export async function authMiddleware(c: Context<{ Bindings: Bindings }>, next: Next) {
   const authService = new AuthService();
   const isValid = await authService.validateToken(c.req.raw);
-  
+
   if (!isValid) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'UNAUTHORIZED',
-        message: 'Authentication required'
-      }
-    }, 401);
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Authentication required',
+        },
+      },
+      401,
+    );
   }
-  
+
   await next();
 }
 ```
@@ -817,33 +848,39 @@ Future enhancements may include:
 The service implements several security measures:
 
 ### 7.1 Authentication and Authorization
+
 - **Cloudflare Access Authentication**: (Planned) JWT-based authentication
 - **API Key Validation**: (Planned) For service-to-service communication
 - **Role-Based Access Control**: (Planned) Different permissions for different operations
 
 ### 7.2 Request Protection
+
 - **Rate Limiting**: Protection against abuse with configurable limits
 - **Batch Size Limits**: Prevent DoS attacks through large payloads
 - **CORS Configuration**: Controlled cross-origin access
 
 ### 7.3 Data Validation and Sanitization
+
 - **Input Validation**: Strict schema validation using Zod
 - **JSON Parsing Error Handling**: Graceful handling of malformed requests
 - **Type Checking**: Strong typing throughout the codebase
 
 ### 7.4 Secure Error Handling
+
 - **Error Sanitization**: Prevent leaking sensitive information in errors
 - **Production-Specific Error Messages**: Generic error messages in production
 - **Stack Trace Protection**: Stack traces never exposed in production responses
 - **Sensitive Data Filtering**: Automatic filtering of sensitive fields in errors
 
 ### 7.5 Logging and Tracing
+
 - **Correlation IDs**: Consistent propagation across all asynchronous operations
 - **Structured Logging**: Secure logging practices with sensitive data handling
 - **Log Sanitization**: Automatic redaction of sensitive information in production logs
 - **Security Event Logging**: All security-related events are properly logged
 
 ### 7.6 Data Protection
+
 - **Transient Processing**: No sensitive data stored by the service
 - **Secure Transmission**: All data transmitted via HTTPS
 - **Minimal Data Collection**: Only necessary data is processed

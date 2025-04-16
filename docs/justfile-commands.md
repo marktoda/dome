@@ -312,6 +312,7 @@ just new-service my-service-name
 ```
 
 This command:
+
 1. Creates a new directory for the service
 2. Copies the necessary configuration files
 3. Creates a basic TypeScript service
@@ -325,6 +326,7 @@ just new-hono-service my-service-name
 ```
 
 This command:
+
 1. Creates a new directory for the service
 2. Copies the necessary configuration files
 3. Creates a Hono-based TypeScript service with middleware and routes
@@ -338,6 +340,7 @@ just new-rust-service my-rust-service
 ```
 
 This command:
+
 1. Creates a new directory for the service
 2. Copies the Rust template files
 3. Updates the service name in the configuration files
@@ -351,6 +354,7 @@ just update-to-hono service-name
 ```
 
 This command:
+
 1. Adds Hono as a dependency
 2. Backs up the original index.ts file
 3. Creates a new Hono-based index.ts file
@@ -473,3 +477,4 @@ Runs a one-off command in a specific package.
 
 ```bash
 just run @communicator/common build
+```

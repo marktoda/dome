@@ -1,14 +1,14 @@
 /**
  * Message controller for handling message-related API endpoints
  */
+import type { MessageData } from '@communicator/common';
 import {
   ValidationError,
   BatchValidationError,
   QueueError,
   MessageProcessingError,
-  MessageData,
 } from '@communicator/common';
-import { TelegramMessage } from '../models';
+import type { TelegramMessage } from '../models';
 import { MessageService } from '../services/messageService';
 
 /**
@@ -33,13 +33,15 @@ export class MessageController {
    * @throws QueueError if there's an issue with the queue
    * @throws MessageProcessingError if there's an issue processing the messages
    */
-  async publishTelegramMessages(messages: TelegramMessage[]): Promise<{ message: string; count: number }> {
+  async publishTelegramMessages(
+    messages: TelegramMessage[],
+  ): Promise<{ message: string; count: number }> {
     try {
       // Handle empty message array gracefully
       if (messages.length === 0) {
         return {
-          message: "Successfully published 0 messages to the queue",
-          count: 0
+          message: 'Successfully published 0 messages to the queue',
+          count: 0,
         };
       }
 
@@ -47,7 +49,7 @@ export class MessageController {
       if (messages.length > 100) {
         throw new BatchValidationError('Batch size exceeds maximum allowed (100)', {
           providedCount: messages.length,
-          maxAllowed: 100
+          maxAllowed: 100,
         });
       }
 
@@ -56,13 +58,15 @@ export class MessageController {
       // Return success response as a plain object
       return {
         message: `Successfully published ${count} messages to the queue`,
-        count
+        count,
       };
     } catch (error) {
       // Re-throw known errors
-      if (error instanceof ValidationError ||
+      if (
+        error instanceof ValidationError ||
         error instanceof QueueError ||
-        error instanceof MessageProcessingError) {
+        error instanceof MessageProcessingError
+      ) {
         throw error;
       }
 

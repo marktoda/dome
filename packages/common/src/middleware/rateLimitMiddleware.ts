@@ -1,4 +1,4 @@
-import { Context, MiddlewareHandler, Next } from 'hono';
+import type { Context, MiddlewareHandler, Next } from 'hono';
 import { RateLimitError } from '../errors';
 
 /**
@@ -34,7 +34,7 @@ class RateLimiter {
     if (!clientData || now > clientData.resetTime) {
       this.requests.set(key, {
         count: 1,
-        resetTime: now + this.windowMs
+        resetTime: now + this.windowMs,
       });
       return true;
     }
@@ -61,13 +61,13 @@ class RateLimiter {
     if (!clientData || now > clientData.resetTime) {
       return {
         remaining: this.maxRequests,
-        resetTime: now + this.windowMs
+        resetTime: now + this.windowMs,
       };
     }
 
     return {
       remaining: Math.max(0, this.maxRequests - clientData.count),
-      resetTime: clientData.resetTime
+      resetTime: clientData.resetTime,
     };
   }
 
@@ -94,9 +94,10 @@ class RateLimiter {
  * @returns Middleware handler
  */
 export function createRateLimitMiddleware(
-  windowMs: number = 60000,
-  maxRequests: number = 100,
-  keyGenerator: (c: Context) => string = (c) => c.req.header('x-forwarded-for') || c.req.header('cf-connecting-ip') || 'unknown'
+  windowMs = 60000,
+  maxRequests = 100,
+  keyGenerator: (c: Context) => string = c =>
+    c.req.header('x-forwarded-for') || c.req.header('cf-connecting-ip') || 'unknown',
 ): MiddlewareHandler {
   const limiter = new RateLimiter(windowMs, maxRequests);
 

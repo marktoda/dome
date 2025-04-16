@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import { Router } from 'express';
 import { param } from 'express-validator';
 import { sessionManager } from '../../telegram/sessionManager';
 import { sessionStore } from '../../storage/sessionStore';
@@ -20,14 +21,14 @@ router.get(
   authenticate,
   asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).userId;
-    
+
     // Get all sessions for the user
     const sessions = await sessionStore.listUserSessions(userId);
-    
+
     sendSuccess(res as any, {
       sessions: sessions || [],
     });
-  })
+  }),
 );
 
 /**
@@ -38,28 +39,26 @@ router.get(
 router.get(
   '/:id',
   authenticate,
-  validate([
-    param('id').notEmpty().withMessage('Session ID is required'),
-  ]),
+  validate([param('id').notEmpty().withMessage('Session ID is required')]),
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).userId;
-    
+
     const session = await sessionStore.getSession(id);
-    
+
     if (!session) {
       throw new NotFoundError(`Session not found: ${id}`);
     }
-    
+
     // Ensure the user can only access their own sessions
     if (session.userId !== userId) {
       throw new AuthorizationError('Not authorized to access this session');
     }
-    
+
     sendSuccess(res as any, {
       session,
     });
-  })
+  }),
 );
 
 /**
@@ -70,27 +69,25 @@ router.get(
 router.delete(
   '/:id',
   authenticate,
-  validate([
-    param('id').notEmpty().withMessage('Session ID is required'),
-  ]),
+  validate([param('id').notEmpty().withMessage('Session ID is required')]),
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).userId;
-    
+
     // Get the session to check ownership
     const session = await sessionStore.getSession(id);
-    
+
     if (!session) {
       throw new NotFoundError(`Session not found: ${id}`);
     }
-    
+
     // Ensure the user can only revoke their own sessions
     if (session.userId !== userId) {
       throw new AuthorizationError('Not authorized to revoke this session');
     }
-    
+
     const result = await sessionManager.terminateSession(id);
-    
+
     if (result) {
       sendNoContent(res as any);
     } else {
@@ -99,7 +96,7 @@ router.delete(
         message: 'Session could not be terminated',
       });
     }
-  })
+  }),
 );
 
 /**
@@ -110,25 +107,23 @@ router.delete(
 router.get(
   '/user/:userId',
   authenticate,
-  validate([
-    param('userId').notEmpty().withMessage('User ID is required'),
-  ]),
+  validate([param('userId').notEmpty().withMessage('User ID is required')]),
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
     const requestingUserId = (req as any).userId;
     const role = (req as any).role;
-    
+
     // Only admins can view other users' sessions
     if (userId !== requestingUserId && role !== 'admin') {
-      throw new AuthorizationError('Not authorized to view other users\' sessions');
+      throw new AuthorizationError("Not authorized to view other users' sessions");
     }
-    
+
     const sessions = await sessionStore.listUserSessions(userId);
-    
+
     sendSuccess(res as any, {
       sessions: sessions || [],
     });
-  })
+  }),
 );
 
 /**
@@ -139,32 +134,30 @@ router.get(
 router.get(
   '/status/:id',
   authenticate,
-  validate([
-    param('id').notEmpty().withMessage('Session ID is required'),
-  ]),
+  validate([param('id').notEmpty().withMessage('Session ID is required')]),
   asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).userId;
-    
+
     // Get the session to check ownership
     const session = await sessionStore.getSession(id);
-    
+
     if (!session) {
       throw new NotFoundError(`Session not found: ${id}`);
     }
-    
+
     // Ensure the user can only check their own sessions
     if (session.userId !== userId && (req as any).role !== 'admin') {
       throw new AuthorizationError('Not authorized to check this session');
     }
-    
+
     const isValid = await sessionManager.validateSession(id);
-    
+
     sendSuccess(res as any, {
       sessionId: id,
       isValid,
     });
-  })
+  }),
 );
 
 export default router;

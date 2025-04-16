@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { logger, logError } from './logger';
 import { SERVER } from '../config';
 
@@ -17,7 +17,7 @@ export class ApiError extends Error {
     statusCode: number,
     code: string,
     details?: Record<string, any>,
-    isOperational = true
+    isOperational = true,
   ) {
     super(message);
     this.statusCode = statusCode;
@@ -25,7 +25,7 @@ export class ApiError extends Error {
     this.details = details;
     this.isOperational = isOperational;
     this.name = this.constructor.name;
-    
+
     // Use Error.captureStackTrace if available (Node.js environment)
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
@@ -46,7 +46,7 @@ export class AppError extends Error {
     this.statusCode = statusCode;
     this.isOperational = isOperational;
     this.name = this.constructor.name;
-    
+
     // Use Error.captureStackTrace if available (Node.js environment)
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
@@ -221,7 +221,7 @@ export const errorToResponse = (error: Error, includeStack = false): Record<stri
 
     return response;
   }
-  
+
   // If it's an AppError (legacy), convert it
   if (error instanceof AppError) {
     const response: Record<string, any> = {
@@ -268,12 +268,7 @@ export const errorToResponse = (error: Error, includeStack = false): Record<stri
  * Error handler middleware
  * Handles all errors in the application
  */
-export const errorHandler = (
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
+export const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction): void => {
   // Log the error
   logError(err, req);
 
@@ -300,11 +295,10 @@ export const errorHandler = (
  * Async handler wrapper
  * Catches errors in async route handlers and passes them to the error handler
  */
-export const asyncHandler = (fn: Function) => {
-  return (req: Request, res: Response, next: NextFunction): Promise<any> => {
-    return Promise.resolve(fn(req, res, next)).catch(next);
-  };
-};
+export const asyncHandler =
+  (fn: Function) =>
+  (req: Request, res: Response, next: NextFunction): Promise<any> =>
+    Promise.resolve(fn(req, res, next)).catch(next);
 
 /**
  * Not found handler

@@ -5,11 +5,11 @@ import { Logger } from 'telegram/extensions/Logger';
 import { TELEGRAM } from '../config';
 import { logger } from '../utils/logger';
 import { TelegramError } from '../utils/errors';
-import { SessionData } from '../storage/sessionStore';
+import type { SessionData } from '../storage/sessionStore';
 
 // Set logging level
 Logger.setLevel('error');
-import {
+import type {
   TelegramUser,
   TelegramChat,
   TelegramMessage,
@@ -17,7 +17,7 @@ import {
   AuthVerificationResult,
   ChatListResult,
   MessageListResult,
-  SendMessageResult
+  SendMessageResult,
 } from './types';
 
 /**
@@ -34,10 +34,10 @@ export class TelegramClientWrapper {
    */
   constructor(id: string) {
     this.id = id;
-    
+
     // Set logging level
     Logger.setLevel('error');
-    
+
     // Create a new TelegramClient with a StringSession
     this.client = new TelegramClient(
       new StringSession(''),
@@ -45,7 +45,7 @@ export class TelegramClientWrapper {
       TELEGRAM.API_HASH || '',
       {
         connectionRetries: 5,
-      }
+      },
     );
   }
 
@@ -84,7 +84,9 @@ export class TelegramClientWrapper {
       logger.info(`Telegram client ${this.id} connected`);
     } catch (error: unknown) {
       logger.error(`Failed to connect Telegram client ${this.id}:`, error);
-      throw new TelegramError(`Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -131,7 +133,9 @@ export class TelegramClientWrapper {
       logger.info(`Telegram client ${this.id} using session ${sessionData.id}`);
     } catch (error: unknown) {
       logger.error(`Failed to use session with Telegram client ${this.id}:`, error);
-      throw new TelegramError(`Failed to use session: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to use session: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -162,17 +166,19 @@ export class TelegramClientWrapper {
         }
 
         const result = await this.client.sendMessage(chatId, { message });
-        
+
         // Convert to expected format
         return {
           message: this.convertMessageToTelegramMessage(result),
-          users: [],  // We don't have users in the result
-          chats: []   // We don't have chats in the result
+          users: [], // We don't have users in the result
+          chats: [], // We don't have chats in the result
         };
       });
     } catch (error: unknown) {
       logger.error(`Failed to send message to ${chatId}:`, error);
-      throw new TelegramError(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -187,18 +193,22 @@ export class TelegramClientWrapper {
         }
 
         const result = await this.client.getMessages(chatId, { limit });
-        
+
         // Convert to expected format
         return {
-          messages: Array.isArray(result) ? result.map(msg => this.convertMessageToTelegramMessage(msg)) : [],
-          users: [],  // We don't have users in the result
-          chats: [],  // We don't have chats in the result
-          count: Array.isArray(result) ? result.length : 0
+          messages: Array.isArray(result)
+            ? result.map(msg => this.convertMessageToTelegramMessage(msg))
+            : [],
+          users: [], // We don't have users in the result
+          chats: [], // We don't have chats in the result
+          count: Array.isArray(result) ? result.length : 0,
         };
       });
     } catch (error: unknown) {
       logger.error(`Failed to get messages from ${chatId}:`, error);
-      throw new TelegramError(`Failed to get messages: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to get messages: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -216,18 +226,22 @@ export class TelegramClientWrapper {
           limit,
           offsetId,
         });
-        
+
         // Convert to expected format
         return {
-          messages: Array.isArray(result) ? result.map(msg => this.convertMessageToTelegramMessage(msg)) : [],
-          users: [],  // We don't have users in the result
-          chats: [],  // We don't have chats in the result
-          count: Array.isArray(result) ? result.length : 0
+          messages: Array.isArray(result)
+            ? result.map(msg => this.convertMessageToTelegramMessage(msg))
+            : [],
+          users: [], // We don't have users in the result
+          chats: [], // We don't have chats in the result
+          count: Array.isArray(result) ? result.length : 0,
         };
       });
     } catch (error: unknown) {
       logger.error(`Failed to get history from ${chatId}:`, error);
-      throw new TelegramError(`Failed to get history: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to get history: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -253,7 +267,7 @@ export class TelegramClientWrapper {
         const result = await (this.client as any).sendCode(
           normalizedPhone,
           parseInt(TELEGRAM.API_ID || '0', 10),
-          TELEGRAM.API_HASH || ''
+          TELEGRAM.API_HASH || '',
         );
 
         logger.info(`Sent auth code to ${phoneNumber}`);
@@ -266,7 +280,9 @@ export class TelegramClientWrapper {
       });
     } catch (error: unknown) {
       logger.error(`Failed to send auth code to ${phoneNumber}:`, error);
-      throw new TelegramError(`Failed to send auth code: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to send auth code: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -277,7 +293,11 @@ export class TelegramClientWrapper {
    * @param code The verification code received by the user
    * @returns User information if successful
    */
-  async verifyAuthCode(phoneNumber: string, phoneCodeHash: string, code: string): Promise<AuthVerificationResult> {
+  async verifyAuthCode(
+    phoneNumber: string,
+    phoneCodeHash: string,
+    code: string,
+  ): Promise<AuthVerificationResult> {
     try {
       return await this.withRetry(async () => {
         if (!this.isConnected) {
@@ -300,32 +320,32 @@ export class TelegramClientWrapper {
               return Promise.resolve(false);
             },
           });
-          
+
           // Get user information
           const me = await this.client.getMe();
-          
+
           // Update session data
           if (this.sessionData) {
             this.sessionData.authKey = this.getSessionString();
             this.sessionData.userId = me.id ? me.id.toString() : undefined;
           }
-          
+
           logger.info(`Successfully verified auth code for ${phoneNumber}`);
-          
+
           // Return in the expected format
           return {
             user: this.convertUserToTelegramUser(me),
             sessionData: {
               authKey: this.getSessionString(),
-              userId: me.id ? me.id.toString() : ''
-            }
+              userId: me.id ? me.id.toString() : '',
+            },
           };
         } catch (error: unknown) {
           // Check if we need to provide a password (2FA enabled)
           if (error instanceof Error && error.message.includes('PASSWORD_NEEDED')) {
             logger.info(`2FA password required for ${phoneNumber}`);
             throw new TelegramError('Two-factor authentication required', {
-              requiresPassword: true
+              requiresPassword: true,
             });
           }
           throw error;
@@ -333,7 +353,9 @@ export class TelegramClientWrapper {
       });
     } catch (error: unknown) {
       logger.error(`Failed to verify auth code for ${phoneNumber}:`, error);
-      throw new TelegramError(`Failed to verify auth code: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to verify auth code: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -351,18 +373,18 @@ export class TelegramClientWrapper {
 
         // In telegram package, we need to use the start method with password
         await this.client.start({
-          phoneNumber: async () => '',  // Not needed for 2FA
+          phoneNumber: async () => '', // Not needed for 2FA
           password: async () => password,
-          phoneCode: async () => '',    // Not needed for 2FA
+          phoneCode: async () => '', // Not needed for 2FA
           onError: (err: Error) => {
             logger.error(`2FA auth error: ${err}`);
             return Promise.resolve(false);
           },
         });
-        
+
         // Get user information
         const me = await this.client.getMe();
-        
+
         // Update session data
         if (this.sessionData) {
           this.sessionData.authKey = this.getSessionString();
@@ -370,19 +392,23 @@ export class TelegramClientWrapper {
         }
 
         logger.info('Successfully verified 2FA password');
-        
+
         // Create a result object that matches our expected interface
         return {
           user: this.convertUserToTelegramUser(me),
           sessionData: {
             authKey: this.getSessionString(),
-            userId: me.id ? me.id.toString() : ''
-          }
+            userId: me.id ? me.id.toString() : '',
+          },
         };
       });
     } catch (error: unknown) {
       logger.error('Failed to verify 2FA password:', error);
-      throw new TelegramError(`Failed to verify 2FA password: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to verify 2FA password: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      );
     }
   }
 
@@ -402,7 +428,11 @@ export class TelegramClientWrapper {
       });
     } catch (error: unknown) {
       logger.error('Failed to get user information:', error);
-      throw new TelegramError(`Failed to get user information: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to get user information: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      );
     }
   }
 
@@ -421,11 +451,11 @@ export class TelegramClientWrapper {
         const result = await this.client.getDialogs({
           limit,
         });
-        
+
         // Convert to expected format
         const chats: TelegramChat[] = [];
         const users: TelegramUser[] = [];
-        
+
         // Process dialogs to extract chats and users
         if (Array.isArray(result)) {
           for (const dialog of result) {
@@ -434,16 +464,18 @@ export class TelegramClientWrapper {
             }
           }
         }
-        
+
         return {
           chats,
           users,
-          count: chats.length
+          count: chats.length,
         };
       });
     } catch (error: unknown) {
       logger.error('Failed to get chats:', error);
-      throw new TelegramError(`Failed to get chats: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to get chats: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -464,7 +496,9 @@ export class TelegramClientWrapper {
       });
     } catch (error: unknown) {
       logger.error(`Failed to get chat ${chatId}:`, error);
-      throw new TelegramError(`Failed to get chat: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Failed to get chat: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -478,10 +512,10 @@ export class TelegramClientWrapper {
   private async withRetry<T>(
     operation: () => Promise<T>,
     maxRetries = 3,
-    retryDelay = 1000
+    retryDelay = 1000,
   ): Promise<T> {
     let lastError: Error | null = null;
-    
+
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
       try {
         // Check if we need to reconnect
@@ -489,31 +523,31 @@ export class TelegramClientWrapper {
           logger.info('Reconnecting before retry attempt');
           await this.connect();
         }
-        
+
         return await operation();
       } catch (error: unknown) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        
+
         // Don't retry if this is the last attempt
         if (attempt > maxRetries) {
           break;
         }
-        
+
         // Check if error is retryable
         const isRetryable = this.isRetryableError(lastError);
         if (!isRetryable) {
           logger.warn(`Non-retryable error encountered: ${lastError.message}`);
           break;
         }
-        
+
         // Log retry attempt
         logger.warn(`Retry attempt ${attempt}/${maxRetries} after error: ${lastError.message}`);
-        
+
         // Wait before retrying
         await new Promise(resolve => setTimeout(resolve, retryDelay * attempt));
       }
     }
-    
+
     // If we get here, all retries failed
     throw lastError || new Error('Operation failed after retries');
   }
@@ -535,12 +569,12 @@ export class TelegramClientWrapper {
     ) {
       return true;
     }
-    
+
     // Telegram flood wait errors are retryable
     if (error.message.includes('FLOOD_WAIT_')) {
       return true;
     }
-    
+
     // Server errors are generally retryable
     if (
       error.message.includes('INTERNAL_SERVER_ERROR') ||
@@ -549,7 +583,7 @@ export class TelegramClientWrapper {
     ) {
       return true;
     }
-    
+
     // By default, don't retry
     return false;
   }
@@ -562,19 +596,21 @@ export class TelegramClientWrapper {
       logger.info(`Reconnecting Telegram client ${this.id}`);
       await this.disconnect();
       await this.connect();
-      
+
       // Restore session if available
       if (this.sessionData && this.sessionData.authKey) {
         this.client.session = new StringSession(this.sessionData.authKey);
       }
-      
+
       logger.info(`Telegram client ${this.id} reconnected`);
     } catch (error: unknown) {
       logger.error(`Failed to reconnect Telegram client ${this.id}:`, error);
-      throw new TelegramError(`Reconnection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new TelegramError(
+        `Reconnection failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
-  
+
   /**
    * Convert a User object from telegram package to our TelegramUser interface
    */
@@ -586,10 +622,10 @@ export class TelegramClientWrapper {
       username: user.username,
       phone: user.phone,
       bot: user.bot,
-      accessHash: user.accessHash ? user.accessHash.toString() : undefined
+      accessHash: user.accessHash ? user.accessHash.toString() : undefined,
     };
   }
-  
+
   /**
    * Convert a Chat object from telegram package to our TelegramChat interface
    */
@@ -598,10 +634,10 @@ export class TelegramClientWrapper {
       id: typeof chat.id === 'number' ? chat.id : parseInt(chat.id.toString(), 10),
       title: chat.title,
       username: chat.username,
-      accessHash: chat.accessHash ? chat.accessHash.toString() : undefined
+      accessHash: chat.accessHash ? chat.accessHash.toString() : undefined,
     };
   }
-  
+
   /**
    * Convert a Message object from telegram package to our TelegramMessage interface
    */
@@ -609,7 +645,7 @@ export class TelegramClientWrapper {
     return {
       id: typeof message.id === 'number' ? message.id : parseInt(message.id.toString(), 10),
       message: message.message,
-      date: message.date
+      date: message.date,
     };
   }
 }

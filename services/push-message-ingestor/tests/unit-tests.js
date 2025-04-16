@@ -1,6 +1,6 @@
 /**
  * Unit tests for push-message-ingestor service
- * 
+ *
  * These tests can be run using Jest or another JavaScript testing framework.
  * They test the core functionality of the service without requiring it to be running.
  */
@@ -14,32 +14,35 @@ const mockQueue = {
 // Import the necessary modules
 const { MessageService } = require('../src/services/messageService');
 const { MessageController } = require('../src/controllers/messageController');
-const { validateTelegramMessage, validateTelegramMessageBatch } = require('../src/models/validators');
+const {
+  validateTelegramMessage,
+  validateTelegramMessageBatch,
+} = require('../src/models/validators');
 
 // Sample valid message
 const validMessage = {
-  id: "msg123",
+  id: 'msg123',
   timestamp: new Date().toISOString(),
-  platform: "telegram",
-  content: "Hello, this is a test message",
+  platform: 'telegram',
+  content: 'Hello, this is a test message',
   metadata: {
-    chatId: "chat123",
-    messageId: "telegramMsg123",
-    fromUserId: "user123",
-    fromUsername: "testuser"
-  }
+    chatId: 'chat123',
+    messageId: 'telegramMsg123',
+    fromUserId: 'user123',
+    fromUsername: 'testuser',
+  },
 };
 
 // Sample invalid message (missing required fields)
 const invalidMessage = {
-  id: "msg123",
+  id: 'msg123',
   timestamp: new Date().toISOString(),
-  platform: "telegram",
-  content: "Hello, this is a test message",
+  platform: 'telegram',
+  content: 'Hello, this is a test message',
   metadata: {
-    fromUserId: "user123",
-    fromUsername: "testuser"
-  }
+    fromUserId: 'user123',
+    fromUsername: 'testuser',
+  },
 };
 
 describe('Message Validators', () => {
@@ -123,9 +126,9 @@ describe('MessageController', () => {
     messageController = new MessageController(mockQueue);
     mockContext = {
       req: {
-        json: jest.fn()
+        json: jest.fn(),
       },
-      json: jest.fn().mockReturnValue(new Response())
+      json: jest.fn().mockReturnValue(new Response()),
     };
     mockQueue.send.mockClear();
     mockQueue.sendBatch.mockClear();
@@ -134,17 +137,17 @@ describe('MessageController', () => {
   test('publishTelegramMessages should return success for valid messages', async () => {
     const batch = { messages: [validMessage, validMessage] };
     mockContext.req.json.mockResolvedValue(batch);
-    
+
     await messageController.publishTelegramMessages(mockContext);
-    
+
     expect(mockContext.json).toHaveBeenCalledWith(
       expect.objectContaining({
         success: true,
         data: expect.objectContaining({
-          count: 2
-        })
+          count: 2,
+        }),
       }),
-      undefined
+      undefined,
     );
     expect(mockQueue.sendBatch).toHaveBeenCalledWith(batch.messages);
   });
@@ -152,17 +155,17 @@ describe('MessageController', () => {
   test('publishTelegramMessages should return error for invalid messages', async () => {
     const batch = { messages: [validMessage, invalidMessage] };
     mockContext.req.json.mockResolvedValue(batch);
-    
+
     await messageController.publishTelegramMessages(mockContext);
-    
+
     expect(mockContext.json).toHaveBeenCalledWith(
       expect.objectContaining({
         success: false,
         error: expect.objectContaining({
-          code: 'VALIDATION_ERROR'
-        })
+          code: 'VALIDATION_ERROR',
+        }),
       }),
-      400
+      400,
     );
     expect(mockQueue.sendBatch).not.toHaveBeenCalled();
   });
@@ -170,33 +173,33 @@ describe('MessageController', () => {
   test('publishTelegramMessages should handle empty message array', async () => {
     const batch = { messages: [] };
     mockContext.req.json.mockResolvedValue(batch);
-    
+
     await messageController.publishTelegramMessages(mockContext);
-    
+
     expect(mockContext.json).toHaveBeenCalledWith(
       expect.objectContaining({
         success: true,
         data: expect.objectContaining({
-          count: 0
-        })
+          count: 0,
+        }),
       }),
-      undefined
+      undefined,
     );
   });
 
   test('publishTelegramMessages should handle JSON parsing errors', async () => {
     mockContext.req.json.mockRejectedValue(new Error('Invalid JSON'));
-    
+
     await messageController.publishTelegramMessages(mockContext);
-    
+
     expect(mockContext.json).toHaveBeenCalledWith(
       expect.objectContaining({
         success: false,
         error: expect.objectContaining({
-          code: 'SERVER_ERROR'
-        })
+          code: 'SERVER_ERROR',
+        }),
       }),
-      500
+      500,
     );
   });
 });

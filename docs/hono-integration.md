@@ -58,7 +58,7 @@ import { Hono } from 'hono';
 
 const app = new Hono();
 
-app.get('/', (c) => c.text('Hello Cloudflare Workers!'));
+app.get('/', c => c.text('Hello Cloudflare Workers!'));
 
 export default app;
 ```
@@ -73,14 +73,14 @@ import { ApiResponse, ServiceInfo } from '@communicator/common';
 
 const app = new Hono();
 
-app.get('/', (c) => {
+app.get('/', c => {
   const response: ApiResponse = {
     success: true,
     data: {
-      message: 'Hello World!'
-    }
+      message: 'Hello World!',
+    },
   };
-  
+
   return c.json(response);
 });
 ```
@@ -106,9 +106,9 @@ type Bindings = {
  * Service information
  */
 const serviceInfo: ServiceInfo = {
-  name: "service-name",
-  version: "0.1.0",
-  environment: "development" // Default value, will be overridden by env
+  name: 'service-name',
+  version: '0.1.0',
+  environment: 'development', // Default value, will be overridden by env
 };
 
 /**
@@ -135,25 +135,25 @@ app.use('*', async (c, next) => {
 /**
  * Routes
  */
-app.get('/', (c) => {
+app.get('/', c => {
   const response: ApiResponse = {
     success: true,
     data: {
       message: 'Hello World!',
-      service: serviceInfo
-    }
+      service: serviceInfo,
+    },
   };
-  
+
   return c.json(response);
 });
 
 /**
  * Health check endpoint
  */
-app.get('/health', (c) => {
+app.get('/health', c => {
   return c.json({
     status: 'ok',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -219,7 +219,7 @@ const app = new Hono<{ Bindings: Bindings }>();
 This allows you to access environment variables in a type-safe way:
 
 ```typescript
-app.get('/env', (c) => {
+app.get('/env', c => {
   const environment = c.env.ENVIRONMENT || 'development';
   return c.text(`Environment: ${environment}`);
 });
@@ -232,14 +232,14 @@ API responses are defined using the common package:
 ```typescript
 import { ApiResponse } from '@communicator/common';
 
-app.get('/', (c) => {
+app.get('/', c => {
   const response: ApiResponse = {
     success: true,
     data: {
-      message: 'Hello World!'
-    }
+      message: 'Hello World!',
+    },
   };
-  
+
   return c.json(response);
 });
 ```
@@ -249,7 +249,7 @@ app.get('/', (c) => {
 Hono provides access to environment variables through the context object:
 
 ```typescript
-app.get('/env', (c) => {
+app.get('/env', c => {
   const environment = c.env.ENVIRONMENT || 'development';
   return c.text(`Environment: ${environment}`);
 });
@@ -275,15 +275,15 @@ Hono provides built-in error handling through the `onError` method:
 ```typescript
 app.onError((err, c) => {
   console.error(`Error: ${err.message}`);
-  
+
   const response: ApiResponse = {
     success: false,
     error: {
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'An unexpected error occurred'
-    }
+      message: 'An unexpected error occurred',
+    },
   };
-  
+
   return c.json(response, 500);
 });
 ```
@@ -291,15 +291,15 @@ app.onError((err, c) => {
 For 404 errors, Hono provides the `notFound` method:
 
 ```typescript
-app.notFound((c) => {
+app.notFound(c => {
   const response: ApiResponse = {
     success: false,
     error: {
       code: 'NOT_FOUND',
-      message: 'The requested resource was not found'
-    }
+      message: 'The requested resource was not found',
+    },
   };
-  
+
   return c.json(response, 404);
 });
 ```
@@ -371,27 +371,27 @@ import { ApiResponse } from '@communicator/common';
 
 const app = new Hono();
 
-app.get('/', (c) => {
+app.get('/', c => {
   const response: ApiResponse = {
     success: true,
     data: {
-      users: []
-    }
+      users: [],
+    },
   };
-  
+
   return c.json(response);
 });
 
-app.get('/:id', (c) => {
+app.get('/:id', c => {
   const id = c.req.param('id');
-  
+
   const response: ApiResponse = {
     success: true,
     data: {
-      user: { id }
-    }
+      user: { id },
+    },
   };
-  
+
   return c.json(response);
 });
 
@@ -426,15 +426,15 @@ Use consistent error handling across all services:
 ```typescript
 app.onError((err, c) => {
   console.error(`Error: ${err.message}`);
-  
+
   const response: ApiResponse = {
     success: false,
     error: {
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'An unexpected error occurred'
-    }
+      message: 'An unexpected error occurred',
+    },
   };
-  
+
   return c.json(response, 500);
 });
 ```
@@ -447,22 +447,22 @@ Use middleware for cross-cutting concerns:
 // Authentication middleware
 app.use('/api/*', async (c, next) => {
   const token = c.req.header('Authorization');
-  
+
   if (!token) {
     const response: ApiResponse = {
       success: false,
       error: {
         code: 'UNAUTHORIZED',
-        message: 'Authentication required'
-      }
+        message: 'Authentication required',
+      },
     };
-    
+
     return c.json(response, 401);
   }
-  
+
   // Validate token
   // ...
-  
+
   await next();
 });
 ```
@@ -479,8 +479,9 @@ describe('API', () => {
   it('should return 200 OK', async () => {
     const res = await app.request('http://localhost/');
     expect(res.status).toBe(200);
-    
+
     const data = await res.json();
     expect(data.success).toBe(true);
   });
 });
+```

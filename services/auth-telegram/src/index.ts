@@ -5,11 +5,11 @@
  * It exposes methods for session management that can be called directly by other
  * services using Cloudflare service bindings.
  */
-import { WorkerEntrypoint } from "cloudflare:workers";
+import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { ApiResponse, ServiceInfo } from '@communicator/common';
+import type { ApiResponse, ServiceInfo } from '@communicator/common';
 import routes from './routes';
 import { SessionManager } from './lib/session-manager';
 
@@ -42,7 +42,7 @@ declare abstract class TypedWorkerEntrypoint<Env = unknown> extends WorkerEntryp
 const serviceInfo: ServiceInfo = {
   name: 'auth-telegram',
   version: '0.1.0',
-  environment: 'development' // Default value, will be overridden by env
+  environment: 'development', // Default value, will be overridden by env
 };
 
 /**
@@ -74,41 +74,41 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
     // Error handling middleware
     app.onError((err, c) => {
       console.error(`Error: ${err.message}`);
-      
+
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'INTERNAL_SERVER_ERROR',
-          message: 'An unexpected error occurred'
-        }
+          message: 'An unexpected error occurred',
+        },
       };
-      
+
       return c.json(response, 500);
     });
 
     // Not found handler
-    app.notFound((c) => {
+    app.notFound(c => {
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'NOT_FOUND',
-          message: 'The requested resource was not found'
-        }
+          message: 'The requested resource was not found',
+        },
       };
-      
+
       return c.json(response, 404);
     });
 
     // Root route
-    app.get('/', (c) => {
+    app.get('/', c => {
       const response: ApiResponse = {
         success: true,
         data: {
           message: 'Telegram Authentication Service',
-          service: serviceInfo
-        }
+          service: serviceInfo,
+        },
       };
-      
+
       return c.json(response);
     });
 
@@ -116,12 +116,12 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
     app.route('/api/telegram-auth', routes);
 
     // Health check endpoint
-    app.get('/health', (c) => {
-      return c.json({
+    app.get('/health', c =>
+      c.json({
         status: 'ok',
-        timestamp: new Date().toISOString()
-      });
-    });
+        timestamp: new Date().toISOString(),
+      }),
+    );
 
     // Handle the request with Hono
     return app.fetch(request, this.env as any);
@@ -139,15 +139,14 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
     sessionId: string;
     expiresAt: string;
   }> {
-    const sessionManager = new SessionManager(
-      this.env.DB,
-      this.env.SESSION_SECRET
-    );
-    
+    const sessionManager = new SessionManager(this.env.DB, this.env.SESSION_SECRET);
+
     try {
       // Get session for user
-      const { sessionString, sessionId, expiresAt } = await sessionManager.getSessionByUserId(userId);
-      
+      const { sessionString, sessionId, expiresAt } = await sessionManager.getSessionByUserId(
+        userId,
+      );
+
       // Log access
       await sessionManager.logAccess(
         sessionId,
@@ -155,17 +154,17 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
         'get_session',
         true,
         undefined,
-        'internal-service-binding' // IP address
+        'internal-service-binding', // IP address
       );
-      
+
       return {
         sessionString,
         sessionId,
-        expiresAt: expiresAt.toISOString()
+        expiresAt: expiresAt.toISOString(),
       };
     } catch (error: any) {
       console.error(`Error getting session: ${error.message}`);
-      
+
       // Log failed access if we have a session ID
       if (error.sessionId) {
         await sessionManager.logAccess(
@@ -174,10 +173,10 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
           'get_session',
           false,
           error.message,
-          'internal-service-binding'
+          'internal-service-binding',
         );
       }
-      
+
       throw new Error(error.message || 'Session not found or expired');
     }
   }
@@ -190,15 +189,12 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
    * @returns Array of session data
    */
   async listSessions(userId: number) {
-    const sessionManager = new SessionManager(
-      this.env.DB,
-      this.env.SESSION_SECRET
-    );
-    
+    const sessionManager = new SessionManager(this.env.DB, this.env.SESSION_SECRET);
+
     try {
       // Get all sessions for user
       const sessions = await sessionManager.listSessions(userId);
-      
+
       // Map to response format (without sensitive data)
       return sessions.map(session => ({
         id: session.id,
@@ -209,7 +205,7 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
         expiresAt: session.expiresAt?.toISOString(),
         isActive: session.isActive,
         deviceInfo: session.deviceInfo,
-        ipAddress: session.ipAddress
+        ipAddress: session.ipAddress,
       }));
     } catch (error: any) {
       console.error(`Error listing sessions: ${error.message}`);
@@ -224,15 +220,12 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
    * @param sessionId - The session ID
    */
   async revokeSession(sessionId: string): Promise<void> {
-    const sessionManager = new SessionManager(
-      this.env.DB,
-      this.env.SESSION_SECRET
-    );
-    
+    const sessionManager = new SessionManager(this.env.DB, this.env.SESSION_SECRET);
+
     try {
       // Revoke the session
       await sessionManager.revokeSession(sessionId);
-      
+
       // Log access
       await sessionManager.logAccess(
         sessionId,
@@ -240,11 +233,11 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
         'revoke_session',
         true,
         undefined,
-        'internal-service-binding'
+        'internal-service-binding',
       );
     } catch (error: any) {
       console.error(`Error revoking session: ${error.message}`);
-      
+
       // Log failed access
       await sessionManager.logAccess(
         sessionId,
@@ -252,9 +245,9 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
         'revoke_session',
         false,
         error.message,
-        'internal-service-binding'
+        'internal-service-binding',
       );
-      
+
       throw new Error(error.message || 'Failed to revoke session');
     }
   }

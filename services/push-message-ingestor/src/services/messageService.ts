@@ -1,12 +1,9 @@
 /**
  * Message service for handling message operations
  */
-import { PlatformMessage } from '../models/message';
-import {
-  QueueError,
-  MessageData,
-  BatchValidationError,
-} from '@communicator/common';
+import type { PlatformMessage } from '../models/message';
+import type { MessageData } from '@communicator/common';
+import { QueueError, BatchValidationError } from '@communicator/common';
 
 /**
  * Service for handling message operations
@@ -45,13 +42,15 @@ export class MessageService {
     }
 
     try {
-      await this.queueBinding.sendBatch(messages.map(message => ({ body: message.toMessageData() })));
+      await this.queueBinding.sendBatch(
+        messages.map(message => ({ body: message.toMessageData() })),
+      );
       return messages.length;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       throw new QueueError(`Failed to publish message batch to queue: ${errorMessage}`, {
         messageCount: messages.length,
-        platforms: [...new Set(messages.map(m => m.platform))]
+        platforms: [...new Set(messages.map(m => m.platform))],
       });
     }
   }

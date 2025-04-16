@@ -55,13 +55,13 @@ pnpm test:coverage
 
 #### Unit Test Scenarios
 
-| Test Category | Test Cases |
-|---------------|------------|
-| **Message Validation** | - Valid message validation<br>- Invalid message validation<br>- Required field validation<br>- Field type validation |
-| **Error Handling** | - AppError creation and handling<br>- ZodError handling<br>- Generic error handling |
-| **Response Formatting** | - Success response formatting<br>- Error response formatting<br>- Correlation ID inclusion |
-| **Pagination** | - Pagination options normalization<br>- Array pagination<br>- Batch processing |
-| **Queue Integration** | - Message publishing<br>- Batch message publishing<br>- Error handling during publishing |
+| Test Category           | Test Cases                                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Message Validation**  | - Valid message validation<br>- Invalid message validation<br>- Required field validation<br>- Field type validation |
+| **Error Handling**      | - AppError creation and handling<br>- ZodError handling<br>- Generic error handling                                  |
+| **Response Formatting** | - Success response formatting<br>- Error response formatting<br>- Correlation ID inclusion                           |
+| **Pagination**          | - Pagination options normalization<br>- Array pagination<br>- Batch processing                                       |
+| **Queue Integration**   | - Message publishing<br>- Batch message publishing<br>- Error handling during publishing                             |
 
 ### 2.2 Integration Tests
 
@@ -85,13 +85,13 @@ chmod +x run-tests.sh
 
 #### Integration Test Scenarios
 
-| Test Category | Test Cases |
-|---------------|------------|
-| **Base Endpoints** | - GET / (service info)<br>- GET /health (health check) |
+| Test Category          | Test Cases                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Base Endpoints**     | - GET / (service info)<br>- GET /health (health check)                                                                                                         |
 | **Message Publishing** | - Valid single message<br>- Valid multiple messages<br>- Empty message array<br>- Invalid message format<br>- Missing required fields<br>- Invalid field types |
-| **Error Responses** | - Validation error response format<br>- Server error response format<br>- Queue error response format |
-| **Rate Limiting** | - Requests within rate limit<br>- Requests exceeding rate limit |
-| **Correlation ID** | - Correlation ID in response headers<br>- Correlation ID in error responses |
+| **Error Responses**    | - Validation error response format<br>- Server error response format<br>- Queue error response format                                                          |
+| **Rate Limiting**      | - Requests within rate limit<br>- Requests exceeding rate limit                                                                                                |
+| **Correlation ID**     | - Correlation ID in response headers<br>- Correlation ID in error responses                                                                                    |
 
 ### 2.3 End-to-End Tests
 
@@ -110,11 +110,11 @@ chmod +x tests/e2e-tests.sh
 
 #### End-to-End Test Scenarios
 
-| Test Category | Test Cases |
-|---------------|------------|
-| **Complete Flow** | - Message from API to queue<br>- Batch messages from API to queue |
-| **Error Handling** | - Queue connection failure<br>- Queue publishing failure |
-| **Performance** | - Large batch processing<br>- Concurrent requests |
+| Test Category      | Test Cases                                                        |
+| ------------------ | ----------------------------------------------------------------- |
+| **Complete Flow**  | - Message from API to queue<br>- Batch messages from API to queue |
+| **Error Handling** | - Queue connection failure<br>- Queue publishing failure          |
+| **Performance**    | - Large batch processing<br>- Concurrent requests                 |
 
 ## 3. Test Data
 
@@ -235,22 +235,22 @@ chmod +x tests/e2e-tests.sh
 
 ### 4.1 Success Criteria
 
-| Test Type | Success Criteria |
-|-----------|------------------|
-| **Unit Tests** | - All tests pass<br>- Code coverage > 80% |
+| Test Type             | Success Criteria                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Unit Tests**        | - All tests pass<br>- Code coverage > 80%                                                                              |
 | **Integration Tests** | - All endpoints return expected responses<br>- Error handling works as expected<br>- Rate limiting functions correctly |
-| **End-to-End Tests** | - Messages are successfully published to the queue<br>- Error scenarios are handled gracefully |
+| **End-to-End Tests**  | - Messages are successfully published to the queue<br>- Error scenarios are handled gracefully                         |
 
 ### 4.2 Verification Methods
 
 #### Response Status Codes
 
-| Scenario | Expected Status Code |
-|----------|---------------------|
-| Successful request | 200 OK or 201 Created |
-| Validation error | 400 Bad Request |
-| Rate limit exceeded | 429 Too Many Requests |
-| Server error | 500 Internal Server Error |
+| Scenario            | Expected Status Code      |
+| ------------------- | ------------------------- |
+| Successful request  | 200 OK or 201 Created     |
+| Validation error    | 400 Bad Request           |
+| Rate limit exceeded | 429 Too Many Requests     |
+| Server error        | 500 Internal Server Error |
 
 #### Response Format Verification
 
@@ -303,11 +303,11 @@ name: Push Message Ingestor Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
       - 'services/push-message-ingestor/**'
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
       - 'services/push-message-ingestor/**'
 
@@ -443,13 +443,13 @@ pnpm test:report
 
 ### Common Test Issues
 
-| Issue | Solution |
-|-------|----------|
-| **Wrangler not found** | Install Wrangler globally: `npm install -g wrangler` |
-| **Queue binding errors** | Ensure Wrangler is configured correctly with queue bindings |
-| **Permission denied for test scripts** | Make scripts executable: `chmod +x tests/*.sh` |
-| **JSON parsing errors** | Use the fixed test script: `./tests/test-scripts-fixed.sh` |
-| **Rate limit errors during testing** | Increase the rate limit in development or add delays between requests |
+| Issue                                  | Solution                                                              |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| **Wrangler not found**                 | Install Wrangler globally: `npm install -g wrangler`                  |
+| **Queue binding errors**               | Ensure Wrangler is configured correctly with queue bindings           |
+| **Permission denied for test scripts** | Make scripts executable: `chmod +x tests/*.sh`                        |
+| **JSON parsing errors**                | Use the fixed test script: `./tests/test-scripts-fixed.sh`            |
+| **Rate limit errors during testing**   | Increase the rate limit in development or add delays between requests |
 
 ## 12. Conclusion
 

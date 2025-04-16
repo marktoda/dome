@@ -57,11 +57,13 @@ The test script includes the following test cases:
 If you encounter issues with the tests:
 
 1. **"Message body cannot be undefined" error**:
+
    - This could indicate an issue with the JSON payload format
    - Check that the Content-Type header is set to application/json
    - Verify that the JSON payload is properly formatted
 
 2. **"sendBatch() requires at least one message" error**:
+
    - This occurs when trying to send an empty array to the queue
    - The service has been updated to handle this case properly
 

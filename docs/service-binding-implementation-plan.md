@@ -36,7 +36,7 @@ We'll refactor the telegram-auth service to extend the WorkerEntrypoint class, e
 
 ```typescript
 // services/auth-telegram/src/index.ts
-import { WorkerEntrypoint } from "cloudflare:workers";
+import { WorkerEntrypoint } from 'cloudflare:workers';
 import { SessionManager } from './lib/session-manager';
 import { ApiResponse } from '@communicator/common';
 
@@ -54,15 +54,14 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
     sessionId: string;
     expiresAt: string;
   }> {
-    const sessionManager = new SessionManager(
-      this.env.DB,
-      this.env.SESSION_SECRET
-    );
-    
+    const sessionManager = new SessionManager(this.env.DB, this.env.SESSION_SECRET);
+
     try {
       // Get session for user
-      const { sessionString, sessionId, expiresAt } = await sessionManager.getSessionByUserId(userId);
-      
+      const { sessionString, sessionId, expiresAt } = await sessionManager.getSessionByUserId(
+        userId,
+      );
+
       // Log access
       await sessionManager.logAccess(
         sessionId,
@@ -70,13 +69,13 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
         'get_session',
         true,
         undefined,
-        'internal-service-binding' // IP address
+        'internal-service-binding', // IP address
       );
-      
+
       return {
         sessionString,
         sessionId,
-        expiresAt: expiresAt.toISOString()
+        expiresAt: expiresAt.toISOString(),
       };
     } catch (error) {
       // Log failed access if we have a session ID
@@ -87,10 +86,10 @@ export default class TelegramAuthWorker extends WorkerEntrypoint {
           'get_session',
           false,
           error.message,
-          'internal-service-binding'
+          'internal-service-binding',
         );
       }
-      
+
       throw error;
     }
   }
@@ -116,7 +115,7 @@ Update the package.json to include the necessary dependencies:
 ```json
 {
   "dependencies": {
-    "cloudflare:workers": "latest",
+    "cloudflare:workers": "latest"
     // ...existing dependencies...
   }
 }
@@ -202,7 +201,7 @@ export class TelegramAuthClient {
     this.config = {
       retryAttempts: 3,
       retryDelay: 1000,
-      ...config
+      ...config,
     };
   }
 
@@ -220,10 +219,10 @@ export class TelegramAuthClient {
 
     // Fetch from auth service using service binding
     const session = await this.fetchSession(userId);
-    
+
     // Cache the session
     this.sessionCache.set(userId, session);
-    
+
     return session;
   }
 
@@ -235,7 +234,7 @@ export class TelegramAuthClient {
   private isSessionValid(session: TelegramSession): boolean {
     const expiresAt = new Date(session.expiresAt);
     const now = new Date();
-    
+
     // Consider session invalid if it expires in less than 5 minutes
     const fiveMinutes = 5 * 60 * 1000;
     return expiresAt.getTime() - now.getTime() > fiveMinutes;
@@ -248,28 +247,28 @@ export class TelegramAuthClient {
    */
   private async fetchSession(userId: number): Promise<TelegramSession> {
     let lastError: Error | null = null;
-    
+
     // Retry logic
     for (let attempt = 0; attempt < this.config.retryAttempts!; attempt++) {
       try {
         // Use service binding to directly call the method
         const sessionData = await this.config.telegramAuth.getSessionByUserId(userId);
-        
+
         return {
           sessionString: sessionData.sessionString,
           userId: userId,
-          expiresAt: sessionData.expiresAt
+          expiresAt: sessionData.expiresAt,
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        
+
         // Don't wait on the last attempt
         if (attempt < this.config.retryAttempts! - 1) {
           await new Promise(resolve => setTimeout(resolve, this.config.retryDelay!));
         }
       }
     }
-    
+
     throw lastError || new Error('Failed to get session after multiple attempts');
   }
 
@@ -281,7 +280,7 @@ export class TelegramAuthClient {
   async refreshSession(userId: number): Promise<TelegramSession> {
     // Remove from cache
     this.sessionCache.delete(userId);
-    
+
     // Fetch fresh session
     return this.fetchSession(userId);
   }
@@ -335,34 +334,34 @@ app.use('*', async (c, next) => {
   try {
     // Get Telegram config from environment
     const telegramConfig = getTelegramConfig(c.env);
-    
+
     // Initialize Telegram auth client with service binding
     const telegramAuthClient = new TelegramAuthClient({
       telegramAuth: c.env.TELEGRAM_AUTH, // Use service binding
       serviceId: telegramConfig.serviceId,
       retryAttempts: telegramConfig.maxRetries,
-      retryDelay: telegramConfig.retryDelay
+      retryDelay: telegramConfig.retryDelay,
     });
-    
+
     // Initialize Telegram service
     const telegramService = new TelegramService({
       telegramApiId: telegramConfig.apiId,
       telegramApiHash: telegramConfig.apiHash,
       authClient: telegramAuthClient,
       maxRetries: telegramConfig.maxRetries,
-      retryDelay: telegramConfig.retryDelay
+      retryDelay: telegramConfig.retryDelay,
     });
-    
+
     // Initialize Telegram controller
     const telegramController = new TelegramController(telegramService);
-    
+
     // Store in context for route handlers
     c.set('telegramController', telegramController);
   } catch (error) {
     console.warn('Failed to initialize Telegram integration:', error);
     // Continue without Telegram integration
   }
-  
+
   await next();
 });
 
@@ -383,27 +382,27 @@ export interface TelegramConfig {
    * Telegram API ID (from my.telegram.org)
    */
   apiId: number;
-  
+
   /**
    * Telegram API Hash (from my.telegram.org)
    */
   apiHash: string;
-  
+
   /**
    * Service ID for identifying this service to the Telegram Auth Service
    */
   serviceId: string;
-  
+
   /**
    * Maximum number of retries for API calls
    */
   maxRetries: number;
-  
+
   /**
    * Delay between retries in milliseconds
    */
   retryDelay: number;
-  
+
   /**
    * Session cache TTL in milliseconds
    */
@@ -417,25 +416,21 @@ export interface TelegramConfig {
  */
 export function getTelegramConfig(env: Record<string, string | undefined>): TelegramConfig {
   // Required environment variables
-  const requiredVars = [
-    'TELEGRAM_API_ID',
-    'TELEGRAM_API_HASH',
-    'TELEGRAM_SERVICE_ID'
-  ];
-  
+  const requiredVars = ['TELEGRAM_API_ID', 'TELEGRAM_API_HASH', 'TELEGRAM_SERVICE_ID'];
+
   // Check for missing required variables
   const missingVars = requiredVars.filter(varName => !env[varName]);
   if (missingVars.length > 0) {
     throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
   }
-  
+
   return {
     apiId: parseInt(env.TELEGRAM_API_ID!, 10),
     apiHash: env.TELEGRAM_API_HASH!,
     serviceId: env.TELEGRAM_SERVICE_ID!,
     maxRetries: parseInt(env.TELEGRAM_MAX_RETRIES || '3', 10),
     retryDelay: parseInt(env.TELEGRAM_RETRY_DELAY || '2000', 10),
-    sessionCacheTtl: parseInt(env.TELEGRAM_SESSION_CACHE_TTL || '300000', 10) // 5 minutes default
+    sessionCacheTtl: parseInt(env.TELEGRAM_SESSION_CACHE_TTL || '300000', 10), // 5 minutes default
   };
 }
 ```
@@ -468,7 +463,7 @@ export function deployWorker(
     accountId: string;
     routes?: string[];
     serviceBindings?: { name: string; service: string }[];
-  }
+  },
 ): cloudflare.WorkerScript {
   // Create the worker script
   const worker = new cloudflare.WorkerScript(name, {
@@ -514,13 +509,17 @@ const accountId = config.require('cloudflare:accountId');
  */
 export function dev() {
   // Deploy the auth-telegram worker
-  const authTelegramWorker = deployWorker('auth-telegram-dev', '../services/auth-telegram/dist/index.js', {
-    accountId,
-    routes: [
-      // Example route - update as needed
-      // 'auth-telegram-dev.your-domain.com/*',
-    ],
-  });
+  const authTelegramWorker = deployWorker(
+    'auth-telegram-dev',
+    '../services/auth-telegram/dist/index.js',
+    {
+      accountId,
+      routes: [
+        // Example route - update as needed
+        // 'auth-telegram-dev.your-domain.com/*',
+      ],
+    },
+  );
 
   // Deploy the ingestor worker with service binding to auth-telegram
   const ingestorWorker = deployWorker('ingestor-dev', '../services/ingestor/dist/index.js', {
@@ -599,7 +598,7 @@ If Wrangler's local service binding support is insufficient, we can implement a 
 // services/ingestor/src/clients/telegram-auth-client.ts
 private async fetchSession(userId: number): Promise<TelegramSession> {
   let lastError: Error | null = null;
-  
+
   // Retry logic
   for (let attempt = 0; attempt < this.config.retryAttempts!; attempt++) {
     try {
@@ -607,7 +606,7 @@ private async fetchSession(userId: number): Promise<TelegramSession> {
       if (this.config.telegramAuth) {
         // Use service binding to directly call the method
         const sessionData = await this.config.telegramAuth.getSessionByUserId(userId);
-        
+
         return {
           sessionString: sessionData.sessionString,
           userId: userId,
@@ -616,7 +615,7 @@ private async fetchSession(userId: number): Promise<TelegramSession> {
       } else if (this.config.endpoint) {
         // Fallback to HTTP for local development
         const url = `${this.config.endpoint}/sessions/user/${userId}`;
-        
+
         const response = await fetch(url, {
           method: 'GET',
           headers: {
@@ -625,32 +624,32 @@ private async fetchSession(userId: number): Promise<TelegramSession> {
             'Content-Type': 'application/json'
           }
         });
-        
+
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(`Failed to get session: ${response.status} ${response.statusText} - ${errorText}`);
         }
-        
+
         const data = await response.json() as ApiResponse<{ sessionString: string; userId: number; expiresAt: string }>;
-        
+
         if (!data.success || !data.data) {
           throw new Error(`Failed to get session: ${data.error?.message || 'Unknown error'}`);
         }
-        
+
         return data.data;
       } else {
         throw new Error('No service binding or endpoint configured');
       }
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       // Don't wait on the last attempt
       if (attempt < this.config.retryAttempts! - 1) {
         await new Promise(resolve => setTimeout(resolve, this.config.retryDelay!));
       }
     }
   }
-  
+
   throw lastError || new Error('Failed to get session after multiple attempts');
 }
 ```

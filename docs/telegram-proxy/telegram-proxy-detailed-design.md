@@ -3,6 +3,7 @@
 This document provides a detailed design for the Telegram Proxy Service, focusing on communication protocols, deployment strategy, and scalability considerations for handling aggressive polling by the ingestor service.
 
 ## Table of Contents
+
 1. [Communication Architecture](#communication-architecture)
 2. [Deployment Strategy](#deployment-strategy)
 3. [Scalability and Performance](#scalability-and-performance)
@@ -54,6 +55,7 @@ The communication between the Cloudflare Worker and the Telegram Proxy Service w
 All API requests and responses will use JSON format:
 
 **Example Request:**
+
 ```json
 {
   "sessionId": "user123_session456",
@@ -68,6 +70,7 @@ All API requests and responses will use JSON format:
 ```
 
 **Example Response:**
+
 ```json
 {
   "success": true,
@@ -86,11 +89,13 @@ All API requests and responses will use JSON format:
 ### Authentication and Security
 
 1. **Service-to-Service Authentication:**
+
    - JWT-based authentication with short-lived tokens (15 minutes)
    - Mutual TLS for additional security in production
    - API keys for initial authentication
 
 2. **Request Signing:**
+
    - All requests will include a signature header
    - HMAC-SHA256 signature of request body + timestamp
    - Prevents tampering and replay attacks
@@ -103,6 +108,7 @@ All API requests and responses will use JSON format:
 ### Error Handling and Resilience
 
 1. **Standardized Error Responses:**
+
 ```json
 {
   "success": false,
@@ -119,6 +125,7 @@ All API requests and responses will use JSON format:
 ```
 
 2. **Circuit Breaker Pattern:**
+
    - Prevents cascading failures
    - Automatically disables problematic endpoints
    - Gradual recovery with exponential backoff
@@ -141,6 +148,7 @@ For more efficient operation than polling, the service will support WebSocket co
 ```
 
 WebSocket messages will follow a standard format:
+
 ```json
 {
   "type": "NEW_MESSAGE",
@@ -160,16 +168,19 @@ WebSocket messages will follow a standard format:
 #### Recommended Setup: Kubernetes on DigitalOcean
 
 1. **Kubernetes Cluster:**
+
    - 3-node cluster minimum (1 control plane, 2 workers)
    - Autoscaling enabled for worker nodes
    - Managed Kubernetes service for simplified operations
 
 2. **Redis:**
+
    - Redis cluster with 3 masters, 3 replicas
    - Persistence enabled with both RDB and AOF
    - DigitalOcean Managed Database or Redis Enterprise
 
 3. **Monitoring:**
+
    - Prometheus for metrics collection
    - Grafana for visualization
    - Loki for log aggregation
@@ -183,11 +194,13 @@ WebSocket messages will follow a standard format:
 #### Alternative: AWS-based Deployment
 
 1. **ECS with Fargate:**
+
    - Serverless container execution
    - Auto-scaling based on CPU/memory metrics
    - Application Load Balancer for traffic distribution
 
 2. **ElastiCache for Redis:**
+
    - Multi-AZ deployment
    - Automatic failover
    - Encryption at rest and in transit
@@ -200,14 +213,15 @@ WebSocket messages will follow a standard format:
 ### CI/CD Pipeline
 
 1. **GitHub Actions Workflow:**
+
 ```yaml
 name: Telegram Proxy CI/CD
 
 on:
   push:
-    branches: [ main, staging ]
+    branches: [main, staging]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   test:
@@ -256,6 +270,7 @@ jobs:
 ```
 
 2. **Deployment Environments:**
+
    - Development: Local or ephemeral environments
    - Staging: Production-like environment for testing
    - Production: Highly available, scaled deployment
@@ -268,10 +283,12 @@ jobs:
 ### Configuration Management
 
 1. **Environment Variables:**
+
    - Non-sensitive configuration
    - Environment-specific settings
 
 2. **Kubernetes Secrets:**
+
    - API credentials
    - Encryption keys
    - Database passwords
@@ -284,6 +301,7 @@ jobs:
 ### Backup and Disaster Recovery
 
 1. **Regular Backups:**
+
    - Redis snapshots every hour
    - Database backups daily
    - Configuration backups on change
@@ -362,11 +380,13 @@ class TelegramClientPool {
 #### Efficient Polling
 
 1. **Cursor-based Pagination:**
+
    - Efficient retrieval of new messages
    - Prevents duplicate processing
    - Handles large message volumes
 
 2. **Batch Processing:**
+
    - Retrieve multiple messages in a single request
    - Process messages in batches
    - Optimize network utilization
@@ -379,11 +399,13 @@ class TelegramClientPool {
 #### Caching Strategy
 
 1. **Multi-level Caching:**
+
    - L1: In-memory cache (node-local)
    - L2: Redis cache (distributed)
    - Tiered expiration policies
 
 2. **Cache Invalidation:**
+
    - Time-based expiration for volatile data
    - Event-based invalidation for immediate updates
    - Versioned cache keys
@@ -396,12 +418,14 @@ class TelegramClientPool {
 ### Handling Telegram API Limits
 
 1. **Rate Limiting:**
+
    - Respect Telegram's API limits (configurable)
    - Per-method rate limits
    - Per-user rate limits
    - Global rate limits
 
 2. **Backoff Strategy:**
+
    - Exponential backoff on rate limit errors
    - Jitter to prevent thundering herd
    - Circuit breaker for persistent issues
@@ -414,11 +438,13 @@ class TelegramClientPool {
 ### Horizontal Scaling
 
 1. **Stateless Design:**
+
    - No node-specific state (except caches)
    - Any request can be handled by any node
    - Seamless node addition/removal
 
 2. **Load Balancing:**
+
    - Round-robin for even distribution
    - Least connections for optimal utilization
    - Session affinity for efficiency (but not required)
@@ -433,11 +459,13 @@ class TelegramClientPool {
 Based on similar architectures, we can expect:
 
 1. **Throughput:**
+
    - 100-200 requests/second per node
    - 5,000+ concurrent sessions per node
    - Linear scaling with additional nodes
 
 2. **Latency:**
+
    - API requests: 50-200ms (p95)
    - Message polling: 100-300ms (p95)
    - Session operations: 30-100ms (p95)
@@ -452,11 +480,13 @@ Based on similar architectures, we can expect:
 ### Data Protection
 
 1. **Encryption:**
+
    - TLS 1.3 for all external communications
    - AES-256-GCM for session data at rest
    - Key rotation every 30 days
 
 2. **Data Minimization:**
+
    - Only store essential session data
    - Automatic purging of expired sessions
    - No storage of message content unless required
@@ -469,11 +499,13 @@ Based on similar architectures, we can expect:
 ### Attack Mitigation
 
 1. **DDoS Protection:**
+
    - Rate limiting at the edge
    - Traffic filtering
    - Automatic blocking of suspicious IPs
 
 2. **Intrusion Detection:**
+
    - Anomaly detection
    - Suspicious pattern recognition
    - Real-time alerts

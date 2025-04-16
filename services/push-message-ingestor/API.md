@@ -5,6 +5,7 @@ This document provides detailed information about the API endpoints exposed by t
 ## Base URL
 
 When deployed, the service is accessible at:
+
 - Production: `https://push-message-ingestor.your-domain.workers.dev`
 - Staging: `https://push-message-ingestor-staging.your-domain.workers.dev`
 - Local development: `http://localhost:8787`
@@ -129,26 +130,26 @@ Publishes a batch of Telegram messages to the queue for further processing.
 
 **Required Fields:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Unique identifier for the message |
-| `timestamp` | string | ISO 8601 timestamp of when the message was created |
-| `platform` | string | Must be "telegram" for this endpoint |
-| `content` | string | Text content of the message (required if no media) |
-| `metadata.chatId` | string | Telegram chat ID where the message was sent |
-| `metadata.messageId` | string | Telegram message ID |
+| Field                | Type   | Description                                        |
+| -------------------- | ------ | -------------------------------------------------- |
+| `id`                 | string | Unique identifier for the message                  |
+| `timestamp`          | string | ISO 8601 timestamp of when the message was created |
+| `platform`           | string | Must be "telegram" for this endpoint               |
+| `content`            | string | Text content of the message (required if no media) |
+| `metadata.chatId`    | string | Telegram chat ID where the message was sent        |
+| `metadata.messageId` | string | Telegram message ID                                |
 
 **Optional Fields:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `metadata.fromUserId` | string | Telegram user ID of the sender |
-| `metadata.fromUsername` | string | Telegram username of the sender |
-| `metadata.replyToMessageId` | string | ID of the message this is replying to |
-| `metadata.forwardFromMessageId` | string | ID of the original message if forwarded |
-| `metadata.forwardFromChatId` | string | Chat ID of the original message if forwarded |
-| `metadata.mediaType` | string | Type of media (photo, video, document, etc.) |
-| `metadata.mediaUrl` | string | URL to the media content |
+| Field                           | Type   | Description                                  |
+| ------------------------------- | ------ | -------------------------------------------- |
+| `metadata.fromUserId`           | string | Telegram user ID of the sender               |
+| `metadata.fromUsername`         | string | Telegram username of the sender              |
+| `metadata.replyToMessageId`     | string | ID of the message this is replying to        |
+| `metadata.forwardFromMessageId` | string | ID of the original message if forwarded      |
+| `metadata.forwardFromChatId`    | string | Chat ID of the original message if forwarded |
+| `metadata.mediaType`            | string | Type of media (photo, video, document, etc.) |
+| `metadata.mediaUrl`             | string | URL to the media content                     |
 
 **Success Response:**
 
@@ -228,14 +229,14 @@ Publishes a batch of Telegram messages to the queue for further processing.
 
 The service uses the following error codes:
 
-| Error Code | HTTP Status | Description |
-|------------|-------------|-------------|
-| `VALIDATION_ERROR` | 400 | The request body or message format is invalid |
-| `SERVER_ERROR` | 500 | An internal server error occurred |
-| `QUEUE_ERROR` | 500 | Error publishing to the queue |
-| `NOT_FOUND` | 404 | The requested resource was not found |
-| `METHOD_NOT_ALLOWED` | 405 | The HTTP method is not supported for this endpoint |
-| `RATE_LIMIT_EXCEEDED` | 429 | Too many requests in a short time period |
+| Error Code            | HTTP Status | Description                                        |
+| --------------------- | ----------- | -------------------------------------------------- |
+| `VALIDATION_ERROR`    | 400         | The request body or message format is invalid      |
+| `SERVER_ERROR`        | 500         | An internal server error occurred                  |
+| `QUEUE_ERROR`         | 500         | Error publishing to the queue                      |
+| `NOT_FOUND`           | 404         | The requested resource was not found               |
+| `METHOD_NOT_ALLOWED`  | 405         | The HTTP method is not supported for this endpoint |
+| `RATE_LIMIT_EXCEEDED` | 429         | Too many requests in a short time period           |
 
 ### Error Response Format
 
@@ -262,6 +263,7 @@ The service implements different error handling behavior based on the environmen
 #### Development Environment
 
 In development environments, error responses include:
+
 - Detailed error messages
 - Stack traces (for server errors)
 - Comprehensive error details
@@ -272,6 +274,7 @@ This helps developers quickly identify and fix issues during development.
 #### Production Environment
 
 In production environments, error responses are sanitized to prevent information leakage:
+
 - Generic error messages for server errors
 - No stack traces or internal details
 - Limited error details for non-validation errors
@@ -319,11 +322,11 @@ The service implements rate limiting to prevent abuse. By default, clients are l
 
 When a rate limit is exceeded, the service returns a 429 Too Many Requests response with the following headers:
 
-| Header | Description |
-|--------|-------------|
-| `X-RateLimit-Limit` | Maximum number of requests allowed in the time window |
+| Header                  | Description                                             |
+| ----------------------- | ------------------------------------------------------- |
+| `X-RateLimit-Limit`     | Maximum number of requests allowed in the time window   |
 | `X-RateLimit-Remaining` | Number of requests remaining in the current time window |
-| `X-RateLimit-Reset` | ISO 8601 timestamp when the rate limit will reset |
+| `X-RateLimit-Reset`     | ISO 8601 timestamp when the rate limit will reset       |
 
 **Rate Limit Exceeded Response:**
 
@@ -345,10 +348,10 @@ When a rate limit is exceeded, the service returns a 429 Too Many Requests respo
 
 For endpoints that return large collections of data, the service supports pagination using the following query parameters:
 
-| Parameter | Description | Default | Maximum |
-|-----------|-------------|---------|---------|
-| `limit` | Number of items per page | 100 | 1000 |
-| `page` | Page number (1-based) | 1 | - |
+| Parameter | Description              | Default | Maximum |
+| --------- | ------------------------ | ------- | ------- |
+| `limit`   | Number of items per page | 100     | 1000    |
+| `page`    | Page number (1-based)    | 1       | -       |
 
 Paginated responses include pagination metadata:
 

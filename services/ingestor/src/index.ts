@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { ApiResponse, ServiceInfo } from '@communicator/common';
+import type { ApiResponse, ServiceInfo } from '@communicator/common';
 import { TelegramAuthClient } from './clients/telegram-auth-client';
 import { TelegramProxyClient } from './clients/telegram-proxy-client';
 import { TelegramService } from './services/telegram-service';
@@ -36,7 +36,7 @@ type Bindings = {
 const serviceInfo: ServiceInfo = {
   name: 'ingestor',
   version: '0.1.0',
-  environment: 'development' // Default value, will be overridden by env
+  environment: 'development', // Default value, will be overridden by env
 };
 
 /**
@@ -65,57 +65,57 @@ app.use('*', async (c, next) => {
  */
 app.onError((err, c) => {
   console.error(`Error: ${err.message}`);
-  
+
   const response: ApiResponse = {
     success: false,
     error: {
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'An unexpected error occurred'
-    }
+      message: 'An unexpected error occurred',
+    },
   };
-  
+
   return c.json(response, 500);
 });
 
 /**
  * Not found handler
  */
-app.notFound((c) => {
+app.notFound(c => {
   const response: ApiResponse = {
     success: false,
     error: {
       code: 'NOT_FOUND',
-      message: 'The requested resource was not found'
-    }
+      message: 'The requested resource was not found',
+    },
   };
-  
+
   return c.json(response, 404);
 });
 
 /**
  * Routes
  */
-app.get('/', (c) => {
+app.get('/', c => {
   const response: ApiResponse = {
     success: true,
     data: {
       message: 'Hello World from Communicator Ingestor Service!',
-      service: serviceInfo
-    }
+      service: serviceInfo,
+    },
   };
-  
+
   return c.json(response);
 });
 
 /**
  * Health check endpoint
  */
-app.get('/health', (c) => {
-  return c.json({
+app.get('/health', c =>
+  c.json({
     status: 'ok',
-    timestamp: new Date().toISOString()
-  });
-});
+    timestamp: new Date().toISOString(),
+  }),
+);
 
 /**
  * Initialize Telegram integration
@@ -124,30 +124,30 @@ app.use('*', async (c, next) => {
   try {
     // Get Telegram config from environment
     const telegramConfig = getTelegramConfig(c.env);
-    
+
     // Initialize Telegram auth client with service binding
     const telegramAuthClient = new TelegramAuthClient({
       telegramAuth: c.env.TELEGRAM_AUTH, // Use service binding
       serviceId: telegramConfig.serviceId,
       retryAttempts: telegramConfig.maxRetries,
-      retryDelay: telegramConfig.retryDelay
+      retryDelay: telegramConfig.retryDelay,
     });
-    
+
     // Initialize Telegram service based on proxy configuration
     let telegramService;
-    
+
     if (telegramConfig.proxy.enabled) {
       console.log('Initializing Telegram Proxy Service integration');
-      
+
       // Initialize Telegram proxy client
       const telegramProxyClient = new TelegramProxyClient({
         baseUrl: telegramConfig.proxy.baseUrl,
         apiKey: telegramConfig.proxy.apiKey,
         maxRetries: telegramConfig.maxRetries,
         retryDelay: telegramConfig.retryDelay,
-        pollTimeout: telegramConfig.proxy.pollTimeout
+        pollTimeout: telegramConfig.proxy.pollTimeout,
       });
-      
+
       // Initialize Telegram proxy service
       telegramService = new TelegramProxyService({
         telegramApiId: telegramConfig.apiId,
@@ -157,31 +157,31 @@ app.use('*', async (c, next) => {
         maxRetries: telegramConfig.maxRetries,
         retryDelay: telegramConfig.retryDelay,
         defaultPollingInterval: telegramConfig.proxy.pollingInterval,
-        useProxyService: true
+        useProxyService: true,
       });
     } else {
       console.log('Using direct Telegram integration (without proxy)');
-      
+
       // Initialize regular Telegram service
       telegramService = new TelegramService({
         telegramApiId: telegramConfig.apiId,
         telegramApiHash: telegramConfig.apiHash,
         authClient: telegramAuthClient,
         maxRetries: telegramConfig.maxRetries,
-        retryDelay: telegramConfig.retryDelay
+        retryDelay: telegramConfig.retryDelay,
       });
     }
-    
+
     // Initialize Telegram controller
     const telegramController = new TelegramController(telegramService);
-    
+
     // Store in context for route handlers
     c.set('telegramController', telegramController);
   } catch (error) {
     console.warn('Failed to initialize Telegram integration:', error);
     // Continue without Telegram integration
   }
-  
+
   await next();
 });
 
@@ -191,124 +191,140 @@ app.use('*', async (c, next) => {
 const telegramRouter = app.route('/api/telegram');
 
 // Get messages from a Telegram channel or chat
-telegramRouter.get('/messages/:userId/:source', async (c) => {
+telegramRouter.get('/messages/:userId/:source', async c => {
   const telegramController = c.get('telegramController');
-  
+
   if (!telegramController) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'TELEGRAM_NOT_CONFIGURED',
-        message: 'Telegram integration is not configured'
-      }
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'TELEGRAM_NOT_CONFIGURED',
+          message: 'Telegram integration is not configured',
+        },
+      },
+      500,
+    );
   }
-  
+
   return telegramController.getMessages(c);
 });
 
 // Get media from a Telegram channel or chat
-telegramRouter.get('/media/:userId/:source', async (c) => {
+telegramRouter.get('/media/:userId/:source', async c => {
   const telegramController = c.get('telegramController');
-  
+
   if (!telegramController) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'TELEGRAM_NOT_CONFIGURED',
-        message: 'Telegram integration is not configured'
-      }
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'TELEGRAM_NOT_CONFIGURED',
+          message: 'Telegram integration is not configured',
+        },
+      },
+      500,
+    );
   }
-  
+
   return telegramController.getMedia(c);
 });
 
 // Get information about a Telegram channel or chat
-telegramRouter.get('/source/:userId/:source', async (c) => {
+telegramRouter.get('/source/:userId/:source', async c => {
   const telegramController = c.get('telegramController');
-  
+
   if (!telegramController) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'TELEGRAM_NOT_CONFIGURED',
-        message: 'Telegram integration is not configured'
-      }
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'TELEGRAM_NOT_CONFIGURED',
+          message: 'Telegram integration is not configured',
+        },
+      },
+      500,
+    );
   }
-  
+
   return telegramController.getSourceInfo(c);
 });
 
 // Poll for new messages from a Telegram channel or chat
-telegramRouter.get('/poll/:userId/:source', async (c) => {
+telegramRouter.get('/poll/:userId/:source', async c => {
   const telegramController = c.get('telegramController');
-  
+
   if (!telegramController) {
-    return c.json({
-      success: false,
-      error: {
-        code: 'TELEGRAM_NOT_CONFIGURED',
-        message: 'Telegram integration is not configured'
-      }
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'TELEGRAM_NOT_CONFIGURED',
+          message: 'Telegram integration is not configured',
+        },
+      },
+      500,
+    );
   }
-  
+
   try {
     const { userId, source } = c.req.param();
     const { timeout, limit } = c.req.query();
-    
+
     // Validate parameters
     if (!userId || !source) {
-      return c.json({
-        success: false,
-        error: {
-          code: 'INVALID_PARAMETERS',
-          message: 'Missing required parameters: userId and source'
-        }
-      }, 400);
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'INVALID_PARAMETERS',
+            message: 'Missing required parameters: userId and source',
+          },
+        },
+        400,
+      );
     }
-    
+
     // Parse parameters
     const userIdNum = parseInt(userId, 10);
     const timeoutNum = timeout ? parseInt(timeout, 10) : undefined;
     const limitNum = limit ? parseInt(limit, 10) : undefined;
-    
+
     // Get the telegram service from the controller
     const telegramService = (telegramController as any).telegramService;
-    
+
     // Check if the service supports polling
     if (telegramService.pollMessages) {
-      const messages = await telegramService.pollMessages(
-        userIdNum,
-        source,
-        { timeout: timeoutNum, limit: limitNum }
-      );
-      
+      const messages = await telegramService.pollMessages(userIdNum, source, {
+        timeout: timeoutNum,
+        limit: limitNum,
+      });
+
       return c.json({
         success: true,
         data: {
           messages,
           source,
           userId: userIdNum,
-          count: messages.length
-        }
+          count: messages.length,
+        },
       });
-    } else {
-      // Fallback to regular message retrieval
-      return telegramController.getMessages(c);
     }
+    // Fallback to regular message retrieval
+    return telegramController.getMessages(c);
   } catch (error) {
     console.error('Error polling messages:', error);
-    
-    return c.json({
-      success: false,
-      error: {
-        code: 'TELEGRAM_ERROR',
-        message: error instanceof Error ? error.message : String(error)
-      }
-    }, 500);
+
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'TELEGRAM_ERROR',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      },
+      500,
+    );
   }
 });
 
@@ -316,4 +332,3 @@ telegramRouter.get('/poll/:userId/:source', async (c) => {
  * Export the Hono app as the default export
  */
 export default app;
-

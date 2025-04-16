@@ -1,10 +1,12 @@
 /**
  * Authentication Handler
  */
-import { TelegramClientWrapper, SendCodeResult, VerifyCodeResult } from '../lib/telegram-client';
+import type { SendCodeResult } from '../lib/telegram-client';
+import { TelegramClientWrapper, VerifyCodeResult } from '../lib/telegram-client';
 import { TelegramProxyClient, ErrorType, TelegramProxyError } from '../lib/telegram-proxy-client';
 import { SessionManager } from '../lib/session-manager';
-import { TelegramUser, TelegramUserDTO, fromDTO as userFromDTO } from '../models/user';
+import type { TelegramUser, TelegramUserDTO } from '../models/user';
+import { fromDTO as userFromDTO } from '../models/user';
 
 /**
  * Authentication Handler class
@@ -13,7 +15,7 @@ export class TelegramAuthHandler {
   private telegramClient: TelegramProxyClient | TelegramClientWrapper;
   private sessionManager?: SessionManager;
   private db?: D1Database;
-  
+
   /**
    * Constructor
    * @param apiId - Telegram API ID
@@ -30,7 +32,7 @@ export class TelegramAuthHandler {
       proxyUrl: string;
       apiKey?: string;
       useProxy: boolean;
-    }
+    },
   ) {
     // Use the proxy client if configured, otherwise fall back to direct client
     if (proxyConfig?.useProxy) {
@@ -41,20 +43,20 @@ export class TelegramAuthHandler {
         retryDelay: 1000,
         circuitBreaker: {
           failureThreshold: 5,
-          resetTimeout: 30000 // 30 seconds
-        }
+          resetTimeout: 30000, // 30 seconds
+        },
       });
     } else {
       // Fallback to direct client if proxy is not enabled
       this.telegramClient = new TelegramClientWrapper(apiId, apiHash);
     }
-    
+
     if (db && sessionSecret) {
       this.db = db;
       this.sessionManager = new SessionManager(db, sessionSecret);
     }
   }
-  
+
   /**
    * Send authentication code to phone number
    * @param phoneNumber - The phone number to send code to
@@ -68,7 +70,7 @@ export class TelegramAuthHandler {
       // Enhanced error handling to distinguish between proxy and Telegram errors
       if (error instanceof TelegramProxyError) {
         console.error(`Proxy error sending auth code: [${error.type}] ${error.message}`);
-        
+
         // Rethrow with more specific error message based on type
         switch (error.type) {
           case ErrorType.RATE_LIMIT:
@@ -89,7 +91,7 @@ export class TelegramAuthHandler {
       }
     }
   }
-  
+
   /**
    * Verify authentication code
    * @param phoneNumber - The phone number
@@ -104,50 +106,46 @@ export class TelegramAuthHandler {
     phoneCodeHash: string,
     code: string,
     deviceInfo?: string,
-    ipAddress?: string
+    ipAddress?: string,
   ): Promise<{ sessionId: string; expiresAt: Date }> {
     if (!this.db || !this.sessionManager) {
       throw new Error('Database and session manager are required for verifyAuthCode');
     }
-    
+
     try {
       // Verify the code via Telegram client
-      const result = await this.telegramClient.verifyAuthCode(
-        phoneNumber,
-        phoneCodeHash,
-        code
-      );
-      
+      const result = await this.telegramClient.verifyAuthCode(phoneNumber, phoneCodeHash, code);
+
       // Get or create user in database
       const user = await this.getOrCreateUser(
         result.userId,
         phoneNumber,
         result.firstName,
         result.lastName,
-        result.username
+        result.username,
       );
-      
+
       // Save the session
       const sessionId = await this.sessionManager.saveSession(
         user.id,
         result.sessionString,
         deviceInfo,
-        ipAddress
+        ipAddress,
       );
-      
+
       // Calculate expiration date (30 days from now)
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30);
-      
+
       return {
         sessionId,
-        expiresAt
+        expiresAt,
       };
     } catch (error) {
       // Enhanced error handling to distinguish between proxy and Telegram errors
       if (error instanceof TelegramProxyError) {
         console.error(`Proxy error verifying auth code: [${error.type}] ${error.message}`);
-        
+
         // Rethrow with more specific error message based on type
         switch (error.type) {
           case ErrorType.RATE_LIMIT:
@@ -170,7 +168,7 @@ export class TelegramAuthHandler {
       }
     }
   }
-  
+
   /**
    * Get or create a user in the database
    * @param telegramId - The Telegram user ID
@@ -185,32 +183,36 @@ export class TelegramAuthHandler {
     phoneNumber: string,
     firstName?: string,
     lastName?: string,
-    username?: string
+    username?: string,
   ): Promise<TelegramUser> {
     if (!this.db) {
       throw new Error('Database is required for getOrCreateUser');
     }
-    
+
     // Try to find existing user by phone number
-    const existingUser = await this.db.prepare(`
+    const existingUser = await this.db
+      .prepare(
+        `
       SELECT * FROM telegram_users
       WHERE phone_number = ?
-    `).bind(phoneNumber).first<TelegramUserDTO>();
-    
+    `,
+      )
+      .bind(phoneNumber)
+      .first<TelegramUserDTO>();
+
     if (existingUser) {
       // Update user information if needed
-      await this.db.prepare(`
+      await this.db
+        .prepare(
+          `
         UPDATE telegram_users
         SET telegram_id = ?, first_name = ?, last_name = ?, username = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).bind(
-        telegramId,
-        firstName || null,
-        lastName || null,
-        username || null,
-        existingUser.id
-      ).run();
-      
+      `,
+        )
+        .bind(telegramId, firstName || null, lastName || null, username || null, existingUser.id)
+        .run();
+
       // Return updated user
       return {
         ...userFromDTO(existingUser),
@@ -218,13 +220,15 @@ export class TelegramAuthHandler {
         firstName,
         lastName,
         username,
-        updatedAt: new Date()
+        updatedAt: new Date(),
       };
     }
-    
+
     // Create new user
     const now = new Date().toISOString();
-    const result = await this.db.prepare(`
+    const result = await this.db
+      .prepare(
+        `
       INSERT INTO telegram_users (
         phone_number, telegram_id, first_name, last_name, username,
         access_level, is_blocked, created_at, updated_at
@@ -233,23 +237,26 @@ export class TelegramAuthHandler {
         1, 0, ?, ?
       )
       RETURNING *
-    `).bind(
-      phoneNumber,
-      telegramId,
-      firstName || null,
-      lastName || null,
-      username || null,
-      now,
-      now
-    ).first<TelegramUserDTO>();
-    
+    `,
+      )
+      .bind(
+        phoneNumber,
+        telegramId,
+        firstName || null,
+        lastName || null,
+        username || null,
+        now,
+        now,
+      )
+      .first<TelegramUserDTO>();
+
     if (!result) {
       throw new Error('Failed to create user');
     }
-    
+
     return userFromDTO(result);
   }
-  
+
   /**
    * Get a user by ID
    * @param userId - The user ID
@@ -259,19 +266,24 @@ export class TelegramAuthHandler {
     if (!this.db) {
       throw new Error('Database is required for getUserById');
     }
-    
-    const user = await this.db.prepare(`
+
+    const user = await this.db
+      .prepare(
+        `
       SELECT * FROM telegram_users
       WHERE id = ?
-    `).bind(userId).first<TelegramUserDTO>();
-    
+    `,
+      )
+      .bind(userId)
+      .first<TelegramUserDTO>();
+
     if (!user) {
       throw new Error(`User not found: ${userId}`);
     }
-    
+
     return userFromDTO(user);
   }
-  
+
   /**
    * Get a user by phone number
    * @param phoneNumber - The phone number
@@ -281,19 +293,24 @@ export class TelegramAuthHandler {
     if (!this.db) {
       throw new Error('Database is required for getUserByPhoneNumber');
     }
-    
-    const user = await this.db.prepare(`
+
+    const user = await this.db
+      .prepare(
+        `
       SELECT * FROM telegram_users
       WHERE phone_number = ?
-    `).bind(phoneNumber).first<TelegramUserDTO>();
-    
+    `,
+      )
+      .bind(phoneNumber)
+      .first<TelegramUserDTO>();
+
     if (!user) {
       throw new Error(`User not found with phone number: ${phoneNumber}`);
     }
-    
+
     return userFromDTO(user);
   }
-  
+
   /**
    * Get the session manager
    * @returns The session manager
@@ -302,7 +319,7 @@ export class TelegramAuthHandler {
     if (!this.sessionManager) {
       throw new Error('Session manager not initialized');
     }
-    
+
     return this.sessionManager;
   }
 }

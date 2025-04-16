@@ -1,0 +1,24 @@
+# Build outputs
+dist/
+build/
+coverage/
+
+# Dependencies
+node_modules/
+
+# Cache
+.cache/
+.wrangler/
+
+# Config files
+.eslintrc.js
+.prettierrc.js
+jest.config.js
+*.config.js
+*.config.ts
+
+# Other
+.git/
+.github/
+.vscode/
+.direnv/

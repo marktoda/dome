@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import type { Response } from 'express';
 
 /**
  * Standard API response interface
@@ -18,7 +18,7 @@ export interface ApiResponse<T = any> {
 
 /**
  * Send a success response
- * 
+ *
  * @param res Express response object
  * @param data Response data
  * @param meta Optional metadata
@@ -28,7 +28,7 @@ export function sendSuccess<T>(
   res: Response,
   data: T,
   meta?: Record<string, any>,
-  statusCode = 200
+  statusCode = 200,
 ): void {
   const response: ApiResponse<T> = {
     success: true,
@@ -44,7 +44,7 @@ export function sendSuccess<T>(
 
 /**
  * Send an error response
- * 
+ *
  * @param res Express response object
  * @param code Error code
  * @param message Error message
@@ -56,7 +56,7 @@ export function sendError(
   code: string,
   message: string,
   details?: any,
-  statusCode = 400
+  statusCode = 400,
 ): void {
   const response: ApiResponse = {
     success: false,
@@ -75,22 +75,18 @@ export function sendError(
 
 /**
  * Send a created response (201 Created)
- * 
+ *
  * @param res Express response object
  * @param data Response data
  * @param meta Optional metadata
  */
-export function sendCreated<T>(
-  res: Response,
-  data: T,
-  meta?: Record<string, any>
-): void {
+export function sendCreated<T>(res: Response, data: T, meta?: Record<string, any>): void {
   sendSuccess(res, data, meta, 201);
 }
 
 /**
  * Send a no content response (204 No Content)
- * 
+ *
  * @param res Express response object
  */
 export function sendNoContent(res: Response): void {
@@ -99,7 +95,7 @@ export function sendNoContent(res: Response): void {
 
 /**
  * Send a paginated response
- * 
+ *
  * @param res Express response object
  * @param data Response data
  * @param page Current page number
@@ -113,10 +109,10 @@ export function sendPaginated<T>(
   page: number,
   limit: number,
   total: number,
-  statusCode = 200
+  statusCode = 200,
 ): void {
   const totalPages = Math.ceil(total / limit);
-  
+
   sendSuccess(
     res,
     data,
@@ -129,13 +125,13 @@ export function sendPaginated<T>(
         hasMore: page < totalPages,
       },
     },
-    statusCode
+    statusCode,
   );
 }
 
 /**
  * Send a cursor-paginated response
- * 
+ *
  * @param res Express response object
  * @param data Response data
  * @param cursor Current cursor
@@ -149,7 +145,7 @@ export function sendCursorPaginated<T>(
   cursor: string | null,
   nextCursor: string | null,
   count: number,
-  statusCode = 200
+  statusCode = 200,
 ): void {
   sendSuccess(
     res,
@@ -162,6 +158,6 @@ export function sendCursorPaginated<T>(
         hasMore: nextCursor !== null,
       },
     },
-    statusCode
+    statusCode,
   );
 }

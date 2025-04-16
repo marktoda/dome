@@ -427,11 +427,11 @@ The Ingestor Service will use the Telegram Authentication Service to:
 
 ```typescript
 // Example integration in Ingestor Service
-import { TelegramSessionManager } from "@communicator/telegram-auth";
+import { TelegramSessionManager } from '@communicator/telegram-auth';
 
 // Initialize session manager
 const sessionManager = new TelegramSessionManager({
-  endpoint: "https://telegram-auth.example.com/api/telegram-auth",
+  endpoint: 'https://telegram-auth.example.com/api/telegram-auth',
 });
 
 // Get session for a user
@@ -440,7 +440,7 @@ const session = await sessionManager.getSession(userId);
 // Use session with GramJS to fetch messages
 const client = new TelegramClient(session, apiId, apiHash);
 await client.connect();
-const messages = await client.getMessages("channel_name", { limit: 100 });
+const messages = await client.getMessages('channel_name', { limit: 100 });
 ```
 
 ### Integration with Other Platform Services
@@ -721,12 +721,12 @@ services/telegram-auth/
 ### Auth Routes (routes/auth.ts)
 
 ```typescript
-import { Hono } from "hono";
-import { zValidator } from "@hono/zod-validator";
-import { z } from "zod";
-import { TelegramAuthHandler } from "../handlers/auth-handler";
-import { SessionManager } from "../lib/session-manager";
-import { ApiResponse } from "@communicator/common";
+import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
+import { TelegramAuthHandler } from '../handlers/auth-handler';
+import { SessionManager } from '../lib/session-manager';
+import { ApiResponse } from '@communicator/common';
 
 // Environment bindings
 type Bindings = {
@@ -744,13 +744,10 @@ const sendCodeSchema = z.object({
   phoneNumber: z.string().min(6).max(15),
 });
 
-router.post("/send-code", zValidator("json", sendCodeSchema), async (c) => {
-  const { phoneNumber } = c.req.valid("json");
+router.post('/send-code', zValidator('json', sendCodeSchema), async c => {
+  const { phoneNumber } = c.req.valid('json');
 
-  const authHandler = new TelegramAuthHandler(
-    c.env.TELEGRAM_API_ID,
-    c.env.TELEGRAM_API_HASH
-  );
+  const authHandler = new TelegramAuthHandler(c.env.TELEGRAM_API_ID, c.env.TELEGRAM_API_HASH);
 
   try {
     const result = await authHandler.sendAuthCode(phoneNumber);
@@ -767,8 +764,8 @@ router.post("/send-code", zValidator("json", sendCodeSchema), async (c) => {
     const response: ApiResponse = {
       success: false,
       error: {
-        code: error.code || "INTERNAL_SERVER_ERROR",
-        message: error.message || "An unexpected error occurred",
+        code: error.code || 'INTERNAL_SERVER_ERROR',
+        message: error.message || 'An unexpected error occurred',
       },
     };
 
@@ -783,13 +780,10 @@ const verifyCodeSchema = z.object({
   code: z.string().min(1).max(10),
 });
 
-router.post("/verify-code", zValidator("json", verifyCodeSchema), async (c) => {
-  const { phoneNumber, phoneCodeHash, code } = c.req.valid("json");
+router.post('/verify-code', zValidator('json', verifyCodeSchema), async c => {
+  const { phoneNumber, phoneCodeHash, code } = c.req.valid('json');
 
-  const authHandler = new TelegramAuthHandler(
-    c.env.TELEGRAM_API_ID,
-    c.env.TELEGRAM_API_HASH
-  );
+  const authHandler = new TelegramAuthHandler(c.env.TELEGRAM_API_ID, c.env.TELEGRAM_API_HASH);
 
   const sessionManager = new SessionManager(c.env.DB, c.env.SESSION_SECRET);
 
@@ -798,7 +792,7 @@ router.post("/verify-code", zValidator("json", verifyCodeSchema), async (c) => {
     const { sessionString, userId } = await authHandler.verifyAuthCode(
       phoneNumber,
       phoneCodeHash,
-      code
+      code,
     );
 
     // Save the session
@@ -823,8 +817,8 @@ router.post("/verify-code", zValidator("json", verifyCodeSchema), async (c) => {
     const response: ApiResponse = {
       success: false,
       error: {
-        code: error.code || "INTERNAL_SERVER_ERROR",
-        message: error.message || "An unexpected error occurred",
+        code: error.code || 'INTERNAL_SERVER_ERROR',
+        message: error.message || 'An unexpected error occurred',
       },
     };
 
@@ -838,12 +832,12 @@ export default router;
 ### Encryption Utilities (utils/crypto.ts)
 
 ```typescript
-import { subtle } from "crypto";
+import { subtle } from 'crypto';
 
 export async function encrypt(
   data: string,
   masterKey: string,
-  salt: string
+  salt: string,
 ): Promise<{ encryptedData: string; iv: string }> {
   // Import the master key
   const key = await importKey(masterKey);
@@ -860,11 +854,11 @@ export async function encrypt(
 
   const encryptedBuffer = await subtle.encrypt(
     {
-      name: "AES-GCM",
+      name: 'AES-GCM',
       iv,
     },
     derivedKey,
-    dataBuffer
+    dataBuffer,
   );
 
   // Convert to Base64 for storage
@@ -882,7 +876,7 @@ export async function decrypt(
   encryptedData: string,
   iv: string,
   masterKey: string,
-  salt: string
+  salt: string,
 ): Promise<string> {
   // Import the master key
   const key = await importKey(masterKey);
@@ -906,11 +900,11 @@ export async function decrypt(
   // Decrypt the data
   const decryptedBuffer = await subtle.decrypt(
     {
-      name: "AES-GCM",
+      name: 'AES-GCM',
       iv: ivBuffer,
     },
     derivedKey,
-    encryptedBuffer
+    encryptedBuffer,
   );
 
   // Convert back to string
@@ -922,29 +916,24 @@ async function importKey(keyString: string): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const keyData = encoder.encode(keyString);
 
-  return await subtle.importKey("raw", keyData, { name: "PBKDF2" }, false, [
-    "deriveKey",
-  ]);
+  return await subtle.importKey('raw', keyData, { name: 'PBKDF2' }, false, ['deriveKey']);
 }
 
-async function deriveKey(
-  masterKey: CryptoKey,
-  salt: string
-): Promise<CryptoKey> {
+async function deriveKey(masterKey: CryptoKey, salt: string): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const saltBuffer = encoder.encode(salt);
 
   return await subtle.deriveKey(
     {
-      name: "PBKDF2",
+      name: 'PBKDF2',
       salt: saltBuffer,
       iterations: 100000,
-      hash: "SHA-256",
+      hash: 'SHA-256',
     },
     masterKey,
-    { name: "AES-GCM", length: 256 },
+    { name: 'AES-GCM', length: 256 },
     false,
-    ["encrypt", "decrypt"]
+    ['encrypt', 'decrypt'],
   );
 }
 ```
@@ -970,23 +959,18 @@ export class TelegramAuthClient {
     sessionId: string;
     expiresAt: Date;
   }> {
-    const response = await fetch(
-      `${this.endpoint}/api/telegram-auth/sessions/user/${userId}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `ApiKey ${this.apiKey}`,
-          "X-Service-ID": this.serviceId,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await fetch(`${this.endpoint}/api/telegram-auth/sessions/user/${userId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `ApiKey ${this.apiKey}`,
+        'X-Service-ID': this.serviceId,
+        'Content-Type': 'application/json',
+      },
+    });
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(
-        `Failed to get session: ${error.error?.message || response.statusText}`
-      );
+      throw new Error(`Failed to get session: ${error.error?.message || response.statusText}`);
     }
 
     const data = await response.json();
@@ -1006,11 +990,11 @@ export class TelegramAuthClient {
     // Create a TelegramClient with the session
     const client = new TelegramClient(
       session,
-      parseInt(process.env.TELEGRAM_API_ID || "0", 10),
-      process.env.TELEGRAM_API_HASH || "",
+      parseInt(process.env.TELEGRAM_API_ID || '0', 10),
+      process.env.TELEGRAM_API_HASH || '',
       {
         connectionRetries: 3,
-      }
+      },
     );
 
     // Connect the client

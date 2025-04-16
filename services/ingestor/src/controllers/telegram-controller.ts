@@ -1,13 +1,13 @@
-import { Context } from 'hono';
-import { ApiResponse } from '@communicator/common';
-import { ITelegramService } from '../services/telegram-service-interface';
+import type { Context } from 'hono';
+import type { ApiResponse } from '@communicator/common';
+import type { ITelegramService } from '../services/telegram-service-interface';
 
 /**
  * Controller for Telegram-related endpoints
  */
 export class TelegramController {
   private telegramService: ITelegramService;
-  
+
   /**
    * Create a new TelegramController
    * @param telegramService Telegram service
@@ -25,31 +25,30 @@ export class TelegramController {
     try {
       const { userId, source } = c.req.param();
       const { limit, offsetId } = c.req.query();
-      
+
       // Validate parameters
       if (!userId || !source) {
         const response: ApiResponse = {
           success: false,
           error: {
             code: 'INVALID_PARAMETERS',
-            message: 'Missing required parameters: userId and source'
-          }
+            message: 'Missing required parameters: userId and source',
+          },
         };
         return c.json(response, 400);
       }
-      
+
       // Parse parameters
       const userIdNum = parseInt(userId, 10);
       const limitNum = limit ? parseInt(limit, 10) : undefined;
       const offsetIdNum = offsetId ? parseInt(offsetId, 10) : undefined;
-      
+
       // Collect messages
-      const messages = await this.telegramService.collectMessages(
-        userIdNum,
-        source,
-        { limit: limitNum, offsetId: offsetIdNum }
-      );
-      
+      const messages = await this.telegramService.collectMessages(userIdNum, source, {
+        limit: limitNum,
+        offsetId: offsetIdNum,
+      });
+
       // Return response
       const response: ApiResponse = {
         success: true,
@@ -57,22 +56,22 @@ export class TelegramController {
           messages,
           source,
           userId: userIdNum,
-          count: messages.length
-        }
+          count: messages.length,
+        },
       };
-      
+
       return c.json(response);
     } catch (error) {
       console.error('Error getting messages:', error);
-      
+
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'TELEGRAM_ERROR',
-          message: error instanceof Error ? error.message : String(error)
-        }
+          message: error instanceof Error ? error.message : String(error),
+        },
       };
-      
+
       return c.json(response, 500);
     }
   }
@@ -86,31 +85,31 @@ export class TelegramController {
     try {
       const { userId, source } = c.req.param();
       const { limit, offsetId, mediaType } = c.req.query();
-      
+
       // Validate parameters
       if (!userId || !source) {
         const response: ApiResponse = {
           success: false,
           error: {
             code: 'INVALID_PARAMETERS',
-            message: 'Missing required parameters: userId and source'
-          }
+            message: 'Missing required parameters: userId and source',
+          },
         };
         return c.json(response, 400);
       }
-      
+
       // Parse parameters
       const userIdNum = parseInt(userId, 10);
       const limitNum = limit ? parseInt(limit, 10) : undefined;
       const offsetIdNum = offsetId ? parseInt(offsetId, 10) : undefined;
-      
+
       // Collect media
-      const media = await this.telegramService.collectMedia(
-        userIdNum,
-        source,
-        { limit: limitNum, offsetId: offsetIdNum, mediaType }
-      );
-      
+      const media = await this.telegramService.collectMedia(userIdNum, source, {
+        limit: limitNum,
+        offsetId: offsetIdNum,
+        mediaType,
+      });
+
       // Return response
       const response: ApiResponse = {
         success: true,
@@ -118,22 +117,22 @@ export class TelegramController {
           media,
           source,
           userId: userIdNum,
-          count: media.length
-        }
+          count: media.length,
+        },
       };
-      
+
       return c.json(response);
     } catch (error) {
       console.error('Error getting media:', error);
-      
+
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'TELEGRAM_ERROR',
-          message: error instanceof Error ? error.message : String(error)
-        }
+          message: error instanceof Error ? error.message : String(error),
+        },
       };
-      
+
       return c.json(response, 500);
     }
   }
@@ -146,47 +145,47 @@ export class TelegramController {
   async getSourceInfo(c: Context): Promise<Response> {
     try {
       const { userId, source } = c.req.param();
-      
+
       // Validate parameters
       if (!userId || !source) {
         const response: ApiResponse = {
           success: false,
           error: {
             code: 'INVALID_PARAMETERS',
-            message: 'Missing required parameters: userId and source'
-          }
+            message: 'Missing required parameters: userId and source',
+          },
         };
         return c.json(response, 400);
       }
-      
+
       // Parse parameters
       const userIdNum = parseInt(userId, 10);
-      
+
       // Get source info
       const sourceInfo = await this.telegramService.getSourceInfo(userIdNum, source);
-      
+
       // Return response
       const response: ApiResponse = {
         success: true,
         data: {
           sourceInfo,
           source,
-          userId: userIdNum
-        }
+          userId: userIdNum,
+        },
       };
-      
+
       return c.json(response);
     } catch (error) {
       console.error('Error getting source info:', error);
-      
+
       const response: ApiResponse = {
         success: false,
         error: {
           code: 'TELEGRAM_ERROR',
-          message: error instanceof Error ? error.message : String(error)
-        }
+          message: error instanceof Error ? error.message : String(error),
+        },
       };
-      
+
       return c.json(response, 500);
     }
   }

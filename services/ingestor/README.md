@@ -91,6 +91,7 @@ service = "auth-telegram"
 ### Security Considerations
 
 The integration follows these security best practices:
+
 1. **Secure Session Handling**: Sessions are securely stored and accessed through the Telegram Authentication Service
 2. **Service Bindings**: Cloudflare service bindings provide secure, direct communication between services
 3. **Error Handling**: Proper error handling and logging for security-related issues
@@ -113,22 +114,18 @@ const telegramAuthClient = new TelegramAuthClient({
   telegramAuth: env.TELEGRAM_AUTH, // Service binding
   serviceId: 'ingestor-service',
   retryAttempts: 3,
-  retryDelay: 2000
+  retryDelay: 2000,
 });
 
 // Initialize the Telegram Service
 const telegramService = new TelegramService({
   telegramApiId: 12345,
   telegramApiHash: 'your-api-hash',
-  authClient: telegramAuthClient
+  authClient: telegramAuthClient,
 });
 
 // Collect messages from a channel
-const messages = await telegramService.collectMessages(
-  userId,
-  'channel_username',
-  { limit: 100 }
-);
+const messages = await telegramService.collectMessages(userId, 'channel_username', { limit: 100 });
 ```
 
 #### Using the Telegram Proxy Service
@@ -144,7 +141,7 @@ const telegramAuthClient = new TelegramAuthClient({
   telegramAuth: env.TELEGRAM_AUTH, // Service binding
   serviceId: 'ingestor-service',
   retryAttempts: 3,
-  retryDelay: 2000
+  retryDelay: 2000,
 });
 
 // Initialize the Telegram Proxy Client
@@ -153,7 +150,7 @@ const telegramProxyClient = new TelegramProxyClient({
   apiKey: 'your-api-key',
   maxRetries: 3,
   retryDelay: 2000,
-  pollTimeout: 10
+  pollTimeout: 10,
 });
 
 // Initialize the Telegram Proxy Service
@@ -162,22 +159,19 @@ const telegramProxyService = new TelegramProxyService({
   telegramApiHash: 'your-api-hash',
   authClient: telegramAuthClient,
   proxyClient: telegramProxyClient,
-  useProxyService: true
+  useProxyService: true,
 });
 
 // Collect messages from a channel
-const messages = await telegramProxyService.collectMessages(
-  userId,
-  'channel_username',
-  { limit: 100 }
-);
+const messages = await telegramProxyService.collectMessages(userId, 'channel_username', {
+  limit: 100,
+});
 
 // Poll for new messages
-const newMessages = await telegramProxyService.pollMessages(
-  userId,
-  'channel_username',
-  { timeout: 10, limit: 50 }
-);
+const newMessages = await telegramProxyService.pollMessages(userId, 'channel_username', {
+  timeout: 10,
+  limit: 50,
+});
 ```
 
 ## Development

@@ -1,4 +1,5 @@
-import Redis, { RedisOptions, Cluster, ClusterOptions } from 'ioredis';
+import type { RedisOptions, Cluster, ClusterOptions } from 'ioredis';
+import Redis from 'ioredis';
 import EventEmitter from 'events';
 import { REDIS } from '../config';
 import { logger } from '../utils/logger';
@@ -77,10 +78,10 @@ export class RedisService extends EventEmitter {
   private pubSubClient: RedisClient | null = null;
   private status: RedisConnectionStatus = RedisConnectionStatus.DISCONNECTED;
   private options: RedisConnectionOptions;
-  private reconnectAttempts: number = 0;
+  private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
-  
+
   // Explicitly declare emit method to fix TypeScript errors
   public emit(event: string | symbol, ...args: any[]): boolean {
     return super.emit(event, ...args);
@@ -94,7 +95,7 @@ export class RedisService extends EventEmitter {
    */
   constructor(options?: Partial<RedisConnectionOptions>) {
     super();
-    
+
     // Set default options
     this.options = {
       host: REDIS.HOST,
@@ -119,40 +120,44 @@ export class RedisService extends EventEmitter {
    * Connect to Redis
    */
   public async connect(): Promise<void> {
-    if (this.status === RedisConnectionStatus.CONNECTED || 
-        this.status === RedisConnectionStatus.CONNECTING) {
+    if (
+      this.status === RedisConnectionStatus.CONNECTED ||
+      this.status === RedisConnectionStatus.CONNECTING
+    ) {
       return;
     }
 
     this.status = RedisConnectionStatus.CONNECTING;
     this.emit('status', this.status);
-    
+
     try {
       // Initialize the connection pool
       await this.initializeConnectionPool();
-      
+
       // Initialize the pub/sub client
       await this.initializePubSubClient();
-      
+
       // Start health check interval
       this.startHealthCheck();
-      
+
       this.status = RedisConnectionStatus.CONNECTED;
       this.emit('status', this.status);
       this.emit('connect');
-      
+
       logger.info('Redis service connected');
     } catch (error) {
       this.status = RedisConnectionStatus.ERROR;
       this.emit('status', this.status);
       this.emit('error', error);
-      
+
       logger.error('Redis connection failed:', error);
-      
+
       // Attempt to reconnect
       this.scheduleReconnect();
-      
-      throw new RedisError(`Failed to connect to Redis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+      throw new RedisError(
+        `Failed to connect to Redis: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
     }
   }
 
@@ -165,49 +170,55 @@ export class RedisService extends EventEmitter {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
     }
-    
+
     // Clear reconnect timer
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    
+
     // Close all clients
     const closePromises: Promise<void>[] = [];
-    
+
     for (const [id, client] of this.clients.entries()) {
       closePromises.push(
-        client.quit().then(() => {
-          logger.debug(`Redis client ${id} disconnected`);
-        }).catch((error: Error) => {
-          logger.warn(`Error disconnecting Redis client ${id}:`, error);
-        })
+        client
+          .quit()
+          .then(() => {
+            logger.debug(`Redis client ${id} disconnected`);
+          })
+          .catch((error: Error) => {
+            logger.warn(`Error disconnecting Redis client ${id}:`, error);
+          }),
       );
     }
-    
+
     // Close pub/sub client
     if (this.pubSubClient) {
       closePromises.push(
-        this.pubSubClient.quit().then(() => {
-          logger.debug('Redis pub/sub client disconnected');
-        }).catch((error: Error) => {
-          logger.warn('Error disconnecting Redis pub/sub client:', error);
-        })
+        this.pubSubClient
+          .quit()
+          .then(() => {
+            logger.debug('Redis pub/sub client disconnected');
+          })
+          .catch((error: Error) => {
+            logger.warn('Error disconnecting Redis pub/sub client:', error);
+          }),
       );
     }
-    
+
     // Wait for all clients to close
     await Promise.all(closePromises);
-    
+
     // Clear client maps
     this.clients.clear();
     this.pubSubClient = null;
-    
+
     // Update status
     this.status = RedisConnectionStatus.DISCONNECTED;
     this.emit('status', this.status);
     this.emit('disconnect');
-    
+
     logger.info('Redis service disconnected');
   }
 
@@ -218,12 +229,12 @@ export class RedisService extends EventEmitter {
     if (this.clients.size === 0) {
       throw new RedisError('Redis service not connected');
     }
-    
+
     // Get a random client from the pool
     const clientIds = Array.from(this.clients.keys());
     const randomIndex = Math.floor(Math.random() * clientIds.length);
     const clientId = clientIds[randomIndex];
-    
+
     return this.clients.get(clientId)!;
   }
 
@@ -234,7 +245,7 @@ export class RedisService extends EventEmitter {
     if (this.clients.size === 0) {
       return false;
     }
-    
+
     try {
       // Try to ping a client
       const client = this.getClient();
@@ -256,11 +267,7 @@ export class RedisService extends EventEmitter {
   /**
    * Set a key with expiration
    */
-  public async setWithExpiry(
-    key: string,
-    value: string,
-    expirySeconds: number
-  ): Promise<void> {
+  public async setWithExpiry(key: string, value: string, expirySeconds: number): Promise<void> {
     const client = this.getClient();
     await client.set(key, value, 'EX', expirySeconds);
   }
@@ -309,7 +316,7 @@ export class RedisService extends EventEmitter {
   /**
    * Increment a key
    */
-  public async increment(key: string, by: number = 1): Promise<number> {
+  public async increment(key: string, by = 1): Promise<number> {
     const client = this.getClient();
     return by === 1 ? client.incr(key) : client.incrby(key, by);
   }
@@ -317,7 +324,7 @@ export class RedisService extends EventEmitter {
   /**
    * Decrement a key
    */
-  public async decrement(key: string, by: number = 1): Promise<number> {
+  public async decrement(key: string, by = 1): Promise<number> {
     const client = this.getClient();
     return by === 1 ? client.decr(key) : client.decrby(key, by);
   }
@@ -327,14 +334,13 @@ export class RedisService extends EventEmitter {
    */
   public async setNX(key: string, value: string, expirySeconds?: number): Promise<boolean> {
     const client = this.getClient();
-    
+
     if (expirySeconds) {
       const result = await client.set(key, value, 'EX', expirySeconds, 'NX');
       return result === 'OK';
-    } else {
-      const result = await client.setnx(key, value);
-      return result === 1;
     }
+    const result = await client.setnx(key, value);
+    return result === 1;
   }
 
   /**
@@ -442,10 +448,10 @@ export class RedisService extends EventEmitter {
     key: string,
     min: number | string,
     max: number | string,
-    withScores: boolean = false
+    withScores = false,
   ): Promise<string[]> {
     const client = this.getClient();
-    return withScores 
+    return withScores
       ? client.zrangebyscore(key, min, max, 'WITHSCORES')
       : client.zrangebyscore(key, min, max);
   }
@@ -456,7 +462,7 @@ export class RedisService extends EventEmitter {
   public async zremrangebyscore(
     key: string,
     min: number | string,
-    max: number | string
+    max: number | string,
   ): Promise<number> {
     const client = this.getClient();
     return client.zremrangebyscore(key, min, max);
@@ -505,12 +511,14 @@ export class RedisService extends EventEmitter {
   /**
    * Execute a transaction
    */
-  public async transaction<T>(callback: (multi: ReturnType<RedisClient['multi']>) => void): Promise<T[]> {
+  public async transaction<T>(
+    callback: (multi: ReturnType<RedisClient['multi']>) => void,
+  ): Promise<T[]> {
     const client = this.getClient();
     const multi = client.multi();
-    
+
     callback(multi);
-    
+
     return multi.exec() as Promise<T[]>;
   }
 
@@ -521,7 +529,7 @@ export class RedisService extends EventEmitter {
     if (!this.pubSubClient) {
       throw new RedisError('Redis pub/sub client not initialized');
     }
-    
+
     return this.pubSubClient.publish(channel, message);
   }
 
@@ -530,21 +538,21 @@ export class RedisService extends EventEmitter {
    */
   public async subscribe(
     channel: string,
-    callback: (message: RedisPubSubMessage) => void
+    callback: (message: RedisPubSubMessage) => void,
   ): Promise<void> {
     if (!this.pubSubClient) {
       throw new RedisError('Redis pub/sub client not initialized');
     }
-    
+
     // Add the callback to the subscriptions map
     if (!this.subscriptions.has(channel)) {
       this.subscriptions.set(channel, new Set());
-      
+
       // Subscribe to the channel
       await this.pubSubClient.subscribe(channel);
       logger.debug(`Subscribed to Redis channel: ${channel}`);
     }
-    
+
     this.subscriptions.get(channel)!.add(callback);
   }
 
@@ -553,20 +561,20 @@ export class RedisService extends EventEmitter {
    */
   public async unsubscribe(
     channel: string,
-    callback?: (message: RedisPubSubMessage) => void
+    callback?: (message: RedisPubSubMessage) => void,
   ): Promise<void> {
     if (!this.pubSubClient) {
       return;
     }
-    
+
     if (!this.subscriptions.has(channel)) {
       return;
     }
-    
+
     if (callback) {
       // Remove the specific callback
       this.subscriptions.get(channel)!.delete(callback);
-      
+
       // If there are no more callbacks, unsubscribe from the channel
       if (this.subscriptions.get(channel)!.size === 0) {
         this.subscriptions.delete(channel);
@@ -586,21 +594,21 @@ export class RedisService extends EventEmitter {
    */
   public async psubscribe(
     pattern: string,
-    callback: (message: RedisPubSubMessage) => void
+    callback: (message: RedisPubSubMessage) => void,
   ): Promise<void> {
     if (!this.pubSubClient) {
       throw new RedisError('Redis pub/sub client not initialized');
     }
-    
+
     // Add the callback to the pattern subscriptions map
     if (!this.patternSubscriptions.has(pattern)) {
       this.patternSubscriptions.set(pattern, new Set());
-      
+
       // Subscribe to the pattern
       await this.pubSubClient.psubscribe(pattern);
       logger.debug(`Subscribed to Redis pattern: ${pattern}`);
     }
-    
+
     this.patternSubscriptions.get(pattern)!.add(callback);
   }
 
@@ -609,20 +617,20 @@ export class RedisService extends EventEmitter {
    */
   public async punsubscribe(
     pattern: string,
-    callback?: (message: RedisPubSubMessage) => void
+    callback?: (message: RedisPubSubMessage) => void,
   ): Promise<void> {
     if (!this.pubSubClient) {
       return;
     }
-    
+
     if (!this.patternSubscriptions.has(pattern)) {
       return;
     }
-    
+
     if (callback) {
       // Remove the specific callback
       this.patternSubscriptions.get(pattern)!.delete(callback);
-      
+
       // If there are no more callbacks, unsubscribe from the pattern
       if (this.patternSubscriptions.get(pattern)!.size === 0) {
         this.patternSubscriptions.delete(pattern);
@@ -643,20 +651,20 @@ export class RedisService extends EventEmitter {
   private async initializeConnectionPool(): Promise<void> {
     const poolSize = this.options.poolSize || 10;
     const minPoolSize = this.options.minPoolSize || 2;
-    
+
     // Create the initial pool of clients
     const initialPoolSize = Math.min(poolSize, Math.max(minPoolSize, 2));
-    
+
     for (let i = 0; i < initialPoolSize; i++) {
       const clientId = `client-${i}`;
       const client = this.createRedisClient(clientId);
-      
+
       // Set up event handlers
       this.setupClientEventHandlers(client, clientId);
-      
+
       // Add to the pool
       this.clients.set(clientId, client);
-      
+
       // Test connection
       try {
         await client.ping();
@@ -666,7 +674,7 @@ export class RedisService extends EventEmitter {
         throw error;
       }
     }
-    
+
     logger.info(`Redis connection pool initialized with ${initialPoolSize} clients`);
   }
 
@@ -676,16 +684,16 @@ export class RedisService extends EventEmitter {
   private async initializePubSubClient(): Promise<void> {
     const clientId = 'pubsub';
     const client = this.createRedisClient(clientId);
-    
+
     // Set up event handlers
     this.setupClientEventHandlers(client, clientId);
-    
+
     // Set up pub/sub event handlers
     client.on('message', (channel: string, message: string) => {
       if (this.subscriptions.has(channel)) {
         const callbacks = this.subscriptions.get(channel)!;
         const messageObj: RedisPubSubMessage = { channel, message };
-        
+
         for (const callback of callbacks) {
           try {
             callback(messageObj);
@@ -695,22 +703,25 @@ export class RedisService extends EventEmitter {
         }
       }
     });
-    
+
     client.on('pmessage', (pattern: string, channel: string, message: string) => {
       if (this.patternSubscriptions.has(pattern)) {
         const callbacks = this.patternSubscriptions.get(pattern)!;
         const messageObj: RedisPubSubMessage = { channel, message, pattern };
-        
+
         for (const callback of callbacks) {
           try {
             callback(messageObj);
           } catch (error) {
-            logger.error(`Error in Redis pattern subscription callback for pattern ${pattern}:`, error);
+            logger.error(
+              `Error in Redis pattern subscription callback for pattern ${pattern}:`,
+              error,
+            );
           }
         }
       }
     });
-    
+
     // Test connection
     try {
       await client.ping();
@@ -719,7 +730,7 @@ export class RedisService extends EventEmitter {
       logger.error('Redis pub/sub client connection failed:', error);
       throw error;
     }
-    
+
     this.pubSubClient = client;
   }
 
@@ -728,18 +739,18 @@ export class RedisService extends EventEmitter {
    */
   private createRedisClient(clientId: string): RedisClient {
     const connectionName = `${this.options.connectionName || 'redis-service'}-${clientId}`;
-    
+
     if (this.options.cluster) {
       // Create a cluster client
       if (!this.options.clusterNodes || this.options.clusterNodes.length === 0) {
         throw new RedisError('Cluster nodes must be provided for cluster mode');
       }
-      
+
       const nodes = this.options.clusterNodes.map(node => ({
         host: node.host,
         port: node.port,
       }));
-      
+
       const clusterOptions: ClusterOptions = {
         redisOptions: {
           password: this.options.password,
@@ -751,24 +762,23 @@ export class RedisService extends EventEmitter {
           // retryStrategy is handled separately
         },
       };
-      
+
       return new Redis.Cluster(nodes, clusterOptions);
-    } else {
-      // Create a standalone client
-      const options: RedisOptions = {
-        host: this.options.host,
-        port: this.options.port,
-        password: this.options.password,
-        db: this.options.db,
-        keyPrefix: this.options.keyPrefix,
-        connectionName,
-        tls: this.options.tls ? {} : undefined,
-        commandTimeout: this.options.commandTimeout,
-        // retryStrategy is handled separately
-      };
-      
-      return new Redis(options);
     }
+    // Create a standalone client
+    const options: RedisOptions = {
+      host: this.options.host,
+      port: this.options.port,
+      password: this.options.password,
+      db: this.options.db,
+      keyPrefix: this.options.keyPrefix,
+      connectionName,
+      tls: this.options.tls ? {} : undefined,
+      commandTimeout: this.options.commandTimeout,
+      // retryStrategy is handled separately
+    };
+
+    return new Redis(options);
   }
 
   /**
@@ -779,22 +789,22 @@ export class RedisService extends EventEmitter {
       logger.debug(`Redis client ${clientId} connected`);
       this.emit('client:connect', clientId);
     });
-    
+
     client.on('ready', () => {
       logger.debug(`Redis client ${clientId} ready`);
       this.emit('client:ready', clientId);
     });
-    
+
     client.on('error', (err: Error) => {
       logger.error(`Redis client ${clientId} error:`, err);
       this.emit('client:error', clientId, err);
     });
-    
+
     client.on('reconnecting', (time: number) => {
       logger.debug(`Redis client ${clientId} reconnecting in ${time}ms`);
       this.emit('client:reconnecting', clientId, time);
     });
-    
+
     client.on('end', () => {
       logger.debug(`Redis client ${clientId} connection closed`);
       this.emit('client:end', clientId);
@@ -807,21 +817,21 @@ export class RedisService extends EventEmitter {
   private createRetryStrategy(): (times: number) => number | void {
     return (times: number) => {
       const maxAttempts = this.options.maxReconnectAttempts || 20;
-      
+
       if (times > maxAttempts) {
         logger.error(`Redis reconnection failed after ${times} attempts`);
         return;
       }
-      
+
       const baseDelay = this.options.reconnectDelay || 100;
       const maxDelay = this.options.maxReconnectDelay || 10000;
-      
+
       // Exponential backoff with jitter
       const delay = Math.min(
         Math.floor(baseDelay * Math.pow(1.5, times) * (0.8 + Math.random() * 0.4)),
-        maxDelay
+        maxDelay,
       );
-      
+
       logger.debug(`Redis reconnection attempt ${times} in ${delay}ms`);
       return delay;
     };
@@ -834,52 +844,54 @@ export class RedisService extends EventEmitter {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
     }
-    
+
     const maxAttempts = this.options.maxReconnectAttempts || 20;
-    
+
     if (this.reconnectAttempts >= maxAttempts) {
       logger.error(`Redis reconnection failed after ${this.reconnectAttempts} attempts`);
       this.emit('reconnect:fail', this.reconnectAttempts);
       return;
     }
-    
+
     this.reconnectAttempts++;
-    
+
     const baseDelay = this.options.reconnectDelay || 100;
     const maxDelay = this.options.maxReconnectDelay || 10000;
-    
+
     // Exponential backoff with jitter
     const delay = Math.min(
       Math.floor(baseDelay * Math.pow(1.5, this.reconnectAttempts) * (0.8 + Math.random() * 0.4)),
-      maxDelay
+      maxDelay,
     );
-    
-    logger.info(`Redis service reconnection attempt ${this.reconnectAttempts} scheduled in ${delay}ms`);
-    
+
+    logger.info(
+      `Redis service reconnection attempt ${this.reconnectAttempts} scheduled in ${delay}ms`,
+    );
+
     this.status = RedisConnectionStatus.RECONNECTING;
     this.emit('status', this.status);
     this.emit('reconnect:schedule', this.reconnectAttempts, delay);
-    
+
     this.reconnectTimer = setTimeout(async () => {
       try {
         logger.info(`Attempting to reconnect to Redis (attempt ${this.reconnectAttempts})`);
         this.emit('reconnect:attempt', this.reconnectAttempts);
-        
+
         // Close any existing clients
         await this.disconnect();
-        
+
         // Try to connect again
         await this.connect();
-        
+
         // Reset reconnect attempts on success
         this.reconnectAttempts = 0;
         this.emit('reconnect:success');
-        
+
         logger.info('Redis service reconnected successfully');
       } catch (error) {
         logger.error(`Redis reconnection attempt ${this.reconnectAttempts} failed:`, error);
         this.emit('reconnect:error', this.reconnectAttempts, error);
-        
+
         // Schedule another reconnection attempt
         this.scheduleReconnect();
       }
@@ -893,12 +905,12 @@ export class RedisService extends EventEmitter {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
     }
-    
+
     // Run health check every 30 seconds
     this.healthCheckInterval = setInterval(async () => {
       try {
         const isHealthy = await this.healthCheck();
-        
+
         if (!isHealthy && this.status === RedisConnectionStatus.CONNECTED) {
           logger.warn('Redis health check failed, attempting to reconnect');
           this.scheduleReconnect();
@@ -946,7 +958,7 @@ export async function closeRedis(): Promise<void> {
 export async function setWithExpiry(
   key: string,
   value: string,
-  expirySeconds: number
+  expirySeconds: number,
 ): Promise<void> {
   await redisService.setWithExpiry(key, value, expirySeconds);
 }

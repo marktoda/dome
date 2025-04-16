@@ -1,7 +1,7 @@
-import * as pulumi from '@pulumi/pulumi';
+import type * as pulumi from '@pulumi/pulumi';
 import * as cloudflare from '@pulumi/cloudflare';
 import * as fs from 'fs';
-import * as path from 'path';
+// path is not used, so we remove it
 
 /**
  * Deploy a TypeScript Cloudflare Worker
@@ -18,7 +18,7 @@ export function deployWorker(
     accountId: string;
     routes?: string[];
     serviceBindings?: { name: string; service: pulumi.Input<string> }[];
-  }
+  },
 ): cloudflare.WorkerScript {
   // Create the worker script
   const worker = new cloudflare.WorkerScript(name, {
@@ -57,7 +57,7 @@ export function deployRustWorker(
   options: {
     accountId: string;
     routes?: string[];
-  }
+  },
 ): cloudflare.WorkerScript {
   // Create the worker script with WebAssembly content
   const worker = new cloudflare.WorkerScript(name, {

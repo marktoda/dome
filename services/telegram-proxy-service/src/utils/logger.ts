@@ -3,7 +3,7 @@ import { Writable } from 'stream';
 import { LOGGING, SERVER } from '../config';
 import 'winston-daily-rotate-file';
 import { v4 as uuidv4 } from 'uuid';
-import { Request } from 'express';
+import type { Request } from 'express';
 
 // Define log levels
 const levels = {
@@ -47,13 +47,16 @@ const developmentFormat = winston.format.combine(
   winston.format.errors({ stack: true }),
   winston.format.splat(),
   winston.format.colorize({ all: true }),
-  winston.format.printf(({ level, message, timestamp, requestId, ...meta }: Record<string, any>) => {
-    const requestIdStr = requestId ? `[${requestId}] ` : '';
-    const metaStr = Object.keys(meta).length && meta.stack !== message
-      ? `\n${JSON.stringify(meta, null, 2)}`
-      : '';
-    return `${timestamp} ${level}: ${requestIdStr}${message}${metaStr}`;
-  })
+  winston.format.printf(
+    ({ level, message, timestamp, requestId, ...meta }: Record<string, any>) => {
+      const requestIdStr = requestId ? `[${requestId}] ` : '';
+      const metaStr =
+        Object.keys(meta).length && meta.stack !== message
+          ? `\n${JSON.stringify(meta, null, 2)}`
+          : '';
+      return `${timestamp} ${level}: ${requestIdStr}${message}${metaStr}`;
+    },
+  ),
 );
 
 /**
@@ -63,15 +66,14 @@ const productionFormat = winston.format.combine(
   winston.format.timestamp(),
   winston.format.errors({ stack: true }),
   winston.format.splat(),
-  winston.format.json()
+  winston.format.json(),
 );
 
 /**
  * Select the appropriate format based on environment
  */
-const format = SERVER.IS_PRODUCTION || LOGGING.FORMAT === 'json'
-  ? productionFormat
-  : developmentFormat;
+const format =
+  SERVER.IS_PRODUCTION || LOGGING.FORMAT === 'json' ? productionFormat : developmentFormat;
 
 /**
  * Configure transports based on environment
@@ -91,7 +93,7 @@ if (SERVER.IS_PRODUCTION) {
       maxSize: '20m',
       maxFiles: '14d',
       level: 'error',
-    })
+    }),
   );
 
   // Daily rotate file transport for all logs
@@ -101,7 +103,7 @@ if (SERVER.IS_PRODUCTION) {
       datePattern: 'YYYY-MM-DD',
       maxSize: '20m',
       maxFiles: '14d',
-    })
+    }),
   );
 }
 
@@ -132,7 +134,11 @@ export const logStream = new Writable({
  * @param message Optional message
  * @param meta Optional metadata
  */
-export const logRequest = (req: Request, message?: string, meta: Record<string, any> = {}): string => {
+export const logRequest = (
+  req: Request,
+  message?: string,
+  meta: Record<string, any> = {},
+): string => {
   const requestId = getRequestId(req);
   const logData = {
     requestId,
@@ -158,7 +164,7 @@ export const logResponse = (
   req: Request,
   statusCode: number,
   responseTime: number,
-  meta: Record<string, any> = {}
+  meta: Record<string, any> = {},
 ): void => {
   const requestId = getRequestId(req);
   const logData = {

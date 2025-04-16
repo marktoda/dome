@@ -10,10 +10,7 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   collectCoverage: true,
   coverageDirectory: 'coverage',
-  collectCoverageFrom: [
-    'src/**/*.{ts,js}',
-    '!src/**/*.d.ts',
-  ],
+  collectCoverageFrom: ['src/**/*.{ts,js}', '!src/**/*.d.ts'],
   coverageReporters: ['text', 'lcov'],
   // Mock Cloudflare Worker environment
   globals: {

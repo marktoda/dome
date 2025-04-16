@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { RATE_LIMIT } from '../../config';
 import { RateLimitError } from '../../utils/errors';
@@ -25,7 +25,7 @@ const defaultRateLimitOptions = {
 
 /**
  * Create a rate limiter with custom options
- * 
+ *
  * @param options Custom rate limit options
  * @returns Rate limit middleware
  */
@@ -106,22 +106,22 @@ export const trustedServiceRateLimiter = createRateLimiter({
 export const rateLimitBypass = (req: Request, res: Response, next: NextFunction) => {
   // Check for API key or other trusted service identifier
   const apiKey = req.headers['x-api-key'] as string;
-  
+
   // List of trusted API keys that can bypass rate limits
   const trustedApiKeys = (process.env.TRUSTED_API_KEYS || '').split(',').filter(Boolean);
-  
+
   // If the request has a trusted API key, set a flag to bypass rate limits
   if (apiKey && trustedApiKeys.includes(apiKey)) {
     (req as any).bypassRateLimit = true;
   }
-  
+
   next();
 };
 
 /**
  * Conditional rate limiter
  * Applies rate limiting only if the request doesn't have the bypass flag
- * 
+ *
  * @param limiter The rate limiter to apply conditionally
  */
 export function conditionalRateLimit(limiter: any) {
@@ -130,7 +130,7 @@ export function conditionalRateLimit(limiter: any) {
       // Skip rate limiting for trusted services
       return next();
     }
-    
+
     // Apply rate limiting for normal requests
     return limiter(req, res, next);
   };

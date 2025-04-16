@@ -46,16 +46,16 @@ The package provides reusable middleware components for Hono-based services:
 Example usage:
 
 ```typescript
-import { 
-  createRequestContextMiddleware, 
-  createErrorMiddleware, 
-  responseHandlerMiddleware 
+import {
+  createRequestContextMiddleware,
+  createErrorMiddleware,
+  responseHandlerMiddleware,
 } from '@communicator/common';
 
 // In your Hono app setup
-app.use("*", createRequestContextMiddleware());
-app.use("*", createErrorMiddleware(formatZodError));
-app.use("*", responseHandlerMiddleware);
+app.use('*', createRequestContextMiddleware());
+app.use('*', createErrorMiddleware(formatZodError));
+app.use('*', responseHandlerMiddleware);
 ```
 
 ### Types
@@ -88,3 +88,4 @@ To run tests:
 ```bash
 cd packages/common
 pnpm test
+```

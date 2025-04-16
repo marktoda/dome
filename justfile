@@ -47,6 +47,18 @@ test-pkg PACKAGE:
 lint:
     pnpm run lint
 
+# Run linting with auto-fix for all packages
+lint-fix:
+    pnpm run lint:fix
+
+# Run linting for a specific package
+lint-pkg PACKAGE:
+    pnpm --filter {{ PACKAGE }} lint
+
+# Run linting with auto-fix for a specific package
+lint-fix-pkg PACKAGE:
+    pnpm --filter {{ PACKAGE }} lint -- --fix
+
 # Run type checking for all packages
 typecheck:
     pnpm run typecheck
@@ -79,6 +91,8 @@ new-service NAME:
     # Copy the TypeScript template and replace the service name
     cp templates/typescript-service-template.ts services/{{ NAME }}/src/index.ts
     sed -i 's/SERVICE_NAME/{{ NAME }}/g' services/{{ NAME }}/src/index.ts
+    # Create ESLint configuration
+    echo 'module.exports = {\n  extends: ["../../.eslintrc.js"],\n  parserOptions: {\n    project: "./tsconfig.json",\n    tsconfigRootDir: __dirname,\n  },\n  rules: {\n    // Service-specific overrides can be added here\n  },\n};' > services/{{ NAME }}/.eslintrc.js
     @echo "Service {{ NAME }} created successfully!"
 
 # Create a new Rust service (WebAssembly)
@@ -92,6 +106,8 @@ new-rust-service NAME:
     sed -i 's/rust-worker-template/{{ NAME }}/g' services/{{ NAME }}/wrangler.toml
     sed -i 's/rust_worker.wasm/{{ NAME }}.wasm/g' services/{{ NAME }}/wrangler.toml
     sed -i 's/"rust-worker-template"/"{{ NAME }}"/g' services/{{ NAME }}/src/lib.rs
+    # Create a .eslintrc.js file for any JavaScript/TypeScript files in the Rust service
+    echo 'module.exports = {\n  extends: ["../../.eslintrc.js"],\n  parserOptions: {\n    project: "./tsconfig.json",\n    tsconfigRootDir: __dirname,\n  },\n  rules: {\n    // Service-specific overrides can be added here\n  },\n};' > services/{{ NAME }}/.eslintrc.js
     @echo "Rust service {{ NAME }} created successfully!"
 
 # Setup local development environment

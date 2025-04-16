@@ -13,6 +13,7 @@ Welcome to the documentation for the Communicator Cloudflare project. This docum
 The Communicator Cloudflare project is designed to ingest messages from various platforms (Telegram, Twitter, Slack, etc.), process them through an LLM pipeline to categorize, prioritize, summarize, and generate responses based on user feedback. The system is built as a microservices monorepo using Cloudflare Workers, with infrastructure managed by Pulumi.
 
 The project supports two methods of message ingestion:
+
 1. **Pull-based ingestion**: The ingestor service periodically polls external APIs to fetch new messages
 2. **Push-based ingestion**: The push-message-ingestor service provides endpoints that external systems can push messages to directly
 
@@ -92,10 +93,13 @@ For more detailed instructions, refer to the [architecture document](./architect
 When contributing to the project, please follow these guidelines:
 
 1. Use the appropriate service creation commands to create new services:
+
    ```bash
    just new-hono-service my-service-name
    ```
+
    or
+
    ```bash
    just new-rust-service my-rust-service
    ```

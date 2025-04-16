@@ -84,6 +84,7 @@ The `index.ts` file defines the API endpoints:
 The service integrates with Cloudflare Queues to publish messages:
 
 1. The `wrangler.toml` file defines the queue binding:
+
    ```toml
    [[queues.producers]]
    queue = "rawmessages"
@@ -111,6 +112,7 @@ The service can be tested using the following approaches:
 1. **Unit Tests**: Test individual components (validators, services, controllers)
 2. **Integration Tests**: Test the API endpoints with mock queue bindings
 3. **End-to-End Tests**: Test the service with actual queue integration
+
 ## Development and Deployment
 
 ### Local Development
@@ -142,3 +144,4 @@ wrangler deploy
 # or
 pnpm deploy
 pnpm deploy
+```

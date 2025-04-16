@@ -5,11 +5,8 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { TelegramAuthHandler } from '../handlers/auth-handler';
 import { SessionManager } from '../lib/session-manager';
-import { ApiResponse } from '@communicator/common';
-import {
-  sendCodeRequestSchema,
-  verifyCodeRequestSchema
-} from '../utils/validation';
+import type { ApiResponse } from '@communicator/common';
+import { sendCodeRequestSchema, verifyCodeRequestSchema } from '../utils/validation';
 import { rateLimit } from '../middleware/auth';
 
 /**
@@ -40,9 +37,9 @@ router.use('*', rateLimit(10, 60 * 1000));
  * Send code endpoint
  * POST /api/telegram-auth/send-code
  */
-router.post('/send-code', zValidator('json', sendCodeRequestSchema), async (c) => {
+router.post('/send-code', zValidator('json', sendCodeRequestSchema), async c => {
   const { phoneNumber } = c.req.valid('json');
-  
+
   // Create auth handler with proxy configuration if enabled
   const useProxy = c.env.USE_TELEGRAM_PROXY === 'true';
   const authHandler = new TelegramAuthHandler(
@@ -53,30 +50,30 @@ router.post('/send-code', zValidator('json', sendCodeRequestSchema), async (c) =
     {
       useProxy,
       proxyUrl: c.env.TELEGRAM_PROXY_URL || 'http://telegram-proxy-service',
-      apiKey: c.env.TELEGRAM_PROXY_API_KEY
-    }
+      apiKey: c.env.TELEGRAM_PROXY_API_KEY,
+    },
   );
-  
+
   try {
     const result = await authHandler.sendAuthCode(phoneNumber);
-    
+
     const response: ApiResponse = {
       success: true,
-      data: result
+      data: result,
     };
-    
+
     return c.json(response);
   } catch (error: any) {
     console.error(`Error sending code: ${error.message}`);
-    
+
     const response: ApiResponse = {
       success: false,
       error: {
         code: 'SEND_CODE_FAILED',
-        message: error.message || 'An unexpected error occurred'
-      }
+        message: error.message || 'An unexpected error occurred',
+      },
     };
-    
+
     return c.json(response, 500);
   }
 });
@@ -85,9 +82,9 @@ router.post('/send-code', zValidator('json', sendCodeRequestSchema), async (c) =
  * Verify code endpoint
  * POST /api/telegram-auth/verify-code
  */
-router.post('/verify-code', zValidator('json', verifyCodeRequestSchema), async (c) => {
+router.post('/verify-code', zValidator('json', verifyCodeRequestSchema), async c => {
   const { phoneNumber, phoneCodeHash, code } = c.req.valid('json');
-  
+
   // Create auth handler with proxy configuration if enabled
   const useProxy = c.env.USE_TELEGRAM_PROXY === 'true';
   const authHandler = new TelegramAuthHandler(
@@ -98,44 +95,44 @@ router.post('/verify-code', zValidator('json', verifyCodeRequestSchema), async (
     {
       useProxy,
       proxyUrl: c.env.TELEGRAM_PROXY_URL || 'http://telegram-proxy-service',
-      apiKey: c.env.TELEGRAM_PROXY_API_KEY
-    }
+      apiKey: c.env.TELEGRAM_PROXY_API_KEY,
+    },
   );
-  
+
   try {
     // Get device and IP information
     const deviceInfo = c.req.header('User-Agent');
     const ipAddress = c.req.header('CF-Connecting-IP');
-    
+
     // Verify the code with Telegram
     const { sessionId, expiresAt } = await authHandler.verifyAuthCode(
       phoneNumber,
       phoneCodeHash,
       code,
       deviceInfo,
-      ipAddress
+      ipAddress,
     );
-    
+
     const response: ApiResponse = {
       success: true,
       data: {
         sessionId,
-        expiresAt: expiresAt.toISOString()
-      }
+        expiresAt: expiresAt.toISOString(),
+      },
     };
-    
+
     return c.json(response);
   } catch (error: any) {
     console.error(`Error verifying code: ${error.message}`);
-    
+
     const response: ApiResponse = {
       success: false,
       error: {
         code: 'VERIFY_CODE_FAILED',
-        message: error.message || 'An unexpected error occurred'
-      }
+        message: error.message || 'An unexpected error occurred',
+      },
     };
-    
+
     return c.json(response, 500);
   }
 });
@@ -144,58 +141,59 @@ router.post('/verify-code', zValidator('json', verifyCodeRequestSchema), async (
  * Status endpoint
  * GET /api/telegram-auth/status
  */
-router.get('/status', async (c) => {
+router.get('/status', async c => {
   // Get session ID from header or query
   const sessionId = c.req.header('X-Session-ID') || c.req.query('sessionId');
-  
+
   if (!sessionId) {
     const response: ApiResponse = {
       success: true,
       data: {
-        authenticated: false
-      }
+        authenticated: false,
+      },
     };
-    
+
     return c.json(response);
   }
-  
-  const sessionManager = new SessionManager(
-    c.env.DB,
-    c.env.SESSION_SECRET
-  );
-  
+
+  const sessionManager = new SessionManager(c.env.DB, c.env.SESSION_SECRET);
+
   try {
     // Try to get the session
     await sessionManager.getSession(sessionId);
-    
+
     // Get session details
-    const sessions = await c.env.DB.prepare(`
+    const sessions = await c.env.DB.prepare(
+      `
       SELECT user_id, expires_at FROM telegram_sessions
       WHERE id = ? AND is_active = 1
-    `).bind(sessionId).first<{ user_id: number; expires_at: string }>();
-    
+    `,
+    )
+      .bind(sessionId)
+      .first<{ user_id: number; expires_at: string }>();
+
     if (!sessions) {
       throw new Error('Session not found');
     }
-    
+
     const response: ApiResponse = {
       success: true,
       data: {
         authenticated: true,
         userId: sessions.user_id,
-        sessionExpiresAt: sessions.expires_at
-      }
+        sessionExpiresAt: sessions.expires_at,
+      },
     };
-    
+
     return c.json(response);
   } catch (error) {
     const response: ApiResponse = {
       success: true,
       data: {
-        authenticated: false
-      }
+        authenticated: false,
+      },
     };
-    
+
     return c.json(response);
   }
 });
@@ -204,11 +202,11 @@ router.get('/status', async (c) => {
  * Health check endpoint
  * GET /api/telegram-auth/health
  */
-router.get('/health', (c) => {
-  return c.json({
+router.get('/health', c =>
+  c.json({
     status: 'ok',
-    timestamp: new Date().toISOString()
-  });
-});
+    timestamp: new Date().toISOString(),
+  }),
+);
 
 export default router;

@@ -12,20 +12,23 @@ export enum Platform {
  * Message data interface
  */
 export interface MessageData {
-  id: string;              // Unique message ID
-  platform: Platform;          // Source of the message (telegram, websocket, etc.)
-  timestamp: number;       // Unix timestamp in milliseconds
-  content: {               // Message content
-    type: string;          // text, image, video, etc.
-    text?: string;         // Text content if applicable
-    mediaUrl?: string;     // URL to media if applicable
+  id: string; // Unique message ID
+  platform: Platform; // Source of the message (telegram, websocket, etc.)
+  timestamp: number; // Unix timestamp in milliseconds
+  content: {
+    // Message content
+    type: string; // text, image, video, etc.
+    text?: string; // Text content if applicable
+    mediaUrl?: string; // URL to media if applicable
   };
-  metadata: {              // Additional metadata
-    sender?: {             // Sender information
+  metadata: {
+    // Additional metadata
+    sender?: {
+      // Sender information
       id: string;
       name?: string;
     };
-    retryCount?: number;   // For tracking retries
+    retryCount?: number; // For tracking retries
   };
 }
 
@@ -38,7 +41,7 @@ export enum MessageStatus {
   COMPLETED = 'completed',
   FAILED = 'failed',
   RETRYING = 'retrying',
-  DEAD_LETTER = 'dead_letter'
+  DEAD_LETTER = 'dead_letter',
 }
 
 /**

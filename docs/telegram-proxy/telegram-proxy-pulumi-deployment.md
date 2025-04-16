@@ -23,20 +23,20 @@ graph TD
         NET[Networking]
         SEC[Secrets Management]
     end
-    
+
     subgraph "Deployed Resources"
         WORKERS[Cloudflare Edge]
         PROXY[Telegram Proxy Service]
         CACHE[Redis Cache]
     end
-    
+
     CF --> WORKERS
     K8S --> PROXY
     REDIS --> CACHE
     NET --> PROXY
     SEC --> PROXY
     SEC --> WORKERS
-    
+
     WORKERS <--> PROXY
 ```
 
@@ -155,9 +155,11 @@ export function deployRedis(options: RedisOptions) {
     region: options.region,
     size: options.size,
     nodeCount: options.nodeCount || 1,
-    privateNetworkUuid: pulumi.output(digitalocean.getVpcs({
-      region: options.region,
-    })).vpcs[0].id,
+    privateNetworkUuid: pulumi.output(
+      digitalocean.getVpcs({
+        region: options.region,
+      }),
+    ).vpcs[0].id,
   });
 
   // Create a Kubernetes provider using the cluster's kubeconfig
@@ -166,16 +168,20 @@ export function deployRedis(options: RedisOptions) {
   });
 
   // Create a Kubernetes secret for Redis credentials
-  const redisSecret = new kubernetes.core.v1.Secret(`${options.name}-redis-secret`, {
-    metadata: {
-      name: 'redis-credentials',
+  const redisSecret = new kubernetes.core.v1.Secret(
+    `${options.name}-redis-secret`,
+    {
+      metadata: {
+        name: 'redis-credentials',
+      },
+      stringData: {
+        host: redis.host,
+        port: redis.port.apply(port => port.toString()),
+        password: redisPassword.result,
+      },
     },
-    stringData: {
-      host: redis.host,
-      port: redis.port.apply(port => port.toString()),
-      password: redisPassword.result,
-    },
-  }, { provider: k8sProvider });
+    { provider: k8sProvider },
+  );
 
   return {
     redis,
@@ -214,7 +220,7 @@ export function deployTelegramProxyService(options: ProxyServiceOptions) {
   });
 
   // Build and push Docker image
-  const imageName = options.dockerRegistry 
+  const imageName = options.dockerRegistry
     ? `${options.dockerRegistry}/telegram-proxy:${options.dockerImageTag || 'latest'}`
     : `telegram-proxy:${options.dockerImageTag || 'latest'}`;
 
@@ -224,219 +230,257 @@ export function deployTelegramProxyService(options: ProxyServiceOptions) {
       context: '../scripts/telegram-proxy-service',
       dockerfile: '../scripts/telegram-proxy-service/Dockerfile',
     },
-    registry: options.dockerRegistry ? {
-      server: options.dockerRegistry,
-      username: pulumi.config.requireSecret('dockerUsername'),
-      password: pulumi.config.requireSecret('dockerPassword'),
-    } : undefined,
+    registry: options.dockerRegistry
+      ? {
+          server: options.dockerRegistry,
+          username: pulumi.config.requireSecret('dockerUsername'),
+          password: pulumi.config.requireSecret('dockerPassword'),
+        }
+      : undefined,
   });
 
   // Create Kubernetes namespace
-  const namespace = new kubernetes.core.v1.Namespace(`${options.name}-namespace`, {
-    metadata: {
-      name: `telegram-proxy-${options.environment}`,
+  const namespace = new kubernetes.core.v1.Namespace(
+    `${options.name}-namespace`,
+    {
+      metadata: {
+        name: `telegram-proxy-${options.environment}`,
+      },
     },
-  }, { provider: k8sProvider });
+    { provider: k8sProvider },
+  );
 
   // Create Kubernetes secrets for Telegram API credentials
-  const telegramSecret = new kubernetes.core.v1.Secret(`${options.name}-telegram-secret`, {
-    metadata: {
-      name: 'telegram-credentials',
-      namespace: namespace.metadata.name,
+  const telegramSecret = new kubernetes.core.v1.Secret(
+    `${options.name}-telegram-secret`,
+    {
+      metadata: {
+        name: 'telegram-credentials',
+        namespace: namespace.metadata.name,
+      },
+      stringData: {
+        TELEGRAM_API_ID: options.telegramApiId,
+        TELEGRAM_API_HASH: options.telegramApiHash,
+      },
     },
-    stringData: {
-      'TELEGRAM_API_ID': options.telegramApiId,
-      'TELEGRAM_API_HASH': options.telegramApiHash,
-    },
-  }, { provider: k8sProvider });
+    { provider: k8sProvider },
+  );
 
   // Create Kubernetes secret for JWT
-  const jwtSecret = new kubernetes.core.v1.Secret(`${options.name}-jwt-secret`, {
-    metadata: {
-      name: 'jwt-secret',
-      namespace: namespace.metadata.name,
+  const jwtSecret = new kubernetes.core.v1.Secret(
+    `${options.name}-jwt-secret`,
+    {
+      metadata: {
+        name: 'jwt-secret',
+        namespace: namespace.metadata.name,
+      },
+      stringData: {
+        JWT_SECRET: options.jwtSecret,
+      },
     },
-    stringData: {
-      'JWT_SECRET': options.jwtSecret,
-    },
-  }, { provider: k8sProvider });
+    { provider: k8sProvider },
+  );
 
   // Create Kubernetes deployment
-  const deployment = new kubernetes.apps.v1.Deployment(`${options.name}-deployment`, {
-    metadata: {
-      name: 'telegram-proxy',
-      namespace: namespace.metadata.name,
-    },
-    spec: {
-      replicas: options.replicas || 3,
-      selector: {
-        matchLabels: {
-          app: 'telegram-proxy',
-        },
+  const deployment = new kubernetes.apps.v1.Deployment(
+    `${options.name}-deployment`,
+    {
+      metadata: {
+        name: 'telegram-proxy',
+        namespace: namespace.metadata.name,
       },
-      template: {
-        metadata: {
-          labels: {
+      spec: {
+        replicas: options.replicas || 3,
+        selector: {
+          matchLabels: {
             app: 'telegram-proxy',
           },
         },
-        spec: {
-          containers: [{
-            name: 'telegram-proxy',
-            image: image.imageName,
-            ports: [{
-              containerPort: 3000,
-              name: 'http',
-            }],
-            env: [
+        template: {
+          metadata: {
+            labels: {
+              app: 'telegram-proxy',
+            },
+          },
+          spec: {
+            containers: [
               {
-                name: 'NODE_ENV',
-                value: options.environment,
-              },
-              {
-                name: 'PORT',
-                value: '3000',
-              },
-              {
-                name: 'TELEGRAM_API_ID',
-                valueFrom: {
-                  secretKeyRef: {
-                    name: telegramSecret.metadata.name,
-                    key: 'TELEGRAM_API_ID',
+                name: 'telegram-proxy',
+                image: image.imageName,
+                ports: [
+                  {
+                    containerPort: 3000,
+                    name: 'http',
+                  },
+                ],
+                env: [
+                  {
+                    name: 'NODE_ENV',
+                    value: options.environment,
+                  },
+                  {
+                    name: 'PORT',
+                    value: '3000',
+                  },
+                  {
+                    name: 'TELEGRAM_API_ID',
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: telegramSecret.metadata.name,
+                        key: 'TELEGRAM_API_ID',
+                      },
+                    },
+                  },
+                  {
+                    name: 'TELEGRAM_API_HASH',
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: telegramSecret.metadata.name,
+                        key: 'TELEGRAM_API_HASH',
+                      },
+                    },
+                  },
+                  {
+                    name: 'JWT_SECRET',
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: jwtSecret.metadata.name,
+                        key: 'JWT_SECRET',
+                      },
+                    },
+                  },
+                  {
+                    name: 'REDIS_HOST',
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: options.redisSecretName,
+                        key: 'host',
+                      },
+                    },
+                  },
+                  {
+                    name: 'REDIS_PORT',
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: options.redisSecretName,
+                        key: 'port',
+                      },
+                    },
+                  },
+                  {
+                    name: 'REDIS_PASSWORD',
+                    valueFrom: {
+                      secretKeyRef: {
+                        name: options.redisSecretName,
+                        key: 'password',
+                      },
+                    },
+                  },
+                ],
+                resources: {
+                  limits: {
+                    cpu: '1',
+                    memory: '1Gi',
+                  },
+                  requests: {
+                    cpu: '500m',
+                    memory: '512Mi',
                   },
                 },
-              },
-              {
-                name: 'TELEGRAM_API_HASH',
-                valueFrom: {
-                  secretKeyRef: {
-                    name: telegramSecret.metadata.name,
-                    key: 'TELEGRAM_API_HASH',
+                livenessProbe: {
+                  httpGet: {
+                    path: '/health',
+                    port: 'http',
                   },
+                  initialDelaySeconds: 30,
+                  periodSeconds: 10,
                 },
-              },
-              {
-                name: 'JWT_SECRET',
-                valueFrom: {
-                  secretKeyRef: {
-                    name: jwtSecret.metadata.name,
-                    key: 'JWT_SECRET',
+                readinessProbe: {
+                  httpGet: {
+                    path: '/health',
+                    port: 'http',
                   },
-                },
-              },
-              {
-                name: 'REDIS_HOST',
-                valueFrom: {
-                  secretKeyRef: {
-                    name: options.redisSecretName,
-                    key: 'host',
-                  },
-                },
-              },
-              {
-                name: 'REDIS_PORT',
-                valueFrom: {
-                  secretKeyRef: {
-                    name: options.redisSecretName,
-                    key: 'port',
-                  },
-                },
-              },
-              {
-                name: 'REDIS_PASSWORD',
-                valueFrom: {
-                  secretKeyRef: {
-                    name: options.redisSecretName,
-                    key: 'password',
-                  },
+                  initialDelaySeconds: 5,
+                  periodSeconds: 5,
                 },
               },
             ],
-            resources: {
-              limits: {
-                cpu: '1',
-                memory: '1Gi',
-              },
-              requests: {
-                cpu: '500m',
-                memory: '512Mi',
-              },
-            },
-            livenessProbe: {
-              httpGet: {
-                path: '/health',
-                port: 'http',
-              },
-              initialDelaySeconds: 30,
-              periodSeconds: 10,
-            },
-            readinessProbe: {
-              httpGet: {
-                path: '/health',
-                port: 'http',
-              },
-              initialDelaySeconds: 5,
-              periodSeconds: 5,
-            },
-          }],
+          },
         },
       },
     },
-  }, { provider: k8sProvider });
+    { provider: k8sProvider },
+  );
 
   // Create Kubernetes service
-  const service = new kubernetes.core.v1.Service(`${options.name}-service`, {
-    metadata: {
-      name: 'telegram-proxy',
-      namespace: namespace.metadata.name,
-    },
-    spec: {
-      selector: {
-        app: 'telegram-proxy',
+  const service = new kubernetes.core.v1.Service(
+    `${options.name}-service`,
+    {
+      metadata: {
+        name: 'telegram-proxy',
+        namespace: namespace.metadata.name,
       },
-      ports: [{
-        port: 80,
-        targetPort: 3000,
-        protocol: 'TCP',
-      }],
-      type: 'ClusterIP',
+      spec: {
+        selector: {
+          app: 'telegram-proxy',
+        },
+        ports: [
+          {
+            port: 80,
+            targetPort: 3000,
+            protocol: 'TCP',
+          },
+        ],
+        type: 'ClusterIP',
+      },
     },
-  }, { provider: k8sProvider });
+    { provider: k8sProvider },
+  );
 
   // Create Kubernetes ingress
-  const ingress = new kubernetes.networking.v1.Ingress(`${options.name}-ingress`, {
-    metadata: {
-      name: 'telegram-proxy-ingress',
-      namespace: namespace.metadata.name,
-      annotations: {
-        'kubernetes.io/ingress.class': 'nginx',
-        'cert-manager.io/cluster-issuer': 'letsencrypt-prod',
+  const ingress = new kubernetes.networking.v1.Ingress(
+    `${options.name}-ingress`,
+    {
+      metadata: {
+        name: 'telegram-proxy-ingress',
+        namespace: namespace.metadata.name,
+        annotations: {
+          'kubernetes.io/ingress.class': 'nginx',
+          'cert-manager.io/cluster-issuer': 'letsencrypt-prod',
+        },
+      },
+      spec: {
+        rules: [
+          {
+            host: `telegram-proxy-${options.environment}.example.com`,
+            http: {
+              paths: [
+                {
+                  path: '/',
+                  pathType: 'Prefix',
+                  backend: {
+                    service: {
+                      name: service.metadata.name,
+                      port: {
+                        number: 80,
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        tls: [
+          {
+            hosts: [`telegram-proxy-${options.environment}.example.com`],
+            secretName: 'telegram-proxy-tls',
+          },
+        ],
       },
     },
-    spec: {
-      rules: [{
-        host: `telegram-proxy-${options.environment}.example.com`,
-        http: {
-          paths: [{
-            path: '/',
-            pathType: 'Prefix',
-            backend: {
-              service: {
-                name: service.metadata.name,
-                port: {
-                  number: 80,
-                },
-              },
-            },
-          }],
-        },
-      }],
-      tls: [{
-        hosts: [`telegram-proxy-${options.environment}.example.com`],
-        secretName: 'telegram-proxy-tls',
-      }],
-    },
-  }, { provider: k8sProvider });
+    { provider: k8sProvider },
+  );
 
   return {
     namespace,
@@ -632,17 +676,21 @@ export function dev() {
   });
 
   // Deploy the auth-telegram worker
-  const authTelegramWorker = deployWorker('auth-telegram-dev', '../services/auth-telegram/dist/index.js', {
-    accountId,
-    routes: [
-      // Example route - update as needed
-      // 'auth-telegram-dev.your-domain.com/*',
-    ],
-    // Add environment variables for the Telegram Proxy Service URL
-    environmentVariables: {
-      TELEGRAM_PROXY_URL: telegramProxy.serviceUrl,
+  const authTelegramWorker = deployWorker(
+    'auth-telegram-dev',
+    '../services/auth-telegram/dist/index.js',
+    {
+      accountId,
+      routes: [
+        // Example route - update as needed
+        // 'auth-telegram-dev.your-domain.com/*',
+      ],
+      // Add environment variables for the Telegram Proxy Service URL
+      environmentVariables: {
+        TELEGRAM_PROXY_URL: telegramProxy.serviceUrl,
+      },
     },
-  });
+  );
 
   // Deploy the ingestor worker with service binding to auth-telegram
   const ingestorWorker = deployWorker('ingestor-dev', '../services/ingestor/dist/index.js', {
@@ -704,7 +752,7 @@ export function deployWorker(
     routes?: string[];
     serviceBindings?: { name: string; service: pulumi.Input<string> }[];
     environmentVariables?: Record<string, pulumi.Input<string>>;
-  }
+  },
 ): cloudflare.WorkerScript {
   // Create the worker script
   const worker = new cloudflare.WorkerScript(name, {
@@ -712,11 +760,12 @@ export function deployWorker(
     accountId: options.accountId,
     content: fs.readFileSync(scriptPath, 'utf8'),
     serviceBindings: options.serviceBindings,
-    plainTextBindings: options.environmentVariables ? 
-      Object.entries(options.environmentVariables).map(([key, value]) => ({
-        name: key,
-        text: value,
-      })) : undefined,
+    plainTextBindings: options.environmentVariables
+      ? Object.entries(options.environmentVariables).map(([key, value]) => ({
+          name: key,
+          text: value,
+        }))
+      : undefined,
   });
 
   // Create routes for the worker if specified
@@ -789,33 +838,33 @@ export class TelegramClientWrapper {
   private apiId: number;
   private apiHash: string;
   private proxyUrl: string;
-  
+
   constructor(apiId: string, apiHash: string) {
     this.apiId = parseInt(apiId, 10);
     this.apiHash = apiHash;
     this.proxyUrl = TELEGRAM_PROXY_URL; // This is set by Pulumi
   }
-  
+
   async sendAuthCode(phoneNumber: string): Promise<SendCodeResult> {
     // Use the proxy service instead of direct Telegram connection
     const response = await fetch(`${this.proxyUrl}/api/v1/auth/send-code`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${API_KEY}`,
       },
       body: JSON.stringify({ phoneNumber }),
     });
-    
+
     const data = await response.json();
-    
+
     if (!data.success) {
       throw new Error(data.error?.message || 'Failed to send authentication code');
     }
-    
+
     return data.data;
   }
-  
+
   // Other methods similarly updated to use the proxy
 }
 ```
@@ -825,16 +874,19 @@ export class TelegramClientWrapper {
 The Pulumi configuration includes several parameters that can be adjusted for scaling:
 
 1. **Kubernetes Cluster**:
+
    - `nodeCount`: Number of nodes in the cluster
    - `nodeSize`: Size of each node
 
 2. **Redis**:
+
    - `redisSize`: Size of the Redis instance
 
 3. **Telegram Proxy Service**:
    - `replicas`: Number of service replicas
 
 For production environments, consider:
+
 - Increasing node count and size
 - Using a larger Redis instance with high availability
 - Increasing the number of service replicas
@@ -850,39 +902,49 @@ import * as kubernetes from '@pulumi/kubernetes';
 
 export function setupMonitoring(namespace: pulumi.Output<string>, provider: kubernetes.Provider) {
   // Deploy Prometheus
-  const prometheus = new kubernetes.helm.v3.Chart('prometheus', {
-    chart: 'prometheus',
-    version: '15.5.3',
-    namespace: namespace,
-    fetchOpts: {
-      repo: 'https://prometheus-community.github.io/helm-charts',
+  const prometheus = new kubernetes.helm.v3.Chart(
+    'prometheus',
+    {
+      chart: 'prometheus',
+      version: '15.5.3',
+      namespace: namespace,
+      fetchOpts: {
+        repo: 'https://prometheus-community.github.io/helm-charts',
+      },
     },
-  }, { provider });
+    { provider },
+  );
 
   // Deploy Grafana
-  const grafana = new kubernetes.helm.v3.Chart('grafana', {
-    chart: 'grafana',
-    version: '6.32.2',
-    namespace: namespace,
-    fetchOpts: {
-      repo: 'https://grafana.github.io/helm-charts',
-    },
-    values: {
-      adminPassword: 'your-secure-password', // Use a secret in production
-      datasources: {
-        'datasources.yaml': {
-          apiVersion: 1,
-          datasources: [{
-            name: 'Prometheus',
-            type: 'prometheus',
-            url: 'http://prometheus-server',
-            access: 'proxy',
-            isDefault: true,
-          }],
+  const grafana = new kubernetes.helm.v3.Chart(
+    'grafana',
+    {
+      chart: 'grafana',
+      version: '6.32.2',
+      namespace: namespace,
+      fetchOpts: {
+        repo: 'https://grafana.github.io/helm-charts',
+      },
+      values: {
+        adminPassword: 'your-secure-password', // Use a secret in production
+        datasources: {
+          'datasources.yaml': {
+            apiVersion: 1,
+            datasources: [
+              {
+                name: 'Prometheus',
+                type: 'prometheus',
+                url: 'http://prometheus-server',
+                access: 'proxy',
+                isDefault: true,
+              },
+            ],
+          },
         },
       },
     },
-  }, { provider });
+    { provider },
+  );
 
   return {
     prometheus,

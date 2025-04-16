@@ -33,7 +33,7 @@ export class TelegramAuthClient {
     this.config = {
       retryAttempts: 3,
       retryDelay: 1000,
-      ...config
+      ...config,
     };
   }
 
@@ -51,10 +51,10 @@ export class TelegramAuthClient {
 
     // Fetch from auth service using service binding
     const session = await this.fetchSession(userId);
-    
+
     // Cache the session
     this.sessionCache.set(userId, session);
-    
+
     return session;
   }
 
@@ -66,7 +66,7 @@ export class TelegramAuthClient {
   private isSessionValid(session: TelegramSession): boolean {
     const expiresAt = new Date(session.expiresAt);
     const now = new Date();
-    
+
     // Consider session invalid if it expires in less than 5 minutes
     const fiveMinutes = 5 * 60 * 1000;
     return expiresAt.getTime() - now.getTime() > fiveMinutes;
@@ -79,28 +79,28 @@ export class TelegramAuthClient {
    */
   private async fetchSession(userId: number): Promise<TelegramSession> {
     let lastError: Error | null = null;
-    
+
     // Retry logic
     for (let attempt = 0; attempt < this.config.retryAttempts!; attempt++) {
       try {
         // Use service binding to directly call the method
         const sessionData = await this.config.telegramAuth.getSessionByUserId(userId);
-        
+
         return {
           sessionString: sessionData.sessionString,
-          userId: userId,
-          expiresAt: sessionData.expiresAt
+          userId,
+          expiresAt: sessionData.expiresAt,
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        
+
         // Don't wait on the last attempt
         if (attempt < this.config.retryAttempts! - 1) {
-          await new Promise(resolve => setTimeout(resolve, this.config.retryDelay!));
+          await new Promise(resolve => setTimeout(resolve, this.config.retryDelay));
         }
       }
     }
-    
+
     throw lastError || new Error('Failed to get session after multiple attempts');
   }
 
@@ -112,7 +112,7 @@ export class TelegramAuthClient {
   async refreshSession(userId: number): Promise<TelegramSession> {
     // Remove from cache
     this.sessionCache.delete(userId);
-    
+
     // Fetch fresh session
     return this.fetchSession(userId);
   }

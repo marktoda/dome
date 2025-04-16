@@ -13,10 +13,10 @@ async function bootstrap() {
   try {
     // Validate required configuration
     validateConfig();
-    
+
     // Log configuration (excluding sensitive values)
     logger.info('Starting Telegram Proxy Service with configuration:', getSanitizedConfig());
-    
+
     // Initialize Redis connection
     await redisService.connect();
     logger.info('Redis connection established');
@@ -34,18 +34,18 @@ async function bootstrap() {
     // Handle graceful shutdown
     const shutdown = async () => {
       logger.info('Shutting down server...');
-      
+
       try {
         // Shutdown Telegram client pool
         logger.info('Shutting down Telegram client pool...');
         await clientPool.shutdown();
         logger.info('Telegram client pool shut down');
-        
+
         // Disconnect Redis
         logger.info('Disconnecting from Redis...');
         await redisService.disconnect();
         logger.info('Redis disconnected');
-        
+
         // Stop the API server
         logger.info('Stopping API server...');
         await apiServer.stop();
@@ -70,11 +70,11 @@ async function bootstrap() {
 // to ensure they're registered even if the logger module is modified
 if (process.env.NODE_ENV !== 'test') {
   // Handle uncaught exceptions
-  process.on('uncaughtException', (error) => {
+  process.on('uncaughtException', error => {
     console.error('UNCAUGHT EXCEPTION! 💥 Shutting down...');
     console.error(error.name, error.message);
     console.error(error.stack);
-    
+
     // Exit with error
     process.exit(1);
   });
@@ -83,7 +83,7 @@ if (process.env.NODE_ENV !== 'test') {
   process.on('unhandledRejection', (reason, promise) => {
     console.error('UNHANDLED REJECTION! 💥 Unhandled Promise rejection:');
     console.error(reason);
-    
+
     // In production, we might want to exit on unhandled rejections
     if (SERVER.IS_PRODUCTION) {
       process.exit(1);
@@ -92,4 +92,4 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 // Start the application
-bootstrap();
+void bootstrap();

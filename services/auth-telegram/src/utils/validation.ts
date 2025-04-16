@@ -6,7 +6,8 @@ import { z } from 'zod';
 /**
  * Phone number validation schema
  */
-export const phoneNumberSchema = z.string()
+export const phoneNumberSchema = z
+  .string()
   .min(6, 'Phone number must be at least 6 characters')
   .max(15, 'Phone number must be at most 15 characters')
   .regex(/^\+?[0-9]+$/, 'Phone number must contain only digits and optionally start with +');
@@ -14,7 +15,8 @@ export const phoneNumberSchema = z.string()
 /**
  * Authentication code validation schema
  */
-export const authCodeSchema = z.string()
+export const authCodeSchema = z
+  .string()
   .min(1, 'Authentication code is required')
   .max(10, 'Authentication code must be at most 10 characters')
   .regex(/^[0-9]+$/, 'Authentication code must contain only digits');
@@ -22,39 +24,36 @@ export const authCodeSchema = z.string()
 /**
  * Phone code hash validation schema
  */
-export const phoneCodeHashSchema = z.string()
-  .min(1, 'Phone code hash is required');
+export const phoneCodeHashSchema = z.string().min(1, 'Phone code hash is required');
 
 /**
  * Session ID validation schema
  */
-export const sessionIdSchema = z.string()
-  .min(1, 'Session ID is required');
+export const sessionIdSchema = z.string().min(1, 'Session ID is required');
 
 /**
  * User ID validation schema
  */
-export const userIdSchema = z.number()
+export const userIdSchema = z
+  .number()
   .int('User ID must be an integer')
   .positive('User ID must be positive');
 
 /**
  * API key validation schema
  */
-export const apiKeySchema = z.string()
-  .min(16, 'API key must be at least 16 characters');
+export const apiKeySchema = z.string().min(16, 'API key must be at least 16 characters');
 
 /**
  * Service ID validation schema
  */
-export const serviceIdSchema = z.string()
-  .min(1, 'Service ID is required');
+export const serviceIdSchema = z.string().min(1, 'Service ID is required');
 
 /**
  * Send code request schema
  */
 export const sendCodeRequestSchema = z.object({
-  phoneNumber: phoneNumberSchema
+  phoneNumber: phoneNumberSchema,
 });
 
 /**
@@ -63,21 +62,21 @@ export const sendCodeRequestSchema = z.object({
 export const verifyCodeRequestSchema = z.object({
   phoneNumber: phoneNumberSchema,
   phoneCodeHash: phoneCodeHashSchema,
-  code: authCodeSchema
+  code: authCodeSchema,
 });
 
 /**
  * Get session request schema
  */
 export const getSessionRequestSchema = z.object({
-  userId: userIdSchema
+  userId: userIdSchema,
 });
 
 /**
  * Revoke session request schema
  */
 export const revokeSessionRequestSchema = z.object({
-  sessionId: sessionIdSchema
+  sessionId: sessionIdSchema,
 });
 
 /**
@@ -85,7 +84,7 @@ export const revokeSessionRequestSchema = z.object({
  */
 export const serviceAuthSchema = z.object({
   apiKey: apiKeySchema,
-  serviceId: serviceIdSchema
+  serviceId: serviceIdSchema,
 });
 
 /**

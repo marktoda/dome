@@ -7,7 +7,7 @@
     "pulumi:preview": "pulumi preview",
     "pulumi:up": "pulumi up",
     "pulumi:destroy": "pulumi destroy",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts,.tsx"
   },
   "dependencies": {
     "@pulumi/cloudflare": "^4.13.0",
