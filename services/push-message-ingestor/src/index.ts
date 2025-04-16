@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
 import { zValidator } from "@hono/zod-validator";
 import { ApiResponse, ServiceInfo } from "@communicator/common";
 import { MessageController } from "./controllers/messageController";
 import { telegramMessageBatchSchema } from "./models/schemas";
+import { pinoLogger } from "./middleware/pinoLogger";
+import { createRequestContextMiddleware } from "./utils/requestContext";
 import { Bindings } from "./types";
 
 // Service information
@@ -17,8 +18,8 @@ const serviceInfo: ServiceInfo = {
 // Create Hono app
 const app = new Hono<{ Bindings: Bindings }>();
 
-// Middleware
-app.use("*", logger());
+app.use("*", createRequestContextMiddleware());
+app.use("*", pinoLogger());
 app.use("*", cors());
 
 // Routes
@@ -43,14 +44,14 @@ app.post(
     try {
       // Get the validated data from zValidator
       const validatedData = c.req.valid('json');
-      
+
       // Process the request
       const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
       return await messageController.publishTelegramMessages(validatedData);
     } catch (error) {
       // Handle unexpected errors
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+
       return c.json({
         success: false,
         error: {

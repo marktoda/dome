@@ -62,12 +62,12 @@ export class MessageController {
     } catch (error) {
       // Extract error message
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+
       // Determine if this is a validation error or server error
       const isValidationError = errorMessage.toLowerCase().includes('required') ||
-                               errorMessage.toLowerCase().includes('invalid') ||
-                               errorMessage.toLowerCase().includes('undefined');
-      
+        errorMessage.toLowerCase().includes('invalid') ||
+        errorMessage.toLowerCase().includes('undefined');
+
       return Response.json({
         success: false,
         error: {

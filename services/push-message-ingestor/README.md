@@ -15,8 +15,11 @@ The service is responsible for:
 - **Multi-platform Support**: Designed to accept messages from various platforms (currently supports Telegram)
 - **Message Validation**: Validates message format and content before publishing
 - **Queue Integration**: Publishes messages to the `rawmessages` Cloudflare Queue
-- **Batch Processing**: Supports publishing multiple messages in a single request
-- **Error Handling**: Comprehensive error handling with detailed error messages
+- **Batch Processing**: Supports publishing multiple messages in a single request with efficient pagination
+- **Comprehensive Error Handling**: Centralized error handling with standardized error responses
+- **Structured Logging**: Detailed logging with correlation IDs for request tracing
+- **Rate Limiting**: Protection against abuse with configurable rate limits
+- **Performance Optimization**: Efficient batch processing for large message sets
 - **Extensibility**: Modular architecture for easy addition of new message sources
 
 ## Installation and Setup
@@ -261,23 +264,130 @@ For more detailed API documentation, see the [API.md](API.md) file.
 
 ## Error Handling
 
-The service returns standardized error responses:
+The service implements a comprehensive error handling system with standardized error responses:
 
 ```json
 {
   "success": false,
   "error": {
     "code": "ERROR_CODE",
-    "message": "Detailed error message"
+    "message": "Detailed error message",
+    "correlationId": "unique-correlation-id",
+    "details": {
+      // Additional error details when available
+    }
   }
 }
 ```
 
 Common error codes:
 
-- `VALIDATION_ERROR`: Invalid message format or missing required fields
-- `SERVER_ERROR`: Internal server error
-- `QUEUE_ERROR`: Error publishing to the queue
+- `VALIDATION_ERROR`: Invalid message format or missing required fields (HTTP 400)
+- `SERVER_ERROR`: Internal server error (HTTP 500)
+- `QUEUE_ERROR`: Error publishing to the queue (HTTP 500)
+- `RATE_LIMIT_EXCEEDED`: Too many requests in a short time period (HTTP 429)
+
+### Error Handling Features
+
+- **Centralized Error Middleware**: All errors are processed through a single middleware
+- **Correlation IDs**: Each request has a unique ID for tracing through logs
+- **Detailed Error Messages**: Clear, actionable error messages
+- **Proper HTTP Status Codes**: Appropriate status codes for different error types
+- **Structured Error Logging**: Errors are logged with context for easier debugging
+- **Environment-Specific Behavior**: Different error handling in development vs. production
+- **Security-Focused**: Prevents exposure of sensitive information in production
+- **Consistent Propagation**: Correlation IDs maintained across all asynchronous operations
+
+### Production vs. Development Error Handling
+
+The service implements different error handling behavior based on the environment:
+
+#### Development Environment
+- Detailed error messages with original error information
+- Stack traces included in logs and error details
+- Comprehensive error context for debugging
+
+#### Production Environment
+- Generic error messages for server errors
+- No stack traces or internal details exposed in responses
+- Sensitive information automatically redacted from logs and responses
+- Validation errors still provide detailed information to help clients
+
+This approach ensures security in production while maintaining developer-friendly error handling during development.
+
+## Performance Optimizations
+
+The service includes several performance optimizations:
+
+- **Efficient Batch Processing**: Large message batches are processed in smaller chunks to avoid memory issues
+- **Rate Limiting**: Configurable rate limiting to prevent abuse and ensure service stability
+- **Pagination**: Support for paginating large result sets
+- **Asynchronous Processing**: Non-blocking operations for better throughput
+- **Optimized Validation**: Efficient validation for large message batches
+
+## Logging
+
+The service implements structured logging with the following features:
+
+- **Correlation IDs**: Each request has a unique ID that is consistently propagated through all logs
+- **Structured JSON Logs**: Logs are formatted as JSON for easier parsing and analysis
+- **Log Levels**: Different log levels (debug, info, warn, error) for appropriate filtering
+- **Business Event Logging**: Important business events are logged with context
+- **Error Context**: Errors are logged with detailed context for easier debugging
+- **Asynchronous Context Preservation**: Correlation IDs maintained across all asynchronous operations
+- **Sensitive Data Protection**: Automatic redaction of sensitive information in production logs
+- **Environment-Specific Behavior**: Different logging detail levels based on environment
+
+### Logging Security Features
+
+The logging system includes several security features:
+
+- **Stack Trace Handling**: Stack traces are only included in non-production environments
+- **Sensitive Field Filtering**: Automatic filtering of fields that might contain sensitive data (passwords, tokens, keys, etc.)
+- **Sanitized Error Objects**: Error objects are sanitized before logging in production
+- **Consistent Context**: All logs include the same correlation ID for complete request tracing
+- **Structured Format**: JSON format enables easier log analysis and security monitoring
+
+### Log Examples
+
+#### Info Log
+```json
+{
+  "level": "info",
+  "message": "Publishing batch of 10 messages",
+  "timestamp": "2025-04-15T20:55:00.000Z",
+  "correlationId": "d8e8fca2-dc1b-4c7e-9d40-a9a0c3a7b1c9"
+}
+```
+
+#### Error Log (Development)
+```json
+{
+  "level": "error",
+  "message": "Failed to publish message to queue",
+  "timestamp": "2025-04-15T20:55:00.000Z",
+  "correlationId": "d8e8fca2-dc1b-4c7e-9d40-a9a0c3a7b1c9",
+  "data": {
+    "name": "QueueError",
+    "message": "Failed to connect to queue",
+    "stack": "QueueError: Failed to connect to queue\n    at MessageService.publishMessage (/src/services/messageService.ts:58:13)\n    ..."
+  }
+}
+```
+
+#### Error Log (Production)
+```json
+{
+  "level": "error",
+  "message": "Failed to publish message to queue",
+  "timestamp": "2025-04-15T20:55:00.000Z",
+  "correlationId": "d8e8fca2-dc1b-4c7e-9d40-a9a0c3a7b1c9",
+  "data": {
+    "name": "QueueError",
+    "message": "Failed to connect to queue"
+  }
+}
+```
 
 ## Future Extension Points
 

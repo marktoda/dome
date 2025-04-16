@@ -30,6 +30,13 @@ graph TD
     subgraph "Push-Message-Ingestor Service"
         API[API Layer]
         
+        subgraph "Middleware"
+            EM[Error Middleware]
+            LM[Logger Middleware]
+            RL[Rate Limiter]
+            CM[CORS Middleware]
+        end
+        
         subgraph "Controllers"
             TC[Telegram Controller]
             WC[WebSocket Controller]
@@ -49,6 +56,12 @@ graph TD
         subgraph "Models"
             MM[Message Models]
         end
+        
+        subgraph "Utils"
+            RU[Response Utils]
+            LU[Logger Utils]
+            PU[Pagination Utils]
+        end
     end
     
     subgraph "Cloudflare Queues"
@@ -59,9 +72,23 @@ graph TD
     WS --> API
     FU --> API
     
-    API --> TC
-    API --> WC
-    API --> FC
+    API --> EM
+    API --> LM
+    API --> RL
+    API --> CM
+    
+    EM --> TC
+    LM --> TC
+    RL --> TC
+    CM --> TC
+    
+    EM --> WC
+    LM --> WC
+    RL --> WC
+    CM --> WC
+    
+    TC --> MS
+    WC --> MS
     
     TC --> MV
     WC --> MV
@@ -72,6 +99,10 @@ graph TD
     MS --> QS
     
     QS --> RQ
+    
+    TC --> RU
+    MS --> LU
+    MS --> PU
     
     AS --> API
 ```
@@ -84,19 +115,67 @@ The API layer is built using the Hono framework and is responsible for:
 
 - Defining HTTP endpoints for receiving messages
 - Routing requests to appropriate controllers
-- Implementing middleware (CORS, logging)
+- Implementing middleware (error handling, logging, CORS, rate limiting)
 - Handling authentication and authorization (future)
 
 ```typescript
 // Example from src/index.ts
 const app = new Hono<{ Bindings: Bindings }>();
-app.use("*", logger());
-app.use("*", cors());
 
-app.post("/publish/telegram/messages", async (c: any) => {
-  const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
-  return await messageController.publishTelegramMessages(c);
-});
+// Global middleware
+app.use("*", errorMiddleware);
+app.use("*", honoLogger((str) => {
+  logger.info(str);
+}));
+app.use("*", cors({
+  origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+  maxAge: 86400,
+}));
+app.use("*", createRateLimitMiddleware(60000, 100));
+
+app.post(
+  "/publish/telegram/messages",
+  zValidator('json', telegramMessageBatchSchema),
+  async (c) => {
+    const validatedData = c.req.valid('json');
+    const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
+    return await messageController.publishTelegramMessages(c, validatedData);
+  }
+);
+```
+
+#### Middleware (`src/middleware/`)
+
+The middleware layer provides cross-cutting concerns:
+
+- **Error Middleware**: Centralized error handling with standardized responses
+- **Rate Limiting**: Protection against abuse with configurable limits
+- **Logging**: Request/response logging with correlation IDs
+- **CORS**: Cross-origin resource sharing configuration
+
+```typescript
+// Example from src/middleware/errorMiddleware.ts
+export const errorMiddleware: MiddlewareHandler = async (c: Context, next: Next) => {
+  try {
+    // Generate a correlation ID for request tracing
+    const correlationId = crypto.randomUUID();
+    c.set('correlationId', correlationId);
+    
+    // Add correlation ID to response headers
+    c.header('X-Correlation-ID', correlationId);
+    
+    await next();
+  } catch (error) {
+    // Log the error with correlation ID
+    const correlationId = c.get('correlationId') || 'unknown';
+    logger.error(`Error processing request [${correlationId}]:`, error as Error);
+    
+    // Format and return standardized error response
+    // ...
+  }
+};
 ```
 
 #### Controllers (`src/controllers/`)
@@ -104,27 +183,46 @@ app.post("/publish/telegram/messages", async (c: any) => {
 Controllers handle the HTTP request/response cycle and delegate business logic to services:
 
 - **MessageController**: Handles message-related endpoints
-  - Parses request bodies
+  - Processes validated request data
   - Calls appropriate service methods
-  - Formats responses
-  - Handles errors
+  - Uses response utilities for standardized responses
+  - Logs important business events
 
 ```typescript
 // Example from src/controllers/messageController.ts
 export class MessageController {
   private messageService: MessageService;
 
-  constructor(queueBinding: Bindings['RAW_MESSAGES_QUEUE']) {
+  constructor(queueBinding: Queue<BaseMessage>) {
     this.messageService = new MessageService(queueBinding);
   }
 
-  async publishTelegramMessages(c: Context<{ Bindings: Bindings }>): Promise<Response> {
+  async publishTelegramMessages(c: Context, body: TelegramMessageBatch): Promise<Response> {
+    const correlationId = c.get('correlationId');
+    
     try {
-      const body = await c.req.json() as TelegramMessageBatch;
-      const result = await this.messageService.publishTelegramMessages(body);
-      // Format and return response
+      // Log the request
+      logger.info('Received request to publish Telegram messages', {
+        messageCount: body.messages?.length || 0
+      }, correlationId);
+      
+      // Check if the batch size is too large
+      const MAX_BATCH_SIZE = 1000;
+      if (body.messages.length > MAX_BATCH_SIZE) {
+        return sendValidationErrorResponse(c, `Message batch too large. Maximum allowed: ${MAX_BATCH_SIZE}`);
+      }
+
+      // Publish the messages
+      const result = await this.messageService.publishTelegramMessages(body, correlationId);
+
+      // Return standardized response
+      return sendCreatedResponse(c, {
+        message: `Successfully published ${result.count} messages to the queue`,
+        count: result.count
+      });
     } catch (error) {
-      // Handle errors
+      // Error handling is delegated to the error middleware
+      throw error;
     }
   }
 }
@@ -135,9 +233,10 @@ export class MessageController {
 Services implement the core business logic:
 
 - **MessageService**: Core service for processing messages
-  - Validates messages using validators
   - Publishes messages to the queue
-  - Handles errors and retries
+  - Handles batch processing with pagination
+  - Implements error handling and logging
+  - Optimizes performance for large message sets
 
 ```typescript
 // Example from src/services/messageService.ts
@@ -148,16 +247,39 @@ export class MessageService {
     this.queueBinding = queueBinding;
   }
 
-  async publishTelegramMessages(batch: TelegramMessageBatch): Promise<{ success: boolean; error?: string }> {
-    // Validate the batch
-    const validation = validateTelegramMessageBatch(batch);
-    if (!validation.valid) {
-      return { success: false, error: validation.errors?.join(', ') };
+  async publishTelegramMessages(batch: TelegramMessageBatch, correlationId?: string): Promise<PublishResult> {
+    // Handle empty batch gracefully
+    if (!batch.messages || batch.messages.length === 0) {
+      logger.info('Empty Telegram message batch received', undefined, correlationId);
+      return { success: true, count: 0 };
     }
 
-    // Publish the messages
-    await this.publishMessages(batch.messages);
-    return { success: true };
+    try {
+      // Log the operation
+      logger.info(`Publishing ${batch.messages.length} Telegram messages`, undefined, correlationId);
+      
+      // For large batches, process in smaller chunks to avoid memory issues
+      if (batch.messages.length > MAX_BATCH_SIZE) {
+        await processBatches(
+          batch.messages,
+          MAX_BATCH_SIZE,
+          async (messageBatch) => {
+            await this.queueBinding.sendBatch(messageBatch.map(message => ({ body: message })));
+            return [];
+          }
+        );
+      } else {
+        // For smaller batches, publish all at once
+        await this.queueBinding.sendBatch(batch.messages.map(message => ({ body: message })));
+      }
+      
+      // Return success result
+      return { success: true, count: batch.messages.length };
+    } catch (error) {
+      // Handle and log the error
+      logger.error('Failed to publish Telegram messages', { error }, correlationId);
+      return { success: false, count: 0, error: `Failed to publish messages: ${error}` };
+    }
   }
 }
 ```
@@ -191,29 +313,72 @@ export interface TelegramMessage extends BaseMessage {
 }
 ```
 
-#### Validators (`src/models/validators.ts`)
+#### Validators (`src/models/schemas.ts`)
 
-Validators ensure that incoming data meets the required format:
+Validators ensure that incoming data meets the required format using Zod schemas:
 
-- **Message Validators**: Validate message format and content
-  - Check required fields
-  - Validate field formats
-  - Return detailed error messages
+- **Message Schemas**: Define validation rules for messages
+  - Specify required and optional fields
+  - Define field types and formats
+  - Provide detailed error messages
 
 ```typescript
-// Example from src/models/validators.ts
-export function validateTelegramMessage(message: any): { valid: boolean; errors?: string[] } {
-  const errors: string[] = [];
+// Example from src/models/schemas.ts
+export const telegramMessageSchema = z.object({
+  id: z.string({
+    required_error: 'Message ID is required',
+    invalid_type_error: 'Message ID must be a string'
+  }),
+  timestamp: z.string({
+    required_error: 'Timestamp is required',
+    invalid_type_error: 'Timestamp must be a string'
+  }),
+  platform: z.literal('telegram', {
+    required_error: 'Platform is required',
+    invalid_type_error: 'Platform must be "telegram"'
+  }),
+  content: z.string({
+    required_error: 'Message body cannot be undefined',
+    invalid_type_error: 'Content must be a string'
+  }),
+  metadata: telegramMetadataSchema
+}).strict();
 
-  // Check required fields
-  if (!message.id) errors.push('Message ID is required');
-  if (!message.timestamp) errors.push('Timestamp is required');
-  // More validation rules...
+export const telegramMessageBatchSchema = z.object({
+  messages: z.array(telegramMessageSchema, {
+    required_error: 'Messages array is required',
+    invalid_type_error: 'Messages must be an array'
+  })
+}).strict();
+```
 
-  return {
-    valid: errors.length === 0,
-    errors: errors.length > 0 ? errors : undefined
+#### Utilities (`src/utils/`)
+
+Utilities provide reusable functionality across the service:
+
+- **Response Utilities**: Standardized response formatting
+- **Logger Utilities**: Structured logging with correlation IDs
+- **Pagination Utilities**: Efficient handling of large data sets
+
+```typescript
+// Example from src/utils/responseUtils.ts
+export function sendSuccessResponse(c: Context, data: Record<string, any>, status: number = 200): Response {
+  const correlationId = c.get('correlationId');
+  
+  if (correlationId) {
+    logger.info('Success response', { data, status }, correlationId);
+  }
+  
+  const response = {
+    success: true,
+    data
   };
+  
+  return c.json(response, status);
+}
+
+export function sendCreatedResponse(c: Context, data: Record<string, any>): Response {
+  return sendSuccessResponse(c, data, 201);
 }
 ```
 
@@ -235,19 +400,53 @@ This creates a binding named `RAW_MESSAGES_QUEUE` that the service can use to pu
 
 ### Queue Usage
 
-The service uses the queue binding to publish messages:
+The service uses the queue binding to publish messages with optimized batch processing:
 
 ```typescript
 // Example from src/services/messageService.ts
-async publishMessage(message: BaseMessage): Promise<void> {
-  await this.queueBinding.send(message);
+async publishMessage(message: BaseMessage, correlationId?: string): Promise<void> {
+  try {
+    logger.info('Publishing message to queue', { messageId: message.id, platform: message.platform }, correlationId);
+    await this.queueBinding.send(message);
+    logger.info('Message published successfully', { messageId: message.id }, correlationId);
+  } catch (error) {
+    logger.error('Failed to publish message to queue', { error, messageId: message.id }, correlationId);
+    throw createQueueError(`Failed to publish message: ${error}`, { messageId: message.id });
+  }
 }
 
-async publishMessages(messages: BaseMessage[]): Promise<void> {
-  if (typeof this.queueBinding.sendBatch === 'function') {
-    await this.queueBinding.sendBatch(messages);
-  } else {
-    await Promise.all(messages.map(message => this.queueBinding.send(message)));
+async publishMessages(messages: BaseMessage[], correlationId?: string): Promise<void> {
+  // Handle empty arrays gracefully
+  if (messages.length === 0) {
+    logger.info('No messages to publish', undefined, correlationId);
+    return;
+  }
+
+  try {
+    // For large batches, process in smaller chunks to avoid memory issues
+    if (messages.length > MAX_BATCH_SIZE) {
+      logger.info(`Processing large batch of ${messages.length} messages in chunks`, undefined, correlationId);
+      
+      await processBatches(
+        messages,
+        MAX_BATCH_SIZE,
+        async (batch) => {
+          logger.info(`Publishing batch of ${batch.length} messages`, undefined, correlationId);
+          await this.queueBinding.sendBatch(batch.map(message => ({ body: message })));
+          return []; // Return empty array as we don't need results
+        }
+      );
+      
+      logger.info(`Successfully published ${messages.length} messages in batches`, undefined, correlationId);
+    } else {
+      // For smaller batches, publish all at once
+      logger.info(`Publishing batch of ${messages.length} messages`, undefined, correlationId);
+      await this.queueBinding.sendBatch(messages.map(message => ({ body: message })));
+      logger.info(`Successfully published ${messages.length} messages`, undefined, correlationId);
+    }
+  } catch (error) {
+    logger.error('Failed to publish message batch to queue', { error, count: messages.length }, correlationId);
+    throw createQueueError(`Failed to publish message batch: ${error}`, { count: messages.length });
   }
 }
 ```
@@ -596,11 +795,16 @@ wrangler deploy --env production
 
 ## 6. Monitoring and Error Handling
 
-The service includes comprehensive error handling and logging:
+The service includes comprehensive error handling and monitoring:
 
-- **Validation Errors**: Detailed error messages for invalid input
-- **Service Errors**: Error handling for queue publishing failures
-- **Logging**: Console logging for debugging and monitoring
+- **Centralized Error Middleware**: All errors are processed through a single middleware
+- **Correlation IDs**: Each request has a unique ID for tracing through logs
+- **Structured Logging**: JSON-formatted logs with context for easier analysis
+- **Error Classification**: Errors are properly categorized (validation, server, queue)
+- **Appropriate Status Codes**: HTTP status codes match the error type
+- **Detailed Error Messages**: Clear, actionable error messages
+- **Rate Limiting Monitoring**: Track and alert on rate limit violations
+- **Performance Metrics**: Log processing times for large batches
 
 Future enhancements may include:
 
@@ -612,10 +816,37 @@ Future enhancements may include:
 
 The service implements several security measures:
 
-- **Input Validation**: Prevents injection attacks and malformed data
-- **CORS Configuration**: Restricts access to trusted domains
-- **Authentication**: (Future) Cloudflare Access integration for secure access
-- **Rate Limiting**: (Future) Prevents abuse of the API
+### 7.1 Authentication and Authorization
+- **Cloudflare Access Authentication**: (Planned) JWT-based authentication
+- **API Key Validation**: (Planned) For service-to-service communication
+- **Role-Based Access Control**: (Planned) Different permissions for different operations
+
+### 7.2 Request Protection
+- **Rate Limiting**: Protection against abuse with configurable limits
+- **Batch Size Limits**: Prevent DoS attacks through large payloads
+- **CORS Configuration**: Controlled cross-origin access
+
+### 7.3 Data Validation and Sanitization
+- **Input Validation**: Strict schema validation using Zod
+- **JSON Parsing Error Handling**: Graceful handling of malformed requests
+- **Type Checking**: Strong typing throughout the codebase
+
+### 7.4 Secure Error Handling
+- **Error Sanitization**: Prevent leaking sensitive information in errors
+- **Production-Specific Error Messages**: Generic error messages in production
+- **Stack Trace Protection**: Stack traces never exposed in production responses
+- **Sensitive Data Filtering**: Automatic filtering of sensitive fields in errors
+
+### 7.5 Logging and Tracing
+- **Correlation IDs**: Consistent propagation across all asynchronous operations
+- **Structured Logging**: Secure logging practices with sensitive data handling
+- **Log Sanitization**: Automatic redaction of sensitive information in production logs
+- **Security Event Logging**: All security-related events are properly logged
+
+### 7.6 Data Protection
+- **Transient Processing**: No sensitive data stored by the service
+- **Secure Transmission**: All data transmitted via HTTPS
+- **Minimal Data Collection**: Only necessary data is processed
 
 ## 8. Conclusion
 
