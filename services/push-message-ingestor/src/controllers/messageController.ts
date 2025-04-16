@@ -5,9 +5,10 @@ import {
   ValidationError,
   BatchValidationError,
   QueueError,
-  MessageProcessingError
+  MessageProcessingError,
+  MessageData,
 } from '@communicator/common';
-import { TelegramMessageBatch, BaseMessage } from '../models/message';
+import { TelegramMessage } from '../models';
 import { MessageService } from '../services/messageService';
 
 /**
@@ -20,22 +21,22 @@ export class MessageController {
    * Creates a new MessageController
    * @param queueBinding The queue binding to use for publishing messages
    */
-  constructor(queueBinding: Queue<BaseMessage>) {
+  constructor(queueBinding: Queue<MessageData>) {
     this.messageService = new MessageService(queueBinding);
   }
 
   /**
    * Handles the publish Telegram messages endpoint
-   * @param body The validated request body
+   * @param messages The validated request body
    * @returns A plain object that will be wrapped in a standardized response
    * @throws ValidationError if the request is invalid
    * @throws QueueError if there's an issue with the queue
    * @throws MessageProcessingError if there's an issue processing the messages
    */
-  async publishTelegramMessages(body: TelegramMessageBatch): Promise<{ message: string; count: number }> {
+  async publishTelegramMessages(messages: TelegramMessage[]): Promise<{ message: string; count: number }> {
     try {
       // Handle empty message array gracefully
-      if (body.messages.length === 0) {
+      if (messages.length === 0) {
         return {
           message: "Successfully published 0 messages to the queue",
           count: 0
@@ -43,15 +44,14 @@ export class MessageController {
       }
 
       // Validate message count
-      if (body.messages.length > 100) {
+      if (messages.length > 100) {
         throw new BatchValidationError('Batch size exceeds maximum allowed (100)', {
-          providedCount: body.messages.length,
+          providedCount: messages.length,
           maxAllowed: 100
         });
       }
 
-      // Publish the messages
-      const count = await this.messageService.publishTelegramMessages(body);
+      const count = await this.messageService.publishMessages(messages);
 
       // Return success response as a plain object
       return {

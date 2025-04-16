@@ -1,8 +1,9 @@
 import { Context, MiddlewareHandler, Next } from 'hono';
 import { ZodError } from 'zod';
-import { ApiResponse, ExtendedError } from '../types';
+import { ApiResponse } from '../types';
 import {
   BaseError,
+  ExtendedError,
   ValidationError,
   SchemaValidationError,
   ServiceError,
@@ -11,7 +12,7 @@ import {
 /**
  * Error handling middleware for Hono
  * Catches errors and formats them into standardized responses
- * 
+ *
  * @param formatZodError Optional function to format Zod validation errors
  * @returns Middleware handler
  */

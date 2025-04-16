@@ -1,16 +1,15 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { zValidator } from "@hono/zod-validator";
-import { 
-  ServiceInfo, 
-  createRequestContextMiddleware, 
-  createErrorMiddleware, 
-  responseHandlerMiddleware, 
-  createPinoLoggerMiddleware 
+import {
+  ServiceInfo,
+  createRequestContextMiddleware,
+  createErrorMiddleware,
+  responseHandlerMiddleware,
+  createPinoLoggerMiddleware
 } from "@communicator/common";
 import { MessageController } from "./controllers/messageController";
-import { telegramMessageBatchSchema } from "./models/schemas";
-import { formatZodError } from "./models/schemas";
+import { formatZodError, telegramMessageBatchSchema, TelegramMessage, TelegramMessageData } from "./models";
 import { Bindings } from "./types";
 
 // Service information
@@ -46,10 +45,11 @@ app.post(
   async (c: any) => {
     // Get the validated data from zValidator
     const validatedData = c.req.valid('json');
+    const messages = validatedData.messages.map((message: TelegramMessageData) => new TelegramMessage(message));
 
     // Process the request
     const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
-    const result = await messageController.publishTelegramMessages(validatedData);
+    const result = await messageController.publishTelegramMessages(messages);
 
     // Return the result as a JSON response
     return c.json(result);

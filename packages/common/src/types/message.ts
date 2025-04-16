@@ -2,12 +2,18 @@
  * Message data interface for the queue infrastructure
  */
 
+export enum Platform {
+  TELEGRAM = 'telegram',
+  TWITTER = 'twitter',
+  SLACK = 'slack',
+}
+
 /**
  * Message data interface
  */
 export interface MessageData {
   id: string;              // Unique message ID
-  source: string;          // Source of the message (telegram, websocket, etc.)
+  platform: Platform;          // Source of the message (telegram, websocket, etc.)
   timestamp: number;       // Unix timestamp in milliseconds
   content: {               // Message content
     type: string;          // text, image, video, etc.
@@ -15,7 +21,6 @@ export interface MessageData {
     mediaUrl?: string;     // URL to media if applicable
   };
   metadata: {              // Additional metadata
-    platform?: string;     // Platform-specific information
     sender?: {             // Sender information
       id: string;
       name?: string;

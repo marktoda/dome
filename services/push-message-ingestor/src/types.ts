@@ -1,6 +1,6 @@
-import { BaseMessage } from "./models/message";
+import { MessageData } from "@communicator/common";
 
 export type Bindings = {
-  RAW_MESSAGES_QUEUE: Queue<BaseMessage>;
+  RAW_MESSAGES_QUEUE: Queue<MessageData>;
 }
 

@@ -25,5 +25,4 @@ export interface ApiResponse<T = any> {
   };
 }
 
-// Export error types
-export * from './error';
+export * from './message';
