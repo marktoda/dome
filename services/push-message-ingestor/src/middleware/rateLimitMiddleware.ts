@@ -1,7 +1,5 @@
 import { Context, MiddlewareHandler, Next } from 'hono';
-import { logger } from '../utils/logger';
-import { sendErrorResponse } from '../utils/responseUtils';
-
+import { RateLimitError } from '../errors';
 /**
  * Simple in-memory rate limiter
  * For production use, consider using a distributed rate limiter with Redis
@@ -100,10 +98,10 @@ export function createRateLimitMiddleware(
   keyGenerator: (c: Context) => string = (c) => c.req.header('x-forwarded-for') || c.req.header('cf-connecting-ip') || 'unknown'
 ): MiddlewareHandler {
   const limiter = new RateLimiter(windowMs, maxRequests);
-  
+
   // Start cleanup interval
   const cleanupInterval = limiter.startCleanup();
-  
+
   // Ensure cleanup interval is cleared when the worker terminates
   if (typeof self !== 'undefined' && 'addEventListener' in self) {
     // Use 'beforeunload' for Cloudflare Workers environment
@@ -112,39 +110,33 @@ export function createRateLimitMiddleware(
       // We'll rely on garbage collection to clean up the interval
     });
   }
-  
+
   return async (c: Context, next: Next) => {
     const key = keyGenerator(c);
-    
+
     if (!limiter.isAllowed(key)) {
-      logger.warn(`Rate limit exceeded for client ${key}`);
-      
+      console.warn(`Rate limit exceeded for client ${key}`);
+
       const { resetTime } = limiter.getRemainingRequests(key);
       const resetDate = new Date(resetTime).toISOString();
-      
+
       // Set rate limit headers
       c.header('X-RateLimit-Limit', maxRequests.toString());
       c.header('X-RateLimit-Remaining', '0');
       c.header('X-RateLimit-Reset', resetDate);
-      
-      return sendErrorResponse(c, {
-        code: 'RATE_LIMIT_EXCEEDED',
-        message: 'Too many requests, please try again later',
-        details: {
-          retryAfter: Math.ceil((resetTime - Date.now()) / 1000)
-        }
-      }, 429);
+
+      throw new RateLimitError('Too many requests, please try again later');
     }
-    
+
     // Get remaining requests
     const { remaining, resetTime } = limiter.getRemainingRequests(key);
     const resetDate = new Date(resetTime).toISOString();
-    
+
     // Set rate limit headers
     c.header('X-RateLimit-Limit', maxRequests.toString());
     c.header('X-RateLimit-Remaining', remaining.toString());
     c.header('X-RateLimit-Reset', resetDate);
-    
+
     await next();
   };
 }

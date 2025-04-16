@@ -2,60 +2,23 @@ import { Context, MiddlewareHandler, Next } from 'hono';
 import { ApiResponse } from '@communicator/common';
 import { ZodError } from 'zod';
 import { formatZodError } from '../models/schemas';
-import { ExtendedError, createValidationErrorResponse, createServerErrorResponse } from '../utils/responseUtils';
+import {
+  BaseError,
+  ValidationError,
+  SchemaValidationError,
+  ServiceError,
+} from '../errors';
 
-/**
- * Custom error class for application-specific errors
+// Re-export AppError as BaseError for backward compatibility
+export { BaseError as AppError } from '../errors';
+/*
+ * Extended error interface with additional properties
  */
-export class AppError extends Error {
+export interface ExtendedError {
   code: string;
-  status: number;
+  message: string;
+  requestId?: string;
   details?: Record<string, any>;
-
-  /**
-   * Creates a new AppError
-   * @param message Error message
-   * @param code Error code
-   * @param status HTTP status code
-   * @param details Additional error details
-   */
-  constructor(message: string, code: string, status: number = 500, details?: Record<string, any>) {
-    super(message);
-    this.name = 'AppError';
-    this.code = code;
-    this.status = status;
-    this.details = details;
-  }
-}
-
-/**
- * Creates a validation error
- * @param message Error message
- * @param details Additional error details
- * @returns AppError instance
- */
-export function createValidationError(message: string, details?: Record<string, any>): AppError {
-  return new AppError(message, 'VALIDATION_ERROR', 400, details);
-}
-
-/**
- * Creates a server error
- * @param message Error message
- * @param details Additional error details
- * @returns AppError instance
- */
-export function createServerError(message: string, details?: Record<string, any>): AppError {
-  return new AppError(message, 'SERVER_ERROR', 500, details);
-}
-
-/**
- * Creates a queue error
- * @param message Error message
- * @param details Additional error details
- * @returns AppError instance
- */
-export function createQueueError(message: string, details?: Record<string, any>): AppError {
-  return new AppError(message, 'QUEUE_ERROR', 500, details);
 }
 
 /**
@@ -75,14 +38,14 @@ export const errorMiddleware: MiddlewareHandler = async (c: Context, next: Next)
 
     const isProduction = c.env.ENVIRONMENT === 'production';
 
-    if (error instanceof AppError) {
+    if (error instanceof BaseError) {
       // Handle application-specific errors
       const extendedError: ExtendedError = {
         code: error.code,
         message: error.message,
         requestId,
         // Only include details in non-production environments or if they don't contain sensitive info
-        ...((!isProduction || error.code === 'VALIDATION_ERROR') && error.details && { details: error.details })
+        ...((!isProduction || error instanceof ValidationError) && error.details && { details: error.details })
       };
 
       errorResponse = {
@@ -93,8 +56,20 @@ export const errorMiddleware: MiddlewareHandler = async (c: Context, next: Next)
     } else if (error instanceof ZodError) {
       // Handle Zod validation errors
       const formattedErrors = formatZodError(error);
-      const { body, status: responseStatus } = createValidationErrorResponse('Validation error', { errors: formattedErrors });
-      return c.json(body, responseStatus);
+      const schemaError = new SchemaValidationError('Validation error', { errors: formattedErrors });
+
+      const extendedError: ExtendedError = {
+        code: schemaError.code,
+        message: schemaError.message,
+        requestId,
+        details: schemaError.details
+      };
+
+      errorResponse = {
+        success: false,
+        error: extendedError
+      };
+      status = schemaError.status;
     } else {
       // Handle unknown errors
       // In production, use a generic error message to avoid exposing sensitive information
@@ -102,10 +77,22 @@ export const errorMiddleware: MiddlewareHandler = async (c: Context, next: Next)
         ? 'An internal server error occurred'
         : (error instanceof Error ? error.message : 'Unknown error');
 
-      const { body, status: responseStatus } = createServerErrorResponse(
+      // Create a ServiceError for unknown errors
+      const serviceError = new ServiceError(
         isProduction ? errorMessage : `Error processing request: ${errorMessage}`
       );
-      return c.json(body, responseStatus);
+
+      const extendedError: ExtendedError = {
+        code: serviceError.code,
+        message: serviceError.message,
+        requestId
+      };
+
+      errorResponse = {
+        success: false,
+        error: extendedError
+      };
+      status = serviceError.status;
     }
 
     return c.json(errorResponse, status);

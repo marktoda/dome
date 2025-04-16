@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { zValidator } from "@hono/zod-validator";
-import { ApiResponse, ServiceInfo } from "@communicator/common";
+import { ServiceInfo } from "@communicator/common";
 import { MessageController } from "./controllers/messageController";
 import { telegramMessageBatchSchema } from "./models/schemas";
 import { pinoLogger } from "./middleware/pinoLogger";
-import { createRequestContextMiddleware } from "./utils/requestContext";
+import { createRequestContextMiddleware } from "./middleware/requestContext";
 import { errorMiddleware } from "./middleware/errorMiddleware";
 import { responseHandlerMiddleware } from "./middleware/responseHandlerMiddleware";
 import { Bindings } from "./types";
@@ -47,7 +47,7 @@ app.post(
     // Process the request
     const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
     const result = await messageController.publishTelegramMessages(validatedData);
-    
+
     // Return the result as a JSON response
     return c.json(result);
   }
