@@ -32,11 +32,6 @@ export class MessageService {
    * @returns A promise that resolves when all messages are published
    */
   async publishMessages(messages: BaseMessage[]): Promise<void> {
-    // Handle empty arrays gracefully
-    if (messages.length === 0) {
-      return;
-    }
-
     await this.queueBinding.sendBatch(messages.map(message => ({ body: message })));
   }
 
@@ -45,23 +40,15 @@ export class MessageService {
    * @param batch The batch of Telegram messages to publish
    * @returns A result object with success status and optional error message
    */
-  async publishTelegramMessages(batch: TelegramMessageBatch): Promise<{ success: boolean; error?: string }> {
+  async publishTelegramMessages(batch: TelegramMessageBatch): Promise<number> {
     // Handle empty batch gracefully
     if (!batch.messages || batch.messages.length === 0) {
-      return { success: true };
+      return 0;
     }
 
-    try {
-      // Publish the messages
-      await this.publishMessages(batch.messages);
-      return { success: true };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        success: false,
-        error: `Failed to publish messages: ${errorMessage}`
-      };
-    }
+    // Publish the messages
+    await this.publishMessages(batch.messages);
+    return batch.messages.length;
   }
 }
 

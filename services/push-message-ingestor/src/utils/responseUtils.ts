@@ -1,6 +1,5 @@
 import { Context } from 'hono';
 import { ApiResponse } from '@communicator/common';
-import { logger, getRequestId } from './logger';
 
 /**
  * Extended error interface with additional properties
@@ -27,8 +26,8 @@ export interface ResponseResult {
  * @returns API response object
  */
 export function createSuccessResponse(data: Record<string, any>, status: number = 200): ResponseResult {
-  logger.info('Creating success response', { status });
-  
+  console.info('Creating success response', { status });
+
   return {
     body: {
       success: true,
@@ -36,15 +35,6 @@ export function createSuccessResponse(data: Record<string, any>, status: number 
     },
     status
   };
-}
-
-/**
- * Creates a created response (201 Created)
- * @param data Response data
- * @returns API response object
- */
-export function createCreatedResponse(data: Record<string, any>): ResponseResult {
-  return createSuccessResponse(data, 201);
 }
 
 /**
@@ -59,9 +49,9 @@ export function createErrorResponse(error: Omit<ExtendedError, 'requestId'>, sta
     ...error,
     requestId
   };
-  
-  logger.error('Creating error response', { error: extendedError, status });
-  
+
+  console.error('Creating error response', { error: extendedError, status });
+
   return {
     body: {
       success: false,
@@ -111,32 +101,6 @@ export function createQueueErrorResponse(message: string, details?: Record<strin
     message,
     ...(details && { details })
   }, 500);
-}
-
-// Legacy functions that use Hono context - these will be used in middleware
-// but not in business logic
-
-/**
- * Sends a success response
- * @param c Hono context
- * @param data Response data
- * @param status HTTP status code (default: 200)
- * @returns Hono response
- */
-export function sendSuccessResponse(c: Context, data: Record<string, any>, status: number = 200): Response {
-  const { body, status: responseStatus } = createSuccessResponse(data, status);
-  return c.json(body, responseStatus);
-}
-
-/**
- * Sends a created response (201 Created)
- * @param c Hono context
- * @param data Response data
- * @returns Hono response
- */
-export function sendCreatedResponse(c: Context, data: Record<string, any>): Response {
-  const { body, status } = createCreatedResponse(data);
-  return c.json(body, status);
 }
 
 /**

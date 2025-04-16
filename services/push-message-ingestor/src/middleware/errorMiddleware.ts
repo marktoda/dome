@@ -2,7 +2,6 @@ import { Context, MiddlewareHandler, Next } from 'hono';
 import { ApiResponse } from '@communicator/common';
 import { ZodError } from 'zod';
 import { formatZodError } from '../models/schemas';
-import { logger, getRequestId } from '../utils/logger';
 import { ExtendedError, createValidationErrorResponse, createServerErrorResponse } from '../utils/responseUtils';
 
 /**
@@ -69,7 +68,7 @@ export const errorMiddleware: MiddlewareHandler = async (c: Context, next: Next)
   } catch (error) {
     // Log the error with request ID
     const requestId = c.get('requestId') || 'unknown';
-    logger.error(`Error processing request [${requestId}]:`, error instanceof Error ? error : {});
+    console.error(`Error processing request [${requestId}]:`, error instanceof Error ? error : {});
 
     let errorResponse: ApiResponse;
     let status = 500;
