@@ -1,5 +1,5 @@
 /**
- * Error module for the push-message-ingestor service
+ * Error module for the common package
  * Exports all error classes and utility functions
  */
 
@@ -37,3 +37,6 @@ export {
   RateLimitError,
   NotFoundError
 };
+
+// For backward compatibility
+export { BaseError as AppError } from './BaseError';

@@ -6,7 +6,7 @@ import {
   BatchValidationError,
   QueueError,
   MessageProcessingError
-} from '../errors';
+} from '@communicator/common';
 import { TelegramMessageBatch, BaseMessage } from '../models/message';
 import { MessageService } from '../services/messageService';
 

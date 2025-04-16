@@ -88,7 +88,7 @@ This repository is organized as a monorepo with the following structure:
   - Leverage Hono's routing capabilities for clean API design
   - Use Hono's type-safe request/response handling
   - Follow the established patterns in existing services
-  - Utilize Hono's built-in validation and error handling
+  - Utilize Zod and Hono zValidator built-in validation and error handling
 
 ## Common Workflows
 

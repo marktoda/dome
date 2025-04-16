@@ -1,5 +1,6 @@
 import { Context, MiddlewareHandler, Next } from 'hono';
 import { RateLimitError } from '../errors';
+
 /**
  * Simple in-memory rate limiter
  * For production use, consider using a distributed rate limiter with Redis

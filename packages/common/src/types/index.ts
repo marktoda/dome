@@ -20,5 +20,10 @@ export interface ApiResponse<T = any> {
   error?: {
     code: string;
     message: string;
+    requestId?: string;
+    details?: Record<string, any>;
   };
 }
+
+// Export error types
+export * from './error';

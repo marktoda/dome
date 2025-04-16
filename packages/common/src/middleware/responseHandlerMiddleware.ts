@@ -1,5 +1,5 @@
 import { Context, MiddlewareHandler, Next } from 'hono';
-import { ApiResponse } from '@communicator/common';
+import { ApiResponse } from '../types';
 import pino from 'pino';
 
 // Create a logger instance

@@ -1,13 +1,16 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { zValidator } from "@hono/zod-validator";
-import { ServiceInfo } from "@communicator/common";
+import { 
+  ServiceInfo, 
+  createRequestContextMiddleware, 
+  createErrorMiddleware, 
+  responseHandlerMiddleware, 
+  createPinoLoggerMiddleware 
+} from "@communicator/common";
 import { MessageController } from "./controllers/messageController";
 import { telegramMessageBatchSchema } from "./models/schemas";
-import { pinoLogger } from "./middleware/pinoLogger";
-import { createRequestContextMiddleware } from "./middleware/requestContext";
-import { errorMiddleware } from "./middleware/errorMiddleware";
-import { responseHandlerMiddleware } from "./middleware/responseHandlerMiddleware";
+import { formatZodError } from "./models/schemas";
 import { Bindings } from "./types";
 
 // Service information
@@ -22,9 +25,9 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 // Register middleware
 app.use("*", createRequestContextMiddleware());
-app.use("*", pinoLogger());
+app.use("*", createPinoLoggerMiddleware());
 app.use("*", cors());
-app.use("*", errorMiddleware);
+app.use("*", createErrorMiddleware(formatZodError));
 app.use("*", responseHandlerMiddleware);
 
 // Routes

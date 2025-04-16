@@ -6,7 +6,7 @@ import {
   QueueError,
   MessageProcessingError,
   BatchValidationError
-} from '../errors';
+} from '@communicator/common';
 
 /**
  * Service for handling message operations
@@ -77,4 +77,3 @@ export class MessageService {
     return batch.messages.length;
   }
 }
-
