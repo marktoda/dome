@@ -13,7 +13,6 @@
     "format": "prettier --write 'src/**/*.ts'"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.20230518.0",
     "@dome/common": "workspace:*",
     "zod": "^3.21.4"
   },
@@ -26,3 +25,4 @@
     "wrangler": "^3.0.0"
   }
 }
+

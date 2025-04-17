@@ -1,43 +1,19 @@
 // @ts-nocheck
 import axios from 'axios';
+import { describe, beforeEach, test, expect, vi, afterEach } from 'vitest';
 import { ApiClient, addContent, addNote, listItems, showItem, search, chat, resetApiInstance, getApiInstance } from './api';
 import { loadConfig, saveApiKey } from './config';
 import type { ConfigSchema } from './config';
 
-// Add Jest types
-declare global {
-  namespace jest {
-    interface Matchers<R> {
-      toHaveBeenCalledWith: (...args: any[]) => R;
-    }
-    type Mock<T = any, Y extends any[] = any> = {
-      (...args: Y): T;
-      mockReturnValue: (val: T) => Mock<T, Y>;
-      mockResolvedValue: (val: T) => Mock<Promise<T>, Y>;
-      mockImplementation: (fn: (...args: Y) => T) => Mock<T, Y>;
-    };
-    type Mocked<T> = {
-      [P in keyof T]: T[P] extends (...args: infer A) => infer B
-        ? jest.Mock<B, A>
-        : T[P];
-    };
-  }
-
-  function describe(name: string, fn: () => void): void;
-  function beforeEach(fn: () => void): void;
-  function test(name: string, fn: () => void): void;
-  function expect<T>(value: T): any;
-}
-
 // Mock axios
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+vi.mock('axios');
+const mockedAxios = axios as any;
 
 // Mock config
-jest.mock('./config', () => ({
-  loadConfig: jest.fn(),
-  isAuthenticated: jest.fn().mockReturnValue(true),
-  saveApiKey: jest.fn(),
+vi.mock('./config', () => ({
+  loadConfig: vi.fn(),
+  isAuthenticated: vi.fn().mockReturnValue(true),
+  saveApiKey: vi.fn(),
 }));
 
 describe('ApiClient', () => {
@@ -48,18 +24,18 @@ describe('ApiClient', () => {
   };
   
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     resetApiInstance();
-    (loadConfig as jest.Mock).mockReturnValue(mockConfig);
+    (loadConfig as any).mockReturnValue(mockConfig);
     
     mockedAxios.create.mockReturnValue({
-      get: jest.fn().mockResolvedValue({ data: {} }),
-      post: jest.fn().mockResolvedValue({ data: {} }),
-      put: jest.fn().mockResolvedValue({ data: {} }),
-      delete: jest.fn().mockResolvedValue({ data: {} }),
+      get: vi.fn().mockResolvedValue({ data: {} }),
+      post: vi.fn().mockResolvedValue({ data: {} }),
+      put: vi.fn().mockResolvedValue({ data: {} }),
+      delete: vi.fn().mockResolvedValue({ data: {} }),
       interceptors: {
         request: {
-          use: jest.fn(),
+          use: vi.fn(),
         },
       },
     } as any);
@@ -76,12 +52,12 @@ describe('ApiClient', () => {
   });
 
   test('addContent should call post with the correct parameters', async () => {
-    const mockPost = jest.fn().mockResolvedValue({ data: { success: true } });
+    const mockPost = vi.fn().mockResolvedValue({ data: { success: true } });
     mockedAxios.create.mockReturnValue({
       post: mockPost,
       interceptors: {
         request: {
-          use: jest.fn(),
+          use: vi.fn(),
         },
       },
     } as any);
@@ -92,12 +68,12 @@ describe('ApiClient', () => {
   });
 
   test('addNote should call post with the correct parameters', async () => {
-    const mockPost = jest.fn().mockResolvedValue({ data: { success: true } });
+    const mockPost = vi.fn().mockResolvedValue({ data: { success: true } });
     mockedAxios.create.mockReturnValue({
       post: mockPost,
       interceptors: {
         request: {
-          use: jest.fn(),
+          use: vi.fn(),
         },
       },
     } as any);
@@ -108,12 +84,12 @@ describe('ApiClient', () => {
   });
 
   test('listItems should call get with the correct parameters', async () => {
-    const mockGet = jest.fn().mockResolvedValue({ data: { items: [] } });
+    const mockGet = vi.fn().mockResolvedValue({ data: { items: [] } });
     mockedAxios.create.mockReturnValue({
       get: mockGet,
       interceptors: {
         request: {
-          use: jest.fn(),
+          use: vi.fn(),
         },
       },
     } as any);
@@ -124,12 +100,12 @@ describe('ApiClient', () => {
   });
 
   test('showItem should call get with the correct parameters', async () => {
-    const mockGet = jest.fn().mockResolvedValue({ data: { id: '123' } });
+    const mockGet = vi.fn().mockResolvedValue({ data: { id: '123' } });
     mockedAxios.create.mockReturnValue({
       get: mockGet,
       interceptors: {
         request: {
-          use: jest.fn(),
+          use: vi.fn(),
         },
       },
     } as any);
@@ -140,12 +116,12 @@ describe('ApiClient', () => {
   });
 
   test('search should call get with the correct parameters', async () => {
-    const mockGet = jest.fn().mockResolvedValue({ data: { matches: [] } });
+    const mockGet = vi.fn().mockResolvedValue({ data: { matches: [] } });
     mockedAxios.create.mockReturnValue({
       get: mockGet,
       interceptors: {
         request: {
-          use: jest.fn(),
+          use: vi.fn(),
         },
       },
     } as any);
@@ -156,12 +132,12 @@ describe('ApiClient', () => {
   });
 
   test('chat should call post with the correct parameters', async () => {
-    const mockPost = jest.fn().mockResolvedValue({ data: { message: 'response' } });
+    const mockPost = vi.fn().mockResolvedValue({ data: { message: 'response' } });
     mockedAxios.create.mockReturnValue({
       post: mockPost,
       interceptors: {
         request: {
-          use: jest.fn(),
+          use: vi.fn(),
         },
       },
     } as any);

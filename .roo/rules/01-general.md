@@ -97,6 +97,7 @@ This repository is organized as a monorepo with the following structure:
 
 - When deploying: first navigate to the project directory, then run Wrangler commands
 - For testing: ensure you're in the correct directory before running test suites
+- Use vitest for testing
 - Creating a new service:
   1. Use the appropriate template from `templates/`
   2. Update the service configuration

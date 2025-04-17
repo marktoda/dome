@@ -40,11 +40,12 @@ export class NoteController {
    * @returns Response
    */
   async ingest(c: Context<{ Bindings: Bindings }>): Promise<Response> {
+    console.log("hi im ingestin");
     try {
       // Validate request body
       const body = await c.req.json();
       const validatedData = ingestSchema.parse(body);
-      
+
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
       if (!userId) {
@@ -60,7 +61,7 @@ export class NoteController {
       // Process the content to extract entities and classify intent
       // This would typically involve an LLM call, but for now we'll use a simple approach
       const title = validatedData.title || this.generateTitle(validatedData.content);
-      
+
       // Create the note
       const note = await this.noteRepository.create(c.env, {
         userId,
@@ -81,7 +82,7 @@ export class NoteController {
       }, 201);
     } catch (error) {
       console.error('Error in ingest controller:', error);
-      
+
       if (error instanceof z.ZodError) {
         return c.json({
           success: false,
@@ -92,7 +93,7 @@ export class NoteController {
           }
         }, 400);
       }
-      
+
       if (error instanceof ServiceError) {
         return c.json({
           success: false,
@@ -102,7 +103,7 @@ export class NoteController {
           }
         }, 500);
       }
-      
+
       return c.json({
         success: false,
         error: {
@@ -134,10 +135,10 @@ export class NoteController {
 
       // Get note ID from path
       const noteId = c.req.param('id');
-      
+
       // Get the note
       const note = await this.noteRepository.findById(c.env, noteId);
-      
+
       // Check if the note exists and belongs to the user
       if (!note || note.userId !== userId) {
         return c.json({
@@ -148,7 +149,7 @@ export class NoteController {
           }
         }, 404);
       }
-      
+
       // Return the note
       return c.json({
         success: true,
@@ -156,7 +157,7 @@ export class NoteController {
       });
     } catch (error) {
       console.error('Error getting note:', error);
-      
+
       if (error instanceof ServiceError) {
         return c.json({
           success: false,
@@ -166,7 +167,7 @@ export class NoteController {
           }
         }, 500);
       }
-      
+
       return c.json({
         success: false,
         error: {
@@ -202,18 +203,18 @@ export class NoteController {
       const offsetParam = c.req.query('offset');
       const limit = limitParam ? parseInt(limitParam) : 50;
       const offset = offsetParam ? parseInt(offsetParam) : 0;
-      
+
       // Get notes for the user
       const notes = await this.noteRepository.findByUserId(c.env, userId);
-      
+
       // Filter by content type if specified
-      const filteredNotes = contentType 
+      const filteredNotes = contentType
         ? notes.filter(note => note.contentType === contentType)
         : notes;
-      
+
       // Apply pagination
       const paginatedNotes = filteredNotes.slice(offset, offset + limit);
-      
+
       // Return the notes
       return c.json({
         success: true,
@@ -223,7 +224,7 @@ export class NoteController {
       });
     } catch (error) {
       console.error('Error listing notes:', error);
-      
+
       if (error instanceof ServiceError) {
         return c.json({
           success: false,
@@ -233,7 +234,7 @@ export class NoteController {
           }
         }, 500);
       }
-      
+
       return c.json({
         success: false,
         error: {
@@ -265,10 +266,10 @@ export class NoteController {
 
       // Get note ID from path
       const noteId = c.req.param('id');
-      
+
       // Get the note to check ownership
       const existingNote = await this.noteRepository.findById(c.env, noteId);
-      
+
       // Check if the note exists and belongs to the user
       if (!existingNote || existingNote.userId !== userId) {
         return c.json({
@@ -279,26 +280,26 @@ export class NoteController {
           }
         }, 404);
       }
-      
+
       // Validate request body
       const body = await c.req.json();
       const validatedData = updateNoteSchema.parse(body);
-      
+
       // Update the note
       const updatedNote = await this.noteRepository.update(c.env, noteId, validatedData);
-      
+
       // If the body was updated, regenerate the embedding
       if (validatedData.body) {
         // Update embedding status to pending
         await this.noteRepository.update(c.env, noteId, {
           embeddingStatus: EmbeddingStatus.PENDING
         });
-        
+
         // Process embedding in the background
         this.processEmbedding(c.env, noteId, validatedData.body, userId)
           .catch(error => console.error(`Error processing embedding for note ${noteId}:`, error));
       }
-      
+
       // Return the updated note
       return c.json({
         success: true,
@@ -306,7 +307,7 @@ export class NoteController {
       });
     } catch (error) {
       console.error('Error updating note:', error);
-      
+
       if (error instanceof z.ZodError) {
         return c.json({
           success: false,
@@ -317,7 +318,7 @@ export class NoteController {
           }
         }, 400);
       }
-      
+
       if (error instanceof ServiceError) {
         return c.json({
           success: false,
@@ -327,7 +328,7 @@ export class NoteController {
           }
         }, 500);
       }
-      
+
       return c.json({
         success: false,
         error: {
@@ -359,10 +360,10 @@ export class NoteController {
 
       // Get note ID from path
       const noteId = c.req.param('id');
-      
+
       // Get the note to check ownership
       const existingNote = await this.noteRepository.findById(c.env, noteId);
-      
+
       // Check if the note exists and belongs to the user
       if (!existingNote || existingNote.userId !== userId) {
         return c.json({
@@ -373,10 +374,10 @@ export class NoteController {
           }
         }, 404);
       }
-      
+
       // Delete the note
       await this.noteRepository.delete(c.env, noteId);
-      
+
       // Delete the embedding from Vectorize
       try {
         await vectorizeService.deleteVector(c.env, noteId);
@@ -384,7 +385,7 @@ export class NoteController {
         console.warn(`Error deleting vector for note ${noteId}:`, error);
         // Continue even if vector deletion fails
       }
-      
+
       // Return success
       return c.json({
         success: true,
@@ -392,7 +393,7 @@ export class NoteController {
       });
     } catch (error) {
       console.error('Error deleting note:', error);
-      
+
       if (error instanceof ServiceError) {
         return c.json({
           success: false,
@@ -402,7 +403,7 @@ export class NoteController {
           }
         }, 500);
       }
-      
+
       return c.json({
         success: false,
         error: {
@@ -424,7 +425,7 @@ export class NoteController {
     if (firstLine.length <= 50) {
       return firstLine;
     }
-    
+
     // Use first few words
     const words = content.split(' ').slice(0, 5).join(' ');
     return words.length < 50 ? `${words}...` : words.substring(0, 47) + '...';
@@ -443,29 +444,29 @@ export class NoteController {
       await this.noteRepository.update(env, noteId, {
         embeddingStatus: EmbeddingStatus.PROCESSING
       });
-      
+
       // Generate embedding
       const embedding = await embeddingService.generateEmbedding(env, content);
-      
+
       // Store embedding in Vectorize
       await vectorizeService.addVector(env, noteId, embedding, {
         noteId,
         userId,
         createdAt: Date.now()
       });
-      
+
       // Update embedding status to completed
       await this.noteRepository.update(env, noteId, {
         embeddingStatus: EmbeddingStatus.COMPLETED
       });
     } catch (error) {
       console.error(`Error processing embedding for note ${noteId}:`, error);
-      
+
       // Update embedding status to failed
       await this.noteRepository.update(env, noteId, {
         embeddingStatus: EmbeddingStatus.FAILED
       });
-      
+
       throw error;
     }
   }
