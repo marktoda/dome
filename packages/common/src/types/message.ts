@@ -1,66 +1,48 @@
 /**
- * Message data interface for the queue infrastructure
+ * Message types for the dome project
  */
 
+/**
+ * Platform enum for message sources
+ */
 export enum Platform {
   TELEGRAM = 'telegram',
-  TWITTER = 'twitter',
+  EMAIL = 'email',
   SLACK = 'slack',
+  WEB = 'web',
+  API = 'api',
 }
+
+/**
+ * Content type for messages
+ */
+export type MessageContent = {
+  type: 'text' | 'image' | 'file' | 'audio' | 'video';
+  text?: string;
+  url?: string;
+  mimeType?: string;
+};
+
+/**
+ * Metadata for messages
+ */
+export type MessageMetadata = {
+  sender?: {
+    id?: string;
+    name?: string;
+    email?: string;
+  };
+  tags?: string[];
+  [key: string]: any;
+};
 
 /**
  * Message data interface
  */
 export interface MessageData {
-  id: string; // Unique message ID
-  platform: Platform; // Source of the message (telegram, websocket, etc.)
-  timestamp: number; // Unix timestamp in milliseconds
-  content: {
-    // Message content
-    type: string; // text, image, video, etc.
-    text?: string; // Text content if applicable
-    mediaUrl?: string; // URL to media if applicable
-  };
-  metadata: {
-    // Additional metadata
-    sender?: {
-      // Sender information
-      id: string;
-      name?: string;
-    };
-    retryCount?: number; // For tracking retries
-  };
-}
-
-/**
- * Queue message status
- */
-export enum MessageStatus {
-  PENDING = 'pending',
-  PROCESSING = 'processing',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  RETRYING = 'retrying',
-  DEAD_LETTER = 'dead_letter',
-}
-
-/**
- * Queue message interface
- */
-export interface QueueMessage {
   id: string;
-  data: MessageData;
-  status: MessageStatus;
-  createdAt: number;
-  updatedAt: number;
-  processingAttempts: number;
-  error?: string;
-}
-
-/**
- * Dead letter queue message interface
- */
-export interface DeadLetterQueueMessage extends QueueMessage {
-  failureReason: string;
-  lastAttemptAt: number;
+  platform: Platform | string;
+  timestamp: number;
+  content: MessageContent;
+  metadata?: MessageMetadata;
 }

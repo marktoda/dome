@@ -1,6 +1,9 @@
 /**
- * Common types for the Communicator services
+ * Common types for the Dome project
  */
+
+// Export message types
+export * from './message';
 
 /**
  * Service information interface
@@ -24,5 +27,3 @@ export interface ApiResponse<T = any> {
     details?: Record<string, any>;
   };
 }
-
-export * from './message';

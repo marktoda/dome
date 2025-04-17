@@ -1,0 +1,42 @@
+# Root wrangler.toml for dome project
+# This file defines global Cloudflare resources used across the project
+
+# D1 Database binding
+[[d1_databases]]
+binding = "D1_DATABASE"
+database_name = "dome_meta"
+database_id = "placeholder-id" # Replace with actual ID after creation
+preview_database_id = "placeholder-preview-id" # Replace with actual preview ID after creation
+
+# Vectorize binding
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "dome_notes"
+index_id = "placeholder-id" # Replace with actual ID after creation
+
+# R2 Bucket binding
+[[r2_buckets]]
+binding = "RAW"
+bucket_name = "dome_raw"
+
+# Queue binding
+[[queues.producers]]
+binding = "EVENTS"
+queue = "dome_events"
+
+# Optional Durable Object binding for session management
+# Uncomment when needed
+# [[durable_objects.bindings]]
+# name = "SESSIONS"
+# class_name = "SessionManager"
+
+[vars]
+ENVIRONMENT = "development"
+VERSION = "0.1.0"
+
+# Environment-specific configurations
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+vars = { ENVIRONMENT = "staging" }

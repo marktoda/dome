@@ -1,0 +1,44 @@
+name = "dome-api"
+main = "src/index.ts"
+compatibility_date = "2023-04-15"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "D1_DATABASE"
+database_name = "dome_meta"
+database_id = "placeholder-id" # Replace with actual ID after creation
+preview_database_id = "placeholder-preview-id" # Replace with actual preview ID after creation
+
+# Vectorize binding
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "dome_notes"
+index_id = "placeholder-id" # Replace with actual ID after creation
+
+# R2 Bucket binding
+[[r2_buckets]]
+binding = "RAW"
+bucket_name = "dome_raw"
+
+# Queue binding
+[[queues.producers]]
+binding = "EVENTS"
+queue = "dome_events"
+
+[vars]
+ENVIRONMENT = "development"
+VERSION = "0.1.0"
+
+# For local development
+[dev]
+port = 8787
+
+[dev.vars]
+ENVIRONMENT = "development"
+
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+vars = { ENVIRONMENT = "staging" }
+command = "pnpm build"

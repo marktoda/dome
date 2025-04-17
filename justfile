@@ -1,4 +1,4 @@
-# Communicator Cloudflare Justfile
+# Dome Cloudflare Justfile
 # Usage: just <command>
 
 # List all available commands
@@ -25,14 +25,14 @@ build-deploy:
     # First build TypeScript
     pnpm run build
     # Then prepare for deployment with wrangler
-    cd services/ingestor && wrangler deploy --dry-run --outdir=dist
+    cd services/dome-api && wrangler deploy --dry-run --outdir=dist
 
 # Build a specific package
 build-pkg PACKAGE:
     pnpm --filter {{ PACKAGE }} build
 
 # Run development server for a specific service
-dev SERVICE="ingestor":
+dev SERVICE="dome-api":
     wrangler dev -c ./services/{{ SERVICE }}/wrangler.toml
 
 # Run tests for all packages
@@ -119,15 +119,15 @@ setup-local:
 
 # Generate D1 database migrations
 db-migrate NAME:
-    wrangler d1 migrations create communicator {{ NAME }}
+    wrangler d1 migrations create dome_meta {{ NAME }}
 
 # Apply D1 database migrations locally
 db-migrate-local:
-    wrangler d1 migrations apply communicator --local
+    wrangler d1 migrations apply dome_meta --local
 
 # Apply D1 database migrations to production
 db-migrate-prod:
-    wrangler d1 migrations apply communicator
+    wrangler d1 migrations apply dome_meta
 
 # Create a new KV namespace
 kv-create NAME:

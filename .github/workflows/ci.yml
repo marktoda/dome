@@ -16,12 +16,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
 
       - name: Setup PNPM
         uses: pnpm/action-setup@v2
         with:
-          version: 7
+          version: 8
           run_install: false
 
       - name: Get pnpm store directory
@@ -49,3 +49,16 @@ jobs:
 
       - name: Test
         run: pnpm test
+        
+      - name: Install Wrangler
+        if: github.ref == 'refs/heads/main'
+        run: pnpm add -g wrangler
+
+      - name: Validate Deployment
+        if: github.ref == 'refs/heads/main'
+        run: wrangler deploy --dry-run
+        working-directory: services/dome-api
+        
+      - name: Validate D1 Migrations
+        if: github.ref == 'refs/heads/main'
+        run: wrangler d1 migrations apply dome_meta --dry-run
