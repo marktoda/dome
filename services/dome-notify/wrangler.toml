@@ -1,0 +1,35 @@
+name = "dome-notify"
+main = "src/index.ts"
+compatibility_date = "2023-05-18"
+
+# Inherit bindings from root wrangler.toml
+[build]
+command = "pnpm build"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "D1_DATABASE"
+database_name = "dome_meta"
+database_id = "placeholder-id" # Replace with actual ID after creation
+preview_database_id = "placeholder-preview-id" # Replace with actual preview ID after creation
+
+# Queue binding as consumer
+[[queues.consumers]]
+queue = "dome_events"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+
+[vars]
+ENVIRONMENT = "development"
+VERSION = "0.1.0"
+MAIL_FROM = "notifications@dome.example.com"
+MAIL_FROM_NAME = "Dome Notifications"
+SLACK_WEBHOOK_URL = ""  # Set this in production
+
+# Environment-specific configurations
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+vars = { ENVIRONMENT = "staging" }

@@ -5,6 +5,9 @@
 // Export message types
 export * from './message';
 
+// Export event types
+export * from './events';
+
 /**
  * Service information interface
  */

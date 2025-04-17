@@ -14,6 +14,9 @@ import {
 import type { Bindings } from './types';
 import { SearchController } from './controllers/searchController';
 import { fileController } from './controllers/fileController';
+import { noteController } from './controllers/noteController';
+import { taskController } from './controllers/taskController';
+import { chatController } from './controllers/chatController';
 
 // Service information
 const serviceInfo: ServiceInfo = {
@@ -56,9 +59,13 @@ app.get('/health', (c) =>
 const notesRouter = new Hono();
 
 // Ingest endpoint - for adding new notes, files, etc.
-notesRouter.post('/ingest', async (c) => {
-  throw new NotImplementedError('Notes ingestion not implemented yet');
-});
+notesRouter.post('/ingest', noteController.ingest.bind(noteController));
+
+// CRUD operations for notes
+notesRouter.get('/', noteController.listNotes.bind(noteController));
+notesRouter.get('/:id', noteController.getNote.bind(noteController));
+notesRouter.put('/:id', noteController.updateNote.bind(noteController));
+notesRouter.delete('/:id', noteController.deleteNote.bind(noteController));
 
 // File attachment endpoints
 notesRouter.post('/files', fileController.uploadFile.bind(fileController));
@@ -75,25 +82,21 @@ notesRouter.get('/search/stream', SearchController.streamSearch);
 // Tasks API routes
 const tasksRouter = new Hono();
 
-// Create task
-tasksRouter.post('/', async (c) => {
-  throw new NotImplementedError('Task creation not implemented yet');
-});
-
-// List tasks
-tasksRouter.get('/', async (c) => {
-  throw new NotImplementedError('Task listing not implemented yet');
-});
+// CRUD operations for tasks
+tasksRouter.post('/', taskController.createTask.bind(taskController));
+tasksRouter.get('/', taskController.listTasks.bind(taskController));
+tasksRouter.get('/:id', taskController.getTask.bind(taskController));
+tasksRouter.put('/:id', taskController.updateTask.bind(taskController));
+tasksRouter.delete('/:id', taskController.deleteTask.bind(taskController));
 
 // Complete task
-tasksRouter.post('/:id/complete', async (c) => {
-  throw new NotImplementedError('Task completion not implemented yet');
-});
+tasksRouter.post('/:id/complete', taskController.completeTask.bind(taskController));
+
+// Add reminder to task
+tasksRouter.post('/:id/remind', taskController.addReminder.bind(taskController));
 
 // Chat API route
-app.post('/chat', async (c) => {
-  throw new NotImplementedError('Chat functionality not implemented yet');
-});
+app.post('/chat', chatController.chat.bind(chatController));
 
 // Mount routers
 app.route('/notes', notesRouter);
