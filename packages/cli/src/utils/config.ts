@@ -8,12 +8,14 @@ export interface ConfigSchema {
   apiKey?: string;
   baseUrl: string;
   environment: 'development' | 'production';
+  theme?: 'light' | 'dark';
 }
 
 // Default configuration
 const defaultConfig: ConfigSchema = {
   baseUrl: 'http://localhost:8787',
   environment: 'development',
+  theme: 'light',
 };
 
 // Create the configuration directory if it doesn't exist
@@ -39,6 +41,11 @@ const config = new Conf<ConfigSchema>({
       enum: ['development', 'production'],
       default: defaultConfig.environment,
     },
+    theme: {
+      type: 'string',
+      enum: ['light', 'dark'],
+      default: defaultConfig.theme,
+    },
   },
   cwd: configDir,
 });
@@ -59,6 +66,7 @@ export function loadConfig(): ConfigSchema {
     apiKey: config.get('apiKey'),
     baseUrl: config.get('baseUrl'),
     environment: config.get('environment'),
+    theme: config.get('theme'),
   };
 }
 
@@ -114,4 +122,34 @@ export function getConfigStore(): Conf<ConfigSchema> {
  */
 export function isAuthenticated(): boolean {
   return !!config.get('apiKey');
+}
+
+/**
+ * Save the entire configuration
+ * @param configData The configuration data to save
+ */
+export function saveConfig(configData: ConfigSchema): void {
+  if (configData.apiKey) {
+    config.set('apiKey', configData.apiKey);
+  }
+  
+  if (configData.baseUrl) {
+    config.set('baseUrl', configData.baseUrl);
+  }
+  
+  if (configData.environment) {
+    config.set('environment', configData.environment);
+  }
+  
+  if (configData.theme) {
+    config.set('theme', configData.theme);
+  }
+}
+
+/**
+ * Set the theme
+ * @param theme The theme to set
+ */
+export function setTheme(theme: 'light' | 'dark'): void {
+  config.set('theme', theme);
 }

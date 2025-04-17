@@ -139,6 +139,24 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
 }
 
 /**
+ * List notes
+ * @param filter Optional filter criteria
+ * @returns The response data with notes
+ */
+export async function listNotes(filter?: string): Promise<any[]> {
+  return listItems('notes', filter);
+}
+
+/**
+ * List tasks
+ * @param filter Optional filter criteria
+ * @returns The response data with tasks
+ */
+export async function listTasks(filter?: string): Promise<any[]> {
+  return listItems('tasks', filter);
+}
+
+/**
  * Show a specific note or task
  * @param id The ID of the item to show
  * @returns The response data

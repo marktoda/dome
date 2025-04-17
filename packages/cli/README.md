@@ -6,12 +6,14 @@ A terminal UI client for interacting with the dome API.
 
 - Command-line interface for all dome API operations
 - Terminal UI using Ink (React for the terminal)
+- Full-screen curses-based TUI with interactive navigation
 - Authentication with API key
 - Environment switching (development, production)
 - Interactive chat with the RAG-enhanced interface
 - Support for adding notes, tasks, and reminders
 - Search across stored content
 - List and view notes and tasks
+- Theme customization (light/dark)
 
 ## Installation
 
@@ -156,6 +158,43 @@ Send a single message:
 dome chat --message "What meetings do I have scheduled for tomorrow?"
 ```
 
+### Full-Screen TUI
+
+Launch the full-screen terminal user interface:
+
+```bash
+dome tui
+```
+
+Or using the justfile:
+
+```bash
+just run-tui
+```
+
+The TUI provides a more interactive experience with:
+
+- Dashboard with overview and quick actions
+- Interactive chat with message history
+- Notes management with list and detail views
+- Search functionality with result previews
+- Settings configuration
+- Keyboard navigation and shortcuts
+- Theme customization
+
+#### TUI Keyboard Shortcuts
+
+- Arrow keys: Navigate menus and lists
+- Enter: Select an item
+- Escape: Go back or exit current view
+- q: Quit the application
+- ?: Show help screen
+- h: Return to dashboard
+- c: Quick access to chat
+- n: Quick access to notes
+- t: Quick access to tasks
+- s: Quick access to search
+
 ### Environment Switching
 
 Use the `--prod` flag to switch to production environment:
@@ -171,12 +210,23 @@ dome --prod list notes
 - `src/index.ts` - Main entry point
 - `src/commands/` - Command implementations
 - `src/components/` - React components for the terminal UI
+- `src/tui/` - Full-screen TUI implementation
+  - `src/tui/index.ts` - TUI entry point
+  - `src/tui/layouts/` - Layout components
+  - `src/tui/screens/` - Screen implementations
+  - `src/tui/components/` - TUI components
 - `src/utils/` - Utility functions and API client
 
 ### Building
 
 ```bash
 pnpm build
+```
+
+### Setting up the TUI
+
+```bash
+just setup-tui
 ```
 
 ### Testing

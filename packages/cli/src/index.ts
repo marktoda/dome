@@ -13,6 +13,7 @@ import { chatCommand } from './commands/chat';
 import { loginCommand } from './commands/login';
 import { logoutCommand } from './commands/logout';
 import { configCommand } from './commands/config';
+import { startTui } from './tui/index';
 
 // Load configuration
 const config = loadConfig();
@@ -47,6 +48,15 @@ chatCommand(program);
 loginCommand(program);
 logoutCommand(program);
 configCommand(program);
+
+// Add a command to launch the TUI
+program
+  .command('tui')
+  .description('Launch the full-screen terminal user interface')
+  .action(() => {
+    // Skip the banner when launching the TUI
+    startTui();
+  });
 
 // Parse command line arguments
 program.parse(process.argv);

@@ -18,6 +18,8 @@
   "dependencies": {
     "@dome/common": "workspace:*",
     "axios": "^1.6.0",
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
     "chalk": "^4.1.2",
     "commander": "^11.0.0",
     "conf": "^10.2.0",
@@ -25,14 +27,17 @@
     "ink": "^4.4.1",
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^5.0.1",
+    "keypress": "^0.2.1",
     "node-fetch": "^3.3.2",
     "ora": "^5.4.1",
     "react": "^18.2.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/blessed": "^0.1.22",
     "@types/figlet": "^1.5.6",
     "@types/jest": "^29.5.5",
+    "@types/keypress": "^2.0.30",
     "@types/node": "^18.15.11",
     "@types/react": "^18.2.21",
     "@typescript-eslint/eslint-plugin": "^5.57.1",

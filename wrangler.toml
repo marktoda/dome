@@ -4,25 +4,26 @@
 # D1 Database binding
 [[d1_databases]]
 binding = "D1_DATABASE"
-database_name = "dome_meta"
+database_name = "dome-meta"
 database_id = "placeholder-id" # Replace with actual ID after creation
 preview_database_id = "placeholder-preview-id" # Replace with actual preview ID after creation
 
 # Vectorize binding
 [[vectorize]]
 binding = "VECTORIZE"
-index_name = "dome_notes"
+index_name = "dome-notes"
 index_id = "placeholder-id" # Replace with actual ID after creation
 
 # R2 Bucket binding
 [[r2_buckets]]
 binding = "RAW"
-bucket_name = "dome_raw"
+bucket_name = "dome-raw"
+preview_bucket_name = "dome-raw-dev"
 
 # Queue binding
 [[queues.producers]]
 binding = "EVENTS"
-queue = "dome_events"
+queue = "dome-events"
 
 # Optional Durable Object binding for session management
 # Uncomment when needed

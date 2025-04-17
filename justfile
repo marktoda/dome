@@ -163,3 +163,15 @@ logs SERVICE:
 # Run a one-off command in a specific package
 run PACKAGE COMMAND:
     pnpm --filter {{ PACKAGE }} {{ COMMAND }}
+
+# Setup the CLI TUI
+setup-tui:
+    @echo "Setting up the CLI TUI..."
+    pnpm --filter @dome/cli install
+    pnpm --filter @dome/cli build
+    @echo "CLI TUI setup complete! Run 'just run-tui' to start the TUI."
+
+# Run the CLI TUI
+run-tui:
+    @echo "Starting the CLI TUI..."
+    pnpm --filter @dome/cli exec dome tui
