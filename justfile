@@ -20,20 +20,20 @@ reinstall: clean install
 build:
     pnpm run build
 
-# Build and prepare for deployment
-build-deploy:
-    # First build TypeScript
-    pnpm run build
-    # Then prepare for deployment with wrangler
-    cd services/dome-api && wrangler deploy --dry-run --outdir=dist
-
 # Build a specific package
-build-pkg PACKAGE:
+build-pkg PACKAGE: install
     pnpm --filter {{ PACKAGE }} build
+
+# Deploy a specific service (builds first)
+deploy SERVICE ENV="dev":
+    # First build the service
+    just build-pkg {{ SERVICE }}
+    # Then deploy with wrangler
+    wrangler -c services/{{ SERVICE }}/wrangler.toml deploy
 
 # Run development server for a specific service
 dev SERVICE="dome-api":
-    wrangler dev -c ./services/{{ SERVICE }}/wrangler.toml
+    wrangler -c services/{{ SERVICE }}/wrangler.toml dev
 
 # Run tests for all packages
 test:
@@ -67,17 +67,26 @@ typecheck:
 format:
     pnpm run format
 
-# Preview Pulumi changes for a specific environment
+# Setup local development environment
+setup-local: install build
+    @echo "Local development environment setup complete!"
+
+# Pulumi commands
 pulumi-preview ENV="dev":
     cd infrastructure && pnpm exec pulumi preview --stack {{ ENV }}
 
-# Deploy with Pulumi to a specific environment
 pulumi-up ENV="dev":
     cd infrastructure && pnpm exec pulumi up --stack {{ ENV }} --yes
 
-# Destroy Pulumi resources for a specific environment
 pulumi-destroy ENV="dev":
     cd infrastructure && pnpm exec pulumi destroy --stack {{ ENV }} --yes
+
+pulumi-stack-init ENV:
+    cd infrastructure && pnpm exec pulumi stack init {{ ENV }}
+
+# Deploy all services using Pulumi
+deploy-all ENV="dev": build
+    just pulumi-up {{ ENV }}
 
 # Create a new TypeScript service with Hono
 new-service NAME:
@@ -110,68 +119,55 @@ new-rust-service NAME:
     echo 'module.exports = {\n  extends: ["../../.eslintrc.js"],\n  parserOptions: {\n    project: "./tsconfig.json",\n    tsconfigRootDir: __dirname,\n  },\n  rules: {\n    // Service-specific overrides can be added here\n  },\n};' > services/{{ NAME }}/.eslintrc.js
     @echo "Rust service {{ NAME }} created successfully!"
 
-# Setup local development environment
-setup-local:
-    @echo "Setting up local development environment..."
-    pnpm install
-    pnpm build
-    @echo "Local development environment setup complete!"
-
-# Generate D1 database migrations
+# Database commands
 db-migrate NAME:
-    wrangler d1 migrations create dome_meta {{ NAME }}
+    wrangler -c services/dome-api/wrangler.toml d1 migrations create dome-meta {{ NAME }}
+
+db-migrate-local:
+    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta --local
+
+db-migrate-remote:
+    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta --remote
+
+db-migrate-prod:
+    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta
 
 # Apply D1 database migrations locally
-db-migrate-local:
-    wrangler d1 migrations apply dome_meta --local
+db-setup:
+    @echo "Applying database migrations locally..."
+    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta --local
+    @echo "Database migrations applied successfully!"
 
-# Apply D1 database migrations to production
-db-migrate-prod:
-    wrangler d1 migrations apply dome_meta
+# Run the API server in remote mode (without applying migrations)
+api-run-remote:
+    @echo "Starting the dome-api server with remote mode..."
+    wrangler -c services/dome-api/wrangler.toml dev --remote
 
-# Create a new KV namespace
-kv-create NAME:
-    wrangler kv:namespace create {{ NAME }}
-
-# Create a new R2 bucket
-r2-create NAME:
-    wrangler r2 bucket create {{ NAME }}
-
-# Create a new Queue
-queue-create NAME:
-    wrangler queues create {{ NAME }}
-
-# Deploy all services
-deploy-all ENV="dev":
-    just pulumi-up {{ ENV }}
-
-# Deploy a specific service
-deploy SERVICE ENV="dev":
-    # First build TypeScript
-    pnpm --filter {{ SERVICE }} build
-    # Then deploy with wrangler
-    cd services/{{ SERVICE }} && wrangler deploy
-
-# Generate a new Pulumi stack
-pulumi-stack-init ENV:
-    cd infrastructure && pnpm exec pulumi stack init {{ ENV }}
+# Apply D1 database migrations locally and start the API server
+db-setup-and-run:
+    @echo "Applying database migrations locally..."
+    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta --local
+    @echo "Starting the dome-api server with remote mode..."
+    wrangler -c services/dome-api/wrangler.toml dev --remote
 
 # Show logs for a service
 logs SERVICE:
-    cd services/{{ SERVICE }} && wrangler tail
+    wrangler -c services/{{ SERVICE }}/wrangler.toml tail
 
 # Run a one-off command in a specific package
 run PACKAGE COMMAND:
     pnpm --filter {{ PACKAGE }} {{ COMMAND }}
 
-# Setup the CLI TUI
+# CLI TUI commands
 setup-tui:
     @echo "Setting up the CLI TUI..."
-    pnpm --filter @dome/cli install
-    pnpm --filter @dome/cli build
+    just build-pkg @dome/cli
     @echo "CLI TUI setup complete! Run 'just run-tui' to start the TUI."
 
-# Run the CLI TUI
-run-tui:
+run-tui: setup-tui
     @echo "Starting the CLI TUI..."
-    pnpm --filter @dome/cli exec dome tui
+    node packages/cli/dist/tui/index.js
+
+run-prompt: setup-tui
+    @echo "Starting the prompt-based CLI TUI..."
+    node packages/cli/dist/tui/prompt.js

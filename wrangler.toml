@@ -6,7 +6,8 @@
 binding = "D1_DATABASE"
 database_name = "dome-meta"
 database_id = "placeholder-id" # Replace with actual ID after creation
-preview_database_id = "placeholder-preview-id" # Replace with actual preview ID after creation
+preview_database_id = "ac198406-1036-495e-b0f1-b61f7c9ecbdf"
+migrations_dir  = "services/dome-api/migrations"   # <‑‑ add this
 
 # Vectorize binding
 [[vectorize]]

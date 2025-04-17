@@ -158,7 +158,9 @@ Send a single message:
 dome chat --message "What meetings do I have scheduled for tomorrow?"
 ```
 
-### Full-Screen TUI
+### Terminal User Interfaces
+
+#### Full-Screen TUI
 
 Launch the full-screen terminal user interface:
 
@@ -172,7 +174,7 @@ Or using the justfile:
 just run-tui
 ```
 
-The TUI provides a more interactive experience with:
+The full-screen TUI provides a comprehensive experience with:
 
 - Dashboard with overview and quick actions
 - Interactive chat with message history
@@ -182,7 +184,7 @@ The TUI provides a more interactive experience with:
 - Keyboard navigation and shortcuts
 - Theme customization
 
-#### TUI Keyboard Shortcuts
+##### Full-Screen TUI Keyboard Shortcuts
 
 - Arrow keys: Navigate menus and lists
 - Enter: Select an item
@@ -194,6 +196,44 @@ The TUI provides a more interactive experience with:
 - n: Quick access to notes
 - t: Quick access to tasks
 - s: Quick access to search
+
+#### Prompt-Based TUI
+
+Launch the prompt-based terminal user interface:
+
+```bash
+dome prompt
+```
+
+Or using the justfile:
+
+```bash
+just run-prompt
+```
+
+The prompt-based TUI provides a simpler, command-line like experience:
+
+- Start with a blank prompt
+- Type messages directly to chat with Dome
+- Use slash commands for various actions
+- Keyboard shortcuts for mode switching
+
+##### Prompt-Based TUI Commands
+
+- `/add <content>` - Add content
+- `/note <context> <content>` - Add a note
+- `/list [notes|tasks]` - List items
+- `/search <query>` - Search content
+- `/help` - Show help
+- `/exit` - Exit the application
+
+##### Prompt-Based TUI Keyboard Shortcuts
+
+- Ctrl+c: Exit
+- Ctrl+n: Switch to note mode
+- Ctrl+l: Switch to list mode
+- Ctrl+s: Switch to search mode
+- Ctrl+h: Show help
 
 ### Environment Switching
 

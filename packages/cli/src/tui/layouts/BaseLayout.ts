@@ -30,7 +30,16 @@ export function createBaseLayout(): BaseLayoutElements {
 
   // Set key bindings for global navigation
   screen.key(['escape', 'q', 'C-c'], () => {
-    return process.exit(0);
+    // Clean up and exit
+    screen.destroy();
+    process.exit(0);
+  });
+
+  // Also handle SIGINT (Ctrl+C) at the process level
+  process.on('SIGINT', () => {
+    // Clean up and exit
+    screen.destroy();
+    process.exit(0);
   });
 
   // Create a grid layout

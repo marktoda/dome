@@ -14,6 +14,7 @@ import { loginCommand } from './commands/login';
 import { logoutCommand } from './commands/logout';
 import { configCommand } from './commands/config';
 import { startTui } from './tui/index';
+import { startPromptTui } from './tui/prompt';
 
 // Load configuration
 const config = loadConfig();
@@ -56,6 +57,15 @@ program
   .action(() => {
     // Skip the banner when launching the TUI
     startTui();
+  });
+
+// Add a command to launch the prompt-based TUI
+program
+  .command('prompt')
+  .description('Launch the prompt-based terminal user interface')
+  .action(() => {
+    // Skip the banner when launching the prompt TUI
+    startPromptTui();
   });
 
 // Parse command line arguments
