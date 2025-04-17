@@ -30,16 +30,16 @@ export function searchCommand(program: Command): void {
         
         spinner.stop();
         
-        if (results.matches.length === 0) {
+        if (!results.results || results.results.length === 0) {
           console.log(`No results found for query: "${query}"`);
           return;
         }
         
         console.log(heading(`Search Results for: "${query}"`));
-        console.log(`Found ${results.matches.length} results.\n`);
+        console.log(`Found ${results.results.length} results.\n`);
         
         // Display results
-        results.matches.slice(0, limit).forEach((match: any, index: number) => {
+        results.results.slice(0, limit).forEach((match: any, index: number) => {
           console.log(subheading(`Result ${index + 1} (Score: ${match.score.toFixed(2)})`));
           console.log(formatKeyValue('ID', match.id));
           console.log(formatKeyValue('Type', match.type));
@@ -64,8 +64,8 @@ export function searchCommand(program: Command): void {
         });
         
         // Show message if results were limited
-        if (results.matches.length > limit) {
-          console.log(`Showing ${limit} of ${results.matches.length} results. Use --limit option to see more.`);
+        if (results.results.length > limit) {
+          console.log(`Showing ${limit} of ${results.results.length} results. Use --limit option to see more.`);
         }
       } catch (err) {
         console.log(error(`Failed to search: ${err instanceof Error ? err.message : String(err)}`));

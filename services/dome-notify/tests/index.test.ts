@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import worker from '../src/index';
-import { Event, EventSchema } from 'common';
 import { NotificationService } from '../src/services/notificationService';
 import { EventHandlerRegistry } from '../src/handlers/eventHandlers';
+import { Event, EventSchema } from '@dome/common';
 
 // Mock notification service
 vi.mock('../src/services/notificationService', () => ({
@@ -23,6 +23,8 @@ vi.mock('../src/handlers/eventHandlers', () => ({
   EventHandlerRegistry: vi.fn().mockImplementation(() => ({
     registerHandler: vi.fn(),
     handleEvent: vi.fn().mockResolvedValue(undefined),
+    handlers: [],
+    getHandler: vi.fn(),
   })),
   ReminderDueEventHandler: vi.fn().mockImplementation(() => ({
     canHandle: vi.fn().mockReturnValue(true),
@@ -35,11 +37,13 @@ vi.mock('../src/handlers/eventHandlers', () => ({
 }));
 
 // Mock common module
-vi.mock('common', () => ({
+vi.mock('@dome/common', () => ({
   Event: {},
   EventSchema: {
     parse: vi.fn().mockImplementation((data) => data),
   },
+  QueueService: {},
+  MessageBatch: {},
 }));
 
 // Mock environment
@@ -104,7 +108,7 @@ describe('dome-notify worker', () => {
   describe('queue handler', () => {
     it('should initialize notification service with configured channels', async () => {
       // Act
-      await worker.queue(mockMessageBatch, mockEnv, mockContext);
+      await worker.queue(mockMessageBatch, mockEnv as any, mockContext);
 
       // Assert
       expect(NotificationService).toHaveBeenCalled();
@@ -115,7 +119,7 @@ describe('dome-notify worker', () => {
 
     it('should initialize event handler registry with all handlers', async () => {
       // Act
-      await worker.queue(mockMessageBatch, mockEnv, mockContext);
+      await worker.queue(mockMessageBatch, mockEnv as any, mockContext);
 
       // Assert
       expect(EventHandlerRegistry).toHaveBeenCalled();
@@ -126,7 +130,7 @@ describe('dome-notify worker', () => {
 
     it('should process each message in the batch', async () => {
       // Act
-      await worker.queue(mockMessageBatch, mockEnv, mockContext);
+      await worker.queue(mockMessageBatch, mockEnv as any, mockContext);
 
       // Assert
       expect(EventSchema.parse).toHaveBeenCalledTimes(1);
@@ -141,13 +145,15 @@ describe('dome-notify worker', () => {
     it('should handle errors in message processing', async () => {
       // Arrange
       // Directly modify the mock implementation
-      vi.mocked(EventHandlerRegistry).mockImplementation(() => ({
+      vi.mocked(EventHandlerRegistry as any).mockImplementation(() => ({
         registerHandler: vi.fn(),
         handleEvent: vi.fn().mockRejectedValue(new Error('Handler error')),
+        handlers: [],
+        getHandler: vi.fn(),
       }));
 
       // Act
-      await worker.queue(mockMessageBatch, mockEnv, mockContext);
+      await worker.queue(mockMessageBatch, mockEnv as any, mockContext);
 
       // Assert
       expect(mockMessageBatch.ack).toHaveBeenCalledTimes(1);
@@ -159,7 +165,7 @@ describe('dome-notify worker', () => {
       mockMessageBatch.messages[0].body = 'invalid json';
 
       // Act
-      await worker.queue(mockMessageBatch, mockEnv, mockContext);
+      await worker.queue(mockMessageBatch, mockEnv as any, mockContext);
 
       // Assert
       expect(console.error).toHaveBeenCalled;
@@ -172,7 +178,7 @@ describe('dome-notify worker', () => {
       mockMessageBatch.messages = [];
 
       // Act
-      await worker.queue(mockMessageBatch, mockEnv, mockContext);
+      await worker.queue(mockMessageBatch, mockEnv as any, mockContext);
 
       // Assert
       expect(EventSchema.parse).not.toHaveBeenCalled();
@@ -182,3 +188,5 @@ describe('dome-notify worker', () => {
     });
   });
 });
+
+

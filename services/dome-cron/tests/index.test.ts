@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import worker from '../src/index';
-import { QueueService } from 'common';
+import { QueueService } from '@dome/common';
 
 // Mock environment
 const createMockEnv = () => ({
@@ -41,7 +41,7 @@ const createMockScheduledEvent = () => ({
 });
 
 // Mock QueueService
-vi.mock('common', () => ({
+vi.mock('@dome/common', () => ({
   QueueService: vi.fn().mockImplementation(() => ({
     publishEvent: vi.fn().mockResolvedValue(undefined),
     publishEvents: vi.fn().mockResolvedValue(undefined),
@@ -75,7 +75,7 @@ describe('dome-cron worker', () => {
   describe('scheduled handler', () => {
     it('should query for due reminders and publish events to the queue', async () => {
       // Act
-      await worker.scheduled(mockScheduledEvent, mockEnv, mockContext);
+      await worker.scheduled(mockScheduledEvent, mockEnv as any, mockContext);
 
       // Assert
       expect(mockEnv.D1_DATABASE.prepare).toHaveBeenCalled();
@@ -98,11 +98,32 @@ describe('dome-cron worker', () => {
 
     it('should handle database errors gracefully', async () => {
       // Arrange
-      mockEnv.D1_DATABASE.all = vi.fn().mockRejectedValue(new Error('Database error'));
+      const dbError = new Error('Database error');
+      mockEnv.D1_DATABASE.all = vi.fn().mockRejectedValue(dbError);
+      
+      // Mock waitUntil to properly handle the rejection
+      let capturedPromise: Promise<any> | null = null;
+      mockContext.waitUntil = vi.fn().mockImplementation((promise) => {
+        capturedPromise = promise;
+        return Promise.resolve();
+      });
 
       // Act & Assert
-      await expect(worker.scheduled(mockScheduledEvent, mockEnv, mockContext)).rejects.toThrow('Database error');
+      await expect(worker.scheduled(mockScheduledEvent, mockEnv as any, mockContext))
+        .rejects.toThrow('Database error');
+      
+      // Verify waitUntil was called
       expect(mockContext.waitUntil).toHaveBeenCalled();
+      
+      // If capturedPromise was set, we need to catch its rejection to prevent unhandled rejection
+      if (capturedPromise) {
+        try {
+          await capturedPromise;
+        } catch (error) {
+          // Expected to throw, we're just catching it to prevent unhandled rejection
+          expect((error as Error).message).toBe('Database error');
+        }
+      }
     });
 
     it('should handle empty result sets', async () => {
@@ -113,7 +134,7 @@ describe('dome-cron worker', () => {
       });
 
       // Act
-      await worker.scheduled(mockScheduledEvent, mockEnv, mockContext);
+      await worker.scheduled(mockScheduledEvent, mockEnv as any, mockContext);
 
       // Assert
       const queueServiceInstance = (QueueService as any).mock.results[0].value;
@@ -148,7 +169,7 @@ describe('dome-cron worker', () => {
         });
 
       // Act
-      await worker.scheduled(mockScheduledEvent, mockEnv, mockContext);
+      await worker.scheduled(mockScheduledEvent, mockEnv as any, mockContext);
 
       // Assert
       expect(mockEnv.D1_DATABASE.all).toHaveBeenCalledTimes(3);

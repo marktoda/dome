@@ -26,6 +26,8 @@ export class ApiClient {
     this.client.interceptors.request.use((config) => {
       if (isAuthenticated()) {
         config.headers['x-api-key'] = this.config.apiKey;
+        // Add user ID header for controller-level authentication
+        config.headers['x-user-id'] = 'test-user-id';
       }
       return config;
     });
@@ -107,7 +109,7 @@ export const api = {
  * @returns The response data
  */
 export async function addContent(content: string): Promise<any> {
-  return api.post('/ingest', { content });
+  return api.post('/notes/ingest', { content });
 }
 
 /**
@@ -117,7 +119,7 @@ export async function addContent(content: string): Promise<any> {
  * @returns The response data
  */
 export async function addNote(context: string, content: string): Promise<any> {
-  return api.post(`/note/${encodeURIComponent(context)}`, { content });
+  return api.post(`/note/${context}`, { content });
 }
 
 /**
@@ -131,7 +133,9 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
   if (filter) {
     params.filter = filter;
   }
-  return api.get(`/list/${type}`, { params });
+  // Use the correct endpoint based on type
+  const endpoint = type === 'notes' ? '/notes' : '/tasks';
+  return api.get(endpoint, { params });
 }
 
 /**
@@ -140,7 +144,7 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
  * @returns The response data
  */
 export async function showItem(id: string): Promise<any> {
-  return api.get(`/show/${id}`);
+  return api.get(`/notes/${id}`);
 }
 
 /**
@@ -149,7 +153,7 @@ export async function showItem(id: string): Promise<any> {
  * @returns The response data
  */
 export async function search(query: string): Promise<any> {
-  return api.get('/search', { params: { q: query } });
+  return api.get('/notes/search', { params: { q: query } });
 }
 
 /**

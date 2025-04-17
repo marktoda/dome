@@ -34,7 +34,10 @@ export function listCommand(program: Command): void {
         
         spinner.stop();
         
-        if (result.items.length === 0) {
+        // Handle different response formats based on type
+        const items = type === 'notes' ? result.notes : result.items;
+        
+        if (!items || items.length === 0) {
           console.log(`No ${type} found.`);
           return;
         }
@@ -44,7 +47,7 @@ export function listCommand(program: Command): void {
         if (type === 'notes') {
           // Format notes as a table
           const headers = ['ID', 'Title', 'Created', 'Tags'];
-          const rows = result.items.map((note: any) => [
+          const rows = items.map((note: any) => [
             note.id,
             note.title || '(No title)',
             new Date(note.createdAt).toLocaleString(),
@@ -55,7 +58,7 @@ export function listCommand(program: Command): void {
         } else {
           // Format tasks as a table
           const headers = ['ID', 'Description', 'Due Date', 'Status'];
-          const rows = result.items.map((task: any) => [
+          const rows = items.map((task: any) => [
             task.id,
             task.description || '(No description)',
             task.dueDate ? new Date(task.dueDate).toLocaleString() : 'No due date',
