@@ -1,0 +1,47 @@
+{
+  "name": "@dome/cli",
+  "version": "0.1.0",
+  "description": "Terminal UI client for the dome API",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "dome": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@dome/common": "workspace:*",
+    "axios": "^1.6.0",
+    "chalk": "^4.1.2",
+    "commander": "^11.0.0",
+    "conf": "^10.2.0",
+    "figlet": "^1.6.0",
+    "ink": "^4.4.1",
+    "ink-spinner": "^5.0.0",
+    "ink-text-input": "^5.0.1",
+    "node-fetch": "^3.3.2",
+    "ora": "^5.4.1",
+    "react": "^18.2.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/figlet": "^1.5.6",
+    "@types/jest": "^29.5.5",
+    "@types/node": "^18.15.11",
+    "@types/react": "^18.2.21",
+    "@typescript-eslint/eslint-plugin": "^5.57.1",
+    "@typescript-eslint/parser": "^5.57.1",
+    "eslint": "^8.38.0",
+    "jest": "^29.7.0",
+    "nock": "^13.3.3",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4"
+  }
+}
