@@ -1,26 +1,15 @@
 name = "dome-cron"
 main = "src/index.ts"
 compatibility_date = "2023-05-18"
+inject = "../../wrangler.shared.toml"
 
-# Inherit bindings from root wrangler.toml
+# Build configuration
 [build]
 command = "pnpm build"
 
 # Scheduled cron trigger (every 5 minutes)
 [triggers]
 crons = ["*/5 * * * *"]
-
-# D1 Database binding
-[[d1_databases]]
-binding = "D1_DATABASE"
-database_name = "dome_meta"
-database_id = "placeholder-id" # Replace with actual ID after creation
-preview_database_id = "placeholder-preview-id" # Replace with actual preview ID after creation
-
-# Queue binding
-[[queues.producers]]
-binding = "EVENTS"
-queue = "dome_events"
 
 [vars]
 ENVIRONMENT = "development"

@@ -1,24 +1,11 @@
 name = "dome-notify"
 main = "src/index.ts"
 compatibility_date = "2023-05-18"
+inject = "../../wrangler.shared.toml"
 
-# Inherit bindings from root wrangler.toml
+# Build configuration
 [build]
 command = "pnpm build"
-
-# D1 Database binding
-[[d1_databases]]
-binding = "D1_DATABASE"
-database_name = "dome_meta"
-database_id = "placeholder-id" # Replace with actual ID after creation
-preview_database_id = "placeholder-preview-id" # Replace with actual preview ID after creation
-
-# Queue binding as consumer
-[[queues.consumers]]
-queue = "dome_events"
-max_batch_size = 10
-max_batch_timeout = 5
-max_retries = 3
 
 [vars]
 ENVIRONMENT = "development"
@@ -33,3 +20,4 @@ vars = { ENVIRONMENT = "production" }
 
 [env.staging]
 vars = { ENVIRONMENT = "staging" }
+
