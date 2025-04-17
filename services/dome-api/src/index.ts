@@ -12,6 +12,8 @@ import {
   NotImplementedError
 } from '@dome/common';
 import type { Bindings } from './types';
+import { SearchController } from './controllers/searchController';
+import { fileController } from './controllers/fileController';
 
 // Service information
 const serviceInfo: ServiceInfo = {
@@ -58,10 +60,17 @@ notesRouter.post('/ingest', async (c) => {
   throw new NotImplementedError('Notes ingestion not implemented yet');
 });
 
+// File attachment endpoints
+notesRouter.post('/files', fileController.uploadFile.bind(fileController));
+notesRouter.get('/:id/file', fileController.getFileAttachment.bind(fileController));
+notesRouter.post('/:id/process-file', fileController.processFileContent.bind(fileController));
+notesRouter.delete('/:id/file', fileController.deleteFileAttachment.bind(fileController));
+
 // Search endpoint - for semantic search over notes
-notesRouter.get('/search', async (c) => {
-  throw new NotImplementedError('Notes search not implemented yet');
-});
+notesRouter.get('/search', SearchController.search);
+
+// Streaming search endpoint - for real-time search results
+notesRouter.get('/search/stream', SearchController.streamSearch);
 
 // Tasks API routes
 const tasksRouter = new Hono();

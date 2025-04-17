@@ -25,6 +25,10 @@ bucket_name = "dome_raw"
 binding = "EVENTS"
 queue = "dome_events"
 
+# Workers AI binding
+[ai]
+binding = "AI"
+
 [vars]
 ENVIRONMENT = "development"
 VERSION = "0.1.0"
