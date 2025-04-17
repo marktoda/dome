@@ -121,21 +121,21 @@ new-rust-service NAME:
 
 # Database commands
 db-migrate NAME:
-    wrangler -c services/dome-api/wrangler.toml d1 migrations create dome-meta {{ NAME }}
+    wrangler -c wrangler.shared.toml d1 migrations create dome-meta {{ NAME }}
 
 db-migrate-local:
-    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta --local
+    wrangler -c wrangler.shared.toml d1 migrations apply dome-meta --local
 
 db-migrate-remote:
-    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta --remote
+    wrangler -c wrangler.shared.toml d1 migrations apply dome-meta --remote
 
 db-migrate-prod:
-    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta
+    wrangler -c wrangler.shared.toml d1 migrations apply dome-meta
 
 # Apply D1 database migrations locally
 db-setup:
     @echo "Applying database migrations locally..."
-    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta --local
+    wrangler -c wrangler.shared.toml d1 migrations apply dome-meta --local
     @echo "Database migrations applied successfully!"
 
 # Run the API server in remote mode (without applying migrations)
@@ -146,7 +146,7 @@ api-run-remote:
 # Apply D1 database migrations locally and start the API server
 db-setup-and-run:
     @echo "Applying database migrations locally..."
-    wrangler -c services/dome-api/wrangler.toml d1 migrations apply dome-meta --local
+    wrangler -c wrangler.shared.toml d1 migrations apply dome-meta --local
     @echo "Starting the dome-api server with remote mode..."
     wrangler -c services/dome-api/wrangler.toml dev --remote
 

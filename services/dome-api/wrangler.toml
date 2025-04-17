@@ -1,44 +1,18 @@
 name = "dome-api"
 main = "src/index.ts"
-compatibility_date = "2023-04-15"
-
-# D1 Database binding
-[[d1_databases]]
-binding = "D1_DATABASE"
-database_name = "dome-meta"
-database_id = "placeholder-id" # Replace with actual ID after creation
-preview_database_id = "ac198406-1036-495e-b0f1-b61f7c9ecbdf"
-
-# Vectorize binding
-[[vectorize]]
-binding = "VECTORIZE"
-index_name = "dome-notes"
-
-# R2 Bucket binding
-[[r2_buckets]]
-binding = "RAW"
-bucket_name = "dome-raw"
-preview_bucket_name = "dome-raw-dev"
-
-# Queue binding
-[[queues.producers]]
-binding = "EVENTS"
-queue = "dome-events"
+compatibility_date = "2025-04-15"
+inject = "../../wrangler.shared.toml"
 
 # Workers AI binding
 [ai]
 binding = "AI"
 
-[vars]
-ENVIRONMENT = "development"
-VERSION = "0.1.0"
-
 # For local development
 [dev]
 port = 8787
 
-[dev.vars]
-ENVIRONMENT = "development"
+[vars]
+VERSION = "0.1.0"
 
 [env.production]
 vars = { ENVIRONMENT = "production" }
