@@ -42,8 +42,9 @@ export class MessageService {
     }
 
     try {
+      // Fix: Pass the MessageData objects directly to sendBatch
       await this.queueBinding.sendBatch(
-        messages.map(message => ({ body: message.toMessageData() })),
+        messages.map(message => message.toMessageData()),
       );
       return messages.length;
     } catch (error) {

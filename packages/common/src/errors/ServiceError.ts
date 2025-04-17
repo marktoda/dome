@@ -75,3 +75,51 @@ export class NotFoundError extends ServiceError {
     this.status = 404; // Not Found
   }
 }
+
+/**
+ * Error class for unauthorized access
+ */
+export class UnauthorizedError extends ServiceError {
+  /**
+   * Creates a new UnauthorizedError
+   * @param message Error message
+   * @param details Additional error details
+   */
+  constructor(message: string = 'Unauthorized', details?: Record<string, any>) {
+    super(message, { ...details, errorType: 'unauthorized' });
+    this.code = 'UNAUTHORIZED_ERROR';
+    this.status = 401; // Unauthorized
+  }
+}
+
+/**
+ * Error class for forbidden access
+ */
+export class ForbiddenError extends ServiceError {
+  /**
+   * Creates a new ForbiddenError
+   * @param message Error message
+   * @param details Additional error details
+   */
+  constructor(message: string = 'Forbidden', details?: Record<string, any>) {
+    super(message, { ...details, errorType: 'forbidden' });
+    this.code = 'FORBIDDEN_ERROR';
+    this.status = 403; // Forbidden
+  }
+}
+
+/**
+ * Error class for not implemented functionality
+ */
+export class NotImplementedError extends ServiceError {
+  /**
+   * Creates a new NotImplementedError
+   * @param message Error message
+   * @param details Additional error details
+   */
+  constructor(message: string = 'Not implemented', details?: Record<string, any>) {
+    super(message, { ...details, errorType: 'not_implemented' });
+    this.code = 'NOT_IMPLEMENTED_ERROR';
+    this.status = 501; // Not Implemented
+  }
+}

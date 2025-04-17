@@ -7,10 +7,10 @@ import {
   createErrorMiddleware,
   responseHandlerMiddleware,
   createPinoLoggerMiddleware,
+  createSimpleAuthMiddleware,
+  formatZodError,
+  NotImplementedError
 } from '@dome/common';
-import { MessageController } from './controllers/messageController';
-import type { PublishTelegramMessageRequest, TelegramMessageData } from './models';
-import { formatZodError, telegramMessageBatchSchema, TelegramMessage } from './models';
 import type { Bindings } from './types';
 
 // Service information
@@ -28,40 +28,20 @@ app.use('*', createRequestContextMiddleware());
 app.use('*', createPinoLoggerMiddleware());
 app.use('*', cors());
 app.use('*', createErrorMiddleware(formatZodError));
+app.use('*', createSimpleAuthMiddleware()); // Simple auth middleware for now
 app.use('*', responseHandlerMiddleware);
 
-// Routes
-app.get('/', (c: any) =>
+// Root route
+app.get('/', (c) =>
   c.json({
-    message: 'Hello from dome-api service!',
+    message: 'Welcome to the dome API',
     service: serviceInfo,
-    description:
-      'API service for the dome project',
+    description: 'AI-Powered Exobrain API service',
   }),
 );
 
-// Message routes
-app.post(
-  '/publish/telegram/messages',
-  zValidator('json', telegramMessageBatchSchema),
-  async (c: any) => {
-    // Get the validated data from zValidator
-    const validatedData: PublishTelegramMessageRequest = c.req.valid('json');
-    const messages = validatedData.messages.map(
-      (message: TelegramMessageData) => new TelegramMessage(message),
-    );
-
-    // Process the request
-    const messageController = new MessageController(c.env.EVENTS);
-    const result = await messageController.publishTelegramMessages(messages);
-
-    // Return the result as a JSON response
-    return c.json(result);
-  },
-);
-
 // Health check endpoint
-app.get('/health', (c: any) =>
+app.get('/health', (c) =>
   c.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -69,5 +49,56 @@ app.get('/health', (c: any) =>
     version: serviceInfo.version,
   }),
 );
+
+// Notes API routes
+const notesRouter = new Hono();
+
+// Ingest endpoint - for adding new notes, files, etc.
+notesRouter.post('/ingest', async (c) => {
+  throw new NotImplementedError('Notes ingestion not implemented yet');
+});
+
+// Search endpoint - for semantic search over notes
+notesRouter.get('/search', async (c) => {
+  throw new NotImplementedError('Notes search not implemented yet');
+});
+
+// Tasks API routes
+const tasksRouter = new Hono();
+
+// Create task
+tasksRouter.post('/', async (c) => {
+  throw new NotImplementedError('Task creation not implemented yet');
+});
+
+// List tasks
+tasksRouter.get('/', async (c) => {
+  throw new NotImplementedError('Task listing not implemented yet');
+});
+
+// Complete task
+tasksRouter.post('/:id/complete', async (c) => {
+  throw new NotImplementedError('Task completion not implemented yet');
+});
+
+// Chat API route
+app.post('/chat', async (c) => {
+  throw new NotImplementedError('Chat functionality not implemented yet');
+});
+
+// Mount routers
+app.route('/notes', notesRouter);
+app.route('/tasks', tasksRouter);
+
+// 404 handler for unknown routes
+app.notFound((c) => {
+  return c.json({
+    success: false,
+    error: {
+      code: 'NOT_FOUND',
+      message: 'The requested resource was not found',
+    }
+  }, 404);
+});
 
 export default app;

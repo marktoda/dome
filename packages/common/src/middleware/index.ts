@@ -17,3 +17,6 @@ export { createPinoLoggerMiddleware } from './pinoLogger';
 
 // Rate limit middleware
 export { createRateLimitMiddleware } from './rateLimitMiddleware';
+
+// Authentication middleware
+export { createAuthMiddleware, createSimpleAuthMiddleware } from './authMiddleware';

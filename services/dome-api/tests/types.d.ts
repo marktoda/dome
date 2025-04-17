@@ -2,6 +2,9 @@
  * Type definitions for Cloudflare Worker environment in tests
  */
 
+// Import Jest types
+/// <reference types="jest" />
+
 declare class D1Database {
   prepare(query: string): any;
   batch(statements: any[]): Promise<any>;

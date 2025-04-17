@@ -10,6 +10,8 @@ This repository is organized as a monorepo with the following structure:
 - Do not worry about backwards compatibility, deleting outdated files etc.
 - when refactoring code, always clean up the old code
 - focus heavily on creating simple, readable and extensible code
+- the common/ package has all errors and middleware for api handlers
+- to update common packages in a service you need to pnpm i and pnpm build
 
 ### Core Directories
 
@@ -62,6 +64,7 @@ This repository is organized as a monorepo with the following structure:
 - Use pnpm for package management and script execution
 - Use TypeScript for type-safe development
 - Follow the established patterns in existing services and packages
+- Use drizzle ORM native queries where possible
 
 ## Rust Workers
 

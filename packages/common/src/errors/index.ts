@@ -23,9 +23,21 @@ import {
   MessageProcessingError,
   RateLimitError,
   NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotImplementedError,
 } from './ServiceError';
 
-export { ServiceError, QueueError, MessageProcessingError, RateLimitError, NotFoundError };
+export { 
+  ServiceError, 
+  QueueError, 
+  MessageProcessingError, 
+  RateLimitError, 
+  NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotImplementedError
+};
 
 // For backward compatibility
 export { BaseError as AppError } from './BaseError';

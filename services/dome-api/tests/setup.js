@@ -2,6 +2,9 @@
  * Jest setup file for Cloudflare Worker environment
  */
 
+// Import Jest globals
+const { expect, describe, it, beforeEach, afterEach, beforeAll, afterAll } = global;
+
 // Mock Cloudflare Worker environment
 global.Request = class Request {};
 global.Response = class Response {
@@ -125,3 +128,12 @@ global.Queue = class Queue {
     return Promise.resolve({ success: true });
   }
 };
+
+// Re-export Jest globals
+global.describe = describe;
+global.it = it;
+global.expect = expect;
+global.beforeEach = beforeEach;
+global.afterEach = afterEach;
+global.beforeAll = beforeAll;
+global.afterAll = afterAll;
