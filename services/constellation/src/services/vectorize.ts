@@ -242,7 +242,11 @@ export class VectorizeService {
 
       // Query the vector index
       getLogger().debug('Executing vectorize.query with filter and topK');
-      const results = await this.vectorize.query(queryVector, { topK, filter });
+      const results = await this.vectorize.query(queryVector, {
+        topK,
+        filter,
+        returnMetadata: true,
+      });
 
       metrics.increment('vectorize.query.success');
       metrics.gauge('vectorize.query.results', results.matches.length);

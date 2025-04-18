@@ -10,20 +10,32 @@ import pino from 'pino';
  */
 export const baseLogger = pino({
   level: (globalThis as any).LOG_LEVEL ?? 'info',
-  
-  // Ensure level is explicit
+
+  // Ensure level is explicit and message is a top-level field
   formatters: {
     level(label) {
       return { level: label };
     },
+    // Move the message to a top-level field
+    log(object) {
+      // If the object has a msg property, rename it to message
+      if (object.msg) {
+        object.message = object.msg;
+        delete object.msg;
+      }
+      return object;
+    },
   },
-  
+
   timestamp: pino.stdTimeFunctions.isoTime,
-  
+
   // Ensure exactly one JSON object per line for Cloudflare to parse correctly
   browser: {
     asObject: true,
-    write: (obj) => console.log(JSON.stringify(obj)) // exactly 1 JSON object per line
+    write: (obj: any) => {
+      // Ensure we're outputting a single, flat JSON object
+      console.log(JSON.stringify(obj));
+    },
   },
 });
 

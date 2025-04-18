@@ -260,7 +260,7 @@ describe('Metrics Utilities', () => {
 
         expect(metricsService.getCounter('test_counter')).toBe(0);
         expect(metricsService.getGauge('test_gauge')).toBe(0);
-        expect(mockLogger.debug).toHaveBeenCalledWith('Metrics reset');
+        expect(mockLogger.debug).toHaveBeenCalledWith({ message: 'Metrics reset' });
       });
     });
   });

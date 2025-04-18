@@ -2,6 +2,7 @@ import { Bindings } from '../types';
 import { Note } from '../models/note';
 import { NoteRepository } from '../repositories/noteRepository';
 import { vectorizeService, SearchResult } from './vectorizeService';
+import { getLogger } from '@dome/logging';
 import { ServiceError } from '@dome/common';
 import { z } from 'zod';
 
@@ -104,8 +105,14 @@ export class SearchService {
       const notes: Note[] = [];
       for (const noteId of uniqueNoteIds) {
         try {
+          getLogger().info({ noteId }, 'Fetching note from repository');
           const note = await this.noteRepository.findById(env, noteId);
-          if (note) {
+          if (!note) {
+            getLogger().warn({ noteId }, 'Note not found in repository');
+            continue;
+          } else {
+            getLogger().info({ noteId }, 'Note found in repository');
+
             notes.push(note);
           }
         } catch (error) {

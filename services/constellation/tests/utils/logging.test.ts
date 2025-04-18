@@ -39,12 +39,12 @@ describe('Logging Utilities', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Test error',
-          name: 'Error',
-          stack: error.stack,
+          error_message: 'Test error',
+          error_name: 'Error',
+          error_stack: error.stack,
           userId: 'user1',
+          message,
         }),
-        message,
       );
     });
 
@@ -58,10 +58,10 @@ describe('Logging Utilities', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({
-          error: 'String error',
+          error_value: 'String error',
           userId: 'user1',
+          message,
         }),
-        message,
       );
     });
 
@@ -74,11 +74,11 @@ describe('Logging Utilities', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Test error',
-          name: 'Error',
-          stack: error.stack,
+          error_message: 'Test error',
+          error_name: 'Error',
+          error_stack: error.stack,
+          message,
         }),
-        message,
       );
     });
   });
@@ -98,8 +98,8 @@ describe('Logging Utilities', () => {
           metric_value: value,
           metric_type: 'gauge',
           service: 'constellation',
+          message: 'Metric recorded',
         }),
-        'Metric recorded',
       );
     });
 
@@ -115,8 +115,8 @@ describe('Logging Utilities', () => {
           metric_name: name,
           metric_value: value,
           metric_type: 'gauge',
+          message: 'Metric recorded',
         }),
-        'Metric recorded',
       );
     });
   });
@@ -150,8 +150,8 @@ describe('Logging Utilities', () => {
           metric_name: 'test_operation.duration_ms',
           metric_type: 'timing',
           service: 'constellation',
+          message: 'Metric recorded',
         }),
-        'Metric recorded',
       );
 
       // We don't check the exact value of metric_value since it may vary

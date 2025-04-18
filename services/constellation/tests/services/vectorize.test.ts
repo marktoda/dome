@@ -176,7 +176,11 @@ describe('VectorizeService', () => {
       await vectorizeService.query(queryVector, filter, topK);
 
       // Verify the query was called with the correct parameters
-      expect(mockVectorize.query).toHaveBeenCalledWith(queryVector, { topK, filter });
+      expect(mockVectorize.query).toHaveBeenCalledWith(queryVector, {
+        topK,
+        filter,
+        returnMetadata: true,
+      });
     });
 
     it('should return the search results from Vectorize', async () => {
@@ -223,7 +227,11 @@ describe('VectorizeService', () => {
       await vectorizeService.query(queryVector);
 
       // Verify the query was called with default values for filter and topK
-      expect(mockVectorize.query).toHaveBeenCalledWith(queryVector, { topK: 10, filter: {} });
+      expect(mockVectorize.query).toHaveBeenCalledWith(queryVector, {
+        topK: 10,
+        filter: {},
+        returnMetadata: true,
+      });
     });
   });
 
