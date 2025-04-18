@@ -113,7 +113,7 @@ export class MetricsService {
   public reset(): void {
     this.counters.clear();
     this.gauges.clear();
-    getLogger().debug({ message: 'Metrics reset' });
+    getLogger().debug('Metrics reset');
   }
 }
 

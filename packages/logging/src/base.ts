@@ -20,25 +20,10 @@ export const baseLogger = pino({
   
   timestamp: pino.stdTimeFunctions.isoTime,
   
-  // Custom serializer to ensure message is included in the object
-  // and only a single object is passed to console.log
+  // Ensure exactly one JSON object per line for Cloudflare to parse correctly
   browser: {
     asObject: true,
-    write: (obj: any) => {
-      // Extract the message from the object
-      const message = obj.msg;
-      
-      // Create a new object with the message field renamed to avoid duplication
-      const newObj = { ...obj, message };
-      
-      // Remove the original msg field
-      if ('msg' in newObj) {
-        delete newObj.msg;
-      }
-      
-      // Log the single object
-      console.log(newObj);
-    }
+    write: (obj) => console.log(JSON.stringify(obj)) // exactly 1 JSON object per line
   },
 });
 
