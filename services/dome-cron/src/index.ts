@@ -41,8 +41,9 @@ export default {
         scheduledTime: event.scheduledTime,
         environment: env.ENVIRONMENT,
       },
-      async () => {
-        getLogger().info('Running scheduled job');
+      "info",
+      async (log) => {
+        log.info('Running scheduled job');
 
         // Initialize the queue service
         const queueService = new QueueService({
@@ -87,7 +88,7 @@ export default {
             cursor = String(parseInt(cursor || '0') + reminders.length);
             processedCount += reminders.length;
 
-            getLogger().info({ count: reminders.length }, 'Processing batch of reminders');
+            log.info({ count: reminders.length }, 'Processing batch of reminders');
 
             // Create reminder events for each due reminder
             const reminderEvents: Event[] = reminders.map(reminder =>
@@ -105,7 +106,7 @@ export default {
             // Publish events to the queue
             if (reminderEvents.length > 0) {
               await queueService.publishEvents(reminderEvents);
-              getLogger().info(
+              log.info(
                 { count: reminderEvents.length },
                 'Published reminder events to queue',
               );
@@ -138,9 +139,9 @@ export default {
             }
           } while (true);
 
-          getLogger().info({ processedCount }, 'Scheduled job completed');
+          log.info({ processedCount }, 'Scheduled job completed');
         } catch (error) {
-          getLogger().error({ error }, 'Error in scheduled job');
+          log.error({ error }, 'Error in scheduled job');
           // Ensure the error is reported to the Cloudflare dashboard
           ctx.waitUntil(Promise.reject(error));
           // Re-throw the error to propagate it to the caller

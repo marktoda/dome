@@ -1,5 +1,6 @@
 import { baseLogger } from './base';
 import { getContext } from 'hono/context-storage';
+import { Logger } from 'pino';
 
 /**
  * Interface for Cloudflare Workers ExecutionContext
@@ -34,30 +35,31 @@ interface LoggerContext {
  */
 export async function runWithLogger<T>(
   meta: Record<string, unknown>,
-  fn: () => Promise<T>,
+  level: string = "info",
+  fn: (logger: Logger) => Promise<T> | T,
   ctx?: CFExecutionContext,
 ): Promise<T> {
-  const child = baseLogger.child(meta);
-
+  const child = baseLogger.child(meta, { level });
+  const execute = () => Promise.resolve(fn(child));
+  let als: LoggerContext | undefined;
   try {
-    const storage = getContext() as LoggerContext | undefined;
-
-    if (ctx?.run) {
-      return await ctx.run(() => {
-        if (storage) {
-          storage.set('logger', child);
-        }
-        return fn();
-      });
-    }
-
-    return await fn();
-  } catch (error) {
-    // If accessing context storage fails, log the error and fall back to direct execution
-    child.warn(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      'Failed to access context storage in runWithLogger, falling back to direct execution',
-    );
-    return await fn();
+    als = getContext() as LoggerContext | undefined;
+  } catch (e) {
+    child.warn('No async-context, direct logger in use');
+    await execute();
   }
+
+  if (ctx?.run) {                               // fetch | scheduled
+    return ctx.run(() => {
+      if (als) {
+        als.set('logger', child);
+      }
+      return execute();
+    });
+  }
+
+  if (als) als.set('logger', child);            // already inside ALS
+  else child.debug('No async-context, direct logger in use'); // queue/dev
+
+  return execute();
 }

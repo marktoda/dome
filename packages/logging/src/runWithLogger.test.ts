@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runWithLogger } from './runWithLogger';
 import { baseLogger } from './base';
+import { Logger } from 'pino';
 
 // Mock the ExecutionContext
 const mockCtx = {
@@ -49,43 +50,67 @@ describe('runWithLogger', () => {
     (getContext as any).mockReturnValue(mockStorage);
 
     const meta = { test: 'value', trigger: 'test' };
-    const fn = vi.fn().mockResolvedValue('result');
+    const mockChildLogger = { debug: vi.fn() };
+    (baseLogger.child as any).mockReturnValue(mockChildLogger);
+    
+    const fn = vi.fn(async (log: Logger) => {
+      expect(log).toBe(mockChildLogger);
+      return 'result';
+    });
 
-    const result = await runWithLogger(meta, fn, mockCtx as any);
+    const result = await runWithLogger(meta, "info", fn, mockCtx as any);
 
     expect(result).toBe('result');
     expect(fn).toHaveBeenCalledTimes(1);
-    expect(baseLogger.child).toHaveBeenCalledWith(meta);
+    expect(baseLogger.child).toHaveBeenCalledWith(meta, { level: "info" });
     expect(mockCtx.run).toHaveBeenCalled();
     expect(mockStorage.set).toHaveBeenCalled();
   });
 
-  it('should fall back to direct function call if no execution context', async () => {
+  it('should set logger in context if already inside ALS but no execution context', async () => {
+    // Setup mock context storage
+    const mockStorage = {
+      get: vi.fn(),
+      set: vi.fn(),
+    };
+    (getContext as any).mockReturnValue(mockStorage);
+
     const meta = { test: 'value' };
-    const fn = vi.fn().mockResolvedValue('result');
-
-    // Pass undefined as context
-    const result = await runWithLogger(meta, fn, undefined);
-
-    expect(result).toBe('result');
-    expect(fn).toHaveBeenCalledTimes(1);
-    expect(baseLogger.child).toHaveBeenCalledWith(meta);
-  });
-
-  it('should handle errors when accessing context storage', async () => {
-    // Mock getContext to throw an error
-    (getContext as any).mockImplementation(() => {
-      throw new Error('Context access error');
+    const mockChildLogger = { debug: vi.fn() };
+    (baseLogger.child as any).mockReturnValue(mockChildLogger);
+    
+    const fn = vi.fn(async (log: Logger) => {
+      expect(log).toBe(mockChildLogger);
+      return 'result';
     });
 
-    const meta = { test: 'value' };
-    const fn = vi.fn().mockResolvedValue('result');
-
-    const result = await runWithLogger(meta, fn, mockCtx as any);
+    // Pass undefined as context
+    const result = await runWithLogger(meta, "info", fn, undefined);
 
     expect(result).toBe('result');
     expect(fn).toHaveBeenCalledTimes(1);
-    // Child logger should have been created
-    expect(baseLogger.child).toHaveBeenCalledWith(meta);
+    expect(baseLogger.child).toHaveBeenCalledWith(meta, { level: "info" });
+    expect(mockStorage.set).toHaveBeenCalledWith('logger', mockChildLogger);
+  });
+
+  it('should log debug message when no ALS context is available', async () => {
+    // Mock getContext to return undefined
+    (getContext as any).mockReturnValue(undefined);
+
+    const meta = { test: 'value' };
+    const mockChildLogger = { debug: vi.fn() };
+    (baseLogger.child as any).mockReturnValue(mockChildLogger);
+    
+    const fn = vi.fn(async (log: Logger) => {
+      expect(log).toBe(mockChildLogger);
+      return 'result';
+    });
+
+    const result = await runWithLogger(meta, "info", fn, undefined);
+
+    expect(result).toBe('result');
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(baseLogger.child).toHaveBeenCalledWith(meta, { level: "info" });
+    expect(mockChildLogger.debug).toHaveBeenCalledWith('No async-context, direct logger in use');
   });
 });

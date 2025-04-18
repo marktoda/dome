@@ -88,8 +88,9 @@ export default {
         batchSize: batch.messages.length,
         environment: env.ENVIRONMENT,
       },
-      async () => {
-        getLogger().info({ batchSize: batch.messages.length }, 'Processing message batch');
+      "info",
+      async (log) => {
+        log.info({ batchSize: batch.messages.length }, 'Processing message batch');
 
         // Initialize services
         const notificationService = initializeNotificationService(env);
@@ -98,7 +99,7 @@ export default {
         // Process each message in the batch
         for (const message of batch.messages) {
           try {
-            getLogger().info({ messageId: message.id }, 'Processing message');
+            log.info({ messageId: message.id }, 'Processing message');
 
             // Parse the message body as JSON
             const rawEvent = JSON.parse(message.body);
@@ -112,9 +113,9 @@ export default {
             // Acknowledge the message as processed
             batch.ack(message.id);
 
-            getLogger().info({ messageId: message.id }, 'Successfully processed message');
+            log.info({ messageId: message.id }, 'Successfully processed message');
           } catch (error) {
-            getLogger().error({ messageId: message.id, error }, 'Error processing message');
+            log.error({ messageId: message.id, error }, 'Error processing message');
 
             // Acknowledge the message to remove it from the queue
             // In a production environment, you might want to implement a dead-letter queue
@@ -123,7 +124,7 @@ export default {
           }
         }
 
-        getLogger().info('Batch processing completed');
+        log.info('Batch processing completed');
       },
       ctx,
     );
