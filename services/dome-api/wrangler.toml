@@ -10,10 +10,6 @@ database_id = "ac198406-1036-495e-b0f1-b61f7c9ecbdf"
 preview_database_id = "672837d0-28fc-4ac8-9144-86653a2d0965"
 migrations_dir = "services/dome-api/migrations"   # mono-repo friendly
 
-[[vectorize]]
-binding = "VECTORIZE"
-index_name = "dome-notes"
-
 [[r2_buckets]]
 binding = "RAW"
 bucket_name = "dome-raw"
@@ -22,6 +18,11 @@ preview_bucket_name = "dome-raw-dev"
 [[queues.producers]]
 binding = "EVENTS"
 queue = "dome-events"
+
+# Add queue producer for embedding jobs
+[[queues.producers]]
+binding = "EMBED_QUEUE"
+queue = "EMBED_QUEUE"
 
 [[queues.consumers]]
 queue = "dome-events"
@@ -33,6 +34,12 @@ max_retries = 3
 [ai]
 binding = "AI"
 
+# Constellation service binding
+[[services]]
+binding = "CONSTELLATION"
+service = "constellation"
+environment = "production"
+
 # For local development
 [dev]
 port = 8787
@@ -43,6 +50,18 @@ VERSION = "0.1.0"
 [env.production]
 vars = { ENVIRONMENT = "production" }
 
+# Production-specific service binding
+[[env.production.services]]
+binding = "CONSTELLATION"
+service = "constellation"
+environment = "production"
+
 [env.staging]
 vars = { ENVIRONMENT = "staging" }
 command = "pnpm build"
+
+# Staging-specific service binding
+[[env.staging.services]]
+binding = "CONSTELLATION"
+service = "constellation"
+environment = "staging"

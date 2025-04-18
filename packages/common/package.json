@@ -12,7 +12,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "hono": "^3.0.0",
+    "hono": "^4.0.0",
     "pino": "^8.0.0",
     "pino-http": "^8.0.0",
     "zod": "^3.0.0"

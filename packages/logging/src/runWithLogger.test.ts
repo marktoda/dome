@@ -6,14 +6,14 @@ import { baseLogger } from './base';
 const mockCtx = {
   run: vi.fn(fn => fn()),
   waitUntil: vi.fn(),
-  passThroughOnException: vi.fn()
+  passThroughOnException: vi.fn(),
 };
 
 // Mock the hono/context-storage module
 vi.mock('hono/context-storage', () => {
   const mockGetContext = vi.fn();
   return {
-    getContext: mockGetContext
+    getContext: mockGetContext,
   };
 });
 
@@ -25,13 +25,13 @@ describe('runWithLogger', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.clearAllMocks();
-    
+
     // Spy on baseLogger.child
-    vi.spyOn(baseLogger, 'child').mockImplementation((bindings) => {
+    vi.spyOn(baseLogger, 'child').mockImplementation(bindings => {
       return {
         ...baseLogger,
         bindings: () => bindings,
-        warn: vi.fn()
+        warn: vi.fn(),
       } as any;
     });
   });
@@ -44,10 +44,10 @@ describe('runWithLogger', () => {
     // Setup mock context storage
     const mockStorage = {
       get: vi.fn(),
-      set: vi.fn()
+      set: vi.fn(),
     };
     (getContext as any).mockReturnValue(mockStorage);
-    
+
     const meta = { test: 'value', trigger: 'test' };
     const fn = vi.fn().mockResolvedValue('result');
 
@@ -71,18 +71,18 @@ describe('runWithLogger', () => {
     expect(fn).toHaveBeenCalledTimes(1);
     expect(baseLogger.child).toHaveBeenCalledWith(meta);
   });
-  
+
   it('should handle errors when accessing context storage', async () => {
     // Mock getContext to throw an error
     (getContext as any).mockImplementation(() => {
       throw new Error('Context access error');
     });
-    
+
     const meta = { test: 'value' };
     const fn = vi.fn().mockResolvedValue('result');
-    
+
     const result = await runWithLogger(meta, fn, mockCtx as any);
-    
+
     expect(result).toBe('result');
     expect(fn).toHaveBeenCalledTimes(1);
     // Child logger should have been created

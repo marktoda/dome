@@ -19,7 +19,7 @@ function createCFExecutionContext(ctx: ExecutionContext): CFExecutionContext {
       return Promise.resolve(callback());
     },
     waitUntil: ctx.waitUntil.bind(ctx),
-    passThroughOnException: ctx.passThroughOnException.bind(ctx)
+    passThroughOnException: ctx.passThroughOnException.bind(ctx),
   };
 }
 
@@ -34,13 +34,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   private async embedBatch(
     jobs: EmbedJob[],
     env: Env,
-    sendToDeadLetter?: (job: EmbedJob) => Promise<void>
+    sendToDeadLetter?: (job: EmbedJob) => Promise<void>,
   ): Promise<number> {
     // Initialize services
     const preprocessor = createPreprocessor();
     const embedder = createEmbedder(env.AI);
     const vectorizeService = createVectorizeService(env.VECTORIZE);
-    
+
     let successCount = 0;
 
     // Process each job
@@ -52,7 +52,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         // 1. Preprocess text
         const processedTexts = preprocessor.process(job.text);
         if (processedTexts.length === 0) {
-          logger.warn({ userId: job.userId, noteId: job.noteId }, 'No text chunks to embed after preprocessing');
+          logger.warn(
+            { userId: job.userId, noteId: job.noteId },
+            'No text chunks to embed after preprocessing',
+          );
           continue;
         }
 
@@ -68,7 +71,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             noteId: job.noteId,
             createdAt: Math.floor(job.created / 1000),
             version: job.version,
-          } satisfies NoteVectorMeta
+          } satisfies NoteVectorMeta,
         }));
 
         // 4. Store vectors
@@ -76,19 +79,22 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         logger.info(
           { userId: job.userId, noteId: job.noteId, chunks: processedTexts.length },
-          'Successfully embedded and stored note'
+          'Successfully embedded and stored note',
         );
         successCount++;
       } catch (error) {
         logger.error(
           { error, userId: job.userId, noteId: job.noteId },
-          'Error processing embedding job'
+          'Error processing embedding job',
         );
 
         // If we have a dead letter handler, use it
         if (sendToDeadLetter) {
           await sendToDeadLetter(job);
-          logger.info({ userId: job.userId, noteId: job.noteId }, 'Sent failed job to dead letter queue');
+          logger.info(
+            { userId: job.userId, noteId: job.noteId },
+            'Sent failed job to dead letter queue',
+          );
         }
 
         // Rethrow the error to allow the caller to handle retries
@@ -142,7 +148,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           }
         }
       },
-      createCFExecutionContext(this.ctx)
+      createCFExecutionContext(this.ctx),
     );
   }
 
@@ -159,7 +165,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         version: env.VERSION,
       },
       async () => {
-        logger.info({ userId: job.userId, noteId: job.noteId }, 'Processing direct embedding request');
+        logger.info(
+          { userId: job.userId, noteId: job.noteId },
+          'Processing direct embedding request',
+        );
         metrics.increment('rpc.embed.requests');
         const timer = metrics.startTimer('rpc.embed');
 
@@ -169,13 +178,16 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           metrics.increment('rpc.embed.success');
         } catch (error) {
           metrics.increment('rpc.embed.errors');
-          logger.error({ error, userId: job.userId, noteId: job.noteId }, 'Error in direct embedding');
+          logger.error(
+            { error, userId: job.userId, noteId: job.noteId },
+            'Error in direct embedding',
+          );
           throw error;
         } finally {
           timer.stop();
         }
       },
-      createCFExecutionContext(this.ctx)
+      createCFExecutionContext(this.ctx),
     );
   }
 
@@ -184,7 +196,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     env: Env,
     text: string,
     filter: Partial<NoteVectorMeta>,
-    topK = 10
+    topK = 10,
   ): Promise<VectorSearchResult[]> {
     return await runWithLogger(
       {
@@ -237,7 +249,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           timer.stop();
         }
       },
-      createCFExecutionContext(this.ctx)
+      createCFExecutionContext(this.ctx),
     );
   }
 
@@ -274,7 +286,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           timer.stop();
         }
       },
-      createCFExecutionContext(this.ctx)
+      createCFExecutionContext(this.ctx),
     );
   }
 }

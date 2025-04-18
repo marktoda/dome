@@ -5,6 +5,7 @@
 Constellation is a dedicated Cloudflare Worker that provides embedding and vector search capabilities for the Dome application. The service has two main responsibilities:
 
 1. **Asynchronous Embedding Processing**:
+
    - Consumes raw text jobs from a Workers Queue
    - Converts text into vector embeddings using Workers AI
    - Upserts embeddings into a shared Vectorize index
@@ -18,16 +19,16 @@ graph TD
     A[API Worker] -->|enqueue| B[EMBED_QUEUE]
     C[GitHub Cron] -->|enqueue| B
     D[Notion Cron] -->|enqueue| B
-    
+
     A -->|RPC: query/stats| E[Constellation Worker]
     C -->|RPC: query/stats| E
     D -->|RPC: query/stats| E
-    
+
     B -->|batch consume| E
-    
+
     E -->|embed| F[Workers AI]
     E -->|upsert/query| G[Vectorize Index]
-    
+
     E -->|logs/metrics| H[Monitoring]
 ```
 
@@ -155,8 +156,11 @@ export interface VectorWithMetadata {
  */
 export interface VectorizeNamespace {
   upsert(vectors: VectorWithMetadata[]): Promise<void>;
-  query(text: string, options: { topK: number, filter?: Partial<NoteVectorMeta> }): Promise<VectorSearchResult[]>;
-  info(): Promise<{ vectorCount: number, dimensions: number }>;
+  query(
+    text: string,
+    options: { topK: number; filter?: Partial<NoteVectorMeta> },
+  ): Promise<VectorSearchResult[]>;
+  info(): Promise<{ vectorCount: number; dimensions: number }>;
 }
 
 /**
@@ -172,6 +176,7 @@ export interface AINamespace {
 ### Phase 1: Setup and Infrastructure (Week 1)
 
 1. **Project Setup**
+
    - Create the constellation service directory structure
    - Set up package.json with dependencies
    - Configure tsconfig.json
@@ -179,6 +184,7 @@ export interface AINamespace {
    - Set up worker-configuration.d.ts with environment bindings
 
 2. **Common Types**
+
    - Create embedding.ts in common package with shared types
    - Update common package index.ts to export new types
 
@@ -189,14 +195,17 @@ export interface AINamespace {
 ### Phase 2: Core Implementation (Week 1-2)
 
 4. **Text Preprocessing**
+
    - Implement preprocessing.ts with text normalization functions
    - Add unit tests for preprocessing functions
 
 5. **Embedding Service**
+
    - Implement embedding.ts with Workers AI integration
    - Add unit tests with mocked AI service
 
 6. **Vectorize Service**
+
    - Implement vectorize.ts with Vectorize index operations
    - Add unit tests with mocked Vectorize service
 
@@ -207,6 +216,7 @@ export interface AINamespace {
 ### Phase 3: Integration and Testing (Week 2)
 
 8. **Integration Testing**
+
    - Set up integration tests with mocked services
    - Test the full embedding pipeline
    - Test the RPC interface
@@ -219,11 +229,13 @@ export interface AINamespace {
 ### Phase 4: Deployment and Integration (Week 3)
 
 10. **Deployment**
+
     - Deploy the Constellation worker
     - Verify the worker is functioning correctly
     - Set up monitoring and alerts
 
 11. **Client Integration**
+
     - Update API worker to use the Constellation service
     - Update import workers to use the Constellation service
     - Test the integration with real data
@@ -238,16 +250,19 @@ export interface AINamespace {
 ### Unit Testing
 
 1. **Preprocessing Utilities**
+
    - Test text normalization functions
    - Test handling of edge cases (empty text, very long text)
    - Test character encoding handling
 
 2. **Embedding Service**
+
    - Test embedding generation with mocked AI service
    - Test error handling for AI service failures
    - Test batch size limits and chunking
 
 3. **Vectorize Service**
+
    - Test upsert operations with mocked Vectorize service
    - Test query operations with mocked Vectorize service
    - Test metadata filtering
@@ -260,6 +275,7 @@ export interface AINamespace {
 ### Integration Testing
 
 5. **End-to-End Pipeline**
+
    - Test the full embedding pipeline with mocked services
    - Test queue consumer with real queue messages
    - Test RPC interface with real service bindings
@@ -272,6 +288,7 @@ export interface AINamespace {
 ### Production Testing
 
 7. **Canary Deployment**
+
    - Deploy to a subset of traffic
    - Monitor for errors and performance issues
    - Gradually increase traffic
@@ -284,6 +301,7 @@ export interface AINamespace {
 ## 6. Monitoring and Observability
 
 1. **Metrics to Track**
+
    - Queue depth and processing time
    - Embedding generation time
    - Vectorize upsert and query time
@@ -291,6 +309,7 @@ export interface AINamespace {
    - RPC method usage and latency
 
 2. **Logging Strategy**
+
    - Structured logs with consistent fields
    - Error logs with detailed context
    - Performance logs for slow operations
@@ -305,21 +324,25 @@ export interface AINamespace {
 ## 7. Migration Plan
 
 1. **Deploy Constellation Worker**
+
    - Deploy the worker with queue consumer enabled
    - Verify the worker is functioning correctly with `/stats` RPC method
    - Set up monitoring and alerts
 
 2. **Update Producers**
+
    - Update API worker to enqueue embedding jobs
    - Update import workers to enqueue embedding jobs
    - Verify jobs are being processed correctly
 
 3. **Update Consumers**
+
    - Replace direct Vectorize calls with Constellation RPC calls
    - Verify queries are returning expected results
    - Monitor for any performance issues
 
 4. **Scale and Optimize**
+
    - Monitor queue depth and adjust batch size/concurrency
    - Optimize preprocessing for better performance
    - Fine-tune error handling and retry strategies

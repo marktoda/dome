@@ -26,7 +26,11 @@ export function getLogger(): BaseLogger {
     return (ctx?.get('logger') as BaseLogger) ?? baseLogger;
   } catch (error) {
     // Not inside ALS – occurs during module init or unit tests
-    console.log(`getLogger() failed to get context storage: ${error instanceof Error ? error.message : 'unknown error'}`);
+    console.log(
+      `getLogger() failed to get context storage: ${
+        error instanceof Error ? error.message : 'unknown error'
+      }`,
+    );
     return baseLogger;
   }
 }

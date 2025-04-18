@@ -1,6 +1,6 @@
 /**
  * Text Preprocessing Service
- * 
+ *
  * Handles text chunking and preparation for embedding.
  */
 
@@ -20,8 +20,8 @@ export interface PreprocessorConfig {
  */
 export const DEFAULT_PREPROCESSOR_CONFIG: PreprocessorConfig = {
   maxChunkSize: 8000, // Maximum characters per chunk (Workers AI limit)
-  overlapSize: 200,   // Character overlap between chunks
-  minChunkSize: 100,  // Minimum chunk size to process
+  overlapSize: 200, // Character overlap between chunks
+  minChunkSize: 100, // Minimum chunk size to process
 };
 
 /**
@@ -75,7 +75,7 @@ export class TextPreprocessor {
     }
 
     const normalized = this.normalize(text);
-    
+
     // If text is smaller than max chunk size, return as single chunk
     if (normalized.length <= this.config.maxChunkSize) {
       return [normalized];
@@ -87,23 +87,23 @@ export class TextPreprocessor {
     while (startPos < normalized.length) {
       // Calculate end position for this chunk
       let endPos = startPos + this.config.maxChunkSize;
-      
+
       // If we're not at the end of the text, try to find a natural break point
       if (endPos < normalized.length) {
         // Look for natural break points: sentence end, paragraph, etc.
         const breakPoints = ['. ', '! ', '? ', '\n\n', '\n'];
-        
+
         // Try each break point type, starting from the most preferred
         for (const breakPoint of breakPoints) {
           const lastBreakPos = normalized.lastIndexOf(breakPoint, endPos);
-          
+
           // If we found a break point that's not too far back, use it
           if (lastBreakPos > startPos && lastBreakPos > endPos - 100) {
             endPos = lastBreakPos + 1; // Include the break character
             break;
           }
         }
-        
+
         // If no good break point was found, just use a space
         if (endPos > startPos + this.config.maxChunkSize - 10) {
           const lastSpacePos = normalized.lastIndexOf(' ', endPos);
@@ -118,7 +118,7 @@ export class TextPreprocessor {
 
       // Extract the chunk
       const chunk = normalized.substring(startPos, endPos).trim();
-      
+
       // Only add chunks that meet the minimum size requirement
       if (chunk.length >= this.config.minChunkSize) {
         chunks.push(chunk);
@@ -126,7 +126,7 @@ export class TextPreprocessor {
 
       // Move start position for next chunk, accounting for overlap
       startPos = endPos - this.config.overlapSize;
-      
+
       // Ensure we're making forward progress
       if (startPos <= 0 || startPos >= normalized.length - this.config.minChunkSize) {
         break;

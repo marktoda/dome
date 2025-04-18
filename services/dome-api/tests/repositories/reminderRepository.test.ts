@@ -54,6 +54,7 @@ describe('ReminderRepository', () => {
       VECTORIZE: {} as VectorizeIndex,
       RAW: {} as R2Bucket,
       EVENTS: {} as Queue<any>,
+      EMBED_QUEUE: {} as Queue<any>,
     };
 
     // Create repository

@@ -30,6 +30,7 @@ describe('SearchService', () => {
     VECTORIZE: {} as VectorizeIndex,
     RAW: {} as R2Bucket,
     EVENTS: {} as Queue<any>,
+    EMBED_QUEUE: {} as Queue<any>,
   };
 
   // Mock data
@@ -82,8 +83,8 @@ describe('SearchService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Mock embeddingService.generateEmbedding
-    (embeddingService.generateEmbedding as jest.Mock).mockResolvedValue(mockEmbedding);
+    // Mock embeddingService.queryEmbeddings
+    (embeddingService.queryEmbeddings as jest.Mock).mockResolvedValue(mockSearchResults);
 
     // Mock vectorizeService.queryVectors
     (vectorizeService.queryVectors as jest.Mock).mockResolvedValue(mockSearchResults);
@@ -110,8 +111,7 @@ describe('SearchService', () => {
       const results = await searchService.searchNotes(mockEnv, options);
 
       // Assert
-      expect(embeddingService.generateEmbedding).toHaveBeenCalledWith(mockEnv, mockQuery);
-      expect(vectorizeService.queryVectors).toHaveBeenCalledWith(mockEnv, mockEmbedding, {
+      expect(vectorizeService.queryVectors).toHaveBeenCalledWith(mockEnv, mockQuery, {
         topK: 10,
         filter: { userId: mockUserId },
       });
@@ -169,19 +169,6 @@ describe('SearchService', () => {
       expect(results.length).toBe(2);
     });
 
-    it('should throw ServiceError when embedding generation fails', async () => {
-      // Arrange
-      const options = {
-        userId: mockUserId,
-        query: mockQuery,
-        limit: 10,
-      };
-      const error = new Error('Embedding error');
-      (embeddingService.generateEmbedding as jest.Mock).mockRejectedValueOnce(error);
-
-      // Act & Assert
-      await expect(searchService.searchNotes(mockEnv, options)).rejects.toThrow(ServiceError);
-    });
 
     it('should throw ServiceError when vector search fails', async () => {
       // Arrange
@@ -199,7 +186,7 @@ describe('SearchService', () => {
   });
 
   describe('search', () => {
-    it('should combine results from notes and pages', async () => {
+    it('should call searchNotes', async () => {
       // Arrange
       const options = {
         userId: mockUserId,
@@ -207,7 +194,7 @@ describe('SearchService', () => {
         limit: 10,
       };
 
-      // Mock searchNotes and searchNotePages
+      // Mock searchNotes
       jest.spyOn(searchService, 'searchNotes').mockResolvedValueOnce([
         {
           id: 'note-1',
@@ -216,18 +203,6 @@ describe('SearchService', () => {
           score: 0.95,
           createdAt: 1617235678000,
           updatedAt: 1617235678000,
-          contentType: 'text/plain',
-        },
-      ]);
-
-      jest.spyOn(searchService, 'searchNotePages').mockResolvedValueOnce([
-        {
-          id: 'note-2',
-          title: 'Test Note 2',
-          body: 'This is page 1 of note 2',
-          score: 0.9,
-          createdAt: 1617235679000,
-          updatedAt: 1617235679000,
           contentType: 'text/plain',
         },
       ]);
@@ -237,95 +212,9 @@ describe('SearchService', () => {
 
       // Assert
       expect(searchService.searchNotes).toHaveBeenCalledWith(mockEnv, options);
-      expect(searchService.searchNotePages).toHaveBeenCalledWith(mockEnv, options);
-      expect(results.length).toBe(2);
+      expect(results.length).toBe(1);
       expect(results[0].id).toBe('note-1');
       expect(results[0].score).toBe(0.95);
-      expect(results[1].id).toBe('note-2');
-      expect(results[1].score).toBe(0.9);
-    });
-
-    it('should remove duplicates and keep the higher score', async () => {
-      // Arrange
-      const options = {
-        userId: mockUserId,
-        query: mockQuery,
-        limit: 10,
-      };
-
-      // Mock searchNotes and searchNotePages with overlapping results
-      jest.spyOn(searchService, 'searchNotes').mockResolvedValueOnce([
-        {
-          id: 'note-1',
-          title: 'Test Note 1',
-          body: 'This is test note 1',
-          score: 0.95,
-          createdAt: 1617235678000,
-          updatedAt: 1617235678000,
-          contentType: 'text/plain',
-        },
-      ]);
-
-      jest.spyOn(searchService, 'searchNotePages').mockResolvedValueOnce([
-        {
-          id: 'note-1', // Same ID as in searchNotes result
-          title: 'Test Note 1',
-          body: 'This is page 1 of note 1',
-          score: 0.98, // Higher score
-          createdAt: 1617235678000,
-          updatedAt: 1617235678000,
-          contentType: 'text/plain',
-        },
-      ]);
-
-      // Act
-      const results = await searchService.search(mockEnv, options);
-
-      // Assert
-      expect(results.length).toBe(1);
-      expect(results[0].id).toBe('note-1');
-      expect(results[0].score).toBe(0.98); // Should keep the higher score
-    });
-
-    it('should limit results to the specified limit', async () => {
-      // Arrange
-      const options = {
-        userId: mockUserId,
-        query: mockQuery,
-        limit: 1, // Only want 1 result
-      };
-
-      // Mock searchNotes and searchNotePages with multiple results
-      jest.spyOn(searchService, 'searchNotes').mockResolvedValueOnce([
-        {
-          id: 'note-1',
-          title: 'Test Note 1',
-          body: 'This is test note 1',
-          score: 0.95,
-          createdAt: 1617235678000,
-          updatedAt: 1617235678000,
-          contentType: 'text/plain',
-        },
-      ]);
-
-      jest.spyOn(searchService, 'searchNotePages').mockResolvedValueOnce([
-        {
-          id: 'note-2',
-          title: 'Test Note 2',
-          body: 'This is page 1 of note 2',
-          score: 0.9,
-          createdAt: 1617235679000,
-          updatedAt: 1617235679000,
-          contentType: 'text/plain',
-        },
-      ]);
-
-      // Act
-      const results = await searchService.search(mockEnv, options);
-
-      // Assert
-      expect(results.length).toBe(1);
-      expect(results[0].id).toBe('note-1'); // Should keep the higher score result
     });
   });
 });

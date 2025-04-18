@@ -1,12 +1,11 @@
 import { Bindings } from '../types';
 import { Note, NotePage, EmbeddingStatus } from '../models/note';
 import { NoteRepository } from '../repositories/noteRepository';
-import { vectorizeService, VectorMetadata } from './vectorizeService';
 import { embeddingService } from './embeddingService';
 import { ServiceError } from '@dome/common';
 
 /**
- * Service for indexing notes in Vectorize
+ * Service for indexing notes using the Constellation embedding service
  */
 export class NoteIndexingService {
   private noteRepository: NoteRepository;
@@ -19,7 +18,7 @@ export class NoteIndexingService {
   }
 
   /**
-   * Index a note in Vectorize
+   * Index a note using Constellation
    * @param env Environment bindings
    * @param note Note to index
    * @returns Promise<void>
@@ -31,20 +30,12 @@ export class NoteIndexingService {
         embeddingStatus: EmbeddingStatus.PROCESSING,
       });
 
-      // Generate embedding for the note body
-      const embedding = await embeddingService.generateEmbedding(env, note.body);
-
-      // Create metadata for the vector
-      const metadata: VectorMetadata = {
-        userId: note.userId,
-        noteId: note.id,
-        createdAt: note.createdAt,
-      };
-
-      // Add vector to Vectorize
-      await vectorizeService.addVector(env, note.id, embedding, metadata);
+      // Enqueue the note for embedding
+      await embeddingService.enqueueEmbedding(env, note.userId, note.id, note.body);
 
       // Update note status to completed
+      // Note: In a real implementation, we might want to use a webhook or polling
+      // to update the status when the embedding is actually complete
       await this.noteRepository.update(env, note.id, {
         embeddingStatus: EmbeddingStatus.COMPLETED,
       });
@@ -64,7 +55,7 @@ export class NoteIndexingService {
   }
 
   /**
-   * Index note pages in Vectorize
+   * Index note pages using Constellation
    * @param env Environment bindings
    * @param note Note
    * @param pages Note pages to index
@@ -77,25 +68,14 @@ export class NoteIndexingService {
         embeddingStatus: EmbeddingStatus.PROCESSING,
       });
 
-      // Generate embeddings for each page in batches
-      const pageContents = pages.map(page => page.content);
-      const embeddings = await embeddingService.generateEmbeddings(env, pageContents);
-
-      // Add vectors to Vectorize
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
-        const embedding = embeddings[i];
-
-        // Create metadata for the vector
-        const metadata: VectorMetadata = {
-          userId: note.userId,
-          noteId: note.id,
-          createdAt: note.createdAt,
-          pageNum: page.pageNum,
-        };
-
-        // Add vector to Vectorize
-        await vectorizeService.addVector(env, page.id, embedding, metadata);
+      // Enqueue each page for embedding
+      for (const page of pages) {
+        await embeddingService.enqueueEmbedding(
+          env,
+          note.userId,
+          `${note.id}:page:${page.pageNum}`,
+          page.content,
+        );
       }
 
       // Update note status to completed
@@ -118,7 +98,7 @@ export class NoteIndexingService {
   }
 
   /**
-   * Update note index in Vectorize
+   * Update note index using Constellation
    * @param env Environment bindings
    * @param note Note to update
    * @returns Promise<void>
@@ -130,18 +110,8 @@ export class NoteIndexingService {
         embeddingStatus: EmbeddingStatus.PROCESSING,
       });
 
-      // Generate embedding for the note body
-      const embedding = await embeddingService.generateEmbedding(env, note.body);
-
-      // Create metadata for the vector
-      const metadata: VectorMetadata = {
-        userId: note.userId,
-        noteId: note.id,
-        createdAt: note.createdAt,
-      };
-
-      // Update vector in Vectorize
-      await vectorizeService.updateVector(env, note.id, embedding, metadata);
+      // Enqueue the note for embedding (will overwrite existing vectors)
+      await embeddingService.enqueueEmbedding(env, note.userId, note.id, note.body);
 
       // Update note status to completed
       await this.noteRepository.update(env, note.id, {
@@ -158,33 +128,6 @@ export class NoteIndexingService {
       throw new ServiceError(`Failed to update note index for note ${note.id}`, {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: { noteId: note.id },
-      });
-    }
-  }
-
-  /**
-   * Delete note index from Vectorize
-   * @param env Environment bindings
-   * @param noteId Note ID
-   * @returns Promise<void>
-   */
-  async deleteNoteIndex(env: Bindings, noteId: string): Promise<void> {
-    try {
-      // Delete vector from Vectorize
-      await vectorizeService.deleteVector(env, noteId);
-
-      // Get note pages
-      const pages = await this.noteRepository.findPagesByNoteId(env, noteId);
-
-      // Delete page vectors from Vectorize
-      for (const page of pages) {
-        await vectorizeService.deleteVector(env, page.id);
-      }
-    } catch (error) {
-      console.error(`Error deleting note index for note ${noteId}:`, error);
-      throw new ServiceError(`Failed to delete note index for note ${noteId}`, {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        context: { noteId },
       });
     }
   }

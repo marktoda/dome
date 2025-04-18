@@ -60,7 +60,9 @@ export class VectorizeService {
     try {
       // Split into batches if needed
       if (vectors.length > this.config.maxBatchSize) {
-        logger.debug(`Splitting ${vectors.length} vectors into batches of ${this.config.maxBatchSize}`);
+        logger.debug(
+          `Splitting ${vectors.length} vectors into batches of ${this.config.maxBatchSize}`,
+        );
 
         const batches: VectorWithMetadata[][] = [];
         for (let i = 0; i < vectors.length; i += this.config.maxBatchSize) {
@@ -101,9 +103,9 @@ export class VectorizeService {
         const vectorizeVectors = vectors.map(v => ({
           id: v.id,
           values: v.values,
-          metadata: v.metadata as unknown as Record<string, VectorizeVectorMetadata>
+          metadata: v.metadata as unknown as Record<string, VectorizeVectorMetadata>,
         }));
-        
+
         await this.vectorize.upsert(vectorizeVectors);
         metrics.increment('vectorize.upsert.success');
         return;
@@ -114,7 +116,9 @@ export class VectorizeService {
         // Log the error
         logger.warn(
           { error: lastError, attempt, maxAttempts: this.config.retryAttempts },
-          `Vectorize upsert attempt ${attempt} failed, ${this.config.retryAttempts - attempt} retries left`
+          `Vectorize upsert attempt ${attempt} failed, ${
+            this.config.retryAttempts - attempt
+          } retries left`,
         );
 
         // If we have retries left, wait before trying again
@@ -139,7 +143,7 @@ export class VectorizeService {
   public async query(
     queryVector: number[],
     filter: Partial<NoteVectorMeta> = {},
-    topK = 10
+    topK = 10,
   ): Promise<VectorSearchResult[]> {
     if (!queryVector || queryVector.length === 0) {
       logger.warn('Empty query vector provided for vector search');
@@ -155,12 +159,12 @@ export class VectorizeService {
       const results = await this.vectorize.query(queryVector, { topK, filter });
       metrics.increment('vectorize.query.success');
       metrics.gauge('vectorize.query.results', results.matches.length);
-      
+
       // Transform the results to match VectorSearchResult[]
       return results.matches.map(match => ({
         id: match.id,
         score: match.score,
-        metadata: match.metadata as unknown as NoteVectorMeta
+        metadata: match.metadata as unknown as NoteVectorMeta,
       }));
     } catch (error) {
       metrics.increment('vectorize.query.errors');
@@ -178,7 +182,7 @@ export class VectorizeService {
   public async getStats(): Promise<VectorIndexStats> {
     try {
       const info = await this.vectorize.describe();
-      
+
       // Determine the dimension based on the config type
       let dimension = 0;
       if ('dimensions' in info.config) {
@@ -188,7 +192,7 @@ export class VectorizeService {
         // For now, use a default value
         dimension = 384; // Common embedding dimension
       }
-      
+
       return {
         vectors: info.vectorsCount,
         dimension,
@@ -205,7 +209,7 @@ export class VectorizeService {
  */
 export const createVectorizeService = (
   vectorize: VectorizeIndex,
-  config?: Partial<VectorizeConfig>
+  config?: Partial<VectorizeConfig>,
 ): VectorizeService => {
   return new VectorizeService(vectorize, config);
 };

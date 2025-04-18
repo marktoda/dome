@@ -38,7 +38,7 @@ export async function runWithLogger<T>(
   ctx?: CFExecutionContext,
 ): Promise<T> {
   const child = baseLogger.child(meta);
-  
+
   try {
     const storage = getContext() as LoggerContext | undefined;
 
@@ -56,7 +56,7 @@ export async function runWithLogger<T>(
     // If accessing context storage fails, log the error and fall back to direct execution
     child.warn(
       { error: error instanceof Error ? error.message : 'Unknown error' },
-      'Failed to access context storage in runWithLogger, falling back to direct execution'
+      'Failed to access context storage in runWithLogger, falling back to direct execution',
     );
     return await fn();
   }

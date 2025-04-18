@@ -5,11 +5,11 @@ describe('baseLogger', () => {
   // Mock console.log to prevent test output pollution
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    
+
     // Temporarily set LOG_LEVEL to info for testing
     const originalLogLevel = (globalThis as any).LOG_LEVEL;
     (globalThis as any).LOG_LEVEL = 'info';
-    
+
     return () => {
       // Restore original LOG_LEVEL
       (globalThis as any).LOG_LEVEL = originalLogLevel;

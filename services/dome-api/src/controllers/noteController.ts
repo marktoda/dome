@@ -86,11 +86,14 @@ export class NoteController {
       getLogger().info({ noteId: note.id }, 'Starting background embedding process');
 
       // extends workers life until it finishes
-      c.executionCtx.waitUntil(this.processEmbedding(c.env, note.id, note.body, userId)
-        .catch(err => getLogger().error(
-          { err, noteId: note.id, userId },
-          'Error processing embedding for note',
-        )));
+      c.executionCtx.waitUntil(
+        this.processEmbedding(c.env, note.id, note.body, userId).catch(err =>
+          getLogger().error(
+            { err, noteId: note.id, userId },
+            'Error processing embedding for note',
+          ),
+        ),
+      );
 
       // Return the created note
       getLogger().info({ noteId: note.id }, 'Note successfully created');
@@ -419,21 +422,6 @@ export class NoteController {
       getLogger().info({ noteId }, 'Deleting note from repository');
       await this.noteRepository.delete(c.env, noteId);
 
-      // Delete the embedding from Vectorize
-      try {
-        getLogger().info({ noteId }, 'Deleting vector embedding');
-        await vectorizeService.deleteVector(c.env, noteId);
-      } catch (error) {
-        getLogger().warn(
-          {
-            err: error,
-            noteId,
-          },
-          'Error deleting vector for note - continuing with deletion',
-        );
-        // Continue even if vector deletion fails
-      }
-
       // Return success
       getLogger().info({ noteId }, 'Note successfully deleted');
       return c.json({
@@ -499,24 +487,11 @@ export class NoteController {
         embeddingStatus: EmbeddingStatus.PROCESSING,
       });
 
-      // Generate embedding
-      getLogger().debug({ noteId }, 'Generating embedding vector');
-      const embedding = await embeddingService.generateEmbedding(env, content);
+      // Enqueue for embedding via Constellation
+      getLogger().debug({ noteId }, 'Enqueuing for embedding');
+      await embeddingService.enqueueEmbedding(env, userId, noteId, content);
 
-      // Store embedding in Vectorize
-      getLogger().debug(
-        {
-          noteId,
-          embeddingLength: embedding.length,
-        },
-        'Storing embedding vector',
-      );
-
-      await vectorizeService.addVector(env, noteId, embedding, {
-        noteId,
-        userId,
-        createdAt: Date.now(),
-      });
+      getLogger().debug({ noteId }, 'Note enqueued for embedding');
 
       // Update embedding status to completed
       await this.noteRepository.update(env, noteId, {

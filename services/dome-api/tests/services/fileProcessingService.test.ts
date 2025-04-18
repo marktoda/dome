@@ -13,6 +13,7 @@ describe('FileProcessingService', () => {
     D1_DATABASE: {} as D1Database,
     VECTORIZE: {} as VectorizeIndex,
     EVENTS: {} as Queue<any>,
+    EMBED_QUEUE: {} as Queue<any>,
   };
 
   beforeEach(() => {

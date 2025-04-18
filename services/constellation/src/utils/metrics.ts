@@ -1,6 +1,6 @@
 /**
  * Metrics Utilities
- * 
+ *
  * Provides metrics tracking for the Constellation service.
  */
 
@@ -67,13 +67,13 @@ export class MetricsService {
    */
   public startTimer(name: string) {
     const startTime = performance.now();
-    
+
     return {
       stop: (tags: Record<string, string> = {}) => {
         const duration = Math.round(performance.now() - startTime);
         this.timing(`${name}.duration_ms`, duration, tags);
         return duration;
-      }
+      },
     };
   }
 

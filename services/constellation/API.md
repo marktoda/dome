@@ -11,19 +11,22 @@ The Constellation service exposes the following RPC methods through service bind
 Embeds a single note immediately. This is a synchronous operation and should be used sparingly, primarily for testing or low-volume scenarios.
 
 **Parameters:**
+
 - `job: EmbedJob` - The embedding job to process
 
 **Returns:**
+
 - `Promise<void>` - A promise that resolves when the embedding is complete
 
 **Example:**
+
 ```typescript
 await env.CONSTELLATION.embed({
   userId: 'user123',
   noteId: 'note456',
   text: 'This is the text to embed',
   created: Date.now(),
-  version: 1
+  version: 1,
 });
 ```
 
@@ -32,21 +35,20 @@ await env.CONSTELLATION.embed({
 Performs a vector similarity search using the provided query text and optional filters.
 
 **Parameters:**
+
 - `text: string` - The query text to search for
 - `filter?: Partial<NoteVectorMeta>` - Optional metadata filter to restrict results
 - `topK?: number` - Optional number of results to return (default: 10)
 
 **Returns:**
+
 - `Promise<VectorSearchResult[]>` - A promise that resolves to an array of search results
 
 **Example:**
+
 ```typescript
 // Search for similar vectors with a filter
-const results = await env.CONSTELLATION.query(
-  'Search query text',
-  { userId: 'user123' },
-  10
-);
+const results = await env.CONSTELLATION.query('Search query text', { userId: 'user123' }, 10);
 
 // Process results
 for (const result of results) {
@@ -59,12 +61,15 @@ for (const result of results) {
 Retrieves statistics about the vector index.
 
 **Parameters:**
+
 - None
 
 **Returns:**
+
 - `Promise<VectorIndexStats>` - A promise that resolves to the vector index statistics
 
 **Example:**
+
 ```typescript
 const stats = await env.CONSTELLATION.stats();
 console.log(`Vector index has ${stats.vectors} vectors with dimension ${stats.dimension}`);
@@ -78,11 +83,11 @@ Represents a job for embedding a text document.
 
 ```typescript
 interface EmbedJob {
-  userId: string;       // User ID associated with the note
-  noteId: string;       // Unique identifier for the note
-  text: string;         // Text content to embed (≤ 8 kB preferred)
-  created: number;      // Creation timestamp (ms since epoch)
-  version: number;      // Embedding version
+  userId: string; // User ID associated with the note
+  noteId: string; // Unique identifier for the note
+  text: string; // Text content to embed (≤ 8 kB preferred)
+  created: number; // Creation timestamp (ms since epoch)
+  version: number; // Embedding version
 }
 ```
 
@@ -92,10 +97,10 @@ Metadata associated with a vector in the index.
 
 ```typescript
 interface NoteVectorMeta {
-  userId: string;       // User ID associated with the note
-  noteId: string;       // Unique identifier for the note
-  createdAt: number;    // Creation timestamp (s since epoch)
-  version: number;      // Embedding version
+  userId: string; // User ID associated with the note
+  noteId: string; // Unique identifier for the note
+  createdAt: number; // Creation timestamp (s since epoch)
+  version: number; // Embedding version
 }
 ```
 
@@ -105,8 +110,8 @@ Result from a vector similarity search.
 
 ```typescript
 interface VectorSearchResult {
-  id: string;           // Vector ID (format: note:{noteId}:{chunkIndex})
-  score: number;        // Similarity score (0-1, higher is more similar)
+  id: string; // Vector ID (format: note:{noteId}:{chunkIndex})
+  score: number; // Similarity score (0-1, higher is more similar)
   metadata: NoteVectorMeta; // Associated metadata
 }
 ```
@@ -117,8 +122,8 @@ Statistics about the vector index.
 
 ```typescript
 interface VectorIndexStats {
-  vectors: number;      // Number of vectors in the index
-  dimension: number;    // Dimension of the vectors
+  vectors: number; // Number of vectors in the index
+  dimension: number; // Dimension of the vectors
 }
 ```
 
@@ -136,13 +141,14 @@ await env.QUEUE.send('EMBED_QUEUE', {
   noteId: 'note456',
   text: 'This is the text to embed',
   created: Date.now(),
-  version: 1
+  version: 1,
 } satisfies EmbedJob);
 ```
 
 ### Queue Processing
 
 The queue consumer:
+
 1. Processes batches of up to 10 jobs at a time
 2. Preprocesses text (normalizes and chunks if necessary)
 3. Generates embeddings using Workers AI

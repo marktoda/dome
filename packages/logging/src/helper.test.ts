@@ -6,7 +6,7 @@ import { getLogger } from './helper';
 vi.mock('hono/context-storage', () => {
   const mockGetContext = vi.fn();
   return {
-    getContext: mockGetContext
+    getContext: mockGetContext,
   };
 });
 
@@ -27,7 +27,7 @@ describe('getLogger', () => {
   it('should return base logger when no context is available', () => {
     // Mock getContext to return null (no context)
     (getContext as any).mockReturnValue(null);
-    
+
     const logger = getLogger();
 
     expect(logger).toBeDefined();
@@ -42,13 +42,13 @@ describe('getLogger', () => {
     // Create a mock context with a logger
     const mockLogger = baseLogger.child({ requestId: 'test-123' });
     const mockContext = {
-      get: vi.fn((key: string) => key === 'logger' ? mockLogger : undefined),
-      set: vi.fn()
+      get: vi.fn((key: string) => (key === 'logger' ? mockLogger : undefined)),
+      set: vi.fn(),
     };
-    
+
     // Mock getContext to return our mock context
     (getContext as any).mockReturnValue(mockContext);
-    
+
     const logger = getLogger();
 
     expect(logger).toBeDefined();
@@ -61,7 +61,7 @@ describe('getLogger', () => {
     (getContext as any).mockImplementation(() => {
       throw new Error('Context access error');
     });
-    
+
     const logger = getLogger();
 
     expect(logger).toBeDefined();

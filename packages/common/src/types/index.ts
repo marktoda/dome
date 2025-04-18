@@ -33,4 +33,3 @@ export interface ApiResponse<T = any> {
     details?: Record<string, any>;
   };
 }
-

@@ -105,7 +105,7 @@ export class Embedder {
         // In a real implementation, you would use a valid model name from the AiModels type
         const response = await this.ai.run(this.config.model as any, { text: texts });
         metrics.increment('embedding.success');
-        
+
         // Handle different response formats
         if (typeof response === 'object' && response !== null && 'data' in response) {
           return (response as any).data;
@@ -121,7 +121,9 @@ export class Embedder {
         // Log the error
         logger.warn(
           { error: lastError, attempt, maxAttempts: this.config.retryAttempts },
-          `Embedding attempt ${attempt} failed, ${this.config.retryAttempts - attempt} retries left`
+          `Embedding attempt ${attempt} failed, ${
+            this.config.retryAttempts - attempt
+          } retries left`,
         );
 
         // If we have retries left, wait before trying again

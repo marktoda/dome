@@ -92,7 +92,8 @@ export function createErrorMiddleware(
         status = serviceError.status;
       }
 
-      return c.json(errorResponse, status);
+      return c.json(errorResponse, status as any);
     }
   };
 }
+

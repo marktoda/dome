@@ -23,12 +23,12 @@ describe('logging middleware', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.clearAllMocks();
-    
+
     // Spy on baseLogger.child
-    vi.spyOn(baseLogger, 'child').mockImplementation((bindings) => {
+    vi.spyOn(baseLogger, 'child').mockImplementation(bindings => {
       return {
         ...baseLogger,
-        bindings: () => bindings
+        bindings: () => bindings,
       } as any;
     });
   });
@@ -65,39 +65,41 @@ describe('logging middleware', () => {
 
   it('should create a child logger with request context and set it in the Hono context', async () => {
     const middleware = buildLoggingMiddleware();
-    
+
     // Create mock request context
     const mockContext = {
       req: {
         raw: {
           headers: {
-            get: vi.fn((key) => key === 'cf-ray' ? 'test-ray-id' : null)
+            get: vi.fn(key => (key === 'cf-ray' ? 'test-ray-id' : null)),
           },
           cf: {
-            colo: 'TEST'
-          }
+            colo: 'TEST',
+          },
         },
-        header: vi.fn((key) => key === 'CF-Connecting-IP' ? '127.0.0.1' : undefined)
+        header: vi.fn(key => (key === 'CF-Connecting-IP' ? '127.0.0.1' : undefined)),
       },
-      set: vi.fn()
+      set: vi.fn(),
     };
-    
+
     const mockNext = vi.fn().mockResolvedValue(undefined);
-    
+
     // Execute the middleware
     await middleware(mockContext as any, mockNext);
-    
+
     // Verify the child logger was created with the right bindings
-    expect(baseLogger.child).toHaveBeenCalledWith(expect.objectContaining({
-      reqId: 'test-id-12345',
-      ip: '127.0.0.1',
-      colo: 'TEST',
-      cfRay: 'test-ray-id'
-    }));
-    
+    expect(baseLogger.child).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reqId: 'test-id-12345',
+        ip: '127.0.0.1',
+        colo: 'TEST',
+        cfRay: 'test-ray-id',
+      }),
+    );
+
     // Verify the logger was set in the context
     expect(mockContext.set).toHaveBeenCalledWith('logger', expect.anything());
-    
+
     // Verify next() was called
     expect(mockNext).toHaveBeenCalled();
   });

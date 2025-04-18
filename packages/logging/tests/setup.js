@@ -40,7 +40,7 @@ global.Request = class Request {
     this.cf = {
       colo: 'TEST',
       country: 'XX',
-      asn: 12345
+      asn: 12345,
     };
   }
 };
@@ -50,7 +50,7 @@ global.ExecutionContext = class {
   constructor() {
     this.waitUntil = vi.fn();
     this.passThroughOnException = vi.fn();
-    this.run = vi.fn((fn) => fn());
+    this.run = vi.fn(fn => fn());
   }
 };
 

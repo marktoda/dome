@@ -76,10 +76,10 @@ describe('TextPreprocessor', () => {
         overlapSize: 5,
         minChunkSize: 5,
       });
-      
+
       const text = 'This is a longer text that should be split into multiple chunks for processing';
       const result = preprocessor.chunk(text);
-      
+
       expect(result.length).toBeGreaterThan(1);
       // Check that each chunk is smaller than or equal to maxChunkSize
       result.forEach(chunk => {
@@ -93,21 +93,22 @@ describe('TextPreprocessor', () => {
         overlapSize: 5,
         minChunkSize: 5,
       });
-      
+
       const text = 'This is a text that should have overlapping chunks when processed';
       const chunks = preprocessor.chunk(text);
-      
+
       // Check for overlap between consecutive chunks
       for (let i = 0; i < chunks.length - 1; i++) {
         const currentChunk = chunks[i];
         const nextChunk = chunks[i + 1];
-        
+
         // Get the end of the current chunk
         const endOfCurrent = currentChunk.slice(-5);
-        
+
         // Check if the beginning of the next chunk contains the overlap
-        expect(nextChunk.startsWith(endOfCurrent) || 
-               nextChunk.includes(endOfCurrent.trim())).toBeTruthy();
+        expect(
+          nextChunk.startsWith(endOfCurrent) || nextChunk.includes(endOfCurrent.trim()),
+        ).toBeTruthy();
       }
     });
 
@@ -117,17 +118,21 @@ describe('TextPreprocessor', () => {
         overlapSize: 10,
         minChunkSize: 10,
       });
-      
-      const text = 'This is sentence one. This is sentence two! This is sentence three? This is sentence four.';
+
+      const text =
+        'This is sentence one. This is sentence two! This is sentence three? This is sentence four.';
       const chunks = preprocessor.chunk(text);
-      
+
       // Check if chunks end with natural break points
       chunks.forEach(chunk => {
-        if (chunk !== chunks[chunks.length - 1]) { // Skip the last chunk
-          expect(chunk.endsWith('. ') || 
-                 chunk.endsWith('! ') || 
-                 chunk.endsWith('? ') || 
-                 chunk.endsWith('\n')).toBeTruthy();
+        if (chunk !== chunks[chunks.length - 1]) {
+          // Skip the last chunk
+          expect(
+            chunk.endsWith('. ') ||
+              chunk.endsWith('! ') ||
+              chunk.endsWith('? ') ||
+              chunk.endsWith('\n'),
+          ).toBeTruthy();
         }
       });
     });
@@ -144,9 +149,9 @@ describe('TextPreprocessor', () => {
       const preprocessor = new TextPreprocessor();
       const spy1 = vi.spyOn(preprocessor, 'normalize');
       const spy2 = vi.spyOn(preprocessor, 'chunk');
-      
+
       preprocessor.process('Test text');
-      
+
       expect(spy1).toHaveBeenCalled();
       expect(spy2).toHaveBeenCalled();
     });
@@ -156,12 +161,12 @@ describe('TextPreprocessor', () => {
       const spy = vi.spyOn(preprocessor, 'chunk').mockImplementation(() => {
         throw new Error('Test error');
       });
-      
+
       const result = preprocessor.process('Test text');
-      
+
       expect(result).toHaveLength(1);
       expect(result[0]).toBe('Test text');
-      
+
       spy.mockRestore();
     });
 
@@ -169,9 +174,9 @@ describe('TextPreprocessor', () => {
       const preprocessor = new TextPreprocessor();
       // Generate a long text
       const longText = 'A '.repeat(5000) + 'B';
-      
+
       const result = preprocessor.process(longText);
-      
+
       expect(result.length).toBeGreaterThan(1);
       // Check that the original text is fully represented in the chunks
       expect(result.join(' ')).toContain('A B');
@@ -183,17 +188,17 @@ describe('TextPreprocessor', () => {
         overlapSize: 20,
         minChunkSize: 30,
       };
-      
+
       const preprocessor = new TextPreprocessor(customConfig);
       const longText = 'Word '.repeat(50);
-      
+
       const result = preprocessor.process(longText);
-      
+
       // Each chunk should be less than or equal to maxChunkSize
       result.forEach(chunk => {
         expect(chunk.length).toBeLessThanOrEqual(customConfig.maxChunkSize);
       });
-      
+
       // Each chunk (except possibly the last) should be at least minChunkSize
       for (let i = 0; i < result.length - 1; i++) {
         expect(result[i].length).toBeGreaterThanOrEqual(customConfig.minChunkSize);
@@ -212,13 +217,13 @@ describe('TextPreprocessor', () => {
         maxChunkSize: 1000,
         overlapSize: 50,
       };
-      
+
       const preprocessor = new TextPreprocessor(customConfig);
-      
+
       // We can't directly access private properties, so we'll test indirectly
       const longText = 'Word '.repeat(300); // ~1500 chars
       const result = preprocessor.chunk(longText);
-      
+
       // With maxChunkSize of 1000, we should get at least 2 chunks
       expect(result.length).toBeGreaterThanOrEqual(2);
     });

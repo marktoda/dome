@@ -2,7 +2,6 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
     "types": ["./worker-configuration.d.ts", "@types/node"]
   },
   "include": ["src/**/*.ts"],

@@ -48,7 +48,7 @@ export const responseHandlerMiddleware: MiddlewareHandler = async (c: Context, n
 
     // If the body is already an ApiResponse, return it directly
     if (body && typeof body === 'object' && 'success' in body) {
-      return c.json(body, status);
+      return c.json(body, status as any);
     }
 
     // Otherwise, wrap the body in a standardized success response
@@ -58,7 +58,7 @@ export const responseHandlerMiddleware: MiddlewareHandler = async (c: Context, n
     };
 
     logger.debug('Response handler wrapping body with status');
-    return c.json(apiResponse, status);
+    return c.json(apiResponse, status as any);
   }
 
   // For plain objects, wrap them in a standardized success response

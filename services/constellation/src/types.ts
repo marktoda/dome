@@ -5,17 +5,6 @@
 import { NoteVectorMeta } from '@dome/common';
 
 /**
- * Environment variables and bindings
- */
-export interface Env {
-  VERSION: string;
-  ENVIRONMENT: string;
-  EMBED_DEAD: Queue;
-  VECTORIZE: VectorizeIndex;
-  AI: Ai;
-}
-
-/**
  * Vector with metadata for upsert operations
  */
 export interface VectorWithMetadata {
