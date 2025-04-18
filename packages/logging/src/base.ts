@@ -10,11 +10,21 @@ import pino from 'pino';
  */
 export const baseLogger = pino({
   level: (globalThis as any).LOG_LEVEL ?? 'info',
-  browser: {
-    asObject: true,
-    write: (o: unknown) => console.log(JSON.stringify(o)),
+  
+  // keep the default `msg` key but make sure level is explicit
+  formatters: {
+    level(label) {
+      return { level: label };
+    },
   },
+  
   timestamp: pino.stdTimeFunctions.isoTime,
+  
+  /* IMPORTANT — emit the *object* as‑is */
+  browser: {
+    asObject: true,                 // Pino gives you a plain object
+    write: (obj) => console.log(obj) // no stringify!
+  },
 });
 
 /**
