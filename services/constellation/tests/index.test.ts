@@ -48,32 +48,34 @@ vi.mock('@dome/logging', () => ({
 
 vi.mock('../src/services/preprocessor', () => ({
   createPreprocessor: vi.fn(() => ({
-    process: vi.fn((text) => [text]),
-    normalize: vi.fn((text) => text),
+    process: vi.fn(text => [text]),
+    normalize: vi.fn(text => text),
   })),
 }));
 
 vi.mock('../src/services/embedder', () => ({
   createEmbedder: vi.fn(() => ({
-    embed: vi.fn((texts) => Promise.resolve(texts.map(() => new Array(1536).fill(0.1)))),
+    embed: vi.fn(texts => Promise.resolve(texts.map(() => new Array(1536).fill(0.1)))),
   })),
 }));
 
 vi.mock('../src/services/vectorize', () => ({
   createVectorizeService: vi.fn(() => ({
     upsert: vi.fn(() => Promise.resolve({ success: true })),
-    query: vi.fn(() => Promise.resolve([
-      {
-        id: 'vector-1',
-        score: 0.95,
-        metadata: {
-          userId: 'user-123',
-          noteId: 'note-1',
-          createdAt: 1617235678,
-          version: 1,
+    query: vi.fn(() =>
+      Promise.resolve([
+        {
+          id: 'vector-1',
+          score: 0.95,
+          metadata: {
+            userId: 'user-123',
+            noteId: 'note-1',
+            createdAt: 1617235678,
+            version: 1,
+          },
         },
-      },
-    ])),
+      ]),
+    ),
     getStats: vi.fn(() => Promise.resolve({ vectors: 100, dimension: 1536 })),
   })),
 }));
@@ -137,7 +139,7 @@ describe('Constellation', () => {
         super();
       }
     }
-    
+
     constellation = new TestConstellation();
     // @ts-ignore - Accessing protected property for testing
     constellation.env = mockEnv;
@@ -150,11 +152,11 @@ describe('Constellation', () => {
 
       // Assert
       expect(getLogger().info).toHaveBeenCalledWith(
-        expect.objectContaining({ 
-          userId: testJob.userId, 
-          noteId: testJob.noteId 
+        expect.objectContaining({
+          userId: testJob.userId,
+          noteId: testJob.noteId,
         }),
-        expect.any(String)
+        expect.any(String),
       );
     });
 
@@ -187,11 +189,11 @@ describe('Constellation', () => {
       // Assert
       const { createVectorizeService } = await import('../src/services/vectorize');
       const mockVectorizeService = (createVectorizeService as ReturnType<typeof vi.fn>)() as any;
-      
+
       expect(mockVectorizeService.query).toHaveBeenCalledWith(
         expect.any(Array),
         testFilter,
-        10 // Default topK
+        10, // Default topK
       );
     });
 
@@ -253,7 +255,7 @@ describe('Constellation', () => {
             body: testJob,
             attempts: 1,
             retry: vi.fn(),
-            ack: vi.fn()
+            ack: vi.fn(),
           },
           {
             id: '2',
@@ -261,8 +263,8 @@ describe('Constellation', () => {
             body: { ...testJob, noteId: 'note-789' },
             attempts: 1,
             retry: vi.fn(),
-            ack: vi.fn()
-          }
+            ack: vi.fn(),
+          },
         ],
         queue: 'test-queue',
         retryAll: vi.fn(),
@@ -278,7 +280,7 @@ describe('Constellation', () => {
       // Assert
       expect(constellation['embedBatch']).toHaveBeenCalledWith(
         [testJob, { ...testJob, noteId: 'note-789' }],
-        expect.any(Function)
+        expect.any(Function),
       );
     });
 
@@ -292,8 +294,8 @@ describe('Constellation', () => {
             body: testJob,
             attempts: 1,
             retry: vi.fn(),
-            ack: vi.fn()
-          }
+            ack: vi.fn(),
+          },
         ],
         queue: 'test-queue',
         retryAll: vi.fn(),
@@ -315,10 +317,7 @@ describe('Constellation', () => {
   describe('embedBatch', () => {
     it('should process multiple embedding jobs', async () => {
       // Arrange
-      const jobs = [
-        testJob,
-        { ...testJob, noteId: 'note-789' },
-      ];
+      const jobs = [testJob, { ...testJob, noteId: 'note-789' }];
 
       // Act
       const successCount = await (constellation as any).embedBatch(jobs);
@@ -350,7 +349,9 @@ describe('Constellation', () => {
       const sendToDeadLetter = vi.fn();
 
       // Act & Assert
-      await expect((constellation as any).embedBatch([testJob], sendToDeadLetter)).rejects.toThrow();
+      await expect(
+        (constellation as any).embedBatch([testJob], sendToDeadLetter),
+      ).rejects.toThrow();
       expect(sendToDeadLetter).toHaveBeenCalledWith(testJob);
     });
   });

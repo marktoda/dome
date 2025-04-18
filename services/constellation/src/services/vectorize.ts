@@ -5,7 +5,7 @@
  */
 
 import { NoteVectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
-import { logger } from '../utils/logging';
+import { getLogger } from '@dome/logging';
 import { metrics } from '../utils/metrics';
 import { VectorWithMetadata } from '../types';
 
@@ -48,7 +48,7 @@ export class VectorizeService {
    */
   public async upsert(vectors: VectorWithMetadata[]): Promise<void> {
     if (!vectors.length) {
-      logger.warn('Empty vectors array provided for upsert');
+      getLogger().warn('Empty vectors array provided for upsert');
       return;
     }
 
@@ -57,10 +57,34 @@ export class VectorizeService {
     metrics.gauge('vectorize.upsert.batch_size', vectors.length);
     const timer = metrics.startTimer('vectorize.upsert');
 
+    getLogger().debug(
+      {
+        vectorCount: vectors.length,
+        vectorIds: vectors.map(v => v.id),
+        vectorDimensions: vectors[0]?.values.length,
+        metadataFields: vectors[0]?.metadata ? Object.keys(vectors[0].metadata) : [],
+      },
+      'Upserting vectors to Vectorize index',
+    );
+
     try {
+      // Get index stats before upsert to verify index state
+      try {
+        const stats = await this.vectorize.describe();
+        getLogger().debug(
+          {
+            vectorsCount: stats.vectorsCount,
+            indexConfig: stats.config,
+          },
+          'Vector index stats before upsert',
+        );
+      } catch (statsError) {
+        getLogger().warn({ error: statsError }, 'Unable to get vector index stats');
+      }
+
       // Split into batches if needed
       if (vectors.length > this.config.maxBatchSize) {
-        logger.debug(
+        getLogger().debug(
           `Splitting ${vectors.length} vectors into batches of ${this.config.maxBatchSize}`,
         );
 
@@ -71,6 +95,10 @@ export class VectorizeService {
 
         // Process batches
         for (const batch of batches) {
+          getLogger().debug(
+            { batchSize: batch.length, batchIds: batch.map(v => v.id) },
+            'Processing batch',
+          );
           await this.upsertBatch(batch);
         }
 
@@ -81,7 +109,7 @@ export class VectorizeService {
       await this.upsertBatch(vectors);
     } catch (error) {
       metrics.increment('vectorize.upsert.errors');
-      logger.error({ error }, 'Error upserting vectors');
+      getLogger().error({ error }, 'Error upserting vectors');
       throw error;
     } finally {
       timer.stop();
@@ -97,6 +125,16 @@ export class VectorizeService {
     let attempt = 0;
     let lastError: Error | null = null;
 
+    getLogger().debug(
+      {
+        batchSize: vectors.length,
+        firstId: vectors[0]?.id,
+        lastId: vectors[vectors.length - 1]?.id,
+        retryAttempts: this.config.retryAttempts,
+      },
+      'Starting upsert batch operation',
+    );
+
     while (attempt < this.config.retryAttempts) {
       try {
         // Transform vectors to match VectorizeVector[]
@@ -106,18 +144,41 @@ export class VectorizeService {
           metadata: v.metadata as unknown as Record<string, VectorizeVectorMetadata>,
         }));
 
+        getLogger().debug(
+          {
+            attempt: attempt + 1,
+            vectorCount: vectorizeVectors.length,
+            sampleId: vectorizeVectors[0]?.id,
+            metadataKeys: vectorizeVectors[0]?.metadata
+              ? Object.keys(vectorizeVectors[0].metadata)
+              : [],
+          },
+          'Sending vectors to Vectorize.upsert',
+        );
+
         await this.vectorize.upsert(vectorizeVectors);
+        getLogger().debug({ batchSize: vectors.length }, 'Successfully upserted vector batch');
         metrics.increment('vectorize.upsert.success');
         return;
       } catch (error) {
         attempt++;
         lastError = error instanceof Error ? error : new Error(String(error));
 
-        logger.error(error);
+        getLogger().error(
+          {
+            error,
+            attempt,
+            maxAttempts: this.config.retryAttempts,
+            batchSize: vectors.length,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          'Error during vector batch upsert',
+        );
         // Log the error
-        logger.warn(
+        getLogger().warn(
           { error: lastError, attempt, maxAttempts: this.config.retryAttempts },
-          `Vectorize upsert attempt ${attempt} failed, ${this.config.retryAttempts - attempt
+          `Vectorize upsert attempt ${attempt} failed, ${
+            this.config.retryAttempts - attempt
           } retries left`,
         );
 
@@ -146,7 +207,7 @@ export class VectorizeService {
     topK = 10,
   ): Promise<VectorSearchResult[]> {
     if (!queryVector || queryVector.length === 0) {
-      logger.warn('Empty query vector provided for vector search');
+      getLogger().warn('Empty query vector provided for vector search');
       return [];
     }
 
@@ -154,21 +215,59 @@ export class VectorizeService {
     metrics.increment('vectorize.query.requests');
     const timer = metrics.startTimer('vectorize.query');
 
+    getLogger().debug(
+      {
+        vectorDimension: queryVector.length,
+        filter,
+        topK,
+        vectorSample: queryVector.slice(0, 5), // Log first 5 values as sample
+      },
+      'Vectorize query request details',
+    );
+
     try {
+      // Get index stats before query to verify index state
+      try {
+        const stats = await this.vectorize.describe();
+        getLogger().debug(
+          {
+            vectorsCount: stats.vectorsCount,
+            indexConfig: stats.config,
+          },
+          'Vector index stats before query',
+        );
+      } catch (statsError) {
+        getLogger().warn({ error: statsError }, 'Unable to get vector index stats');
+      }
+
       // Query the vector index
+      getLogger().debug('Executing vectorize.query with filter and topK');
       const results = await this.vectorize.query(queryVector, { topK, filter });
+
       metrics.increment('vectorize.query.success');
       metrics.gauge('vectorize.query.results', results.matches.length);
 
+      getLogger().debug(
+        {
+          matchCount: results.matches.length,
+          matchIds: results.matches.map(m => m.id),
+          matchScores: results.matches.map(m => m.score),
+          hasMetadata: results.matches.some(m => m.metadata !== undefined),
+        },
+        'Raw vectorize query results',
+      );
+
       // Transform the results to match VectorSearchResult[]
-      return results.matches.map(match => ({
+      const transformedResults = results.matches.map(match => ({
         id: match.id,
         score: match.score,
         metadata: match.metadata as unknown as NoteVectorMeta,
       }));
+
+      return transformedResults;
     } catch (error) {
       metrics.increment('vectorize.query.errors');
-      logger.error({ error, filter, topK }, 'Error querying vectors');
+      getLogger().error({ error, filter, topK }, 'Error querying vectors');
       throw error;
     } finally {
       timer.stop();
@@ -198,7 +297,7 @@ export class VectorizeService {
         dimension,
       };
     } catch (error) {
-      logger.error({ error }, 'Error getting vector index stats');
+      getLogger().error({ error }, 'Error getting vector index stats');
       throw error;
     }
   }

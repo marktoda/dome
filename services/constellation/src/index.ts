@@ -188,7 +188,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         version: this.env.VERSION,
       },
       async () => {
-        getLogger().info({ filter, topK }, 'Processing vector search query');
+        getLogger().info({ filter, topK, text }, 'Processing vector search query');
         metrics.increment('rpc.query.requests');
         const timer = metrics.startTimer('rpc.query');
 
@@ -200,6 +200,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
           // Preprocess query text
           const processedText = preprocessor.normalize(text);
+          getLogger().debug({ originalText: text, processedText }, 'Query text preprocessing');
           if (!processedText) {
             getLogger().warn('Empty query text after preprocessing');
             return [];
@@ -207,6 +208,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
           // Generate embedding for the query text
           const embeddings = await embedder.embed([processedText]);
+          getLogger().debug(
+            { embeddingsCount: embeddings.length, embeddingDimension: embeddings[0]?.length },
+            'Generated query embeddings',
+          );
           if (embeddings.length === 0) {
             getLogger().warn('Failed to generate embedding for query text');
             return [];
@@ -214,11 +219,23 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
           // Query the vector index with the generated embedding
           const queryVector = embeddings[0];
+          getLogger().debug(
+            { vectorDimension: queryVector.length, filterKeys: Object.keys(filter) },
+            'Querying vector index',
+          );
           const results = await vectorizeService.query(queryVector, filter, topK);
 
           metrics.increment('rpc.query.success');
           metrics.gauge('rpc.query.results', results.length);
-          getLogger().info({ resultCount: results.length }, 'Vector search completed');
+          getLogger().info(
+            {
+              resultCount: results.length,
+              resultIds: results.map(r => r.id),
+              resultScores: results.map(r => r.score),
+              filterUsed: filter,
+            },
+            'Vector search completed',
+          );
 
           return results;
         } catch (error) {

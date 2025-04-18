@@ -13,20 +13,20 @@ The Dome application follows a microservices architecture built on Cloudflare Wo
 ```mermaid
 graph TD
     Client[Client Applications] -->|HTTP Requests| DomeAPI[Dome API]
-    
+
     DomeAPI -->|Service Binding| Constellation[Constellation Service]
     DomeAPI -->|Enqueue Jobs| EmbedQueue[Embed Queue]
     Constellation -->|Process Jobs| EmbedQueue
-    
+
     DomeAPI -->|Store/Query| D1[D1 Database]
     Constellation -->|Store/Query| Vectorize[Vectorize Index]
-    
+
     GithubCron[GitHub Cron] -->|Service Binding| Constellation
     GithubCron -->|Enqueue Jobs| EmbedQueue
-    
+
     NotionCron[Notion Cron] -->|Service Binding| Constellation
     NotionCron -->|Enqueue Jobs| EmbedQueue
-    
+
     DomeNotify[Dome Notify] -->|Read Data| D1
     DomeCron[Dome Cron] -->|Trigger| DomeNotify
 ```
@@ -56,7 +56,7 @@ sequenceDiagram
     participant WorkersAI as Workers AI
     participant Vectorize as Vectorize Index
     participant D1 as D1 Database
-    
+
     %% Create/Update Note Flow
     Client->>DomeAPI: Create/Update Note
     DomeAPI->>D1: Store Note Data
@@ -64,7 +64,7 @@ sequenceDiagram
     EmbedQueue->>Constellation: Process Job Batch
     Constellation->>WorkersAI: Generate Embeddings
     Constellation->>Vectorize: Store Vectors
-    
+
     %% Search Flow
     Client->>DomeAPI: Search Request
     DomeAPI->>Constellation: Vector Query
@@ -81,17 +81,13 @@ The Dome API service communicates with the Constellation service through a typed
 
 ```typescript
 // In Dome API's wrangler.toml
-[[services]]
-binding   = "CONSTELLATION"
-service   = "constellation"
-environment = "production"
+[[services]];
+binding = 'CONSTELLATION';
+service = 'constellation';
+environment = 'production';
 
 // In Dome API code
-const results = await env.CONSTELLATION.query(
-  searchText,
-  { userId: currentUser.id },
-  10
-);
+const results = await env.CONSTELLATION.query(searchText, { userId: currentUser.id }, 10);
 ```
 
 ### Asynchronous Processing
@@ -120,14 +116,14 @@ In the previous architecture, embedding and vector search operations were handle
 ```mermaid
 graph TD
     Client[Client Applications] -->|HTTP Requests| DomeAPI[Dome API]
-    
+
     DomeAPI -->|Direct Embedding| WorkersAI[Workers AI]
     DomeAPI -->|Direct Vector Operations| Vectorize[Vectorize Index]
     DomeAPI -->|Store/Query| D1[D1 Database]
-    
+
     GithubCron[GitHub Cron] -->|Direct Embedding| WorkersAI
     GithubCron -->|Direct Vector Operations| Vectorize
-    
+
     NotionCron[Notion Cron] -->|Direct Embedding| WorkersAI
     NotionCron -->|Direct Vector Operations| Vectorize
 ```
@@ -147,18 +143,18 @@ The current architecture addresses these limitations by centralizing embedding a
 ```mermaid
 graph TD
     Client[Client Applications] -->|HTTP Requests| DomeAPI[Dome API]
-    
+
     DomeAPI -->|Service Binding| Constellation[Constellation Service]
     DomeAPI -->|Enqueue Jobs| EmbedQueue[Embed Queue]
     Constellation -->|Process Jobs| EmbedQueue
-    
+
     Constellation -->|Embedding| WorkersAI[Workers AI]
     Constellation -->|Vector Operations| Vectorize[Vectorize Index]
     DomeAPI -->|Store/Query| D1[D1 Database]
-    
+
     GithubCron[GitHub Cron] -->|Service Binding| Constellation
     GithubCron -->|Enqueue Jobs| EmbedQueue
-    
+
     NotionCron[Notion Cron] -->|Service Binding| Constellation
     NotionCron -->|Enqueue Jobs| EmbedQueue
 ```
@@ -188,7 +184,7 @@ During this phase, both architectures operated in parallel for write operations:
 graph TD
     DomeAPI[Dome API] -->|Write| OldSystem[Old System]
     DomeAPI -->|Write| NewSystem[Constellation + Queue]
-    
+
     Client[Client] -->|Read| OldSystem
 ```
 
@@ -204,7 +200,7 @@ During this phase, read operations were gradually migrated to the new system:
 graph TD
     DomeAPI[Dome API] -->|Write| OldSystem[Old System]
     DomeAPI -->|Write| NewSystem[Constellation + Queue]
-    
+
     Client[Client] -->|Read 20%| NewSystem
     Client -->|Read 80%| OldSystem
 ```
@@ -221,7 +217,7 @@ During this phase, all operations were migrated to the new system:
 graph TD
     DomeAPI[Dome API] -->|Write| OldSystem[Old System]
     DomeAPI -->|Write| NewSystem[Constellation + Queue]
-    
+
     Client[Client] -->|Read 100%| NewSystem
 ```
 

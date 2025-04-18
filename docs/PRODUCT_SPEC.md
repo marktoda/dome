@@ -5,12 +5,13 @@
 Dome is a personal knowledge management system that allows users to store, search, and retrieve information using natural language. The system leverages Cloudflare's serverless infrastructure to provide a scalable, low-latency solution.
 
 Key technologies:
-  - **D1** for structured rows
-  - **Vectorize** for embeddings (via Constellation service)
-  - **R2** for large blobs
-  - **Workers** for API and background processing
-  - **Queues** for asynchronous operations
-  - **Workers AI** for embeddings and LLM operations (via Constellation service)
+
+- **D1** for structured rows
+- **Vectorize** for embeddings (via Constellation service)
+- **R2** for large blobs
+- **Workers** for API and background processing
+- **Queues** for asynchronous operations
+- **Workers AI** for embeddings and LLM operations (via Constellation service)
 
 ## 2. User Experience
 
@@ -57,9 +58,10 @@ Users interact with Dome through:
 ## 4. Data Model
 
 Each "note" in the system consists of:
-   - row in **D1** (`notes`, `tasks`, `reminders`)
-   - embedding in **Vectorize** (via Constellation service)
-   - raw file in **R2** (when applicable)
+
+- row in **D1** (`notes`, `tasks`, `reminders`)
+- embedding in **Vectorize** (via Constellation service)
+- raw file in **R2** (when applicable)
 
 ### 4.1. Note Schema
 
@@ -79,11 +81,11 @@ interface Note {
 
 ### 4.2. Storage Mapping
 
-| Storage Type | Technology                                       | Contents                                         |
-| -------------- | ------------------------------------------------------- | ------------------------------------------------------- |
+| Storage Type   | Technology                                         | Contents                                                |
+| -------------- | -------------------------------------------------- | ------------------------------------------------------- |
 | **Vector**     | **Cloudflare Vectorize** via Constellation service | Embeddings + metadata (`note_id`, `user_id`, timestamp) |
-| **Structured** | **D1** SQLite DB `dome_meta`                            | Tables: `notes`, `tasks`, `reminders`, `tags`           |
-| **Blob**       | **R2** Bucket `dome_raw`                                | Raw files (PDFs, images, etc.)                          |
+| **Structured** | **D1** SQLite DB `dome_meta`                       | Tables: `notes`, `tasks`, `reminders`, `tags`           |
+| **Blob**       | **R2** Bucket `dome_raw`                           | Raw files (PDFs, images, etc.)                          |
 
 ## 5. Vector Database (Vectorize via Constellation)
 

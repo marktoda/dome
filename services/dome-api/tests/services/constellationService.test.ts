@@ -37,7 +37,7 @@ describe('ConstellationService', () => {
 
       // Assert
       expect(mockEnv.EMBED_QUEUE.send).toHaveBeenCalledTimes(1);
-      
+
       // Verify job structure
       const sendMock = mockEnv.EMBED_QUEUE.send as unknown as ReturnType<typeof vi.fn>;
       const job = sendMock.mock.calls[0][0];
@@ -48,7 +48,7 @@ describe('ConstellationService', () => {
         created: expect.any(Number),
         version: 1,
       });
-      
+
       // Verify text preprocessing
       expect(job.text).toBe(text.trim());
     });
@@ -56,14 +56,14 @@ describe('ConstellationService', () => {
     it('should handle very short text inputs', async () => {
       // Arrange
       const shortText = 'hi';
-      
+
       // Act
       await constellationService.enqueueEmbedding(mockEnv, userId, noteId, shortText);
-      
+
       // Assert
       const sendMock = mockEnv.EMBED_QUEUE.send as unknown as ReturnType<typeof vi.fn>;
       const job = sendMock.mock.calls[0][0];
-      
+
       // Should pad very short inputs
       expect(job.text).toBe('hi hi query search');
     });
@@ -71,14 +71,14 @@ describe('ConstellationService', () => {
     it('should truncate very long text inputs', async () => {
       // Arrange
       const longText = 'a'.repeat(10000);
-      
+
       // Act
       await constellationService.enqueueEmbedding(mockEnv, userId, noteId, longText);
-      
+
       // Assert
       const sendMock = mockEnv.EMBED_QUEUE.send as unknown as ReturnType<typeof vi.fn>;
       const job = sendMock.mock.calls[0][0];
-      
+
       // Should truncate to MAX_TEXT_LENGTH (8192)
       expect(job.text.length).toBe(8192);
     });
@@ -86,10 +86,11 @@ describe('ConstellationService', () => {
     it('should throw ServiceError when queue send fails', async () => {
       // Arrange
       mockEnv.EMBED_QUEUE.send = vi.fn().mockRejectedValueOnce(new Error('Queue error'));
-      
+
       // Act & Assert
-      await expect(constellationService.enqueueEmbedding(mockEnv, userId, noteId, text))
-        .rejects.toThrow(ServiceError);
+      await expect(
+        constellationService.enqueueEmbedding(mockEnv, userId, noteId, text),
+      ).rejects.toThrow(ServiceError);
     });
   });
 
@@ -100,7 +101,7 @@ describe('ConstellationService', () => {
 
       // Assert
       expect(mockEnv.CONSTELLATION.embed).toHaveBeenCalledTimes(1);
-      
+
       // Verify job structure
       const embedMock = mockEnv.CONSTELLATION.embed as unknown as ReturnType<typeof vi.fn>;
       const job = embedMock.mock.calls[0][0];
@@ -116,19 +117,21 @@ describe('ConstellationService', () => {
     it('should throw ServiceError when Constellation binding is missing', async () => {
       // Arrange
       const envWithoutConstellation = { ...mockEnv, CONSTELLATION: undefined };
-      
+
       // Act & Assert
-      await expect(constellationService.embedDirectly(envWithoutConstellation, userId, noteId, text))
-        .rejects.toThrow(ServiceError);
+      await expect(
+        constellationService.embedDirectly(envWithoutConstellation, userId, noteId, text),
+      ).rejects.toThrow(ServiceError);
     });
 
     it('should throw ServiceError when Constellation embed fails', async () => {
       // Arrange
       mockEnv.CONSTELLATION.embed = vi.fn().mockRejectedValueOnce(new Error('Embedding error'));
-      
+
       // Act & Assert
-      await expect(constellationService.embedDirectly(mockEnv, userId, noteId, text))
-        .rejects.toThrow(ServiceError);
+      await expect(
+        constellationService.embedDirectly(mockEnv, userId, noteId, text),
+      ).rejects.toThrow(ServiceError);
     });
   });
 
@@ -142,7 +145,7 @@ describe('ConstellationService', () => {
       expect(mockEnv.CONSTELLATION.query).toHaveBeenCalledWith(
         text.trim(), // Preprocessed text
         filter,
-        topK
+        topK,
       );
     });
 
@@ -154,26 +157,26 @@ describe('ConstellationService', () => {
       expect(mockEnv.CONSTELLATION.query).toHaveBeenCalledWith(
         text.trim(),
         filter,
-        10 // Default topK
+        10, // Default topK
       );
     });
 
     it('should throw ServiceError when Constellation binding is missing', async () => {
       // Arrange
       const envWithoutConstellation = { ...mockEnv, CONSTELLATION: undefined };
-      
+
       // Act & Assert
-      await expect(constellationService.query(envWithoutConstellation, text, filter))
-        .rejects.toThrow(ServiceError);
+      await expect(
+        constellationService.query(envWithoutConstellation, text, filter),
+      ).rejects.toThrow(ServiceError);
     });
 
     it('should throw ServiceError when Constellation query fails', async () => {
       // Arrange
       mockEnv.CONSTELLATION.query = vi.fn().mockRejectedValueOnce(new Error('Query error'));
-      
+
       // Act & Assert
-      await expect(constellationService.query(mockEnv, text, filter))
-        .rejects.toThrow(ServiceError);
+      await expect(constellationService.query(mockEnv, text, filter)).rejects.toThrow(ServiceError);
     });
   });
 
@@ -190,19 +193,19 @@ describe('ConstellationService', () => {
     it('should throw ServiceError when Constellation binding is missing', async () => {
       // Arrange
       const envWithoutConstellation = { ...mockEnv, CONSTELLATION: undefined };
-      
+
       // Act & Assert
-      await expect(constellationService.getStats(envWithoutConstellation))
-        .rejects.toThrow(ServiceError);
+      await expect(constellationService.getStats(envWithoutConstellation)).rejects.toThrow(
+        ServiceError,
+      );
     });
 
     it('should throw ServiceError when Constellation stats fails', async () => {
       // Arrange
       mockEnv.CONSTELLATION.stats = vi.fn().mockRejectedValueOnce(new Error('Stats error'));
-      
+
       // Act & Assert
-      await expect(constellationService.getStats(mockEnv))
-        .rejects.toThrow(ServiceError);
+      await expect(constellationService.getStats(mockEnv)).rejects.toThrow(ServiceError);
     });
   });
 
@@ -210,10 +213,10 @@ describe('ConstellationService', () => {
     it('should normalize whitespace', () => {
       // Arrange
       const textWithExtraSpaces = '  This   has   extra   spaces  ';
-      
+
       // Act
       const result = constellationService['preprocess'](textWithExtraSpaces);
-      
+
       // Assert
       expect(result).toBe('This has extra spaces');
     });
@@ -221,10 +224,10 @@ describe('ConstellationService', () => {
     it('should handle very short inputs by padding', () => {
       // Arrange
       const shortText = 'hi';
-      
+
       // Act
       const result = constellationService['preprocess'](shortText);
-      
+
       // Assert
       expect(result).toBe('hi hi query search');
     });
@@ -232,10 +235,10 @@ describe('ConstellationService', () => {
     it('should truncate very long inputs', () => {
       // Arrange
       const longText = 'a'.repeat(10000);
-      
+
       // Act
       const result = constellationService['preprocess'](longText);
-      
+
       // Assert
       expect(result.length).toBe(8192);
     });

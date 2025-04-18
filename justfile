@@ -33,10 +33,10 @@ deploy SERVICE ENV="dev":
 
 # Run development server for a specific service
 dev: build
-    wrangler \
+    wrangler dev \
       -c services/dome-api/wrangler.toml \
       -c services/constellation/wrangler.toml \
-      dev --experimental-vectorize-bind-to-prod
+      --experimental-vectorize-bind-to-prod
 
 # Run tests for all packages
 test:

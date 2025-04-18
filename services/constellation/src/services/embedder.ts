@@ -4,7 +4,7 @@
  * Interfaces with Workers AI to generate embeddings.
  */
 
-import { logger } from '../utils/logging';
+import { getLogger } from '@dome/logging';
 import { metrics } from '../utils/metrics';
 
 /**
@@ -49,7 +49,7 @@ export class Embedder {
    */
   public async embed(texts: string[]): Promise<number[][]> {
     if (!texts.length) {
-      logger.warn('Empty texts array provided for embedding');
+      getLogger().warn('Empty texts array provided for embedding');
       return [];
     }
 
@@ -58,10 +58,20 @@ export class Embedder {
     metrics.gauge('embedding.batch_size', texts.length);
     const timer = metrics.startTimer('embedding');
 
+    getLogger().debug(
+      {
+        textCount: texts.length,
+        textSamples: texts.map(t => t.substring(0, 50) + (t.length > 50 ? '...' : '')).slice(0, 2),
+        textLengths: texts.map(t => t.length),
+        model: this.config.model,
+      },
+      'Generating embeddings for texts',
+    );
+
     try {
       // Split into batches if needed
       if (texts.length > this.config.maxBatchSize) {
-        logger.debug(`Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`);
+        getLogger().debug(`Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`);
 
         const batches: string[][] = [];
         for (let i = 0; i < texts.length; i += this.config.maxBatchSize) {
@@ -71,18 +81,36 @@ export class Embedder {
         // Process batches and combine results
         const results: number[][] = [];
         for (const batch of batches) {
+          getLogger().debug({ batchSize: batch.length }, 'Processing embedding batch');
           const batchResults = await this.embedBatch(batch);
           results.push(...batchResults);
         }
+
+        getLogger().debug(
+          {
+            totalEmbeddings: results.length,
+            embeddingDimension: results[0]?.length,
+          },
+          'Combined embedding results from batches',
+        );
 
         return results;
       }
 
       // Process single batch
-      return await this.embedBatch(texts);
+      const results = await this.embedBatch(texts);
+      getLogger().debug(
+        {
+          embeddingsCount: results.length,
+          embeddingDimension: results[0]?.length,
+        },
+        'Generated embeddings for single batch',
+      );
+
+      return results;
     } catch (error) {
       metrics.increment('embedding.errors');
-      logger.error({ error }, 'Error generating embeddings');
+      getLogger().error({ error }, 'Error generating embeddings');
       throw error;
     } finally {
       timer.stop();
@@ -99,8 +127,23 @@ export class Embedder {
     let attempt = 0;
     let lastError: Error | null = null;
 
+    getLogger().debug(
+      {
+        batchSize: texts.length,
+        textLengthRange:
+          texts.length > 0
+            ? `${Math.min(...texts.map(t => t.length))} - ${Math.max(...texts.map(t => t.length))}`
+            : 'N/A',
+        model: this.config.model,
+        retryAttempts: this.config.retryAttempts,
+      },
+      'Starting embedding batch operation',
+    );
+
     while (attempt < this.config.retryAttempts) {
       try {
+        getLogger().debug({ attempt: attempt + 1 }, 'Sending batch to AI service for embedding');
+
         // Cast the model name to any to avoid type errors
         // In a real implementation, you would use a valid model name from the AiModels type
         const response = await this.ai.run(this.config.model as any, { text: texts });
@@ -108,10 +151,26 @@ export class Embedder {
 
         // Handle different response formats
         if (typeof response === 'object' && response !== null && 'data' in response) {
-          return (response as any).data;
+          const embeddings = (response as any).data;
+          getLogger().debug(
+            {
+              responseType: 'data array',
+              embeddingsCount: embeddings.length,
+              embeddingDimension: embeddings[0]?.length,
+            },
+            'Successfully received embeddings from AI service',
+          );
+          return embeddings;
         } else {
           // If the response doesn't have a data property, return an empty array
-          logger.warn('Unexpected response format from AI service');
+          getLogger().warn(
+            {
+              responseType: typeof response,
+              responseKeys:
+                typeof response === 'object' && response !== null ? Object.keys(response) : [],
+            },
+            'Unexpected response format from AI service',
+          );
           return [];
         }
       } catch (error) {
@@ -119,10 +178,9 @@ export class Embedder {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         // Log the error
-        logger.warn(
+        getLogger().warn(
           { error: lastError, attempt, maxAttempts: this.config.retryAttempts },
-          `Embedding attempt ${attempt} failed, ${
-            this.config.retryAttempts - attempt
+          `Embedding attempt ${attempt} failed, ${this.config.retryAttempts - attempt
           } retries left`,
         );
 

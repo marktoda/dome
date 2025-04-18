@@ -1,10 +1,10 @@
 import { Bindings, ConstellationService as ConstellationBinding } from '../types';
-import { 
-  ServiceError, 
-  EmbedJob, 
-  NoteVectorMeta, 
+import {
+  ServiceError,
+  EmbedJob,
+  NoteVectorMeta,
   VectorSearchResult,
-  VectorIndexStats
+  VectorIndexStats,
 } from '@dome/common';
 
 /**
@@ -63,15 +63,10 @@ export class ConstellationService {
    * @param text - Text to embed
    * @returns Promise resolving when the embedding is complete
    */
-  async embedDirectly(
-    env: Bindings,
-    userId: string,
-    noteId: string,
-    text: string
-  ): Promise<void> {
+  async embedDirectly(env: Bindings, userId: string, noteId: string, text: string): Promise<void> {
     try {
       this.validateConstellationBinding(env.CONSTELLATION);
-      
+
       const job: EmbedJob = {
         userId,
         noteId,
@@ -106,7 +101,7 @@ export class ConstellationService {
   ): Promise<VectorSearchResult[]> {
     try {
       this.validateConstellationBinding(env.CONSTELLATION);
-      
+
       const processedText = this.preprocess(text);
       return await env.CONSTELLATION!.query(processedText, filter, topK);
     } catch (error) {
@@ -126,7 +121,7 @@ export class ConstellationService {
   async getStats(env: Bindings): Promise<VectorIndexStats> {
     try {
       this.validateConstellationBinding(env.CONSTELLATION);
-      
+
       return await env.CONSTELLATION!.stats();
     } catch (error) {
       throw new ServiceError('Failed to get vector index statistics', {
@@ -160,7 +155,7 @@ export class ConstellationService {
 
   /**
    * Validates that the Constellation binding is available
-   * 
+   *
    * @param binding - The Constellation binding to validate
    * @throws ServiceError if the binding is not available
    */

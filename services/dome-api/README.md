@@ -68,6 +68,7 @@ The Dome API Service integrates with the Constellation embedding service through
 ### How It Works
 
 1. **Creating/Updating Notes**:
+
    - When a note is created or updated, the API service enqueues an embedding job
    - The job is processed asynchronously by the Constellation service
    - The embedding is stored in the Vectorize index with metadata
@@ -110,7 +111,7 @@ await env.EMBED_QUEUE.send({
 const results = await env.CONSTELLATION.query(
   searchText,
   { userId: currentUser.id }, // Filter by user
-  10 // Return top 10 results
+  10, // Return top 10 results
 );
 
 // Process results
@@ -194,11 +195,13 @@ pnpm deploy:prod
 ### Common Issues
 
 1. **Embedding Not Working**:
+
    - Check if the Constellation service is running
    - Verify the service binding is correctly configured
    - Check the queue depth for embedding jobs
 
 2. **Search Not Returning Expected Results**:
+
    - Verify the note has been embedded (check Vectorize index)
    - Check if the search query is properly formatted
    - Ensure metadata filters are correctly applied
@@ -213,10 +216,12 @@ pnpm deploy:prod
 The integration with Constellation replaces the previous direct embedding approach. The main changes include:
 
 1. **Embedding Process**:
+
    - Old: Direct embedding in the API service using Workers AI
    - New: Asynchronous embedding through Constellation queue
 
 2. **Vector Search**:
+
    - Old: Direct Vectorize calls from the API service
    - New: RPC calls to the Constellation service
 

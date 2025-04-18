@@ -11,7 +11,7 @@ The Dome application follows a microservices architecture using Cloudflare Worke
 ```mermaid
 graph TD
     Client[Client Applications] -->|HTTP Requests| DomeAPI[Dome API]
-    
+
     subgraph "Core Services"
         DomeAPI[Dome API Service] -->|Service Binding| Constellation[Constellation Service]
         DomeAPI -->|Enqueue Jobs| EmbedQueue[Embed Queue]
@@ -20,14 +20,14 @@ graph TD
         Constellation -->|Store Vectors| Vectorize[Vectorize Index]
         DomeAPI -->|Query Data| Vectorize
     end
-    
+
     subgraph "Import Services"
         GithubCron[GitHub Cron Service] -->|Service Binding| Constellation
         GithubCron -->|Enqueue Jobs| EmbedQueue
         NotionCron[Notion Cron Service] -->|Service Binding| Constellation
         NotionCron -->|Enqueue Jobs| EmbedQueue
     end
-    
+
     subgraph "Notification Services"
         DomeNotify[Dome Notify Service] -->|Read Data| D1
         DomeCron[Dome Cron Service] -->|Trigger| DomeNotify
@@ -43,6 +43,7 @@ graph TD
 The Dome API Service is the primary entry point for client applications. It provides RESTful endpoints for managing notes, performing searches, and handling user data.
 
 **Responsibilities:**
+
 - Expose HTTP endpoints for client applications
 - Handle authentication and authorization
 - Manage note CRUD operations
@@ -50,6 +51,7 @@ The Dome API Service is the primary entry point for client applications. It prov
 - Enqueue embedding jobs for text processing
 
 **Key Integrations:**
+
 - Constellation Service: For embedding and vector search operations
 - D1 Database: For storing structured data
 - Embed Queue: For asynchronous embedding processing
@@ -61,12 +63,14 @@ The Dome API Service is the primary entry point for client applications. It prov
 The Constellation Service is a dedicated worker for embedding and vector search operations. It provides a typed RPC interface for other services to interact with.
 
 **Responsibilities:**
+
 - Process embedding jobs from the queue
 - Generate vector embeddings using Workers AI
 - Store and retrieve vectors from the Vectorize index
 - Provide vector search capabilities
 
 **Key Integrations:**
+
 - Workers AI: For generating embeddings
 - Vectorize Index: For storing and querying vectors
 - Embed Queue: For consuming embedding jobs
@@ -80,6 +84,7 @@ The Constellation Service is a dedicated worker for embedding and vector search 
 The GitHub Cron Service periodically imports content from GitHub repositories for embedding and search.
 
 **Responsibilities:**
+
 - Fetch content from GitHub repositories
 - Parse and normalize content
 - Enqueue embedding jobs for processing
@@ -89,6 +94,7 @@ The GitHub Cron Service periodically imports content from GitHub repositories fo
 The Notion Cron Service periodically imports content from Notion workspaces for embedding and search.
 
 **Responsibilities:**
+
 - Fetch content from Notion workspaces
 - Parse and normalize content
 - Enqueue embedding jobs for processing
@@ -100,6 +106,7 @@ The Notion Cron Service periodically imports content from Notion workspaces for 
 The Dome Notify Service handles sending notifications to users based on various triggers.
 
 **Responsibilities:**
+
 - Send email notifications
 - Send in-app notifications
 - Handle notification preferences
@@ -109,6 +116,7 @@ The Dome Notify Service handles sending notifications to users based on various 
 The Dome Cron Service handles scheduled tasks and periodic operations.
 
 **Responsibilities:**
+
 - Trigger periodic tasks
 - Clean up stale data
 - Generate reports
@@ -130,12 +138,13 @@ The Dome service layer follows these key design principles:
 Service bindings provide a type-safe RPC interface between workers. This is the primary method for synchronous service-to-service communication.
 
 Example:
+
 ```typescript
 // In wrangler.toml
-[[services]]
-binding = "CONSTELLATION"
-service = "constellation"
-environment = "production"
+[[services]];
+binding = 'CONSTELLATION';
+service = 'constellation';
+environment = 'production';
 
 // In code
 const results = await env.CONSTELLATION.query(searchText, filter, topK);
@@ -146,12 +155,13 @@ const results = await env.CONSTELLATION.query(searchText, filter, topK);
 Queues are used for asynchronous processing and background jobs. They provide a way to offload heavy operations from user-facing services.
 
 Example:
+
 ```typescript
 // Enqueue a job
 await env.EMBED_QUEUE.send({
-  userId: "user123",
-  noteId: "note456",
-  text: "Content to embed",
+  userId: 'user123',
+  noteId: 'note456',
+  text: 'Content to embed',
   created: Date.now(),
   version: 1,
 });
@@ -162,7 +172,7 @@ export default {
     for (const message of batch.messages) {
       await processJob(message.body);
     }
-  }
+  },
 };
 ```
 

@@ -4,7 +4,7 @@
  * Provides structured logging for the Constellation service.
  */
 
-import { getLogger, baseLogger, BaseLogger } from '@dome/logging';
+import { getLogger } from '@dome/logging';
 
 /**
  * Log an error with additional context
@@ -37,7 +37,14 @@ export function logError(
  * @param tags Additional tags
  */
 export function logMetric(name: string, value: number, tags: Record<string, string> = {}) {
-  getLogger().info({ metric: name, value, ...tags }, 'Metric recorded');
+  // Create a structured log with metric data as top-level fields
+  // This ensures Cloudflare properly parses the metrics instead of embedding them in the message
+  getLogger().info({
+    metric_name: name,
+    metric_value: value,
+    metric_type: tags.type || 'gauge',
+    ...tags,
+  }, 'Metric recorded');
 }
 
 /**
@@ -51,11 +58,8 @@ export function createTimer(name: string) {
   return {
     stop: (tags: Record<string, string> = {}) => {
       const duration = Math.round(performance.now() - startTime);
-      logMetric(`${name}.duration_ms`, duration, tags);
+      logMetric(`${name}.duration_ms`, duration, { ...tags, type: 'timing' });
       return duration;
     },
   };
 }
-
-// Export the logger for direct use
-export const logger: BaseLogger = getLogger();
