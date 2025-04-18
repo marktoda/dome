@@ -15,10 +15,9 @@
     "@cloudflare/workers-types": "^4.0.0",
     "hono": "^4.0.0",
     "nanoid": "^3.3.4",
-    "pino": "^8.0.0"
+    "pino": "^9.6.0"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.14",
     "@typescript-eslint/eslint-plugin": "^5.57.1",
     "@typescript-eslint/parser": "^5.57.1",
     "eslint": "^8.38.0",

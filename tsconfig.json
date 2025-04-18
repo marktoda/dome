@@ -12,8 +12,12 @@
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
-      "@communicator/common": ["packages/common/src"],
-      "@communicator/common/*": ["packages/common/src/*"]
+      "@dome/common": ["packages/common/src"],
+      "@dome/common/*": ["packages/common/src/*"],
+      "@dome/logging": ["packages/logging/src"],
+      "@dome/logging/*": ["packages/logging/src/*"],
+      "@dome/cli": ["packages/cli/src"],
+      "@dome/cli/*": ["packages/cli/src/*"]
     }
   },
   "exclude": ["node_modules", "dist"]
