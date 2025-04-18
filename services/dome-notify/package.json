@@ -15,6 +15,7 @@
   "dependencies": {
     "@cloudflare/workers-types": "^4.20230518.0",
     "@dome/common": "workspace:*",
+    "@dome/logging": "workspace:*",
     "zod": "^3.21.4"
   },
   "devDependencies": {

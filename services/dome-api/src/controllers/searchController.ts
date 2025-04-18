@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Bindings } from '../types';
 import { searchService, NoteSearchResult } from '../services/searchService';
 import { ServiceError } from '@dome/common';
+import { getLogger } from '@dome/logging';
 
 /**
  * Search query validation schema
@@ -29,12 +30,14 @@ export class SearchController {
     try {
       // Validate query parameters
       const query = c.req.query();
+      getLogger().debug({ query }, 'Received search query parameters');
       const validatedQuery = searchQuerySchema.parse(query);
       
       // Get user ID from request headers or query parameters
       // This is a temporary solution for development purposes
       // In production, this would come from proper authentication
       const userId = c.req.header('x-user-id') || c.req.query('userId');
+      getLogger().debug({ userId }, 'User ID extracted from request');
       if (!userId) {
         return c.json({
           success: false,
@@ -46,6 +49,13 @@ export class SearchController {
       }
       
       // Perform search
+      getLogger().info({
+        userId,
+        searchQuery: validatedQuery.q,
+        limit: validatedQuery.limit,
+        contentType: validatedQuery.contentType
+      }, 'Performing search operation');
+      
       const searchResults = await searchService.search(c.env, {
         userId,
         query: validatedQuery.q,
@@ -55,6 +65,11 @@ export class SearchController {
         endDate: validatedQuery.endDate
       });
       
+      getLogger().info({
+        resultCount: searchResults.length,
+        query: validatedQuery.q
+      }, 'Search completed successfully');
+      
       // Return search results
       return c.json({
         success: true,
@@ -63,9 +78,17 @@ export class SearchController {
         query: validatedQuery.q
       });
     } catch (error) {
-      console.error('Error in search controller:', error);
+      getLogger().error({
+        err: error,
+        path: c.req.path,
+        query: c.req.query()
+      }, 'Error in search controller');
       
       if (error instanceof z.ZodError) {
+        getLogger().warn({
+          validationErrors: error.errors,
+          query: c.req.query()
+        }, 'Search validation error');
         return c.json({
           success: false,
           error: {
@@ -105,12 +128,14 @@ export class SearchController {
     try {
       // Validate query parameters
       const query = c.req.query();
+      getLogger().debug({ query }, 'Received stream search query parameters');
       const validatedQuery = searchQuerySchema.parse(query);
       
       // Get user ID from request headers or query parameters
       // This is a temporary solution for development purposes
       // In production, this would come from proper authentication
       const userId = c.req.header('x-user-id') || c.req.query('userId');
+      getLogger().debug({ userId }, 'User ID extracted for stream search');
       if (!userId) {
         return c.json({
           success: false,
@@ -124,6 +149,12 @@ export class SearchController {
       // Create a TransformStream for streaming results
       const { readable, writable } = new TransformStream();
       const writer = writable.getWriter();
+      
+      getLogger().info({
+        userId,
+        searchQuery: validatedQuery.q,
+        streamMode: true
+      }, 'Starting stream search operation');
       
       // Start search in the background
       (async () => {
@@ -147,7 +178,11 @@ export class SearchController {
           // Close the stream
           await writer.close();
         } catch (error) {
-          console.error('Error in stream search:', error);
+          getLogger().error({
+            err: error,
+            userId,
+            searchQuery: validatedQuery.q
+          }, 'Error in stream search processing');
           
           // Write error to stream
           const errorJson = JSON.stringify({
@@ -170,9 +205,17 @@ export class SearchController {
         }
       });
     } catch (error) {
-      console.error('Error in stream search controller:', error);
+      getLogger().error({
+        err: error,
+        path: c.req.path,
+        query: c.req.query()
+      }, 'Error in stream search controller');
       
       if (error instanceof z.ZodError) {
+        getLogger().warn({
+          validationErrors: error.errors,
+          query: c.req.query()
+        }, 'Stream search validation error');
         return c.json({
           success: false,
           error: {

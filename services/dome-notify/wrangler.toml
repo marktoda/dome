@@ -1,6 +1,7 @@
 name = "dome-notify"
 main = "src/index.ts"
 compatibility_date = "2023-05-18"
+compatibility_flags = ["nodejs_als"]
 inject = "../../wrangler.shared.toml"
 
 # Build configuration

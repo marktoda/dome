@@ -8,6 +8,7 @@ import { vectorizeService } from '../services/vectorizeService';
 import { ServiceError } from '@dome/common';
 import { createNoteSchema, updateNoteSchema, EmbeddingStatus } from '../models/note';
 import { v4 as uuidv4 } from 'uuid';
+import { getLogger } from '@dome/logging';
 
 /**
  * Ingest request schema
@@ -40,14 +41,16 @@ export class NoteController {
    * @returns Response
    */
   async ingest(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    console.log("hi im ingestin");
+    getLogger().info({ path: c.req.path, method: c.req.method }, 'Note ingestion started');
     try {
       // Validate request body
       const body = await c.req.json();
+      getLogger().debug({ requestBody: body }, 'Received ingest request data');
       const validatedData = ingestSchema.parse(body);
 
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
+      getLogger().debug({ userId }, 'User ID extracted for note ingestion');
       if (!userId) {
         return c.json({
           success: false,
@@ -61,8 +64,14 @@ export class NoteController {
       // Process the content to extract entities and classify intent
       // This would typically involve an LLM call, but for now we'll use a simple approach
       const title = validatedData.title || this.generateTitle(validatedData.content);
+      getLogger().debug({ generatedTitle: title }, 'Generated title for note');
 
       // Create the note
+      getLogger().info({
+        userId,
+        contentType: validatedData.contentType,
+        contentLength: validatedData.content.length
+      }, 'Creating new note');
       const note = await this.noteRepository.create(c.env, {
         userId,
         title,
@@ -72,18 +81,33 @@ export class NoteController {
       });
 
       // Generate embedding in the background
+      getLogger().info({ noteId: note.id }, 'Starting background embedding process');
       this.processEmbedding(c.env, note.id, note.body, userId)
-        .catch(error => console.error(`Error processing embedding for note ${note.id}:`, error));
+        .catch(error => {
+          getLogger().error({
+            err: error,
+            noteId: note.id,
+            userId
+          }, 'Error processing embedding for note');
+        });
 
       // Return the created note
+      getLogger().info({ noteId: note.id }, 'Note successfully created');
       return c.json({
         success: true,
         note
       }, 201);
     } catch (error) {
-      console.error('Error in ingest controller:', error);
+      getLogger().error({
+        err: error,
+        path: c.req.path,
+        method: c.req.method
+      }, 'Error in ingest controller');
 
       if (error instanceof z.ZodError) {
+        getLogger().warn({
+          validationErrors: error.errors
+        }, 'Note ingestion validation error');
         return c.json({
           success: false,
           error: {
@@ -123,6 +147,13 @@ export class NoteController {
     try {
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
+      const noteId = c.req.param('id');
+      
+      getLogger().info({
+        userId,
+        noteId,
+        path: c.req.path
+      }, 'Get note request received');
       if (!userId) {
         return c.json({
           success: false,
@@ -133,14 +164,18 @@ export class NoteController {
         }, 401);
       }
 
-      // Get note ID from path
-      const noteId = c.req.param('id');
-
       // Get the note
+      getLogger().debug({ noteId }, 'Fetching note from repository');
       const note = await this.noteRepository.findById(c.env, noteId);
 
       // Check if the note exists and belongs to the user
       if (!note || note.userId !== userId) {
+        getLogger().info({
+          noteId,
+          userId,
+          noteExists: !!note,
+          noteOwnedByUser: note ? note.userId === userId : false
+        }, 'Note not found or access denied');
         return c.json({
           success: false,
           error: {
@@ -151,12 +186,17 @@ export class NoteController {
       }
 
       // Return the note
+      getLogger().info({ noteId }, 'Note successfully retrieved');
       return c.json({
         success: true,
         note
       });
     } catch (error) {
-      console.error('Error getting note:', error);
+      getLogger().error({
+        err: error,
+        noteId: c.req.param('id'),
+        path: c.req.path
+      }, 'Error getting note');
 
       if (error instanceof ServiceError) {
         return c.json({
@@ -187,6 +227,12 @@ export class NoteController {
     try {
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
+      
+      getLogger().info({
+        userId,
+        path: c.req.path,
+        query: c.req.query()
+      }, 'List notes request received');
       if (!userId) {
         return c.json({
           success: false,
@@ -203,8 +249,15 @@ export class NoteController {
       const offsetParam = c.req.query('offset');
       const limit = limitParam ? parseInt(limitParam) : 50;
       const offset = offsetParam ? parseInt(offsetParam) : 0;
+      
+      getLogger().debug({
+        contentType,
+        limit,
+        offset
+      }, 'List notes query parameters');
 
       // Get notes for the user
+      getLogger().debug({ userId }, 'Fetching notes from repository');
       const notes = await this.noteRepository.findByUserId(c.env, userId);
 
       // Filter by content type if specified
@@ -216,6 +269,12 @@ export class NoteController {
       const paginatedNotes = filteredNotes.slice(offset, offset + limit);
 
       // Return the notes
+      getLogger().info({
+        count: paginatedNotes.length,
+        total: filteredNotes.length,
+        contentTypeFilter: contentType || 'none'
+      }, 'Notes successfully listed');
+      
       return c.json({
         success: true,
         notes: paginatedNotes,
@@ -223,7 +282,11 @@ export class NoteController {
         total: filteredNotes.length
       });
     } catch (error) {
-      console.error('Error listing notes:', error);
+      getLogger().error({
+        err: error,
+        userId: c.req.header('x-user-id') || c.req.query('userId'),
+        path: c.req.path
+      }, 'Error listing notes');
 
       if (error instanceof ServiceError) {
         return c.json({
@@ -254,6 +317,13 @@ export class NoteController {
     try {
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
+      const noteId = c.req.param('id');
+      
+      getLogger().info({
+        userId,
+        noteId,
+        path: c.req.path
+      }, 'Update note request received');
       if (!userId) {
         return c.json({
           success: false,
@@ -264,14 +334,18 @@ export class NoteController {
         }, 401);
       }
 
-      // Get note ID from path
-      const noteId = c.req.param('id');
-
       // Get the note to check ownership
+      getLogger().debug({ noteId }, 'Fetching note to verify ownership');
       const existingNote = await this.noteRepository.findById(c.env, noteId);
 
       // Check if the note exists and belongs to the user
       if (!existingNote || existingNote.userId !== userId) {
+        getLogger().info({
+          noteId,
+          userId,
+          noteExists: !!existingNote,
+          noteOwnedByUser: existingNote ? existingNote.userId === userId : false
+        }, 'Note not found or access denied for update');
         return c.json({
           success: false,
           error: {
@@ -283,13 +357,20 @@ export class NoteController {
 
       // Validate request body
       const body = await c.req.json();
+      getLogger().debug({ requestBody: body }, 'Received update note data');
       const validatedData = updateNoteSchema.parse(body);
 
       // Update the note
+      getLogger().info({
+        noteId,
+        fieldsToUpdate: Object.keys(validatedData)
+      }, 'Updating note');
       const updatedNote = await this.noteRepository.update(c.env, noteId, validatedData);
 
       // If the body was updated, regenerate the embedding
       if (validatedData.body) {
+        getLogger().info({ noteId }, 'Content updated, regenerating embedding');
+        
         // Update embedding status to pending
         await this.noteRepository.update(c.env, noteId, {
           embeddingStatus: EmbeddingStatus.PENDING
@@ -297,16 +378,27 @@ export class NoteController {
 
         // Process embedding in the background
         this.processEmbedding(c.env, noteId, validatedData.body, userId)
-          .catch(error => console.error(`Error processing embedding for note ${noteId}:`, error));
+          .catch(error => {
+            getLogger().error({
+              err: error,
+              noteId,
+              userId
+            }, 'Error processing embedding for updated note');
+          });
       }
 
       // Return the updated note
+      getLogger().info({ noteId }, 'Note successfully updated');
       return c.json({
         success: true,
         note: updatedNote
       });
     } catch (error) {
-      console.error('Error updating note:', error);
+      getLogger().error({
+        err: error,
+        noteId: c.req.param('id'),
+        path: c.req.path
+      }, 'Error updating note');
 
       if (error instanceof z.ZodError) {
         return c.json({
@@ -348,6 +440,13 @@ export class NoteController {
     try {
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
+      const noteId = c.req.param('id');
+      
+      getLogger().info({
+        userId,
+        noteId,
+        path: c.req.path
+      }, 'Delete note request received');
       if (!userId) {
         return c.json({
           success: false,
@@ -358,14 +457,18 @@ export class NoteController {
         }, 401);
       }
 
-      // Get note ID from path
-      const noteId = c.req.param('id');
-
       // Get the note to check ownership
+      getLogger().debug({ noteId }, 'Fetching note to verify ownership before deletion');
       const existingNote = await this.noteRepository.findById(c.env, noteId);
 
       // Check if the note exists and belongs to the user
       if (!existingNote || existingNote.userId !== userId) {
+        getLogger().info({
+          noteId,
+          userId,
+          noteExists: !!existingNote,
+          noteOwnedByUser: existingNote ? existingNote.userId === userId : false
+        }, 'Note not found or access denied for deletion');
         return c.json({
           success: false,
           error: {
@@ -376,23 +479,33 @@ export class NoteController {
       }
 
       // Delete the note
+      getLogger().info({ noteId }, 'Deleting note from repository');
       await this.noteRepository.delete(c.env, noteId);
 
       // Delete the embedding from Vectorize
       try {
+        getLogger().info({ noteId }, 'Deleting vector embedding');
         await vectorizeService.deleteVector(c.env, noteId);
       } catch (error) {
-        console.warn(`Error deleting vector for note ${noteId}:`, error);
+        getLogger().warn({
+          err: error,
+          noteId
+        }, 'Error deleting vector for note - continuing with deletion');
         // Continue even if vector deletion fails
       }
 
       // Return success
+      getLogger().info({ noteId }, 'Note successfully deleted');
       return c.json({
         success: true,
         message: 'Note deleted successfully'
       });
     } catch (error) {
-      console.error('Error deleting note:', error);
+      getLogger().error({
+        err: error,
+        noteId: c.req.param('id'),
+        path: c.req.path
+      }, 'Error deleting note');
 
       if (error instanceof ServiceError) {
         return c.json({
@@ -440,15 +553,26 @@ export class NoteController {
    */
   private async processEmbedding(env: Bindings, noteId: string, content: string, userId: string): Promise<void> {
     try {
+      getLogger().debug({
+        noteId,
+        contentLength: content.length
+      }, 'Starting embedding process');
+      
       // Update embedding status to processing
       await this.noteRepository.update(env, noteId, {
         embeddingStatus: EmbeddingStatus.PROCESSING
       });
 
       // Generate embedding
+      getLogger().debug({ noteId }, 'Generating embedding vector');
       const embedding = await embeddingService.generateEmbedding(env, content);
 
       // Store embedding in Vectorize
+      getLogger().debug({
+        noteId,
+        embeddingLength: embedding.length
+      }, 'Storing embedding vector');
+      
       await vectorizeService.addVector(env, noteId, embedding, {
         noteId,
         userId,
@@ -459,8 +583,14 @@ export class NoteController {
       await this.noteRepository.update(env, noteId, {
         embeddingStatus: EmbeddingStatus.COMPLETED
       });
+      
+      getLogger().info({ noteId }, 'Embedding process completed successfully');
     } catch (error) {
-      console.error(`Error processing embedding for note ${noteId}:`, error);
+      getLogger().error({
+        err: error,
+        noteId,
+        userId
+      }, 'Error processing embedding for note');
 
       // Update embedding status to failed
       await this.noteRepository.update(env, noteId, {

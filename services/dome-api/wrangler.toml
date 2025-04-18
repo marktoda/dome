@@ -1,6 +1,7 @@
 name = "dome-api"
 main = "src/index.ts"
 compatibility_date = "2025-04-15"
+compatibility_flags = ["nodejs_als"]
 
 [[d1_databases]]
 binding = "D1_DATABASE"

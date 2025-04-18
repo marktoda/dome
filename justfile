@@ -17,7 +17,7 @@ clean:
 reinstall: clean install
 
 # Build all packages
-build:
+build: install
     pnpm run build
 
 # Build a specific package

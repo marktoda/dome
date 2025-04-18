@@ -1,4 +1,12 @@
 import { QueueService, Event, EventSchema, MessageBatch } from '@dome/common';
+import { runWithLogger, getLogger } from '@dome/logging';
+
+// Define the execution context interface with the run method
+interface CFExecutionContext {
+  run<T>(callback: () => T): Promise<T>;
+  waitUntil(promise: Promise<any>): void;
+  passThroughOnException(): void;
+}
 import { 
   NotificationService, 
   EmailNotificationChannel, 
@@ -74,41 +82,51 @@ export default {
    * @param env Environment bindings
    * @param ctx Execution context
    */
-  async queue(batch: MessageBatch, env: Env, ctx: ExecutionContext): Promise<void> {
-    console.log(`Processing batch of ${batch.messages.length} messages`);
-    
-    // Initialize services
-    const notificationService = initializeNotificationService(env);
-    const eventHandlerRegistry = initializeEventHandlerRegistry(notificationService);
-    
-    // Process each message in the batch
-    for (const message of batch.messages) {
-      try {
-        console.log(`Processing message: ${message.id}`);
+  async queue(batch: MessageBatch, env: Env, ctx: CFExecutionContext): Promise<void> {
+    await runWithLogger(
+      {
+        trigger: 'queue',
+        batchSize: batch.messages.length,
+        environment: env.ENVIRONMENT
+      },
+      async () => {
+        getLogger().info({ batchSize: batch.messages.length }, 'Processing message batch');
         
-        // Parse the message body as JSON
-        const rawEvent = JSON.parse(message.body);
+        // Initialize services
+        const notificationService = initializeNotificationService(env);
+        const eventHandlerRegistry = initializeEventHandlerRegistry(notificationService);
         
-        // Validate the event against the schema
-        const event = EventSchema.parse(rawEvent) as Event;
+        // Process each message in the batch
+        for (const message of batch.messages) {
+          try {
+            getLogger().info({ messageId: message.id }, 'Processing message');
+            
+            // Parse the message body as JSON
+            const rawEvent = JSON.parse(message.body);
+            
+            // Validate the event against the schema
+            const event = EventSchema.parse(rawEvent) as Event;
+            
+            // Handle the event with the appropriate handler
+            await eventHandlerRegistry.handleEvent(event, env);
+            
+            // Acknowledge the message as processed
+            batch.ack(message.id);
+            
+            getLogger().info({ messageId: message.id }, 'Successfully processed message');
+          } catch (error) {
+            getLogger().error({ messageId: message.id, error }, 'Error processing message');
+            
+            // Acknowledge the message to remove it from the queue
+            // In a production environment, you might want to implement a dead-letter queue
+            // or other error handling mechanism instead of just acknowledging
+            batch.ack(message.id);
+          }
+        }
         
-        // Handle the event with the appropriate handler
-        await eventHandlerRegistry.handleEvent(event, env);
-        
-        // Acknowledge the message as processed
-        batch.ack(message.id);
-        
-        console.log(`Successfully processed message: ${message.id}`);
-      } catch (error) {
-        console.error(`Error processing message ${message.id}:`, error);
-        
-        // Acknowledge the message to remove it from the queue
-        // In a production environment, you might want to implement a dead-letter queue
-        // or other error handling mechanism instead of just acknowledging
-        batch.ack(message.id);
-      }
-    }
-    
-    console.log('Batch processing completed');
+        getLogger().info('Batch processing completed');
+      },
+      ctx
+    );
   },
 };

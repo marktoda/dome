@@ -1,4 +1,12 @@
 import { QueueService, Event, createReminderDueEvent } from '@dome/common';
+import { runWithLogger, getLogger } from '@dome/logging';
+
+// Define the execution context interface with the run method
+interface CFExecutionContext {
+  run<T>(callback: () => T): Promise<T>;
+  waitUntil(promise: Promise<any>): void;
+  passThroughOnException(): void;
+}
 
 /**
  * Environment interface for the dome-cron worker
@@ -25,16 +33,24 @@ export default {
    * @param env Environment bindings
    * @param ctx Execution context
    */
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    console.log(`Running scheduled job at ${new Date().toISOString()}`);
-    
-    // Initialize the queue service
-    const queueService = new QueueService({
-      queueBinding: env.EVENTS,
-      maxRetries: 3,
-    });
-    
-    try {
+  async scheduled(event: ScheduledEvent, env: Env, ctx: CFExecutionContext): Promise<void> {
+    await runWithLogger(
+      {
+        trigger: 'cron',
+        cron: event.cron,
+        scheduledTime: event.scheduledTime,
+        environment: env.ENVIRONMENT
+      },
+      async () => {
+        getLogger().info('Running scheduled job');
+        
+        // Initialize the queue service
+        const queueService = new QueueService({
+          queueBinding: env.EVENTS,
+          maxRetries: 3,
+        });
+        
+        try {
       // Process reminders in batches to handle potential large result sets
       let cursor: string | null = null;
       const batchSize = 500; // Process 500 reminders at a time
@@ -71,7 +87,7 @@ export default {
         cursor = String(parseInt(cursor || '0') + reminders.length);
         processedCount += reminders.length;
         
-        console.log(`Processing batch of ${reminders.length} reminders`);
+        getLogger().info({ count: reminders.length }, 'Processing batch of reminders');
         
         // Create reminder events for each due reminder
         const reminderEvents: Event[] = reminders.map(reminder => 
@@ -89,7 +105,7 @@ export default {
         // Publish events to the queue
         if (reminderEvents.length > 0) {
           await queueService.publishEvents(reminderEvents);
-          console.log(`Published ${reminderEvents.length} reminder events to queue`);
+          getLogger().info({ count: reminderEvents.length }, 'Published reminder events to queue');
         }
         
         // If we got fewer results than the batch size, we need to make one more query
@@ -119,13 +135,16 @@ export default {
         }
       } while (true);
       
-      console.log(`Scheduled job completed. Processed ${processedCount} reminders.`);
-    } catch (error) {
-      console.error('Error in scheduled job:', error);
-      // Ensure the error is reported to the Cloudflare dashboard
-      ctx.waitUntil(Promise.reject(error));
-      // Re-throw the error to propagate it to the caller
-      throw error;
-    }
+        getLogger().info({ processedCount }, 'Scheduled job completed');
+      } catch (error) {
+        getLogger().error({ error }, 'Error in scheduled job');
+        // Ensure the error is reported to the Cloudflare dashboard
+        ctx.waitUntil(Promise.reject(error));
+        // Re-throw the error to propagate it to the caller
+        throw error;
+      }
+      },
+      ctx
+    );
   },
 };

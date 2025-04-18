@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Bindings } from '../types';
 import { ServiceError } from '@dome/common';
 import { chatService, ChatMessage } from '../services/chatService';
+import { getLogger } from '@dome/logging';
 
 /**
  * Chat message schema
@@ -34,13 +35,20 @@ export class ChatController {
    * @returns Response
    */
   async chat(c: Context<{ Bindings: Bindings }>): Promise<Response> {
+    getLogger().info({
+      path: c.req.path,
+      method: c.req.method
+    }, 'Chat processing started');
+    
     try {
       // Validate request body
       const body = await c.req.json();
+      getLogger().debug({ requestBody: body }, 'Received chat request data');
       const validatedData = chatRequestSchema.parse(body);
       
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
+      getLogger().debug({ userId }, 'User ID extracted for chat processing');
       if (!userId) {
         return c.json({
           success: false,
@@ -56,6 +64,7 @@ export class ChatController {
         .find(msg => msg.role === 'user');
       
       if (!lastUserMessage) {
+        getLogger().warn({ userId }, 'No user message found in chat request');
         return c.json({
           success: false,
           error: {
@@ -66,6 +75,14 @@ export class ChatController {
       }
 
       // Prepare chat options
+      getLogger().debug({
+        userId,
+        messageCount: validatedData.messages.length,
+        lastUserMessage: lastUserMessage.content.substring(0, 100) + (lastUserMessage.content.length > 100 ? '...' : ''),
+        enhanceWithContext: validatedData.enhanceWithContext,
+        streaming: validatedData.stream
+      }, 'Preparing chat options');
+      
       const chatOptions = {
         messages: validatedData.messages as ChatMessage[],
         userId,
@@ -77,8 +94,10 @@ export class ChatController {
 
       // If streaming is requested, use streaming response
       if (validatedData.stream) {
+        getLogger().info({ userId }, 'Starting streaming chat response');
         const stream = await chatService.streamResponse(c.env, chatOptions);
         
+        getLogger().info({ userId }, 'Streaming response initialized');
         return new Response(stream, {
           headers: {
             'Content-Type': 'text/plain; charset=utf-8',
@@ -88,16 +107,28 @@ export class ChatController {
       }
 
       // Otherwise, use regular response
+      getLogger().info({ userId }, 'Generating chat response');
       const response = await chatService.generateResponse(c.env, chatOptions);
 
+      getLogger().info({
+        userId,
+        responseLength: typeof response === 'string' ? response.length : JSON.stringify(response).length
+      }, 'Chat response successfully generated');
       return c.json({
         success: true,
         response
       });
     } catch (error) {
-      console.error('Error in chat controller:', error);
+      getLogger().error({
+        err: error,
+        path: c.req.path,
+        userId: c.req.header('x-user-id') || c.req.query('userId')
+      }, 'Error in chat controller');
       
       if (error instanceof z.ZodError) {
+        getLogger().warn({
+          validationErrors: error.errors
+        }, 'Chat request validation error');
         return c.json({
           success: false,
           error: {

@@ -158,11 +158,48 @@ importers:
         specifier: ^0.31.0
         version: 0.31.4
 
+  packages/logging:
+    dependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.0.0
+        version: 4.20250415.0
+      hono:
+        specifier: ^4.0.0
+        version: 4.7.7
+      nanoid:
+        specifier: ^3.3.4
+        version: 3.3.11
+      pino:
+        specifier: ^8.0.0
+        version: 8.21.0
+    devDependencies:
+      '@types/jest':
+        specifier: ^29.5.14
+        version: 29.5.14
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^5.57.1
+        version: 5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.8.3))(eslint@8.57.1)(typescript@5.8.3)
+      '@typescript-eslint/parser':
+        specifier: ^5.57.1
+        version: 5.62.0(eslint@8.57.1)(typescript@5.8.3)
+      eslint:
+        specifier: ^8.38.0
+        version: 8.57.1
+      typescript:
+        specifier: ^5.0.4
+        version: 5.8.3
+      vitest:
+        specifier: ^0.31.0
+        version: 0.31.4
+
   services/dome-api:
     dependencies:
       '@dome/common':
         specifier: workspace:*
         version: link:../../packages/common
+      '@dome/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       '@graphql-tools/schema':
         specifier: ^10.0.2
         version: 10.0.23(graphql@16.10.0)
@@ -239,6 +276,9 @@ importers:
       '@dome/common':
         specifier: workspace:*
         version: link:../../packages/common
+      '@dome/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       zod:
         specifier: ^3.21.4
         version: 3.22.3
@@ -270,6 +310,9 @@ importers:
       '@dome/common':
         specifier: workspace:*
         version: link:../../packages/common
+      '@dome/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       zod:
         specifier: ^3.21.4
         version: 3.22.3
@@ -2448,6 +2491,10 @@ packages:
   hono@3.12.12:
     resolution: {integrity: sha512-5IAMJOXfpA5nT+K0MNjClchzz0IhBHs2Szl7WFAhrFOsbtQsYmNynFyJRg/a3IPsmCfxcrf8txUGiNShXpK5Rg==}
     engines: {node: '>=16.0.0'}
+
+  hono@4.7.7:
+    resolution: {integrity: sha512-2PCpQRbN87Crty8/L/7akZN3UyZIAopSoRxCwRbJgUuV1+MHNFHzYFxZTg4v/03cXUm+jce/qa2VSBZpKBm3Qw==}
+    engines: {node: '>=16.9.0'}
 
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
@@ -6022,6 +6069,8 @@ snapshots:
   here@0.0.2: {}
 
   hono@3.12.12: {}
+
+  hono@4.7.7: {}
 
   html-escaper@2.0.2: {}
 
