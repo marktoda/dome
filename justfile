@@ -36,7 +36,7 @@ dev: build
     wrangler \
       -c services/dome-api/wrangler.toml \
       -c services/constellation/wrangler.toml \
-      dev --experimental-vectorize-bind-to-prod
+      dev --experimental-vectorize-bind-to-prod | npx pino-pretty
 
 # Run tests for all packages
 test:
