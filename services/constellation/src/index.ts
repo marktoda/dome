@@ -99,6 +99,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         batchSize: batch.messages.length,
         environment: this.env.ENVIRONMENT,
         version: this.env.VERSION,
+        level: this.env.LOG_LEVEL,
       },
       async () => {
         getLogger().warn(this.env);
@@ -145,6 +146,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         noteId: job.noteId,
         environment: this.env.ENVIRONMENT,
         version: this.env.VERSION,
+        level: this.env.LOG_LEVEL,
       },
       async () => {
         getLogger().info(
@@ -186,6 +188,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         topK,
         environment: this.env.ENVIRONMENT,
         version: this.env.VERSION,
+        level: this.env.LOG_LEVEL,
       },
       async () => {
         getLogger().info({ filter, topK, text }, 'Processing vector search query');
@@ -257,6 +260,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         operation: 'stats',
         environment: this.env.ENVIRONMENT,
         version: this.env.VERSION,
+        level: this.env.LOG_LEVEL,
       },
       async () => {
         getLogger().info('Processing stats request');

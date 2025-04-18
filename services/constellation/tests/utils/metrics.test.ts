@@ -180,14 +180,10 @@ describe('Metrics Utilities', () => {
         // Stop the timer with tags
         timer.stop({ service: 'constellation' });
 
-        expect(logMetric).toHaveBeenCalledWith(
-          'test_operation.duration_ms',
-          expect.any(Number),
-          {
-            type: 'timing',
-            service: 'constellation',
-          }
-        );
+        expect(logMetric).toHaveBeenCalledWith('test_operation.duration_ms', expect.any(Number), {
+          type: 'timing',
+          service: 'constellation',
+        });
       });
     });
 

@@ -71,7 +71,9 @@ export class Embedder {
     try {
       // Split into batches if needed
       if (texts.length > this.config.maxBatchSize) {
-        getLogger().debug(`Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`);
+        getLogger().debug(
+          `Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`,
+        );
 
         const batches: string[][] = [];
         for (let i = 0; i < texts.length; i += this.config.maxBatchSize) {
@@ -180,7 +182,8 @@ export class Embedder {
         // Log the error
         getLogger().warn(
           { error: lastError, attempt, maxAttempts: this.config.retryAttempts },
-          `Embedding attempt ${attempt} failed, ${this.config.retryAttempts - attempt
+          `Embedding attempt ${attempt} failed, ${
+            this.config.retryAttempts - attempt
           } retries left`,
         );
 

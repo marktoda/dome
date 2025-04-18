@@ -153,7 +153,7 @@ describe('Logging Utilities', () => {
         }),
         'Metric recorded',
       );
-      
+
       // We don't check the exact value of metric_value since it may vary
     });
   });
