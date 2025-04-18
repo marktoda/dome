@@ -28,5 +28,5 @@ export {
   requirePermissions,
   requireRole,
   requireOwnership,
-  UserRole
+  UserRole,
 } from './enhancedAuthMiddleware';

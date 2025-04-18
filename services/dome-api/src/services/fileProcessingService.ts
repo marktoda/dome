@@ -9,7 +9,7 @@ export enum FileType {
   TEXT = 'text',
   PDF = 'pdf',
   IMAGE = 'image',
-  UNKNOWN = 'unknown'
+  UNKNOWN = 'unknown',
 }
 
 /**
@@ -39,10 +39,10 @@ export interface ProcessedFile {
 export class FileProcessingService {
   // Maximum size for direct processing (32KB)
   private readonly MAX_DIRECT_PROCESSING_SIZE = 32 * 1024;
-  
+
   // Maximum chunk size for text processing (4KB)
   private readonly MAX_CHUNK_SIZE = 4 * 1024;
-  
+
   /**
    * Detect file type from content type
    * @param contentType Content type
@@ -50,24 +50,26 @@ export class FileProcessingService {
    */
   detectFileType(contentType: string): FileType {
     const normalizedContentType = contentType.toLowerCase();
-    
-    if (normalizedContentType.startsWith('text/') || 
-        normalizedContentType === 'application/json' ||
-        normalizedContentType === 'application/xml') {
+
+    if (
+      normalizedContentType.startsWith('text/') ||
+      normalizedContentType === 'application/json' ||
+      normalizedContentType === 'application/xml'
+    ) {
       return FileType.TEXT;
     }
-    
+
     if (normalizedContentType === 'application/pdf') {
       return FileType.PDF;
     }
-    
+
     if (normalizedContentType.startsWith('image/')) {
       return FileType.IMAGE;
     }
-    
+
     return FileType.UNKNOWN;
   }
-  
+
   /**
    * Process a file and extract content
    * @param env Environment bindings
@@ -80,7 +82,7 @@ export class FileProcessingService {
     env: Bindings,
     data: ReadableStream | ArrayBuffer | string,
     contentType: string,
-    fileName?: string
+    fileName?: string,
   ): Promise<ProcessedFile> {
     try {
       // Generate a unique key for R2 storage
@@ -88,25 +90,33 @@ export class FileProcessingService {
       const randomSuffix = Math.random().toString(36).substring(2, 10);
       const fileExtension = this.getFileExtension(contentType, fileName);
       const r2Key = `files/${timestamp}-${randomSuffix}${fileExtension}`;
-      
+
       // Detect file type
       const fileType = this.detectFileType(contentType);
-      
+
       // Upload to R2
       await r2Service.uploadObject(env, r2Key, data, contentType);
-      
+
       // Initialize metadata
       const metadata: FileMetadata = {
         contentType,
         fileType,
-        size: typeof data === 'string' ? new TextEncoder().encode(data).length : 
-              data instanceof ArrayBuffer ? data.byteLength : 0, // For ReadableStream, size will be updated after processing
+        size:
+          typeof data === 'string'
+            ? new TextEncoder().encode(data).length
+            : data instanceof ArrayBuffer
+            ? data.byteLength
+            : 0, // For ReadableStream, size will be updated after processing
       };
-      
+
       // Process based on file type and size
       let chunks: string[] | undefined;
-      
-      if (fileType === FileType.TEXT && typeof data === 'string' && data.length <= this.MAX_DIRECT_PROCESSING_SIZE) {
+
+      if (
+        fileType === FileType.TEXT &&
+        typeof data === 'string' &&
+        data.length <= this.MAX_DIRECT_PROCESSING_SIZE
+      ) {
         // For small text files, process directly
         chunks = this.chunkText(data);
         metadata.extractedText = data;
@@ -119,21 +129,21 @@ export class FileProcessingService {
         // In a real implementation, this would extract image metadata
         metadata.additionalMetadata = { needsOCR: true };
       }
-      
+
       return {
         r2Key,
         metadata,
-        chunks
+        chunks,
       };
     } catch (error) {
       console.error('Error processing file:', error);
       throw new ServiceError('Failed to process file', {
         cause: error instanceof Error ? error : new Error(String(error)),
-        context: { contentType, fileName }
+        context: { contentType, fileName },
       });
     }
   }
-  
+
   /**
    * Extract text from a PDF file
    * @param env Environment bindings
@@ -144,11 +154,11 @@ export class FileProcessingService {
     try {
       // Download the PDF from R2
       const object = await r2Service.downloadObject(env, r2Key);
-      
+
       if (!object) {
         throw new Error(`PDF with key ${r2Key} not found`);
       }
-      
+
       // In a real implementation, this would use a PDF parsing library
       // For now, we'll return a placeholder
       return `[PDF Text Extraction Placeholder for ${r2Key}]`;
@@ -156,11 +166,11 @@ export class FileProcessingService {
       console.error(`Error extracting text from PDF ${r2Key}:`, error);
       throw new ServiceError(`Failed to extract text from PDF ${r2Key}`, {
         cause: error instanceof Error ? error : new Error(String(error)),
-        context: { r2Key }
+        context: { r2Key },
       });
     }
   }
-  
+
   /**
    * Extract text from an image using OCR
    * @param env Environment bindings
@@ -171,11 +181,11 @@ export class FileProcessingService {
     try {
       // Download the image from R2
       const object = await r2Service.downloadObject(env, r2Key);
-      
+
       if (!object) {
         throw new Error(`Image with key ${r2Key} not found`);
       }
-      
+
       // In a real implementation, this would use OCR via Workers AI
       // For now, we'll return a placeholder
       return `[Image OCR Placeholder for ${r2Key}]`;
@@ -183,11 +193,11 @@ export class FileProcessingService {
       console.error(`Error extracting text from image ${r2Key}:`, error);
       throw new ServiceError(`Failed to extract text from image ${r2Key}`, {
         cause: error instanceof Error ? error : new Error(String(error)),
-        context: { r2Key }
+        context: { r2Key },
       });
     }
   }
-  
+
   /**
    * Chunk text into smaller pieces for processing
    * @param text Text to chunk
@@ -195,15 +205,15 @@ export class FileProcessingService {
    */
   chunkText(text: string): string[] {
     const chunks: string[] = [];
-    
+
     // Simple chunking by size
     for (let i = 0; i < text.length; i += this.MAX_CHUNK_SIZE) {
       chunks.push(text.substring(i, i + this.MAX_CHUNK_SIZE));
     }
-    
+
     return chunks;
   }
-  
+
   /**
    * Get file extension from content type or file name
    * @param contentType Content type
@@ -218,10 +228,10 @@ export class FileProcessingService {
         return fileName.substring(lastDotIndex);
       }
     }
-    
+
     // Get extension from content type
     const normalizedContentType = contentType.toLowerCase();
-    
+
     switch (normalizedContentType) {
       case 'text/plain':
         return '.txt';

@@ -43,9 +43,7 @@ export class MessageService {
 
     try {
       // Fix: Pass the MessageData objects directly to sendBatch
-      await this.queueBinding.sendBatch(
-        messages.map(message => message.toMessageData()),
-      );
+      await this.queueBinding.sendBatch(messages.map(message => message.toMessageData()));
       return messages.length;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

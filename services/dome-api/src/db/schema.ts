@@ -13,7 +13,7 @@ export const notes = sqliteTable('notes', {
   metadata: text('metadata'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
-  embeddingStatus: text('embedding_status').default('pending')
+  embeddingStatus: text('embedding_status').default('pending'),
 });
 
 /**
@@ -26,7 +26,7 @@ export const notePages = sqliteTable('note_pages', {
     .references(() => notes.id, { onDelete: 'cascade' }),
   pageNum: integer('page_num').notNull(),
   content: text('content').notNull(),
-  createdAt: integer('created_at').notNull()
+  createdAt: integer('created_at').notNull(),
 });
 
 /**
@@ -42,7 +42,7 @@ export const tasks = sqliteTable('tasks', {
   dueDate: integer('due_date'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
-  completedAt: integer('completed_at')
+  completedAt: integer('completed_at'),
 });
 
 /**
@@ -56,7 +56,7 @@ export const reminders = sqliteTable('reminders', {
   remindAt: integer('remind_at').notNull(),
   delivered: integer('delivered', { mode: 'boolean' }).notNull().default(false),
   deliveryMethod: text('delivery_method').default('email'),
-  createdAt: integer('created_at').notNull()
+  createdAt: integer('created_at').notNull(),
 });
 
 /**
@@ -66,5 +66,5 @@ export const schema = {
   notes,
   notePages,
   tasks,
-  reminders
+  reminders,
 };

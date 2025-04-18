@@ -106,7 +106,7 @@ export class NotImplementedError extends ApiError {
  */
 export function formatZodError(error: ZodError): Record<string, any> {
   return {
-    issues: error.errors.map((err) => ({
+    issues: error.errors.map(err => ({
       path: err.path.join('.'),
       message: err.message,
     })),

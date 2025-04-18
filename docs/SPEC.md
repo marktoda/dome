@@ -130,7 +130,7 @@ _Responsibilities_
 | **POST /tasks/:id/complete**    | UPDATE task SET status='done'                                                                                                                    |
 | **POST /chat** (RAG)            | 1) embed query; 2) fetch context chunks; 3) call LLM (Workers AI or OpenAI) with RAG prompt; 4) return answer                                    |
 
-_Tech stack_ — TypeScript Worker using Hono router; Zod for validation; Drizzle for D1 access.
+*Tech stack* — TypeScript Worker using Hono router; Zod for validation; Drizzle for D1 access.
 
 ### 4.2 Scheduler Worker (`src/worker/scheduler.ts`)
 

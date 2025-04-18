@@ -6,13 +6,13 @@ import { Bindings } from '../../src/types';
 
 // Mock the uuid module
 jest.mock('uuid', () => ({
-  v4: jest.fn(() => 'mock-uuid')
+  v4: jest.fn(() => 'mock-uuid'),
 }));
 
 // Mock the database
 jest.mock('../../src/db', () => ({
   getDb: jest.fn(),
-  handleDatabaseError: jest.fn((error) => error)
+  handleDatabaseError: jest.fn(error => error),
 }));
 
 describe('NoteRepository', () => {
@@ -37,7 +37,7 @@ describe('NoteRepository', () => {
       returning: jest.fn().mockReturnThis(),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
-      delete: jest.fn().mockReturnThis()
+      delete: jest.fn().mockReturnThis(),
     };
 
     // Mock getDb to return our mock
@@ -48,7 +48,7 @@ describe('NoteRepository', () => {
       D1_DATABASE: {} as D1Database,
       VECTORIZE: {} as VectorizeIndex,
       RAW: {} as R2Bucket,
-      EVENTS: {} as Queue<any>
+      EVENTS: {} as Queue<any>,
     };
 
     // Create repository
@@ -62,7 +62,7 @@ describe('NoteRepository', () => {
         userId: 'user-123',
         title: 'Test Note',
         body: 'This is a test note',
-        contentType: 'text/plain'
+        contentType: 'text/plain',
       };
 
       const expectedNote: Note = {
@@ -73,7 +73,7 @@ describe('NoteRepository', () => {
         contentType: 'text/plain',
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        embeddingStatus: EmbeddingStatus.PENDING
+        embeddingStatus: EmbeddingStatus.PENDING,
       };
 
       mockDb.all.mockResolvedValue([expectedNote]);
@@ -83,14 +83,16 @@ describe('NoteRepository', () => {
 
       // Verify
       expect(mockDb.insert).toHaveBeenCalledWith(notes);
-      expect(mockDb.values).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'mock-uuid',
-        userId: 'user-123',
-        title: 'Test Note',
-        body: 'This is a test note',
-        contentType: 'text/plain',
-        embeddingStatus: 'pending'
-      }));
+      expect(mockDb.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'mock-uuid',
+          userId: 'user-123',
+          title: 'Test Note',
+          body: 'This is a test note',
+          contentType: 'text/plain',
+          embeddingStatus: 'pending',
+        }),
+      );
       expect(result).toEqual(expectedNote);
     });
   });
@@ -100,7 +102,7 @@ describe('NoteRepository', () => {
       // Setup
       const updateData: UpdateNoteData = {
         title: 'Updated Title',
-        body: 'Updated body'
+        body: 'Updated body',
       };
 
       const expectedNote: Note = {
@@ -111,7 +113,7 @@ describe('NoteRepository', () => {
         contentType: 'text/plain',
         createdAt: 1000,
         updatedAt: Date.now(),
-        embeddingStatus: EmbeddingStatus.PENDING
+        embeddingStatus: EmbeddingStatus.PENDING,
       };
 
       mockDb.all.mockResolvedValue([expectedNote]);
@@ -121,11 +123,13 @@ describe('NoteRepository', () => {
 
       // Verify
       expect(mockDb.update).toHaveBeenCalledWith(notes);
-      expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({
-        title: 'Updated Title',
-        body: 'Updated body',
-        updatedAt: expect.any(Number)
-      }));
+      expect(mockDb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Updated Title',
+          body: 'Updated body',
+          updatedAt: expect.any(Number),
+        }),
+      );
       expect(result).toEqual(expectedNote);
     });
 
@@ -134,8 +138,9 @@ describe('NoteRepository', () => {
       mockDb.all.mockResolvedValue([]);
 
       // Execute & Verify
-      await expect(repository.update(mockEnv, 'non-existent', { title: 'New Title' }))
-        .rejects.toThrow('Note with ID non-existent not found');
+      await expect(
+        repository.update(mockEnv, 'non-existent', { title: 'New Title' }),
+      ).rejects.toThrow('Note with ID non-existent not found');
     });
   });
 
@@ -151,7 +156,7 @@ describe('NoteRepository', () => {
           contentType: 'text/plain',
           createdAt: 1000,
           updatedAt: 1000,
-          embeddingStatus: EmbeddingStatus.COMPLETED
+          embeddingStatus: EmbeddingStatus.COMPLETED,
         },
         {
           id: 'note-2',
@@ -161,8 +166,8 @@ describe('NoteRepository', () => {
           contentType: 'text/plain',
           createdAt: 2000,
           updatedAt: 2000,
-          embeddingStatus: EmbeddingStatus.COMPLETED
-        }
+          embeddingStatus: EmbeddingStatus.COMPLETED,
+        },
       ];
 
       mockDb.all.mockResolvedValue(expectedNotes);

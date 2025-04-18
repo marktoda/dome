@@ -19,18 +19,22 @@ The `@dome/logging` package has been successfully implemented as a structured, r
 #### Core Components
 
 1. **Base Logger** (`src/base.ts`):
+
    - Creates a global Pino logger instance
    - Configures log level from environment or defaults to 'info'
    - Sets up browser-compatible logging for Cloudflare Workers
 
 2. **Helper Functions** (`src/helper.ts`):
+
    - `getLogger()`: Returns the request-scoped logger if inside ALS context, otherwise returns the base logger
 
 3. **Middleware** (`src/middleware.ts`):
+
    - `initLogging()`: Convenience function to wire both contextStorage & logging in one call
    - `buildLoggingMiddleware()`: Creates a middleware that attaches a child logger to each request context
 
 4. **Run With Logger** (`src/runWithLogger.ts`):
+
    - `runWithLogger()`: Function for non-HTTP workers (Cron, Queue) to run code with a logger in context
 
 5. **Types** (`src/types.ts`):
@@ -44,7 +48,7 @@ The `@dome/logging` package has been integrated into all three services:
 
 - **Integration Method**: Using `initLogging(app)` middleware
 - **Configuration**: Added `nodejs_als` compatibility flag in wrangler.toml
-- **Usage**: 
+- **Usage**:
   - Initialized in main app setup
   - Used in error handlers and route handlers via `getLogger()`
 - **Key Files Modified**:
@@ -78,6 +82,7 @@ The `@dome/logging` package has been integrated into all three services:
 All services have been updated with the required configuration:
 
 1. **Wrangler.toml Updates**:
+
    - All services now include `compatibility_flags = ["nodejs_als"]`
    - All services have a recent `compatibility_date`
 
@@ -120,11 +125,13 @@ When verifying the logging implementation, check for the following:
 #### For HTTP API Workers (dome-api)
 
 1. **Request Context Information**:
+
    - Each log entry should include a `reqId` field
    - IP address (`ip`) should be captured
    - Cloudflare data (`colo`, `cfRay`) should be present
 
 2. **Log Levels**:
+
    - `info` level for normal operations
    - `error` level for exceptions
    - `debug` level for detailed debugging (if enabled)
@@ -136,6 +143,7 @@ When verifying the logging implementation, check for the following:
 #### For Cron Workers (dome-cron)
 
 1. **Execution Context**:
+
    - Logs should include `trigger: 'cron'`
    - Cron schedule information should be present
    - Environment information should be included
@@ -147,6 +155,7 @@ When verifying the logging implementation, check for the following:
 #### For Queue Workers (dome-notify)
 
 1. **Message Processing**:
+
    - Logs should include `trigger: 'queue'`
    - Batch size information should be present
    - Message IDs should be logged
@@ -207,14 +216,17 @@ LIMIT 20
 ### 2.4 Potential Issues to Watch For
 
 1. **Missing ALS Configuration**:
+
    - If logs don't include request context, check that `nodejs_als` is enabled in wrangler.toml
    - Verify the compatibility date is recent enough
 
 2. **Logger Not Initialized**:
+
    - If logs are missing, ensure `initLogging(app)` is called before other middleware in HTTP workers
    - For Cron/Queue workers, ensure `runWithLogger()` wraps the execution
 
 3. **Incorrect Log Levels**:
+
    - If logs are too verbose or too sparse, check the log level configuration
    - Default level is 'info', but can be customized
 
@@ -229,71 +241,77 @@ LIMIT 20
 #### For HTTP API Workers
 
 1. **Add the dependency**:
+
    ```bash
    pnpm add @dome/logging --filter your-service
    ```
 
 2. **Update wrangler.toml**:
+
    ```toml
    compatibility_date = "2025-04-17"  # or newer
    compatibility_flags = ["nodejs_als"]
    ```
 
 3. **Initialize in your application**:
+
    ```typescript
    import { Hono } from 'hono';
    import { initLogging, getLogger } from '@dome/logging';
 
    const app = new Hono();
-   
+
    // Initialize logging early in the middleware chain
    initLogging(app);
-   
+
    // Add other middleware and routes
    app.use('*', otherMiddleware());
-   
-   app.get('/example', (c) => {
+
+   app.get('/example', c => {
      getLogger().info({ path: c.req.path }, 'Handling request');
      return c.json({ success: true });
    });
-   
+
    // Add error handling
    app.onError((err, c) => {
      getLogger().error({ err, path: c.req.path }, 'Unhandled error');
      return c.json({ error: 'Internal server error' }, 500);
    });
-   
+
    export default app;
    ```
 
 #### For Cron Workers
 
 1. **Add the dependency**:
+
    ```bash
    pnpm add @dome/logging --filter your-cron-service
    ```
 
 2. **Update wrangler.toml**:
+
    ```toml
    compatibility_date = "2025-04-17"  # or newer
    compatibility_flags = ["nodejs_als"]
    ```
 
 3. **Implement in your scheduled handler**:
+
    ```typescript
    import { runWithLogger, getLogger } from '@dome/logging';
-   
+
    export default {
      async scheduled(event, env, ctx) {
        await runWithLogger(
          {
            trigger: 'cron',
            cron: event.cron,
-           environment: env.ENVIRONMENT
+           environment: env.ENVIRONMENT,
          },
          async () => {
            getLogger().info('Starting scheduled job');
-           
+
            try {
              // Your job logic here
              getLogger().info('Job completed successfully');
@@ -302,7 +320,7 @@ LIMIT 20
              throw error;
            }
          },
-         ctx
+         ctx,
        );
      },
    };
@@ -311,37 +329,40 @@ LIMIT 20
 #### For Queue Workers
 
 1. **Add the dependency**:
+
    ```bash
    pnpm add @dome/logging --filter your-queue-service
    ```
 
 2. **Update wrangler.toml**:
+
    ```toml
    compatibility_date = "2025-04-17"  # or newer
    compatibility_flags = ["nodejs_als"]
    ```
 
 3. **Implement in your queue handler**:
+
    ```typescript
    import { runWithLogger, getLogger } from '@dome/logging';
-   
+
    export default {
      async queue(batch, env, ctx) {
        await runWithLogger(
          {
            trigger: 'queue',
            batchSize: batch.messages.length,
-           environment: env.ENVIRONMENT
+           environment: env.ENVIRONMENT,
          },
          async () => {
            getLogger().info({ batchSize: batch.messages.length }, 'Processing message batch');
-           
+
            for (const message of batch.messages) {
              try {
                getLogger().info({ messageId: message.id }, 'Processing message');
-               
+
                // Process the message
-               
+
                batch.ack(message.id);
                getLogger().info({ messageId: message.id }, 'Successfully processed message');
              } catch (error) {
@@ -350,7 +371,7 @@ LIMIT 20
              }
            }
          },
-         ctx
+         ctx,
        );
      },
    };
@@ -359,17 +380,20 @@ LIMIT 20
 ### 3.2 Best Practices for Using the Logging Package
 
 1. **Structured Logging**:
+
    - Always include relevant context as an object in the first parameter
    - Use the message string (second parameter) for human-readable descriptions
+
    ```typescript
    // Good
    getLogger().info({ userId, action }, 'User logged in');
-   
+
    // Avoid
    getLogger().info(`User ${userId} logged in`);
    ```
 
 2. **Log Levels**:
+
    - Use appropriate log levels for different types of information:
      - `error`: For errors and exceptions
      - `warn`: For warning conditions
@@ -378,7 +402,9 @@ LIMIT 20
      - `trace`: For very detailed tracing information
 
 3. **Error Logging**:
+
    - Always include the full error object when logging errors
+
    ```typescript
    try {
      // code that might throw
@@ -388,6 +414,7 @@ LIMIT 20
    ```
 
 4. **Request Lifecycle Logging**:
+
    - Log at key points in the request lifecycle:
      - Start of request processing
      - Important decision points
@@ -395,8 +422,10 @@ LIMIT 20
      - Error conditions
 
 5. **Performance Considerations**:
+
    - Avoid excessive logging in hot paths
    - Use conditional logging for verbose information
+
    ```typescript
    if (getLogger().isLevelEnabled('debug')) {
      // Expensive operation to gather debug data
@@ -405,11 +434,14 @@ LIMIT 20
    ```
 
 6. **Sensitive Information**:
+
    - Never log sensitive information (passwords, tokens, PII)
    - Consider implementing a redaction mechanism for sensitive fields
 
 7. **Custom Request IDs**:
+
    - You can provide a custom ID factory when initializing logging:
+
    ```typescript
    initLogging(app, {
      idFactory: () => `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -431,15 +463,18 @@ LIMIT 20
 ### 3.3 Troubleshooting Common Issues
 
 1. **Logger Not Available in Context**:
+
    - Ensure `initLogging(app)` is called before accessing the logger
    - For non-HTTP workers, ensure code is wrapped with `runWithLogger()`
    - Check that `nodejs_als` is enabled in wrangler.toml
 
 2. **Missing Request Context**:
+
    - Verify the middleware is registered correctly
    - Ensure the middleware runs before your route handlers
 
 3. **Logs Not Appearing**:
+
    - Check the log level configuration
    - Verify Cloudflare Logs Engine is properly configured
    - For local development, check console output

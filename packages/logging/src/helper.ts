@@ -14,10 +14,10 @@ interface LoggerContext {
 export function getLogger(): BaseLogger {
   try {
     const ctx = getContext() as LoggerContext | undefined;
-    return (ctx?.get('logger') as BaseLogger) ?? baseLogger
+    return (ctx?.get('logger') as BaseLogger) ?? baseLogger;
   } catch (_) {
-    console.log('getLogger() failed to get context storage, returning base logger')
+    console.log('getLogger() failed to get context storage, returning base logger');
     // Not inside ALS – occurs during module init or unit tests
-    return baseLogger
+    return baseLogger;
   }
 }

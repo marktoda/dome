@@ -28,15 +28,15 @@ import {
   NotImplementedError,
 } from './ServiceError';
 
-export { 
-  ServiceError, 
-  QueueError, 
-  MessageProcessingError, 
-  RateLimitError, 
+export {
+  ServiceError,
+  QueueError,
+  MessageProcessingError,
+  RateLimitError,
   NotFoundError,
   UnauthorizedError,
   ForbiddenError,
-  NotImplementedError
+  NotImplementedError,
 };
 
 // For backward compatibility

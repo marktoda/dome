@@ -7,9 +7,7 @@ import { success, error, info, formatKeyValue } from '../utils/ui';
  * @param program The commander program
  */
 export function configCommand(program: Command): void {
-  const configCmd = program
-    .command('config')
-    .description('Manage dome CLI configuration');
+  const configCmd = program.command('config').description('Manage dome CLI configuration');
 
   // Get configuration
   configCmd
@@ -19,23 +17,23 @@ export function configCommand(program: Command): void {
     .action((options: { key?: string }) => {
       try {
         const config = getConfigStore();
-        
+
         if (options.key) {
           // Get specific key
           const value = config.get(options.key);
-          
+
           if (value === undefined) {
             console.log(error(`Configuration key "${options.key}" not found.`));
             return;
           }
-          
+
           console.log(formatKeyValue(options.key, JSON.stringify(value)));
         } else {
           // Get all configuration
           const allConfig = config.store;
-          
+
           console.log(info('Current Configuration:'));
-          
+
           Object.entries(allConfig).forEach(([key, value]) => {
             // Don't show API key directly
             if (key === 'apiKey' && value) {
@@ -46,7 +44,9 @@ export function configCommand(program: Command): void {
           });
         }
       } catch (err) {
-        console.log(error(`Failed to get configuration: ${err instanceof Error ? err.message : String(err)}`));
+        console.log(
+          error(`Failed to get configuration: ${err instanceof Error ? err.message : String(err)}`),
+        );
         process.exit(1);
       }
     });
@@ -67,27 +67,31 @@ export function configCommand(program: Command): void {
             console.log(error('Invalid URL format.'));
             return;
           }
-          
+
           setBaseUrl(options.baseUrl);
           console.log(success(`Base URL set to: ${options.baseUrl}`));
         }
-        
+
         if (options.environment) {
           // Validate environment
           if (options.environment !== 'development' && options.environment !== 'production') {
             console.log(error('Environment must be either "development" or "production".'));
             return;
           }
-          
+
           setEnvironment(options.environment as 'development' | 'production');
           console.log(success(`Environment set to: ${options.environment}`));
         }
-        
+
         if (!options.baseUrl && !options.environment) {
-          console.log(info('No configuration changes specified. Use --base-url or --environment options.'));
+          console.log(
+            info('No configuration changes specified. Use --base-url or --environment options.'),
+          );
         }
       } catch (err) {
-        console.log(error(`Failed to set configuration: ${err instanceof Error ? err.message : String(err)}`));
+        console.log(
+          error(`Failed to set configuration: ${err instanceof Error ? err.message : String(err)}`),
+        );
         process.exit(1);
       }
     });

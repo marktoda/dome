@@ -16,7 +16,9 @@ export function loginCommand(program: Command): void {
       try {
         // Check if already authenticated
         if (isAuthenticated()) {
-          console.log(info('You are already logged in. To use a different API key, run `dome logout` first.'));
+          console.log(
+            info('You are already logged in. To use a different API key, run `dome logout` first.'),
+          );
           return;
         }
 
@@ -29,8 +31,8 @@ export function loginCommand(program: Command): void {
             output: process.stdout,
           });
 
-          apiKey = await new Promise<string>((resolve) => {
-            rl.question('Enter your API key: ', (answer) => {
+          apiKey = await new Promise<string>(resolve => {
+            rl.question('Enter your API key: ', answer => {
               rl.close();
               resolve(answer.trim());
             });
@@ -48,7 +50,9 @@ export function loginCommand(program: Command): void {
 
         console.log(success('Successfully authenticated. You can now use the dome CLI.'));
       } catch (err) {
-        console.log(error(`Failed to authenticate: ${err instanceof Error ? err.message : String(err)}`));
+        console.log(
+          error(`Failed to authenticate: ${err instanceof Error ? err.message : String(err)}`),
+        );
         process.exit(1);
       }
     });

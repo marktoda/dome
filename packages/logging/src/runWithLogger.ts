@@ -20,18 +20,21 @@ export async function runWithLogger<T>(
   ctx?: CFExecutionContext,
 ): Promise<T> {
   const child = baseLogger.child(meta);
-  const storage = getContext() as LoggerContext | undefined;
-  // If no ALS context yet, fall back to base run
-  if (!storage) return await fn();
+  try {
+    const storage = getContext() as LoggerContext | undefined;
 
-  if (ctx?.run) {
-    return await ctx.run(() => {
-      if (storage) {
-        storage.set('logger', child);
-      }
-      return fn();
-    });
+    if (ctx?.run) {
+      return await ctx.run(() => {
+        if (storage) {
+          storage.set('logger', child);
+        }
+        return fn();
+      });
+    }
+
+    return await fn();
+  } catch (_) {
+    // If no ALS context yet, fall back to base run
+    return await fn();
   }
-  
-  return await fn();
 }

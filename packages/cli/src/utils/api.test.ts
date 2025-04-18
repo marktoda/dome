@@ -1,7 +1,17 @@
 // @ts-nocheck
 import axios from 'axios';
 import { describe, beforeEach, test, expect, vi, afterEach } from 'vitest';
-import { ApiClient, addContent, addNote, listItems, showItem, search, chat, resetApiInstance, getApiInstance } from './api';
+import {
+  ApiClient,
+  addContent,
+  addNote,
+  listItems,
+  showItem,
+  search,
+  chat,
+  resetApiInstance,
+  getApiInstance,
+} from './api';
 import { loadConfig, saveApiKey } from './config';
 import type { ConfigSchema } from './config';
 
@@ -22,12 +32,12 @@ describe('ApiClient', () => {
     apiKey: 'test-api-key',
     environment: 'development',
   };
-  
+
   beforeEach(() => {
     vi.clearAllMocks();
     resetApiInstance();
     (loadConfig as any).mockReturnValue(mockConfig);
-    
+
     mockedAxios.create.mockReturnValue({
       get: vi.fn().mockResolvedValue({ data: {} }),
       post: vi.fn().mockResolvedValue({ data: {} }),
@@ -63,7 +73,7 @@ describe('ApiClient', () => {
     } as any);
 
     await addContent('test content');
-    
+
     expect(mockPost).toHaveBeenCalledWith('/ingest', { content: 'test content' }, undefined);
   });
 
@@ -79,7 +89,7 @@ describe('ApiClient', () => {
     } as any);
 
     await addNote('meeting', 'test note');
-    
+
     expect(mockPost).toHaveBeenCalledWith('/note/meeting', { content: 'test note' }, undefined);
   });
 
@@ -95,7 +105,7 @@ describe('ApiClient', () => {
     } as any);
 
     await listItems('notes', 'tag:work');
-    
+
     expect(mockGet).toHaveBeenCalledWith('/list/notes', { params: { filter: 'tag:work' } });
   });
 
@@ -111,7 +121,7 @@ describe('ApiClient', () => {
     } as any);
 
     await showItem('123');
-    
+
     expect(mockGet).toHaveBeenCalledWith('/show/123', undefined);
   });
 
@@ -127,7 +137,7 @@ describe('ApiClient', () => {
     } as any);
 
     await search('test query');
-    
+
     expect(mockGet).toHaveBeenCalledWith('/search', { params: { q: 'test query' } });
   });
 
@@ -143,7 +153,7 @@ describe('ApiClient', () => {
     } as any);
 
     await chat('hello');
-    
+
     expect(mockPost).toHaveBeenCalledWith('/chat', { message: 'hello' }, undefined);
   });
 });

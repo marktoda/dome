@@ -36,7 +36,7 @@ export class TaskRepository extends BaseRepository<Task, CreateTaskData, UpdateT
         dueDate: data.dueDate,
         createdAt: now,
         updatedAt: now,
-        completedAt: undefined
+        completedAt: undefined,
       };
 
       const db = getDb(env);
@@ -58,7 +58,7 @@ export class TaskRepository extends BaseRepository<Task, CreateTaskData, UpdateT
     try {
       const updateData = {
         ...data,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       };
 
       const db = getDb(env);
@@ -68,11 +68,11 @@ export class TaskRepository extends BaseRepository<Task, CreateTaskData, UpdateT
         .where(eq(tasks.id, id))
         .returning()
         .all();
-      
+
       if (result.length === 0) {
         throw new Error(`Task with ID ${id} not found`);
       }
-      
+
       return result[0] as Task;
     } catch (error) {
       throw handleDatabaseError(error, `update task(${id})`);
@@ -91,7 +91,7 @@ export class TaskRepository extends BaseRepository<Task, CreateTaskData, UpdateT
       const updateData = {
         status: TaskStatus.COMPLETED,
         completedAt: now,
-        updatedAt: now
+        updatedAt: now,
       };
 
       const db = getDb(env);
@@ -101,11 +101,11 @@ export class TaskRepository extends BaseRepository<Task, CreateTaskData, UpdateT
         .where(eq(tasks.id, id))
         .returning()
         .all();
-      
+
       if (result.length === 0) {
         throw new Error(`Task with ID ${id} not found`);
       }
-      
+
       return result[0] as Task;
     } catch (error) {
       throw handleDatabaseError(error, `complete task(${id})`);
@@ -137,7 +137,7 @@ export class TaskRepository extends BaseRepository<Task, CreateTaskData, UpdateT
         .from(tasks)
         .where(and(eq(tasks.userId, userId), eq(tasks.status, status)))
         .all();
-      
+
       return results as Task[];
     } catch (error) {
       throw handleDatabaseError(error, `findByUserIdAndStatus(${userId}, ${status})`);
@@ -161,11 +161,11 @@ export class TaskRepository extends BaseRepository<Task, CreateTaskData, UpdateT
           and(
             eq(tasks.userId, userId),
             eq(tasks.status, TaskStatus.PENDING),
-            lte(tasks.dueDate, beforeDate)
-          )
+            lte(tasks.dueDate, beforeDate),
+          ),
         )
         .all();
-      
+
       return results as Task[];
     } catch (error) {
       throw handleDatabaseError(error, `findTasksDueBy(${userId}, ${beforeDate})`);

@@ -51,7 +51,7 @@ export function startPromptTui(): void {
   const grid = new contrib.grid({
     rows: 12,
     cols: 12,
-    screen: screen
+    screen: screen,
   });
 
   // Create a header
@@ -76,7 +76,8 @@ export function startPromptTui(): void {
         fg: 'blue',
       },
     },
-    content: '\n{bold}Commands:{/bold}\n\n' +
+    content:
+      '\n{bold}Commands:{/bold}\n\n' +
       ' {cyan-fg}/add{/cyan-fg} - Add content\n' +
       ' {cyan-fg}/note{/cyan-fg} - Add a note\n' +
       ' {cyan-fg}/list{/cyan-fg} - List items\n' +
@@ -154,7 +155,11 @@ export function startPromptTui(): void {
 
   // Set the status line based on the current mode
   function updateStatusLine(mode: string): void {
-    statusBar.setContent(` {bold}Mode:{/bold} ${mode.charAt(0).toUpperCase() + mode.slice(1)} | Type a message or command`);
+    statusBar.setContent(
+      ` {bold}Mode:{/bold} ${
+        mode.charAt(0).toUpperCase() + mode.slice(1)
+      } | Type a message or command`,
+    );
     screen.render();
   }
 
@@ -172,7 +177,7 @@ export function startPromptTui(): void {
         screen.destroy();
         process.exit(0);
         break;
-        
+
       case 'help':
         addMessage('\n{bold}Available Commands:{/bold}');
         addMessage('{bold}/add <content>{/bold} - Add content');
@@ -188,7 +193,7 @@ export function startPromptTui(): void {
         addMessage('{bold}Ctrl+s{/bold} - Search mode');
         addMessage('{bold}Ctrl+h{/bold} - Help');
         break;
-        
+
       case 'add':
         if (args.length === 0) {
           addMessage('{red-fg}Error: Missing content. Usage: /add <content>{/red-fg}');
@@ -199,10 +204,12 @@ export function startPromptTui(): void {
           addMessage('{yellow-fg}Add functionality not yet implemented{/yellow-fg}');
         }
         break;
-        
+
       case 'note':
         if (args.length < 2) {
-          addMessage('{red-fg}Error: Missing context or content. Usage: /note <context> <content>{/red-fg}');
+          addMessage(
+            '{red-fg}Error: Missing context or content. Usage: /note <context> <content>{/red-fg}',
+          );
         } else {
           const context = args[0];
           const content = args.slice(1).join(' ');
@@ -211,7 +218,7 @@ export function startPromptTui(): void {
           addMessage('{yellow-fg}Note functionality not yet implemented{/yellow-fg}');
         }
         break;
-        
+
       case 'list':
         const type = args[0] || 'notes';
         if (type !== 'notes' && type !== 'tasks') {
@@ -225,18 +232,26 @@ export function startPromptTui(): void {
             } else {
               items.forEach((item: any) => {
                 if (type === 'notes') {
-                  addMessage(`• ${item.title || 'Untitled'}: ${item.content.substring(0, 50)}${item.content.length > 50 ? '...' : ''}`);
+                  addMessage(
+                    `• ${item.title || 'Untitled'}: ${item.content.substring(0, 50)}${
+                      item.content.length > 50 ? '...' : ''
+                    }`,
+                  );
                 } else {
                   addMessage(`• ${item.description} (${item.status})`);
                 }
               });
             }
           } catch (err) {
-            addMessage(`{red-fg}Error listing ${type}: ${err instanceof Error ? err.message : String(err)}{/red-fg}`);
+            addMessage(
+              `{red-fg}Error listing ${type}: ${
+                err instanceof Error ? err.message : String(err)
+              }{/red-fg}`,
+            );
           }
         }
         break;
-        
+
       case 'search':
         if (args.length === 0) {
           addMessage('{red-fg}Error: Missing query. Usage: /search <query>{/red-fg}');
@@ -247,7 +262,7 @@ export function startPromptTui(): void {
           addMessage('{yellow-fg}Search functionality not yet implemented{/yellow-fg}');
         }
         break;
-        
+
       default:
         addMessage(`{red-fg}Unknown command: ${command}{/red-fg}`);
         break;
@@ -258,18 +273,18 @@ export function startPromptTui(): void {
   async function handleChatMode(input: string): Promise<void> {
     // Display user message
     addMessage(`{bold}{green-fg}You:{/green-fg}{/bold} ${input}`);
-    
+
     try {
       // Show "thinking" indicator
       statusBar.setContent(' {bold}Mode:{/bold} Chat | Dome is thinking...');
       screen.render();
-      
+
       // Send message to API
       const response = await chat(input);
-      
+
       // Display response
       addMessage(`{bold}{blue-fg}Dome:{/blue-fg}{/bold} ${response.message}`);
-      
+
       // Reset status line
       updateStatusLine('chat');
     } catch (err) {
@@ -295,7 +310,7 @@ export function startPromptTui(): void {
   // Handle input submission
   inputBox.key('enter', async () => {
     const input = inputBox.getValue().trim();
-    
+
     if (!input) {
       return;
     }
@@ -324,7 +339,9 @@ export function startPromptTui(): void {
         }
       }
     } catch (err) {
-      addMessage(`{red-fg}Unexpected error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`);
+      addMessage(
+        `{red-fg}Unexpected error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+      );
     }
 
     // Always make sure the input box regains focus after processing
@@ -362,7 +379,7 @@ export function startPromptTui(): void {
   bindKeyToAll('C-h', () => {
     inputBox.setValue('/help');
     inputBox.focus();
-    
+
     // Simulate pressing enter
     setTimeout(() => {
       const enterEvent = { name: 'enter' };

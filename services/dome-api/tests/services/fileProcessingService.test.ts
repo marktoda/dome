@@ -12,7 +12,7 @@ describe('FileProcessingService', () => {
     RAW: {} as R2Bucket,
     D1_DATABASE: {} as D1Database,
     VECTORIZE: {} as VectorizeIndex,
-    EVENTS: {} as Queue<any>
+    EVENTS: {} as Queue<any>,
   };
 
   beforeEach(() => {
@@ -38,7 +38,9 @@ describe('FileProcessingService', () => {
     });
 
     it('should return UNKNOWN for unsupported file types', () => {
-      expect(fileProcessingService.detectFileType('application/octet-stream')).toBe(FileType.UNKNOWN);
+      expect(fileProcessingService.detectFileType('application/octet-stream')).toBe(
+        FileType.UNKNOWN,
+      );
       expect(fileProcessingService.detectFileType('audio/mpeg')).toBe(FileType.UNKNOWN);
     });
   });
@@ -50,7 +52,7 @@ describe('FileProcessingService', () => {
         contentType: 'text/plain',
         size: 100,
         etag: 'test-etag',
-        uploaded: new Date()
+        uploaded: new Date(),
       });
 
       // Call the service
@@ -58,7 +60,7 @@ describe('FileProcessingService', () => {
         mockEnv,
         'This is a test text file',
         'text/plain',
-        'test.txt'
+        'test.txt',
       );
 
       // Verify the result
@@ -73,7 +75,7 @@ describe('FileProcessingService', () => {
         mockEnv,
         expect.stringContaining('files/'),
         'This is a test text file',
-        'text/plain'
+        'text/plain',
       );
     });
 
@@ -83,7 +85,7 @@ describe('FileProcessingService', () => {
         contentType: 'application/pdf',
         size: 1000,
         etag: 'test-etag',
-        uploaded: new Date()
+        uploaded: new Date(),
       });
 
       // Create a mock PDF buffer
@@ -94,7 +96,7 @@ describe('FileProcessingService', () => {
         mockEnv,
         pdfBuffer,
         'application/pdf',
-        'test.pdf'
+        'test.pdf',
       );
 
       // Verify the result
@@ -108,7 +110,7 @@ describe('FileProcessingService', () => {
         mockEnv,
         expect.stringContaining('files/'),
         pdfBuffer,
-        'application/pdf'
+        'application/pdf',
       );
     });
 
@@ -118,7 +120,7 @@ describe('FileProcessingService', () => {
         contentType: 'image/jpeg',
         size: 500,
         etag: 'test-etag',
-        uploaded: new Date()
+        uploaded: new Date(),
       });
 
       // Create a mock image buffer
@@ -129,7 +131,7 @@ describe('FileProcessingService', () => {
         mockEnv,
         imageBuffer,
         'image/jpeg',
-        'test.jpg'
+        'test.jpg',
       );
 
       // Verify the result
@@ -143,7 +145,7 @@ describe('FileProcessingService', () => {
         mockEnv,
         expect.stringContaining('files/'),
         imageBuffer,
-        'image/jpeg'
+        'image/jpeg',
       );
     });
 
@@ -153,7 +155,7 @@ describe('FileProcessingService', () => {
 
       // Call the service and expect it to throw
       await expect(
-        fileProcessingService.processFile(mockEnv, 'test data', 'text/plain', 'test.txt')
+        fileProcessingService.processFile(mockEnv, 'test data', 'text/plain', 'test.txt'),
       ).rejects.toThrow(ServiceError);
     });
   });
@@ -167,8 +169,8 @@ describe('FileProcessingService', () => {
           contentType: 'application/pdf',
           size: 1000,
           etag: 'test-etag',
-          uploaded: new Date()
-        }
+          uploaded: new Date(),
+        },
       });
 
       // Call the service
@@ -187,9 +189,9 @@ describe('FileProcessingService', () => {
       (r2Service.downloadObject as jest.Mock).mockResolvedValue(null);
 
       // Call the service and expect it to throw
-      await expect(
-        fileProcessingService.extractTextFromPdf(mockEnv, 'test-key')
-      ).rejects.toThrow('PDF with key test-key not found');
+      await expect(fileProcessingService.extractTextFromPdf(mockEnv, 'test-key')).rejects.toThrow(
+        'PDF with key test-key not found',
+      );
     });
 
     it('should throw ServiceError when download fails', async () => {
@@ -197,9 +199,9 @@ describe('FileProcessingService', () => {
       (r2Service.downloadObject as jest.Mock).mockRejectedValue(new Error('Download failed'));
 
       // Call the service and expect it to throw
-      await expect(
-        fileProcessingService.extractTextFromPdf(mockEnv, 'test-key')
-      ).rejects.toThrow(ServiceError);
+      await expect(fileProcessingService.extractTextFromPdf(mockEnv, 'test-key')).rejects.toThrow(
+        ServiceError,
+      );
     });
   });
 
@@ -212,8 +214,8 @@ describe('FileProcessingService', () => {
           contentType: 'image/jpeg',
           size: 500,
           etag: 'test-etag',
-          uploaded: new Date()
-        }
+          uploaded: new Date(),
+        },
       });
 
       // Call the service
@@ -232,9 +234,9 @@ describe('FileProcessingService', () => {
       (r2Service.downloadObject as jest.Mock).mockResolvedValue(null);
 
       // Call the service and expect it to throw
-      await expect(
-        fileProcessingService.extractTextFromImage(mockEnv, 'test-key')
-      ).rejects.toThrow('Image with key test-key not found');
+      await expect(fileProcessingService.extractTextFromImage(mockEnv, 'test-key')).rejects.toThrow(
+        'Image with key test-key not found',
+      );
     });
 
     it('should throw ServiceError when download fails', async () => {
@@ -242,9 +244,9 @@ describe('FileProcessingService', () => {
       (r2Service.downloadObject as jest.Mock).mockRejectedValue(new Error('Download failed'));
 
       // Call the service and expect it to throw
-      await expect(
-        fileProcessingService.extractTextFromImage(mockEnv, 'test-key')
-      ).rejects.toThrow(ServiceError);
+      await expect(fileProcessingService.extractTextFromImage(mockEnv, 'test-key')).rejects.toThrow(
+        ServiceError,
+      );
     });
   });
 

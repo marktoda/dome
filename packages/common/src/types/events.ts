@@ -5,7 +5,10 @@ import { z } from 'zod';
  */
 export const BaseEventSchema = z.object({
   id: z.string().uuid().optional(),
-  timestamp: z.string().datetime().default(() => new Date().toISOString()),
+  timestamp: z
+    .string()
+    .datetime()
+    .default(() => new Date().toISOString()),
   type: z.string(),
   version: z.string().default('1.0'),
 });
@@ -86,7 +89,9 @@ export const createReminderDueEvent = (data: ReminderDueEvent['data']): Reminder
   attempts: 0,
 });
 
-export const createIngestionCompleteEvent = (data: IngestionCompleteEvent['data']): IngestionCompleteEvent => ({
+export const createIngestionCompleteEvent = (
+  data: IngestionCompleteEvent['data'],
+): IngestionCompleteEvent => ({
   id: crypto.randomUUID(),
   timestamp: new Date().toISOString(),
   type: 'ingestion_complete',
@@ -98,7 +103,7 @@ export const createRetryEvent = (
   originalEvent: any,
   error: string,
   attempts: number,
-  maxAttempts: number
+  maxAttempts: number,
 ): RetryEvent => ({
   id: crypto.randomUUID(),
   timestamp: new Date().toISOString(),

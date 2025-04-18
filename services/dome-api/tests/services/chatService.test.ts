@@ -6,20 +6,20 @@ import { ServiceError } from '@dome/common';
 // Mock dependencies
 vi.mock('../../src/services/searchService', () => ({
   searchService: {
-    search: vi.fn()
-  }
+    search: vi.fn(),
+  },
 }));
 
 describe('ChatService', () => {
   // Mock environment
   const mockEnv = {
     AI: {
-      run: vi.fn()
+      run: vi.fn(),
     },
     D1_DATABASE: {} as D1Database,
     VECTORIZE: {} as VectorizeIndex,
     RAW: {} as R2Bucket,
-    EVENTS: {} as Queue<any>
+    EVENTS: {} as Queue<any>,
   };
 
   // Mock search results
@@ -31,7 +31,7 @@ describe('ChatService', () => {
       score: 0.95,
       createdAt: 1650000000000,
       updatedAt: 1650000000000,
-      contentType: 'text/plain'
+      contentType: 'text/plain',
     },
     {
       id: 'note2',
@@ -40,8 +40,8 @@ describe('ChatService', () => {
       score: 0.85,
       createdAt: 1650000100000,
       updatedAt: 1650000100000,
-      contentType: 'text/plain'
-    }
+      contentType: 'text/plain',
+    },
   ];
 
   beforeEach(() => {
@@ -59,12 +59,12 @@ describe('ChatService', () => {
 
       // Mock AI response
       vi.mocked(mockEnv.AI.run).mockResolvedValue({
-        response: 'This is a test response based on the provided context.'
+        response: 'This is a test response based on the provided context.',
       });
 
       // Test messages
       const messages = [
-        { role: 'user' as const, content: 'What information do I have about test notes?' }
+        { role: 'user' as const, content: 'What information do I have about test notes?' },
       ];
 
       // Call the service
@@ -72,14 +72,14 @@ describe('ChatService', () => {
         messages,
         userId: 'user123',
         enhanceWithContext: true,
-        maxContextItems: 5
+        maxContextItems: 5,
       });
 
       // Verify search was called with correct parameters
       expect(searchService.search).toHaveBeenCalledWith(mockEnv, {
         userId: 'user123',
         query: 'What information do I have about test notes?',
-        limit: 5
+        limit: 5,
       });
 
       // Verify AI was called with correct parameters
@@ -87,13 +87,13 @@ describe('ChatService', () => {
         messages: expect.arrayContaining([
           expect.objectContaining({
             role: 'system',
-            content: expect.stringContaining('Here is relevant information from the user\'s notes')
+            content: expect.stringContaining("Here is relevant information from the user's notes"),
           }),
           expect.objectContaining({
             role: 'user',
-            content: 'What information do I have about test notes?'
-          })
-        ])
+            content: 'What information do I have about test notes?',
+          }),
+        ]),
       });
 
       // Verify response
@@ -103,19 +103,17 @@ describe('ChatService', () => {
     it('should generate a response without context when enhanceWithContext is false', async () => {
       // Mock AI response
       vi.mocked(mockEnv.AI.run).mockResolvedValue({
-        response: 'This is a test response without context.'
+        response: 'This is a test response without context.',
       });
 
       // Test messages
-      const messages = [
-        { role: 'user' as const, content: 'What is the capital of France?' }
-      ];
+      const messages = [{ role: 'user' as const, content: 'What is the capital of France?' }];
 
       // Call the service
       const response = await chatService.generateResponse(mockEnv, {
         messages,
         userId: 'user123',
-        enhanceWithContext: false
+        enhanceWithContext: false,
       });
 
       // Verify search was not called
@@ -126,13 +124,15 @@ describe('ChatService', () => {
         messages: expect.arrayContaining([
           expect.objectContaining({
             role: 'system',
-            content: expect.not.stringContaining('Here is relevant information from the user\'s notes')
+            content: expect.not.stringContaining(
+              "Here is relevant information from the user's notes",
+            ),
           }),
           expect.objectContaining({
             role: 'user',
-            content: 'What is the capital of France?'
-          })
-        ])
+            content: 'What is the capital of France?',
+          }),
+        ]),
       });
 
       // Verify response
@@ -145,12 +145,13 @@ describe('ChatService', () => {
 
       // Mock AI response
       vi.mocked(mockEnv.AI.run).mockResolvedValue({
-        response: 'I\'ll help you remember that. You can use the /add command to save this information.'
+        response:
+          "I'll help you remember that. You can use the /add command to save this information.",
       });
 
       // Test messages with a "remember" request
       const messages = [
-        { role: 'user' as const, content: 'Remember that my meeting is at 3pm tomorrow.' }
+        { role: 'user' as const, content: 'Remember that my meeting is at 3pm tomorrow.' },
       ];
 
       // Call the service
@@ -158,7 +159,7 @@ describe('ChatService', () => {
         messages,
         userId: 'user123',
         enhanceWithContext: true,
-        suggestAddCommand: true
+        suggestAddCommand: true,
       });
 
       // Verify AI was called with system message containing /add suggestion
@@ -166,13 +167,15 @@ describe('ChatService', () => {
         messages: expect.arrayContaining([
           expect.objectContaining({
             role: 'system',
-            content: expect.stringContaining('/add command')
-          })
-        ])
+            content: expect.stringContaining('/add command'),
+          }),
+        ]),
       });
 
       // Verify response
-      expect(response).toBe('I\'ll help you remember that. You can use the /add command to save this information.');
+      expect(response).toBe(
+        "I'll help you remember that. You can use the /add command to save this information.",
+      );
     });
 
     it('should throw an error when AI binding is not available', async () => {
@@ -181,33 +184,35 @@ describe('ChatService', () => {
         D1_DATABASE: {} as D1Database,
         VECTORIZE: {} as VectorizeIndex,
         RAW: {} as R2Bucket,
-        EVENTS: {} as Queue<any>
+        EVENTS: {} as Queue<any>,
       };
 
       // Test messages
-      const messages = [
-        { role: 'user' as const, content: 'Test message' }
-      ];
+      const messages = [{ role: 'user' as const, content: 'Test message' }];
 
       // Expect error
-      await expect(chatService.generateResponse(envWithoutAI, {
-        messages,
-        userId: 'user123'
-      })).rejects.toThrow(ServiceError);
+      await expect(
+        chatService.generateResponse(envWithoutAI, {
+          messages,
+          userId: 'user123',
+        }),
+      ).rejects.toThrow(ServiceError);
     });
 
     it('should throw an error when no user message is provided', async () => {
       // Test messages without user message
       const messages = [
         { role: 'system' as const, content: 'System message' },
-        { role: 'assistant' as const, content: 'Assistant message' }
+        { role: 'assistant' as const, content: 'Assistant message' },
       ];
 
       // Expect error
-      await expect(chatService.generateResponse(mockEnv, {
-        messages,
-        userId: 'user123'
-      })).rejects.toThrow('At least one user message is required');
+      await expect(
+        chatService.generateResponse(mockEnv, {
+          messages,
+          userId: 'user123',
+        }),
+      ).rejects.toThrow('At least one user message is required');
     });
   });
 
@@ -226,26 +231,24 @@ describe('ChatService', () => {
                 count++;
                 return Promise.resolve({
                   value: { response: `Chunk ${count}` },
-                  done: false
+                  done: false,
                 });
               }
               return Promise.resolve({ done: true });
-            }
+            },
           };
-        }
+        },
       };
-      
+
       vi.mocked(mockEnv.AI.run).mockResolvedValue(mockStreamResponse);
 
       // Test messages
-      const messages = [
-        { role: 'user' as const, content: 'Stream a response to me.' }
-      ];
+      const messages = [{ role: 'user' as const, content: 'Stream a response to me.' }];
 
       // Call the service
       const stream = await chatService.streamResponse(mockEnv, {
         messages,
-        userId: 'user123'
+        userId: 'user123',
       });
 
       // Verify we got a ReadableStream
@@ -257,7 +260,7 @@ describe('ChatService', () => {
       // Verify AI was called with streaming option
       expect(mockEnv.AI.run).toHaveBeenCalledWith('@cf/meta/llama-3-8b-instruct', {
         messages: expect.any(Array),
-        stream: true
+        stream: true,
       });
     });
   });

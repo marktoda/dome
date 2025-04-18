@@ -11,7 +11,7 @@ import { loadConfig, saveConfig } from '../../utils/config';
 export function createSettingsScreen(layout: BaseLayoutElements): Screen {
   // Load the current config
   const config = loadConfig();
-  
+
   // Create the main container
   const element = blessed.box({
     parent: layout.mainContent,
@@ -240,7 +240,7 @@ export function createSettingsScreen(layout: BaseLayoutElements): Screen {
 
     // Show a success message
     layout.statusBar.setContent(
-      ` {bold}Status:{/bold} Settings saved successfully | Press {bold}q{/bold} to quit | {bold}?{/bold} for help`
+      ` {bold}Status:{/bold} Settings saved successfully | Press {bold}q{/bold} to quit | {bold}?{/bold} for help`,
     );
     layout.screen.render();
   });

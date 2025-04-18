@@ -36,7 +36,7 @@ export class NoteRepository extends BaseRepository<Note, CreateNoteData, UpdateN
         metadata: data.metadata,
         createdAt: now,
         updatedAt: now,
-        embeddingStatus: 'pending'
+        embeddingStatus: 'pending',
       };
 
       const db = getDb(env);
@@ -58,7 +58,7 @@ export class NoteRepository extends BaseRepository<Note, CreateNoteData, UpdateN
     try {
       const updateData = {
         ...data,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       };
 
       const db = getDb(env);
@@ -68,11 +68,11 @@ export class NoteRepository extends BaseRepository<Note, CreateNoteData, UpdateN
         .where(eq(notes.id, id))
         .returning()
         .all();
-      
+
       if (result.length === 0) {
         throw new Error(`Note with ID ${id} not found`);
       }
-      
+
       return result[0] as Note;
     } catch (error) {
       throw handleDatabaseError(error, `update note(${id})`);
@@ -102,7 +102,7 @@ export class NoteRepository extends BaseRepository<Note, CreateNoteData, UpdateN
         noteId: data.noteId,
         pageNum: data.pageNum,
         content: data.content,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
 
       const db = getDb(env);
@@ -128,7 +128,7 @@ export class NoteRepository extends BaseRepository<Note, CreateNoteData, UpdateN
         .where(eq(notePages.noteId, noteId))
         .orderBy(notePages.pageNum)
         .all();
-      
+
       return results as NotePage[];
     } catch (error) {
       throw handleDatabaseError(error, `findPagesByNoteId(${noteId})`);
@@ -145,12 +145,8 @@ export class NoteRepository extends BaseRepository<Note, CreateNoteData, UpdateN
     try {
       const db = getDb(env);
       // The foreign key constraint will automatically delete the pages
-      const result = await db
-        .delete(notes)
-        .where(eq(notes.id, id))
-        .returning()
-        .all();
-      
+      const result = await db.delete(notes).where(eq(notes.id, id)).returning().all();
+
       return result.length > 0;
     } catch (error) {
       throw handleDatabaseError(error, `delete note(${id})`);

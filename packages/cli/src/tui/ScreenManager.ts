@@ -74,7 +74,7 @@ export class ScreenManager {
 
     // Show the selected screen
     this.screens[index].element.show();
-    
+
     // Call onFocus for the new active screen
     if (this.screens[index].onFocus) {
       this.screens[index].onFocus();
@@ -82,7 +82,7 @@ export class ScreenManager {
 
     // Update status bar
     this.layout.statusBar.setContent(
-      ` {bold}Status:{/bold} Viewing ${this.screens[index].title} | Press {bold}q{/bold} to quit | {bold}?{/bold} for help`
+      ` {bold}Status:{/bold} Viewing ${this.screens[index].title} | Press {bold}q{/bold} to quit | {bold}?{/bold} for help`,
     );
 
     this.activeScreenIndex = index;

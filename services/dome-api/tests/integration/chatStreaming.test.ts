@@ -7,28 +7,28 @@ import { chatService } from '../../src/services/chatService';
 vi.mock('../../src/services/chatService', () => ({
   chatService: {
     generateResponse: vi.fn(),
-    streamResponse: vi.fn()
-  }
+    streamResponse: vi.fn(),
+  },
 }));
 
 describe('Chat Streaming Integration', () => {
   // Create a test app
   let app: Hono;
-  
+
   // Mock environment
   const mockEnv = {
     AI: {
-      run: vi.fn()
+      run: vi.fn(),
     },
     D1_DATABASE: {} as D1Database,
     VECTORIZE: {} as VectorizeIndex,
     RAW: {} as R2Bucket,
-    EVENTS: {} as Queue<any>
+    EVENTS: {} as Queue<any>,
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Create a new Hono app for each test
     app = new Hono();
     app.post('/chat', chatController.chat.bind(chatController));
@@ -48,7 +48,7 @@ describe('Chat Streaming Integration', () => {
         controller.enqueue(new TextEncoder().encode('streaming '));
         controller.enqueue(new TextEncoder().encode('response.'));
         controller.close();
-      }
+      },
     });
 
     // Mock chatService.streamResponse to return the mock stream
@@ -59,19 +59,17 @@ describe('Chat Streaming Integration', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user'
+        'x-user-id': 'test-user',
       },
       body: JSON.stringify({
-        messages: [
-          { role: 'user', content: 'Test streaming message' }
-        ],
-        stream: true
-      })
+        messages: [{ role: 'user', content: 'Test streaming message' }],
+        stream: true,
+      }),
     });
 
     // Add bindings to the request
     const reqWithBindings = Object.assign(req, {
-      env: mockEnv
+      env: mockEnv,
     });
 
     // Call the endpoint
@@ -85,7 +83,7 @@ describe('Chat Streaming Integration', () => {
     // Read the stream
     const reader = res.body!.getReader();
     let result = '';
-    
+
     let done = false;
     while (!done) {
       const { value, done: isDone } = await reader.read();
@@ -95,7 +93,7 @@ describe('Chat Streaming Integration', () => {
         result += new TextDecoder().decode(value);
       }
     }
-    
+
     // Verify the complete streamed response
     expect(result).toBe('This is a streaming response.');
 
@@ -105,8 +103,8 @@ describe('Chat Streaming Integration', () => {
       expect.objectContaining({
         messages: [{ role: 'user', content: 'Test streaming message' }],
         userId: 'test-user',
-        stream: true
-      })
+        stream: true,
+      }),
     );
   });
 
@@ -119,31 +117,29 @@ describe('Chat Streaming Integration', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user'
+        'x-user-id': 'test-user',
       },
       body: JSON.stringify({
-        messages: [
-          { role: 'user', content: 'Test non-streaming message' }
-        ],
-        stream: false
-      })
+        messages: [{ role: 'user', content: 'Test non-streaming message' }],
+        stream: false,
+      }),
     });
 
     // Add bindings to the request
     const reqWithBindings = Object.assign(req, {
-      env: mockEnv
+      env: mockEnv,
     });
 
     // Call the endpoint
     const res = await app.fetch(reqWithBindings);
-    
+
     // Verify response
     expect(res.status).toBe(200);
-    
+
     const data = await res.json();
     expect(data).toEqual({
       success: true,
-      response: 'This is a non-streaming response.'
+      response: 'This is a non-streaming response.',
     });
 
     // Verify chatService was called with correct parameters
@@ -152,35 +148,31 @@ describe('Chat Streaming Integration', () => {
       expect.objectContaining({
         messages: [{ role: 'user', content: 'Test non-streaming message' }],
         userId: 'test-user',
-        stream: false
-      })
+        stream: false,
+      }),
     );
   });
 
   it('should handle errors during streaming', async () => {
     // Mock chatService.streamResponse to throw an error
-    vi.mocked(chatService.streamResponse).mockRejectedValue(
-      new Error('AI service error')
-    );
+    vi.mocked(chatService.streamResponse).mockRejectedValue(new Error('AI service error'));
 
     // Create a test request
     const req = new Request('http://localhost/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user'
+        'x-user-id': 'test-user',
       },
       body: JSON.stringify({
-        messages: [
-          { role: 'user', content: 'Test error handling' }
-        ],
-        stream: true
-      })
+        messages: [{ role: 'user', content: 'Test error handling' }],
+        stream: true,
+      }),
     });
 
     // Add bindings to the request
     const reqWithBindings = Object.assign(req, {
-      env: mockEnv
+      env: mockEnv,
     });
 
     // Call the endpoint
@@ -188,15 +180,15 @@ describe('Chat Streaming Integration', () => {
 
     // Verify response status
     expect(res.status).toBe(500);
-    
+
     // Verify error response
     const data = await res.json();
     expect(data).toEqual({
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred during chat processing'
-      }
+        message: 'An unexpected error occurred during chat processing',
+      },
     });
 
     // Verify chatService was called

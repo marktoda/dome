@@ -27,7 +27,7 @@ program
   .description('Terminal UI client for the dome API')
   .version('0.1.0')
   .option('--prod', 'Use production environment')
-  .hook('preAction', (thisCommand) => {
+  .hook('preAction', thisCommand => {
     // Set environment based on --prod flag
     if (thisCommand.opts().prod) {
       process.env.DOME_ENV = 'production';

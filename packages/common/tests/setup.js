@@ -12,7 +12,7 @@ global.process = {
     SAMPLE_RATE: '1',
     ENVIRONMENT: 'test',
     RELEASE: 'test',
-  }
+  },
 };
 
 // Mock Cloudflare Worker environment

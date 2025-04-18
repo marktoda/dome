@@ -12,7 +12,7 @@ migrations_dir = "services/dome-api/migrations"   # mono-repo friendly
 
 [[vectorize]]
 binding = "VECTORIZE"
-index_name = "dome-notes"         # removed index_id as Wrangler ignores it
+index_name = "dome-notes"
 
 [[r2_buckets]]
 binding = "RAW"

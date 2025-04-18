@@ -39,7 +39,7 @@ export class EmailNotificationChannel implements NotificationChannel {
   async send(notification: Notification): Promise<void> {
     // Get user email from metadata or fetch from database
     const userEmail = notification.metadata?.email || 'user@example.com';
-    
+
     // Prepare email content
     const emailContent = {
       personalizations: [
@@ -137,7 +137,9 @@ export class SlackNotificationChannel implements NotificationChannel {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to send Slack notification: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `Failed to send Slack notification: ${response.status} ${response.statusText}`,
+        );
       }
 
       console.log('Slack notification sent');

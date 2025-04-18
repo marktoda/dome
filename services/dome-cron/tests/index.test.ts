@@ -46,7 +46,7 @@ vi.mock('@dome/common', () => ({
     publishEvent: vi.fn().mockResolvedValue(undefined),
     publishEvents: vi.fn().mockResolvedValue(undefined),
   })),
-  createReminderDueEvent: vi.fn().mockImplementation((data) => ({
+  createReminderDueEvent: vi.fn().mockImplementation(data => ({
     id: '123e4567-e89b-12d3-a456-426614174000',
     timestamp: new Date().toISOString(),
     type: 'reminder_due',
@@ -56,7 +56,7 @@ vi.mock('@dome/common', () => ({
   })),
   Event: {},
   EventSchema: {
-    parse: vi.fn().mockImplementation((data) => data),
+    parse: vi.fn().mockImplementation(data => data),
   },
 }));
 
@@ -80,17 +80,17 @@ describe('dome-cron worker', () => {
       // Assert
       expect(mockEnv.D1_DATABASE.prepare).toHaveBeenCalled();
       expect(mockEnv.D1_DATABASE.all).toHaveBeenCalled();
-      
+
       // Verify QueueService was initialized with the correct parameters
       expect(QueueService).toHaveBeenCalledWith({
         queueBinding: mockEnv.EVENTS,
         maxRetries: 3,
       });
-      
+
       // Verify events were published
       const queueServiceInstance = (QueueService as any).mock.results[0].value;
       expect(queueServiceInstance.publishEvents).toHaveBeenCalled();
-      
+
       // Verify the correct number of events were published
       const publishEventsCall = queueServiceInstance.publishEvents.mock.calls[0][0];
       expect(publishEventsCall.length).toBe(1);
@@ -100,21 +100,22 @@ describe('dome-cron worker', () => {
       // Arrange
       const dbError = new Error('Database error');
       mockEnv.D1_DATABASE.all = vi.fn().mockRejectedValue(dbError);
-      
+
       // Mock waitUntil to properly handle the rejection
       let capturedPromise: Promise<any> | null = null;
-      mockContext.waitUntil = vi.fn().mockImplementation((promise) => {
+      mockContext.waitUntil = vi.fn().mockImplementation(promise => {
         capturedPromise = promise;
         return Promise.resolve();
       });
 
       // Act & Assert
-      await expect(worker.scheduled(mockScheduledEvent, mockEnv as any, mockContext))
-        .rejects.toThrow('Database error');
-      
+      await expect(
+        worker.scheduled(mockScheduledEvent, mockEnv as any, mockContext),
+      ).rejects.toThrow('Database error');
+
       // Verify waitUntil was called
       expect(mockContext.waitUntil).toHaveBeenCalled();
-      
+
       // If capturedPromise was set, we need to catch its rejection to prevent unhandled rejection
       if (capturedPromise) {
         try {
@@ -143,18 +144,21 @@ describe('dome-cron worker', () => {
 
     it('should process reminders in batches when there are many results', async () => {
       // Arrange
-      const mockResults = Array(600).fill(0).map((_, i) => ({
-        reminder_id: `reminder-${i}`,
-        task_id: `task-${i}`,
-        user_id: 'user-1',
-        title: `Reminder ${i}`,
-        description: `Description ${i}`,
-        remind_at: new Date().toISOString(),
-        priority: 'medium',
-      }));
+      const mockResults = Array(600)
+        .fill(0)
+        .map((_, i) => ({
+          reminder_id: `reminder-${i}`,
+          task_id: `task-${i}`,
+          user_id: 'user-1',
+          title: `Reminder ${i}`,
+          description: `Description ${i}`,
+          remind_at: new Date().toISOString(),
+          priority: 'medium',
+        }));
 
       // First call returns 500 results, second call returns 100 results
-      mockEnv.D1_DATABASE.all = vi.fn()
+      mockEnv.D1_DATABASE.all = vi
+        .fn()
         .mockResolvedValueOnce({
           results: mockResults.slice(0, 500),
           success: true,
@@ -173,14 +177,14 @@ describe('dome-cron worker', () => {
 
       // Assert
       expect(mockEnv.D1_DATABASE.all).toHaveBeenCalledTimes(3);
-      
+
       const queueServiceInstance = (QueueService as any).mock.results[0].value;
       expect(queueServiceInstance.publishEvents).toHaveBeenCalledTimes(2);
-      
+
       // First batch should have 500 events
       const firstBatchEvents = queueServiceInstance.publishEvents.mock.calls[0][0];
       expect(firstBatchEvents.length).toBe(500);
-      
+
       // Second batch should have 100 events
       const secondBatchEvents = queueServiceInstance.publishEvents.mock.calls[1][0];
       expect(secondBatchEvents.length).toBe(100);

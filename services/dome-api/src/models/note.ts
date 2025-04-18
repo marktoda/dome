@@ -7,7 +7,7 @@ export enum EmbeddingStatus {
   PENDING = 'pending',
   PROCESSING = 'processing',
   COMPLETED = 'completed',
-  FAILED = 'failed'
+  FAILED = 'failed',
 }
 
 /**
@@ -46,7 +46,7 @@ export const createNoteSchema = z.object({
   body: z.string().min(1, 'Body is required'),
   contentType: z.string().min(1, 'Content type is required'),
   r2Key: z.string().optional(),
-  metadata: z.string().optional()
+  metadata: z.string().optional(),
 });
 
 /**
@@ -63,12 +63,14 @@ export const updateNoteSchema = z.object({
   contentType: z.string().min(1, 'Content type is required').optional(),
   r2Key: z.string().optional(),
   metadata: z.string().optional(),
-  embeddingStatus: z.enum([
-    EmbeddingStatus.PENDING,
-    EmbeddingStatus.PROCESSING,
-    EmbeddingStatus.COMPLETED,
-    EmbeddingStatus.FAILED
-  ]).optional()
+  embeddingStatus: z
+    .enum([
+      EmbeddingStatus.PENDING,
+      EmbeddingStatus.PROCESSING,
+      EmbeddingStatus.COMPLETED,
+      EmbeddingStatus.FAILED,
+    ])
+    .optional(),
 });
 
 /**
@@ -82,7 +84,7 @@ export type UpdateNoteData = z.infer<typeof updateNoteSchema>;
 export const createNotePageSchema = z.object({
   noteId: z.string().min(1, 'Note ID is required'),
   pageNum: z.number().int().min(1, 'Page number must be a positive integer'),
-  content: z.string().min(1, 'Content is required')
+  content: z.string().min(1, 'Content is required'),
 });
 
 /**

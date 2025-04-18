@@ -32,7 +32,8 @@ export function createChatScreen(layout: BaseLayoutElements): Screen {
     style: {
       fg: 'white',
     },
-    content: '{center}{bold}Chat with Dome{/bold}{/center}\n{center}Type your message below and press Enter to send{/center}\n\n',
+    content:
+      '{center}{bold}Chat with Dome{/bold}{/center}\n{center}Type your message below and press Enter to send{/center}\n\n',
     padding: {
       left: 1,
       right: 1,
@@ -80,34 +81,43 @@ export function createChatScreen(layout: BaseLayoutElements): Screen {
     const message = inputBox.getValue();
     if (message.trim()) {
       // Add user message to chat
-      messagesBox.setContent(messagesBox.getContent() + `\n{bold}{green-fg}You:{/green-fg}{/bold} ${message}`);
+      messagesBox.setContent(
+        messagesBox.getContent() + `\n{bold}{green-fg}You:{/green-fg}{/bold} ${message}`,
+      );
       messagesBox.setScrollPerc(100);
       layout.screen.render();
-      
+
       // Clear input
       inputBox.clearValue();
       layout.screen.render();
-      
+
       try {
         // Show loading indicator
         loadingIndicator.load('Thinking...');
-        
+
         // Send message to API
         const response = await chat(message);
-        
+
         // Hide loading indicator
         loadingIndicator.stop();
-        
+
         // Add assistant response to chat
-        messagesBox.setContent(messagesBox.getContent() + `\n{bold}{blue-fg}Dome:{/blue-fg}{/bold} ${response.message}`);
+        messagesBox.setContent(
+          messagesBox.getContent() + `\n{bold}{blue-fg}Dome:{/blue-fg}{/bold} ${response.message}`,
+        );
         messagesBox.setScrollPerc(100);
         layout.screen.render();
       } catch (err) {
         // Hide loading indicator
         loadingIndicator.stop();
-        
+
         // Add error message to chat
-        messagesBox.setContent(messagesBox.getContent() + `\n{bold}{red-fg}Error:{/red-fg}{/bold} ${err instanceof Error ? err.message : String(err)}`);
+        messagesBox.setContent(
+          messagesBox.getContent() +
+            `\n{bold}{red-fg}Error:{/red-fg}{/bold} ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+        );
         messagesBox.setScrollPerc(100);
         layout.screen.render();
       }

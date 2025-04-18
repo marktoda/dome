@@ -1,7 +1,7 @@
 import { Context } from 'hono';
 import { z } from 'zod';
 import { Bindings } from '../types';
-import { ServiceError } from '@dome/common';
+import { ServiceError, UnauthorizedError, ValidationError } from '@dome/common';
 import { chatService, ChatMessage } from '../services/chatService';
 import { getLogger } from '@dome/logging';
 
@@ -10,7 +10,7 @@ import { getLogger } from '@dome/logging';
  */
 const chatMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
-  content: z.string().min(1, 'Message content is required')
+  content: z.string().min(1, 'Message content is required'),
 });
 
 /**
@@ -22,7 +22,7 @@ const chatRequestSchema = z.object({
   enhanceWithContext: z.boolean().optional().default(true),
   maxContextItems: z.number().int().positive().optional().default(5),
   includeSourceInfo: z.boolean().optional().default(true),
-  suggestAddCommand: z.boolean().optional().default(true)
+  suggestAddCommand: z.boolean().optional().default(true),
 });
 
 /**
@@ -35,74 +35,75 @@ export class ChatController {
    * @returns Response
    */
   async chat(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    getLogger().info({
-      path: c.req.path,
-      method: c.req.method
-    }, 'Chat processing started');
-    
+    getLogger().info(
+      {
+        path: c.req.path,
+        method: c.req.method,
+      },
+      'Chat processing started',
+    );
+
     try {
       // Validate request body
       const body = await c.req.json();
       getLogger().debug({ requestBody: body }, 'Received chat request data');
       const validatedData = chatRequestSchema.parse(body);
-      
+
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
       getLogger().debug({ userId }, 'User ID extracted for chat processing');
+
       if (!userId) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User ID is required. Provide it via x-user-id header or userId query parameter'
-          }
-        }, 401);
+        getLogger().warn({ path: c.req.path }, 'Missing user ID in chat request');
+        throw new UnauthorizedError(
+          'User ID is required. Provide it via x-user-id header or userId query parameter',
+        );
       }
 
       // Get the last user message
-      const lastUserMessage = [...validatedData.messages].reverse()
+      const lastUserMessage = [...validatedData.messages]
+        .reverse()
         .find(msg => msg.role === 'user');
-      
+
       if (!lastUserMessage) {
         getLogger().warn({ userId }, 'No user message found in chat request');
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'At least one user message is required'
-          }
-        }, 400);
+        throw new ValidationError('At least one user message is required');
       }
 
       // Prepare chat options
-      getLogger().debug({
-        userId,
-        messageCount: validatedData.messages.length,
-        lastUserMessage: lastUserMessage.content.substring(0, 100) + (lastUserMessage.content.length > 100 ? '...' : ''),
-        enhanceWithContext: validatedData.enhanceWithContext,
-        streaming: validatedData.stream
-      }, 'Preparing chat options');
-      
+      getLogger().debug(
+        {
+          userId,
+          messageCount: validatedData.messages.length,
+          lastUserMessage:
+            lastUserMessage.content.substring(0, 100) +
+            (lastUserMessage.content.length > 100 ? '...' : ''),
+          enhanceWithContext: validatedData.enhanceWithContext,
+          streaming: validatedData.stream,
+        },
+        'Preparing chat options',
+      );
+
       const chatOptions = {
         messages: validatedData.messages as ChatMessage[],
         userId,
         enhanceWithContext: validatedData.enhanceWithContext,
         maxContextItems: validatedData.maxContextItems,
         includeSourceInfo: validatedData.includeSourceInfo,
-        suggestAddCommand: validatedData.suggestAddCommand
+        suggestAddCommand: validatedData.suggestAddCommand,
       };
 
       // If streaming is requested, use streaming response
       if (validatedData.stream) {
         getLogger().info({ userId }, 'Starting streaming chat response');
         const stream = await chatService.streamResponse(c.env, chatOptions);
-        
+
         getLogger().info({ userId }, 'Streaming response initialized');
         return new Response(stream, {
           headers: {
             'Content-Type': 'text/plain; charset=utf-8',
-            'Transfer-Encoding': 'chunked'
-          }
+            'Transfer-Encoding': 'chunked',
+          },
         });
       }
 
@@ -110,52 +111,30 @@ export class ChatController {
       getLogger().info({ userId }, 'Generating chat response');
       const response = await chatService.generateResponse(c.env, chatOptions);
 
-      getLogger().info({
-        userId,
-        responseLength: typeof response === 'string' ? response.length : JSON.stringify(response).length
-      }, 'Chat response successfully generated');
+      getLogger().info(
+        {
+          userId,
+          responseLength:
+            typeof response === 'string' ? response.length : JSON.stringify(response).length,
+        },
+        'Chat response successfully generated',
+      );
       return c.json({
         success: true,
-        response
+        response,
       });
     } catch (error) {
-      getLogger().error({
-        err: error,
-        path: c.req.path,
-        userId: c.req.header('x-user-id') || c.req.query('userId')
-      }, 'Error in chat controller');
-      
-      if (error instanceof z.ZodError) {
-        getLogger().warn({
-          validationErrors: error.errors
-        }, 'Chat request validation error');
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid chat request',
-            details: error.errors
-          }
-        }, 400);
-      }
-      
-      if (error instanceof ServiceError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'SERVICE_ERROR',
-            message: error.message
-          }
-        }, 500);
-      }
-      
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred during chat processing'
-        }
-      }, 500);
+      getLogger().error(
+        {
+          err: error,
+          path: c.req.path,
+          userId: c.req.header('x-user-id') || c.req.query('userId'),
+        },
+        'Error in chat controller',
+      );
+
+      // Let the middleware handle the error
+      throw error;
     }
   }
 }

@@ -1,18 +1,24 @@
 import { TaskRepository } from '../../src/repositories/taskRepository';
-import { Task, CreateTaskData, UpdateTaskData, TaskStatus, TaskPriority } from '../../src/models/task';
+import {
+  Task,
+  CreateTaskData,
+  UpdateTaskData,
+  TaskStatus,
+  TaskPriority,
+} from '../../src/models/task';
 import { tasks } from '../../src/db/schema';
 import { getDb } from '../../src/db';
 import { Bindings } from '../../src/types';
 
 // Mock the uuid module
 jest.mock('uuid', () => ({
-  v4: jest.fn(() => 'mock-uuid')
+  v4: jest.fn(() => 'mock-uuid'),
 }));
 
 // Mock the database
 jest.mock('../../src/db', () => ({
   getDb: jest.fn(),
-  handleDatabaseError: jest.fn((error) => error)
+  handleDatabaseError: jest.fn(error => error),
 }));
 
 describe('TaskRepository', () => {
@@ -37,7 +43,7 @@ describe('TaskRepository', () => {
       returning: jest.fn().mockReturnThis(),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
-      delete: jest.fn().mockReturnThis()
+      delete: jest.fn().mockReturnThis(),
     };
 
     // Mock getDb to return our mock
@@ -48,7 +54,7 @@ describe('TaskRepository', () => {
       D1_DATABASE: {} as D1Database,
       VECTORIZE: {} as VectorizeIndex,
       RAW: {} as R2Bucket,
-      EVENTS: {} as Queue<any>
+      EVENTS: {} as Queue<any>,
     };
 
     // Create repository
@@ -64,7 +70,7 @@ describe('TaskRepository', () => {
         description: 'This is a test task',
         status: TaskStatus.PENDING,
         priority: TaskPriority.MEDIUM,
-        dueDate: Date.now() + 86400000 // Tomorrow
+        dueDate: Date.now() + 86400000, // Tomorrow
       };
 
       const expectedTask: Task = {
@@ -77,7 +83,7 @@ describe('TaskRepository', () => {
         dueDate: createData.dueDate,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        completedAt: undefined
+        completedAt: undefined,
       };
 
       mockDb.all.mockResolvedValue([expectedTask]);
@@ -87,15 +93,17 @@ describe('TaskRepository', () => {
 
       // Verify
       expect(mockDb.insert).toHaveBeenCalledWith(tasks);
-      expect(mockDb.values).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'mock-uuid',
-        userId: 'user-123',
-        title: 'Test Task',
-        description: 'This is a test task',
-        status: TaskStatus.PENDING,
-        priority: TaskPriority.MEDIUM,
-        dueDate: createData.dueDate
-      }));
+      expect(mockDb.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'mock-uuid',
+          userId: 'user-123',
+          title: 'Test Task',
+          description: 'This is a test task',
+          status: TaskStatus.PENDING,
+          priority: TaskPriority.MEDIUM,
+          dueDate: createData.dueDate,
+        }),
+      );
       expect(result).toEqual(expectedTask);
     });
   });
@@ -106,7 +114,7 @@ describe('TaskRepository', () => {
       const updateData: UpdateTaskData = {
         title: 'Updated Task',
         description: 'Updated description',
-        status: TaskStatus.IN_PROGRESS
+        status: TaskStatus.IN_PROGRESS,
       };
 
       const expectedTask: Task = {
@@ -118,7 +126,7 @@ describe('TaskRepository', () => {
         priority: TaskPriority.MEDIUM,
         createdAt: 1000,
         updatedAt: Date.now(),
-        completedAt: undefined
+        completedAt: undefined,
       };
 
       mockDb.all.mockResolvedValue([expectedTask]);
@@ -128,12 +136,14 @@ describe('TaskRepository', () => {
 
       // Verify
       expect(mockDb.update).toHaveBeenCalledWith(tasks);
-      expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({
-        title: 'Updated Task',
-        description: 'Updated description',
-        status: TaskStatus.IN_PROGRESS,
-        updatedAt: expect.any(Number)
-      }));
+      expect(mockDb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Updated Task',
+          description: 'Updated description',
+          status: TaskStatus.IN_PROGRESS,
+          updatedAt: expect.any(Number),
+        }),
+      );
       expect(result).toEqual(expectedTask);
     });
 
@@ -142,8 +152,9 @@ describe('TaskRepository', () => {
       mockDb.all.mockResolvedValue([]);
 
       // Execute & Verify
-      await expect(repository.update(mockEnv, 'non-existent', { title: 'New Title' }))
-        .rejects.toThrow('Task with ID non-existent not found');
+      await expect(
+        repository.update(mockEnv, 'non-existent', { title: 'New Title' }),
+      ).rejects.toThrow('Task with ID non-existent not found');
     });
   });
 
@@ -159,7 +170,7 @@ describe('TaskRepository', () => {
         priority: TaskPriority.MEDIUM,
         createdAt: 1000,
         updatedAt: Date.now(),
-        completedAt: Date.now()
+        completedAt: Date.now(),
       };
 
       mockDb.all.mockResolvedValue([expectedTask]);
@@ -169,11 +180,13 @@ describe('TaskRepository', () => {
 
       // Verify
       expect(mockDb.update).toHaveBeenCalledWith(tasks);
-      expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({
-        status: TaskStatus.COMPLETED,
-        completedAt: expect.any(Number),
-        updatedAt: expect.any(Number)
-      }));
+      expect(mockDb.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: TaskStatus.COMPLETED,
+          completedAt: expect.any(Number),
+          updatedAt: expect.any(Number),
+        }),
+      );
       expect(result).toEqual(expectedTask);
     });
 
@@ -182,8 +195,9 @@ describe('TaskRepository', () => {
       mockDb.all.mockResolvedValue([]);
 
       // Execute & Verify
-      await expect(repository.completeTask(mockEnv, 'non-existent'))
-        .rejects.toThrow('Task with ID non-existent not found');
+      await expect(repository.completeTask(mockEnv, 'non-existent')).rejects.toThrow(
+        'Task with ID non-existent not found',
+      );
     });
   });
 
@@ -200,7 +214,7 @@ describe('TaskRepository', () => {
           priority: TaskPriority.HIGH,
           createdAt: 1000,
           updatedAt: 1000,
-          completedAt: undefined
+          completedAt: undefined,
         },
         {
           id: 'task-2',
@@ -211,8 +225,8 @@ describe('TaskRepository', () => {
           priority: TaskPriority.MEDIUM,
           createdAt: 2000,
           updatedAt: 2000,
-          completedAt: undefined
-        }
+          completedAt: undefined,
+        },
       ];
 
       mockDb.all.mockResolvedValue(expectedTasks);
@@ -238,14 +252,18 @@ describe('TaskRepository', () => {
           priority: TaskPriority.HIGH,
           createdAt: 1000,
           updatedAt: 1000,
-          completedAt: undefined
-        }
+          completedAt: undefined,
+        },
       ];
 
       mockDb.all.mockResolvedValue(expectedTasks);
 
       // Execute
-      const result = await repository.findByUserIdAndStatus(mockEnv, 'user-123', TaskStatus.PENDING);
+      const result = await repository.findByUserIdAndStatus(
+        mockEnv,
+        'user-123',
+        TaskStatus.PENDING,
+      );
 
       // Verify
       expect(result).toEqual(expectedTasks);

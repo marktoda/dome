@@ -38,29 +38,32 @@ export class MessageController {
     messages: TelegramMessage[],
   ): Promise<{ message: string; count: number }> {
     getLogger().info({ messageCount: messages.length }, 'Telegram message publishing started');
-    
-    try {
-      // Handle empty message array gracefully
-      if (messages.length === 0) {
-        getLogger().info({}, 'Empty message array received, no messages to publish');
-        return {
-          message: 'Successfully published 0 messages to the queue',
-          count: 0,
-        };
-      }
 
-      // Validate message count
-      if (messages.length > 100) {
-        getLogger().warn({
-          providedCount: messages.length,
-          maxAllowed: 100
-        }, 'Batch size exceeds maximum allowed');
-        throw new BatchValidationError('Batch size exceeds maximum allowed (100)', {
+    // Handle empty message array gracefully
+    if (messages.length === 0) {
+      getLogger().info({}, 'Empty message array received, no messages to publish');
+      return {
+        message: 'Successfully published 0 messages to the queue',
+        count: 0,
+      };
+    }
+
+    // Validate message count
+    if (messages.length > 100) {
+      getLogger().warn(
+        {
           providedCount: messages.length,
           maxAllowed: 100,
-        });
-      }
+        },
+        'Batch size exceeds maximum allowed',
+      );
+      throw new BatchValidationError('Batch size exceeds maximum allowed (100)', {
+        providedCount: messages.length,
+        maxAllowed: 100,
+      });
+    }
 
+    try {
       getLogger().debug({ messageCount: messages.length }, 'Publishing messages to queue');
       const count = await this.messageService.publishMessages(messages);
 
@@ -72,7 +75,7 @@ export class MessageController {
       };
     } catch (error) {
       getLogger().error({ err: error }, 'Error publishing Telegram messages');
-      
+
       // Re-throw known errors
       if (
         error instanceof ValidationError ||
@@ -84,9 +87,12 @@ export class MessageController {
 
       // Wrap unknown errors
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      getLogger().error({
-        originalError: errorMessage
-      }, 'Unknown error while processing message batch');
+      getLogger().error(
+        {
+          originalError: errorMessage,
+        },
+        'Unknown error while processing message batch',
+      );
       throw new MessageProcessingError(`Failed to process message batch: ${errorMessage}`);
     }
   }

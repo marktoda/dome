@@ -7,15 +7,15 @@ interface CFExecutionContext {
   waitUntil(promise: Promise<any>): void;
   passThroughOnException(): void;
 }
-import { 
-  NotificationService, 
-  EmailNotificationChannel, 
-  SlackNotificationChannel 
+import {
+  NotificationService,
+  EmailNotificationChannel,
+  SlackNotificationChannel,
 } from './services/notificationService';
-import { 
-  EventHandlerRegistry, 
-  ReminderDueEventHandler, 
-  IngestionCompleteEventHandler 
+import {
+  EventHandlerRegistry,
+  ReminderDueEventHandler,
+  IngestionCompleteEventHandler,
 } from './handlers/eventHandlers';
 
 /**
@@ -24,7 +24,7 @@ import {
 export interface Env {
   // D1 Database binding
   D1_DATABASE: D1Database;
-  
+
   // Environment variables
   ENVIRONMENT: string;
   VERSION: string;
@@ -40,20 +40,17 @@ export interface Env {
  */
 function initializeNotificationService(env: Env): NotificationService {
   const notificationService = new NotificationService();
-  
+
   // Add email notification channel
-  const emailChannel = new EmailNotificationChannel(
-    env.MAIL_FROM,
-    env.MAIL_FROM_NAME
-  );
+  const emailChannel = new EmailNotificationChannel(env.MAIL_FROM, env.MAIL_FROM_NAME);
   notificationService.addChannel(emailChannel);
-  
+
   // Add Slack notification channel if webhook URL is configured
   if (env.SLACK_WEBHOOK_URL) {
     const slackChannel = new SlackNotificationChannel(env.SLACK_WEBHOOK_URL);
     notificationService.addChannel(slackChannel);
   }
-  
+
   return notificationService;
 }
 
@@ -62,13 +59,15 @@ function initializeNotificationService(env: Env): NotificationService {
  * @param notificationService The notification service to use
  * @returns Configured event handler registry
  */
-function initializeEventHandlerRegistry(notificationService: NotificationService): EventHandlerRegistry {
+function initializeEventHandlerRegistry(
+  notificationService: NotificationService,
+): EventHandlerRegistry {
   const registry = new EventHandlerRegistry();
-  
+
   // Register handlers for different event types
   registry.registerHandler(new ReminderDueEventHandler(notificationService));
   registry.registerHandler(new IngestionCompleteEventHandler(notificationService));
-  
+
   return registry;
 }
 
@@ -87,46 +86,46 @@ export default {
       {
         trigger: 'queue',
         batchSize: batch.messages.length,
-        environment: env.ENVIRONMENT
+        environment: env.ENVIRONMENT,
       },
       async () => {
         getLogger().info({ batchSize: batch.messages.length }, 'Processing message batch');
-        
+
         // Initialize services
         const notificationService = initializeNotificationService(env);
         const eventHandlerRegistry = initializeEventHandlerRegistry(notificationService);
-        
+
         // Process each message in the batch
         for (const message of batch.messages) {
           try {
             getLogger().info({ messageId: message.id }, 'Processing message');
-            
+
             // Parse the message body as JSON
             const rawEvent = JSON.parse(message.body);
-            
+
             // Validate the event against the schema
             const event = EventSchema.parse(rawEvent) as Event;
-            
+
             // Handle the event with the appropriate handler
             await eventHandlerRegistry.handleEvent(event, env);
-            
+
             // Acknowledge the message as processed
             batch.ack(message.id);
-            
+
             getLogger().info({ messageId: message.id }, 'Successfully processed message');
           } catch (error) {
             getLogger().error({ messageId: message.id, error }, 'Error processing message');
-            
+
             // Acknowledge the message to remove it from the queue
             // In a production environment, you might want to implement a dead-letter queue
             // or other error handling mechanism instead of just acknowledging
             batch.ack(message.id);
           }
         }
-        
+
         getLogger().info('Batch processing completed');
       },
-      ctx
+      ctx,
     );
   },
 };

@@ -40,7 +40,7 @@ vi.mock('../src/handlers/eventHandlers', () => ({
 vi.mock('@dome/common', () => ({
   Event: {},
   EventSchema: {
-    parse: vi.fn().mockImplementation((data) => data),
+    parse: vi.fn().mockImplementation(data => data),
   },
   QueueService: {},
   MessageBatch: {},
@@ -112,7 +112,7 @@ describe('dome-notify worker', () => {
 
       // Assert
       expect(NotificationService).toHaveBeenCalled();
-      
+
       const notificationServiceInstance = (NotificationService as any).mock.results[0].value;
       expect(notificationServiceInstance.addChannel).toHaveBeenCalledTimes(2); // Email and Slack
     });
@@ -123,7 +123,7 @@ describe('dome-notify worker', () => {
 
       // Assert
       expect(EventHandlerRegistry).toHaveBeenCalled();
-      
+
       const eventHandlerRegistryInstance = (EventHandlerRegistry as any).mock.results[0].value;
       expect(eventHandlerRegistryInstance.registerHandler).toHaveBeenCalledTimes(2); // ReminderDue and IngestionComplete
     });
@@ -134,10 +134,10 @@ describe('dome-notify worker', () => {
 
       // Assert
       expect(EventSchema.parse).toHaveBeenCalledTimes(1);
-      
+
       const eventHandlerRegistryInstance = (EventHandlerRegistry as any).mock.results[0].value;
       expect(eventHandlerRegistryInstance.handleEvent).toHaveBeenCalledTimes(1);
-      
+
       expect(mockMessageBatch.ack).toHaveBeenCalledTimes(1);
       expect(mockMessageBatch.ack).toHaveBeenCalledWith('msg1');
     });
@@ -182,11 +182,9 @@ describe('dome-notify worker', () => {
 
       // Assert
       expect(EventSchema.parse).not.toHaveBeenCalled();
-      
+
       const eventHandlerRegistryInstance = (EventHandlerRegistry as any).mock.results[0].value;
       expect(eventHandlerRegistryInstance.handleEvent).not.toHaveBeenCalled();
     });
   });
 });
-
-

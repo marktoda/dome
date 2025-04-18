@@ -26,7 +26,7 @@ export interface AuthOptions {
 
 /**
  * Creates an authentication middleware that validates API keys
- * 
+ *
  * @param options Authentication options
  * @returns Middleware handler
  */
@@ -40,7 +40,7 @@ export function createAuthMiddleware(options?: AuthOptions): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     // Get environment
     const environment = c.env?.ENVIRONMENT || 'development';
-    
+
     // Skip authentication in development mode if configured
     if (skipInDevelopment && environment === 'development') {
       await next();
@@ -49,7 +49,7 @@ export function createAuthMiddleware(options?: AuthOptions): MiddlewareHandler {
 
     // Get API key from header
     const apiKey = c.req.header(headerName);
-    
+
     // Check if API key is provided
     if (!apiKey) {
       throw new UnauthorizedError('API key is required');
@@ -57,7 +57,7 @@ export function createAuthMiddleware(options?: AuthOptions): MiddlewareHandler {
 
     // Get expected API key from environment
     const expectedApiKey = c.env?.[envVarName];
-    
+
     // Check if API key is valid
     if (!expectedApiKey || apiKey !== expectedApiKey) {
       throw new UnauthorizedError('Invalid API key');
@@ -71,14 +71,14 @@ export function createAuthMiddleware(options?: AuthOptions): MiddlewareHandler {
 /**
  * Creates a simple authentication middleware for development
  * This is a placeholder that will be replaced with a proper authentication system in later stages
- * 
+ *
  * @returns Middleware handler
  */
 export function createSimpleAuthMiddleware(): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     // Get environment
     const environment = c.env?.ENVIRONMENT || 'development';
-    
+
     // Skip authentication in development mode
     if (environment === 'development') {
       await next();
@@ -87,7 +87,7 @@ export function createSimpleAuthMiddleware(): MiddlewareHandler {
 
     // Get API key from header
     const apiKey = c.req.header('x-api-key');
-    
+
     // Check if API key is provided
     if (!apiKey) {
       throw new UnauthorizedError('API key is required');

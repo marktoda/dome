@@ -14,7 +14,7 @@ const mockHono = {
 // Mock the hono/context-storage module
 vi.mock('hono/context-storage', () => ({
   contextStorage: vi.fn(),
-  getContext: vi.fn().mockReturnValue(null)
+  getContext: vi.fn().mockReturnValue(null),
 }));
 
 describe('logging middleware', () => {
@@ -31,19 +31,19 @@ describe('logging middleware', () => {
   it('should create middleware with custom options', () => {
     const idFactory = () => 'custom-id';
     const extraBindings = { app: 'test-app' };
-    
+
     const middleware = buildLoggingMiddleware({
       idFactory,
       extraBindings,
     });
-    
+
     expect(middleware).toBeDefined();
     expect(typeof middleware).toBe('function');
   });
 
   it('should initialize logging with Hono app', () => {
     initLogging(mockHono as any);
-    
+
     expect(mockHono.use).toHaveBeenCalledTimes(2);
     expect(mockHono.use.mock.calls[1][0]).toBe('*');
   });

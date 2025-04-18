@@ -20,10 +20,10 @@ export function createDashboardScreen(layout: BaseLayoutElements): Screen {
   });
 
   // Create a grid for the dashboard components
-  const grid = new contrib.grid({ 
-    rows: 12, 
-    cols: 12, 
-    screen: layout.screen 
+  const grid = new contrib.grid({
+    rows: 12,
+    cols: 12,
+    screen: layout.screen,
   });
 
   // Create a welcome message
@@ -33,7 +33,8 @@ export function createDashboardScreen(layout: BaseLayoutElements): Screen {
     left: 0,
     width: '100%',
     height: 3,
-    content: '{center}{bold}Welcome to Dome CLI{/bold}{/center}\n{center}AI-powered personal memory assistant{/center}',
+    content:
+      '{center}{bold}Welcome to Dome CLI{/bold}{/center}\n{center}AI-powered personal memory assistant{/center}',
     tags: true,
     style: {
       fg: 'white',
@@ -70,7 +71,8 @@ export function createDashboardScreen(layout: BaseLayoutElements): Screen {
     right: 0,
     width: '50%',
     height: 7,
-    content: '{bold}Recent Activity{/bold}\n\n• Added note "Meeting notes" (2 hours ago)\n• Completed task "Send email" (5 hours ago)\n• Chat session (yesterday)',
+    content:
+      '{bold}Recent Activity{/bold}\n\n• Added note "Meeting notes" (2 hours ago)\n• Completed task "Send email" (5 hours ago)\n• Chat session (yesterday)',
     tags: true,
     border: {
       type: 'line',
@@ -93,7 +95,8 @@ export function createDashboardScreen(layout: BaseLayoutElements): Screen {
     left: 0,
     width: '100%',
     height: 5,
-    content: '{bold}Quick Actions{/bold}\n\n• Press {bold}c{/bold} to start a new chat\n• Press {bold}n{/bold} to add a new note\n• Press {bold}t{/bold} to add a new task',
+    content:
+      '{bold}Quick Actions{/bold}\n\n• Press {bold}c{/bold} to start a new chat\n• Press {bold}n{/bold} to add a new note\n• Press {bold}t{/bold} to add a new task',
     tags: true,
     border: {
       type: 'line',

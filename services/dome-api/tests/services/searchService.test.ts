@@ -13,9 +13,9 @@ jest.mock('../../src/repositories/noteRepository', () => {
   return {
     NoteRepository: jest.fn().mockImplementation(() => {
       return {
-        findById: jest.fn()
+        findById: jest.fn(),
       };
-    })
+    }),
   };
 });
 
@@ -25,11 +25,11 @@ describe('SearchService', () => {
     D1_DATABASE: {
       prepare: jest.fn().mockReturnThis(),
       bind: jest.fn().mockReturnThis(),
-      first: jest.fn()
+      first: jest.fn(),
     } as unknown as D1Database,
     VECTORIZE: {} as VectorizeIndex,
     RAW: {} as R2Bucket,
-    EVENTS: {} as Queue<any>
+    EVENTS: {} as Queue<any>,
   };
 
   // Mock data
@@ -43,8 +43,8 @@ describe('SearchService', () => {
       metadata: {
         userId: mockUserId,
         noteId: 'note-1',
-        createdAt: 1617235678000
-      }
+        createdAt: 1617235678000,
+      },
     },
     {
       id: 'vector-2',
@@ -52,9 +52,9 @@ describe('SearchService', () => {
       metadata: {
         userId: mockUserId,
         noteId: 'note-2',
-        createdAt: 1617235679000
-      }
-    }
+        createdAt: 1617235679000,
+      },
+    },
   ];
   const mockNotes = [
     {
@@ -65,7 +65,7 @@ describe('SearchService', () => {
       contentType: 'text/plain',
       createdAt: 1617235678000,
       updatedAt: 1617235678000,
-      embeddingStatus: 'completed'
+      embeddingStatus: 'completed',
     },
     {
       id: 'note-2',
@@ -75,27 +75,26 @@ describe('SearchService', () => {
       contentType: 'text/plain',
       createdAt: 1617235679000,
       updatedAt: 1617235679000,
-      embeddingStatus: 'completed'
-    }
+      embeddingStatus: 'completed',
+    },
   ];
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Mock embeddingService.generateEmbedding
     (embeddingService.generateEmbedding as jest.Mock).mockResolvedValue(mockEmbedding);
-    
+
     // Mock vectorizeService.queryVectors
     (vectorizeService.queryVectors as jest.Mock).mockResolvedValue(mockSearchResults);
-    
+
     // Mock noteRepository.findById
     const mockNoteRepo = searchService['noteRepository'];
-    mockNoteRepo.findById = jest.fn()
-      .mockImplementation((env, id) => {
-        const note = mockNotes.find(n => n.id === id);
-        if (note) return Promise.resolve(note);
-        return Promise.resolve(null);
-      });
+    mockNoteRepo.findById = jest.fn().mockImplementation((env, id) => {
+      const note = mockNotes.find(n => n.id === id);
+      if (note) return Promise.resolve(note);
+      return Promise.resolve(null);
+    });
   });
 
   describe('searchNotes', () => {
@@ -104,7 +103,7 @@ describe('SearchService', () => {
       const options = {
         userId: mockUserId,
         query: mockQuery,
-        limit: 10
+        limit: 10,
       };
 
       // Act
@@ -112,14 +111,10 @@ describe('SearchService', () => {
 
       // Assert
       expect(embeddingService.generateEmbedding).toHaveBeenCalledWith(mockEnv, mockQuery);
-      expect(vectorizeService.queryVectors).toHaveBeenCalledWith(
-        mockEnv,
-        mockEmbedding,
-        {
-          topK: 10,
-          filter: { userId: mockUserId }
-        }
-      );
+      expect(vectorizeService.queryVectors).toHaveBeenCalledWith(mockEnv, mockEmbedding, {
+        topK: 10,
+        filter: { userId: mockUserId },
+      });
       expect(results.length).toBe(2);
       expect(results[0].id).toBe('note-1');
       expect(results[0].score).toBe(0.95);
@@ -133,7 +128,7 @@ describe('SearchService', () => {
         userId: mockUserId,
         query: mockQuery,
         contentType: 'text/plain',
-        limit: 10
+        limit: 10,
       };
 
       // Act
@@ -154,27 +149,23 @@ describe('SearchService', () => {
         query: mockQuery,
         startDate,
         endDate,
-        limit: 10
+        limit: 10,
       };
 
       // Act
       const results = await searchService.searchNotes(mockEnv, options);
 
       // Assert
-      expect(vectorizeService.queryVectors).toHaveBeenCalledWith(
-        mockEnv,
-        mockEmbedding,
-        {
-          topK: 10,
-          filter: {
-            userId: mockUserId,
-            createdAt: {
-              $gte: startDate,
-              $lte: endDate
-            }
-          }
-        }
-      );
+      expect(vectorizeService.queryVectors).toHaveBeenCalledWith(mockEnv, mockEmbedding, {
+        topK: 10,
+        filter: {
+          userId: mockUserId,
+          createdAt: {
+            $gte: startDate,
+            $lte: endDate,
+          },
+        },
+      });
       expect(results.length).toBe(2);
     });
 
@@ -183,14 +174,13 @@ describe('SearchService', () => {
       const options = {
         userId: mockUserId,
         query: mockQuery,
-        limit: 10
+        limit: 10,
       };
       const error = new Error('Embedding error');
       (embeddingService.generateEmbedding as jest.Mock).mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(searchService.searchNotes(mockEnv, options))
-        .rejects.toThrow(ServiceError);
+      await expect(searchService.searchNotes(mockEnv, options)).rejects.toThrow(ServiceError);
     });
 
     it('should throw ServiceError when vector search fails', async () => {
@@ -198,14 +188,13 @@ describe('SearchService', () => {
       const options = {
         userId: mockUserId,
         query: mockQuery,
-        limit: 10
+        limit: 10,
       };
       const error = new Error('Vector search error');
       (vectorizeService.queryVectors as jest.Mock).mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(searchService.searchNotes(mockEnv, options))
-        .rejects.toThrow(ServiceError);
+      await expect(searchService.searchNotes(mockEnv, options)).rejects.toThrow(ServiceError);
     });
   });
 
@@ -215,9 +204,9 @@ describe('SearchService', () => {
       const options = {
         userId: mockUserId,
         query: mockQuery,
-        limit: 10
+        limit: 10,
       };
-      
+
       // Mock searchNotes and searchNotePages
       jest.spyOn(searchService, 'searchNotes').mockResolvedValueOnce([
         {
@@ -227,10 +216,10 @@ describe('SearchService', () => {
           score: 0.95,
           createdAt: 1617235678000,
           updatedAt: 1617235678000,
-          contentType: 'text/plain'
-        }
+          contentType: 'text/plain',
+        },
       ]);
-      
+
       jest.spyOn(searchService, 'searchNotePages').mockResolvedValueOnce([
         {
           id: 'note-2',
@@ -239,8 +228,8 @@ describe('SearchService', () => {
           score: 0.9,
           createdAt: 1617235679000,
           updatedAt: 1617235679000,
-          contentType: 'text/plain'
-        }
+          contentType: 'text/plain',
+        },
       ]);
 
       // Act
@@ -261,9 +250,9 @@ describe('SearchService', () => {
       const options = {
         userId: mockUserId,
         query: mockQuery,
-        limit: 10
+        limit: 10,
       };
-      
+
       // Mock searchNotes and searchNotePages with overlapping results
       jest.spyOn(searchService, 'searchNotes').mockResolvedValueOnce([
         {
@@ -273,10 +262,10 @@ describe('SearchService', () => {
           score: 0.95,
           createdAt: 1617235678000,
           updatedAt: 1617235678000,
-          contentType: 'text/plain'
-        }
+          contentType: 'text/plain',
+        },
       ]);
-      
+
       jest.spyOn(searchService, 'searchNotePages').mockResolvedValueOnce([
         {
           id: 'note-1', // Same ID as in searchNotes result
@@ -285,8 +274,8 @@ describe('SearchService', () => {
           score: 0.98, // Higher score
           createdAt: 1617235678000,
           updatedAt: 1617235678000,
-          contentType: 'text/plain'
-        }
+          contentType: 'text/plain',
+        },
       ]);
 
       // Act
@@ -303,9 +292,9 @@ describe('SearchService', () => {
       const options = {
         userId: mockUserId,
         query: mockQuery,
-        limit: 1 // Only want 1 result
+        limit: 1, // Only want 1 result
       };
-      
+
       // Mock searchNotes and searchNotePages with multiple results
       jest.spyOn(searchService, 'searchNotes').mockResolvedValueOnce([
         {
@@ -315,10 +304,10 @@ describe('SearchService', () => {
           score: 0.95,
           createdAt: 1617235678000,
           updatedAt: 1617235678000,
-          contentType: 'text/plain'
-        }
+          contentType: 'text/plain',
+        },
       ]);
-      
+
       jest.spyOn(searchService, 'searchNotePages').mockResolvedValueOnce([
         {
           id: 'note-2',
@@ -327,8 +316,8 @@ describe('SearchService', () => {
           score: 0.9,
           createdAt: 1617235679000,
           updatedAt: 1617235679000,
-          contentType: 'text/plain'
-        }
+          contentType: 'text/plain',
+        },
       ]);
 
       // Act

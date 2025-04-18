@@ -99,7 +99,7 @@ export function setBaseUrl(baseUrl: string): void {
  */
 export function setEnvironment(environment: 'development' | 'production'): void {
   config.set('environment', environment);
-  
+
   // Update the base URL based on the environment
   if (environment === 'production') {
     config.set('baseUrl', 'https://api.dome.example.com'); // Replace with actual production URL
@@ -132,15 +132,15 @@ export function saveConfig(configData: ConfigSchema): void {
   if (configData.apiKey) {
     config.set('apiKey', configData.apiKey);
   }
-  
+
   if (configData.baseUrl) {
     config.set('baseUrl', configData.baseUrl);
   }
-  
+
   if (configData.environment) {
     config.set('environment', configData.environment);
   }
-  
+
   if (configData.theme) {
     config.set('theme', configData.theme);
   }

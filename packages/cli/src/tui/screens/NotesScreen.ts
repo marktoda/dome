@@ -88,7 +88,8 @@ export function createNotesScreen(layout: BaseLayoutElements): Screen {
     left: 0,
     width: '100%',
     height: 3,
-    content: '{bold}Commands:{/bold} [a] Add Note | [d] Delete Note | [e] Edit Note | [r] Refresh | [Esc] Back to Menu',
+    content:
+      '{bold}Commands:{/bold} [a] Add Note | [d] Delete Note | [e] Edit Note | [r] Refresh | [Esc] Back to Menu',
     tags: true,
     border: {
       type: 'line',
@@ -232,24 +233,26 @@ export function createNotesScreen(layout: BaseLayoutElements): Screen {
   submitButton.on('press', async () => {
     const title = titleInput.getValue();
     const content = contentInput.getValue();
-    
+
     if (content.trim()) {
       try {
         await addNote(title, content);
-        
+
         // Clear form and hide it
         titleInput.clearValue();
         contentInput.clearValue();
         addNoteForm.hide();
-        
+
         // Refresh notes list
         await loadNotes();
-        
+
         layout.screen.render();
       } catch (err) {
         // Show error message
         layout.statusBar.setContent(
-          ` {bold}Error:{/bold} ${err instanceof Error ? err.message : String(err)} | Press {bold}q{/bold} to quit | {bold}?{/bold} for help`
+          ` {bold}Error:{/bold} ${
+            err instanceof Error ? err.message : String(err)
+          } | Press {bold}q{/bold} to quit | {bold}?{/bold} for help`,
         );
         layout.screen.render();
       }
@@ -268,20 +271,20 @@ export function createNotesScreen(layout: BaseLayoutElements): Screen {
   async function loadNotes() {
     try {
       const notes = await listNotes();
-      
+
       // Update notes list
-      notesListBox.setItems(
-        notes.map(note => note.title || `Note ${note.id.substring(0, 8)}`)
-      );
-      
+      notesListBox.setItems(notes.map(note => note.title || `Note ${note.id.substring(0, 8)}`));
+
       // Store the full notes data
       (notesListBox as any).notesData = notes;
-      
+
       layout.screen.render();
     } catch (err) {
       notesListBox.setItems(['Error loading notes']);
       layout.statusBar.setContent(
-        ` {bold}Error:{/bold} ${err instanceof Error ? err.message : String(err)} | Press {bold}q{/bold} to quit | {bold}?{/bold} for help`
+        ` {bold}Error:{/bold} ${
+          err instanceof Error ? err.message : String(err)
+        } | Press {bold}q{/bold} to quit | {bold}?{/bold} for help`,
       );
       layout.screen.render();
     }
@@ -294,9 +297,9 @@ export function createNotesScreen(layout: BaseLayoutElements): Screen {
       const note = notes[index];
       noteContentBox.setContent(
         `{bold}Title:{/bold} ${note.title || '(No title)'}\n` +
-        `{bold}Created:{/bold} ${new Date(note.createdAt).toLocaleString()}\n` +
-        `{bold}Tags:{/bold} ${note.tags?.join(', ') || 'None'}\n\n` +
-        `${note.content}`
+          `{bold}Created:{/bold} ${new Date(note.createdAt).toLocaleString()}\n` +
+          `{bold}Tags:{/bold} ${note.tags?.join(', ') || 'None'}\n\n` +
+          `${note.content}`,
       );
       layout.screen.render();
     }
@@ -329,7 +332,7 @@ export function createNotesScreen(layout: BaseLayoutElements): Screen {
     onFocus: async () => {
       // Load notes when the screen is shown
       await loadNotes();
-      
+
       // Focus the notes list
       notesListBox.focus();
     },

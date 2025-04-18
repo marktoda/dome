@@ -29,22 +29,24 @@ export function addCommand(program: Command): void {
 
           // Read file content
           const fileContent = fs.readFileSync(content, 'utf-8');
-          
+
           // Add file content
           await addContent(fileContent);
-          
+
           spinner.succeed(`Added file: ${path.basename(content)}`);
         } else {
           // Add text content
           const spinner = createSpinner('Adding content');
           spinner.start();
-          
+
           await addContent(content);
-          
+
           spinner.succeed('Content added successfully');
         }
       } catch (err) {
-        console.log(error(`Failed to add content: ${err instanceof Error ? err.message : String(err)}`));
+        console.log(
+          error(`Failed to add content: ${err instanceof Error ? err.message : String(err)}`),
+        );
         process.exit(1);
       }
     });

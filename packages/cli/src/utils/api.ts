@@ -14,7 +14,7 @@ export class ApiClient {
    */
   constructor(configOverride?: ReturnType<typeof loadConfig>) {
     this.config = configOverride || loadConfig();
-    
+
     this.client = axios.create({
       baseURL: this.config.baseUrl,
       headers: {
@@ -23,7 +23,7 @@ export class ApiClient {
     });
 
     // Add request interceptor to add the API key to all requests
-    this.client.interceptors.request.use((config) => {
+    this.client.interceptors.request.use(config => {
       if (isAuthenticated()) {
         config.headers['x-api-key'] = this.config.apiKey;
         // Add user ID header for controller-level authentication
@@ -98,8 +98,10 @@ export function resetApiInstance(): void {
 // Backward compatibility
 export const api = {
   get: (url: string, config?: AxiosRequestConfig) => getApiInstance().get(url, config),
-  post: (url: string, data?: any, config?: AxiosRequestConfig) => getApiInstance().post(url, data, config),
-  put: (url: string, data?: any, config?: AxiosRequestConfig) => getApiInstance().put(url, data, config),
+  post: (url: string, data?: any, config?: AxiosRequestConfig) =>
+    getApiInstance().post(url, data, config),
+  put: (url: string, data?: any, config?: AxiosRequestConfig) =>
+    getApiInstance().put(url, data, config),
   delete: (url: string, config?: AxiosRequestConfig) => getApiInstance().delete(url, config),
 };
 

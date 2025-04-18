@@ -93,7 +93,7 @@ export function formatDate(date: Date | string | number): string {
  * @returns The formatted list
  */
 export function formatList(items: string[]): string {
-  return items.map((item) => `  ${chalk.cyan('•')} ${item}`).join('\n');
+  return items.map(item => `  ${chalk.cyan('•')} ${item}`).join('\n');
 }
 
 /**
@@ -115,23 +115,17 @@ export function formatKeyValue(key: string, value: string): string {
 export function formatTable(headers: string[], rows: string[][]): string {
   // Calculate column widths
   const columnWidths = headers.map((header, index) => {
-    const maxRowWidth = Math.max(...rows.map((row) => row[index]?.length || 0));
+    const maxRowWidth = Math.max(...rows.map(row => row[index]?.length || 0));
     return Math.max(header.length, maxRowWidth);
   });
 
   // Format headers
-  const headerRow = headers
-    .map((header, index) => header.padEnd(columnWidths[index]))
-    .join(' | ');
-  const separator = columnWidths
-    .map((width) => '-'.repeat(width))
-    .join('-+-');
+  const headerRow = headers.map((header, index) => header.padEnd(columnWidths[index])).join(' | ');
+  const separator = columnWidths.map(width => '-'.repeat(width)).join('-+-');
 
   // Format rows
-  const formattedRows = rows.map((row) =>
-    row
-      .map((cell, index) => (cell || '').padEnd(columnWidths[index]))
-      .join(' | ')
+  const formattedRows = rows.map(row =>
+    row.map((cell, index) => (cell || '').padEnd(columnWidths[index])).join(' | '),
   );
 
   return [headerRow, separator, ...formattedRows].join('\n');

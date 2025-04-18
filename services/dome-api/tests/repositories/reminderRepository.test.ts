@@ -1,18 +1,23 @@
 import { ReminderRepository } from '../../src/repositories/reminderRepository';
-import { Reminder, CreateReminderData, UpdateReminderData, DeliveryMethod } from '../../src/models/reminder';
+import {
+  Reminder,
+  CreateReminderData,
+  UpdateReminderData,
+  DeliveryMethod,
+} from '../../src/models/reminder';
 import { reminders } from '../../src/db/schema';
 import { getDb } from '../../src/db';
 import { Bindings } from '../../src/types';
 
 // Mock the uuid module
 jest.mock('uuid', () => ({
-  v4: jest.fn(() => 'mock-uuid')
+  v4: jest.fn(() => 'mock-uuid'),
 }));
 
 // Mock the database
 jest.mock('../../src/db', () => ({
   getDb: jest.fn(),
-  handleDatabaseError: jest.fn((error) => error)
+  handleDatabaseError: jest.fn(error => error),
 }));
 
 describe('ReminderRepository', () => {
@@ -37,7 +42,7 @@ describe('ReminderRepository', () => {
       returning: jest.fn().mockReturnThis(),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
-      delete: jest.fn().mockReturnThis()
+      delete: jest.fn().mockReturnThis(),
     };
 
     // Mock getDb to return our mock
@@ -48,7 +53,7 @@ describe('ReminderRepository', () => {
       D1_DATABASE: {} as D1Database,
       VECTORIZE: {} as VectorizeIndex,
       RAW: {} as R2Bucket,
-      EVENTS: {} as Queue<any>
+      EVENTS: {} as Queue<any>,
     };
 
     // Create repository
@@ -62,7 +67,7 @@ describe('ReminderRepository', () => {
       const createData: CreateReminderData = {
         taskId: 'task-123',
         remindAt: now + 3600000, // 1 hour from now
-        deliveryMethod: DeliveryMethod.EMAIL
+        deliveryMethod: DeliveryMethod.EMAIL,
       };
 
       const expectedReminder: Reminder = {
@@ -71,7 +76,7 @@ describe('ReminderRepository', () => {
         remindAt: now + 3600000,
         delivered: false,
         deliveryMethod: DeliveryMethod.EMAIL,
-        createdAt: now
+        createdAt: now,
       };
 
       mockDb.all.mockResolvedValue([expectedReminder]);
@@ -81,13 +86,15 @@ describe('ReminderRepository', () => {
 
       // Verify
       expect(mockDb.insert).toHaveBeenCalledWith(reminders);
-      expect(mockDb.values).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'mock-uuid',
-        taskId: 'task-123',
-        remindAt: now + 3600000,
-        delivered: false,
-        deliveryMethod: DeliveryMethod.EMAIL
-      }));
+      expect(mockDb.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'mock-uuid',
+          taskId: 'task-123',
+          remindAt: now + 3600000,
+          delivered: false,
+          deliveryMethod: DeliveryMethod.EMAIL,
+        }),
+      );
       expect(result).toEqual(expectedReminder);
     });
   });
@@ -97,7 +104,7 @@ describe('ReminderRepository', () => {
       // Setup
       const updateData: UpdateReminderData = {
         remindAt: Date.now() + 7200000, // 2 hours from now
-        deliveryMethod: DeliveryMethod.SLACK
+        deliveryMethod: DeliveryMethod.SLACK,
       };
 
       const expectedReminder: Reminder = {
@@ -106,7 +113,7 @@ describe('ReminderRepository', () => {
         remindAt: updateData.remindAt!,
         delivered: false,
         deliveryMethod: DeliveryMethod.SLACK,
-        createdAt: 1000
+        createdAt: 1000,
       };
 
       mockDb.all.mockResolvedValue([expectedReminder]);
@@ -125,8 +132,9 @@ describe('ReminderRepository', () => {
       mockDb.all.mockResolvedValue([]);
 
       // Execute & Verify
-      await expect(repository.update(mockEnv, 'non-existent', { remindAt: Date.now() }))
-        .rejects.toThrow('Reminder with ID non-existent not found');
+      await expect(
+        repository.update(mockEnv, 'non-existent', { remindAt: Date.now() }),
+      ).rejects.toThrow('Reminder with ID non-existent not found');
     });
   });
 
@@ -139,7 +147,7 @@ describe('ReminderRepository', () => {
         remindAt: 1000,
         delivered: true,
         deliveryMethod: DeliveryMethod.EMAIL,
-        createdAt: 1000
+        createdAt: 1000,
       };
 
       mockDb.all.mockResolvedValue([expectedReminder]);
@@ -158,8 +166,9 @@ describe('ReminderRepository', () => {
       mockDb.all.mockResolvedValue([]);
 
       // Execute & Verify
-      await expect(repository.markDelivered(mockEnv, 'non-existent'))
-        .rejects.toThrow('Reminder with ID non-existent not found');
+      await expect(repository.markDelivered(mockEnv, 'non-existent')).rejects.toThrow(
+        'Reminder with ID non-existent not found',
+      );
     });
   });
 
@@ -173,7 +182,7 @@ describe('ReminderRepository', () => {
           remindAt: 1000,
           delivered: false,
           deliveryMethod: DeliveryMethod.EMAIL,
-          createdAt: 1000
+          createdAt: 1000,
         },
         {
           id: 'reminder-2',
@@ -181,8 +190,8 @@ describe('ReminderRepository', () => {
           remindAt: 2000,
           delivered: false,
           deliveryMethod: DeliveryMethod.SLACK,
-          createdAt: 1500
-        }
+          createdAt: 1500,
+        },
       ];
 
       mockDb.all.mockResolvedValue(expectedReminders);
@@ -206,7 +215,7 @@ describe('ReminderRepository', () => {
           remindAt: now - 1000, // 1 second ago
           delivered: false,
           deliveryMethod: DeliveryMethod.EMAIL,
-          createdAt: 1000
+          createdAt: 1000,
         },
         {
           id: 'reminder-2',
@@ -214,8 +223,8 @@ describe('ReminderRepository', () => {
           remindAt: now - 2000, // 2 seconds ago
           delivered: false,
           deliveryMethod: DeliveryMethod.SLACK,
-          createdAt: 1500
-        }
+          createdAt: 1500,
+        },
       ];
 
       mockDb.all.mockResolvedValue(expectedReminders);

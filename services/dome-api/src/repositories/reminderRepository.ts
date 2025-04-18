@@ -1,5 +1,10 @@
 import { BaseRepository } from './baseRepository';
-import { Reminder, CreateReminderData, UpdateReminderData, DeliveryMethod } from '../models/reminder';
+import {
+  Reminder,
+  CreateReminderData,
+  UpdateReminderData,
+  DeliveryMethod,
+} from '../models/reminder';
 import { reminders } from '../db/schema';
 import { eq, and, lte } from 'drizzle-orm';
 import { getDb, handleDatabaseError } from '../db';
@@ -9,7 +14,11 @@ import { v4 as uuidv4 } from 'uuid';
 /**
  * Repository for Reminder operations
  */
-export class ReminderRepository extends BaseRepository<Reminder, CreateReminderData, UpdateReminderData> {
+export class ReminderRepository extends BaseRepository<
+  Reminder,
+  CreateReminderData,
+  UpdateReminderData
+> {
   /**
    * Constructor
    */
@@ -31,7 +40,7 @@ export class ReminderRepository extends BaseRepository<Reminder, CreateReminderD
         remindAt: data.remindAt,
         delivered: false,
         deliveryMethod: data.deliveryMethod || DeliveryMethod.EMAIL,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
 
       const db = getDb(env);
@@ -58,11 +67,11 @@ export class ReminderRepository extends BaseRepository<Reminder, CreateReminderD
         .where(eq(reminders.id, id))
         .returning()
         .all();
-      
+
       if (result.length === 0) {
         throw new Error(`Reminder with ID ${id} not found`);
       }
-      
+
       return result[0] as Reminder;
     } catch (error) {
       throw handleDatabaseError(error, `update reminder(${id})`);
@@ -84,11 +93,11 @@ export class ReminderRepository extends BaseRepository<Reminder, CreateReminderD
         .where(eq(reminders.id, id))
         .returning()
         .all();
-      
+
       if (result.length === 0) {
         throw new Error(`Reminder with ID ${id} not found`);
       }
-      
+
       return result[0] as Reminder;
     } catch (error) {
       throw handleDatabaseError(error, `mark reminder delivered(${id})`);
@@ -117,14 +126,9 @@ export class ReminderRepository extends BaseRepository<Reminder, CreateReminderD
       const results = await db
         .select()
         .from(reminders)
-        .where(
-          and(
-            eq(reminders.delivered, false),
-            lte(reminders.remindAt, currentTime)
-          )
-        )
+        .where(and(eq(reminders.delivered, false), lte(reminders.remindAt, currentTime)))
         .all();
-      
+
       return results as Reminder[];
     } catch (error) {
       throw handleDatabaseError(error, `findDueReminders(${currentTime})`);

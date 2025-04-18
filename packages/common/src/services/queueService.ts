@@ -110,44 +110,44 @@ export class QueueService {
    * @param handler The handler function to process the event
    */
   async processMessage(
-    message: MessageBatch, 
-    handler: (event: Event) => Promise<void>
+    message: MessageBatch,
+    handler: (event: Event) => Promise<void>,
   ): Promise<void> {
     // Process each message in the batch
     for (const msg of message.messages) {
       try {
         // Parse the message body as JSON
         const rawEvent = JSON.parse(msg.body);
-        
+
         // Validate the event against the schema
         const event = EventSchema.parse(rawEvent);
-        
+
         // Process the event with the handler
         await handler(event);
-        
+
         // Acknowledge the message as processed
         message.ack(msg.id);
       } catch (error) {
         console.error('Error processing queue message:', error);
-        
+
         // Parse the message body to get the event
         try {
           const rawEvent = JSON.parse(msg.body);
-          
+
           // Check if we should retry the event
           if (rawEvent.attempts < this.maxRetries) {
             // Increment the retry count
             rawEvent.attempts = (rawEvent.attempts || 0) + 1;
-            
+
             // Re-publish the event with incremented retry count
             await this.queueBinding.send(JSON.stringify(rawEvent));
-            
+
             // Acknowledge the original message
             message.ack(msg.id);
           } else {
             // Max retries reached, acknowledge the message to remove it from the queue
             message.ack(msg.id);
-            
+
             // Log the failure
             console.error(`Max retries (${this.maxRetries}) reached for event:`, rawEvent);
           }

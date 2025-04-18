@@ -13,12 +13,14 @@ This document provides instructions for setting up your development environment 
 ## Initial Setup
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/your-org/dome-cf.git
    cd dome-cf
    ```
 
 2. Install dependencies:
+
    ```bash
    pnpm install
    ```
@@ -71,10 +73,10 @@ wrangler queues create dome_events
 
 The following environment variables are used in the project:
 
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| ENVIRONMENT | Environment name | Yes | development |
-| VERSION | API version | Yes | 0.1.0 |
+| Variable    | Description      | Required | Default     |
+| ----------- | ---------------- | -------- | ----------- |
+| ENVIRONMENT | Environment name | Yes      | development |
+| VERSION     | API version      | Yes      | 0.1.0       |
 
 For local development, you can create a `.dev.vars` file in the `services/dome-api` directory with the following content:
 

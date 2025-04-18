@@ -1,238 +1,112 @@
-import { Context } from 'hono';
-import { zValidator } from '@hono/zod-validator';
-import { z } from 'zod';
-import { Bindings } from '../types';
-import { searchService, NoteSearchResult } from '../services/searchService';
-import { ServiceError } from '@dome/common';
-import { getLogger } from '@dome/logging';
+import { Context } from 'hono'
+import { z } from 'zod'
+import { Bindings } from '../types'
+import { searchService } from '../services/searchService'
+import { UnauthorizedError } from '@dome/common'
+import { getLogger } from '@dome/logging'
 
-/**
- * Search query validation schema
- */
-const searchQuerySchema = z.object({
-  q: z.string().min(1, 'Search query is required'),
+/* -------------------------------------------------------------------------- */
+/*                             Validation Schema                              */
+/* -------------------------------------------------------------------------- */
+
+const SearchQuery = z.object({
+  q: z.string().min(1),
   limit: z.coerce.number().int().positive().optional(),
   contentType: z.string().optional(),
   startDate: z.coerce.number().int().optional(),
-  endDate: z.coerce.number().int().optional()
-});
+  endDate: z.coerce.number().int().optional(),
+})
 
-/**
- * Search controller
- */
+type SearchQueryInput = z.infer<typeof SearchQuery>
+
+/* -------------------------------------------------------------------------- */
+/*                               Util Helpers                                 */
+/* -------------------------------------------------------------------------- */
+
+function getUserId(c: Context): string {
+  const id = c.req.header('x-user-id') || c.req.query('userId')
+  if (!id) throw new UnauthorizedError('Missing x-user-id header or userId param')
+  return id
+}
+
+function tooShort(q: string) {
+  return q.trim().length < 3
+}
+
+function emptyResults(q: string) {
+  return {
+    success: true,
+    results: [],
+    count: 0,
+    query: q,
+    message: 'Use at least 3 characters for better results.',
+  }
+}
+
+function buildParams(userId: string, parsed: SearchQueryInput) {
+  const { q, ...rest } = parsed
+  return { userId, query: q, ...rest }
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              Search Controller                              */
+/* -------------------------------------------------------------------------- */
+
 export class SearchController {
   /**
-   * Search notes
-   * @param c Hono context
-   * @returns Search results
+   * JSON search endpoint
    */
   static async search(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      // Validate query parameters
-      const query = c.req.query();
-      getLogger().debug({ query }, 'Received search query parameters');
-      const validatedQuery = searchQuerySchema.parse(query);
-      
-      // Get user ID from request headers or query parameters
-      // This is a temporary solution for development purposes
-      // In production, this would come from proper authentication
-      const userId = c.req.header('x-user-id') || c.req.query('userId');
-      getLogger().debug({ userId }, 'User ID extracted from request');
-      if (!userId) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User ID is required. Provide it via x-user-id header or userId query parameter'
-          }
-        }, 401);
-      }
-      
-      // Perform search
-      getLogger().info({
-        userId,
-        searchQuery: validatedQuery.q,
-        limit: validatedQuery.limit,
-        contentType: validatedQuery.contentType
-      }, 'Performing search operation');
-      
-      const searchResults = await searchService.search(c.env, {
-        userId,
-        query: validatedQuery.q,
-        limit: validatedQuery.limit,
-        contentType: validatedQuery.contentType,
-        startDate: validatedQuery.startDate,
-        endDate: validatedQuery.endDate
-      });
-      
-      getLogger().info({
-        resultCount: searchResults.length,
-        query: validatedQuery.q
-      }, 'Search completed successfully');
-      
-      // Return search results
-      return c.json({
-        success: true,
-        results: searchResults,
-        count: searchResults.length,
-        query: validatedQuery.q
-      });
-    } catch (error) {
-      getLogger().error({
-        err: error,
-        path: c.req.path,
-        query: c.req.query()
-      }, 'Error in search controller');
-      
-      if (error instanceof z.ZodError) {
-        getLogger().warn({
-          validationErrors: error.errors,
-          query: c.req.query()
-        }, 'Search validation error');
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid search parameters',
-            details: error.errors
-          }
-        }, 400);
-      }
-      
-      if (error instanceof ServiceError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'SEARCH_ERROR',
-            message: error.message
-          }
-        }, 500);
-      }
-      
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred during search'
-        }
-      }, 500);
+    const log = getLogger()
+    const parsed = SearchQuery.parse(c.req.query()) as SearchQueryInput
+    const userId = getUserId(c)
+
+    if (tooShort(parsed.q)) {
+      log.warn({ userId, q: parsed.q }, 'query too short')
+      return c.json(emptyResults(parsed.q))
     }
+
+    log.info({ userId, q: parsed.q }, 'search')
+    const results = await searchService.search(c.env, buildParams(userId, parsed))
+    return c.json({ success: true, results, count: results.length, query: parsed.q })
   }
-  
+
   /**
-   * Stream search results
-   * @param c Hono context
-   * @returns Streamed search results
+   * NDJSON streaming search endpoint
    */
   static async streamSearch(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      // Validate query parameters
-      const query = c.req.query();
-      getLogger().debug({ query }, 'Received stream search query parameters');
-      const validatedQuery = searchQuerySchema.parse(query);
-      
-      // Get user ID from request headers or query parameters
-      // This is a temporary solution for development purposes
-      // In production, this would come from proper authentication
-      const userId = c.req.header('x-user-id') || c.req.query('userId');
-      getLogger().debug({ userId }, 'User ID extracted for stream search');
-      if (!userId) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User ID is required. Provide it via x-user-id header or userId query parameter'
-          }
-        }, 401);
-      }
-      
-      // Create a TransformStream for streaming results
-      const { readable, writable } = new TransformStream();
-      const writer = writable.getWriter();
-      
-      getLogger().info({
-        userId,
-        searchQuery: validatedQuery.q,
-        streamMode: true
-      }, 'Starting stream search operation');
-      
-      // Start search in the background
-      (async () => {
-        try {
-          // Perform search
-          const searchResults = await searchService.search(c.env, {
-            userId,
-            query: validatedQuery.q,
-            limit: validatedQuery.limit,
-            contentType: validatedQuery.contentType,
-            startDate: validatedQuery.startDate,
-            endDate: validatedQuery.endDate
-          });
-          
-          // Stream each result as it becomes available
-          for (const result of searchResults) {
-            const resultJson = JSON.stringify(result) + '\n';
-            await writer.write(new TextEncoder().encode(resultJson));
-          }
-          
-          // Close the stream
-          await writer.close();
-        } catch (error) {
-          getLogger().error({
-            err: error,
-            userId,
-            searchQuery: validatedQuery.q
-          }, 'Error in stream search processing');
-          
-          // Write error to stream
-          const errorJson = JSON.stringify({
-            error: {
-              code: 'SEARCH_ERROR',
-              message: error instanceof Error ? error.message : 'An unexpected error occurred'
-            }
-          }) + '\n';
-          
-          await writer.write(new TextEncoder().encode(errorJson));
-          await writer.close();
-        }
-      })();
-      
-      // Return the readable stream
-      return new Response(readable, {
-        headers: {
-          'Content-Type': 'application/x-ndjson',
-          'Transfer-Encoding': 'chunked'
-        }
-      });
-    } catch (error) {
-      getLogger().error({
-        err: error,
-        path: c.req.path,
-        query: c.req.query()
-      }, 'Error in stream search controller');
-      
-      if (error instanceof z.ZodError) {
-        getLogger().warn({
-          validationErrors: error.errors,
-          query: c.req.query()
-        }, 'Stream search validation error');
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid search parameters',
-            details: error.errors
-          }
-        }, 400);
-      }
-      
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred during search'
-        }
-      }, 500);
+    const log = getLogger()
+    const parsed = SearchQuery.parse(c.req.query()) as SearchQueryInput
+    const userId = getUserId(c)
+
+    if (tooShort(parsed.q)) {
+      log.warn({ userId, q: parsed.q }, 'query too short')
+      return c.json(emptyResults(parsed.q))
     }
+
+    const { readable, writable } = new TransformStream()
+    const writer = writable.getWriter()
+
+      ; (async () => {
+        try {
+          const results = await searchService.search(c.env, buildParams(userId, parsed))
+          for (const r of results) {
+            await writer.write(new TextEncoder().encode(JSON.stringify(r) + '\n'))
+          }
+        } catch (err) {
+          log.error({ err }, 'stream search error')
+          await writer.write(
+            new TextEncoder().encode(
+              JSON.stringify({ error: { code: 'SEARCH_ERROR', message: err instanceof Error ? err.message : 'unknown' } }) + '\n',
+            ),
+          )
+        } finally {
+          writer.close()
+        }
+      })()
+
+    return new Response(readable, {
+      headers: { 'Content-Type': 'application/x-ndjson' },
+    })
   }
 }

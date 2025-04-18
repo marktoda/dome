@@ -9,7 +9,7 @@ const mockHono = {
 // Mock the hono/context-storage module
 vi.mock('hono/context-storage', () => ({
   contextStorage: vi.fn(),
-  getContext: vi.fn().mockReturnValue(null)
+  getContext: vi.fn().mockReturnValue(null),
 }));
 
 describe('@dome/logging', () => {
@@ -19,13 +19,13 @@ describe('@dome/logging', () => {
 
   it('should initialize logging middleware', () => {
     initLogging(mockHono as any);
-    
+
     expect(mockHono.use).toHaveBeenCalledTimes(2);
   });
 
   it('should return a logger', () => {
     const logger = getLogger();
-    
+
     expect(logger).toBeDefined();
     expect(typeof logger.info).toBe('function');
     expect(typeof logger.error).toBe('function');

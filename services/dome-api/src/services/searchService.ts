@@ -41,7 +41,7 @@ export const searchOptionsSchema = z.object({
   limit: z.number().int().positive().optional().default(10),
   contentType: z.string().optional(),
   startDate: z.number().int().optional(),
-  endDate: z.number().int().optional()
+  endDate: z.number().int().optional(),
 });
 
 /**
@@ -49,14 +49,14 @@ export const searchOptionsSchema = z.object({
  */
 export class SearchService {
   private noteRepository: NoteRepository;
-  
+
   /**
    * Constructor
    */
   constructor() {
     this.noteRepository = new NoteRepository();
   }
-  
+
   /**
    * Search notes using semantic search
    * @param env Environment bindings
@@ -67,41 +67,41 @@ export class SearchService {
     try {
       // Validate options
       const validatedOptions = searchOptionsSchema.parse(options);
-      
+
       // Generate embedding for the query
       const embedding = await embeddingService.generateEmbedding(env, validatedOptions.query);
-      
+
       // Build filter for Vectorize query
       const filter: Record<string, any> = {
-        userId: validatedOptions.userId
+        userId: validatedOptions.userId,
       };
-      
+
       // Add optional filters
       if (validatedOptions.startDate && validatedOptions.endDate) {
         filter.createdAt = {
           $gte: validatedOptions.startDate,
-          $lte: validatedOptions.endDate
+          $lte: validatedOptions.endDate,
         };
       } else if (validatedOptions.startDate) {
         filter.createdAt = {
-          $gte: validatedOptions.startDate
+          $gte: validatedOptions.startDate,
         };
       } else if (validatedOptions.endDate) {
         filter.createdAt = {
-          $lte: validatedOptions.endDate
+          $lte: validatedOptions.endDate,
         };
       }
-      
+
       // Query Vectorize
       const searchResults = await vectorizeService.queryVectors(env, embedding, {
         topK: validatedOptions.limit,
-        filter
+        filter,
       });
-      
+
       // Get notes for the search results
       const noteIds = searchResults.map(result => result.metadata.noteId);
       const uniqueNoteIds = [...new Set(noteIds)];
-      
+
       // Fetch notes from the database
       const notes: Note[] = [];
       for (const noteId of uniqueNoteIds) {
@@ -115,15 +115,15 @@ export class SearchService {
           // Continue with next note
         }
       }
-      
+
       // Filter notes by content type if specified
       const filteredNotes = validatedOptions.contentType
         ? notes.filter(note => note.contentType === validatedOptions.contentType)
         : notes;
-      
+
       // Map search results to note search results
       const noteSearchResults: NoteSearchResult[] = [];
-      
+
       for (const result of searchResults) {
         const note = filteredNotes.find(n => n.id === result.metadata.noteId);
         if (note) {
@@ -135,25 +135,25 @@ export class SearchService {
             createdAt: note.createdAt,
             updatedAt: note.updatedAt,
             contentType: note.contentType,
-            metadata: note.metadata
+            metadata: note.metadata,
           });
         }
       }
-      
+
       // Sort by score (highest first)
       noteSearchResults.sort((a, b) => b.score - a.score);
-      
+
       // Limit results
       return noteSearchResults.slice(0, validatedOptions.limit);
     } catch (error) {
       console.error('Error searching notes:', error);
       throw new ServiceError('Failed to search notes', {
         cause: error instanceof Error ? error : new Error(String(error)),
-        context: { options }
+        context: { options },
       });
     }
   }
-  
+
   /**
    * Search note pages
    * @param env Environment bindings
@@ -164,42 +164,41 @@ export class SearchService {
     try {
       // Validate options
       const validatedOptions = searchOptionsSchema.parse(options);
-      
+
       // Generate embedding for the query
       const embedding = await embeddingService.generateEmbedding(env, validatedOptions.query);
-      
+
       // Build filter for Vectorize query
       const filter: Record<string, any> = {
         userId: validatedOptions.userId,
-        pageNum: { $exists: true } // Only match vectors with pageNum
       };
-      
+
       // Add optional filters
       if (validatedOptions.startDate && validatedOptions.endDate) {
         filter.createdAt = {
           $gte: validatedOptions.startDate,
-          $lte: validatedOptions.endDate
+          $lte: validatedOptions.endDate,
         };
       } else if (validatedOptions.startDate) {
         filter.createdAt = {
-          $gte: validatedOptions.startDate
+          $gte: validatedOptions.startDate,
         };
       } else if (validatedOptions.endDate) {
         filter.createdAt = {
-          $lte: validatedOptions.endDate
+          $lte: validatedOptions.endDate,
         };
       }
-      
+
       // Query Vectorize
       const searchResults = await vectorizeService.queryVectors(env, embedding, {
         topK: validatedOptions.limit,
-        filter
+        filter,
       });
-      
+
       // Get notes and pages for the search results
       const noteIds = [...new Set(searchResults.map(result => result.metadata.noteId))];
       const pageIds = searchResults.map(result => result.id);
-      
+
       // Fetch notes from the database
       const notes: Record<string, Note> = {};
       for (const noteId of noteIds) {
@@ -213,20 +212,23 @@ export class SearchService {
           // Continue with next note
         }
       }
-      
+
       // Fetch pages from the database
       const pages: Record<string, string> = {};
       for (const pageId of pageIds) {
         try {
           const db = await env.D1_DATABASE;
-          const result = await db.prepare(`
+          const result = await db
+            .prepare(
+              `
             SELECT content FROM note_pages WHERE id = ?
-          `)
-          .bind(pageId)
-          .first();
-          
+          `,
+            )
+            .bind(pageId)
+            .first();
+
           const typedResult = result as { content: string } | null;
-          
+
           if (typedResult) {
             pages[pageId] = typedResult.content;
           }
@@ -235,22 +237,22 @@ export class SearchService {
           // Continue with next note
         }
       }
-      
+
       // Filter notes by content type if specified
       const filteredResults = validatedOptions.contentType
         ? searchResults.filter(result => {
-            const note = notes[result.metadata.noteId];
-            return note && note.contentType === validatedOptions.contentType;
-          })
+          const note = notes[result.metadata.noteId];
+          return note && note.contentType === validatedOptions.contentType;
+        })
         : searchResults;
-      
+
       // Map search results to note search results
       const noteSearchResults: NoteSearchResult[] = [];
-      
+
       for (const result of filteredResults) {
         const note = notes[result.metadata.noteId];
         const pageContent = pages[result.id];
-        
+
         if (note && pageContent) {
           noteSearchResults.push({
             id: note.id,
@@ -260,25 +262,25 @@ export class SearchService {
             createdAt: note.createdAt,
             updatedAt: note.updatedAt,
             contentType: note.contentType,
-            metadata: note.metadata
+            metadata: note.metadata,
           });
         }
       }
-      
+
       // Sort by score (highest first)
       noteSearchResults.sort((a, b) => b.score - a.score);
-      
+
       // Limit results
       return noteSearchResults.slice(0, validatedOptions.limit);
     } catch (error) {
       console.error('Error searching note pages:', error);
       throw new ServiceError('Failed to search note pages', {
         cause: error instanceof Error ? error : new Error(String(error)),
-        context: { options }
+        context: { options },
       });
     }
   }
-  
+
   /**
    * Combined search for notes and pages
    * @param env Environment bindings
@@ -289,13 +291,13 @@ export class SearchService {
     try {
       // Search notes
       const noteResults = await this.searchNotes(env, options);
-      
+
       // Search note pages
       const pageResults = await this.searchNotePages(env, options);
-      
+
       // Combine results
       const combinedResults = [...noteResults, ...pageResults];
-      
+
       // Remove duplicates (prefer the higher score if the same note appears multiple times)
       const uniqueResults = combinedResults.reduce((acc, result) => {
         const existing = acc.find(r => r.id === result.id);
@@ -308,17 +310,17 @@ export class SearchService {
         }
         return acc;
       }, [] as NoteSearchResult[]);
-      
+
       // Sort by score (highest first)
       uniqueResults.sort((a, b) => b.score - a.score);
-      
+
       // Limit results
       return uniqueResults.slice(0, options.limit || 10);
     } catch (error) {
       console.error('Error performing combined search:', error);
       throw new ServiceError('Failed to perform combined search', {
         cause: error instanceof Error ? error : new Error(String(error)),
-        context: { options }
+        context: { options },
       });
     }
   }

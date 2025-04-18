@@ -62,8 +62,8 @@ describe('Notes API', () => {
       experimental: { disableExperimentalWarning: true },
       // Use vars for environment variables
       vars: {
-        ENVIRONMENT: 'development'
-      }
+        ENVIRONMENT: 'development',
+      },
     });
   });
 
@@ -77,7 +77,7 @@ describe('Notes API', () => {
     const noteData = {
       content: 'This is a test note',
       contentType: 'text/plain',
-      title: 'Test Note'
+      title: 'Test Note',
     };
 
     // Send request to create a note
@@ -85,17 +85,17 @@ describe('Notes API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(noteData)
+      body: JSON.stringify(noteData),
     });
 
     // Check response
     expect(resp.status).toBe(201);
-    
+
     // Parse response body with type assertion
-    const data = await resp.json() as NoteResponse;
-    
+    const data = (await resp.json()) as NoteResponse;
+
     // Validate response
     expect(data.success).toBe(true);
     expect(data.note).toBeDefined();
@@ -110,16 +110,16 @@ describe('Notes API', () => {
     const resp = await worker.fetch('/notes?userId=test-user-123', {
       method: 'GET',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response
     expect(resp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const data = await resp.json() as NotesListResponse;
-    
+    const data = (await resp.json()) as NotesListResponse;
+
     // Validate response
     expect(data.success).toBe(true);
     expect(data.notes).toBeDefined();
@@ -131,7 +131,7 @@ describe('Notes API', () => {
     const noteData = {
       content: 'This is another test note',
       contentType: 'text/plain',
-      title: 'Another Test Note'
+      title: 'Another Test Note',
     };
 
     // Send request to create a note
@@ -139,29 +139,29 @@ describe('Notes API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(noteData)
+      body: JSON.stringify(noteData),
     });
 
     // Parse response body with type assertion
-    const createData = await createResp.json() as NoteResponse;
+    const createData = (await createResp.json()) as NoteResponse;
     const noteId = createData.note.id;
 
     // Send request to get the note
     const getResp = await worker.fetch(`/notes/${noteId}`, {
       method: 'GET',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response
     expect(getResp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const getData = await getResp.json() as NoteResponse;
-    
+    const getData = (await getResp.json()) as NoteResponse;
+
     // Validate response
     expect(getData.success).toBe(true);
     expect(getData.note).toBeDefined();
@@ -175,7 +175,7 @@ describe('Notes API', () => {
     const noteData = {
       content: 'This is a note to update',
       contentType: 'text/plain',
-      title: 'Note to Update'
+      title: 'Note to Update',
     };
 
     // Send request to create a note
@@ -183,19 +183,19 @@ describe('Notes API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(noteData)
+      body: JSON.stringify(noteData),
     });
 
     // Parse response body with type assertion
-    const createData = await createResp.json() as NoteResponse;
+    const createData = (await createResp.json()) as NoteResponse;
     const noteId = createData.note.id;
 
     // Update data
     const updateData = {
       title: 'Updated Note Title',
-      body: 'This note has been updated'
+      body: 'This note has been updated',
     };
 
     // Send request to update the note
@@ -203,17 +203,17 @@ describe('Notes API', () => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(updateData)
+      body: JSON.stringify(updateData),
     });
 
     // Check response
     expect(updateResp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const updateResponseData = await updateResp.json() as NoteResponse;
-    
+    const updateResponseData = (await updateResp.json()) as NoteResponse;
+
     // Validate response
     expect(updateResponseData.success).toBe(true);
     expect(updateResponseData.note).toBeDefined();
@@ -227,7 +227,7 @@ describe('Notes API', () => {
     const noteData = {
       content: 'This is a note to delete',
       contentType: 'text/plain',
-      title: 'Note to Delete'
+      title: 'Note to Delete',
     };
 
     // Send request to create a note
@@ -235,29 +235,29 @@ describe('Notes API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(noteData)
+      body: JSON.stringify(noteData),
     });
 
     // Parse response body with type assertion
-    const createData = await createResp.json() as NoteResponse;
+    const createData = (await createResp.json()) as NoteResponse;
     const noteId = createData.note.id;
 
     // Send request to delete the note
     const deleteResp = await worker.fetch(`/notes/${noteId}`, {
       method: 'DELETE',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response
     expect(deleteResp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const deleteData = await deleteResp.json() as DeleteResponse;
-    
+    const deleteData = (await deleteResp.json()) as DeleteResponse;
+
     // Validate response
     expect(deleteData.success).toBe(true);
     expect(deleteData.message).toBeDefined();
@@ -266,8 +266,8 @@ describe('Notes API', () => {
     const getResp = await worker.fetch(`/notes/${noteId}`, {
       method: 'GET',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response - should be 404 Not Found
@@ -277,15 +277,15 @@ describe('Notes API', () => {
   it('should handle unauthorized access', async () => {
     // Send request without user ID
     const resp = await worker.fetch('/notes', {
-      method: 'GET'
+      method: 'GET',
     });
 
     // In development mode, this might still work with a default user ID
     // In production, it would return 401 Unauthorized
     if (resp.status === 401) {
       // Parse response body with type assertion
-      const data = await resp.json() as ErrorResponse;
-      
+      const data = (await resp.json()) as ErrorResponse;
+
       // Validate response
       expect(data.success).toBe(false);
       expect(data.error).toBeDefined();

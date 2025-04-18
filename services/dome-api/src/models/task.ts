@@ -7,7 +7,7 @@ export enum TaskStatus {
   PENDING = 'pending',
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
-  CANCELLED = 'cancelled'
+  CANCELLED = 'cancelled',
 }
 
 /**
@@ -17,7 +17,7 @@ export enum TaskPriority {
   LOW = 'low',
   MEDIUM = 'medium',
   HIGH = 'high',
-  URGENT = 'urgent'
+  URGENT = 'urgent',
 }
 
 /**
@@ -43,19 +43,13 @@ export const createTaskSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
   title: z.string().min(1, 'Title is required'),
   description: z.string().optional(),
-  status: z.enum([
-    TaskStatus.PENDING,
-    TaskStatus.IN_PROGRESS,
-    TaskStatus.COMPLETED,
-    TaskStatus.CANCELLED
-  ]).default(TaskStatus.PENDING),
-  priority: z.enum([
-    TaskPriority.LOW,
-    TaskPriority.MEDIUM,
-    TaskPriority.HIGH,
-    TaskPriority.URGENT
-  ]).default(TaskPriority.MEDIUM),
-  dueDate: z.number().optional()
+  status: z
+    .enum([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.COMPLETED, TaskStatus.CANCELLED])
+    .default(TaskStatus.PENDING),
+  priority: z
+    .enum([TaskPriority.LOW, TaskPriority.MEDIUM, TaskPriority.HIGH, TaskPriority.URGENT])
+    .default(TaskPriority.MEDIUM),
+  dueDate: z.number().optional(),
 });
 
 /**
@@ -69,20 +63,14 @@ export type CreateTaskData = z.infer<typeof createTaskSchema>;
 export const updateTaskSchema = z.object({
   title: z.string().min(1, 'Title is required').optional(),
   description: z.string().optional(),
-  status: z.enum([
-    TaskStatus.PENDING,
-    TaskStatus.IN_PROGRESS,
-    TaskStatus.COMPLETED,
-    TaskStatus.CANCELLED
-  ]).optional(),
-  priority: z.enum([
-    TaskPriority.LOW,
-    TaskPriority.MEDIUM,
-    TaskPriority.HIGH,
-    TaskPriority.URGENT
-  ]).optional(),
+  status: z
+    .enum([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.COMPLETED, TaskStatus.CANCELLED])
+    .optional(),
+  priority: z
+    .enum([TaskPriority.LOW, TaskPriority.MEDIUM, TaskPriority.HIGH, TaskPriority.URGENT])
+    .optional(),
   dueDate: z.number().optional(),
-  completedAt: z.number().optional()
+  completedAt: z.number().optional(),
 });
 
 /**
@@ -94,7 +82,7 @@ export type UpdateTaskData = z.infer<typeof updateTaskSchema>;
  * Zod schema for validating task completion
  */
 export const completeTaskSchema = z.object({
-  completedAt: z.number().default(() => Date.now())
+  completedAt: z.number().default(() => Date.now()),
 });
 
 /**

@@ -74,15 +74,7 @@ export function createBaseLayout(): BaseLayoutElements {
     border: {
       type: 'line',
     },
-    items: [
-      'Dashboard',
-      'Chat',
-      'Notes',
-      'Tasks',
-      'Search',
-      'Settings',
-      'Help',
-    ],
+    items: ['Dashboard', 'Chat', 'Notes', 'Tasks', 'Search', 'Settings', 'Help'],
   });
 
   // Create main content area

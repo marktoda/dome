@@ -2,13 +2,13 @@
 
 /**
  * Dome Platform Logging Verification Script
- * 
+ *
  * This script makes requests to a test endpoint to generate logs
  * that can be verified in Cloudflare Logs Engine.
- * 
+ *
  * Usage:
  *   node scripts/verify-logging.js [options]
- * 
+ *
  * Options:
  *   --endpoint <url>    Test endpoint URL (default: http://localhost:8787)
  *   --requests <num>    Number of requests to make (default: 10)
@@ -26,12 +26,12 @@ const options = {
   endpoint: 'http://localhost:8787',
   requests: 10,
   interval: 500,
-  includeErrors: false
+  includeErrors: false,
 };
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
-  
+
   if (arg === '--endpoint' && i + 1 < args.length) {
     options.endpoint = args[++i];
   } else if (arg === '--requests' && i + 1 < args.length) {
@@ -71,33 +71,33 @@ function makeRequest(path = '/', requestId = null) {
   return new Promise((resolve, reject) => {
     const url = new URL(path, options.endpoint);
     const client = url.protocol === 'https:' ? https : http;
-    
+
     const headers = {
-      'User-Agent': 'Dome-Logging-Verification-Script/1.0'
+      'User-Agent': 'Dome-Logging-Verification-Script/1.0',
     };
-    
+
     if (requestId) {
       headers['X-Request-ID'] = requestId;
     }
-    
-    const req = client.get(url.toString(), { headers }, (res) => {
+
+    const req = client.get(url.toString(), { headers }, res => {
       let data = '';
-      
-      res.on('data', (chunk) => {
+
+      res.on('data', chunk => {
         data += chunk;
       });
-      
+
       res.on('end', () => {
         resolve({
           statusCode: res.statusCode,
           headers: res.headers,
           body: data,
-          requestId: res.headers['x-request-id'] || requestId
+          requestId: res.headers['x-request-id'] || requestId,
         });
       });
     });
-    
-    req.on('error', (error) => {
+
+    req.on('error', error => {
       reject(error);
     });
   });
@@ -114,35 +114,35 @@ Interval: ${options.interval}ms
 Include Errors: ${options.includeErrors ? 'Yes' : 'No'}
 ====================================
   `);
-  
+
   const requestIds = [];
-  
+
   for (let i = 0; i < options.requests; i++) {
     const requestId = generateRequestId();
     requestIds.push(requestId);
-    
+
     try {
       // Determine path based on request number
       let path = '/';
-      
+
       // Every third request goes to a different path
       if (i % 3 === 1) {
         path = '/api/test';
       } else if (i % 3 === 2) {
         path = '/api/users';
       }
-      
+
       // Every fourth request should trigger an error if enabled
       if (options.includeErrors && i % 4 === 3) {
         path = '/error';
       }
-      
+
       console.log(`Request ${i + 1}/${options.requests}: ${path} (ID: ${requestId})`);
       const response = await makeRequest(path, requestId);
-      
+
       console.log(`  Status: ${response.statusCode}`);
       console.log(`  Request ID: ${response.requestId}`);
-      
+
       // Wait before next request
       if (i < options.requests - 1) {
         await new Promise(resolve => setTimeout(resolve, options.interval));
@@ -151,12 +151,12 @@ Include Errors: ${options.includeErrors ? 'Yes' : 'No'}
       console.error(`  Error: ${error.message}`);
     }
   }
-  
+
   console.log(`
 ✅ Verification Complete
 ====================================
   `);
-  
+
   console.log(`
 📋 How to Check Logs in Cloudflare Logs Engine
 ====================================

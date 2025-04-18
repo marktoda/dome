@@ -22,34 +22,36 @@ export function showCommand(program: Command): void {
       try {
         const spinner = createSpinner(`Fetching item with ID: ${id}`);
         spinner.start();
-        
+
         const item = await showItem(id);
-        
+
         spinner.stop();
-        
+
         if (!item) {
           console.log(error(`No item found with ID: ${id}`));
           return;
         }
-        
+
         // Determine if it's a note or task
         const isTask = 'status' in item && 'dueDate' in item;
-        
+
         // Display the item
         console.log(heading(isTask ? 'Task Details' : 'Note Details'));
         console.log(formatKeyValue('ID', item.id));
-        
+
         if (isTask) {
           // Display task details
           console.log(formatKeyValue('Description', item.description || '(No description)'));
           console.log(formatKeyValue('Status', item.status));
-          console.log(formatKeyValue('Due Date', item.dueDate ? formatDate(item.dueDate) : 'No due date'));
+          console.log(
+            formatKeyValue('Due Date', item.dueDate ? formatDate(item.dueDate) : 'No due date'),
+          );
           console.log(formatKeyValue('Created', formatDate(item.createdAt)));
-          
+
           if (item.tags && item.tags.length > 0) {
             console.log(formatKeyValue('Tags', item.tags.join(', ')));
           }
-          
+
           if (item.reminders && item.reminders.length > 0) {
             console.log(subheading('Reminders'));
             item.reminders.forEach((reminder: any) => {
@@ -60,16 +62,18 @@ export function showCommand(program: Command): void {
           // Display note details
           console.log(formatKeyValue('Title', item.title || '(No title)'));
           console.log(formatKeyValue('Created', formatDate(item.createdAt)));
-          
+
           if (item.tags && item.tags.length > 0) {
             console.log(formatKeyValue('Tags', item.tags.join(', ')));
           }
-          
+
           console.log(subheading('Content'));
           console.log(item.content);
         }
       } catch (err) {
-        console.log(error(`Failed to show item: ${err instanceof Error ? err.message : String(err)}`));
+        console.log(
+          error(`Failed to show item: ${err instanceof Error ? err.message : String(err)}`),
+        );
         process.exit(1);
       }
     });

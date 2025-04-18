@@ -5,7 +5,7 @@ import { Bindings } from '../types';
 import { NoteRepository } from '../repositories/noteRepository';
 import { embeddingService } from '../services/embeddingService';
 import { vectorizeService } from '../services/vectorizeService';
-import { ServiceError } from '@dome/common';
+import { ServiceError, UnauthorizedError, NotFoundError } from '@dome/common';
 import { createNoteSchema, updateNoteSchema, EmbeddingStatus } from '../models/note';
 import { v4 as uuidv4 } from 'uuid';
 import { getLogger } from '@dome/logging';
@@ -18,7 +18,7 @@ const ingestSchema = z.object({
   contentType: z.string().default('text/plain'),
   title: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
-  tags: z.array(z.string()).optional()
+  tags: z.array(z.string()).optional(),
 });
 
 /**
@@ -42,6 +42,7 @@ export class NoteController {
    */
   async ingest(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     getLogger().info({ path: c.req.path, method: c.req.method }, 'Note ingestion started');
+
     try {
       // Validate request body
       const body = await c.req.json();
@@ -51,14 +52,12 @@ export class NoteController {
       // Get user ID from request headers or query parameters
       const userId = c.req.header('x-user-id') || c.req.query('userId');
       getLogger().debug({ userId }, 'User ID extracted for note ingestion');
+
       if (!userId) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User ID is required. Provide it via x-user-id header or userId query parameter'
-          }
-        }, 401);
+        getLogger().warn({ path: c.req.path }, 'Missing user ID in note ingestion request');
+        throw new UnauthorizedError(
+          'User ID is required. Provide it via x-user-id header or userId query parameter',
+        );
       }
 
       // Process the content to extract entities and classify intent
@@ -67,74 +66,56 @@ export class NoteController {
       getLogger().debug({ generatedTitle: title }, 'Generated title for note');
 
       // Create the note
-      getLogger().info({
-        userId,
-        contentType: validatedData.contentType,
-        contentLength: validatedData.content.length
-      }, 'Creating new note');
+      getLogger().info(
+        {
+          userId,
+          contentType: validatedData.contentType,
+          contentLength: validatedData.content.length,
+        },
+        'Creating new note',
+      );
       const note = await this.noteRepository.create(c.env, {
         userId,
         title,
         body: validatedData.content,
         contentType: validatedData.contentType,
-        metadata: validatedData.metadata ? JSON.stringify(validatedData.metadata) : undefined
+        metadata: validatedData.metadata ? JSON.stringify(validatedData.metadata) : undefined,
       });
 
       // Generate embedding in the background
       getLogger().info({ noteId: note.id }, 'Starting background embedding process');
-      this.processEmbedding(c.env, note.id, note.body, userId)
-        .catch(error => {
-          getLogger().error({
+      this.processEmbedding(c.env, note.id, note.body, userId).catch(error => {
+        getLogger().error(
+          {
             err: error,
             noteId: note.id,
-            userId
-          }, 'Error processing embedding for note');
-        });
+            userId,
+          },
+          'Error processing embedding for note',
+        );
+      });
 
       // Return the created note
       getLogger().info({ noteId: note.id }, 'Note successfully created');
-      return c.json({
-        success: true,
-        note
-      }, 201);
+      return c.json(
+        {
+          success: true,
+          note,
+        },
+        201,
+      );
     } catch (error) {
-      getLogger().error({
-        err: error,
-        path: c.req.path,
-        method: c.req.method
-      }, 'Error in ingest controller');
+      getLogger().error(
+        {
+          err: error,
+          path: c.req.path,
+          method: c.req.method,
+        },
+        'Error in ingest controller',
+      );
 
-      if (error instanceof z.ZodError) {
-        getLogger().warn({
-          validationErrors: error.errors
-        }, 'Note ingestion validation error');
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid request data',
-            details: error.errors
-          }
-        }, 400);
-      }
-
-      if (error instanceof ServiceError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'SERVICE_ERROR',
-            message: error.message
-          }
-        }, 500);
-      }
-
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred during ingestion'
-        }
-      }, 500);
+      // Let the middleware handle the error
+      throw error;
     }
   }
 
@@ -144,77 +125,63 @@ export class NoteController {
    * @returns Response
    */
   async getNote(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      // Get user ID from request headers or query parameters
-      const userId = c.req.header('x-user-id') || c.req.query('userId');
-      const noteId = c.req.param('id');
-      
-      getLogger().info({
+    // Get user ID from request headers or query parameters
+    const userId = c.req.header('x-user-id') || c.req.query('userId');
+    const noteId = c.req.param('id');
+
+    getLogger().info(
+      {
         userId,
         noteId,
-        path: c.req.path
-      }, 'Get note request received');
-      if (!userId) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User ID is required. Provide it via x-user-id header or userId query parameter'
-          }
-        }, 401);
-      }
+        path: c.req.path,
+      },
+      'Get note request received',
+    );
 
+    if (!userId) {
+      getLogger().warn({ noteId, path: c.req.path }, 'Missing user ID in get note request');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
+    }
+
+    try {
       // Get the note
       getLogger().debug({ noteId }, 'Fetching note from repository');
       const note = await this.noteRepository.findById(c.env, noteId);
 
       // Check if the note exists and belongs to the user
       if (!note || note.userId !== userId) {
-        getLogger().info({
-          noteId,
-          userId,
-          noteExists: !!note,
-          noteOwnedByUser: note ? note.userId === userId : false
-        }, 'Note not found or access denied');
-        return c.json({
-          success: false,
-          error: {
-            code: 'NOT_FOUND',
-            message: 'Note not found'
-          }
-        }, 404);
+        getLogger().info(
+          {
+            noteId,
+            userId,
+            noteExists: !!note,
+            noteOwnedByUser: note ? note.userId === userId : false,
+          },
+          'Note not found or access denied',
+        );
+        throw new NotFoundError('Note not found');
       }
 
       // Return the note
       getLogger().info({ noteId }, 'Note successfully retrieved');
       return c.json({
         success: true,
-        note
+        note,
       });
     } catch (error) {
-      getLogger().error({
-        err: error,
-        noteId: c.req.param('id'),
-        path: c.req.path
-      }, 'Error getting note');
+      getLogger().error(
+        {
+          err: error,
+          noteId: c.req.param('id'),
+          path: c.req.path,
+        },
+        'Error getting note',
+      );
 
-      if (error instanceof ServiceError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'SERVICE_ERROR',
-            message: error.message
-          }
-        }, 500);
-      }
-
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred while retrieving the note'
-        }
-      }, 500);
+      // Let the middleware handle the error
+      throw error;
     }
   }
 
@@ -224,37 +191,41 @@ export class NoteController {
    * @returns Response
    */
   async listNotes(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      // Get user ID from request headers or query parameters
-      const userId = c.req.header('x-user-id') || c.req.query('userId');
-      
-      getLogger().info({
+    // Get user ID from request headers or query parameters
+    const userId = c.req.header('x-user-id') || c.req.query('userId');
+
+    getLogger().info(
+      {
         userId,
         path: c.req.path,
-        query: c.req.query()
-      }, 'List notes request received');
-      if (!userId) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User ID is required. Provide it via x-user-id header or userId query parameter'
-          }
-        }, 401);
-      }
+        query: c.req.query(),
+      },
+      'List notes request received',
+    );
 
+    if (!userId) {
+      getLogger().warn({ path: c.req.path }, 'Missing user ID in list notes request');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
+    }
+
+    try {
       // Get query parameters for filtering
       const contentType = c.req.query('contentType');
       const limitParam = c.req.query('limit');
       const offsetParam = c.req.query('offset');
       const limit = limitParam ? parseInt(limitParam) : 50;
       const offset = offsetParam ? parseInt(offsetParam) : 0;
-      
-      getLogger().debug({
-        contentType,
-        limit,
-        offset
-      }, 'List notes query parameters');
+
+      getLogger().debug(
+        {
+          contentType,
+          limit,
+          offset,
+        },
+        'List notes query parameters',
+      );
 
       // Get notes for the user
       getLogger().debug({ userId }, 'Fetching notes from repository');
@@ -269,42 +240,33 @@ export class NoteController {
       const paginatedNotes = filteredNotes.slice(offset, offset + limit);
 
       // Return the notes
-      getLogger().info({
-        count: paginatedNotes.length,
-        total: filteredNotes.length,
-        contentTypeFilter: contentType || 'none'
-      }, 'Notes successfully listed');
-      
+      getLogger().info(
+        {
+          count: paginatedNotes.length,
+          total: filteredNotes.length,
+          contentTypeFilter: contentType || 'none',
+        },
+        'Notes successfully listed',
+      );
+
       return c.json({
         success: true,
         notes: paginatedNotes,
         count: paginatedNotes.length,
-        total: filteredNotes.length
+        total: filteredNotes.length,
       });
     } catch (error) {
-      getLogger().error({
-        err: error,
-        userId: c.req.header('x-user-id') || c.req.query('userId'),
-        path: c.req.path
-      }, 'Error listing notes');
+      getLogger().error(
+        {
+          err: error,
+          userId,
+          path: c.req.path,
+        },
+        'Error listing notes',
+      );
 
-      if (error instanceof ServiceError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'SERVICE_ERROR',
-            message: error.message
-          }
-        }, 500);
-      }
-
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred while listing notes'
-        }
-      }, 500);
+      // Let the middleware handle the error
+      throw error;
     }
   }
 
@@ -314,45 +276,43 @@ export class NoteController {
    * @returns Response
    */
   async updateNote(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      // Get user ID from request headers or query parameters
-      const userId = c.req.header('x-user-id') || c.req.query('userId');
-      const noteId = c.req.param('id');
-      
-      getLogger().info({
+    // Get user ID from request headers or query parameters
+    const userId = c.req.header('x-user-id') || c.req.query('userId');
+    const noteId = c.req.param('id');
+
+    getLogger().info(
+      {
         userId,
         noteId,
-        path: c.req.path
-      }, 'Update note request received');
-      if (!userId) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User ID is required. Provide it via x-user-id header or userId query parameter'
-          }
-        }, 401);
-      }
+        path: c.req.path,
+      },
+      'Update note request received',
+    );
 
+    if (!userId) {
+      getLogger().warn({ noteId, path: c.req.path }, 'Missing user ID in update note request');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
+    }
+
+    try {
       // Get the note to check ownership
       getLogger().debug({ noteId }, 'Fetching note to verify ownership');
       const existingNote = await this.noteRepository.findById(c.env, noteId);
 
       // Check if the note exists and belongs to the user
       if (!existingNote || existingNote.userId !== userId) {
-        getLogger().info({
-          noteId,
-          userId,
-          noteExists: !!existingNote,
-          noteOwnedByUser: existingNote ? existingNote.userId === userId : false
-        }, 'Note not found or access denied for update');
-        return c.json({
-          success: false,
-          error: {
-            code: 'NOT_FOUND',
-            message: 'Note not found'
-          }
-        }, 404);
+        getLogger().info(
+          {
+            noteId,
+            userId,
+            noteExists: !!existingNote,
+            noteOwnedByUser: existingNote ? existingNote.userId === userId : false,
+          },
+          'Note not found or access denied for update',
+        );
+        throw new NotFoundError('Note not found');
       }
 
       // Validate request body
@@ -361,73 +321,55 @@ export class NoteController {
       const validatedData = updateNoteSchema.parse(body);
 
       // Update the note
-      getLogger().info({
-        noteId,
-        fieldsToUpdate: Object.keys(validatedData)
-      }, 'Updating note');
+      getLogger().info(
+        {
+          noteId,
+          fieldsToUpdate: Object.keys(validatedData),
+        },
+        'Updating note',
+      );
       const updatedNote = await this.noteRepository.update(c.env, noteId, validatedData);
 
       // If the body was updated, regenerate the embedding
       if (validatedData.body) {
         getLogger().info({ noteId }, 'Content updated, regenerating embedding');
-        
+
         // Update embedding status to pending
         await this.noteRepository.update(c.env, noteId, {
-          embeddingStatus: EmbeddingStatus.PENDING
+          embeddingStatus: EmbeddingStatus.PENDING,
         });
 
         // Process embedding in the background
-        this.processEmbedding(c.env, noteId, validatedData.body, userId)
-          .catch(error => {
-            getLogger().error({
+        this.processEmbedding(c.env, noteId, validatedData.body, userId).catch(error => {
+          getLogger().error(
+            {
               err: error,
               noteId,
-              userId
-            }, 'Error processing embedding for updated note');
-          });
+              userId,
+            },
+            'Error processing embedding for updated note',
+          );
+        });
       }
 
       // Return the updated note
       getLogger().info({ noteId }, 'Note successfully updated');
       return c.json({
         success: true,
-        note: updatedNote
+        note: updatedNote,
       });
     } catch (error) {
-      getLogger().error({
-        err: error,
-        noteId: c.req.param('id'),
-        path: c.req.path
-      }, 'Error updating note');
+      getLogger().error(
+        {
+          err: error,
+          noteId: c.req.param('id'),
+          path: c.req.path,
+        },
+        'Error updating note',
+      );
 
-      if (error instanceof z.ZodError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid update data',
-            details: error.errors
-          }
-        }, 400);
-      }
-
-      if (error instanceof ServiceError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'SERVICE_ERROR',
-            message: error.message
-          }
-        }, 500);
-      }
-
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred while updating the note'
-        }
-      }, 500);
+      // Let the middleware handle the error
+      throw error;
     }
   }
 
@@ -437,45 +379,43 @@ export class NoteController {
    * @returns Response
    */
   async deleteNote(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      // Get user ID from request headers or query parameters
-      const userId = c.req.header('x-user-id') || c.req.query('userId');
-      const noteId = c.req.param('id');
-      
-      getLogger().info({
+    // Get user ID from request headers or query parameters
+    const userId = c.req.header('x-user-id') || c.req.query('userId');
+    const noteId = c.req.param('id');
+
+    getLogger().info(
+      {
         userId,
         noteId,
-        path: c.req.path
-      }, 'Delete note request received');
-      if (!userId) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'UNAUTHORIZED',
-            message: 'User ID is required. Provide it via x-user-id header or userId query parameter'
-          }
-        }, 401);
-      }
+        path: c.req.path,
+      },
+      'Delete note request received',
+    );
 
+    if (!userId) {
+      getLogger().warn({ noteId, path: c.req.path }, 'Missing user ID in delete note request');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
+    }
+
+    try {
       // Get the note to check ownership
       getLogger().debug({ noteId }, 'Fetching note to verify ownership before deletion');
       const existingNote = await this.noteRepository.findById(c.env, noteId);
 
       // Check if the note exists and belongs to the user
       if (!existingNote || existingNote.userId !== userId) {
-        getLogger().info({
-          noteId,
-          userId,
-          noteExists: !!existingNote,
-          noteOwnedByUser: existingNote ? existingNote.userId === userId : false
-        }, 'Note not found or access denied for deletion');
-        return c.json({
-          success: false,
-          error: {
-            code: 'NOT_FOUND',
-            message: 'Note not found'
-          }
-        }, 404);
+        getLogger().info(
+          {
+            noteId,
+            userId,
+            noteExists: !!existingNote,
+            noteOwnedByUser: existingNote ? existingNote.userId === userId : false,
+          },
+          'Note not found or access denied for deletion',
+        );
+        throw new NotFoundError('Note not found');
       }
 
       // Delete the note
@@ -487,10 +427,13 @@ export class NoteController {
         getLogger().info({ noteId }, 'Deleting vector embedding');
         await vectorizeService.deleteVector(c.env, noteId);
       } catch (error) {
-        getLogger().warn({
-          err: error,
-          noteId
-        }, 'Error deleting vector for note - continuing with deletion');
+        getLogger().warn(
+          {
+            err: error,
+            noteId,
+          },
+          'Error deleting vector for note - continuing with deletion',
+        );
         // Continue even if vector deletion fails
       }
 
@@ -498,32 +441,20 @@ export class NoteController {
       getLogger().info({ noteId }, 'Note successfully deleted');
       return c.json({
         success: true,
-        message: 'Note deleted successfully'
+        message: 'Note deleted successfully',
       });
     } catch (error) {
-      getLogger().error({
-        err: error,
-        noteId: c.req.param('id'),
-        path: c.req.path
-      }, 'Error deleting note');
+      getLogger().error(
+        {
+          err: error,
+          noteId: c.req.param('id'),
+          path: c.req.path,
+        },
+        'Error deleting note',
+      );
 
-      if (error instanceof ServiceError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'SERVICE_ERROR',
-            message: error.message
-          }
-        }, 500);
-      }
-
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred while deleting the note'
-        }
-      }, 500);
+      // Let the middleware handle the error
+      throw error;
     }
   }
 
@@ -551,16 +482,24 @@ export class NoteController {
    * @param content Note content
    * @param userId User ID
    */
-  private async processEmbedding(env: Bindings, noteId: string, content: string, userId: string): Promise<void> {
+  private async processEmbedding(
+    env: Bindings,
+    noteId: string,
+    content: string,
+    userId: string,
+  ): Promise<void> {
     try {
-      getLogger().debug({
-        noteId,
-        contentLength: content.length
-      }, 'Starting embedding process');
-      
+      getLogger().debug(
+        {
+          noteId,
+          contentLength: content.length,
+        },
+        'Starting embedding process',
+      );
+
       // Update embedding status to processing
       await this.noteRepository.update(env, noteId, {
-        embeddingStatus: EmbeddingStatus.PROCESSING
+        embeddingStatus: EmbeddingStatus.PROCESSING,
       });
 
       // Generate embedding
@@ -568,33 +507,39 @@ export class NoteController {
       const embedding = await embeddingService.generateEmbedding(env, content);
 
       // Store embedding in Vectorize
-      getLogger().debug({
-        noteId,
-        embeddingLength: embedding.length
-      }, 'Storing embedding vector');
-      
+      getLogger().debug(
+        {
+          noteId,
+          embeddingLength: embedding.length,
+        },
+        'Storing embedding vector',
+      );
+
       await vectorizeService.addVector(env, noteId, embedding, {
         noteId,
         userId,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
 
       // Update embedding status to completed
       await this.noteRepository.update(env, noteId, {
-        embeddingStatus: EmbeddingStatus.COMPLETED
+        embeddingStatus: EmbeddingStatus.COMPLETED,
       });
-      
+
       getLogger().info({ noteId }, 'Embedding process completed successfully');
     } catch (error) {
-      getLogger().error({
-        err: error,
-        noteId,
-        userId
-      }, 'Error processing embedding for note');
+      getLogger().error(
+        {
+          err: error,
+          noteId,
+          userId,
+        },
+        'Error processing embedding for note',
+      );
 
       // Update embedding status to failed
       await this.noteRepository.update(env, noteId, {
-        embeddingStatus: EmbeddingStatus.FAILED
+        embeddingStatus: EmbeddingStatus.FAILED,
       });
 
       throw error;

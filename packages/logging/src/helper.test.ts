@@ -4,7 +4,7 @@ import { getLogger } from './helper';
 
 // Mock the hono/context-storage module
 vi.mock('hono/context-storage', () => ({
-  getContext: vi.fn().mockReturnValue(null)
+  getContext: vi.fn().mockReturnValue(null),
 }));
 
 describe('getLogger', () => {
@@ -14,7 +14,7 @@ describe('getLogger', () => {
 
   it('should return a logger', () => {
     const logger = getLogger();
-    
+
     expect(logger).toBeDefined();
     expect(typeof logger.info).toBe('function');
     expect(typeof logger.error).toBe('function');

@@ -23,7 +23,9 @@ export function logoutCommand(program: Command): void {
 
         console.log(success('Successfully logged out.'));
       } catch (err) {
-        console.log(error(`Failed to log out: ${err instanceof Error ? err.message : String(err)}`));
+        console.log(
+          error(`Failed to log out: ${err instanceof Error ? err.message : String(err)}`),
+        );
         process.exit(1);
       }
     });

@@ -70,8 +70,8 @@ describe('Tasks API', () => {
       experimental: { disableExperimentalWarning: true },
       // Use vars for environment variables
       vars: {
-        ENVIRONMENT: 'development'
-      }
+        ENVIRONMENT: 'development',
+      },
     });
   });
 
@@ -86,7 +86,7 @@ describe('Tasks API', () => {
       title: 'Test Task',
       description: 'This is a test task',
       priority: 'medium',
-      dueDate: Date.now() + 86400000 // Tomorrow
+      dueDate: Date.now() + 86400000, // Tomorrow
     };
 
     // Send request to create a task
@@ -94,17 +94,17 @@ describe('Tasks API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(taskData)
+      body: JSON.stringify(taskData),
     });
 
     // Check response
     expect(resp.status).toBe(201);
-    
+
     // Parse response body with type assertion
-    const data = await resp.json() as TaskResponse;
-    
+    const data = (await resp.json()) as TaskResponse;
+
     // Validate response
     expect(data.success).toBe(true);
     expect(data.task).toBeDefined();
@@ -120,16 +120,16 @@ describe('Tasks API', () => {
     const resp = await worker.fetch('/tasks?userId=test-user-123', {
       method: 'GET',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response
     expect(resp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const data = await resp.json() as TasksListResponse;
-    
+    const data = (await resp.json()) as TasksListResponse;
+
     // Validate response
     expect(data.success).toBe(true);
     expect(data.tasks).toBeDefined();
@@ -142,7 +142,7 @@ describe('Tasks API', () => {
       title: 'Another Test Task',
       description: 'This is another test task',
       priority: 'high',
-      dueDate: Date.now() + 172800000 // Day after tomorrow
+      dueDate: Date.now() + 172800000, // Day after tomorrow
     };
 
     // Send request to create a task
@@ -150,29 +150,29 @@ describe('Tasks API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(taskData)
+      body: JSON.stringify(taskData),
     });
 
     // Parse response body with type assertion
-    const createData = await createResp.json() as TaskResponse;
+    const createData = (await createResp.json()) as TaskResponse;
     const taskId = createData.task.id;
 
     // Send request to get the task
     const getResp = await worker.fetch(`/tasks/${taskId}`, {
       method: 'GET',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response
     expect(getResp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const getData = await getResp.json() as TaskResponse;
-    
+    const getData = (await getResp.json()) as TaskResponse;
+
     // Validate response
     expect(getData.success).toBe(true);
     expect(getData.task).toBeDefined();
@@ -187,7 +187,7 @@ describe('Tasks API', () => {
     const taskData = {
       title: 'Task to Update',
       description: 'This is a task to update',
-      priority: 'medium'
+      priority: 'medium',
     };
 
     // Send request to create a task
@@ -195,20 +195,20 @@ describe('Tasks API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(taskData)
+      body: JSON.stringify(taskData),
     });
 
     // Parse response body with type assertion
-    const createData = await createResp.json() as TaskResponse;
+    const createData = (await createResp.json()) as TaskResponse;
     const taskId = createData.task.id;
 
     // Update data
     const updateData = {
       title: 'Updated Task Title',
       description: 'This task has been updated',
-      priority: 'high'
+      priority: 'high',
     };
 
     // Send request to update the task
@@ -216,17 +216,17 @@ describe('Tasks API', () => {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(updateData)
+      body: JSON.stringify(updateData),
     });
 
     // Check response
     expect(updateResp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const updateResponseData = await updateResp.json() as TaskResponse;
-    
+    const updateResponseData = (await updateResp.json()) as TaskResponse;
+
     // Validate response
     expect(updateResponseData.success).toBe(true);
     expect(updateResponseData.task).toBeDefined();
@@ -241,7 +241,7 @@ describe('Tasks API', () => {
     const taskData = {
       title: 'Task to Complete',
       description: 'This is a task to complete',
-      priority: 'medium'
+      priority: 'medium',
     };
 
     // Send request to create a task
@@ -249,29 +249,29 @@ describe('Tasks API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(taskData)
+      body: JSON.stringify(taskData),
     });
 
     // Parse response body with type assertion
-    const createData = await createResp.json() as TaskResponse;
+    const createData = (await createResp.json()) as TaskResponse;
     const taskId = createData.task.id;
 
     // Send request to complete the task
     const completeResp = await worker.fetch(`/tasks/${taskId}/complete`, {
       method: 'POST',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response
     expect(completeResp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const completeData = await completeResp.json() as TaskResponse;
-    
+    const completeData = (await completeResp.json()) as TaskResponse;
+
     // Validate response
     expect(completeData.success).toBe(true);
     expect(completeData.task).toBeDefined();
@@ -285,7 +285,7 @@ describe('Tasks API', () => {
     const taskData = {
       title: 'Task to Delete',
       description: 'This is a task to delete',
-      priority: 'low'
+      priority: 'low',
     };
 
     // Send request to create a task
@@ -293,29 +293,29 @@ describe('Tasks API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(taskData)
+      body: JSON.stringify(taskData),
     });
 
     // Parse response body with type assertion
-    const createData = await createResp.json() as TaskResponse;
+    const createData = (await createResp.json()) as TaskResponse;
     const taskId = createData.task.id;
 
     // Send request to delete the task
     const deleteResp = await worker.fetch(`/tasks/${taskId}`, {
       method: 'DELETE',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response
     expect(deleteResp.status).toBe(200);
-    
+
     // Parse response body with type assertion
-    const deleteData = await deleteResp.json() as DeleteResponse;
-    
+    const deleteData = (await deleteResp.json()) as DeleteResponse;
+
     // Validate response
     expect(deleteData.success).toBe(true);
     expect(deleteData.message).toBeDefined();
@@ -324,8 +324,8 @@ describe('Tasks API', () => {
     const getResp = await worker.fetch(`/tasks/${taskId}`, {
       method: 'GET',
       headers: {
-        'x-user-id': 'test-user-123'
-      }
+        'x-user-id': 'test-user-123',
+      },
     });
 
     // Check response - should be 404 Not Found
@@ -337,7 +337,7 @@ describe('Tasks API', () => {
     const taskData = {
       title: 'Task with Reminder',
       description: 'This is a task with a reminder',
-      priority: 'high'
+      priority: 'high',
     };
 
     // Send request to create a task
@@ -345,19 +345,19 @@ describe('Tasks API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(taskData)
+      body: JSON.stringify(taskData),
     });
 
     // Parse response body with type assertion
-    const createData = await createResp.json() as TaskResponse;
+    const createData = (await createResp.json()) as TaskResponse;
     const taskId = createData.task.id;
 
     // Reminder data
     const reminderData = {
       remindAt: Date.now() + 3600000, // 1 hour from now
-      deliveryMethod: 'email'
+      deliveryMethod: 'email',
     };
 
     // Send request to add a reminder
@@ -365,17 +365,17 @@ describe('Tasks API', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': 'test-user-123'
+        'x-user-id': 'test-user-123',
       },
-      body: JSON.stringify(reminderData)
+      body: JSON.stringify(reminderData),
     });
 
     // Check response
     expect(reminderResp.status).toBe(201);
-    
+
     // Parse response body with type assertion
-    const reminderResponseData = await reminderResp.json() as { success: boolean; reminder: any };
-    
+    const reminderResponseData = (await reminderResp.json()) as { success: boolean; reminder: any };
+
     // Validate response
     expect(reminderResponseData.success).toBe(true);
     expect(reminderResponseData.reminder).toBeDefined();

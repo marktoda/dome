@@ -14,11 +14,29 @@ jest.mock('../../src/repositories/noteRepository');
 describe('NoteIndexingService', () => {
   // Mock environment and data
   let mockEnv: any;
-  
+
   // Mock data for pending notes
   const mockPendingNotes = [
-    { id: 'note-1', userId: 'user-123', title: 'Test Note 1', body: 'Test body 1', contentType: 'text/plain', createdAt: 1617235678000, updatedAt: 1617235678000, embeddingStatus: EmbeddingStatus.PENDING },
-    { id: 'note-2', userId: 'user-123', title: 'Test Note 2', body: 'Test body 2', contentType: 'text/plain', createdAt: 1617235679000, updatedAt: 1617235679000, embeddingStatus: EmbeddingStatus.PENDING }
+    {
+      id: 'note-1',
+      userId: 'user-123',
+      title: 'Test Note 1',
+      body: 'Test body 1',
+      contentType: 'text/plain',
+      createdAt: 1617235678000,
+      updatedAt: 1617235678000,
+      embeddingStatus: EmbeddingStatus.PENDING,
+    },
+    {
+      id: 'note-2',
+      userId: 'user-123',
+      title: 'Test Note 2',
+      body: 'Test body 2',
+      contentType: 'text/plain',
+      createdAt: 1617235679000,
+      updatedAt: 1617235679000,
+      embeddingStatus: EmbeddingStatus.PENDING,
+    },
   ];
 
   // Mock data
@@ -30,7 +48,7 @@ describe('NoteIndexingService', () => {
     contentType: 'text/plain',
     createdAt: 1617235678000,
     updatedAt: 1617235678000,
-    embeddingStatus: EmbeddingStatus.PENDING
+    embeddingStatus: EmbeddingStatus.PENDING,
   };
 
   const mockPages = [
@@ -39,60 +57,60 @@ describe('NoteIndexingService', () => {
       noteId: 'note-123',
       pageNum: 1,
       content: 'This is page 1 of the test note',
-      createdAt: 1617235678000
+      createdAt: 1617235678000,
     },
     {
       id: 'page-2',
       noteId: 'note-123',
       pageNum: 2,
       content: 'This is page 2 of the test note',
-      createdAt: 1617235678000
-    }
+      createdAt: 1617235678000,
+    },
   ];
 
   const mockEmbedding = new Array(1536).fill(0.1);
 
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Setup mock environment for each test
     const mockD1Result = {
-      results: mockPendingNotes
+      results: mockPendingNotes,
     };
-    
+
     const mockPrepareStmt = {
       bind: jest.fn().mockReturnThis(),
-      all: jest.fn().mockResolvedValue(mockD1Result)
+      all: jest.fn().mockResolvedValue(mockD1Result),
     };
-    
+
     const mockD1Database = {
-      prepare: jest.fn().mockReturnValue(mockPrepareStmt)
+      prepare: jest.fn().mockReturnValue(mockPrepareStmt),
     };
-    
+
     mockEnv = {
       D1_DATABASE: mockD1Database as unknown as D1Database,
       VECTORIZE: {} as VectorizeIndex,
       RAW: {} as R2Bucket,
-      EVENTS: {} as Queue<any>
+      EVENTS: {} as Queue<any>,
     };
-    
+
     // Mock NoteRepository
     (NoteRepository as jest.Mock).mockImplementation(() => {
       return {
         update: jest.fn().mockResolvedValue(mockNote),
-        findPagesByNoteId: jest.fn().mockResolvedValue(mockPages)
+        findPagesByNoteId: jest.fn().mockResolvedValue(mockPages),
       };
     });
-    
+
     // Mock embeddingService.generateEmbedding
     (embeddingService.generateEmbedding as jest.Mock).mockResolvedValue(mockEmbedding);
-    
+
     // Mock embeddingService.generateEmbeddings
     (embeddingService.generateEmbeddings as jest.Mock).mockResolvedValue([
       mockEmbedding,
-      mockEmbedding
+      mockEmbedding,
     ]);
-    
+
     // Mock vectorizeService methods
     (vectorizeService.addVector as jest.Mock).mockResolvedValue(undefined);
     (vectorizeService.updateVector as jest.Mock).mockResolvedValue(undefined);
@@ -106,38 +124,26 @@ describe('NoteIndexingService', () => {
 
       // Assert
       const noteRepo = noteIndexingService['noteRepository'];
-      
+
       // Should update note status to processing
-      expect(noteRepo.update).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        { embeddingStatus: EmbeddingStatus.PROCESSING }
-      );
-      
+      expect(noteRepo.update).toHaveBeenCalledWith(mockEnv, mockNote.id, {
+        embeddingStatus: EmbeddingStatus.PROCESSING,
+      });
+
       // Should generate embedding
-      expect(embeddingService.generateEmbedding).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.body
-      );
-      
+      expect(embeddingService.generateEmbedding).toHaveBeenCalledWith(mockEnv, mockNote.body);
+
       // Should add vector to Vectorize
-      expect(vectorizeService.addVector).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        mockEmbedding,
-        {
-          userId: mockNote.userId,
-          noteId: mockNote.id,
-          createdAt: mockNote.createdAt
-        }
-      );
-      
+      expect(vectorizeService.addVector).toHaveBeenCalledWith(mockEnv, mockNote.id, mockEmbedding, {
+        userId: mockNote.userId,
+        noteId: mockNote.id,
+        createdAt: mockNote.createdAt,
+      });
+
       // Should update note status to completed
-      expect(noteRepo.update).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        { embeddingStatus: EmbeddingStatus.COMPLETED }
-      );
+      expect(noteRepo.update).toHaveBeenCalledWith(mockEnv, mockNote.id, {
+        embeddingStatus: EmbeddingStatus.COMPLETED,
+      });
     });
 
     it('should update note status to failed when embedding generation fails', async () => {
@@ -146,17 +152,14 @@ describe('NoteIndexingService', () => {
       (embeddingService.generateEmbedding as jest.Mock).mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(noteIndexingService.indexNote(mockEnv, mockNote))
-        .rejects.toThrow(ServiceError);
-      
+      await expect(noteIndexingService.indexNote(mockEnv, mockNote)).rejects.toThrow(ServiceError);
+
       const noteRepo = noteIndexingService['noteRepository'];
-      
+
       // Should update note status to failed
-      expect(noteRepo.update).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        { embeddingStatus: EmbeddingStatus.FAILED }
-      );
+      expect(noteRepo.update).toHaveBeenCalledWith(mockEnv, mockNote.id, {
+        embeddingStatus: EmbeddingStatus.FAILED,
+      });
     });
   });
 
@@ -167,20 +170,18 @@ describe('NoteIndexingService', () => {
 
       // Assert
       const noteRepo = noteIndexingService['noteRepository'];
-      
+
       // Should update note status to processing
-      expect(noteRepo.update).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        { embeddingStatus: EmbeddingStatus.PROCESSING }
-      );
-      
+      expect(noteRepo.update).toHaveBeenCalledWith(mockEnv, mockNote.id, {
+        embeddingStatus: EmbeddingStatus.PROCESSING,
+      });
+
       // Should generate embeddings for pages
       expect(embeddingService.generateEmbeddings).toHaveBeenCalledWith(
         mockEnv,
-        mockPages.map(page => page.content)
+        mockPages.map(page => page.content),
       );
-      
+
       // Should add vectors to Vectorize for each page
       expect(vectorizeService.addVector).toHaveBeenCalledTimes(2);
       expect(vectorizeService.addVector).toHaveBeenCalledWith(
@@ -191,8 +192,8 @@ describe('NoteIndexingService', () => {
           userId: mockNote.userId,
           noteId: mockNote.id,
           createdAt: mockNote.createdAt,
-          pageNum: mockPages[0].pageNum
-        }
+          pageNum: mockPages[0].pageNum,
+        },
       );
       expect(vectorizeService.addVector).toHaveBeenCalledWith(
         mockEnv,
@@ -202,16 +203,14 @@ describe('NoteIndexingService', () => {
           userId: mockNote.userId,
           noteId: mockNote.id,
           createdAt: mockNote.createdAt,
-          pageNum: mockPages[1].pageNum
-        }
+          pageNum: mockPages[1].pageNum,
+        },
       );
-      
+
       // Should update note status to completed
-      expect(noteRepo.update).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        { embeddingStatus: EmbeddingStatus.COMPLETED }
-      );
+      expect(noteRepo.update).toHaveBeenCalledWith(mockEnv, mockNote.id, {
+        embeddingStatus: EmbeddingStatus.COMPLETED,
+      });
     });
 
     it('should update note status to failed when embedding generation fails', async () => {
@@ -220,17 +219,16 @@ describe('NoteIndexingService', () => {
       (embeddingService.generateEmbeddings as jest.Mock).mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(noteIndexingService.indexNotePages(mockEnv, mockNote, mockPages))
-        .rejects.toThrow(ServiceError);
-      
+      await expect(
+        noteIndexingService.indexNotePages(mockEnv, mockNote, mockPages),
+      ).rejects.toThrow(ServiceError);
+
       const noteRepo = noteIndexingService['noteRepository'];
-      
+
       // Should update note status to failed
-      expect(noteRepo.update).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        { embeddingStatus: EmbeddingStatus.FAILED }
-      );
+      expect(noteRepo.update).toHaveBeenCalledWith(mockEnv, mockNote.id, {
+        embeddingStatus: EmbeddingStatus.FAILED,
+      });
     });
   });
 
@@ -241,20 +239,15 @@ describe('NoteIndexingService', () => {
 
       // Assert
       const noteRepo = noteIndexingService['noteRepository'];
-      
+
       // Should update note status to processing
-      expect(noteRepo.update).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        { embeddingStatus: EmbeddingStatus.PROCESSING }
-      );
-      
+      expect(noteRepo.update).toHaveBeenCalledWith(mockEnv, mockNote.id, {
+        embeddingStatus: EmbeddingStatus.PROCESSING,
+      });
+
       // Should generate embedding
-      expect(embeddingService.generateEmbedding).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.body
-      );
-      
+      expect(embeddingService.generateEmbedding).toHaveBeenCalledWith(mockEnv, mockNote.body);
+
       // Should update vector in Vectorize
       expect(vectorizeService.updateVector).toHaveBeenCalledWith(
         mockEnv,
@@ -263,16 +256,14 @@ describe('NoteIndexingService', () => {
         {
           userId: mockNote.userId,
           noteId: mockNote.id,
-          createdAt: mockNote.createdAt
-        }
+          createdAt: mockNote.createdAt,
+        },
       );
-      
+
       // Should update note status to completed
-      expect(noteRepo.update).toHaveBeenCalledWith(
-        mockEnv,
-        mockNote.id,
-        { embeddingStatus: EmbeddingStatus.COMPLETED }
-      );
+      expect(noteRepo.update).toHaveBeenCalledWith(mockEnv, mockNote.id, {
+        embeddingStatus: EmbeddingStatus.COMPLETED,
+      });
     });
   });
 
@@ -285,10 +276,10 @@ describe('NoteIndexingService', () => {
       // Should get note pages
       const noteRepo = noteIndexingService['noteRepository'];
       expect(noteRepo.findPagesByNoteId).toHaveBeenCalledWith(mockEnv, mockNote.id);
-      
+
       // Should delete note vector
       expect(vectorizeService.deleteVector).toHaveBeenCalledWith(mockEnv, mockNote.id);
-      
+
       // Should delete page vectors
       expect(vectorizeService.deleteVector).toHaveBeenCalledWith(mockEnv, mockPages[0].id);
       expect(vectorizeService.deleteVector).toHaveBeenCalledWith(mockEnv, mockPages[1].id);
@@ -298,21 +289,18 @@ describe('NoteIndexingService', () => {
   describe('processPendingNotes', () => {
     it('should process pending notes', async () => {
       // Arrange - mockPendingNotes is already set up in beforeEach
-      
+
       // Mock indexNote and indexNotePages
       jest.spyOn(noteIndexingService, 'indexNote').mockResolvedValue();
       jest.spyOn(noteIndexingService, 'indexNotePages').mockResolvedValue();
-      
+
       // Act
       const count = await noteIndexingService.processPendingNotes(mockEnv, 10);
 
       // Assert
       expect(mockEnv.D1_DATABASE.prepare).toHaveBeenCalled();
-      expect(mockEnv.D1_DATABASE.prepare().bind).toHaveBeenCalledWith(
-        EmbeddingStatus.PENDING,
-        10
-      );
-      
+      expect(mockEnv.D1_DATABASE.prepare().bind).toHaveBeenCalledWith(EmbeddingStatus.PENDING, 10);
+
       // Should process each note
       expect(count).toBe(2);
       expect(noteIndexingService.indexNote).toHaveBeenCalledTimes(2);
@@ -321,17 +309,17 @@ describe('NoteIndexingService', () => {
     it('should process notes with pages using indexNotePages', async () => {
       // Arrange - use only the first pending note
       mockEnv.D1_DATABASE.prepare().all = jest.fn().mockResolvedValueOnce({
-        results: [mockPendingNotes[0]]
+        results: [mockPendingNotes[0]],
       });
-      
+
       // Mock indexNote and indexNotePages
       jest.spyOn(noteIndexingService, 'indexNote').mockResolvedValue();
       jest.spyOn(noteIndexingService, 'indexNotePages').mockResolvedValue();
-      
+
       // Mock findPagesByNoteId to return pages
       const noteRepo = noteIndexingService['noteRepository'];
       (noteRepo.findPagesByNoteId as jest.Mock).mockResolvedValueOnce(mockPages);
-      
+
       // Act
       await noteIndexingService.processPendingNotes(mockEnv, 10);
 
@@ -340,7 +328,7 @@ describe('NoteIndexingService', () => {
       expect(noteIndexingService.indexNotePages).toHaveBeenCalledWith(
         mockEnv,
         mockPendingNotes[0],
-        mockPages
+        mockPages,
       );
       expect(noteIndexingService.indexNote).not.toHaveBeenCalled();
     });

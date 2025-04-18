@@ -148,34 +148,34 @@ export function createSearchScreen(layout: BaseLayoutElements): Screen {
         loadingIndicator.load('Searching...');
         resultsList.setItems(['Searching...']);
         layout.screen.render();
-        
+
         // Perform search
         const results = await search(query);
-        
+
         // Hide loading indicator
         loadingIndicator.stop();
-        
+
         if (results.length === 0) {
           resultsList.setItems(['No results found']);
           resultContentBox.setContent('No results found for query: ' + query);
         } else {
           // Update results list
           resultsList.setItems(
-            results.map((result: any) => result.title || `Result ${result.id.substring(0, 8)}`)
+            results.map((result: any) => result.title || `Result ${result.id.substring(0, 8)}`),
           );
-          
+
           // Store the full results data
           (resultsList as any).resultsData = results;
-          
+
           // Focus the results list
           resultsList.focus();
         }
-        
+
         layout.screen.render();
       } catch (err) {
         // Hide loading indicator
         loadingIndicator.stop();
-        
+
         resultsList.setItems(['Error performing search']);
         resultContentBox.setContent(`Error: ${err instanceof Error ? err.message : String(err)}`);
         layout.screen.render();
@@ -190,10 +190,10 @@ export function createSearchScreen(layout: BaseLayoutElements): Screen {
       const result = results[index];
       resultContentBox.setContent(
         `{bold}Title:{/bold} ${result.title || '(No title)'}\n` +
-        `{bold}Type:{/bold} ${result.type || 'Unknown'}\n` +
-        `{bold}Created:{/bold} ${new Date(result.createdAt).toLocaleString()}\n` +
-        `{bold}Tags:{/bold} ${result.tags?.join(', ') || 'None'}\n\n` +
-        `${result.content || result.description || 'No content available'}`
+          `{bold}Type:{/bold} ${result.type || 'Unknown'}\n` +
+          `{bold}Created:{/bold} ${new Date(result.createdAt).toLocaleString()}\n` +
+          `{bold}Tags:{/bold} ${result.tags?.join(', ') || 'None'}\n\n` +
+          `${result.content || result.description || 'No content available'}`,
       );
       layout.screen.render();
     }

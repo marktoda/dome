@@ -28,7 +28,7 @@ export function buildLoggingMiddleware(opts: InitOptions = {}): MiddlewareHandle
   return async (c: HonoContext, next: () => Promise<void>) => {
     const reqId = idFactory();
     const cfRequest = c.req.raw as CFRequest;
-    
+
     const child = baseLogger.child({
       reqId,
       ip: c.req.header('CF-Connecting-IP'),

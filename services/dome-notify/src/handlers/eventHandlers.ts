@@ -57,7 +57,9 @@ export class ReminderDueEventHandler implements EventHandler {
       // Mark the reminder as delivered in the database
       await this.markReminderAsDelivered(reminderEvent.data.reminderId, env.D1_DATABASE);
 
-      console.log(`Reminder notification sent and marked as delivered: ${reminderEvent.data.reminderId}`);
+      console.log(
+        `Reminder notification sent and marked as delivered: ${reminderEvent.data.reminderId}`,
+      );
     } catch (error) {
       console.error('Error handling reminder due event:', error);
       throw error;

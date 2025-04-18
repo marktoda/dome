@@ -209,7 +209,7 @@ describe('QueueService', () => {
         },
         attempts: 0,
       };
-      
+
       const mockMessageBatch = {
         messages: [
           {

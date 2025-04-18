@@ -32,8 +32,8 @@ deploy SERVICE ENV="dev":
     wrangler -c services/{{ SERVICE }}/wrangler.toml deploy
 
 # Run development server for a specific service
-dev SERVICE="dome-api":
-    wrangler -c services/{{ SERVICE }}/wrangler.toml dev
+dev SERVICE="dome-api": build
+    wrangler -c services/{{ SERVICE }}/wrangler.toml dev --experimental-vectorize-bind-to-prod | npx pino-pretty
 
 # Run tests for all packages
 test:
@@ -158,16 +158,10 @@ logs SERVICE:
 run PACKAGE COMMAND:
     pnpm --filter {{ PACKAGE }} {{ COMMAND }}
 
-# CLI TUI commands
-setup-tui:
-    @echo "Setting up the CLI TUI..."
-    just build-pkg @dome/cli
-    @echo "CLI TUI setup complete! Run 'just run-tui' to start the TUI."
-
-run-tui: setup-tui
-    @echo "Starting the CLI TUI..."
-    node packages/cli/dist/tui/index.js
-
-run-prompt: setup-tui
+tui:
     @echo "Starting the prompt-based CLI TUI..."
-    node packages/cli/dist/tui/prompt.js
+    pnpm --filter cli start tui
+
+cli *ARGS:
+    @echo "Starting the prompt‑based CLI"
+    pnpm --filter cli start {{ ARGS }}

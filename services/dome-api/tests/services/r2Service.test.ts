@@ -6,12 +6,12 @@ import { ServiceError } from '@dome/common';
 const mockR2Bucket = {
   get: jest.fn(),
   put: jest.fn(),
-  delete: jest.fn()
+  delete: jest.fn(),
 };
 
 // Mock environment bindings
 const mockEnv = {
-  RAW: mockR2Bucket
+  RAW: mockR2Bucket,
 } as any;
 
 describe('R2Service', () => {
@@ -26,18 +26,14 @@ describe('R2Service', () => {
         key: 'test-key',
         size: 100,
         etag: 'test-etag',
-        uploaded: new Date()
+        uploaded: new Date(),
       };
       mockR2Bucket.put.mockResolvedValue(mockR2Object);
 
       // Call the service
-      const result = await r2Service.uploadObject(
-        mockEnv,
-        'test-key',
-        'test-data',
-        'text/plain',
-        { testMetadata: 'test' }
-      );
+      const result = await r2Service.uploadObject(mockEnv, 'test-key', 'test-data', 'text/plain', {
+        testMetadata: 'test',
+      });
 
       // Verify the result
       expect(result).toEqual({
@@ -45,18 +41,14 @@ describe('R2Service', () => {
         size: mockR2Object.size,
         etag: mockR2Object.etag,
         uploaded: mockR2Object.uploaded,
-        customMetadata: { testMetadata: 'test' }
+        customMetadata: { testMetadata: 'test' },
       });
 
       // Verify R2 bucket was called correctly
-      expect(mockR2Bucket.put).toHaveBeenCalledWith(
-        'test-key',
-        'test-data',
-        {
-          httpMetadata: { contentType: 'text/plain' },
-          customMetadata: { testMetadata: 'test' }
-        }
-      );
+      expect(mockR2Bucket.put).toHaveBeenCalledWith('test-key', 'test-data', {
+        httpMetadata: { contentType: 'text/plain' },
+        customMetadata: { testMetadata: 'test' },
+      });
     });
 
     it('should throw ServiceError when upload fails', async () => {
@@ -65,7 +57,7 @@ describe('R2Service', () => {
 
       // Call the service and expect it to throw
       await expect(
-        r2Service.uploadObject(mockEnv, 'test-key', 'test-data', 'text/plain')
+        r2Service.uploadObject(mockEnv, 'test-key', 'test-data', 'text/plain'),
       ).rejects.toThrow(ServiceError);
     });
   });
@@ -79,7 +71,7 @@ describe('R2Service', () => {
         etag: 'test-etag',
         uploaded: new Date(),
         httpMetadata: { contentType: 'text/plain' },
-        customMetadata: { testMetadata: 'test' }
+        customMetadata: { testMetadata: 'test' },
       };
       mockR2Bucket.get.mockResolvedValue(mockR2Object);
 
@@ -94,8 +86,8 @@ describe('R2Service', () => {
           size: mockR2Object.size,
           etag: mockR2Object.etag,
           uploaded: mockR2Object.uploaded,
-          customMetadata: { testMetadata: 'test' }
-        }
+          customMetadata: { testMetadata: 'test' },
+        },
       });
 
       // Verify R2 bucket was called correctly
@@ -118,9 +110,7 @@ describe('R2Service', () => {
       mockR2Bucket.get.mockRejectedValue(new Error('Download failed'));
 
       // Call the service and expect it to throw
-      await expect(
-        r2Service.downloadObject(mockEnv, 'test-key')
-      ).rejects.toThrow(ServiceError);
+      await expect(r2Service.downloadObject(mockEnv, 'test-key')).rejects.toThrow(ServiceError);
     });
   });
 
@@ -162,9 +152,7 @@ describe('R2Service', () => {
       mockR2Bucket.delete.mockRejectedValue(new Error('Delete failed'));
 
       // Call the service and expect it to throw
-      await expect(
-        r2Service.deleteObject(mockEnv, 'test-key')
-      ).rejects.toThrow(ServiceError);
+      await expect(r2Service.deleteObject(mockEnv, 'test-key')).rejects.toThrow(ServiceError);
     });
   });
 
@@ -202,9 +190,7 @@ describe('R2Service', () => {
       mockR2Bucket.get.mockRejectedValue(new Error('Check failed'));
 
       // Call the service and expect it to throw
-      await expect(
-        r2Service.objectExists(mockEnv, 'test-key')
-      ).rejects.toThrow(ServiceError);
+      await expect(r2Service.objectExists(mockEnv, 'test-key')).rejects.toThrow(ServiceError);
     });
   });
 });

@@ -8,7 +8,7 @@ export enum ContentType {
   NOTE = 'note',
   TASK = 'task',
   REMINDER = 'reminder',
-  FILE = 'file'
+  FILE = 'file',
 }
 
 /**
@@ -21,7 +21,7 @@ export enum EntityType {
   LOCATION = 'location',
   ORGANIZATION = 'organization',
   URL = 'url',
-  EMAIL = 'email'
+  EMAIL = 'email',
 }
 
 /**
@@ -69,13 +69,13 @@ export class NlpProcessor {
       return this.processInputWithAI(env, input);
     } catch (error) {
       console.error('Error processing natural language input:', error);
-      
+
       // Fallback to rule-based processing on error
       try {
         return this.processInputWithRules(input);
       } catch (fallbackError) {
         throw new ServiceError('Failed to process natural language input', {
-          cause: error instanceof Error ? error : new Error(String(error))
+          cause: error instanceof Error ? error : new Error(String(error)),
         });
       }
     }
@@ -117,7 +117,7 @@ export class NlpProcessor {
       // Call Workers AI (we've already checked that env.AI exists in the calling method)
       const ai = env.AI!; // Use non-null assertion since we've checked this in processInput
       const result = await ai.run('@cf/meta/llama-3-8b-instruct', {
-        prompt
+        prompt,
       });
 
       // Parse the response
@@ -128,7 +128,7 @@ export class NlpProcessor {
         if (!jsonMatch) {
           throw new Error('No JSON found in AI response');
         }
-        
+
         const jsonStr = jsonMatch[0];
         parsedResult = JSON.parse(jsonStr);
       } catch (parseError) {
@@ -145,7 +145,7 @@ export class NlpProcessor {
         entities: Array.isArray(parsedResult.entities) ? parsedResult.entities : [],
         dueDate: parsedResult.dueDate,
         priority: parsedResult.priority,
-        reminderTime: parsedResult.reminderTime
+        reminderTime: parsedResult.reminderTime,
       };
     } catch (error) {
       console.error('Error processing input with AI:', error);
@@ -161,42 +161,82 @@ export class NlpProcessor {
   private processInputWithRules(input: string): ExtractedContent {
     // Default to note content type
     let contentType = ContentType.NOTE;
-    
+
     // Extract entities
     const entities: Entity[] = [];
-    
+
     // Check for task indicators
     const taskIndicators = [
-      'todo', 'to-do', 'to do', 'task', 'complete', 'finish', 'accomplish',
-      'by tomorrow', 'by next week', 'by monday', 'by tuesday', 'by wednesday',
-      'by thursday', 'by friday', 'by saturday', 'by sunday'
+      'todo',
+      'to-do',
+      'to do',
+      'task',
+      'complete',
+      'finish',
+      'accomplish',
+      'by tomorrow',
+      'by next week',
+      'by monday',
+      'by tuesday',
+      'by wednesday',
+      'by thursday',
+      'by friday',
+      'by saturday',
+      'by sunday',
     ];
-    
+
     if (taskIndicators.some(indicator => input.toLowerCase().includes(indicator))) {
       contentType = ContentType.TASK;
     }
-    
+
     // Check for reminder indicators
     const reminderIndicators = [
-      'remind', 'reminder', 'remember', 'don\'t forget', 'alert',
-      'at 10am', 'at 11am', 'at 12pm', 'at 1pm', 'at 2pm', 'at 3pm',
-      'at 4pm', 'at 5pm', 'at 6pm', 'at 7pm', 'at 8pm', 'at 9pm'
+      'remind',
+      'reminder',
+      'remember',
+      "don't forget",
+      'alert',
+      'at 10am',
+      'at 11am',
+      'at 12pm',
+      'at 1pm',
+      'at 2pm',
+      'at 3pm',
+      'at 4pm',
+      'at 5pm',
+      'at 6pm',
+      'at 7pm',
+      'at 8pm',
+      'at 9pm',
     ];
-    
+
     if (reminderIndicators.some(indicator => input.toLowerCase().includes(indicator))) {
       contentType = ContentType.REMINDER;
     }
-    
+
     // Check for file indicators
     const fileIndicators = [
-      '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
-      '.txt', '.csv', '.jpg', '.jpeg', '.png', '.gif', 'http://', 'https://'
+      '.pdf',
+      '.doc',
+      '.docx',
+      '.xls',
+      '.xlsx',
+      '.ppt',
+      '.pptx',
+      '.txt',
+      '.csv',
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      'http://',
+      'https://',
     ];
-    
+
     if (fileIndicators.some(indicator => input.includes(indicator))) {
       contentType = ContentType.FILE;
     }
-    
+
     // Extract tags (words starting with #)
     const tagRegex = /#(\w+)/g;
     let tagMatch;
@@ -205,10 +245,10 @@ export class NlpProcessor {
         type: EntityType.TAG,
         value: tagMatch[1],
         startIndex: tagMatch.index,
-        endIndex: tagMatch.index + tagMatch[0].length
+        endIndex: tagMatch.index + tagMatch[0].length,
       });
     }
-    
+
     // Extract dates (simple patterns)
     const datePatterns = [
       // MM/DD/YYYY
@@ -216,9 +256,13 @@ export class NlpProcessor {
       // YYYY-MM-DD
       { regex: /(\d{4})-(\d{1,2})-(\d{1,2})/g, format: 'YYYY-MM-DD' },
       // Month DD, YYYY
-      { regex: /(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}),? (\d{4})/gi, format: 'Month DD, YYYY' }
+      {
+        regex:
+          /(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}),? (\d{4})/gi,
+        format: 'Month DD, YYYY',
+      },
     ];
-    
+
     for (const pattern of datePatterns) {
       let dateMatch;
       while ((dateMatch = pattern.regex.exec(input)) !== null) {
@@ -226,11 +270,11 @@ export class NlpProcessor {
           type: EntityType.DATE,
           value: dateMatch[0],
           startIndex: dateMatch.index,
-          endIndex: dateMatch.index + dateMatch[0].length
+          endIndex: dateMatch.index + dateMatch[0].length,
         });
       }
     }
-    
+
     // Extract emails
     const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
     let emailMatch;
@@ -239,10 +283,10 @@ export class NlpProcessor {
         type: EntityType.EMAIL,
         value: emailMatch[0],
         startIndex: emailMatch.index,
-        endIndex: emailMatch.index + emailMatch[0].length
+        endIndex: emailMatch.index + emailMatch[0].length,
       });
     }
-    
+
     // Extract URLs
     const urlRegex = /https?:\/\/[^\s]+/g;
     let urlMatch;
@@ -251,18 +295,18 @@ export class NlpProcessor {
         type: EntityType.URL,
         value: urlMatch[0],
         startIndex: urlMatch.index,
-        endIndex: urlMatch.index + urlMatch[0].length
+        endIndex: urlMatch.index + urlMatch[0].length,
       });
     }
-    
+
     // Generate a title from the first line or first few words
     const firstLine = input.split('\n')[0].trim();
     const title = firstLine.length <= 50 ? firstLine : firstLine.substring(0, 47) + '...';
-    
+
     // Estimate due date for tasks (if applicable)
     let dueDate: number | undefined;
     let reminderTime: number | undefined;
-    
+
     if (contentType === ContentType.TASK || contentType === ContentType.REMINDER) {
       // Look for date entities
       const dateEntity = entities.find(e => e.type === EntityType.DATE);
@@ -274,7 +318,7 @@ export class NlpProcessor {
           const date = new Date(dateValue);
           if (!isNaN(date.getTime())) {
             dueDate = date.getTime();
-            
+
             // For reminders, set reminder time to the same as due date
             if (contentType === ContentType.REMINDER) {
               reminderTime = dueDate;
@@ -285,21 +329,27 @@ export class NlpProcessor {
         }
       }
     }
-    
+
     // Determine priority for tasks
     let priority: string | undefined;
     if (contentType === ContentType.TASK) {
       if (input.toLowerCase().includes('urgent') || input.toLowerCase().includes('asap')) {
         priority = 'urgent';
-      } else if (input.toLowerCase().includes('high priority') || input.toLowerCase().includes('important')) {
+      } else if (
+        input.toLowerCase().includes('high priority') ||
+        input.toLowerCase().includes('important')
+      ) {
         priority = 'high';
-      } else if (input.toLowerCase().includes('low priority') || input.toLowerCase().includes('whenever')) {
+      } else if (
+        input.toLowerCase().includes('low priority') ||
+        input.toLowerCase().includes('whenever')
+      ) {
         priority = 'low';
       } else {
         priority = 'medium';
       }
     }
-    
+
     return {
       contentType,
       title,
@@ -307,7 +357,7 @@ export class NlpProcessor {
       entities,
       dueDate,
       priority,
-      reminderTime
+      reminderTime,
     };
   }
 

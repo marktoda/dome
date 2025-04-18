@@ -7,7 +7,7 @@ export enum DeliveryMethod {
   EMAIL = 'email',
   SLACK = 'slack',
   SMS = 'sms',
-  PUSH = 'push'
+  PUSH = 'push',
 }
 
 /**
@@ -28,12 +28,9 @@ export interface Reminder {
 export const createReminderSchema = z.object({
   taskId: z.string().min(1, 'Task ID is required'),
   remindAt: z.number().min(Date.now(), 'Reminder time must be in the future'),
-  deliveryMethod: z.enum([
-    DeliveryMethod.EMAIL,
-    DeliveryMethod.SLACK,
-    DeliveryMethod.SMS,
-    DeliveryMethod.PUSH
-  ]).default(DeliveryMethod.EMAIL)
+  deliveryMethod: z
+    .enum([DeliveryMethod.EMAIL, DeliveryMethod.SLACK, DeliveryMethod.SMS, DeliveryMethod.PUSH])
+    .default(DeliveryMethod.EMAIL),
 });
 
 /**
@@ -47,12 +44,9 @@ export type CreateReminderData = z.infer<typeof createReminderSchema>;
 export const updateReminderSchema = z.object({
   remindAt: z.number().min(Date.now(), 'Reminder time must be in the future').optional(),
   delivered: z.boolean().optional(),
-  deliveryMethod: z.enum([
-    DeliveryMethod.EMAIL,
-    DeliveryMethod.SLACK,
-    DeliveryMethod.SMS,
-    DeliveryMethod.PUSH
-  ]).optional()
+  deliveryMethod: z
+    .enum([DeliveryMethod.EMAIL, DeliveryMethod.SLACK, DeliveryMethod.SMS, DeliveryMethod.PUSH])
+    .optional(),
 });
 
 /**
@@ -64,7 +58,7 @@ export type UpdateReminderData = z.infer<typeof updateReminderSchema>;
  * Zod schema for validating reminder delivery
  */
 export const markReminderDeliveredSchema = z.object({
-  delivered: z.literal(true)
+  delivered: z.literal(true),
 });
 
 /**

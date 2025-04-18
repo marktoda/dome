@@ -45,12 +45,8 @@ export abstract class BaseRepository<T, CreateData, UpdateData> {
   async findBy(env: Bindings, field: any, value: string | number): Promise<T[]> {
     try {
       const db = getDb(env);
-      const results = await db
-        .select()
-        .from(this.table)
-        .where(eq(field, value))
-        .all();
-      
+      const results = await db.select().from(this.table).where(eq(field, value)).all();
+
       return results as T[];
     } catch (error) {
       throw handleDatabaseError(error, `findBy(${field.name}, ${value})`);
@@ -66,13 +62,9 @@ export abstract class BaseRepository<T, CreateData, UpdateData> {
   async findById(env: Bindings, id: string): Promise<T | null> {
     try {
       const db = getDb(env);
-      const results = await db
-        .select()
-        .from(this.table)
-        .where(eq(this.idField, id))
-        .all();
-      
-      return results.length > 0 ? results[0] as T : null;
+      const results = await db.select().from(this.table).where(eq(this.idField, id)).all();
+
+      return results.length > 0 ? (results[0] as T) : null;
     } catch (error) {
       throw handleDatabaseError(error, `findById(${id})`);
     }
@@ -87,7 +79,11 @@ export abstract class BaseRepository<T, CreateData, UpdateData> {
   async create(env: Bindings, data: CreateData): Promise<T> {
     try {
       const db = getDb(env);
-      const result = await db.insert(this.table).values(data as any).returning().all();
+      const result = await db
+        .insert(this.table)
+        .values(data as any)
+        .returning()
+        .all();
       return result[0] as T;
     } catch (error) {
       throw handleDatabaseError(error, 'create');
@@ -110,11 +106,11 @@ export abstract class BaseRepository<T, CreateData, UpdateData> {
         .where(eq(this.idField, id))
         .returning()
         .all();
-      
+
       if (result.length === 0) {
         throw new Error(`Record with ID ${id} not found`);
       }
-      
+
       return result[0] as T;
     } catch (error) {
       throw handleDatabaseError(error, `update(${id})`);
@@ -130,12 +126,8 @@ export abstract class BaseRepository<T, CreateData, UpdateData> {
   async delete(env: Bindings, id: string): Promise<boolean> {
     try {
       const db = getDb(env);
-      const result = await db
-        .delete(this.table)
-        .where(eq(this.idField, id))
-        .returning()
-        .all();
-      
+      const result = await db.delete(this.table).where(eq(this.idField, id)).returning().all();
+
       return result.length > 0;
     } catch (error) {
       throw handleDatabaseError(error, `delete(${id})`);

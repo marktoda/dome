@@ -7,14 +7,14 @@ const mockVectorizeIndex = {
   insert: jest.fn(),
   upsert: jest.fn(),
   delete: jest.fn(),
-  query: jest.fn()
+  query: jest.fn(),
 };
 
 const mockEnv = {
   VECTORIZE: mockVectorizeIndex,
   D1_DATABASE: {} as D1Database,
   RAW: {} as R2Bucket,
-  EVENTS: {} as Queue<any>
+  EVENTS: {} as Queue<any>,
 };
 
 describe('VectorizeService', () => {
@@ -34,7 +34,7 @@ describe('VectorizeService', () => {
       const metadata = {
         userId: 'user-1',
         noteId: 'note-1',
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
 
       (mockVectorizeIndex.insert as jest.Mock).mockResolvedValueOnce(undefined);
@@ -47,8 +47,8 @@ describe('VectorizeService', () => {
         {
           id,
           values: vector,
-          metadata
-        }
+          metadata,
+        },
       ]);
     });
 
@@ -59,15 +59,16 @@ describe('VectorizeService', () => {
       const metadata = {
         userId: 'user-1',
         noteId: 'note-1',
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
 
       const error = new Error('Vectorize error');
       (mockVectorizeIndex.insert as jest.Mock).mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(vectorizeService.addVector(mockEnv, id, vector, metadata))
-        .rejects.toThrow(ServiceError);
+      await expect(vectorizeService.addVector(mockEnv, id, vector, metadata)).rejects.toThrow(
+        ServiceError,
+      );
     });
   });
 
@@ -79,7 +80,7 @@ describe('VectorizeService', () => {
       const metadata = {
         userId: 'user-1',
         noteId: 'note-1',
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
 
       (mockVectorizeIndex.upsert as jest.Mock).mockResolvedValueOnce(undefined);
@@ -92,8 +93,8 @@ describe('VectorizeService', () => {
         {
           id,
           values: vector,
-          metadata
-        }
+          metadata,
+        },
       ]);
     });
 
@@ -104,15 +105,16 @@ describe('VectorizeService', () => {
       const metadata = {
         userId: 'user-1',
         noteId: 'note-1',
-        createdAt: Date.now()
+        createdAt: Date.now(),
       };
 
       const error = new Error('Vectorize error');
       (mockVectorizeIndex.upsert as jest.Mock).mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(vectorizeService.updateVector(mockEnv, id, vector, metadata))
-        .rejects.toThrow(ServiceError);
+      await expect(vectorizeService.updateVector(mockEnv, id, vector, metadata)).rejects.toThrow(
+        ServiceError,
+      );
     });
   });
 
@@ -136,8 +138,7 @@ describe('VectorizeService', () => {
       (mockVectorizeIndex.delete as jest.Mock).mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(vectorizeService.deleteVector(mockEnv, id))
-        .rejects.toThrow(ServiceError);
+      await expect(vectorizeService.deleteVector(mockEnv, id)).rejects.toThrow(ServiceError);
     });
   });
 
@@ -153,14 +154,14 @@ describe('VectorizeService', () => {
           {
             id: 'vector-1',
             score: 0.95,
-            metadata: { userId: 'user-1', noteId: 'note-1', createdAt: 123456789 }
+            metadata: { userId: 'user-1', noteId: 'note-1', createdAt: 123456789 },
           },
           {
             id: 'vector-2',
             score: 0.85,
-            metadata: { userId: 'user-1', noteId: 'note-2', createdAt: 123456790 }
-          }
-        ]
+            metadata: { userId: 'user-1', noteId: 'note-2', createdAt: 123456790 },
+          },
+        ],
       };
 
       (mockVectorizeIndex.query as jest.Mock).mockResolvedValueOnce(mockResults);
@@ -172,19 +173,19 @@ describe('VectorizeService', () => {
       expect(mockVectorizeIndex.query).toHaveBeenCalledWith({
         vector,
         topK,
-        filter
+        filter,
       });
       expect(results).toEqual([
         {
           id: 'vector-1',
           score: 0.95,
-          metadata: { userId: 'user-1', noteId: 'note-1', createdAt: 123456789 }
+          metadata: { userId: 'user-1', noteId: 'note-1', createdAt: 123456789 },
         },
         {
           id: 'vector-2',
           score: 0.85,
-          metadata: { userId: 'user-1', noteId: 'note-2', createdAt: 123456790 }
-        }
+          metadata: { userId: 'user-1', noteId: 'note-2', createdAt: 123456790 },
+        },
       ]);
     });
 
@@ -195,8 +196,7 @@ describe('VectorizeService', () => {
       (mockVectorizeIndex.query as jest.Mock).mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(vectorizeService.queryVectors(mockEnv, vector))
-        .rejects.toThrow(ServiceError);
+      await expect(vectorizeService.queryVectors(mockEnv, vector)).rejects.toThrow(ServiceError);
     });
   });
 });

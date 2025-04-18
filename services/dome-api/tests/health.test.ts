@@ -65,9 +65,9 @@ describe('Health Endpoint', () => {
 
     // Call the mock app
     const res = await mockApp.fetch(req, env);
-    
+
     expect(res.status).toBe(200);
-    
+
     const data = await res.json();
     expect(data).toHaveProperty('status', 'ok');
     expect(data).toHaveProperty('timestamp');

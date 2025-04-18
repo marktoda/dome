@@ -95,3 +95,4 @@ interface InitOptions {
   level?: pino.LevelWithSilent;
   serializer?: pino.SerializerFn;
 }
+```
