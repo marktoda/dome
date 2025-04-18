@@ -15,5 +15,12 @@ export { createRateLimitMiddleware } from './rateLimitMiddleware';
 // Authentication middleware
 export { createAuthMiddleware, createSimpleAuthMiddleware } from './authMiddleware';
 // Enhanced authentication middleware
-export { createEnhancedAuthMiddleware, getUserInfo, requirePermissions, requireRole, requireOwnership, UserRole, } from './enhancedAuthMiddleware';
+export {
+  createEnhancedAuthMiddleware,
+  getUserInfo,
+  requirePermissions,
+  requireRole,
+  requireOwnership,
+  UserRole,
+} from './enhancedAuthMiddleware';
 //# sourceMappingURL=index.js.map

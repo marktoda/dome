@@ -38,16 +38,16 @@ export default {
         env: env.ENVIRONMENT,
         ver: env.VERSION,
       },
-      async (log) => {
+      async log => {
         log.info({ path: new URL(request.url).pathname }, 'Request received');
-        
+
         // Your handler code here
-        
+
         return new Response('Hello World');
-      }
+      },
     );
   },
-  
+
   async queue(batch, env, ctx) {
     return withLogger(
       {
@@ -57,13 +57,13 @@ export default {
         env: env.ENVIRONMENT,
         ver: env.VERSION,
       },
-      async (log) => {
+      async log => {
         log.info('Processing batch');
         // Process queue messages
-      }
+      },
     );
   },
-  
+
   async scheduled(event, env, ctx) {
     return withLogger(
       {
@@ -73,12 +73,12 @@ export default {
         env: env.ENVIRONMENT,
         ver: env.VERSION,
       },
-      async (log) => {
+      async log => {
         log.info('Running scheduled job');
         // Run scheduled job
-      }
+      },
     );
-  }
+  },
 };
 ```
 
@@ -90,9 +90,9 @@ import { getLogger } from '@dome/logging';
 export async function processData(data) {
   const log = getLogger();
   log.debug({ dataSize: data.length }, 'Processing data');
-  
+
   // Process data
-  
+
   log.info('Data processing complete');
 }
 ```
@@ -110,10 +110,10 @@ initLogging(app, {
   extraBindings: {
     service: 'dome-api',
     version: '1.0.0',
-  }
+  },
 });
 
-app.get('/', (c) => {
+app.get('/', c => {
   const log = getLogger();
   log.info('Handling request');
   return c.json({ message: 'Hello World' });
@@ -148,12 +148,13 @@ If you were using the previous version of this package, here are the changes:
 ### Parameter Order Change
 
 The parameter order has changed from:
+
 ```typescript
 // Old
-runWithLogger(meta, level, fn, ctx)
+runWithLogger(meta, level, fn, ctx);
 
 // New
-withLogger(meta, fn, level)
+withLogger(meta, fn, level);
 ```
 
 Note that the `ctx` parameter is no longer needed as AsyncLocalStorage handles the context automatically.

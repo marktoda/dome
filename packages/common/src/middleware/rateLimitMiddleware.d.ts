@@ -6,4 +6,8 @@ import type { Context, MiddlewareHandler } from 'hono';
  * @param keyGenerator Function to generate a key for the client (default: uses IP address)
  * @returns Middleware handler
  */
-export declare function createRateLimitMiddleware(windowMs?: number, maxRequests?: number, keyGenerator?: (c: Context) => string): MiddlewareHandler;
+export declare function createRateLimitMiddleware(
+  windowMs?: number,
+  maxRequests?: number,
+  keyGenerator?: (c: Context) => string,
+): MiddlewareHandler;

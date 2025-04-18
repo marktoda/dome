@@ -1,12 +1,10 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { EmbedJob, NoteVectorMeta, VectorSearchResult } from '@dome/common';
 import { withLogger, getLogger } from '@dome/logging';
-import { QueueMessage, CFExecutionContext } from './types';
 import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
 import { createVectorizeService } from './services/vectorize';
 import { metrics } from './utils/metrics';
-import { logger } from './utils/logging';
 
 export default class Constellation extends WorkerEntrypoint<Env> {
   /**
@@ -20,10 +18,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     jobs: EmbedJob[],
     env: Env,
     sendToDeadLetter?: (job: EmbedJob) => Promise<void>,
-    log = logger, // Default to the imported logger if none is provided
   ): Promise<number> {
-    log.info({ batchSize: jobs.length }, 'Processing embedding batch');
-    console.log({ batchSize: jobs.length }, 'Processing embedding batch');
+    getLogger().info({ batchSize: jobs.length }, 'Processing embedding batch');
     // Initialize services
     const preprocessor = createPreprocessor();
     const embedder = createEmbedder(env.AI);
@@ -35,12 +31,12 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     for (const job of jobs) {
       const jobTimer = metrics.startTimer('process_job');
       try {
-        log.debug({ userId: job.userId, noteId: job.noteId }, 'Processing embedding job');
+        getLogger().debug({ userId: job.userId, noteId: job.noteId }, 'Processing embedding job');
 
         // 1. Preprocess text
         const processedTexts = preprocessor.process(job.text);
         if (processedTexts.length === 0) {
-          log.warn(
+          getLogger().warn(
             { userId: job.userId, noteId: job.noteId },
             'No text chunks to embed after preprocessing',
           );
@@ -65,13 +61,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         // 4. Store vectors
         await vectorizeService.upsert(vectors);
 
-        log.info(
+        getLogger().info(
           { userId: job.userId, noteId: job.noteId, chunks: processedTexts.length },
           'Successfully embedded and stored note',
         );
         successCount++;
       } catch (error) {
-        log.error(
+        getLogger().error(
           { error, userId: job.userId, noteId: job.noteId },
           'Error processing embedding job',
         );
@@ -79,7 +75,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         // If we have a dead letter handler, use it
         if (sendToDeadLetter) {
           await sendToDeadLetter(job);
-          log.info(
+          getLogger().info(
             { userId: job.userId, noteId: job.noteId },
             'Sent failed job to dead letter queue',
           );
@@ -105,7 +101,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         environment: this.env.ENVIRONMENT,
         version: this.env.VERSION,
       },
-      async (log) => {
+      async () => {
         try {
           metrics.gauge('queue.batch_size', batch.messages.length);
           const batchTimer = metrics.startTimer('queue.process_batch');
@@ -120,13 +116,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             }
           };
 
-          const successCount = await this.embedBatch(jobs, this.env, sendToDeadLetter, log);
+          const successCount = await this.embedBatch(jobs, this.env, sendToDeadLetter);
           metrics.increment('queue.jobs_processed', successCount);
 
           batchTimer.stop();
-          log.info({ processedCount: successCount }, 'Batch processing completed');
+          getLogger().info({ processedCount: successCount }, 'Batch processing completed');
         } catch (error) {
-          log.error({ error }, 'Error processing batch');
+          getLogger().error({ error }, 'Error processing batch');
           metrics.increment('queue.batch_errors');
 
           // Retry the entire batch if appropriate
@@ -150,8 +146,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         environment: env.ENVIRONMENT,
         version: env.VERSION,
       },
-      async (log) => {
-        log.info(
+      async () => {
+        getLogger().info(
           { userId: job.userId, noteId: job.noteId },
           'Processing direct embedding request',
         );
@@ -160,11 +156,11 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         try {
           // Process the job directly using the embedBatch helper
-          await this.embedBatch([job], env, undefined, log);
+          await this.embedBatch([job], env, undefined);
           metrics.increment('rpc.embed.success');
         } catch (error) {
           metrics.increment('rpc.embed.errors');
-          log.error(
+          getLogger().error(
             { error, userId: job.userId, noteId: job.noteId },
             'Error in direct embedding',
           );
@@ -192,8 +188,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         environment: env.ENVIRONMENT,
         version: env.VERSION,
       },
-      async (log) => {
-        log.info({ filter, topK }, 'Processing vector search query');
+      async () => {
+        getLogger().info({ filter, topK }, 'Processing vector search query');
         metrics.increment('rpc.query.requests');
         const timer = metrics.startTimer('rpc.query');
 
@@ -206,14 +202,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           // Preprocess query text
           const processedText = preprocessor.normalize(text);
           if (!processedText) {
-            log.warn('Empty query text after preprocessing');
+            getLogger().warn('Empty query text after preprocessing');
             return [];
           }
 
           // Generate embedding for the query text
           const embeddings = await embedder.embed([processedText]);
           if (embeddings.length === 0) {
-            log.warn('Failed to generate embedding for query text');
+            getLogger().warn('Failed to generate embedding for query text');
             return [];
           }
 
@@ -223,12 +219,12 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
           metrics.increment('rpc.query.success');
           metrics.gauge('rpc.query.results', results.length);
-          log.info({ resultCount: results.length }, 'Vector search completed');
+          getLogger().info({ resultCount: results.length }, 'Vector search completed');
 
           return results;
         } catch (error) {
           metrics.increment('rpc.query.errors');
-          log.error({ error, filter, topK }, 'Error in vector search');
+          getLogger().error({ error, filter, topK }, 'Error in vector search');
           throw error;
         } finally {
           timer.stop();
@@ -246,8 +242,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         environment: env.ENVIRONMENT,
         version: env.VERSION,
       },
-      async (log) => {
-        log.info('Processing stats request');
+      async () => {
+        getLogger().info('Processing stats request');
         metrics.increment('rpc.stats.requests');
         const timer = metrics.startTimer('rpc.stats');
 
@@ -259,12 +255,12 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           const stats = await vectorizeService.getStats();
 
           metrics.increment('rpc.stats.success');
-          log.info({ stats }, 'Stats request completed');
+          getLogger().info({ stats }, 'Stats request completed');
 
           return stats;
         } catch (error) {
           metrics.increment('rpc.stats.errors');
-          log.error({ error }, 'Error getting stats');
+          getLogger().error({ error }, 'Error getting stats');
           throw error;
         } finally {
           timer.stop();

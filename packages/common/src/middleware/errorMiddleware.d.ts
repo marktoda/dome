@@ -7,4 +7,6 @@ import { ZodError } from 'zod';
  * @param formatZodError Optional function to format Zod validation errors
  * @returns Middleware handler
  */
-export declare function createErrorMiddleware(formatZodError?: (error: ZodError) => any): MiddlewareHandler;
+export declare function createErrorMiddleware(
+  formatZodError?: (error: ZodError) => any,
+): MiddlewareHandler;

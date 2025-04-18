@@ -169,7 +169,6 @@ describe('SearchService', () => {
       expect(results.length).toBe(2);
     });
 
-
     it('should throw ServiceError when vector search fails', async () => {
       // Arrange
       const options = {

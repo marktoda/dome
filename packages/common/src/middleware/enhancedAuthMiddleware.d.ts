@@ -3,45 +3,45 @@ import type { Context, MiddlewareHandler } from 'hono';
  * User role enum
  */
 export declare enum UserRole {
-    USER = "user",
-    ADMIN = "admin"
+  USER = 'user',
+  ADMIN = 'admin',
 }
 /**
  * User information interface
  */
 export interface UserInfo {
-    id: string;
-    email?: string;
-    role: UserRole;
-    permissions?: string[];
+  id: string;
+  email?: string;
+  role: UserRole;
+  permissions?: string[];
 }
 /**
  * Enhanced authentication middleware options
  */
 export interface EnhancedAuthOptions {
-    /**
-     * Header name for the authorization token
-     * @default 'authorization'
-     */
-    authHeaderName?: string;
-    /**
-     * Header name for the user ID (for development)
-     * @default 'x-user-id'
-     */
-    userIdHeaderName?: string;
-    /**
-     * Whether to skip authentication in development mode
-     * @default true
-     */
-    skipInDevelopment?: boolean;
-    /**
-     * Required permissions for the route
-     */
-    requiredPermissions?: string[];
-    /**
-     * Required role for the route
-     */
-    requiredRole?: UserRole;
+  /**
+   * Header name for the authorization token
+   * @default 'authorization'
+   */
+  authHeaderName?: string;
+  /**
+   * Header name for the user ID (for development)
+   * @default 'x-user-id'
+   */
+  userIdHeaderName?: string;
+  /**
+   * Whether to skip authentication in development mode
+   * @default true
+   */
+  skipInDevelopment?: boolean;
+  /**
+   * Required permissions for the route
+   */
+  requiredPermissions?: string[];
+  /**
+   * Required role for the route
+   */
+  requiredRole?: UserRole;
 }
 /**
  * Creates an enhanced authentication middleware that validates JWT tokens
@@ -50,7 +50,9 @@ export interface EnhancedAuthOptions {
  * @param options Authentication options
  * @returns Middleware handler
  */
-export declare function createEnhancedAuthMiddleware(options?: EnhancedAuthOptions): MiddlewareHandler;
+export declare function createEnhancedAuthMiddleware(
+  options?: EnhancedAuthOptions,
+): MiddlewareHandler;
 /**
  * Helper function to get user info from context
  *

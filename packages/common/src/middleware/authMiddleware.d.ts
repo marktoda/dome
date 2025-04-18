@@ -3,21 +3,21 @@ import type { MiddlewareHandler } from 'hono';
  * Authentication middleware options
  */
 export interface AuthOptions {
-    /**
-     * Header name for the API key
-     * @default 'x-api-key'
-     */
-    headerName?: string;
-    /**
-     * Environment variable name for the API key
-     * @default 'API_KEY'
-     */
-    envVarName?: string;
-    /**
-     * Whether to skip authentication in development mode
-     * @default true
-     */
-    skipInDevelopment?: boolean;
+  /**
+   * Header name for the API key
+   * @default 'x-api-key'
+   */
+  headerName?: string;
+  /**
+   * Environment variable name for the API key
+   * @default 'API_KEY'
+   */
+  envVarName?: string;
+  /**
+   * Whether to skip authentication in development mode
+   * @default true
+   */
+  skipInDevelopment?: boolean;
 }
 /**
  * Creates an authentication middleware that validates API keys

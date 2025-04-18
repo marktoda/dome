@@ -52,7 +52,7 @@ export function buildLoggingMiddleware(opts: InitOptions = {}): MiddlewareHandle
     // Store the logger in both Hono context (for backward compatibility)
     // and our AsyncLocalStorage
     c.set('logger', child);
-    
+
     // Run the next middleware in a new ALS context with our logger
     return als.run(new Map([['logger', child]]), async () => {
       await next();

@@ -5,11 +5,34 @@
 // Base error class
 export { BaseError } from './BaseError';
 // Validation errors
-import { ValidationError, SchemaValidationError, MessageFormatError, BatchValidationError, } from './ValidationError';
+import {
+  ValidationError,
+  SchemaValidationError,
+  MessageFormatError,
+  BatchValidationError,
+} from './ValidationError';
 export { ValidationError, SchemaValidationError, MessageFormatError, BatchValidationError };
 // Service errors
-import { ServiceError, QueueError, MessageProcessingError, RateLimitError, NotFoundError, UnauthorizedError, ForbiddenError, NotImplementedError, } from './ServiceError';
-export { ServiceError, QueueError, MessageProcessingError, RateLimitError, NotFoundError, UnauthorizedError, ForbiddenError, NotImplementedError, };
+import {
+  ServiceError,
+  QueueError,
+  MessageProcessingError,
+  RateLimitError,
+  NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotImplementedError,
+} from './ServiceError';
+export {
+  ServiceError,
+  QueueError,
+  MessageProcessingError,
+  RateLimitError,
+  NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotImplementedError,
+};
 // For backward compatibility
 export { BaseError as AppError } from './BaseError';
 //# sourceMappingURL=index.js.map

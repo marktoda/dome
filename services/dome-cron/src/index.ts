@@ -41,8 +41,8 @@ export default {
         scheduledTime: event.scheduledTime,
         environment: env.ENVIRONMENT,
       },
-      async (log) => {
-        log.info('Running scheduled job');
+      async () => {
+        getLogger().info('Running scheduled job');
 
         // Initialize the queue service
         const queueService = new QueueService({
@@ -59,7 +59,7 @@ export default {
           do {
             // Query for due reminders that haven't been delivered yet
             const query = `
-          SELECT 
+          SELECT
             r.id as reminder_id,
             t.id as task_id,
             t.user_id,
@@ -87,7 +87,7 @@ export default {
             cursor = String(parseInt(cursor || '0') + reminders.length);
             processedCount += reminders.length;
 
-            log.info({ count: reminders.length }, 'Processing batch of reminders');
+            getLogger().info({ count: reminders.length }, 'Processing batch of reminders');
 
             // Create reminder events for each due reminder
             const reminderEvents: Event[] = reminders.map(reminder =>
@@ -105,7 +105,7 @@ export default {
             // Publish events to the queue
             if (reminderEvents.length > 0) {
               await queueService.publishEvents(reminderEvents);
-              log.info(
+              getLogger().info(
                 { count: reminderEvents.length },
                 'Published reminder events to queue',
               );
@@ -138,15 +138,15 @@ export default {
             }
           } while (true);
 
-          log.info({ processedCount }, 'Scheduled job completed');
+          getLogger().info({ processedCount }, 'Scheduled job completed');
         } catch (error) {
-          log.error({ error }, 'Error in scheduled job');
+          getLogger().error({ error }, 'Error in scheduled job');
           // Ensure the error is reported to the Cloudflare dashboard
           ctx.waitUntil(Promise.reject(error));
           // Re-throw the error to propagate it to the caller
           throw error;
         }
-      }
+      },
     );
   },
 };
