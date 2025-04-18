@@ -84,16 +84,13 @@ export class NoteController {
 
       // Generate embedding in the background
       getLogger().info({ noteId: note.id }, 'Starting background embedding process');
-      this.processEmbedding(c.env, note.id, note.body, userId).catch(error => {
-        getLogger().error(
-          {
-            err: error,
-            noteId: note.id,
-            userId,
-          },
+
+      // extends workers life until it finishes
+      c.executionCtx.waitUntil(this.processEmbedding(c.env, note.id, note.body, userId)
+        .catch(err => getLogger().error(
+          { err, noteId: note.id, userId },
           'Error processing embedding for note',
-        );
-      });
+        )));
 
       // Return the created note
       getLogger().info({ noteId: note.id }, 'Note successfully created');

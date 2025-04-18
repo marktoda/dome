@@ -213,14 +213,15 @@ export class TaskController {
     // Get user ID from request headers or query parameters
     const userId = c.req.header('x-user-id') || c.req.query('userId');
     getLogger().debug({ userId }, 'User ID extracted for task listing');
-    
+
     if (!userId) {
       getLogger().warn({ path: c.req.path }, 'Missing user ID in task listing request');
-      throw new UnauthorizedError('User ID is required. Provide it via x-user-id header or userId query parameter');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
     }
 
     try {
-
       // Get query parameters for filtering
       const statusParam = c.req.query('status');
       const priorityParam = c.req.query('priority');
@@ -341,10 +342,12 @@ export class TaskController {
     // Get user ID from request headers or query parameters
     const userId = c.req.header('x-user-id') || c.req.query('userId');
     getLogger().debug({ userId, taskId }, 'User ID extracted for task update');
-    
+
     if (!userId) {
       getLogger().warn({ taskId, path: c.req.path }, 'Missing user ID in task update request');
-      throw new UnauthorizedError('User ID is required. Provide it via x-user-id header or userId query parameter');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
     }
 
     try {
@@ -467,10 +470,12 @@ export class TaskController {
     // Get user ID from request headers or query parameters
     const userId = c.req.header('x-user-id') || c.req.query('userId');
     getLogger().debug({ userId, taskId }, 'User ID extracted for task completion');
-    
+
     if (!userId) {
       getLogger().warn({ taskId, path: c.req.path }, 'Missing user ID in task completion request');
-      throw new UnauthorizedError('User ID is required. Provide it via x-user-id header or userId query parameter');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
     }
 
     try {
@@ -554,10 +559,12 @@ export class TaskController {
     // Get user ID from request headers or query parameters
     const userId = c.req.header('x-user-id') || c.req.query('userId');
     getLogger().debug({ userId, taskId }, 'User ID extracted for task deletion');
-    
+
     if (!userId) {
       getLogger().warn({ taskId, path: c.req.path }, 'Missing user ID in task deletion request');
-      throw new UnauthorizedError('User ID is required. Provide it via x-user-id header or userId query parameter');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
     }
 
     try {
@@ -629,10 +636,12 @@ export class TaskController {
     // Get user ID from request headers or query parameters
     const userId = c.req.header('x-user-id') || c.req.query('userId');
     getLogger().debug({ userId, taskId }, 'User ID extracted for adding reminder');
-    
+
     if (!userId) {
       getLogger().warn({ taskId, path: c.req.path }, 'Missing user ID in add reminder request');
-      throw new UnauthorizedError('User ID is required. Provide it via x-user-id header or userId query parameter');
+      throw new UnauthorizedError(
+        'User ID is required. Provide it via x-user-id header or userId query parameter',
+      );
     }
 
     try {

@@ -241,9 +241,9 @@ export class SearchService {
       // Filter notes by content type if specified
       const filteredResults = validatedOptions.contentType
         ? searchResults.filter(result => {
-          const note = notes[result.metadata.noteId];
-          return note && note.contentType === validatedOptions.contentType;
-        })
+            const note = notes[result.metadata.noteId];
+            return note && note.contentType === validatedOptions.contentType;
+          })
         : searchResults;
 
       // Map search results to note search results
