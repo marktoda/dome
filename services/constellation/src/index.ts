@@ -1,6 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { EmbedJob, NoteVectorMeta, VectorSearchResult } from '@dome/common';
-import { runWithLogger, getLogger } from '@dome/logging';
+import { withLogger, getLogger } from '@dome/logging';
 import { QueueMessage, CFExecutionContext } from './types';
 import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
@@ -97,7 +97,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /* ---------------- Queue Consumer ---------------- */
   async queue(batch: MessageBatch<EmbedJob>): Promise<void> {
-    await runWithLogger(
+    await withLogger(
       {
         service: 'constellation',
         operation: 'queue_consumer',
@@ -105,7 +105,6 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         environment: this.env.ENVIRONMENT,
         version: this.env.VERSION,
       },
-      "info",
       async (log) => {
         try {
           metrics.gauge('queue.batch_size', batch.messages.length);
@@ -142,7 +141,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   /* ---------------- RPC Methods ---------------- */
   /** Embed a single note immediately (rare). */
   public async embed(env: Env, job: EmbedJob): Promise<void> {
-    await runWithLogger(
+    await withLogger(
       {
         service: 'constellation',
         operation: 'embed',
@@ -151,7 +150,6 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         environment: env.ENVIRONMENT,
         version: env.VERSION,
       },
-      "info",
       async (log) => {
         log.info(
           { userId: job.userId, noteId: job.noteId },
@@ -185,7 +183,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     filter: Partial<NoteVectorMeta>,
     topK = 10,
   ): Promise<VectorSearchResult[]> {
-    return await runWithLogger(
+    return await withLogger(
       {
         service: 'constellation',
         operation: 'query',
@@ -194,7 +192,6 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         environment: env.ENVIRONMENT,
         version: env.VERSION,
       },
-      "info",
       async (log) => {
         log.info({ filter, topK }, 'Processing vector search query');
         metrics.increment('rpc.query.requests');
@@ -242,14 +239,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /** Lightweight health/stat endpoint. */
   public async stats(env: Env): Promise<{ vectors: number; dimension: number }> {
-    return await runWithLogger(
+    return await withLogger(
       {
         service: 'constellation',
         operation: 'stats',
         environment: env.ENVIRONMENT,
         version: env.VERSION,
       },
-      "info",
       async (log) => {
         log.info('Processing stats request');
         metrics.increment('rpc.stats.requests');

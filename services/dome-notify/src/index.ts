@@ -1,5 +1,5 @@
 import { QueueService, Event, EventSchema, MessageBatch } from '@dome/common';
-import { runWithLogger, getLogger } from '@dome/logging';
+import { withLogger, getLogger } from '@dome/logging';
 
 // Define the execution context interface with the run method
 interface CFExecutionContext {
@@ -82,13 +82,12 @@ export default {
    * @param ctx Execution context
    */
   async queue(batch: MessageBatch, env: Env, ctx: CFExecutionContext): Promise<void> {
-    await runWithLogger(
+    await withLogger(
       {
         trigger: 'queue',
         batchSize: batch.messages.length,
         environment: env.ENVIRONMENT,
       },
-      "info",
       async (log) => {
         log.info({ batchSize: batch.messages.length }, 'Processing message batch');
 
@@ -125,8 +124,7 @@ export default {
         }
 
         log.info('Batch processing completed');
-      },
-      ctx,
+      }
     );
   },
 };

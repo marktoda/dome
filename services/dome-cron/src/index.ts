@@ -1,5 +1,5 @@
 import { QueueService, Event, createReminderDueEvent } from '@dome/common';
-import { runWithLogger, getLogger } from '@dome/logging';
+import { withLogger, getLogger } from '@dome/logging';
 
 // Define the execution context interface with the run method
 interface CFExecutionContext {
@@ -34,14 +34,13 @@ export default {
    * @param ctx Execution context
    */
   async scheduled(event: ScheduledEvent, env: Env, ctx: CFExecutionContext): Promise<void> {
-    await runWithLogger(
+    await withLogger(
       {
         trigger: 'cron',
         cron: event.cron,
         scheduledTime: event.scheduledTime,
         environment: env.ENVIRONMENT,
       },
-      "info",
       async (log) => {
         log.info('Running scheduled job');
 
@@ -147,8 +146,7 @@ export default {
           // Re-throw the error to propagate it to the caller
           throw error;
         }
-      },
-      ctx,
+      }
     );
   },
 };

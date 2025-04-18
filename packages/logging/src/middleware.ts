@@ -1,8 +1,8 @@
 import { MiddlewareHandler, Hono } from 'hono';
 import { contextStorage } from 'hono/context-storage';
-import { baseLogger } from './base';
 import { nanoid } from 'nanoid';
 import type { InitOptions } from './types';
+import { als, baseLogger } from './runtime';
 
 /**
  * Custom request type with Cloudflare-specific properties
@@ -49,14 +49,28 @@ export function buildLoggingMiddleware(opts: InitOptions = {}): MiddlewareHandle
       ...extra,
     });
 
-    // Store the logger in the request context
+    // Store the logger in both Hono context (for backward compatibility)
+    // and our AsyncLocalStorage
     c.set('logger', child);
-    await next();
+    
+    // Run the next middleware in a new ALS context with our logger
+    return als.run(new Map([['logger', child]]), async () => {
+      await next();
+    });
   };
 }
 
 /**
  * Convenience function to wire both contextStorage & logging in one call.
+ *
+ * @remarks
+ * This function sets up both Hono's context storage and our AsyncLocalStorage-based
+ * logging middleware. For the AsyncLocalStorage to work properly in Cloudflare Workers,
+ * you must add the following to your wrangler.toml:
+ *
+ * ```toml
+ * compatibility_flags = ["nodejs_als"]   # or nodejs_compat
+ * ```
  *
  * @param app - The Hono application instance
  * @param opts - Optional configuration for the logging middleware

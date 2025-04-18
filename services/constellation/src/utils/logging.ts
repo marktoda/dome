@@ -4,7 +4,7 @@
  * Provides structured logging for the Constellation service.
  */
 
-import { getLogger, BaseLogger } from '@dome/logging';
+import { getLogger, baseLogger, BaseLogger } from '@dome/logging';
 
 /**
  * Log an error with additional context
