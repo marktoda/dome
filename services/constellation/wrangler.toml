@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_als"]
 
 # Queue consumer configuration
 [[queues.consumers]]
-queue = "EMBED_QUEUE"
+queue = "embed-queue"
 max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 3

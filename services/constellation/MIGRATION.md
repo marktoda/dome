@@ -28,11 +28,11 @@ This document outlines the steps to deploy the Constellation embedding service a
 
    ```bash
    # Create the production queues
-   wrangler queues create EMBED_QUEUE
+   wrangler queues create embed-queue
    wrangler queues create embed-dead-letter-prod
 
    # Create the staging queues
-   wrangler queues create EMBED_QUEUE --env staging
+   wrangler queues create embed-queue --env staging
    wrangler queues create embed-dead-letter-staging
    ```
 
@@ -78,7 +78,7 @@ We'll use a phased approach to migrate from the current embedding implementation
 
 1. **Update Producer Services**:
 
-   - Modify API worker to write to both the old system and the new EMBED_QUEUE
+   - Modify API worker to write to both the old system and the new embed-queue
    - Modify import workers (GitHub, Notion) to write to both systems
    - Keep reads going to the old system
 

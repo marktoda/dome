@@ -11,7 +11,7 @@ queue_depth:
   notification_channels:
     - email
     - slack
-  message: "EMBED_QUEUE has a high number of pending jobs. Check for processing bottlenecks."
+  message: "embed-queue has a high number of pending jobs. Check for processing bottlenecks."
 
 queue_errors:
   name: "High Queue Error Rate"

@@ -22,13 +22,7 @@ queue = "dome-events"
 # Add queue producer for embedding jobs
 [[queues.producers]]
 binding = "EMBED_QUEUE"
-queue = "EMBED_QUEUE"
-
-[[queues.consumers]]
-queue = "dome-events"
-max_batch_size = 10
-max_batch_timeout = 5
-max_retries = 3
+queue = "embed-queue"
 
 # Workers AI binding
 [ai]

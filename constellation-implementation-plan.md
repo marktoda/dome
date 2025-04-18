@@ -16,7 +16,7 @@ Constellation is a dedicated Cloudflare Worker that provides embedding and vecto
 
 ```mermaid
 graph TD
-    A[API Worker] -->|enqueue| B[EMBED_QUEUE]
+    A[API Worker] -->|enqueue| B[embed-queue]
     C[GitHub Cron] -->|enqueue| B
     D[Notion Cron] -->|enqueue| B
 
@@ -34,7 +34,7 @@ graph TD
 
 ### Key Components:
 
-1. **Queue Consumer**: Processes batches of embedding jobs from the EMBED_QUEUE
+1. **Queue Consumer**: Processes batches of embedding jobs from the embed-queue
 2. **Embedding Service**: Interfaces with Workers AI to generate embeddings
 3. **Vector Storage**: Manages interactions with the Vectorize index
 4. **RPC Interface**: Exposes typed methods for other workers
@@ -138,7 +138,7 @@ import { NoteVectorMeta } from '../../../packages/common/src/types/embedding';
 export interface Env {
   VECTORIZE: VectorizeNamespace;
   AI: AINamespace;
-  EMBED_QUEUE: Queue<EmbedJob>;
+  EMBED_QUEUE: Queue<EmbedJob>; // Binding name remains uppercase
   EMBED_DEAD?: Queue<EmbedJob>; // Optional dead letter queue
 }
 

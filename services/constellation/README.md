@@ -14,7 +14,7 @@ Constellation is a dedicated Cloudflare Worker that provides embedding and vecto
 
 Constellation consists of several key components:
 
-1. **Queue Consumer**: Processes batches of embedding jobs from the EMBED_QUEUE.
+1. **Queue Consumer**: Processes batches of embedding jobs from the embed-queue.
 2. **Preprocessor Service**: Handles text normalization and chunking for optimal embedding.
 3. **Embedder Service**: Interfaces with Workers AI to generate embeddings.
 4. **Vectorize Service**: Manages interactions with the Vectorize index.
@@ -22,7 +22,7 @@ Constellation consists of several key components:
 
 ```
 ┌───────────────┐         enqueue           ┌───────────────┐
-│  API Worker   │──────────────────────────▶│  EMBED_QUEUE  │
+│  API Worker   │──────────────────────────▶│  embed-queue  │
 │  GitHub Cron  │                           └───────────────┘
 │  Notion Cron  │                                 ▲
 └───────┬───────┘                                 │ batch
@@ -70,7 +70,7 @@ Constellation consists of several key components:
 
 3. **Create queues**:
    ```bash
-   wrangler queues create EMBED_QUEUE
+   wrangler queues create embed-queue
    wrangler queues create embed-dead-letter
    ```
 
@@ -101,7 +101,7 @@ environment = "production"
 
 ```typescript
 // Enqueue a job for async embedding
-await env.QUEUE.send('EMBED_QUEUE', {
+await env.QUEUE.send('embed-queue', {
   userId: 'user123',
   noteId: 'note456',
   text: 'This is the text to embed',
@@ -159,7 +159,7 @@ console.log(`Vector index has ${stats.vectors} vectors with dimension ${stats.di
 
 - `VECTORIZE`: Vectorize index binding
 - `AI`: Workers AI binding
-- `EMBED_QUEUE`: Queue for embedding jobs
+- `embed-queue`: Queue for embedding jobs
 - `EMBED_DEAD`: Dead letter queue for failed jobs
 
 ### Environment-Specific Configuration
@@ -210,7 +210,7 @@ To test the service with real data locally:
 2. Publish a test message to the queue:
 
    ```bash
-   wrangler queues publish EMBED_QUEUE '{"userId":"test123","noteId":"note123","text":"This is a test note for embedding","created":1650000000000,"version":1}'
+   wrangler queues publish embed-queue '{"userId":"test123","noteId":"note123","text":"This is a test note for embedding","created":1650000000000,"version":1}'
    ```
 
 3. Check the logs to verify processing.

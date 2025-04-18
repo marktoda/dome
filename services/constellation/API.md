@@ -129,14 +129,14 @@ interface VectorIndexStats {
 
 ## Queue Consumer
 
-In addition to the RPC methods, Constellation also acts as a queue consumer for the `EMBED_QUEUE`. This allows for asynchronous processing of embedding jobs.
+In addition to the RPC methods, Constellation also acts as a queue consumer for the `embed-queue`. This allows for asynchronous processing of embedding jobs.
 
 ### Enqueuing Jobs
 
 To enqueue a job for asynchronous processing:
 
 ```typescript
-await env.QUEUE.send('EMBED_QUEUE', {
+await env.QUEUE.send('embed-queue', {
   userId: 'user123',
   noteId: 'note456',
   text: 'This is the text to embed',

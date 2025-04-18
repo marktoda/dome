@@ -20,7 +20,7 @@ model/metadata scheme.
 
 ```
 ┌───────────────┐         enqueue           ┌───────────────┐
-│  API Worker   │──────────────────────────▶│  EMBED_QUEUE  │
+│  API Worker   │──────────────────────────▶│  embed-queue  │
 │  GitHub Cron  │                           └───────────────┘
 │  Notion Cron  │                                 ▲
 └───────┬───────┘                                 │ batch
@@ -145,7 +145,7 @@ name = "constellation"
 main = "src/constellation.ts"
 
 [[queues.consumers]]
-queue = "EMBED_QUEUE"
+queue = "embed-queue"
 max_batch_size = 10
 
 vectorize_binding = "VECTORIZE"
@@ -169,7 +169,7 @@ environment = "production"
 
 ```ts
 // enqueue for async embed
-await env.QUEUE.send('EMBED_QUEUE', {
+await env.QUEUE.send('embed-queue', {
   userId,
   noteId,
   text,
