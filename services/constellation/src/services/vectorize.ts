@@ -113,6 +113,7 @@ export class VectorizeService {
         attempt++;
         lastError = error instanceof Error ? error : new Error(String(error));
 
+        logger.error(error);
         // Log the error
         logger.warn(
           { error: lastError, attempt, maxAttempts: this.config.retryAttempts },

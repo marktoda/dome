@@ -98,7 +98,7 @@ describe('Logging Utilities', () => {
           value,
           service: 'constellation',
         }),
-        `Metric: ${name}`,
+        'Metric recorded',
       );
     });
 
@@ -114,7 +114,7 @@ describe('Logging Utilities', () => {
           metric: name,
           value,
         }),
-        `Metric: ${name}`,
+        'Metric recorded',
       );
     });
   });
@@ -149,7 +149,7 @@ describe('Logging Utilities', () => {
           value: 100,
           service: 'constellation',
         }),
-        'Metric: test_operation.duration_ms',
+        'Metric recorded',
       );
     });
   });

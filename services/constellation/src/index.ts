@@ -92,7 +92,6 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /* ---------------- Queue Consumer ---------------- */
   async queue(batch: MessageBatch<EmbedJob>): Promise<void> {
-    console.log(this.env);
     await withLogger(
       {
         service: 'constellation',

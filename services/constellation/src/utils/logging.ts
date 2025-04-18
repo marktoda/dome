@@ -37,7 +37,7 @@ export function logError(
  * @param tags Additional tags
  */
 export function logMetric(name: string, value: number, tags: Record<string, string> = {}) {
-  getLogger().info({ metric: name, value, ...tags }, `Metric: ${name}`);
+  getLogger().info({ metric: name, value, ...tags }, 'Metric recorded');
 }
 
 /**

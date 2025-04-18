@@ -1,170 +1,185 @@
-## 1. Overview (Dome)
+# Dome Product Specification
 
-An AI‑powered personal memory assistant that:
+## 1. Overview
 
-- Accepts **natural‑language** inputs (notes, todos, reminders, files, links)
-- Persists everything in Cloudflare’s **serverless data plane**
-  - **D1** for structured rows
-  - **Vectorize** for embeddings
-  - **R2** for large blobs
-- Retrieves information with **semantic search** + RAG in < 50 ms worldwide
-- Exposes a **Workers‑based API** (REST + optional GraphQL)
-- Offers a **terminal TUI** (`/add`, `/note`, `/list`, `/show`, `/chat`, …) and pluggable clients (Slack bot, browser extension)
-- Sends reminders via **Queues → Notification Worker** (email, Slack, push)
-- Runs completely server‑less—no VMs, no Kubernetes—scaling to millions of users on demand.
+Dome is a personal knowledge management system that allows users to store, search, and retrieve information using natural language. The system leverages Cloudflare's serverless infrastructure to provide a scalable, low-latency solution.
 
----
+Key technologies:
+  - **D1** for structured rows
+  - **Vectorize** for embeddings (via Constellation service)
+  - **R2** for large blobs
+  - **Workers** for API and background processing
+  - **Queues** for asynchronous operations
+  - **Workers AI** for embeddings and LLM operations (via Constellation service)
 
-## 2. Natural‑Language Input
+## 2. User Experience
 
-Same as before, but routed to the Cloudflare **API Worker**:
+Users interact with Dome through:
 
-```
-POST /ingest         # /add in the TUI
-POST /note/:context  # start or append to session
-GET  /search?q=...
-POST /chat
-```
+1. **Web Interface**: A responsive web application
+2. **Mobile App**: Native mobile applications for iOS and Android
+3. **CLI**: Command-line interface for power users
+4. **API**: RESTful API for integrations
 
-The API Worker:
+## 3. Core Features
 
-1. **Classifies** the text (note, todo, reminder, file URL) with Workers AI or rule‑based patterns.
-2. **Extracts** entities (dates, tags, names) via an LLM prompt.
-3. **Stores**:
+### 3.1. Note Management
+
+- Create, read, update, delete notes
+- Support for rich text, markdown, and code snippets
+- File attachments (PDFs, images, etc.)
+- Tagging and categorization
+- Version history
+
+### 3.2. Semantic Search
+
+- Natural language search queries
+- Vector-based similarity search
+- Filtering by metadata (tags, date, etc.)
+- Relevance ranking
+- Real-time search suggestions
+
+### 3.3. Knowledge Graph
+
+- Automatic linking between related notes
+- Visualization of connections
+- Entity extraction and recognition
+- Topic clustering
+
+### 3.4. Integrations
+
+- GitHub repositories
+- Notion workspaces
+- Google Drive
+- Slack
+- Email
+
+## 4. Data Model
+
+Each "note" in the system consists of:
    - row in **D1** (`notes`, `tasks`, `reminders`)
-   - embedding in **Vectorize**
+   - embedding in **Vectorize** (via Constellation service)
    - raw file in **R2** (when applicable)
 
----
+### 4.1. Note Schema
 
-## 3. NLP & Intent Extraction (Workers AI)
-
-```ts
-const result = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
-  prompt: `
-  Classify and extract JSON:
-  Text: "${input}"
-  Return: {"intent": "...", "datetime": "...", "context": "..."}
-  `,
-});
+```typescript
+interface Note {
+  id: string;
+  userId: string;
+  title: string;
+  content: string;
+  contentType: 'text' | 'markdown' | 'html';
+  tags: string[];
+  created: number; // timestamp
+  updated: number; // timestamp
+  fileKey?: string; // R2 key if applicable
+}
 ```
 
-The JSON output feeds straight into the D1 insert + reminder scheduler.
+### 4.2. Storage Mapping
 
----
-
-## 4. Storage & Knowledge Base
-
-| Layer          | Tech                                                    | What it holds                                           |
+| Storage Type | Technology                                       | Contents                                         |
 | -------------- | ------------------------------------------------------- | ------------------------------------------------------- |
-| **Vector**     | **Cloudflare Vectorize** index `dome_notes` (1536 dims) | Embeddings + metadata (`note_id`, `user_id`, timestamp) |
-| **Structured** | **D1** SQLite DB `dome_meta`                            | Tables: `notes`, `tasks`, `reminders`, `tags`           |
-| **Objects**    | **R2** bucket `dome_raw`                                | PDFs, images, audio, >32 kB text blobs                  |
+| **Vector**     | **Cloudflare Vectorize** via Constellation service | Embeddings + metadata (`note_id`, `user_id`, timestamp) |
+| **Structured** | **D1** SQLite DB `dome_meta`                            | Tables: `notes`, `tasks`, `reminders`, `tags`           |
+| **Blob**       | **R2** Bucket `dome_raw`                                | Raw files (PDFs, images, etc.)                          |
 
-All three are globally replicated; the API Worker calls them via bindings, so latency is Edge‑local.
+## 5. Vector Database (Vectorize via Constellation)
 
----
+- **Write**: Enqueue embedding jobs to Constellation service during ingest.
+- **Query**: Use Constellation service RPC for vector searches in `/search` & `/chat`.
+- P99 latency ≈ 2-3 ms, capacity scales with Constellation service configuration.
 
-## 5. Vector Database (Vectorize)
+## 6. Search Flow
 
-- **Write**: `VECTORIZE.put(embedding, {metadata})` during ingest.
-- **Query**: `VECTORIZE.query(embedding, {topK:10, filter:{user_id}})` in `/search` & `/chat`.
-- P99 latency ≈ 2 ms, capacity 100 k ops/day free.
-- No self‑hosting; replication & durability managed by Cloudflare.
+When a user performs a search:
 
----
+1. Query is sent to the Dome API service.
+2. Dome API calls Constellation service to perform the vector search.
+3. Constellation embeds the query and searches the Vectorize index.
+4. Results are returned to the Dome API service.
+5. Dome API fetches note bodies from D1.
+6. Complete results are returned to the user.
 
-## 6. Retrieval‑Augmented Generation
+## 7. Ingestion Flow
 
-1. Embed query (Workers AI model `@cf/baai/bge-small-en-v1.5`).
-2. Fetch top K matches from Vectorize.
-3. Pull note bodies from D1.
-4. Assemble context + user query into an LLM prompt (`@cf/meta/llama‑3‑8b` or OpenAI via AI Gateway).
-5. Stream answer back to the client.
+When a user creates or updates a note:
 
----
+1. Note metadata and content are stored in D1.
+2. If the note includes a file, it's stored in R2.
+3. An embedding job is enqueued for asynchronous processing by Constellation.
+4. Constellation processes the job, generates the embedding, and stores it in Vectorize.
 
-## 7. Scheduling & Notifications
+## 8. Authentication & Authorization
 
-| Component                                 | Role                                                                                             |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| **Scheduler Worker** (`cron` every 5 min) | SELECT due reminders from D1 → push message to **Queue**                                         |
-| **Queue** (`dome_events`)                 | Durable fan‑out of `reminder_due` events                                                         |
-| **Notification Worker**                   | Consumes queue, sends email (MailChannels) or Slack DM, then `UPDATE reminders SET delivered=1`. |
+- JWT-based authentication
+- Role-based access control
+- Scoped API tokens
+- OAuth2 for third-party integrations
 
----
+## 9. Performance Requirements
 
-## 8. External Integrations
+- Search latency: < 200ms P95
+- Ingestion throughput: 100 notes/second peak
+- Availability: 99.9% uptime
+- Global distribution: < 100ms latency from major regions
 
-- **Slack** (webhooks) and **MailChannels** for outbound notifications.
-- **Google Calendar** (optional) via OAuth 2: API Worker writes events on `/tasks` creation.
-- Additional connectors (GitHub, Notion) can be added as separate Workers or Durable Objects.
-
----
-
-## 9. TUI Command Set (unchanged)
-
-```
-/add <file|URL|text>
-/note <context>
-/end
-/list [filter]
-/show <id>
-/delete <id>
-/complete <id>
-/remind <id> <when>
-/search <keywords>
-/chat <query>
-/help
-/exit
-```
-
-The TUI simply HTTP‑calls the Workers endpoints.
-
----
-
-## 10. Cloudflare Architecture
+## 10. System Architecture
 
 ```
-┌─────────────┐   HTTPS   ┌───────────────────────────┐
-│  CLI / Web  │──────────►│   dome‑api  (Worker)      │
-└─────────────┘           ├────────┬──────────┬───────┤
-                          │        │          │
-       Vector search ─────┘        │          │  raw file → R2
-             (Vectorize)           │          │
-                                   │          │
-                            D1 (SQL rows)     │
-                                   │          │ Queue event
-                                   ▼          ▼
-                             dome‑cron   dome‑notify
-                              (Cron)      (Consumer)
+┌─────────────────┐
+│  Client Apps    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Dome API      │
+│   (Worker)      │
+└────────┬────────┘
+         │
+    ┌────┴─────┐
+    ▼          ▼
+┌─────────┐  ┌─────────────┐
+│   D1    │  │Constellation│
+│ Database│  │  Service    │
+└─────────┘  └──────┬──────┘
+                    │
+              ┌─────┴─────┐
+              ▼           ▼
+        ┌──────────┐  ┌─────────┐
+        │Workers AI│  │Vectorize│
+        └──────────┘  └─────────┘
 ```
 
-_All resources are declared in `wrangler.toml` bindings; a single `wrangler deploy` publishes globally._
-
----
-
-## 11. Deployment & CI/CD
+## 11. Deployment
 
 1. `wrangler d1 create dome_meta`
-2. `wrangler vectorize create dome_notes --dims 1536 --metric cosine`
-3. `wrangler deploy` for each worker (`api`, `cron`, `notify`).
-4. GitHub Actions runs lint, Miniflare tests, then deploys on `main`.
+2. `wrangler vectorize create dome_notes --dims 384 --metric cosine`
+3. Deploy Constellation service
+4. `wrangler deploy` for each worker (`api`, `cron`, `notify`).
 
----
+## 12. Monitoring & Observability
 
-## 12. Benefits vs. Self‑hosted FAISS
+- Cloudflare Workers Analytics
+- Custom metrics for search latency, embedding time, etc.
+- Error tracking and alerting
+- Usage dashboards
 
-| Aspect      | FAISS‑on‑Docker           | Cloudflare Platform                |
-| ----------- | ------------------------- | ---------------------------------- |
-| Scaling     | manual autoscaling        | automatic, global                  |
-| Ops         | maintain DB, GPU, backups | zero‑ops                           |
-| Latency     | depends on region         | <50 ms worldwide                   |
-| Cost        | fixed VM / GPU costs      | pay‑as‑you‑go (free tier generous) |
-| Reliability | handle fail‑overs         | 6× replicated by CF                |
+## 13. Cost Estimates
 
----
+Based on 10,000 active users with 1,000 notes each:
 
-### Summary
+- Workers: ~$50/month
+- D1: ~$20/month
+- Vectorize: ~$30/month
+- R2: ~$5/month
+- Workers AI: ~$25/month
 
-The product now leverages **Cloudflare Workers, Vectorize, D1, R2, Queues, and Workers AI** to deliver a fully serverless, globally low‑latency personal memory assistant—no containers or databases to run, and instant scaling as your user base grows.
+Total: ~$130/month
+
+## 14. Conclusion
+
+The product now leverages **Cloudflare Workers, Constellation service, Vectorize, D1, R2, Queues, and Workers AI** to deliver a fully serverless, globally low-latency personal memory assistant—no containers or databases to run, and instant scaling as your user base grows.
+
+The integration with the Constellation service provides a more robust, scalable approach to embedding and vector search operations, with improved error handling, monitoring, and performance.
