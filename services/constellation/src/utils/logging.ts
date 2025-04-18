@@ -20,14 +20,21 @@ export function logError(
   const errorObj =
     error instanceof Error
       ? {
-          message: error.message,
-          name: error.name,
-          stack: error.stack,
+          error_message: error.message,
+          error_name: error.name,
+          error_stack: error.stack,
           ...context,
+          // Include the message as a field in the object rather than as a separate parameter
+          message,
         }
-      : { error, ...context };
+      : {
+          error,
+          ...context,
+          // Include the message as a field in the object rather than as a separate parameter
+          message,
+        };
 
-  getLogger().error(errorObj, message);
+  getLogger().error(errorObj);
 }
 
 /**
@@ -39,15 +46,14 @@ export function logError(
 export function logMetric(name: string, value: number, tags: Record<string, string> = {}) {
   // Create a structured log with metric data as top-level fields
   // This ensures Cloudflare properly parses the metrics instead of embedding them in the message
-  getLogger().info(
-    {
-      metric_name: name,
-      metric_value: value,
-      metric_type: tags.type || 'gauge',
-      ...tags,
-    },
-    'Metric recorded',
-  );
+  getLogger().info({
+    metric_name: name,
+    metric_value: value,
+    metric_type: tags.type || 'gauge',
+    ...tags,
+    // Include the message as a field in the object rather than as a separate parameter
+    message: 'Metric recorded',
+  });
 }
 
 /**

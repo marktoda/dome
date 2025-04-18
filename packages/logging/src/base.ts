@@ -11,7 +11,7 @@ import pino from 'pino';
 export const baseLogger = pino({
   level: (globalThis as any).LOG_LEVEL ?? 'info',
   
-  // keep the default `msg` key but make sure level is explicit
+  // Ensure level is explicit
   formatters: {
     level(label) {
       return { level: label };
@@ -20,10 +20,25 @@ export const baseLogger = pino({
   
   timestamp: pino.stdTimeFunctions.isoTime,
   
-  /* IMPORTANT — emit the *object* as‑is */
+  // Custom serializer to ensure message is included in the object
+  // and only a single object is passed to console.log
   browser: {
-    asObject: true,                 // Pino gives you a plain object
-    write: (obj) => console.log(obj) // no stringify!
+    asObject: true,
+    write: (obj: any) => {
+      // Extract the message from the object
+      const message = obj.msg;
+      
+      // Create a new object with the message field renamed to avoid duplication
+      const newObj = { ...obj, message };
+      
+      // Remove the original msg field
+      if ('msg' in newObj) {
+        delete newObj.msg;
+      }
+      
+      // Log the single object
+      console.log(newObj);
+    }
   },
 });
 

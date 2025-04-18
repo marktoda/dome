@@ -69,7 +69,9 @@ export class SearchService {
 
       // Build filter for Constellation query
       const filter: Record<string, any> = {
-        userId: validatedOptions.userId,
+        // TODO: add back?
+        // although maybe we want some user-agnostic data
+        // userId: validatedOptions.userId,
       };
 
       // Add optional filters
