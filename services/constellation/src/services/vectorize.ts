@@ -116,8 +116,7 @@ export class VectorizeService {
         // Log the error
         logger.warn(
           { error: lastError, attempt, maxAttempts: this.config.retryAttempts },
-          `Vectorize upsert attempt ${attempt} failed, ${
-            this.config.retryAttempts - attempt
+          `Vectorize upsert attempt ${attempt} failed, ${this.config.retryAttempts - attempt
           } retries left`,
         );
 
@@ -211,5 +210,8 @@ export const createVectorizeService = (
   vectorize: VectorizeIndex,
   config?: Partial<VectorizeConfig>,
 ): VectorizeService => {
+  if (!vectorize) {
+    throw new Error('VECTORIZE binding is undefined');
+  }
   return new VectorizeService(vectorize, config);
 };

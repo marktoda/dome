@@ -59,7 +59,7 @@ export function loadConfig(): ConfigSchema {
   const envFromEnv = process.env.DOME_ENV;
   if (envFromEnv === 'production') {
     config.set('environment', 'production');
-    config.set('baseUrl', 'https://api.dome.example.com'); // Replace with actual production URL
+    config.set('baseUrl', 'https://dome-api.chatter-9999.workers.dev');
   }
 
   return {
@@ -102,7 +102,7 @@ export function setEnvironment(environment: 'development' | 'production'): void 
 
   // Update the base URL based on the environment
   if (environment === 'production') {
-    config.set('baseUrl', 'https://api.dome.example.com'); // Replace with actual production URL
+    config.set('baseUrl', 'https://dome-api.chatter-9999.workers.dev'); // Replace with actual production URL
   } else {
     config.set('baseUrl', defaultConfig.baseUrl);
   }

@@ -16,14 +16,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
    */
   private async embedBatch(
     jobs: EmbedJob[],
-    env: Env,
     sendToDeadLetter?: (job: EmbedJob) => Promise<void>,
   ): Promise<number> {
     getLogger().info({ batchSize: jobs.length }, 'Processing embedding batch');
     // Initialize services
     const preprocessor = createPreprocessor();
-    const embedder = createEmbedder(env.AI);
-    const vectorizeService = createVectorizeService(env.VECTORIZE);
+    const embedder = createEmbedder(this.env.AI);
+    const vectorizeService = createVectorizeService(this.env.VECTORIZE);
 
     let successCount = 0;
 
@@ -93,6 +92,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /* ---------------- Queue Consumer ---------------- */
   async queue(batch: MessageBatch<EmbedJob>): Promise<void> {
+    console.log(this.env);
     await withLogger(
       {
         service: 'constellation',
@@ -102,6 +102,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         version: this.env.VERSION,
       },
       async () => {
+        getLogger().warn(this.env);
         try {
           metrics.gauge('queue.batch_size', batch.messages.length);
           const batchTimer = metrics.startTimer('queue.process_batch');
@@ -116,7 +117,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             }
           };
 
-          const successCount = await this.embedBatch(jobs, this.env, sendToDeadLetter);
+          const successCount = await this.embedBatch(jobs, sendToDeadLetter);
           metrics.increment('queue.jobs_processed', successCount);
 
           batchTimer.stop();
@@ -136,15 +137,15 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /* ---------------- RPC Methods ---------------- */
   /** Embed a single note immediately (rare). */
-  public async embed(env: Env, job: EmbedJob): Promise<void> {
+  public async embed(job: EmbedJob): Promise<void> {
     await withLogger(
       {
         service: 'constellation',
         operation: 'embed',
         userId: job.userId,
         noteId: job.noteId,
-        environment: env.ENVIRONMENT,
-        version: env.VERSION,
+        environment: this.env.ENVIRONMENT,
+        version: this.env.VERSION,
       },
       async () => {
         getLogger().info(
@@ -156,7 +157,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         try {
           // Process the job directly using the embedBatch helper
-          await this.embedBatch([job], env, undefined);
+          await this.embedBatch([job], undefined);
           metrics.increment('rpc.embed.success');
         } catch (error) {
           metrics.increment('rpc.embed.errors');
@@ -174,7 +175,6 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /** Vector/text similarity search. */
   public async query(
-    env: Env,
     text: string,
     filter: Partial<NoteVectorMeta>,
     topK = 10,
@@ -185,8 +185,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         operation: 'query',
         filter,
         topK,
-        environment: env.ENVIRONMENT,
-        version: env.VERSION,
+        environment: this.env.ENVIRONMENT,
+        version: this.env.VERSION,
       },
       async () => {
         getLogger().info({ filter, topK }, 'Processing vector search query');
@@ -196,8 +196,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         try {
           // Initialize services
           const preprocessor = createPreprocessor();
-          const embedder = createEmbedder(env.AI);
-          const vectorizeService = createVectorizeService(env.VECTORIZE);
+          const embedder = createEmbedder(this.env.AI);
+          const vectorizeService = createVectorizeService(this.env.VECTORIZE);
 
           // Preprocess query text
           const processedText = preprocessor.normalize(text);
@@ -234,13 +234,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   }
 
   /** Lightweight health/stat endpoint. */
-  public async stats(env: Env): Promise<{ vectors: number; dimension: number }> {
+  public async stats(): Promise<{ vectors: number; dimension: number }> {
     return await withLogger(
       {
         service: 'constellation',
         operation: 'stats',
-        environment: env.ENVIRONMENT,
-        version: env.VERSION,
+        environment: this.env.ENVIRONMENT,
+        version: this.env.VERSION,
       },
       async () => {
         getLogger().info('Processing stats request');
@@ -249,7 +249,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         try {
           // Initialize service
-          const vectorizeService = createVectorizeService(env.VECTORIZE);
+          const vectorizeService = createVectorizeService(this.env.VECTORIZE);
 
           // Get index stats
           const stats = await vectorizeService.getStats();

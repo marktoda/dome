@@ -59,3 +59,7 @@ command = "pnpm build"
 binding = "CONSTELLATION"
 service = "constellation"
 environment = "staging"
+
+[observability]
+enabled = true
+head_sampling_rate = 1 # optional. default = 1.
