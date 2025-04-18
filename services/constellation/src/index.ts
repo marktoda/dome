@@ -1,157 +1,280 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import type { VectorMetadata } from '@dome/common';
-import { embeddingService } from './services/embeddingService';
-import { Bindings } from './types';
-import { ServiceError } from '@dome/common';
-import { logger } from '@dome/logging';
+import { EmbedJob, NoteVectorMeta, VectorSearchResult } from '@dome/common';
+import { runWithLogger, getLogger } from '@dome/logging';
+import { QueueMessage, CFExecutionContext } from './types';
+import { createPreprocessor } from './services/preprocessor';
+import { createEmbedder } from './services/embedder';
+import { createVectorizeService } from './services/vectorize';
+import { metrics } from './utils/metrics';
+import { logger } from './utils/logging';
 
 /**
- * Interface for embedding job messages received from the queue
+ * Create a wrapper around ExecutionContext that adds the run method
+ * required by the runWithLogger function
  */
-export interface EmbedJob {
-  userId: string;
-  noteId: string;
-  text: string;
-  created: number;
-  version: number;
+function createCFExecutionContext(ctx: ExecutionContext): CFExecutionContext {
+  return {
+    ...ctx,
+    run: async <T>(callback: () => T): Promise<T> => {
+      return Promise.resolve(callback());
+    },
+    waitUntil: ctx.waitUntil.bind(ctx),
+    passThroughOnException: ctx.passThroughOnException.bind(ctx)
+  };
 }
 
-/**
- * Interface for query match results
- */
-export interface QueryMatch {
-  id: string;
-  score: number;
-  metadata: VectorMetadata;
-}
-
-/**
- * Constellation Worker Service
- *
- * Provides:
- * 1. Queue consumer for async embedding jobs
- * 2. RPC interface for direct embedding, queries, and stats
- */
-export class Constellation extends WorkerEntrypoint {
+export default class Constellation extends WorkerEntrypoint<Env> {
   /**
-   * Queue consumer for processing embedding jobs
-   * Processes batches of embedding jobs, generates embeddings, and upserts them to Vectorize
+   * Process a batch of embedding jobs
+   * @param jobs Array of embedding jobs to process
+   * @param env Environment variables and bindings
+   * @param sendToDeadLetter Function to send failed jobs to dead letter queue
+   * @returns Number of successfully processed jobs
    */
-  async queue(batch: MessageBatch<EmbedJob>, env: Bindings): Promise<void> {
-    try {
-      const jobs = batch.messages.map(m => m.body);
-      logger.info(`Processing batch of ${jobs.length} embedding jobs`);
-      
-      // 1. Preprocess text for each job
-      const texts = jobs.map(job => embeddingService.preprocess(job.text));
-      
-      // 2. Generate embeddings (handled in batches by the service)
-      const startEmbed = Date.now();
-      const vectors = await embeddingService.generateBatch(env, texts);
-      const embedTime = Date.now() - startEmbed;
-      logger.info(`Generated ${vectors.length} embeddings in ${embedTime}ms`);
-      
-      // 3. Prepare vectors for upsert with metadata
-      const vectorsWithMeta = vectors.map((vec, i) => ({
-        id: `note:${jobs[i].noteId}`,
-        values: vec,
-        metadata: {
-          userId: jobs[i].userId,
-          noteId: jobs[i].noteId,
-          createdAt: Math.floor(jobs[i].created / 1000),
-          version: jobs[i].version,
-        } as VectorMetadata,
-      }));
-      
-      // 4. Upsert to Vectorize
-      const startUpsert = Date.now();
-      await env.VECTORIZE.upsert(vectorsWithMeta);
-      const upsertTime = Date.now() - startUpsert;
-      
-      logger.info(`Upserted ${vectorsWithMeta.length} vectors in ${upsertTime}ms`);
-    } catch (error) {
-      // Handle rate limiting (429) by retrying the batch
-      if (error instanceof Error && error.message.includes('429')) {
-        logger.warn('Rate limited by Workers AI, retrying batch');
-        batch.retryAll(30); // Retry after 30 seconds
-        return;
+  private async embedBatch(
+    jobs: EmbedJob[],
+    env: Env,
+    sendToDeadLetter?: (job: EmbedJob) => Promise<void>
+  ): Promise<number> {
+    // Initialize services
+    const preprocessor = createPreprocessor();
+    const embedder = createEmbedder(env.AI);
+    const vectorizeService = createVectorizeService(env.VECTORIZE);
+    
+    let successCount = 0;
+
+    // Process each job
+    for (const job of jobs) {
+      const jobTimer = metrics.startTimer('process_job');
+      try {
+        logger.debug({ userId: job.userId, noteId: job.noteId }, 'Processing embedding job');
+
+        // 1. Preprocess text
+        const processedTexts = preprocessor.process(job.text);
+        if (processedTexts.length === 0) {
+          logger.warn({ userId: job.userId, noteId: job.noteId }, 'No text chunks to embed after preprocessing');
+          continue;
+        }
+
+        // 2. Generate embeddings
+        const embeddings = await embedder.embed(processedTexts);
+
+        // 3. Prepare vectors for storage
+        const vectors = embeddings.map((embedding, i) => ({
+          id: `note:${job.noteId}:${i}`,
+          values: embedding,
+          metadata: {
+            userId: job.userId,
+            noteId: job.noteId,
+            createdAt: Math.floor(job.created / 1000),
+            version: job.version,
+          } satisfies NoteVectorMeta
+        }));
+
+        // 4. Store vectors
+        await vectorizeService.upsert(vectors);
+
+        logger.info(
+          { userId: job.userId, noteId: job.noteId, chunks: processedTexts.length },
+          'Successfully embedded and stored note'
+        );
+        successCount++;
+      } catch (error) {
+        logger.error(
+          { error, userId: job.userId, noteId: job.noteId },
+          'Error processing embedding job'
+        );
+
+        // If we have a dead letter handler, use it
+        if (sendToDeadLetter) {
+          await sendToDeadLetter(job);
+          logger.info({ userId: job.userId, noteId: job.noteId }, 'Sent failed job to dead letter queue');
+        }
+
+        // Rethrow the error to allow the caller to handle retries
+        throw error;
+      } finally {
+        jobTimer.stop({ userId: job.userId, noteId: job.noteId });
       }
-      
-      // Log other errors and let the queue system handle retries
-      logger.error('Error processing embedding batch', { error });
-      throw error;
     }
+
+    return successCount;
   }
 
-  /**
-   * Direct embedding RPC method
-   * Embeds a single note immediately (rare use case)
-   */
-  public async embed(env: Bindings, job: EmbedJob): Promise<void> {
-    try {
-      logger.info(`Direct embedding for noteId: ${job.noteId}`);
-      
-      // Create a fake batch with a single message
-      const fakeBatch = {
-        messages: [{ body: job }],
-        retryAll: () => {} // No-op for direct embedding
-      } as MessageBatch<EmbedJob>;
-      
-      // Reuse the queue consumer logic
-      await this.queue(fakeBatch, env);
-    } catch (error) {
-      logger.error('Error in direct embedding', { error, noteId: job.noteId });
-      throw new ServiceError('Failed to directly embed note', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        context: { noteId: job.noteId }
-      });
-    }
+  /* ---------------- Queue Consumer ---------------- */
+  async queue(batch: MessageBatch<EmbedJob>): Promise<void> {
+    await runWithLogger(
+      {
+        service: 'constellation',
+        operation: 'queue_consumer',
+        batchSize: batch.messages.length,
+        environment: this.env.ENVIRONMENT,
+        version: this.env.VERSION,
+      },
+      async () => {
+        try {
+          logger.info({ batchSize: batch.messages.length }, 'Processing embedding batch');
+          metrics.gauge('queue.batch_size', batch.messages.length);
+          const batchTimer = metrics.startTimer('queue.process_batch');
+
+          // Extract jobs from batch
+          const jobs = batch.messages.map(m => m.body);
+
+          // Process the batch with dead letter queue handling
+          const sendToDeadLetter = async (job: EmbedJob) => {
+            if (this.env.EMBED_DEAD) {
+              await this.env.EMBED_DEAD.send(job);
+            }
+          };
+
+          const successCount = await this.embedBatch(jobs, this.env, sendToDeadLetter);
+          metrics.increment('queue.jobs_processed', successCount);
+
+          batchTimer.stop();
+          logger.info({ processedCount: successCount }, 'Batch processing completed');
+        } catch (error) {
+          logger.error({ error }, 'Error processing batch');
+          metrics.increment('queue.batch_errors');
+
+          // Retry the entire batch if appropriate
+          if (batch.retryAll) {
+            batch.retryAll();
+          }
+        }
+      },
+      createCFExecutionContext(this.ctx)
+    );
   }
 
-  /**
-   * Vector/text similarity search RPC method
-   */
+  /* ---------------- RPC Methods ---------------- */
+  /** Embed a single note immediately (rare). */
+  public async embed(env: Env, job: EmbedJob): Promise<void> {
+    await runWithLogger(
+      {
+        service: 'constellation',
+        operation: 'embed',
+        userId: job.userId,
+        noteId: job.noteId,
+        environment: env.ENVIRONMENT,
+        version: env.VERSION,
+      },
+      async () => {
+        logger.info({ userId: job.userId, noteId: job.noteId }, 'Processing direct embedding request');
+        metrics.increment('rpc.embed.requests');
+        const timer = metrics.startTimer('rpc.embed');
+
+        try {
+          // Process the job directly using the embedBatch helper
+          await this.embedBatch([job], env);
+          metrics.increment('rpc.embed.success');
+        } catch (error) {
+          metrics.increment('rpc.embed.errors');
+          logger.error({ error, userId: job.userId, noteId: job.noteId }, 'Error in direct embedding');
+          throw error;
+        } finally {
+          timer.stop();
+        }
+      },
+      createCFExecutionContext(this.ctx)
+    );
+  }
+
+  /** Vector/text similarity search. */
   public async query(
-    env: Bindings,
+    env: Env,
     text: string,
-    filter: Partial<VectorMetadata>,
-    topK = 10,
-  ): Promise<QueryMatch[]> {
-    try {
-      // Preprocess the query text
-      const processedText = embeddingService.preprocess(text);
-      
-      // Execute the query against Vectorize
-      const res = await env.VECTORIZE.query(processedText, { topK, filter });
-      
-      // Return only what callers need
-      return res.matches as QueryMatch[];
-    } catch (error) {
-      logger.error('Error in vector query', { error, filter });
-      throw new ServiceError('Failed to execute vector query', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-      });
-    }
+    filter: Partial<NoteVectorMeta>,
+    topK = 10
+  ): Promise<VectorSearchResult[]> {
+    return await runWithLogger(
+      {
+        service: 'constellation',
+        operation: 'query',
+        filter,
+        topK,
+        environment: env.ENVIRONMENT,
+        version: env.VERSION,
+      },
+      async () => {
+        logger.info({ filter, topK }, 'Processing vector search query');
+        metrics.increment('rpc.query.requests');
+        const timer = metrics.startTimer('rpc.query');
+
+        try {
+          // Initialize services
+          const preprocessor = createPreprocessor();
+          const embedder = createEmbedder(env.AI);
+          const vectorizeService = createVectorizeService(env.VECTORIZE);
+
+          // Preprocess query text
+          const processedText = preprocessor.normalize(text);
+          if (!processedText) {
+            logger.warn('Empty query text after preprocessing');
+            return [];
+          }
+
+          // Generate embedding for the query text
+          const embeddings = await embedder.embed([processedText]);
+          if (embeddings.length === 0) {
+            logger.warn('Failed to generate embedding for query text');
+            return [];
+          }
+
+          // Query the vector index with the generated embedding
+          const queryVector = embeddings[0];
+          const results = await vectorizeService.query(queryVector, filter, topK);
+
+          metrics.increment('rpc.query.success');
+          metrics.gauge('rpc.query.results', results.length);
+          logger.info({ resultCount: results.length }, 'Vector search completed');
+
+          return results;
+        } catch (error) {
+          metrics.increment('rpc.query.errors');
+          logger.error({ error, filter, topK }, 'Error in vector search');
+          throw error;
+        } finally {
+          timer.stop();
+        }
+      },
+      createCFExecutionContext(this.ctx)
+    );
   }
 
-  /**
-   * Quick operational stats RPC method
-   * Returns information about the Vectorize index
-   */
-  public async stats(env: Bindings) {
-    try {
-      const info = await env.VECTORIZE.info();
-      return {
-        vectors: info.vectorCount,
-        dimension: info.dimensions
-      };
-    } catch (error) {
-      logger.error('Error fetching vectorize stats', { error });
-      throw new ServiceError('Failed to fetch vectorize stats', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-      });
-    }
+  /** Lightweight health/stat endpoint. */
+  public async stats(env: Env): Promise<{ vectors: number; dimension: number }> {
+    return await runWithLogger(
+      {
+        service: 'constellation',
+        operation: 'stats',
+        environment: env.ENVIRONMENT,
+        version: env.VERSION,
+      },
+      async () => {
+        logger.info('Processing stats request');
+        metrics.increment('rpc.stats.requests');
+        const timer = metrics.startTimer('rpc.stats');
+
+        try {
+          // Initialize service
+          const vectorizeService = createVectorizeService(env.VECTORIZE);
+
+          // Get index stats
+          const stats = await vectorizeService.getStats();
+
+          metrics.increment('rpc.stats.success');
+          logger.info({ stats }, 'Stats request completed');
+
+          return stats;
+        } catch (error) {
+          metrics.increment('rpc.stats.errors');
+          logger.error({ error }, 'Error getting stats');
+          throw error;
+        } finally {
+          timer.stop();
+        }
+      },
+      createCFExecutionContext(this.ctx)
+    );
   }
 }
-
-export default new Constellation();

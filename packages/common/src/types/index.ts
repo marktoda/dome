@@ -8,6 +8,9 @@ export * from './message';
 // Export event types
 export * from './events';
 
+// Export embedding types
+export * from './embedding';
+
 /**
  * Service information interface
  */
@@ -30,3 +33,4 @@ export interface ApiResponse<T = any> {
     details?: Record<string, any>;
   };
 }
+

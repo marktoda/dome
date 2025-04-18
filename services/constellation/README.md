@@ -1,474 +1,181 @@
-# Push Message Ingestor Service
+# Constellation Embedding Service
 
-## Overview
-
-The Push Message Ingestor Service is a Cloudflare Worker that serves as an entry point for external messages into the Communicator system. Unlike the polling-based ingestor service, this service provides endpoints that external systems can push messages to directly.
-
-The service is responsible for:
-
-- Receiving messages pushed from external sources (currently supporting Telegram)
-- Validating and normalizing incoming message data
-- Publishing validated messages to the `rawmessages` queue for further processing
-- Providing a foundation for future message sources and protocols
+Constellation is a dedicated Cloudflare Worker that provides embedding and vector search capabilities for the Dome application. The service handles the asynchronous processing of text embedding jobs and provides a typed RPC interface for other workers to interact with.
 
 ## Features
 
-- **Multi-platform Support**: Designed to accept messages from various platforms (currently supports Telegram)
-- **Message Validation**: Validates message format and content before publishing
-- **Queue Integration**: Publishes messages to the `rawmessages` Cloudflare Queue
-- **Batch Processing**: Supports publishing multiple messages in a single request with efficient pagination
-- **Comprehensive Error Handling**: Centralized error handling with standardized error responses
-- **Structured Logging**: Detailed logging with correlation IDs for request tracing
-- **Rate Limiting**: Protection against abuse with configurable rate limits
-- **Performance Optimization**: Efficient batch processing for large message sets
-- **Extensibility**: Modular architecture for easy addition of new message sources
+- **Asynchronous Embedding Processing**: Consumes raw text jobs from a Workers Queue, converts them into vector embeddings using Workers AI, and upserts them into a shared Vectorize index.
+- **RPC Interface**: Provides a typed service binding for other workers to embed, query, and retrieve stats.
+- **Robust Error Handling**: Implements retry logic, dead letter queues, and comprehensive logging.
+- **Monitoring and Metrics**: Tracks performance metrics and operational statistics.
 
-## Installation and Setup
+## Architecture
 
-### Prerequisites
+Constellation consists of several key components:
 
-- [Node.js](https://nodejs.org/) (LTS version recommended)
-- [pnpm](https://pnpm.io/) package manager
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) for Cloudflare Workers
+1. **Queue Consumer**: Processes batches of embedding jobs from the EMBED_QUEUE.
+2. **Preprocessor Service**: Handles text normalization and chunking for optimal embedding.
+3. **Embedder Service**: Interfaces with Workers AI to generate embeddings.
+4. **Vectorize Service**: Manages interactions with the Vectorize index.
+5. **RPC Interface**: Exposes typed methods for other workers.
 
-### Installation
-
-1. Clone the repository and navigate to the service directory:
-
-```bash
-# From the repository root
-cd services/push-message-ingestor
+```
+┌───────────────┐         enqueue           ┌───────────────┐
+│  API Worker   │──────────────────────────▶│  EMBED_QUEUE  │
+│  GitHub Cron  │                           └───────────────┘
+│  Notion Cron  │                                 ▲
+└───────┬───────┘                                 │ batch
+        │ service RPC                             │
+        ▼                                         │
+┌───────────────────────────────────────────────────────────────┐
+│             Constellation Worker (service "embedder")          │
+│                                                               │
+│   queue(jobs)  ─►  embedBatch()  ─►  Workers AI  ─► Vectorize │
+│                               ▲               │              │
+│     RPC: query(), stats()  ───┘               └───► logs/metrics
+└───────────────────────────────────────────────────────────────┘
 ```
 
-2. Install dependencies:
+## Usage
 
-```bash
-pnpm install
-```
+### Service Binding
 
-3. Configure Wrangler:
-
-Ensure your `wrangler.toml` file is properly configured with your Cloudflare account ID and queue bindings. You may need to update the following:
+To use Constellation from another worker, add the service binding to your `wrangler.toml`:
 
 ```toml
-# wrangler.toml
-name = "push-message-ingestor"
-account_id = "your-cloudflare-account-id" # Add this line with your account ID
-
-# Queue bindings
-[[queues.producers]]
-queue = "rawmessages"
-binding = "RAW_MESSAGES_QUEUE"
+[[services]]
+binding   = "CONSTELLATION"
+service   = "constellation"
+environment = "production"
 ```
 
-## Local Development
+### Enqueuing Jobs for Async Embedding
 
-### Running the Service Locally
-
-To run the service locally with Wrangler:
-
-```bash
-# Start the development server
-wrangler dev
+```typescript
+// Enqueue a job for async embedding
+await env.QUEUE.send('EMBED_QUEUE', {
+  userId: 'user123',
+  noteId: 'note456',
+  text: 'This is the text to embed',
+  created: Date.now(),
+  version: 1
+});
 ```
 
-> **Important**: Always use `wrangler dev` directly for local development, not `pnpm dev`, to ensure proper queue binding support.
+### Direct Embedding (Rare)
 
-The service will be available at `http://localhost:8787` by default.
-
-### Testing
-
-The service includes unit tests and integration test scripts:
-
-```bash
-# Run unit tests
-pnpm test
-
-# Run tests in watch mode
-pnpm test:watch
-
-# Run integration tests against a local instance
-# Option 1: Using the original test script
-chmod +x tests/test-scripts.sh
-./tests/test-scripts.sh http://localhost:8787
-
-# Option 2: Using the fixed test script (recommended)
-chmod +x tests/test-scripts-fixed.sh
-./tests/test-scripts-fixed.sh http://localhost:8787
-
-# Option 3: Using the test runner script (easiest)
-chmod +x run-tests.sh
-./run-tests.sh
+```typescript
+// Directly embed a note (synchronous, use sparingly)
+await env.CONSTELLATION.embed({
+  userId: 'user123',
+  noteId: 'note456',
+  text: 'This is the text to embed',
+  created: Date.now(),
+  version: 1
+});
 ```
 
-The test scripts verify all endpoints and test various scenarios:
+### Vector Search
 
-- Base endpoint (GET /)
-- Health check endpoint (GET /health)
-- Valid message publishing
-- Invalid message validation
-- Empty message arrays
-- Multiple messages in a single request
-- Mixed valid and invalid messages
+```typescript
+// Search for similar vectors
+const results = await env.CONSTELLATION.query(
+  'Search query text',
+  { userId: 'user123' }, // Optional filter
+  10 // Optional topK
+);
 
-For more details on testing, see the [tests/README.md](tests/README.md) and [tests/TESTING.md](tests/TESTING.md) files.
+// Process results
+for (const result of results) {
+  console.log(`Note ${result.metadata.noteId} matched with score ${result.score}`);
+}
+```
 
-#### Recent Test Improvements
+### Stats
 
-The service has been updated to fix several issues:
+```typescript
+// Get index statistics
+const stats = await env.CONSTELLATION.stats();
+console.log(`Vector index has ${stats.vectors} vectors with dimension ${stats.dimension}`);
+```
 
-- Enhanced JSON parsing error handling with detailed error messages
-- Improved handling of empty message arrays
-- Added request body logging for better debugging
-- Created new test scripts with improved JSON payload handling
-- Added a simple test runner script (`run-tests.sh`) for easier testing
+## Configuration
 
-If you encounter issues with the original test script, try using the fixed version (`test-scripts-fixed.sh`) or the test runner script (`run-tests.sh`).
+### Environment Variables
 
-### Development Workflow
+- `VERSION`: Service version
+- `ENVIRONMENT`: Deployment environment (production, staging, etc.)
 
-1. Make changes to the source code
-2. Run tests to verify functionality
-3. Test locally with Wrangler
-4. Deploy to staging for integration testing
-5. Deploy to production
+### Bindings
 
-## Deployment
+- `VECTORIZE`: Vectorize index binding
+- `AI`: Workers AI binding
+- `EMBED_QUEUE`: Queue for embedding jobs
+- `EMBED_DEAD`: Dead letter queue for failed jobs
 
-### Deploying to Cloudflare
+## Development
 
-To deploy the service to Cloudflare Workers:
+### Local Development
 
-```bash
-# Build the service
-pnpm build
+1. Install dependencies:
+   ```
+   pnpm install
+   ```
 
-# Deploy to the default environment
-wrangler deploy
+2. Run the worker locally:
+   ```
+   pnpm dev
+   ```
 
-# Or use the npm script
+3. Run tests:
+   ```
+   pnpm test
+   ```
+
+### Deployment
+
+Deploy to Cloudflare:
+
+```
 pnpm deploy
-
-# Deploy to a specific environment
-wrangler deploy --env production
 ```
 
-### Environment Configuration
+## Monitoring
 
-The service supports different environments through Wrangler:
+Constellation emits structured logs and metrics for monitoring:
 
-- **Development**: Default local environment
-- **Staging**: For testing before production
-- **Production**: Production environment
+### Key Metrics
 
-Environment-specific configuration is defined in `wrangler.toml`:
+- `queue.batch_size`: Size of job batches
+- `queue.process_batch`: Time to process a batch
+- `queue.process_job`: Time to process a single job
+- `embedding.batch_size`: Size of embedding batches
+- `embedding.duration_ms`: Time to generate embeddings
+- `vectorize.upsert.batch_size`: Size of vector upsert batches
+- `vectorize.upsert.duration_ms`: Time to upsert vectors
+- `vectorize.query.results`: Number of query results
+- `vectorize.query.duration_ms`: Time to query vectors
 
-```toml
-[vars]
-ENVIRONMENT = "development"
+### Error Metrics
 
-[env.production]
-vars = { ENVIRONMENT = "production" }
-
-[env.staging]
-vars = { ENVIRONMENT = "staging" }
-```
-
-## API Documentation
-
-### Base Endpoints
-
-#### `GET /`
-
-Returns basic service information.
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "data": {
-    "message": "Hello from push-message-ingestor service!",
-    "service": {
-      "name": "push-message-ingestor",
-      "version": "0.1.0",
-      "environment": "development"
-    },
-    "description": "Service for ingesting messages from various platforms and publishing them to a queue"
-  }
-}
-```
-
-#### `GET /health`
-
-Health check endpoint.
-
-**Response:**
-
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-04-15T20:55:00.000Z",
-  "service": "push-message-ingestor",
-  "version": "0.1.0"
-}
-```
-
-### Telegram Endpoints
-
-#### `POST /publish/telegram/messages`
-
-Publishes a batch of Telegram messages to the queue.
-
-**Request Body:**
-
-```json
-{
-  "messages": [
-    {
-      "id": "unique-message-id",
-      "timestamp": "2025-04-15T20:55:00.000Z",
-      "platform": "telegram",
-      "content": "Hello, world!",
-      "metadata": {
-        "chatId": "123456789",
-        "messageId": "987654321",
-        "fromUserId": "12345",
-        "fromUsername": "user123",
-        "replyToMessageId": "54321",
-        "mediaType": "photo",
-        "mediaUrl": "https://example.com/photo.jpg"
-      }
-    }
-  ]
-}
-```
-
-**Success Response:**
-
-```json
-{
-  "success": true,
-  "data": {
-    "message": "Successfully published 1 messages to the queue",
-    "count": 1
-  }
-}
-```
-
-**Error Response:**
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid message batch: Message ID is required"
-  }
-}
-```
-
-For more detailed API documentation, see the [API.md](API.md) file.
+- `queue.job_errors`: Count of job processing errors
+- `queue.batch_errors`: Count of batch processing errors
+- `embedding.errors`: Count of embedding errors
+- `vectorize.upsert.errors`: Count of vector upsert errors
+- `vectorize.query.errors`: Count of vector query errors
 
 ## Error Handling
 
-The service implements a comprehensive error handling system with standardized error responses:
+Constellation implements several error handling strategies:
 
-```json
-{
-  "success": false,
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Detailed error message",
-    "correlationId": "unique-correlation-id",
-    "details": {
-      // Additional error details when available
-    }
-  }
-}
-```
+1. **Retries**: Failed operations are retried with exponential backoff.
+2. **Dead Letter Queue**: Persistently failed jobs are sent to a dead letter queue.
+3. **Batch Retries**: Entire batches can be retried if needed.
+4. **Structured Error Logging**: Errors are logged with context for debugging.
 
-Common error codes:
+## Performance Considerations
 
-- `VALIDATION_ERROR`: Invalid message format or missing required fields (HTTP 400)
-- `SERVER_ERROR`: Internal server error (HTTP 500)
-- `QUEUE_ERROR`: Error publishing to the queue (HTTP 500)
-- `RATE_LIMIT_EXCEEDED`: Too many requests in a short time period (HTTP 429)
-
-### Error Handling Features
-
-- **Centralized Error Middleware**: All errors are processed through a single middleware
-- **Correlation IDs**: Each request has a unique ID for tracing through logs
-- **Detailed Error Messages**: Clear, actionable error messages
-- **Proper HTTP Status Codes**: Appropriate status codes for different error types
-- **Structured Error Logging**: Errors are logged with context for easier debugging
-- **Environment-Specific Behavior**: Different error handling in development vs. production
-- **Security-Focused**: Prevents exposure of sensitive information in production
-- **Consistent Propagation**: Correlation IDs maintained across all asynchronous operations
-
-### Production vs. Development Error Handling
-
-The service implements different error handling behavior based on the environment:
-
-#### Development Environment
-
-- Detailed error messages with original error information
-- Stack traces included in logs and error details
-- Comprehensive error context for debugging
-
-#### Production Environment
-
-- Generic error messages for server errors
-- No stack traces or internal details exposed in responses
-- Sensitive information automatically redacted from logs and responses
-- Validation errors still provide detailed information to help clients
-
-This approach ensures security in production while maintaining developer-friendly error handling during development.
-
-## Performance Optimizations
-
-The service includes several performance optimizations:
-
-- **Efficient Batch Processing**: Large message batches are processed in smaller chunks to avoid memory issues
-- **Rate Limiting**: Configurable rate limiting to prevent abuse and ensure service stability
-- **Pagination**: Support for paginating large result sets
-- **Asynchronous Processing**: Non-blocking operations for better throughput
-- **Optimized Validation**: Efficient validation for large message batches
-
-## Logging
-
-The service implements structured logging with the following features:
-
-- **Correlation IDs**: Each request has a unique ID that is consistently propagated through all logs
-- **Structured JSON Logs**: Logs are formatted as JSON for easier parsing and analysis
-- **Log Levels**: Different log levels (debug, info, warn, error) for appropriate filtering
-- **Business Event Logging**: Important business events are logged with context
-- **Error Context**: Errors are logged with detailed context for easier debugging
-- **Asynchronous Context Preservation**: Correlation IDs maintained across all asynchronous operations
-- **Sensitive Data Protection**: Automatic redaction of sensitive information in production logs
-- **Environment-Specific Behavior**: Different logging detail levels based on environment
-
-### Logging Security Features
-
-The logging system includes several security features:
-
-- **Stack Trace Handling**: Stack traces are only included in non-production environments
-- **Sensitive Field Filtering**: Automatic filtering of fields that might contain sensitive data (passwords, tokens, keys, etc.)
-- **Sanitized Error Objects**: Error objects are sanitized before logging in production
-- **Consistent Context**: All logs include the same correlation ID for complete request tracing
-- **Structured Format**: JSON format enables easier log analysis and security monitoring
-
-### Log Examples
-
-#### Info Log
-
-```json
-{
-  "level": "info",
-  "message": "Publishing batch of 10 messages",
-  "timestamp": "2025-04-15T20:55:00.000Z",
-  "correlationId": "d8e8fca2-dc1b-4c7e-9d40-a9a0c3a7b1c9"
-}
-```
-
-#### Error Log (Development)
-
-```json
-{
-  "level": "error",
-  "message": "Failed to publish message to queue",
-  "timestamp": "2025-04-15T20:55:00.000Z",
-  "correlationId": "d8e8fca2-dc1b-4c7e-9d40-a9a0c3a7b1c9",
-  "data": {
-    "name": "QueueError",
-    "message": "Failed to connect to queue",
-    "stack": "QueueError: Failed to connect to queue\n    at MessageService.publishMessage (/src/services/messageService.ts:58:13)\n    ..."
-  }
-}
-```
-
-#### Error Log (Production)
-
-```json
-{
-  "level": "error",
-  "message": "Failed to publish message to queue",
-  "timestamp": "2025-04-15T20:55:00.000Z",
-  "correlationId": "d8e8fca2-dc1b-4c7e-9d40-a9a0c3a7b1c9",
-  "data": {
-    "name": "QueueError",
-    "message": "Failed to connect to queue"
-  }
-}
-```
-
-## Future Extension Points
-
-The service is designed to be extended to support additional platforms and features:
-
-### Adding New Message Sources
-
-To add support for a new message source (e.g., Slack):
-
-1. Create a new message model in `src/models/message.ts`:
-
-   ```typescript
-   export interface SlackMessage extends BaseMessage {
-     platform: 'slack';
-     metadata: {
-       channelId: string;
-       messageId: string;
-       // Other Slack-specific fields
-     };
-   }
-   ```
-
-2. Implement validators in `src/models/validators.ts`:
-
-   ```typescript
-   export function validateSlackMessage(message: any): { valid: boolean; errors?: string[] } {
-     // Validation logic
-   }
-   ```
-
-3. Add a new endpoint in `src/index.ts`:
-
-   ```typescript
-   app.post('/publish/slack/messages', async (c: any) => {
-     const messageController = new MessageController(c.env.RAW_MESSAGES_QUEUE);
-     return await messageController.publishSlackMessages(c);
-   });
-   ```
-
-4. Update the message controller in `src/controllers/messageController.ts`:
-
-   ```typescript
-   async publishSlackMessages(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-     // Controller logic
-   }
-   ```
-
-5. Update the message service in `src/services/messageService.ts`:
-   ```typescript
-   async publishSlackMessages(batch: SlackMessageBatch): Promise<{ success: boolean; error?: string }> {
-     // Service logic
-   }
-   ```
-
-### Implementing WebSocket Support
-
-Future versions of the service will support WebSocket connections for real-time message ingestion:
-
-1. Create a WebSocket controller in `src/controllers/websocketController.ts`
-2. Add WebSocket route handling in `src/index.ts`
-3. Reuse the existing message validation and queue publishing logic
-
-### Adding Authentication
-
-To add Cloudflare Access authentication:
-
-1. Create an auth service in `src/services/authService.ts`
-2. Implement authentication middleware in `src/middleware/authMiddleware.ts`
-3. Apply the middleware to protected routes in `src/index.ts`
-
-For more details on the architecture and extension points, see the [architecture.md](architecture.md) file.
+- **Batch Size**: The queue consumer is configured for batches of 10 jobs.
+- **Embedding Limits**: Workers AI has a limit of 20 texts per embedding call.
+- **Vectorize Limits**: Vectorize has a recommended batch size of 100 vectors.
+- **Text Size**: Text should be ≤ 8 kB for optimal performance.

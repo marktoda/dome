@@ -1,36 +1,44 @@
-import type { MessageData } from '@dome/common';
+/**
+ * Constellation service types
+ */
+
+import { NoteVectorMeta } from '@dome/common';
 
 /**
- * Interface for Workers AI binding
+ * Environment variables and bindings
  */
-interface WorkersAI {
-  run(model: string, options: any): Promise<any>;
-}
-
-/**
- * Vector metadata for Vectorize index
- */
-export interface VectorMetadata {
-  userId: string;
-  noteId: string;
-  createdAt: number; // seconds since epoch
-  version: number;
-}
-
-/**
- * Environment bindings for the Constellation Worker
- */
-export type Bindings = {
-  D1_DATABASE: D1Database;
+export interface Env {
+  VERSION: string;
+  ENVIRONMENT: string;
+  EMBED_DEAD: Queue;
   VECTORIZE: VectorizeIndex;
-  RAW: R2Bucket;
-  EVENTS: Queue<MessageData>;
-  AI?: WorkersAI; // Optional to support testing environments
-};
+  AI: Ai;
+}
 
 /**
- * Queue retry options
+ * Vector with metadata for upsert operations
  */
-export interface QueueRetryOptions {
-  delaySeconds?: number;
+export interface VectorWithMetadata {
+  id: string;
+  values: number[];
+  metadata: NoteVectorMeta;
+}
+
+/**
+ * Message interface for queue operations
+ */
+export interface QueueMessage<T> {
+  id: string;
+  timestamp: Date;
+  body: T;
+  attempts: number;
+  retry(options?: { delaySeconds?: number }): void;
+  ack(): void;
+}
+
+/**
+ * Execution context with run method for logging
+ */
+export interface CFExecutionContext extends ExecutionContext {
+  run<T>(callback: () => T): Promise<T>;
 }

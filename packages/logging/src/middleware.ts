@@ -5,14 +5,15 @@ import { nanoid } from 'nanoid';
 import type { InitOptions } from './types';
 
 /**
- * Extend Request type to include Cloudflare-specific properties
+ * Custom request type with Cloudflare-specific properties
+ * Using a type intersection instead of extending Request to avoid conflicts
  */
-interface CFRequest extends Request {
+type CFRequest = Request & {
   cf?: {
     colo?: string;
     [key: string]: unknown;
   };
-}
+};
 
 /**
  * Type definition for the Hono context used in middleware

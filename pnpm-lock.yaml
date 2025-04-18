@@ -170,12 +170,9 @@ importers:
         specifier: ^3.3.4
         version: 3.3.11
       pino:
-        specifier: ^8.0.0
-        version: 8.21.0
+        specifier: ^9.6.0
+        version: 9.6.0
     devDependencies:
-      '@types/jest':
-        specifier: ^29.5.14
-        version: 29.5.14
       '@typescript-eslint/eslint-plugin':
         specifier: ^5.57.1
         version: 5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.8.3))(eslint@8.57.1)(typescript@5.8.3)
@@ -200,39 +197,18 @@ importers:
       '@dome/logging':
         specifier: workspace:*
         version: link:../../packages/logging
-      '@graphql-tools/schema':
-        specifier: ^10.0.2
-        version: 10.0.23(graphql@16.10.0)
       '@hono/zod-validator':
         specifier: ^0.1.8
         version: 0.1.11(hono@3.12.12)(zod@3.24.3)
-      '@types/uuid':
-        specifier: ^10.0.0
-        version: 10.0.0
-      drizzle-kit:
-        specifier: ^0.31.0
-        version: 0.31.0
       drizzle-orm:
         specifier: ^0.42.0
         version: 0.42.0(@cloudflare/workers-types@4.20250415.0)
-      graphql:
-        specifier: ^16.8.1
-        version: 16.10.0
-      graphql-yoga:
-        specifier: ^5.2.0
-        version: 5.13.4(graphql@16.10.0)
       hono:
         specifier: ^3.12.0
         version: 3.12.12
       pino:
         specifier: ^9.6.0
         version: 9.6.0
-      pino-http:
-        specifier: ^10.4.0
-        version: 10.4.0
-      uuid:
-        specifier: ^11.1.0
-        version: 11.1.0
       zod:
         specifier: ^3.21.4
         version: 3.24.3
@@ -252,15 +228,12 @@ importers:
       '@typescript-eslint/parser':
         specifier: ^5.57.1
         version: 5.62.0(eslint@8.57.1)(typescript@5.8.3)
+      drizzle-kit:
+        specifier: ^0.31.0
+        version: 0.31.0
       eslint:
         specifier: ^8.38.0
         version: 8.57.1
-      jest:
-        specifier: ^29.5.0
-        version: 29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3))
-      ts-jest:
-        specifier: ^29.1.0
-        version: 29.3.2(@babel/core@7.26.10)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.26.10))(esbuild@0.25.2)(jest@29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3)))(typescript@5.8.3)
       typescript:
         specifier: ^5.0.4
         version: 5.8.3
@@ -339,7 +312,7 @@ importers:
         version: 29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3))
       ts-jest:
         specifier: ^29.1.0
-        version: 29.3.2(@babel/core@7.26.10)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.26.10))(esbuild@0.25.2)(jest@29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3)))(typescript@5.8.3)
+        version: 29.3.2(@babel/core@7.26.10)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.26.10))(jest@29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3)))(typescript@5.8.3)
       typescript:
         specifier: ^5.0.4
         version: 5.8.3
@@ -362,6 +335,9 @@ importers:
         specifier: ^3.21.4
         version: 3.22.3
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20230404.0
+        version: 4.20250415.0
       '@types/node':
         specifier: ^18.16.3
         version: 18.19.86
@@ -378,8 +354,8 @@ importers:
         specifier: ^0.31.0
         version: 0.31.4
       wrangler:
-        specifier: ^3.0.0
-        version: 3.114.6(@cloudflare/workers-types@4.20250415.0)(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+        specifier: ^4.10.0
+        version: 4.11.1(@cloudflare/workers-types@4.20250415.0)(bufferutil@4.0.9)(utf-8-validate@5.0.10)
 
   services/dome-notify:
     dependencies:
@@ -7529,12 +7505,12 @@ snapshots:
     dependencies:
       is-number: 7.0.0
 
-  ts-jest@29.3.2(@babel/core@7.26.10)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.26.10))(esbuild@0.25.2)(jest@29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3)))(typescript@5.8.3):
+  ts-jest@29.3.2(@babel/core@7.26.10)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.26.10))(jest@29.7.0(@types/node@18.19.86)(ts-node@10.9.2(@types/node@18.19.86)(typescript@5.8.3)))(typescript@5.8.3):
     dependencies:
       bs-logger: 0.2.6
       ejs: 3.1.10
       fast-json-stable-stringify: 2.1.0
-      jest: 29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3))
+      jest: 29.7.0(@types/node@18.19.86)(ts-node@10.9.2(@types/node@18.19.86)(typescript@5.8.3))
       jest-util: 29.7.0
       json5: 2.2.3
       lodash.memoize: 4.1.2
@@ -7548,14 +7524,13 @@ snapshots:
       '@jest/transform': 29.7.0
       '@jest/types': 29.6.3
       babel-jest: 29.7.0(@babel/core@7.26.10)
-      esbuild: 0.25.2
 
-  ts-jest@29.3.2(@babel/core@7.26.10)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.26.10))(jest@29.7.0(@types/node@18.19.86)(ts-node@10.9.2(@types/node@18.19.86)(typescript@5.8.3)))(typescript@5.8.3):
+  ts-jest@29.3.2(@babel/core@7.26.10)(@jest/transform@29.7.0)(@jest/types@29.6.3)(babel-jest@29.7.0(@babel/core@7.26.10))(jest@29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3)))(typescript@5.8.3):
     dependencies:
       bs-logger: 0.2.6
       ejs: 3.1.10
       fast-json-stable-stringify: 2.1.0
-      jest: 29.7.0(@types/node@18.19.86)(ts-node@10.9.2(@types/node@18.19.86)(typescript@5.8.3))
+      jest: 29.7.0(@types/node@22.14.1)(ts-node@10.9.2(@types/node@22.14.1)(typescript@5.8.3))
       jest-util: 29.7.0
       json5: 2.2.3
       lodash.memoize: 4.1.2

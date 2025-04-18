@@ -1,0 +1,198 @@
+# Constellation Service Alert Configuration
+
+# Queue Alerts
+queue_depth:
+  name: "High Queue Depth"
+  description: "Queue depth is higher than normal"
+  metric: "queue.batch_size"
+  condition: "> 100"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "EMBED_QUEUE has a high number of pending jobs. Check for processing bottlenecks."
+
+queue_errors:
+  name: "High Queue Error Rate"
+  description: "Error rate is higher than normal"
+  metric: "queue.job_errors"
+  condition: "> 10"
+  duration: "5m"
+  severity: "critical"
+  notification_channels:
+    - email
+    - slack
+    - pagerduty
+  message: "High number of job processing errors in Constellation. Check logs for details."
+
+dead_letter_queue:
+  name: "Dead Letter Queue Activity"
+  description: "Jobs are being sent to the dead letter queue"
+  metric: "queue.dead_letter_count"
+  condition: "> 0"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Jobs are being sent to the EMBED_DEAD queue. Check logs for persistent failures."
+
+# Embedding Alerts
+embedding_errors:
+  name: "Embedding Errors"
+  description: "Errors during embedding generation"
+  metric: "embedding.errors"
+  condition: "> 5"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Multiple embedding errors detected. Check Workers AI service status."
+
+embedding_failures:
+  name: "Embedding Failures After Retries"
+  description: "Embedding operations failing after all retry attempts"
+  metric: "embedding.failures"
+  condition: "> 5"
+  duration: "5m"
+  severity: "critical"
+  notification_channels:
+    - email
+    - slack
+    - pagerduty
+  message: "Embedding operations are failing after all retry attempts. Possible AI service outage."
+
+slow_embedding:
+  name: "Slow Embedding"
+  description: "Embedding is taking longer than normal"
+  metric: "embedding.duration_ms"
+  condition: "> 5000"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Embedding operations are taking longer than expected. Check Workers AI service status."
+
+# Vectorize Alerts
+vectorize_errors:
+  name: "Vectorize Errors"
+  description: "Errors during vector storage operations"
+  metric: "vectorize.upsert.errors"
+  condition: "> 5"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Multiple Vectorize errors detected. Check Vectorize service status."
+
+vectorize_failures:
+  name: "Vectorize Failures After Retries"
+  description: "Vectorize operations failing after all retry attempts"
+  metric: "vectorize.upsert.failures"
+  condition: "> 5"
+  duration: "5m"
+  severity: "critical"
+  notification_channels:
+    - email
+    - slack
+    - pagerduty
+  message: "Vectorize operations are failing after all retry attempts. Possible Vectorize service outage."
+
+slow_vectorize:
+  name: "Slow Vectorize Operations"
+  description: "Vectorize operations are taking longer than normal"
+  metric: "vectorize.upsert.duration_ms"
+  condition: "> 2000"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Vectorize operations are taking longer than expected. Check Vectorize service status."
+
+# Query Alerts
+query_errors:
+  name: "Query Errors"
+  description: "Errors during vector query operations"
+  metric: "vectorize.query.errors"
+  condition: "> 5"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Multiple query errors detected. Check Vectorize service status."
+
+slow_queries:
+  name: "Slow Queries"
+  description: "Queries are taking longer than normal"
+  metric: "vectorize.query.duration_ms"
+  condition: "> 1000"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Vector queries are taking longer than expected. Check Vectorize service status."
+
+# RPC Alerts
+rpc_errors:
+  name: "RPC Errors"
+  description: "Errors in RPC method calls"
+  metric: "rpc.*.errors"
+  condition: "> 5"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Multiple RPC errors detected. Check service logs for details."
+
+# System Alerts
+worker_cpu:
+  name: "High CPU Usage"
+  description: "Worker CPU usage is high"
+  metric: "worker.cpu_time"
+  condition: "> 80%"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Constellation worker CPU usage is high. Consider scaling or optimizing."
+
+worker_memory:
+  name: "High Memory Usage"
+  description: "Worker memory usage is high"
+  metric: "worker.memory_usage"
+  condition: "> 80%"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Constellation worker memory usage is high. Check for memory leaks or consider scaling."
+
+# Notification Channels
+notification_channels:
+  email:
+    type: "email"
+    recipients:
+      - "alerts@example.com"
+      - "oncall@example.com"
+  
+  slack:
+    type: "slack"
+    webhook: "https://hooks.slack.com/services/TXXXXXXXX/BXXXXXXXX/XXXXXXXXXXXXXXXXXXXXXXXX"
+    channel: "#constellation-alerts"
+  
+  pagerduty:
+    type: "pagerduty"
+    integration_key: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    severity_mapping:
+      warning: "warning"
+      critical: "critical"

@@ -1,0 +1,250 @@
+{
+  "name": "Constellation Embedding Service Dashboard",
+  "description": "Monitoring dashboard for the Constellation embedding service",
+  "panels": [
+    {
+      "title": "Queue Processing",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "queue.batch_size",
+          "aggregation": "avg",
+          "description": "Average batch size"
+        },
+        {
+          "name": "queue.process_batch.duration_ms",
+          "aggregation": "avg",
+          "description": "Average batch processing time (ms)"
+        },
+        {
+          "name": "queue.jobs_processed",
+          "aggregation": "sum",
+          "description": "Total jobs processed"
+        }
+      ]
+    },
+    {
+      "title": "Queue Errors",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "queue.job_errors",
+          "aggregation": "sum",
+          "description": "Job processing errors"
+        },
+        {
+          "name": "queue.batch_errors",
+          "aggregation": "sum",
+          "description": "Batch processing errors"
+        }
+      ]
+    },
+    {
+      "title": "Embedding Performance",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "embedding.batch_size",
+          "aggregation": "avg",
+          "description": "Average embedding batch size"
+        },
+        {
+          "name": "embedding.duration_ms",
+          "aggregation": "avg",
+          "description": "Average embedding time (ms)"
+        },
+        {
+          "name": "embedding.success",
+          "aggregation": "sum",
+          "description": "Successful embedding operations"
+        },
+        {
+          "name": "embedding.errors",
+          "aggregation": "sum",
+          "description": "Embedding errors"
+        },
+        {
+          "name": "embedding.failures",
+          "aggregation": "sum",
+          "description": "Embedding failures after retries"
+        }
+      ]
+    },
+    {
+      "title": "Vectorize Performance",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "vectorize.upsert.batch_size",
+          "aggregation": "avg",
+          "description": "Average upsert batch size"
+        },
+        {
+          "name": "vectorize.upsert.duration_ms",
+          "aggregation": "avg",
+          "description": "Average upsert time (ms)"
+        },
+        {
+          "name": "vectorize.upsert.success",
+          "aggregation": "sum",
+          "description": "Successful upsert operations"
+        },
+        {
+          "name": "vectorize.upsert.errors",
+          "aggregation": "sum",
+          "description": "Upsert errors"
+        },
+        {
+          "name": "vectorize.upsert.failures",
+          "aggregation": "sum",
+          "description": "Upsert failures after retries"
+        }
+      ]
+    },
+    {
+      "title": "Query Performance",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "vectorize.query.duration_ms",
+          "aggregation": "avg",
+          "description": "Average query time (ms)"
+        },
+        {
+          "name": "vectorize.query.results",
+          "aggregation": "avg",
+          "description": "Average number of query results"
+        },
+        {
+          "name": "vectorize.query.success",
+          "aggregation": "sum",
+          "description": "Successful query operations"
+        },
+        {
+          "name": "vectorize.query.errors",
+          "aggregation": "sum",
+          "description": "Query errors"
+        }
+      ]
+    },
+    {
+      "title": "RPC Usage",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "rpc.embed.requests",
+          "aggregation": "sum",
+          "description": "Direct embed requests"
+        },
+        {
+          "name": "rpc.query.requests",
+          "aggregation": "sum",
+          "description": "Query requests"
+        },
+        {
+          "name": "rpc.stats.requests",
+          "aggregation": "sum",
+          "description": "Stats requests"
+        }
+      ]
+    },
+    {
+      "title": "RPC Performance",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "rpc.embed.duration_ms",
+          "aggregation": "avg",
+          "description": "Average direct embed time (ms)"
+        },
+        {
+          "name": "rpc.query.duration_ms",
+          "aggregation": "avg",
+          "description": "Average query time (ms)"
+        },
+        {
+          "name": "rpc.stats.duration_ms",
+          "aggregation": "avg",
+          "description": "Average stats time (ms)"
+        }
+      ]
+    },
+    {
+      "title": "RPC Errors",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "rpc.embed.errors",
+          "aggregation": "sum",
+          "description": "Direct embed errors"
+        },
+        {
+          "name": "rpc.query.errors",
+          "aggregation": "sum",
+          "description": "Query errors"
+        },
+        {
+          "name": "rpc.stats.errors",
+          "aggregation": "sum",
+          "description": "Stats errors"
+        }
+      ]
+    },
+    {
+      "title": "Vector Index Stats",
+      "type": "gauge",
+      "metrics": [
+        {
+          "name": "vectorize.index.vectors",
+          "description": "Total vectors in index"
+        },
+        {
+          "name": "vectorize.index.dimension",
+          "description": "Vector dimension"
+        }
+      ]
+    }
+  ],
+  "alerts": [
+    {
+      "name": "High Queue Depth",
+      "description": "Queue depth is higher than normal",
+      "metric": "queue.batch_size",
+      "condition": "> 100",
+      "duration": "5m",
+      "severity": "warning"
+    },
+    {
+      "name": "High Error Rate",
+      "description": "Error rate is higher than normal",
+      "metric": "queue.job_errors",
+      "condition": "> 10",
+      "duration": "5m",
+      "severity": "critical"
+    },
+    {
+      "name": "Slow Embedding",
+      "description": "Embedding is taking longer than normal",
+      "metric": "embedding.duration_ms",
+      "condition": "> 5000",
+      "duration": "5m",
+      "severity": "warning"
+    },
+    {
+      "name": "Slow Queries",
+      "description": "Queries are taking longer than normal",
+      "metric": "vectorize.query.duration_ms",
+      "condition": "> 1000",
+      "duration": "5m",
+      "severity": "warning"
+    },
+    {
+      "name": "AI Service Rate Limiting",
+      "description": "AI service is rate limiting requests",
+      "metric": "embedding.failures",
+      "condition": "> 5",
+      "duration": "5m",
+      "severity": "critical"
+    }
+  ]
+}
