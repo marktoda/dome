@@ -1,0 +1,34 @@
+{
+  "name": "silo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "wrangler dev --queue-consumer",
+    "deploy": "wrangler deploy",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@dome/common": "workspace:*",
+    "@dome/logging": "workspace:*",
+    "@hono/zod-validator": "^0.1.8",
+    "drizzle-orm": "^0.42.0",
+    "hono": "^4.0.0",
+    "pino": "^9.6.0",
+    "zod": "^3.21.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20230404.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.14.1",
+    "@typescript-eslint/eslint-plugin": "^5.57.1",
+    "@typescript-eslint/parser": "^5.57.1",
+    "drizzle-kit": "^0.31.0",
+    "eslint": "^8.38.0",
+    "typescript": "^5.0.4",
+    "vitest": "^0.31.0",
+    "wrangler": "^4.10.0"
+  }
+}

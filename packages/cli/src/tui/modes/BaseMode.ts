@@ -1,100 +1,50 @@
-import blessed from 'blessed';
 import { Widgets } from 'blessed';
+import { Mode, ModeConfig, TUIContext } from '../core/types';
 
 /**
- * Interface for mode configuration
+ * Base class for TUI modes
  */
-export interface ModeConfig {
-  name: string;
-  description: string;
-  icon?: string;
-  color?: string;
-  keybindings?: Record<string, string>;
-  commands?: string[];
-}
-
-/**
- * Base class for all TUI modes
- */
-export abstract class BaseMode {
-  protected name: string;
-  protected description: string;
-  protected icon: string;
-  protected color: string;
-  protected screen: blessed.Widgets.Screen;
-  protected keybindings: Record<string, string>;
-  protected commands: string[];
+export abstract class BaseMode implements Mode {
+  protected config: ModeConfig;
+  protected screen!: Widgets.Screen;
+  protected container!: Widgets.BoxElement;
+  protected statusBar!: Widgets.BoxElement;
+  protected inputHandler!: (input: string) => Promise<void>;
   protected active: boolean = false;
 
   /**
    * Create a new mode
    * @param config The mode configuration
+   */
+  constructor(config: ModeConfig) {
+    this.config = config;
+  }
+
+  /**
+   * Get mode configuration
+   */
+  getConfig(): ModeConfig {
+    return this.config;
+  }
+
+  /**
+   * Initialize the mode
    * @param screen The blessed screen
+   * @param container The container element
+   * @param statusBar The status bar element
+   * @param inputHandler The input handler function
    */
-  constructor(config: ModeConfig, screen: blessed.Widgets.Screen) {
-    this.name = config.name;
-    this.description = config.description;
-    this.icon = config.icon || '•';
-    this.color = config.color || 'cyan';
+  init(
+    screen: Widgets.Screen,
+    container: Widgets.BoxElement,
+    statusBar: Widgets.BoxElement,
+    inputHandler: (input: string) => Promise<void>
+  ): void {
     this.screen = screen;
-    this.keybindings = config.keybindings || {};
-    this.commands = config.commands || [];
-  }
-
-  /**
-   * Get the mode name
-   * @returns The mode name
-   */
-  getName(): string {
-    return this.name;
-  }
-
-  /**
-   * Get the mode description
-   * @returns The mode description
-   */
-  getDescription(): string {
-    return this.description;
-  }
-
-  /**
-   * Get the mode icon
-   * @returns The mode icon
-   */
-  getIcon(): string {
-    return this.icon;
-  }
-
-  /**
-   * Get the mode color
-   * @returns The mode color
-   */
-  getColor(): string {
-    return this.color;
-  }
-
-  /**
-   * Get the mode keybindings
-   * @returns The mode keybindings
-   */
-  getKeybindings(): Record<string, string> {
-    return this.keybindings;
-  }
-
-  /**
-   * Get the mode commands
-   * @returns The mode commands
-   */
-  getCommands(): string[] {
-    return this.commands;
-  }
-
-  /**
-   * Check if the mode is active
-   * @returns True if the mode is active, false otherwise
-   */
-  isActive(): boolean {
-    return this.active;
+    this.container = container;
+    this.statusBar = statusBar;
+    this.inputHandler = inputHandler;
+    this.onInit();
   }
 
   /**
@@ -114,6 +64,11 @@ export abstract class BaseMode {
   }
 
   /**
+   * Handle mode initialization
+   */
+  protected abstract onInit(): void;
+
+  /**
    * Handle mode activation
    */
   protected abstract onActivate(): void;
@@ -130,21 +85,7 @@ export abstract class BaseMode {
   abstract handleInput(input: string): Promise<void>;
 
   /**
-   * Handle a command in this mode
-   * @param command The command to handle
-   * @param args The command arguments
-   */
-  abstract handleCommand(command: string, args: string[]): Promise<boolean>;
-
-  /**
-   * Render mode-specific UI elements
-   * @param container The container to render in
-   */
-  abstract render(container: blessed.Widgets.BoxElement): void;
-
-  /**
    * Get help text for this mode
-   * @returns The help text
    */
   abstract getHelpText(): string;
 }

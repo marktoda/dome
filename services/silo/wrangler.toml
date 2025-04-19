@@ -1,0 +1,43 @@
+name = "silo"
+main = "src/index.ts"
+compatibility_date = "2023-10-30"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "PLACEHOLDER_KV_ID" # Replace with actual KV ID during deployment
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "silo-content"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "silo"
+database_id = "PLACEHOLDER_DB_ID" # Replace with actual D1 database ID during deployment
+
+[[queues.producers]]
+binding = "NEW_CONTENT"
+queue = "new-content"
+
+[[queues.consumers]]
+binding = "CONTENT_EVENTS"
+queue = "content-events"
+
+[vars]
+LOG_LEVEL = "info"
+VERSION = "1.0.0"
+ENVIRONMENT = "prod"
+
+# Development environment variables
+[env.dev]
+name = "silo-dev"
+[env.dev.vars]
+LOG_LEVEL = "debug"
+ENVIRONMENT = "dev"
+
+# Staging environment variables
+[env.staging]
+name = "silo-staging"
+[env.staging.vars]
+LOG_LEVEL = "info"
+ENVIRONMENT = "staging"
