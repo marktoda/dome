@@ -115,11 +115,11 @@ describe('SearchService', () => {
         topK: 10,
         filter: { userId: mockUserId },
       });
-      expect(results.length).toBe(2);
-      expect(results[0].id).toBe('note-1');
-      expect(results[0].score).toBe(0.95);
-      expect(results[1].id).toBe('note-2');
-      expect(results[1].score).toBe(0.85);
+      expect(results.results.length).toBe(2);
+      expect(results.results[0].id).toBe('note-1');
+      expect(results.results[0].score).toBe(0.95);
+      expect(results.results[1].id).toBe('note-2');
+      expect(results.results[1].score).toBe(0.85);
     });
 
     it('should filter results by content type', async () => {
@@ -135,9 +135,9 @@ describe('SearchService', () => {
       const results = await searchService.searchNotes(mockEnv, options);
 
       // Assert
-      expect(results.length).toBe(2);
-      expect(results[0].contentType).toBe('text/plain');
-      expect(results[1].contentType).toBe('text/plain');
+      expect(results.results.length).toBe(2);
+      expect(results.results[0].contentType).toBe('text/plain');
+      expect(results.results[1].contentType).toBe('text/plain');
     });
 
     it('should filter results by date range', async () => {
@@ -166,7 +166,7 @@ describe('SearchService', () => {
           },
         },
       });
-      expect(results.length).toBe(2);
+      expect(results.results.length).toBe(2);
     });
 
     it('should throw ServiceError when vector search fails', async () => {
@@ -194,7 +194,8 @@ describe('SearchService', () => {
       };
 
       // Mock searchNotes
-      jest.spyOn(searchService, 'searchNotes').mockResolvedValueOnce([
+      jest.spyOn(searchService, 'searchNotes').mockResolvedValueOnce({
+        results: [
         {
           id: 'note-1',
           title: 'Test Note 1',
@@ -203,17 +204,25 @@ describe('SearchService', () => {
           createdAt: 1617235678000,
           updatedAt: 1617235678000,
           contentType: 'text/plain',
+        }
+        ],
+        pagination: {
+          total: 1,
+          limit: 10,
+          offset: 0,
+          hasMore: false
         },
-      ]);
+        query: mockQuery
+      });
 
       // Act
       const results = await searchService.search(mockEnv, options);
 
       // Assert
       expect(searchService.searchNotes).toHaveBeenCalledWith(mockEnv, options);
-      expect(results.length).toBe(1);
-      expect(results[0].id).toBe('note-1');
-      expect(results[0].score).toBe(0.95);
+      expect(results.results.length).toBe(1);
+      expect(results.results[0].id).toBe('note-1');
+      expect(results.results[0].score).toBe(0.95);
     });
   });
 });

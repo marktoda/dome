@@ -22,21 +22,26 @@ export function startPromptTui(): void {
     title: 'Dome CLI',
     autoPadding: true,
     fullUnicode: true,
+    sendFocus: true,
+    useBCE: true,
   });
 
   // Set key bindings for global navigation
-  screen.key(['C-c'], () => {
+  screen.key(['C-c', 'q'], () => {
     // Clean up and exit
     screen.destroy();
     process.exit(0);
   });
 
   // Also handle SIGINT (Ctrl+C) at the process level
-  process.on('SIGINT', () => {
-    // Clean up and exit
+  // Handle SIGINT (Ctrl+C) and SIGTERM at the process level
+  const exitHandler = () => {
     screen.destroy();
     process.exit(0);
-  });
+  };
+  
+  process.on('SIGINT', exitHandler);
+  process.on('SIGTERM', exitHandler);
 
   // Enable key handling for the entire program
   screen.enableKeys();
@@ -120,6 +125,8 @@ export function startPromptTui(): void {
   // Create a prompt for input
   const inputBox = grid.set(11, 0, 1, 12, blessed.textbox, {
     inputOnFocus: true,
+    keys: true,
+    mouse: true,
     style: {
       fg: 'white',
       bg: 'black',
@@ -129,6 +136,9 @@ export function startPromptTui(): void {
         bold: true,
       },
     },
+    input: true,
+    vi: true,
+    censor: false,
   });
 
   // Create a system info box
@@ -535,9 +545,17 @@ export function startPromptTui(): void {
   });
 
   // Make sure Ctrl+C works on the input box too
-  inputBox.key('C-c', () => {
+  // Make sure Ctrl+C works on the input box too
+  inputBox.key(['C-c', 'escape'], () => {
     screen.destroy();
     process.exit(0);
+  });
+  
+  // Handle input events to prevent character duplication
+  inputBox.on('keypress', (ch: string | undefined, key: { name: string } | undefined) => {
+    if (key && key.name === 'return') {
+      return;
+    }
   });
 
   // Add a welcome message
@@ -559,3 +577,4 @@ export const startTui = startPromptTui;
 if (require.main === module) {
   startPromptTui();
 }
+
