@@ -43,7 +43,22 @@ vi.mock('@dome/logging', () => ({
     debug: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
+    child: vi.fn().mockReturnValue({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }),
   })),
+}));
+
+// Mock cloudflare:workers
+vi.mock('cloudflare:workers', () => ({
+  WorkerEntrypoint: class WorkerEntrypoint {
+    constructor() {}
+    fetch() {}
+    queue() {}
+  },
 }));
 
 vi.mock('../src/services/preprocessor', () => ({

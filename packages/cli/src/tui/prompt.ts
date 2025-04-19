@@ -4,8 +4,7 @@ import blessed from 'blessed';
 import contrib from 'blessed-contrib';
 import { loadConfig, isAuthenticated } from '../utils/config';
 import { error } from '../utils/ui';
-import { chat } from '../utils/api';
-import { listNotes, listTasks } from '../utils/api';
+import { chat, addContent, search, listNotes, listTasks } from '../utils/api';
 
 /**
  * Start the TUI with a prompt-based interface
@@ -38,10 +37,6 @@ export function startPromptTui(): void {
     screen.destroy();
     process.exit(0);
   });
-
-  // Enable key handling for the entire program
-  screen.enableKeys();
-  screen.enableInput();
 
   // Enable key handling for the entire program
   screen.enableKeys();
@@ -200,8 +195,31 @@ export function startPromptTui(): void {
         } else {
           const content = args.join(' ');
           addMessage(`{bold}Adding content:{/bold} ${content}`);
-          // TODO: Implement add functionality
-          addMessage('{yellow-fg}Add functionality not yet implemented{/yellow-fg}');
+
+          try {
+            // Show "processing" indicator
+            statusBar.setContent(' {bold}Mode:{/bold} Add | Processing...');
+            screen.render();
+
+            // Add content using the API
+            const response = await addContent(content);
+
+            // Display success message
+            addMessage(`{green-fg}Content added successfully!{/green-fg}`);
+            if (response.id) {
+              addMessage(`{bold}ID:{/bold} ${response.id}`);
+            }
+
+            // Reset status line
+            updateStatusLine(currentMode);
+          } catch (err) {
+            addMessage(
+              `{red-fg}Error adding content: ${
+                err instanceof Error ? err.message : String(err)
+              }{/red-fg}`,
+            );
+            updateStatusLine(currentMode);
+          }
         }
         break;
 
@@ -226,19 +244,38 @@ export function startPromptTui(): void {
         } else {
           addMessage(`{bold}Listing ${type}:{/bold}`);
           try {
-            const items = type === 'notes' ? await listNotes() : await listTasks();
+            const response = type === 'notes' ? await listNotes() : await listTasks();
+
+            // Handle different response formats
+            // It could be an array directly or an object with a notes/tasks property
+            let items: any[] = [];
+
+            if (Array.isArray(response)) {
+              // If response is already an array
+              items = response;
+            } else if (typeof response === 'object' && response !== null) {
+              // If response is an object, try to extract the items array
+              items = (response as any).notes || (response as any).tasks || [];
+            }
+
             if (items.length === 0) {
               addMessage(`No ${type} found.`);
             } else {
               items.forEach((item: any) => {
                 if (type === 'notes') {
+                  // Handle note item structure
+                  const title = item.title || 'Untitled';
+                  const content = item.body || item.content || '';
                   addMessage(
-                    `• ${item.title || 'Untitled'}: ${item.content.substring(0, 50)}${
-                      item.content.length > 50 ? '...' : ''
-                    }`,
+                    `• ${title}: ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`,
                   );
                 } else {
-                  addMessage(`• ${item.description} (${item.status})`);
+                  // Handle task item structure
+                  addMessage(
+                    `• ${item.description || item.title || 'Untitled task'} (${
+                      item.status || 'unknown'
+                    })`,
+                  );
                 }
               });
             }
@@ -258,8 +295,64 @@ export function startPromptTui(): void {
         } else {
           const query = args.join(' ');
           addMessage(`{bold}Searching for:{/bold} ${query}`);
-          // TODO: Implement search functionality
-          addMessage('{yellow-fg}Search functionality not yet implemented{/yellow-fg}');
+
+          try {
+            // Show "searching" indicator
+            statusBar.setContent(' {bold}Mode:{/bold} Search | Searching...');
+            screen.render();
+
+            // Perform search using the API
+            const results = await search(query);
+
+            // Display results
+            if (!results.results || results.results.length === 0) {
+              addMessage(`{yellow-fg}No results found for query: "${query}"{/yellow-fg}`);
+            } else {
+              addMessage(`{green-fg}Found ${results.results.length} results:{/green-fg}`);
+
+              // Display results
+              results.results.slice(0, 5).forEach((match: any, index: number) => {
+                addMessage(
+                  `\n{bold}Result ${index + 1} (Score: ${match.score?.toFixed(2) || 'N/A'}){/bold}`,
+                );
+                if (match.title) {
+                  addMessage(`{bold}Title:{/bold} ${match.title}`);
+                }
+                if (match.type) {
+                  addMessage(`{bold}Type:{/bold} ${match.type}`);
+                }
+                if (match.tags && match.tags.length > 0) {
+                  addMessage(`{bold}Tags:{/bold} ${match.tags.join(', ')}`);
+                }
+                addMessage(`{bold}Created:{/bold} ${new Date(match.createdAt).toLocaleString()}`);
+
+                // Display content excerpt
+                if (match.excerpt) {
+                  addMessage('\n{bold}Excerpt:{/bold}');
+                  addMessage(match.excerpt);
+                }
+
+                addMessage('{gray-fg}' + '-'.repeat(50) + '{/gray-fg}');
+              });
+
+              // Show message if results were limited
+              if (results.results.length > 5) {
+                addMessage(
+                  `\n{gray-fg}Showing 5 of ${results.results.length} results. Use the search command for more details.{/gray-fg}`,
+                );
+              }
+            }
+
+            // Reset status line
+            updateStatusLine(currentMode);
+          } catch (err) {
+            addMessage(
+              `{red-fg}Error searching: ${
+                err instanceof Error ? err.message : String(err)
+              }{/red-fg}`,
+            );
+            updateStatusLine(currentMode);
+          }
         }
         break;
 
@@ -301,10 +394,64 @@ export function startPromptTui(): void {
   }
 
   // Handle search mode
-  function handleSearchMode(input: string): void {
+  async function handleSearchMode(input: string): Promise<void> {
     addMessage(`{bold}Searching for:{/bold} ${input}`);
-    // TODO: Implement search functionality
-    addMessage('{yellow-fg}Search functionality not yet implemented{/yellow-fg}');
+
+    try {
+      // Show "searching" indicator
+      statusBar.setContent(' {bold}Mode:{/bold} Search | Searching...');
+      screen.render();
+
+      // Perform search using the API
+      const results = await search(input);
+
+      // Display results
+      if (!results.results || results.results.length === 0) {
+        addMessage(`{yellow-fg}No results found for query: "${input}"{/yellow-fg}`);
+      } else {
+        addMessage(`{green-fg}Found ${results.results.length} results:{/green-fg}`);
+
+        // Display results
+        results.results.slice(0, 5).forEach((match: any, index: number) => {
+          addMessage(
+            `\n{bold}Result ${index + 1} (Score: ${match.score?.toFixed(2) || 'N/A'}){/bold}`,
+          );
+          if (match.title) {
+            addMessage(`{bold}Title:{/bold} ${match.title}`);
+          }
+          if (match.type) {
+            addMessage(`{bold}Type:{/bold} ${match.type}`);
+          }
+          if (match.tags && match.tags.length > 0) {
+            addMessage(`{bold}Tags:{/bold} ${match.tags.join(', ')}`);
+          }
+          addMessage(`{bold}Created:{/bold} ${new Date(match.createdAt).toLocaleString()}`);
+
+          // Display content excerpt
+          if (match.excerpt) {
+            addMessage('\n{bold}Excerpt:{/bold}');
+            addMessage(match.excerpt);
+          }
+
+          addMessage('{gray-fg}' + '-'.repeat(50) + '{/gray-fg}');
+        });
+
+        // Show message if results were limited
+        if (results.results.length > 5) {
+          addMessage(
+            `\n{gray-fg}Showing 5 of ${results.results.length} results. Use the search command for more details.{/gray-fg}`,
+          );
+        }
+      }
+
+      // Reset status line
+      updateStatusLine(currentMode);
+    } catch (err) {
+      addMessage(
+        `{red-fg}Error searching: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+      );
+      updateStatusLine(currentMode);
+    }
   }
 
   // Handle input submission
@@ -404,6 +551,9 @@ export function startPromptTui(): void {
   // Render the screen
   screen.render();
 }
+
+// Export the startPromptTui function as startTui for backward compatibility
+export const startTui = startPromptTui;
 
 // If this file is run directly, start the TUI
 if (require.main === module) {

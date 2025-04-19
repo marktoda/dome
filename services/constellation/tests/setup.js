@@ -1,5 +1,47 @@
 import { vi } from 'vitest';
 
+// Mock pino logger to prevent transport errors
+vi.mock('pino', () => {
+  return {
+    default: vi.fn().mockReturnValue({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      child: vi.fn().mockReturnValue({
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      }),
+    }),
+  };
+});
+
+// Mock @dome/logging
+vi.mock('@dome/logging', () => {
+  return {
+    getLogger: vi.fn().mockReturnValue({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      child: vi.fn().mockReturnValue({
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      }),
+    }),
+    withLogger: vi.fn((_, fn) => fn()),
+  };
+});
+
+// Mock cloudflare:workers
+vi.mock('cloudflare:workers', () => {
+  return {};
+});
+
 // Mock global objects for testing
 global.Response = class Response {
   constructor(body, init = {}) {

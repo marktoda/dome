@@ -4,6 +4,10 @@ import { baseLogger } from './base';
 describe('baseLogger', () => {
   // Mock console.log to prevent test output pollution
   beforeEach(() => {
+    // Clear all mocks before each test
+    vi.clearAllMocks();
+
+    // Mock console.log to capture logs
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     // Temporarily set LOG_LEVEL to info for testing
@@ -46,5 +50,50 @@ describe('baseLogger', () => {
       baseLogger.info('test info message');
       baseLogger.error('test error message');
     }).not.toThrow();
+  });
+
+  it('should standardize logging format with string message', () => {
+    const consoleSpy = vi.spyOn(console, 'log');
+
+    baseLogger.info('test message');
+
+    expect(consoleSpy).toHaveBeenCalled();
+    const loggedObj = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(loggedObj).toHaveProperty('message', 'test message');
+  });
+
+  it('should standardize logging format with object and string message', () => {
+    const consoleSpy = vi.spyOn(console, 'log');
+
+    baseLogger.info({ userId: '123' }, 'test message');
+
+    expect(consoleSpy).toHaveBeenCalled();
+    const loggedObj = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(loggedObj).toHaveProperty('userId', '123');
+    expect(loggedObj).toHaveProperty('message', 'test message');
+  });
+
+  it('should handle object with message property correctly', () => {
+    const consoleSpy = vi.spyOn(console, 'log');
+
+    baseLogger.info({ userId: '123', message: 'test message' });
+
+    expect(consoleSpy).toHaveBeenCalled();
+    const loggedObj = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(loggedObj).toHaveProperty('userId', '123');
+    expect(loggedObj).toHaveProperty('message', 'test message');
+  });
+
+  it('should standardize logging in child loggers', () => {
+    const consoleSpy = vi.spyOn(console, 'log');
+
+    const childLogger = baseLogger.child({ service: 'test-service' });
+    childLogger.info({ userId: '123' }, 'test message');
+
+    expect(consoleSpy).toHaveBeenCalled();
+    const loggedObj = JSON.parse(consoleSpy.mock.calls[0][0]);
+    expect(loggedObj).toHaveProperty('service', 'test-service');
+    expect(loggedObj).toHaveProperty('userId', '123');
+    expect(loggedObj).toHaveProperty('message', 'test message');
   });
 });

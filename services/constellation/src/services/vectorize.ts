@@ -1,321 +1,134 @@
-/**
- * Vectorize Service
- *
- * Handles vector storage and retrieval operations.
- */
-
 import { NoteVectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
-import { getLogger } from '@dome/logging';
 import { metrics } from '../utils/metrics';
+import { logger } from '../utils/logging';
 import { VectorWithMetadata } from '../types';
 
-/**
- * Configuration for the vectorize service
- */
+/* ------------------------------------------------------------------------ */
+/*  config                                                                  */
+/* ------------------------------------------------------------------------ */
+
 export interface VectorizeConfig {
-  maxBatchSize: number;
+  maxBatchSize: number; // CF recommend ≤100
   retryAttempts: number;
-  retryDelay: number;
+  retryDelay: number; // ms
 }
 
-/**
- * Default configuration values
- */
 export const DEFAULT_VECTORIZE_CONFIG: VectorizeConfig = {
-  maxBatchSize: 100, // Vectorize recommended batch size
+  maxBatchSize: 100,
   retryAttempts: 3,
-  retryDelay: 1000, // ms
+  retryDelay: 1_000,
 };
 
-/**
- * Vectorize service for storing and retrieving vector embeddings
- */
-export class VectorizeService {
-  private config: VectorizeConfig;
-  private vectorize: VectorizeIndex;
+/* ------------------------------------------------------------------------ */
+/*  service                                                                 */
+/* ------------------------------------------------------------------------ */
 
-  constructor(vectorize: VectorizeIndex, config: Partial<VectorizeConfig> = {}) {
-    this.vectorize = vectorize;
-    this.config = {
-      ...DEFAULT_VECTORIZE_CONFIG,
-      ...config,
-    };
+export class VectorizeService {
+  private readonly cfg: VectorizeConfig;
+  constructor(private readonly idx: VectorizeIndex, cfg: Partial<VectorizeConfig> = {}) {
+    this.cfg = { ...DEFAULT_VECTORIZE_CONFIG, ...cfg };
   }
 
-  /**
-   * Store vectors in the Vectorize index
-   * @param vectors Array of vectors with metadata
-   */
-  public async upsert(vectors: VectorWithMetadata[]): Promise<void> {
-    if (!vectors.length) {
-      getLogger().warn('Empty vectors array provided for upsert');
+  /* ---------- UPSERT --------------------------------------------------- */
+
+  public async upsert(vecs: VectorWithMetadata[]): Promise<void> {
+    if (!vecs.length) {
+      logger.warn('upsert: empty input');
       return;
     }
 
-    // Track metrics
+    const t = metrics.startTimer('vectorize.upsert');
     metrics.increment('vectorize.upsert.requests');
-    metrics.gauge('vectorize.upsert.batch_size', vectors.length);
-    const timer = metrics.startTimer('vectorize.upsert');
+    metrics.gauge('vectorize.upsert.batch_size', vecs.length);
 
-    getLogger().debug(
-      {
-        vectorCount: vectors.length,
-        vectorIds: vectors.map(v => v.id),
-        vectorDimensions: vectors[0]?.values.length,
-        metadataFields: vectors[0]?.metadata ? Object.keys(vectors[0].metadata) : [],
-      },
-      'Upserting vectors to Vectorize index',
-    );
+    const batches =
+      vecs.length > this.cfg.maxBatchSize
+        ? Array.from({ length: Math.ceil(vecs.length / this.cfg.maxBatchSize) }, (_, i) =>
+          vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
+        )
+        : [vecs];
 
-    try {
-      // Get index stats before upsert to verify index state
-      try {
-        const stats = await this.vectorize.describe();
-        getLogger().debug(
-          {
-            vectorsCount: stats.vectorsCount,
-            indexConfig: stats.config,
-          },
-          'Vector index stats before upsert',
-        );
-      } catch (statsError) {
-        getLogger().warn({ error: statsError }, 'Unable to get vector index stats');
-      }
-
-      // Split into batches if needed
-      if (vectors.length > this.config.maxBatchSize) {
-        getLogger().debug(
-          `Splitting ${vectors.length} vectors into batches of ${this.config.maxBatchSize}`,
-        );
-
-        const batches: VectorWithMetadata[][] = [];
-        for (let i = 0; i < vectors.length; i += this.config.maxBatchSize) {
-          batches.push(vectors.slice(i, i + this.config.maxBatchSize));
-        }
-
-        // Process batches
-        for (const batch of batches) {
-          getLogger().debug(
-            { batchSize: batch.length, batchIds: batch.map(v => v.id) },
-            'Processing batch',
-          );
-          await this.upsertBatch(batch);
-        }
-
-        return;
-      }
-
-      // Process single batch
-      await this.upsertBatch(vectors);
-    } catch (error) {
-      metrics.increment('vectorize.upsert.errors');
-      getLogger().error({ error }, 'Error upserting vectors');
-      throw error;
-    } finally {
-      timer.stop();
-    }
+    for (const batch of batches) await this.upsertBatch(batch);
+    t.stop();
   }
 
-  /**
-   * Store a batch of vectors in the Vectorize index
-   * @param vectors Array of vectors with metadata
-   * @private
-   */
-  private async upsertBatch(vectors: VectorWithMetadata[]): Promise<void> {
-    let attempt = 0;
-    let lastError: Error | null = null;
-
-    getLogger().debug(
-      {
-        batchSize: vectors.length,
-        firstId: vectors[0]?.id,
-        lastId: vectors[vectors.length - 1]?.id,
-        retryAttempts: this.config.retryAttempts,
-      },
-      'Starting upsert batch operation',
-    );
-
-    while (attempt < this.config.retryAttempts) {
+  private async upsertBatch(batch: VectorWithMetadata[]) {
+    for (let attempt = 1; attempt <= this.cfg.retryAttempts; attempt++) {
       try {
-        // Transform vectors to match VectorizeVector[]
-        const vectorizeVectors = vectors.map(v => ({
-          id: v.id,
-          values: v.values,
-          metadata: v.metadata as unknown as Record<string, VectorizeVectorMetadata>,
-        }));
-
-        getLogger().debug(
-          {
-            attempt: attempt + 1,
-            vectorCount: vectorizeVectors.length,
-            sampleId: vectorizeVectors[0]?.id,
-            metadataKeys: vectorizeVectors[0]?.metadata
-              ? Object.keys(vectorizeVectors[0].metadata)
-              : [],
-          },
-          'Sending vectors to Vectorize.upsert',
+        await this.idx.upsert(
+          batch.map(v => ({
+            id: v.id,
+            values: v.values,
+            metadata: v.metadata as any,
+          })),
         );
-
-        await this.vectorize.upsert(vectorizeVectors);
-        getLogger().debug({ batchSize: vectors.length }, 'Successfully upserted vector batch');
         metrics.increment('vectorize.upsert.success');
         return;
-      } catch (error) {
-        attempt++;
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        getLogger().error(
-          {
-            error,
-            attempt,
-            maxAttempts: this.config.retryAttempts,
-            batchSize: vectors.length,
-            errorMessage: error instanceof Error ? error.message : String(error),
-          },
-          'Error during vector batch upsert',
+      } catch (err) {
+        metrics.increment('vectorize.upsert.errors');
+        logger.error(
+          { err, attempt, max: this.cfg.retryAttempts, size: batch.length },
+          'vectorize.upsert failed',
         );
-        // Log the error
-        getLogger().warn(
-          { error: lastError, attempt, maxAttempts: this.config.retryAttempts },
-          `Vectorize upsert attempt ${attempt} failed, ${
-            this.config.retryAttempts - attempt
-          } retries left`,
-        );
-
-        // If we have retries left, wait before trying again
-        if (attempt < this.config.retryAttempts) {
-          await new Promise(resolve => setTimeout(resolve, this.config.retryDelay));
-        }
+        if (attempt < this.cfg.retryAttempts)
+          await new Promise(r => setTimeout(r, this.cfg.retryDelay));
+        else throw err;
       }
     }
-
-    // If we've exhausted all retries, throw the last error
-    metrics.increment('vectorize.upsert.failures');
-    throw lastError || new Error('Failed to upsert vectors after multiple attempts');
   }
 
-  /**
-   * Query the Vectorize index for similar vectors
-   * @param queryVector Vector embedding for the query
-   * @param filter Optional metadata filter
-   * @param topK Number of results to return
-   * @returns Array of search results
-   */
+  /* ---------- QUERY ---------------------------------------------------- */
+
   public async query(
-    queryVector: number[],
+    vector: number[],
     filter: Partial<NoteVectorMeta> = {},
     topK = 10,
   ): Promise<VectorSearchResult[]> {
-    if (!queryVector || queryVector.length === 0) {
-      getLogger().warn('Empty query vector provided for vector search');
-      return [];
-    }
+    if (!vector?.length) return [];
 
-    // Track metrics
+    const t = metrics.startTimer('vectorize.query');
     metrics.increment('vectorize.query.requests');
-    const timer = metrics.startTimer('vectorize.query');
-
-    getLogger().debug(
-      {
-        vectorDimension: queryVector.length,
-        filter,
-        topK,
-        vectorSample: queryVector.slice(0, 5), // Log first 5 values as sample
-      },
-      'Vectorize query request details',
-    );
 
     try {
-      // Get index stats before query to verify index state
-      try {
-        const stats = await this.vectorize.describe();
-        getLogger().debug(
-          {
-            vectorsCount: stats.vectorsCount,
-            indexConfig: stats.config,
-          },
-          'Vector index stats before query',
-        );
-      } catch (statsError) {
-        getLogger().warn({ error: statsError }, 'Unable to get vector index stats');
-      }
-
-      // Query the vector index
-      getLogger().debug('Executing vectorize.query with filter and topK');
-      const results = await this.vectorize.query(queryVector, {
-        topK,
-        filter,
-        returnMetadata: true,
-      });
-
+      const res = await this.idx.query(vector, { topK, filter, returnMetadata: true });
       metrics.increment('vectorize.query.success');
-      metrics.gauge('vectorize.query.results', results.matches.length);
+      metrics.gauge('vectorize.query.results', res.matches.length);
 
-      getLogger().debug(
-        {
-          matchCount: results.matches.length,
-          matchIds: results.matches.map(m => m.id),
-          matchScores: results.matches.map(m => m.score),
-          hasMetadata: results.matches.some(m => m.metadata !== undefined),
-        },
-        'Raw vectorize query results',
-      );
 
-      // Transform the results to match VectorSearchResult[]
-      const transformedResults = results.matches.map(match => ({
-        id: match.id,
-        score: match.score,
-        metadata: match.metadata as unknown as NoteVectorMeta,
+      return res.matches.map(m => ({
+        id: m.id,
+        score: m.score,
+        // metadata is optional in SDK type, so supply a fallback object first,
+        // then cast to our stricter NoteVectorMeta to satisfy TS.
+        // TODO: make metadata required?
+        metadata: (m.metadata ?? {}) as unknown as NoteVectorMeta,
       }));
-
-      return transformedResults;
-    } catch (error) {
+    } catch (err) {
       metrics.increment('vectorize.query.errors');
-      getLogger().error({ error, filter, topK }, 'Error querying vectors');
-      throw error;
+      logger.error({ err, filter, topK }, 'vectorize.query failed');
+      throw err;
     } finally {
-      timer.stop();
+      t.stop();
     }
   }
 
-  /**
-   * Get statistics about the Vectorize index
-   * @returns Index statistics
-   */
+  /* ---------- STATS ---------------------------------------------------- */
+
   public async getStats(): Promise<VectorIndexStats> {
-    try {
-      const info = await this.vectorize.describe();
-
-      // Determine the dimension based on the config type
-      let dimension = 0;
-      if ('dimensions' in info.config) {
-        dimension = info.config.dimensions;
-      } else if ('preset' in info.config) {
-        // For preset configs, we need to use a default or fetch from elsewhere
-        // For now, use a default value
-        dimension = 384; // Common embedding dimension
-      }
-
-      return {
-        vectors: info.vectorsCount,
-        dimension,
-      };
-    } catch (error) {
-      getLogger().error({ error }, 'Error getting vector index stats');
-      throw error;
-    }
+    const info = await this.idx.describe();
+    const dim = 'dimensions' in info.config ? info.config.dimensions : 0;
+    return { vectors: info.vectorsCount, dimension: dim };
   }
 }
 
-/**
- * Create a default vectorize service instance
- */
+/* ------------------------------------------------------------------------ */
+/*  factory                                                                 */
+/* ------------------------------------------------------------------------ */
+
 export const createVectorizeService = (
   vectorize: VectorizeIndex,
-  config?: Partial<VectorizeConfig>,
+  cfg?: Partial<VectorizeConfig>,
 ): VectorizeService => {
-  if (!vectorize) {
-    throw new Error('VECTORIZE binding is undefined');
-  }
-  return new VectorizeService(vectorize, config);
+  if (!vectorize) throw new Error('VECTORIZE binding is undefined');
+  return new VectorizeService(vectorize, cfg);
 };

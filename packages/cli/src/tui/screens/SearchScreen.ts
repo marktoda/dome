@@ -150,7 +150,8 @@ export function createSearchScreen(layout: BaseLayoutElements): Screen {
         layout.screen.render();
 
         // Perform search
-        const results = await search(query);
+        const searchResponse = await search(query);
+        const results = searchResponse.results || [];
 
         // Hide loading indicator
         loadingIndicator.stop();

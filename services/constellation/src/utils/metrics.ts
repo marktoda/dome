@@ -4,8 +4,7 @@
  * Provides metrics tracking for the Constellation service.
  */
 
-import { getLogger } from '@dome/logging';
-import { logMetric } from './logging';
+import { logger, logMetric } from './logging';
 
 /**
  * Metrics service for tracking performance and operational metrics
@@ -113,7 +112,7 @@ export class MetricsService {
   public reset(): void {
     this.counters.clear();
     this.gauges.clear();
-    getLogger().debug({ message: 'Metrics reset' });
+    logger.debug('Metrics reset');
   }
 }
 

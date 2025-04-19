@@ -5,6 +5,26 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Embedder, DEFAULT_EMBEDDER_CONFIG, createEmbedder } from '../../src/services/embedder';
 
+// Mock the logger and metrics
+vi.mock('../../src/utils/logging', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('../../src/utils/metrics', () => ({
+  metrics: {
+    increment: vi.fn(),
+    gauge: vi.fn(),
+    startTimer: vi.fn(() => ({
+      stop: vi.fn(),
+    })),
+  },
+}));
+
 describe('Embedder', () => {
   let mockAI: Ai;
 

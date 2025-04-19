@@ -11,6 +11,26 @@ import {
 import { VectorWithMetadata } from '../../src/types';
 import { NoteVectorMeta, VectorSearchResult } from '@dome/common';
 
+// Mock the logger and metrics
+vi.mock('../../src/utils/logging', () => ({
+  logger: {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('../../src/utils/metrics', () => ({
+  metrics: {
+    increment: vi.fn(),
+    gauge: vi.fn(),
+    startTimer: vi.fn(() => ({
+      stop: vi.fn(),
+    })),
+  },
+}));
+
 describe('VectorizeService', () => {
   let mockVectorize: VectorizeIndex;
 
