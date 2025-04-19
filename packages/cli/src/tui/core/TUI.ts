@@ -40,7 +40,12 @@ export class TUI {
         shape: 'line',
         blink: true,
         color: 'cyan'
-      }
+      },
+      keys: true,
+      grabKeys: true, // Grab all key events
+      ignoreLocked: ['C-c'], // Don't ignore Ctrl+C even when locked
+      dockBorders: true,
+      autoPadding: true
     });
 
     // Create the layout
@@ -153,7 +158,10 @@ export class TUI {
         left: 1,
         right: 1
       },
-      label: ' Output '
+      label: ' Output ',
+      keyable: true, // Ensure element can receive key events
+      grabKeys: true, // Grab all key events
+      clickable: true // Allow clicking
     });
 
     // Create the status bar
@@ -163,7 +171,7 @@ export class TUI {
       left: 0,
       width: '100%',
       height: 1,
-      content: ' {bold}Mode:{/bold} None | Type a message or command | Tab to focus | Ctrl+j/k to scroll | Ctrl+C to exit',
+      content: ' {bold}Mode:{/bold} None | Type a message or command | Tab to focus | Ctrl+j/k, Alt+j/k, F1/F2 to scroll | Ctrl+C to exit',
       tags: true,
       style: {
         fg: 'cyan'
@@ -205,7 +213,11 @@ export class TUI {
       },
       keys: true,
       mouse: true,
-      input: true
+      input: true,
+      vi: true,
+      ignoreKeys: false, // Don't ignore any keys
+      grabKeys: true, // Grab all key events
+      keyable: true // Ensure element can receive key events
     });
   }
 
@@ -227,18 +239,33 @@ export class TUI {
     this.screen.key(['C-c', 'q'], exitHandler);
     this.inputBox.key(['C-c', 'escape'], exitHandler);
 
-    // Add scrollback functionality
-    this.screen.key('C-j', () => {
+    // Add scrollback functionality - register on both screen and input box
+    const scrollDownHandler = () => {
       // Scroll down
       this.container.scroll(5);
       this.screen.render();
-    });
+      return false; // Prevent default handling
+    };
 
-    this.screen.key('C-k', () => {
+    const scrollUpHandler = () => {
       // Scroll up
       this.container.scroll(-5);
       this.screen.render();
-    });
+      return false; // Prevent default handling
+    };
+
+    // Try multiple key binding formats for better compatibility
+    // Register on screen
+    this.screen.key(['C-j', 'C-J', '\x0A'], scrollDownHandler); // \x0A is the ASCII code for Ctrl+J
+    this.screen.key(['C-k', 'C-K', '\x0B'], scrollUpHandler); // \x0B is the ASCII code for Ctrl+K
+    
+    // Also register on input box to ensure they work when input is focused
+    this.inputBox.key(['C-j', 'C-J', '\x0A'], scrollDownHandler);
+    this.inputBox.key(['C-k', 'C-K', '\x0B'], scrollUpHandler);
+    
+    // Add direct key handlers for the container
+    this.container.key(['C-j', 'C-J', '\x0A'], scrollDownHandler);
+    this.container.key(['C-k', 'C-K', '\x0B'], scrollUpHandler);
 
     // Also add vi-like scrolling with j/k when container is focused
     this.container.key('j', () => {
@@ -250,6 +277,18 @@ export class TUI {
       this.container.scroll(-1);
       this.screen.render();
     });
+    
+    // Add alternative key bindings for scrolling (using Alt+J/K as alternatives)
+    this.screen.key(['M-j', 'S-down'], scrollDownHandler);
+    this.screen.key(['M-k', 'S-up'], scrollUpHandler);
+    this.inputBox.key(['M-j', 'S-down'], scrollDownHandler);
+    this.inputBox.key(['M-k', 'S-up'], scrollUpHandler);
+    
+    // Add function key alternatives
+    this.screen.key('f1', scrollUpHandler);
+    this.screen.key('f2', scrollDownHandler);
+    this.inputBox.key('f1', scrollUpHandler);
+    this.inputBox.key('f2', scrollDownHandler);
 
     // Add focus toggle between input and container
     this.screen.key('tab', () => {
@@ -405,8 +444,8 @@ export class TUI {
     
     // Add navigation section
     content += '\n{bold}Navigation:{/bold}\n';
-    content += '  {cyan-fg}Ctrl+j{/cyan-fg} - Scroll down\n';
-    content += '  {cyan-fg}Ctrl+k{/cyan-fg} - Scroll up\n';
+    content += '  {cyan-fg}Ctrl+j{/cyan-fg} or {cyan-fg}Alt+j{/cyan-fg} or {cyan-fg}F2{/cyan-fg} - Scroll down\n';
+    content += '  {cyan-fg}Ctrl+k{/cyan-fg} or {cyan-fg}Alt+k{/cyan-fg} or {cyan-fg}F1{/cyan-fg} - Scroll up\n';
     content += '  {cyan-fg}Tab{/cyan-fg} - Toggle focus\n';
     content += '  {cyan-fg}j/k{/cyan-fg} - Scroll when focused\n';
     
@@ -426,7 +465,7 @@ export class TUI {
    */
   private handleModeChange(mode: Mode): void {
     const config = mode.getConfig();
-    this.setStatus(` {bold}Mode:{/bold} {${config.color}-fg}${config.name}{/${config.color}-fg} | ${config.description} | Tab to focus | Ctrl+j/k to scroll`);
+    this.setStatus(` {bold}Mode:{/bold} {${config.color}-fg}${config.name}{/${config.color}-fg} | ${config.description} | Tab to focus | Ctrl+j/k, Alt+j/k, F1/F2 to scroll`);
     this.updateSidebar();
   }
 

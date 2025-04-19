@@ -146,8 +146,41 @@ export class ModeManager {
       const shortcut = config.shortcut;
       
       if (shortcut) {
-        this.screen.key(shortcut, () => {
+        // Register the shortcut on both the screen and any input elements
+        // to ensure it works regardless of focus
+        const shortcutHandler = () => {
           this.switchToMode(config.id);
+          return false; // Prevent event propagation
+        };
+        
+        // Try multiple key binding formats for better compatibility
+        // For example, 'C-n' might also be registered as 'C-N' and '\x0E' (ASCII code)
+        let shortcuts = [shortcut];
+        
+        // Add uppercase variant if it's a ctrl key
+        if (shortcut.startsWith('C-') && shortcut.length === 3) {
+          const upperKey = shortcut.charAt(2).toUpperCase();
+          shortcuts.push(`C-${upperKey}`);
+          
+          // Add ASCII code variant
+          const keyCode = shortcut.charCodeAt(2) - 96; // Convert a-z to 1-26
+          if (keyCode > 0 && keyCode <= 26) {
+            shortcuts.push(String.fromCharCode(keyCode));
+          }
+        }
+        
+        // Register on screen
+        this.screen.key(shortcuts, shortcutHandler);
+        
+        // Find and register on input elements and container
+        const keyableElements = this.screen.children.filter(
+          (element): element is Widgets.TextboxElement | Widgets.BoxElement =>
+            element.type === 'textbox' ||
+            (element.type === 'box' && 'keyable' in element && element.keyable === true)
+        );
+        
+        keyableElements.forEach(element => {
+          element.key(shortcuts, shortcutHandler);
         });
       }
     });
