@@ -4,7 +4,7 @@
  * Handles text chunking and preparation for embedding.
  */
 
-import { logger } from '../utils/logging';
+import { getLogger } from '@dome/logging';
 
 /**
  * Configuration for text preprocessing
@@ -44,11 +44,11 @@ export class TextPreprocessor {
    */
   public normalize(text: string): string {
     if (!text) {
-      logger.warn('Empty text provided for normalization');
+      getLogger().warn('Empty text provided for normalization');
       return '';
     }
 
-    logger.debug(
+    getLogger().debug(
       {
         originalLength: text.length,
         originalSample: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
@@ -68,7 +68,7 @@ export class TextPreprocessor {
     // Remove special characters that might affect embedding quality
     normalized = normalized.replace(/[^\w\s.,?!;:()\[\]{}"'`-]/g, ' ');
 
-    logger.debug(
+    getLogger().debug(
       {
         normalizedLength: normalized.length,
         normalizedSample: normalized.substring(0, 50) + (normalized.length > 50 ? '...' : ''),
@@ -94,7 +94,7 @@ export class TextPreprocessor {
    */
   public chunk(text: string): string[] {
     if (!text) {
-      logger.warn('Empty text provided for chunking');
+      getLogger().warn('Empty text provided for chunking');
       return [];
     }
 
@@ -103,7 +103,7 @@ export class TextPreprocessor {
 
     // If text is smaller than max chunk size, return as single chunk
     if (normalized.length <= this.config.maxChunkSize) {
-      logger.debug('Text is smaller than max chunk size, returning as single chunk');
+      getLogger().debug('Text is smaller than max chunk size, returning as single chunk');
       return [normalized];
     }
 
@@ -116,7 +116,7 @@ export class TextPreprocessor {
    * @private
    */
   private logChunkingStart(text: string): void {
-    logger.debug(
+    getLogger().debug(
       {
         textLength: text.length,
         maxChunkSize: this.config.maxChunkSize,
@@ -165,7 +165,7 @@ export class TextPreprocessor {
       }
     }
 
-    logger.debug(`Split text into ${chunks.length} chunks`);
+    getLogger().debug(`Split text into ${chunks.length} chunks`);
     return chunks;
   }
 
@@ -183,7 +183,7 @@ export class TextPreprocessor {
     endPos: number,
     normalized: string,
   ): void {
-    logger.debug(
+    getLogger().debug(
       {
         chunkNumber: chunkCount + 1,
         startPos,
@@ -205,7 +205,7 @@ export class TextPreprocessor {
   private findChunkEndPosition(text: string, startPos: number, endPos: number): number {
     // If we're at the end of the text, return the text length
     if (endPos >= text.length) {
-      logger.debug('Reached end of text');
+      getLogger().debug('Reached end of text');
       return text.length;
     }
 
@@ -240,7 +240,7 @@ export class TextPreprocessor {
         const oldEndPos = endPos;
         const newEndPos = lastBreakPos + 1; // Include the break character
 
-        logger.debug(
+        getLogger().debug(
           {
             breakPoint,
             breakPointPosition: lastBreakPos,
@@ -273,7 +273,7 @@ export class TextPreprocessor {
       const oldEndPos = endPos;
       const newEndPos = lastSpacePos + 1;
 
-      logger.debug(
+      getLogger().debug(
         {
           fallbackToSpace: true,
           spacePosition: lastSpacePos,
@@ -301,7 +301,7 @@ export class TextPreprocessor {
     if (chunk.length >= this.config.minChunkSize) {
       chunks.push(chunk);
 
-      logger.debug(
+      getLogger().debug(
         {
           chunkNumber: chunkCount + 1,
           chunkLength: chunk.length,
@@ -310,7 +310,7 @@ export class TextPreprocessor {
         'Added chunk',
       );
     } else {
-      logger.debug(
+      getLogger().debug(
         {
           chunkLength: chunk.length,
           minChunkSize: this.config.minChunkSize,
@@ -330,7 +330,7 @@ export class TextPreprocessor {
   private updateStartPosition(endPos: number, text: string): number {
     const newStartPos = endPos - this.config.overlapSize;
 
-    logger.debug(
+    getLogger().debug(
       {
         newStartPos,
         overlap: this.config.overlapSize,
@@ -355,7 +355,7 @@ export class TextPreprocessor {
   public process(text: string): string[] {
     try {
       if (!text) {
-        logger.warn('Empty text provided for processing');
+        getLogger().warn('Empty text provided for processing');
         return [];
       }
 
@@ -375,7 +375,7 @@ export class TextPreprocessor {
    * @private
    */
   private logProcessingStart(text: string): void {
-    logger.debug(
+    getLogger().debug(
       {
         textLength: text.length,
         textSample: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
@@ -393,7 +393,7 @@ export class TextPreprocessor {
     const totalChars = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     const averageSize = chunks.length > 0 ? Math.round(totalChars / chunks.length) : 0;
 
-    logger.debug(
+    getLogger().debug(
       {
         chunkCount: chunks.length,
         totalCharsInChunks: totalChars,
@@ -414,7 +414,7 @@ export class TextPreprocessor {
   private handleProcessingError(error: unknown, text: string): string[] {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    logger.error(
+    getLogger().error(
       {
         error,
         errorMessage,
@@ -436,7 +436,7 @@ export class TextPreprocessor {
   private createFallbackChunk(text: string): string[] {
     const fallbackChunk = this.normalize(text.slice(0, this.config.maxChunkSize));
 
-    logger.debug(
+    getLogger().debug(
       {
         fallbackLength: fallbackChunk.length,
         originalLength: text.length,

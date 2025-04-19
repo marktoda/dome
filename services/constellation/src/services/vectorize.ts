@@ -1,6 +1,5 @@
 import { NoteVectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
-import { metrics } from '../utils/metrics';
-import { logger } from '../utils/logging';
+import { getLogger, metrics } from '@dome/logging';
 import { VectorWithMetadata } from '../types';
 
 /* ------------------------------------------------------------------------ */
@@ -33,7 +32,7 @@ export class VectorizeService {
 
   public async upsert(vecs: VectorWithMetadata[]): Promise<void> {
     if (!vecs.length) {
-      logger.warn('upsert: empty input');
+      getLogger().warn('upsert: empty input');
       return;
     }
 
@@ -66,7 +65,7 @@ export class VectorizeService {
         return;
       } catch (err) {
         metrics.increment('vectorize.upsert.errors');
-        logger.error(
+        getLogger().error(
           { err, attempt, max: this.cfg.retryAttempts, size: batch.length },
           'vectorize.upsert failed',
         );
@@ -105,7 +104,7 @@ export class VectorizeService {
       }));
     } catch (err) {
       metrics.increment('vectorize.query.errors');
-      logger.error({ err, filter, topK }, 'vectorize.query failed');
+      getLogger().error({ err, filter, topK }, 'vectorize.query failed');
       throw err;
     } finally {
       t.stop();

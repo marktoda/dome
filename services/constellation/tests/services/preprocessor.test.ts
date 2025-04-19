@@ -6,13 +6,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { TextPreprocessor, DEFAULT_PREPROCESSOR_CONFIG } from '../../src/services/preprocessor';
 
 // Mock the logger
-vi.mock('../../src/utils/logging', () => ({
-  logger: {
+vi.mock('@dome/logging', () => ({
+  getLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
-  },
+  }),
 }));
 
 describe('TextPreprocessor', () => {

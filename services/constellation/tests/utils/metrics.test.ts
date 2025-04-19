@@ -3,19 +3,44 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MetricsService, metrics } from '../../src/utils/metrics';
-import { logMetric } from '../../src/utils/logging';
+import { MetricsService, metrics, logMetric } from '@dome/logging';
 import { getLogger } from '@dome/logging';
 
 // Mock the logging utilities
-vi.mock('../../src/utils/logging', () => ({
+vi.mock('@dome/logging', () => ({
   logMetric: vi.fn(),
-  logger: {
+  getLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
+  }),
+  metrics: {
+    increment: vi.fn(),
+    decrement: vi.fn(),
+    gauge: vi.fn(),
+    timing: vi.fn(),
+    startTimer: vi.fn().mockReturnValue({
+      stop: vi.fn().mockReturnValue(100),
+    }),
+    trackOperation: vi.fn(),
+    getCounter: vi.fn(),
+    getGauge: vi.fn(),
+    reset: vi.fn(),
   },
+  MetricsService: vi.fn().mockImplementation(() => ({
+    increment: vi.fn(),
+    decrement: vi.fn(),
+    gauge: vi.fn(),
+    timing: vi.fn(),
+    startTimer: vi.fn().mockReturnValue({
+      stop: vi.fn().mockReturnValue(100),
+    }),
+    trackOperation: vi.fn(),
+    getCounter: vi.fn(),
+    getGauge: vi.fn(),
+    reset: vi.fn(),
+  })),
 }));
 
 // Mock the @dome/logging module

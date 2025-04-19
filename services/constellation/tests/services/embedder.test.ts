@@ -6,12 +6,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Embedder, DEFAULT_EMBEDDER_CONFIG, createEmbedder } from '../../src/services/embedder';
 
 // Mock the logger and metrics
-vi.mock('../../src/utils/logging', () => ({
-  logger: {
+vi.mock('@dome/logging', () => ({
+  getLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
+  }),
+  metrics: {
+    increment: vi.fn(),
+    gauge: vi.fn(),
+    timing: vi.fn(),
+    startTimer: vi.fn().mockReturnValue({
+      stop: vi.fn(),
+    }),
   },
 }));
 

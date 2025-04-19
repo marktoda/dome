@@ -1,9 +1,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { EmbedJob, NoteVectorMeta, VectorSearchResult } from '@dome/common';
 
-import { withLogger } from '@dome/logging';
-import { logger } from './utils/logging';
-import { metrics } from './utils/metrics';
+import { withLogger, getLogger, metrics } from '@dome/logging';
 import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
 import { createVectorizeService } from './services/vectorize';
@@ -23,7 +21,7 @@ async function wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T>) {
     try {
       return await fn();
     } catch (err) {
-      logger.error({ err }, 'Unhandled error');
+      getLogger().error({ err }, 'Unhandled error');
       throw err;
     }
   });
@@ -47,7 +45,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
       try {
         const chunks = preprocessor.process(job.text);
         if (!chunks.length) {
-          logger.warn({ job }, 'no text');
+          getLogger().warn({ job }, 'no text');
           continue;
         }
 
@@ -65,7 +63,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         await vectorize.upsert(vecs);
         ok++;
       } catch (err) {
-        logger.error({ err, job }, 'embed failed');
+        getLogger().error({ err, job }, 'embed failed');
         if (dead) await dead(job);
         throw err; // queue retry will handle
       } finally {

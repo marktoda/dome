@@ -4,8 +4,7 @@
  * Interfaces with Workers AI to generate embeddings.
  */
 
-import { metrics } from '../utils/metrics';
-import { logger } from '../utils/logging';
+import { getLogger, metrics } from '@dome/logging';
 
 /**
  * Configuration for the embedding service
@@ -54,7 +53,7 @@ export class Embedder {
    */
   public async embed(texts: string[]): Promise<number[][]> {
     if (!texts.length) {
-      logger.warn('Empty texts array provided for embedding');
+      getLogger().warn('Empty texts array provided for embedding');
       return [];
     }
 
@@ -95,7 +94,7 @@ export class Embedder {
    * @private
    */
   private logEmbeddingRequest(texts: string[]) {
-    logger.debug(
+    getLogger().debug(
       {
         textCount: texts.length,
         textSamples: texts.map(t => t.substring(0, 50) + (t.length > 50 ? '...' : '')).slice(0, 2),
@@ -113,7 +112,7 @@ export class Embedder {
    * @private
    */
   private async processMultipleBatches(texts: string[]): Promise<number[][]> {
-    logger.debug(`Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`);
+    getLogger().debug(`Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`);
 
     // Split texts into batches
     const batches = this.createBatches(texts);
@@ -121,7 +120,7 @@ export class Embedder {
     // Process each batch and combine results
     const results = await this.processBatches(batches);
 
-    logger.debug(
+    getLogger().debug(
       {
         totalEmbeddings: results.length,
         embeddingDimension: results[0]?.length,
@@ -155,7 +154,7 @@ export class Embedder {
   private async processBatches(batches: string[][]): Promise<number[][]> {
     const results: number[][] = [];
     for (const batch of batches) {
-      logger.debug({ batchSize: batch.length }, 'Processing embedding batch');
+      getLogger().debug({ batchSize: batch.length }, 'Processing embedding batch');
       const batchResults = await this.embedBatch(batch);
       results.push(...batchResults);
     }
@@ -170,7 +169,7 @@ export class Embedder {
    */
   private async processSingleBatch(texts: string[]): Promise<number[][]> {
     const results = await this.embedBatch(texts);
-    logger.debug(
+    getLogger().debug(
       {
         embeddingsCount: results.length,
         embeddingDimension: results[0]?.length,
@@ -187,7 +186,7 @@ export class Embedder {
    */
   private handleEmbeddingError(error: unknown) {
     metrics.increment('embedding.errors');
-    logger.error({ error }, 'Error generating embeddings');
+    getLogger().error({ error }, 'Error generating embeddings');
   }
 
   /**
@@ -210,7 +209,7 @@ export class Embedder {
 
     while (attempt < this.config.retryAttempts) {
       try {
-        logger.debug({ attempt: attempt + 1 }, 'Sending batch to AI service for embedding');
+        getLogger().debug({ attempt: attempt + 1 }, 'Sending batch to AI service for embedding');
 
         // Send the batch to the AI service
         const response = await this.callAiService(texts);
@@ -247,7 +246,7 @@ export class Embedder {
         ? `${Math.min(...texts.map(t => t.length))} - ${Math.max(...texts.map(t => t.length))}`
         : 'N/A';
 
-    logger.debug(
+    getLogger().debug(
       {
         batchSize: texts.length,
         textLengthRange,
@@ -294,7 +293,7 @@ export class Embedder {
    * @private
    */
   private logSuccessfulResponse(embeddings: number[][]) {
-    logger.debug(
+    getLogger().debug(
       {
         responseType: 'data array',
         embeddingsCount: embeddings.length,
@@ -310,7 +309,7 @@ export class Embedder {
    * @private
    */
   private logUnexpectedResponseFormat(response: any) {
-    logger.warn(
+    getLogger().warn(
       {
         responseType: typeof response,
         responseKeys:
@@ -330,7 +329,7 @@ export class Embedder {
   private handleRetryLogic(error: unknown, attempt: number): boolean {
     const errorObj = error instanceof Error ? error : new Error(String(error));
 
-    logger.warn(
+    getLogger().warn(
       { error: errorObj, attempt, maxAttempts: this.config.retryAttempts },
       `Embedding attempt ${attempt} failed, ${this.config.retryAttempts - attempt} retries left`,
     );

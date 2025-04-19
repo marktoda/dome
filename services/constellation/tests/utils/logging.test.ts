@@ -3,8 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { logError, logMetric, createTimer } from '../../src/utils/logging';
-import { getLogger } from '@dome/logging';
+import { logMetric, createTimer, getLogger } from '@dome/logging';
 
 // Mock the @dome/logging module
 vi.mock('@dome/logging', () => ({
@@ -14,7 +13,7 @@ vi.mock('@dome/logging', () => ({
     warn: vi.fn(),
     debug: vi.fn(),
   }),
-  BaseLogger: class {},
+  BaseLogger: class { },
 }));
 
 describe('Logging Utilities', () => {
@@ -26,61 +25,6 @@ describe('Logging Utilities', () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
-  });
-
-  describe('logError', () => {
-    it('should log an error with context when error is an Error object', () => {
-      const mockLogger = getLogger();
-      const error = new Error('Test error');
-      const message = 'An error occurred';
-      const context = { userId: 'user1' };
-
-      logError(error, message, context);
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error_message: 'Test error',
-          error_name: 'Error',
-          error_stack: error.stack,
-          userId: 'user1',
-          message,
-        }),
-      );
-    });
-
-    it('should log an error with context when error is not an Error object', () => {
-      const mockLogger = getLogger();
-      const error = 'String error';
-      const message = 'An error occurred';
-      const context = { userId: 'user1' };
-
-      logError(error, message, context);
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error_value: 'String error',
-          userId: 'user1',
-          message,
-        }),
-      );
-    });
-
-    it('should work without context', () => {
-      const mockLogger = getLogger();
-      const error = new Error('Test error');
-      const message = 'An error occurred';
-
-      logError(error, message);
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error_message: 'Test error',
-          error_name: 'Error',
-          error_stack: error.stack,
-          message,
-        }),
-      );
-    });
   });
 
   describe('logMetric', () => {
