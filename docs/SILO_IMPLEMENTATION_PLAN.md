@@ -51,9 +51,7 @@ Set up the project structure, configure Cloudflare resources, and establish the 
    ```
    services/silo/
    ├── src/
-   │   ├── index.ts
-   │   ├── rpc/
-   │   │   └── handlers.ts
+   │   ├── index.ts        # Main entry point with RPC handlers
    │   ├── queue/
    │   │   └── content-events.ts
    │   ├── db/
@@ -63,8 +61,7 @@ Set up the project structure, configure Cloudflare resources, and establish the 
    │       ├── metrics.ts
    │       └── logging.ts
    ├── tests/
-   │   ├── rpc.test.ts
-   │   └── queue.test.ts
+   │   └── index.test.ts
    ├── wrangler.toml
    └── package.json
    ```
@@ -145,54 +142,47 @@ Implement the core Silo service with cloudflare worker entrypoint interface and 
 
 **Technical Tasks**
 
-1. Create the main worker entry point in `src/index.ts`:
+1. Create the main worker entry point in `src/index.ts` with RPC handlers:
 
    ```typescript
-   import { handle } from 'hono/cloudflare-workers';
-   import { rpcHandlers } from './rpc/handlers';
-   import { getLogger, withLogger } from '@dome/loggnig';
+   import { withLogger } from '@dome/logging';
+   import { logger } from './utils/logging';
+   import { metrics } from './utils/metrics';
+   import { NotImplementedError } from '@dome/common';
+   import { Env, R2Event, MessageBatch } from './types';
+   import { z } from 'zod';
+   import { ulid } from 'ulid';
+   import { drizzle } from 'drizzle-orm/d1';
+   import { contents } from './db/schema';
 
-    export default class Silo extends WorkerEntrypoint<Env> {
+   export default class Silo implements WorkerEntrypoint<Env> {
+     // Store environment for use in methods
+     env!: Env;
+     
+     async queue(batch: MessageBatch<R2Event>) {
+       // Queue consumer logic will be implemented in Stage 5
+     }
+     
+     async simplePut(data: any) {
+       // Implement in Stage 3
+     }
 
-    public async put(..) {
-    }
+     async createUpload(data: any) {
+       // Implement in Stage 4
+     }
 
-     async queue(batch, env) {
-       // Queue consumer logic will be implemented in Stage 3
+     async batchGet(data: any) {
+       // Implement in Stage 6
+     }
+
+     async delete(data: any) {
+       // Implement in Stage 7
+     }
+
+     async stats(data: any) {
+       // Implement in Stage 7
      }
    }
-
-   ```
-
-2. Implement RPC handlers in `src/rpc/handlers.ts`:
-
-   ```typescript
-   import { Env } from '../index';
-   import { logger } from '../utils/logging';
-   import { metrics } from '../utils/metrics';
-   import { ulid } from 'ulid';
-
-   export const rpcHandlers = {
-     async simplePut(data, env: Env) {
-       // Implement in Stage 3
-     },
-
-     async createUpload(data, env: Env) {
-       // Implement in Stage 4
-     },
-
-     async batchGet(data, env: Env) {
-       // Implement in Stage 5
-     },
-
-     async delete(data, env: Env) {
-       // Implement in Stage 6
-     },
-
-     async stats(data, env: Env) {
-       // Implement in Stage 7
-     },
-   };
    ```
 
 3. Set up basic logging and metrics utilities in `src/utils/`
@@ -218,7 +208,7 @@ Implement the `simplePut` RPC method for synchronously storing small content ite
 
 **Technical Tasks**
 
-1. Implement the `simplePut` handler in `src/rpc/handlers.ts`:
+1. Implement the `simplePut` handler in `src/index.ts`:
 
    ```typescript
    async simplePut(data, env: Env) {
@@ -290,7 +280,7 @@ Implement the `createUpload` RPC method to generate pre-signed forms for direct 
 
 **Technical Tasks**
 
-1. Implement the `createUpload` handler in `src/rpc/handlers.ts`:
+1. Implement the `createUpload` handler in `src/index.ts`:
 
    ```typescript
    async createUpload(data, env: Env) {
@@ -449,7 +439,7 @@ Implement the `batchGet` RPC method for efficiently retrieving multiple content 
 
 **Technical Tasks**
 
-1. Implement the `batchGet` handler in `src/rpc/handlers.ts`:
+1. Implement the `batchGet` handler in `src/index.ts`:
 
    ```typescript
    async batchGet(data, env: Env) {
@@ -544,7 +534,7 @@ Implement the remaining RPC methods for content management and service statistic
 
 **Technical Tasks**
 
-1. Implement the `delete` handler in `src/rpc/handlers.ts`:
+1. Implement the `delete` handler in `src/index.ts`:
 
    ```typescript
    async delete(data, env: Env) {
@@ -597,7 +587,7 @@ Implement the remaining RPC methods for content management and service statistic
    }
    ```
 
-2. Implement the `stats` handler in `src/rpc/handlers.ts`:
+2. Implement the `stats` handler in `src/index.ts`:
 
    ```typescript
    async stats(data, env: Env) {

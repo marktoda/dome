@@ -118,7 +118,9 @@ This repository is organized as a monorepo with the following structure:
 - Reference `docs/justfile-commands.md` for detailed documentation
 - Common just commands:
   - `just build` - Build all services
+  - `just build-pkg {package name}` - Build a specific service
   - `just test` - Run tests for all services
+  - `just test-pkg {package name}` - Run tests for a specific service
   - `just deploy` - Deploy all services
   - `just new-service <name>` - Create a new service from template
   - `just new-worker <name>` - Create a new Rust worker from template

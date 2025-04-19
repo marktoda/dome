@@ -45,7 +45,23 @@ export class TUI {
       grabKeys: true, // Grab all key events
       ignoreLocked: ['C-c'], // Don't ignore Ctrl+C even when locked
       dockBorders: true,
-      autoPadding: true
+      autoPadding: true,
+      fastCSR: true, // Use fast CSR for better performance
+      terminal: 'xterm-256color' // Explicitly set terminal type
+    });
+    
+    // Add a direct handler for stdin to catch Ctrl+J at the lowest level
+    process.stdin.on('data', (data) => {
+      // Check for Ctrl+J (ASCII 10) and Ctrl+K (ASCII 11)
+      if (data.length === 1) {
+        if (data[0] === 10) { // Ctrl+J
+          this.container.scroll(5);
+          this.screen.render();
+        } else if (data[0] === 11) { // Ctrl+K
+          this.container.scroll(-5);
+          this.screen.render();
+        }
+      }
     });
 
     // Create the layout
@@ -217,7 +233,32 @@ export class TUI {
       vi: true,
       ignoreKeys: false, // Don't ignore any keys
       grabKeys: true, // Grab all key events
-      keyable: true // Ensure element can receive key events
+      keyable: true, // Ensure element can receive key events
+      // Explicitly define which keys should be captured by the input
+      // and not passed to the parent screen
+      forceUnicode: true,
+      censor: false
+    });
+    
+    // Add a special handler for the input box to capture Ctrl+J/K
+    this.inputBox.on('keypress', (ch, key) => {
+      if (!key) return;
+      
+      // Handle Ctrl+J for scrolling down
+      if ((key.ctrl && (key.name === 'j' || key.name === 'n')) ||
+          ch === '\n' || ch === '\x0A') {
+        this.container.scroll(5);
+        this.screen.render();
+        return false;
+      }
+      
+      // Handle Ctrl+K for scrolling up
+      if ((key.ctrl && (key.name === 'k' || key.name === 'p')) ||
+          ch === '\x0B') {
+        this.container.scroll(-5);
+        this.screen.render();
+        return false;
+      }
     });
   }
 
@@ -254,18 +295,34 @@ export class TUI {
       return false; // Prevent default handling
     };
 
-    // Try multiple key binding formats for better compatibility
-    // Register on screen
-    this.screen.key(['C-j', 'C-J', '\x0A'], scrollDownHandler); // \x0A is the ASCII code for Ctrl+J
-    this.screen.key(['C-k', 'C-K', '\x0B'], scrollUpHandler); // \x0B is the ASCII code for Ctrl+K
+    // Handle raw input events for Ctrl+J specifically
+    this.screen.on('keypress', (ch, key) => {
+      // Check for Ctrl+J (which can be represented in multiple ways)
+      if ((key && key.ctrl && (key.name === 'j' || key.name === 'n')) ||
+          ch === '\n' || ch === '\x0A') {
+        scrollDownHandler();
+        return false;
+      }
+      
+      // Check for Ctrl+K
+      if ((key && key.ctrl && (key.name === 'k' || key.name === 'p')) ||
+          ch === '\x0B') {
+        scrollUpHandler();
+        return false;
+      }
+    });
+
+    // Also try the standard key binding approach as a fallback
+    this.screen.key(['C-j', 'C-J', '\x0A', 'C-n'], scrollDownHandler); // \x0A is the ASCII code for Ctrl+J
+    this.screen.key(['C-k', 'C-K', '\x0B', 'C-p'], scrollUpHandler); // \x0B is the ASCII code for Ctrl+K
     
     // Also register on input box to ensure they work when input is focused
-    this.inputBox.key(['C-j', 'C-J', '\x0A'], scrollDownHandler);
-    this.inputBox.key(['C-k', 'C-K', '\x0B'], scrollUpHandler);
+    this.inputBox.key(['C-j', 'C-J', '\x0A', 'C-n'], scrollDownHandler);
+    this.inputBox.key(['C-k', 'C-K', '\x0B', 'C-p'], scrollUpHandler);
     
     // Add direct key handlers for the container
-    this.container.key(['C-j', 'C-J', '\x0A'], scrollDownHandler);
-    this.container.key(['C-k', 'C-K', '\x0B'], scrollUpHandler);
+    this.container.key(['C-j', 'C-J', '\x0A', 'C-n'], scrollDownHandler);
+    this.container.key(['C-k', 'C-K', '\x0B', 'C-p'], scrollUpHandler);
 
     // Also add vi-like scrolling with j/k when container is focused
     this.container.key('j', () => {
@@ -298,6 +355,16 @@ export class TUI {
         this.inputBox.focus();
       }
       this.screen.render();
+    });
+
+    // Override the default Enter key behavior to prevent conflicts with Ctrl+J
+    // This is necessary because Ctrl+J can be interpreted as Enter in some terminals
+    this.inputBox.removeAllListeners('keypress');
+    this.inputBox.on('keypress', (ch, key) => {
+      if (key && key.name === 'return' && !key.ctrl) {
+        // Only submit on plain Enter, not on Ctrl+J
+        this.inputBox.submit();
+      }
     });
 
     // Handle input submission

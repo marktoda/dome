@@ -3,3 +3,5 @@ wrangler vectorize create dome-notes --dimensions=768 --metric=cosine
 wrangler vectorize create-metadata-index dome-notes --property-name pageNum --type number
 
 wrangler vectorize create-metadata-index dome-notes --property-name userId  --type string
+
+wrangler r2 bucket notification create silo-content --queue content-events
