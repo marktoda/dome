@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { chatService } from '../../src/services/chatService';
-import { searchService } from '../../src/services/searchService';
+import { searchService, PaginatedSearchResults } from '../../src/services/searchService';
 import { ServiceError } from '@dome/common';
 
 // Mock dependencies
@@ -24,26 +24,35 @@ describe('ChatService', () => {
   };
 
   // Mock search results
-  const mockSearchResults = [
-    {
-      id: 'note1',
-      title: 'Test Note 1',
-      body: 'This is the content of test note 1.',
-      score: 0.95,
-      createdAt: 1650000000000,
-      updatedAt: 1650000000000,
-      contentType: 'text/plain',
+  const mockSearchResults: PaginatedSearchResults = {
+    results: [
+      {
+        id: 'note1',
+        title: 'Test Note 1',
+        body: 'This is the content of test note 1.',
+        score: 0.95,
+        createdAt: 1650000000000,
+        updatedAt: 1650000000000,
+        contentType: 'text/plain',
+      },
+      {
+        id: 'note2',
+        title: 'Test Note 2',
+        body: 'This is the content of test note 2.',
+        score: 0.85,
+        createdAt: 1650000100000,
+        updatedAt: 1650000100000,
+        contentType: 'text/plain',
+      },
+    ],
+    pagination: {
+      total: 2,
+      limit: 10,
+      offset: 0,
+      hasMore: false
     },
-    {
-      id: 'note2',
-      title: 'Test Note 2',
-      body: 'This is the content of test note 2.',
-      score: 0.85,
-      createdAt: 1650000100000,
-      updatedAt: 1650000100000,
-      contentType: 'text/plain',
-    },
-  ];
+    query: 'test query'
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -142,7 +151,16 @@ describe('ChatService', () => {
 
     it('should suggest /add command when user is asking to remember something', async () => {
       // Mock search service to return empty results
-      vi.mocked(searchService.search).mockResolvedValue([]);
+      vi.mocked(searchService.search).mockResolvedValue({
+        results: [],
+        pagination: {
+          total: 0,
+          limit: 10,
+          offset: 0,
+          hasMore: false
+        },
+        query: 'test query'
+      });
 
       // Mock AI response
       vi.mocked(mockEnv.AI.run).mockResolvedValue({

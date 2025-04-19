@@ -16,11 +16,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "tui": "node dist/index.js prompt",
-    "tui:dev": "ts-node src/index.ts prompt",
-    "tui:custom": "node -e \"require('child_process').execSync('node dist/index.js config set --base-url ' + process.argv[1], {stdio: 'inherit'}); require('child_process').execSync('node dist/index.js prompt', {stdio: 'inherit'});\"",
-    "tui:local": "node -e \"require('child_process').execSync('node dist/index.js config set --base-url http://localhost:8787', {stdio: 'inherit'}); require('child_process').execSync('node dist/index.js prompt', {stdio: 'inherit'});\"",
-    "tui:url": "node -e \"if (process.argv[1]) { require('child_process').execSync('node dist/index.js config set --base-url ' + process.argv[1], {stdio: 'inherit'}); } require('child_process').execSync('node dist/index.js prompt', {stdio: 'inherit'});\""
+    "tui": "node dist/index.js tui",
+    "tui:dev": "ts-node src/index.ts tui",
+    "tui:custom": "node -e \"require('child_process').execSync('node dist/index.js config set --base-url ' + process.argv[1], {stdio: 'inherit'}); require('child_process').execSync('node dist/index.js tui', {stdio: 'inherit'});\"",
+    "tui:local": "node -e \"require('child_process').execSync('node dist/index.js config set --base-url http://localhost:8787', {stdio: 'inherit'}); require('child_process').execSync('node dist/index.js tui', {stdio: 'inherit'});\"",
+    "tui:url": "node -e \"if (process.argv[1]) { require('child_process').execSync('node dist/index.js config set --base-url ' + process.argv[1], {stdio: 'inherit'}); } require('child_process').execSync('node dist/index.js tui', {stdio: 'inherit'});\""
   },
   "dependencies": {
     "@dome/common": "workspace:*",

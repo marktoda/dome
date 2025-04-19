@@ -3,6 +3,7 @@ import { Note, NotePage, EmbeddingStatus } from '../models/note';
 import { NoteRepository } from '../repositories/noteRepository';
 import { embeddingService } from './embeddingService';
 import { ServiceError } from '@dome/common';
+import { getLogger } from '@dome/logging';
 
 /**
  * Service for indexing notes using the Constellation embedding service
@@ -40,7 +41,10 @@ export class NoteIndexingService {
         embeddingStatus: EmbeddingStatus.COMPLETED,
       });
     } catch (error) {
-      console.error(`Error indexing note ${note.id}:`, error);
+      getLogger().error(
+        { err: error, noteId: note.id },
+        `Error indexing note ${note.id}`
+      );
 
       // Update note status to failed
       await this.noteRepository.update(env, note.id, {
@@ -83,7 +87,10 @@ export class NoteIndexingService {
         embeddingStatus: EmbeddingStatus.COMPLETED,
       });
     } catch (error) {
-      console.error(`Error indexing note pages for note ${note.id}:`, error);
+      getLogger().error(
+        { err: error, noteId: note.id, pagesCount: pages.length },
+        `Error indexing note pages for note ${note.id}`
+      );
 
       // Update note status to failed
       await this.noteRepository.update(env, note.id, {
@@ -118,7 +125,10 @@ export class NoteIndexingService {
         embeddingStatus: EmbeddingStatus.COMPLETED,
       });
     } catch (error) {
-      console.error(`Error updating note index for note ${note.id}:`, error);
+      getLogger().error(
+        { err: error, noteId: note.id },
+        `Error updating note index for note ${note.id}`
+      );
 
       // Update note status to failed
       await this.noteRepository.update(env, note.id, {
@@ -170,14 +180,20 @@ export class NoteIndexingService {
             await this.indexNote(env, note);
           }
         } catch (error) {
-          console.error(`Error processing pending note ${note.id}:`, error);
+          getLogger().error(
+            { err: error, noteId: note.id },
+            `Error processing pending note ${note.id}`
+          );
           // Continue with next note
         }
       }
 
       return pendingNotes.length;
     } catch (error) {
-      console.error('Error processing pending notes:', error);
+      getLogger().error(
+        { err: error },
+        'Error processing pending notes'
+      );
       throw new ServiceError('Failed to process pending notes', {
         cause: error instanceof Error ? error : new Error(String(error)),
       });

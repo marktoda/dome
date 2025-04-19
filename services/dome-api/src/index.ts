@@ -10,6 +10,7 @@ import {
   formatZodError,
   NotImplementedError,
 } from '@dome/common';
+import { userIdMiddleware } from './middleware/userIdMiddleware';
 import { initLogging, getLogger } from '@dome/logging';
 import type { Bindings } from './types';
 import { SearchController } from './controllers/searchController';
@@ -29,6 +30,35 @@ const serviceInfo: ServiceInfo = {
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Register middleware
+// Request timing middleware
+app.use('*', async (c, next) => {
+  const startTime = Date.now();
+  getLogger().info(
+    {
+      path: c.req.path,
+      method: c.req.method,
+      userAgent: c.req.header('user-agent'),
+      query: c.req.query(),
+    },
+    'request:start',
+  );
+
+  await next();
+
+  const endTime = Date.now();
+  const duration = endTime - startTime;
+
+  getLogger().info(
+    {
+      path: c.req.path,
+      method: c.req.method,
+      durMs: duration,
+      status: c.res.status,
+    },
+    'request:end',
+  );
+});
+
 app.use('*', createRequestContextMiddleware());
 initLogging(app, {
   extraBindings: {
@@ -76,6 +106,9 @@ app.get('/health', c => {
 // Notes API routes
 const notesRouter = new Hono();
 
+// Apply user ID middleware to all note routes
+notesRouter.use('*', userIdMiddleware);
+
 // Ingest endpoint - for adding new notes, files, etc.
 notesRouter.post('/ingest', noteController.ingest.bind(noteController));
 
@@ -120,34 +153,6 @@ app.post('/chat', chatController.chat.bind(chatController));
 app.route('/notes', notesRouter);
 app.route('/tasks', tasksRouter);
 
-// Request timing middleware
-app.use('*', async (c, next) => {
-  const startTime = Date.now();
-  getLogger().info(
-    {
-      path: c.req.path,
-      method: c.req.method,
-      userAgent: c.req.header('user-agent'),
-      query: c.req.query(),
-    },
-    'request:start',
-  );
-
-  await next();
-
-  const endTime = Date.now();
-  const duration = endTime - startTime;
-
-  getLogger().info(
-    {
-      path: c.req.path,
-      method: c.req.method,
-      durMs: duration,
-      status: c.res.status,
-    },
-    'request:end',
-  );
-});
 
 // 404 handler for unknown routes
 app.notFound(c => {

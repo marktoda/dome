@@ -58,7 +58,6 @@ export class VectorizeService {
 
       // Query Constellation
       const results = await env.CONSTELLATION!.query(queryText, noteVectorFilter, topK);
-      getLogger().warn('!!! queryVectors results', { results });
 
       // Convert VectorSearchResult to SearchResult
       return results.map(result => ({

@@ -1,9 +1,5 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import type { ApiResponse } from '../types';
-import pino from 'pino';
-
-// Create a logger instance
-const logger = pino({ level: 'info' });
 
 /**
  * Type for a response with status
@@ -57,7 +53,7 @@ export const responseHandlerMiddleware: MiddlewareHandler = async (c: Context, n
       data: body,
     };
 
-    logger.debug('Response handler wrapping body with status');
+    // Debug: Response handler wrapping body with status
     return c.json(apiResponse, status as any);
   }
 
@@ -67,6 +63,6 @@ export const responseHandlerMiddleware: MiddlewareHandler = async (c: Context, n
     data: result,
   };
 
-  logger.debug('Response handler wrapping plain object');
+  // Debug: Response handler wrapping plain object
   return c.json(apiResponse);
 };

@@ -1,280 +1,141 @@
 # Dome CLI
 
-A terminal UI client for interacting with the dome API.
+A terminal user interface (TUI) client for the Dome API.
 
 ## Features
 
-- Command-line interface for all dome API operations
-- Terminal UI using Ink (React for the terminal)
-- Full-screen curses-based TUI with interactive navigation
-- Authentication with API key
-- Environment switching (development, production)
-- Interactive chat with the RAG-enhanced interface
-- Support for adding notes, tasks, and reminders
-- Search across stored content
-- List and view notes and tasks
-- Theme customization (light/dark)
+- Interactive chat with Dome
+- Multiple specialized modes for different tasks
+- Command-based interface with slash commands
+- Keyboard shortcuts for quick actions
+- Search functionality
+- Note and task management
 
 ## Installation
 
-### From Source
+```bash
+# Install dependencies
+pnpm install
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
-3. Build the CLI:
-   ```bash
-   pnpm --filter @dome/cli build
-   ```
-4. Link the CLI globally:
-   ```bash
-   cd packages/cli
-   npm link
-   ```
+# Build the CLI
+pnpm build
+```
 
 ## Usage
 
-### Authentication
-
-Before using the CLI, you need to authenticate with your API key:
-
 ```bash
-dome login
+# Start the TUI
+pnpm tui
+
+# Start the TUI in development mode
+pnpm tui:dev
+
+# Start the TUI with a custom API URL
+pnpm tui:url http://your-api-url
+
+# Start the TUI with the local API
+pnpm tui:local
 ```
 
-You can also provide the API key directly:
+## Available Modes
 
-```bash
-dome login --key YOUR_API_KEY
-```
+The TUI supports multiple specialized modes for different tasks:
 
-To log out:
+### Chat Mode (💬)
 
-```bash
-dome logout
-```
+Conversational interface for interacting with the assistant.
 
-### Configuration
+- **Features**:
+  - Message history with user/assistant formatting
+  - Command history
+  - System messages
 
-View current configuration:
+### Focus Mode (✍️)
 
-```bash
-dome config get
-```
+Distraction-free writing environment for notes and content.
 
-Set configuration values:
+- **Features**:
+  - Full-screen text editor
+  - Word and character count
+  - Auto-save functionality
+  - Status indicators
 
-```bash
-dome config set --base-url http://localhost:8787
-dome config set --environment production
-```
+### Dashboard Mode (📊)
 
-### Adding Content
+Overview of notes, tasks, and recent activity.
 
-Add a note:
+- **Features**:
+  - Notes list with previews
+  - Tasks list with status indicators
+  - Recent activity log
+  - Statistics summary
 
-```bash
-dome add "This is a note to remember"
-```
+### Search Mode (🔍)
 
-Add content from a file:
+Advanced search capabilities with filters and sorting.
 
-```bash
-dome add path/to/file.txt
-```
+- **Features**:
+  - Full-text search
+  - Type filtering
+  - Date range filtering
+  - Tag filtering
+  - Customizable sorting
+  - Result previews
 
-### Working with Notes
+## Commands
 
-Start a note session:
-
-```bash
-dome note meeting
-```
-
-This will start an interactive session where you can type multiple lines. Type `/end` to finish the session.
-
-You can also add a single note directly:
-
-```bash
-dome note meeting --content "Discussed project timeline"
-```
-
-### Listing Items
-
-List notes:
-
-```bash
-dome list notes
-```
-
-List tasks:
-
-```bash
-dome list tasks
-```
-
-Filter items:
-
-```bash
-dome list notes --filter "tag:work"
-dome list tasks --filter "status:pending"
-```
-
-### Viewing Items
-
-View a specific note or task:
-
-```bash
-dome show note-id-123
-```
-
-### Searching
-
-Search across all content:
-
-```bash
-dome search "project timeline"
-```
-
-Limit the number of results:
-
-```bash
-dome search "project timeline" --limit 5
-```
-
-### Chat
-
-Start an interactive chat session:
-
-```bash
-dome chat
-```
-
-Send a single message:
-
-```bash
-dome chat --message "What meetings do I have scheduled for tomorrow?"
-```
-
-### Terminal User Interfaces
-
-#### Full-Screen TUI
-
-Launch the full-screen terminal user interface:
-
-```bash
-dome tui
-```
-
-Or using the justfile:
-
-```bash
-just run-tui
-```
-
-The full-screen TUI provides a comprehensive experience with:
-
-- Dashboard with overview and quick actions
-- Interactive chat with message history
-- Notes management with list and detail views
-- Search functionality with result previews
-- Settings configuration
-- Keyboard navigation and shortcuts
-- Theme customization
-
-##### Full-Screen TUI Keyboard Shortcuts
-
-- Arrow keys: Navigate menus and lists
-- Enter: Select an item
-- Escape: Go back or exit current view
-- q: Quit the application
-- ?: Show help screen
-- h: Return to dashboard
-- c: Quick access to chat
-- n: Quick access to notes
-- t: Quick access to tasks
-- s: Quick access to search
-
-#### Prompt-Based TUI
-
-Launch the prompt-based terminal user interface:
-
-```bash
-dome prompt
-```
-
-Or using the justfile:
-
-```bash
-just run-prompt
-```
-
-The prompt-based TUI provides a simpler, command-line like experience:
-
-- Start with a blank prompt
-- Type messages directly to chat with Dome
-- Use slash commands for various actions
-- Keyboard shortcuts for mode switching
-
-##### Prompt-Based TUI Commands
-
+- `/mode <name>` - Switch to a specific mode
+- `/help` - Show help for the current mode
 - `/add <content>` - Add content
 - `/note <context> <content>` - Add a note
 - `/list [notes|tasks]` - List items
 - `/search <query>` - Search content
-- `/help` - Show help
 - `/exit` - Exit the application
 
-##### Prompt-Based TUI Keyboard Shortcuts
+## Keyboard Shortcuts
 
-- Ctrl+c: Exit
-- Ctrl+n: Switch to note mode
-- Ctrl+l: Switch to list mode
-- Ctrl+s: Switch to search mode
-- Ctrl+h: Show help
+- `F1` - Show help
+- `F2` - Show mode selection dialog
+- `Ctrl+n` - Switch to Focus mode
+- `Ctrl+l` - Switch to Dashboard mode
+- `Ctrl+s` - Switch to Search mode
+- `Ctrl+a` - Quick add content
+- `Ctrl+h` - Show help
+- `Ctrl+c` - Exit
 
-### Environment Switching
+## Creating Custom Modes
 
-Use the `--prod` flag to switch to production environment:
+The TUI supports custom modes. See the [Custom Modes documentation](./src/tui/CUSTOM_MODES.md) for details on creating your own modes.
+
+## Configuration
+
+The CLI uses a configuration file stored in `~/.config/dome/config.json`. You can modify this file directly or use the `dome config` command to change settings.
 
 ```bash
-dome --prod list notes
+# Set the API key
+dome config set --api-key your-api-key
+
+# Set the base URL
+dome config set --base-url http://your-api-url
+
+# Set the environment
+dome config set --environment production
+
+# Set the theme
+dome config set --theme dark
 ```
 
 ## Development
 
-### Project Structure
-
-- `src/index.ts` - Main entry point
-- `src/commands/` - Command implementations
-- `src/components/` - React components for the terminal UI
-- `src/tui/` - Full-screen TUI implementation
-  - `src/tui/index.ts` - TUI entry point
-  - `src/tui/layouts/` - Layout components
-  - `src/tui/screens/` - Screen implementations
-  - `src/tui/components/` - TUI components
-- `src/utils/` - Utility functions and API client
-
-### Building
-
 ```bash
-pnpm build
-```
-
-### Setting up the TUI
-
-```bash
-just setup-tui
-```
-
-### Testing
-
-```bash
+# Run tests
 pnpm test
-```
 
-## License
+# Run linting
+pnpm lint
 
-Private
+# Build the CLI
+pnpm build
+
+# Run the CLI in development mode
+pnpm dev

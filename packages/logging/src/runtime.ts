@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { Logger } from 'pino';
 import { baseLogger, BaseLogger } from './base';
 
 export const als = new AsyncLocalStorage<Map<string, unknown>>();

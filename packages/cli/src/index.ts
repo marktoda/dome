@@ -52,7 +52,7 @@ configCommand(program);
 // Add a command to launch the prompt-based TUI
 program
   .command('tui')
-  .description('Launch the prompt-based terminal user interface')
+  .description('Launch the terminal user interface')
   .action(() => {
     startPromptTui();
   });

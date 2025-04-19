@@ -21,8 +21,8 @@ export function createErrorMiddleware(
       // Log the error with request ID
       const requestId = c.get('requestId') || 'unknown';
       console.error(
-        `Error processing request [${requestId}]:`,
-        error instanceof Error ? error : {},
+        `Error processing request [${requestId}]: ${c.req.method} ${c.req.path}`,
+        error instanceof Error ? error : new Error(String(error)),
       );
 
       let errorResponse: ApiResponse;

@@ -1,6 +1,7 @@
 import { Bindings } from '../types';
 import { ServiceError } from '@dome/common';
 import { r2Service } from './r2Service';
+import { getLogger } from '@dome/logging';
 
 /**
  * Supported file types for content extraction
@@ -136,7 +137,10 @@ export class FileProcessingService {
         chunks,
       };
     } catch (error) {
-      console.error('Error processing file:', error);
+      getLogger().error(
+        { err: error, contentType, fileName },
+        'Error processing file'
+      );
       throw new ServiceError('Failed to process file', {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: { contentType, fileName },
@@ -163,7 +167,10 @@ export class FileProcessingService {
       // For now, we'll return a placeholder
       return `[PDF Text Extraction Placeholder for ${r2Key}]`;
     } catch (error) {
-      console.error(`Error extracting text from PDF ${r2Key}:`, error);
+      getLogger().error(
+        { err: error, r2Key },
+        `Error extracting text from PDF ${r2Key}`
+      );
       throw new ServiceError(`Failed to extract text from PDF ${r2Key}`, {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: { r2Key },
@@ -190,7 +197,10 @@ export class FileProcessingService {
       // For now, we'll return a placeholder
       return `[Image OCR Placeholder for ${r2Key}]`;
     } catch (error) {
-      console.error(`Error extracting text from image ${r2Key}:`, error);
+      getLogger().error(
+        { err: error, r2Key },
+        `Error extracting text from image ${r2Key}`
+      );
       throw new ServiceError(`Failed to extract text from image ${r2Key}`, {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: { r2Key },

@@ -2,6 +2,7 @@ import { Bindings } from '../types';
 import { searchService, NoteSearchResult } from './searchService';
 import { embeddingService } from './embeddingService';
 import { ServiceError } from '@dome/common';
+import { getLogger } from '@dome/logging';
 
 /**
  * Chat message interface
@@ -84,7 +85,10 @@ export class ChatService {
 
       return response.response;
     } catch (error) {
-      console.error('Error generating chat response:', error);
+      getLogger().error(
+        { err: error },
+        'Error generating chat response'
+      );
       throw new ServiceError('Failed to generate chat response', {
         cause: error instanceof Error ? error : new Error(String(error)),
       });
@@ -165,7 +169,10 @@ export class ChatService {
           // Close the stream
           await writer.close();
         } catch (error) {
-          console.error('Error in stream chat:', error);
+          getLogger().error(
+            { err: error },
+            'Error in stream chat'
+          );
 
           // Write error to stream
           const errorJson =
@@ -183,7 +190,10 @@ export class ChatService {
 
       return readable;
     } catch (error) {
-      console.error('Error setting up streaming chat response:', error);
+      getLogger().error(
+        { err: error },
+        'Error setting up streaming chat response'
+      );
       throw new ServiceError('Failed to set up streaming chat response', {
         cause: error instanceof Error ? error : new Error(String(error)),
       });
@@ -212,9 +222,13 @@ export class ChatService {
         limit: maxItems,
       });
 
-      return searchResults;
+      // Extract just the results array from the paginated response
+      return searchResults.results;
     } catch (error) {
-      console.error('Error retrieving context:', error);
+      getLogger().error(
+        { err: error, userId, query },
+        'Error retrieving context'
+      );
       // Return empty context on error
       return [];
     }

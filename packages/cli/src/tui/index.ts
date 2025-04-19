@@ -6,6 +6,16 @@ import { loadConfig, isAuthenticated } from '../utils/config';
 import { error } from '../utils/ui';
 import { chat, addContent, search, listNotes, listTasks } from '../utils/api';
 
+// Import the mode system
+import {
+  BaseMode,
+  ModeManager,
+  ChatMode,
+  FocusMode,
+  DashboardMode,
+  SearchMode
+} from './modes';
+
 /**
  * Start the TUI with a prompt-based interface
  */
@@ -118,9 +128,11 @@ export function startPromptTui(): void {
     },
   });
 
-  // Create a prompt for input
+  // Create a prompt for input with improved configuration
   const inputBox = grid.set(11, 0, 1, 12, blessed.textbox, {
     inputOnFocus: true,
+    keys: true,
+    mouse: true,
     style: {
       fg: 'white',
       bg: 'black',
@@ -130,6 +142,9 @@ export function startPromptTui(): void {
         bold: true,
       },
     },
+    // Ensure input handling is properly configured
+    input: true,
+    keyable: true,
   });
 
   // Create a system info box
@@ -146,16 +161,56 @@ export function startPromptTui(): void {
     },
   });
 
-  // Current mode
-  let currentMode = 'chat';
+  // Create the mode manager
+  const modeManager = new ModeManager(
+    screen,
+    outputBox,
+    statusBar,
+    (mode: BaseMode) => {
+      // Update the sidebar with the active mode
+      updateSidebar(mode);
+      
+      // Focus the input box
+      inputBox.focus();
+    }
+  );
 
-  // Set the status line based on the current mode
-  function updateStatusLine(mode: string): void {
-    statusBar.setContent(
-      ` {bold}Mode:{/bold} ${
-        mode.charAt(0).toUpperCase() + mode.slice(1)
-      } | Type a message or command`,
-    );
+  // Register all modes
+  modeManager.registerModes([
+    new ChatMode(screen),
+    new FocusMode(screen),
+    new DashboardMode(screen),
+    new SearchMode(screen),
+  ]);
+
+  // Update the sidebar with available modes
+  function updateSidebar(activeMode: BaseMode | null): void {
+    let content = '\n{bold}Modes:{/bold}\n\n';
+    
+    modeManager.getAllModes().forEach(mode => {
+      const isActive = activeMode && activeMode.getName() === mode.getName();
+      const color = mode.getColor();
+      const icon = mode.getIcon();
+      const name = mode.getName();
+      
+      if (isActive) {
+        content += ` {white-bg}{black-fg}${icon} ${name}{/black-fg}{/white-bg}\n`;
+      } else {
+        content += ` {${color}-fg}${icon} ${name}{/${color}-fg}\n`;
+      }
+    });
+    
+    content += '\n{bold}Commands:{/bold}\n\n';
+    content += ' {cyan-fg}/mode <name>{/cyan-fg} - Switch mode\n';
+    content += ' {cyan-fg}/help{/cyan-fg} - Show help\n';
+    content += ' {cyan-fg}/exit{/cyan-fg} - Exit\n\n';
+    
+    content += '{bold}Global Shortcuts:{/bold}\n\n';
+    content += ' {cyan-fg}F1{/cyan-fg} - Help\n';
+    content += ' {cyan-fg}F2{/cyan-fg} - Mode list\n';
+    content += ' {cyan-fg}Ctrl+c{/cyan-fg} - Exit\n';
+    
+    sidebar.setContent(content);
     screen.render();
   }
 
@@ -166,6 +221,38 @@ export function startPromptTui(): void {
     screen.render();
   }
 
+  // Show help text
+  function showHelp(): void {
+    const activeMode = modeManager.getActiveMode();
+    
+    if (activeMode) {
+      // Show mode-specific help
+      const helpText = activeMode.getHelpText();
+      addMessage(helpText);
+    } else {
+      // Show general help
+      addMessage('\n{bold}Available Commands:{/bold}');
+      addMessage('{bold}/mode <name>{/bold} - Switch to a specific mode');
+      addMessage('{bold}/help{/bold} - Show help for the current mode');
+      addMessage('{bold}/exit{/bold} - Exit the application');
+      
+      addMessage('\n{bold}Available Modes:{/bold}');
+      modeManager.getAllModes().forEach(mode => {
+        const color = mode.getColor();
+        const icon = mode.getIcon();
+        const name = mode.getName();
+        const description = mode.getDescription();
+        
+        addMessage(`{${color}-fg}${icon} ${name}{/${color}-fg}: ${description}`);
+      });
+      
+      addMessage('\n{bold}Global Keybindings:{/bold}');
+      addMessage('{bold}F1{/bold} - Show help');
+      addMessage('{bold}F2{/bold} - Show mode list');
+      addMessage('{bold}Ctrl+c{/bold} - Exit');
+    }
+  }
+
   // Process a slash command
   async function processCommand(command: string, args: string[]): Promise<void> {
     switch (command) {
@@ -174,20 +261,21 @@ export function startPromptTui(): void {
         process.exit(0);
         break;
 
+      case 'mode':
+        if (args.length === 0) {
+          addMessage('{red-fg}Error: Missing mode name. Usage: /mode <name>{/red-fg}');
+        } else {
+          const modeName = args[0];
+          const success = modeManager.switchToMode(modeName);
+          
+          if (!success) {
+            addMessage(`{red-fg}Error: Unknown mode "${modeName}"{/red-fg}`);
+          }
+        }
+        break;
+
       case 'help':
-        addMessage('\n{bold}Available Commands:{/bold}');
-        addMessage('{bold}/add <content>{/bold} - Add content');
-        addMessage('{bold}/note <context> <content>{/bold} - Add a note');
-        addMessage('{bold}/list [notes|tasks]{/bold} - List items');
-        addMessage('{bold}/search <query>{/bold} - Search content');
-        addMessage('{bold}/help{/bold} - Show help');
-        addMessage('{bold}/exit{/bold} - Exit the application');
-        addMessage('\n{bold}Keybindings:{/bold}');
-        addMessage('{bold}Ctrl+c{/bold} - Exit');
-        addMessage('{bold}Ctrl+n{/bold} - New note mode');
-        addMessage('{bold}Ctrl+l{/bold} - List mode');
-        addMessage('{bold}Ctrl+s{/bold} - Search mode');
-        addMessage('{bold}Ctrl+h{/bold} - Help');
+        showHelp();
         break;
 
       case 'add':
@@ -211,15 +299,28 @@ export function startPromptTui(): void {
               addMessage(`{bold}ID:{/bold} ${response.id}`);
             }
 
-            // Reset status line
-            updateStatusLine(currentMode);
+            // Update status bar
+            const activeMode = modeManager.getActiveMode();
+            if (activeMode) {
+              statusBar.setContent(` {bold}Mode:{/bold} ${activeMode.getName()} | Ready`);
+            } else {
+              statusBar.setContent(' {bold}Mode:{/bold} None | Ready');
+            }
+            screen.render();
           } catch (err) {
             addMessage(
               `{red-fg}Error adding content: ${
                 err instanceof Error ? err.message : String(err)
               }{/red-fg}`,
             );
-            updateStatusLine(currentMode);
+            // Update status bar
+            const activeMode = modeManager.getActiveMode();
+            if (activeMode) {
+              statusBar.setContent(` {bold}Mode:{/bold} ${activeMode.getName()} | Ready`);
+            } else {
+              statusBar.setContent(' {bold}Mode:{/bold} None | Ready');
+            }
+            screen.render();
           }
         }
         break;
@@ -344,15 +445,28 @@ export function startPromptTui(): void {
               }
             }
 
-            // Reset status line
-            updateStatusLine(currentMode);
+            // Update status bar
+            const activeMode = modeManager.getActiveMode();
+            if (activeMode) {
+              statusBar.setContent(` {bold}Mode:{/bold} ${activeMode.getName()} | Ready`);
+            } else {
+              statusBar.setContent(' {bold}Mode:{/bold} None | Ready');
+            }
+            screen.render();
           } catch (err) {
             addMessage(
               `{red-fg}Error searching: ${
                 err instanceof Error ? err.message : String(err)
               }{/red-fg}`,
             );
-            updateStatusLine(currentMode);
+            // Update status bar
+            const activeMode = modeManager.getActiveMode();
+            if (activeMode) {
+              statusBar.setContent(` {bold}Mode:{/bold} ${activeMode.getName()} | Ready`);
+            } else {
+              statusBar.setContent(' {bold}Mode:{/bold} None | Ready');
+            }
+            screen.render();
           }
         }
         break;
@@ -379,11 +493,24 @@ export function startPromptTui(): void {
       // Display response
       addMessage(`{bold}{blue-fg}Dome:{/blue-fg}{/bold} ${response.message}`);
 
-      // Reset status line
-      updateStatusLine('chat');
+      // Update status bar
+      const activeMode = modeManager.getActiveMode();
+      if (activeMode) {
+        statusBar.setContent(` {bold}Mode:{/bold} ${activeMode.getName()} | Ready`);
+      } else {
+        statusBar.setContent(' {bold}Mode:{/bold} None | Ready');
+      }
+      screen.render();
     } catch (err) {
       addMessage(`{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`);
-      updateStatusLine('chat');
+      // Update status bar
+      const activeMode = modeManager.getActiveMode();
+      if (activeMode) {
+        statusBar.setContent(` {bold}Mode:{/bold} ${activeMode.getName()} | Ready`);
+      } else {
+        statusBar.setContent(' {bold}Mode:{/bold} None | Ready');
+      }
+      screen.render();
     }
   }
 
@@ -445,25 +572,46 @@ export function startPromptTui(): void {
         }
       }
 
-      // Reset status line
-      updateStatusLine(currentMode);
+      // Update status bar
+      const activeMode = modeManager.getActiveMode();
+      if (activeMode) {
+        statusBar.setContent(` {bold}Mode:{/bold} ${activeMode.getName()} | Ready`);
+      } else {
+        statusBar.setContent(' {bold}Mode:{/bold} None | Ready');
+      }
+      screen.render();
     } catch (err) {
       addMessage(
         `{red-fg}Error searching: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
       );
-      updateStatusLine(currentMode);
+      // Update status bar
+      const activeMode = modeManager.getActiveMode();
+      if (activeMode) {
+        statusBar.setContent(` {bold}Mode:{/bold} ${activeMode.getName()} | Ready`);
+      } else {
+        statusBar.setContent(' {bold}Mode:{/bold} None | Ready');
+      }
+      screen.render();
     }
   }
 
-  // Handle input submission
-  inputBox.key('enter', async () => {
-    const input = inputBox.getValue().trim();
+  // Completely revamped input handling to fix the duplicate character issue
+  
+  // Remove all key handlers from the input box except for enter
+  inputBox.removeAllListeners('keypress');
+  
+  // Handle input submission with a new approach
+  inputBox.on('submit', async (data: string) => {
+    const input = data.trim();
+    console.log(`Processing input: "${input}"`);
 
     if (!input) {
+      inputBox.clearValue();
+      inputBox.focus();
       return;
     }
 
-    // Clear the input box
+    // Clear the input box immediately
     inputBox.clearValue();
     screen.render();
 
@@ -471,19 +619,17 @@ export function startPromptTui(): void {
       // Handle slash commands
       if (input.startsWith('/')) {
         const [command, ...args] = input.slice(1).split(' ');
+        console.log(`Executing command: ${command} with args: ${args.join(', ')}`);
         await processCommand(command, args);
       } else {
-        // Handle based on current mode
-        switch (currentMode) {
-          case 'chat':
-            await handleChatMode(input);
-            break;
-          case 'note':
-            handleNoteMode(input);
-            break;
-          case 'search':
-            handleSearchMode(input);
-            break;
+        // Handle input with the active mode
+        const activeMode = modeManager.getActiveMode();
+        
+        if (activeMode) {
+          console.log(`Sending input to mode: ${activeMode.getName()}`);
+          await modeManager.handleInput(input);
+        } else {
+          addMessage('{yellow-fg}No active mode. Use /mode <name> to switch to a mode.{/yellow-fg}');
         }
       }
     } catch (err) {
@@ -493,50 +639,95 @@ export function startPromptTui(): void {
     }
 
     // Always make sure the input box regains focus after processing
-    setTimeout(() => {
-      inputBox.focus();
-      screen.render();
-    }, 100);
+    inputBox.focus();
+    screen.render();
   });
 
-  // Mode switching keybindings - bind to both screen and inputBox
-  const bindKeyToAll = (key: string, handler: () => void) => {
-    screen.key(key, handler);
-    inputBox.key(key, handler);
-  };
-
-  bindKeyToAll('C-n', () => {
-    currentMode = 'note';
-    updateStatusLine('note');
-    inputBox.focus();
+  // Completely revamp key handling to fix input issues
+  
+  // Only bind global keys to the screen, not to the input box
+  // This prevents duplicate key events
+  
+  // Exit key
+  screen.key(['C-c'], () => {
+    screen.destroy();
+    process.exit(0);
   });
   
-  // Add a new keybinding for add mode
-  bindKeyToAll('C-a', () => {
-    currentMode = 'add';
-    updateStatusLine('add');
+  // Help key (F1)
+  screen.key(['f1'], () => {
+    showHelp();
+  });
+  
+  // Mode selection key (F2)
+  screen.key(['f2'], () => {
+    // Show mode selection dialog
+    const modeList = blessed.list({
+      parent: screen,
+      top: 'center',
+      left: 'center',
+      width: '50%',
+      height: '50%',
+      border: {
+        type: 'line',
+      },
+      style: {
+        border: {
+          fg: 'blue',
+        },
+        selected: {
+          bg: 'blue',
+          fg: 'white',
+        },
+      },
+      label: ' Select Mode ',
+      keys: true,
+      vi: true,
+      mouse: true,
+      tags: true,
+      items: modeManager.getAllModes().map(mode =>
+        `{${mode.getColor()}-fg}${mode.getIcon()} ${mode.getName()}{/${mode.getColor()}-fg}: ${mode.getDescription()}`
+      ),
+    });
+
+    modeList.on('select', (item, index) => {
+      const mode = modeManager.getAllModes()[index];
+      modeManager.switchToMode(mode.getName());
+      screen.remove(modeList);
+      screen.render();
+    });
+
+    modeList.key(['escape', 'q'], () => {
+      screen.remove(modeList);
+      screen.render();
+    });
+
+    screen.render();
+  });
+  
+  // Mode switching keys
+  screen.key(['C-n'], () => {
+    modeManager.switchToMode('Focus');
+  });
+  
+  screen.key(['C-l'], () => {
+    modeManager.switchToMode('Dashboard');
+  });
+  
+  screen.key(['C-s'], () => {
+    modeManager.switchToMode('Search');
+  });
+  
+  // Special handling for add and help commands
+  screen.key(['C-a'], () => {
     inputBox.setValue('/add ');
     inputBox.focus();
   });
-
-  bindKeyToAll('C-l', () => {
-    currentMode = 'list';
-    updateStatusLine('list');
-    inputBox.setValue('/list ');
-    inputBox.focus();
-  });
-
-  bindKeyToAll('C-s', () => {
-    currentMode = 'search';
-    updateStatusLine('search');
-    inputBox.setValue('/search ');
-    inputBox.focus();
-  });
-
-  bindKeyToAll('C-h', () => {
+  
+  screen.key(['C-h'], () => {
     inputBox.setValue('/help');
     inputBox.focus();
-
+    
     // Simulate pressing enter
     setTimeout(() => {
       const enterEvent = { name: 'enter' };
@@ -544,16 +735,13 @@ export function startPromptTui(): void {
     }, 100);
   });
 
-  // Make sure Ctrl+C works on the input box too
-  inputBox.key('C-c', () => {
-    screen.destroy();
-    process.exit(0);
-  });
-
   // Add a welcome message
   addMessage('{center}{bold}Welcome to Dome CLI{/bold}{/center}');
   addMessage('{center}Type a message to chat with Dome or use slash commands{/center}');
   addMessage('');
+
+  // Switch to the default mode (Chat)
+  modeManager.switchToMode('Chat');
 
   // Focus the input box
   inputBox.focus();
