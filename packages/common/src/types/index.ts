@@ -11,6 +11,9 @@ export * from './events';
 // Export embedding types
 export * from './embedding';
 
+// Export silo content types
+export * from './siloContent';
+
 /**
  * Service information interface
  */
