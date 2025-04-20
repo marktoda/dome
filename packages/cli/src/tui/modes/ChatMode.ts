@@ -15,7 +15,7 @@ export class ChatMode extends BaseMode {
       name: 'Chat',
       description: 'Chat with Dome AI',
       shortcut: 'C-t', // Changed from C-c to C-t (for Talk)
-      color: 'green'
+      color: 'green',
     });
   }
 
@@ -67,11 +67,17 @@ export class ChatMode extends BaseMode {
       this.container.setScrollPerc(100);
 
       // Reset status
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     } catch (err) {
-      this.container.pushLine(`{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`);
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.container.pushLine(
+        `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+      );
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     }
   }

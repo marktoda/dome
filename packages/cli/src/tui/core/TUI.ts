@@ -39,7 +39,7 @@ export class TUI {
         artificial: true,
         shape: 'line',
         blink: true,
-        color: 'cyan'
+        color: 'cyan',
       },
       keys: true,
       grabKeys: true, // Grab all key events
@@ -47,17 +47,19 @@ export class TUI {
       dockBorders: true,
       autoPadding: true,
       fastCSR: true, // Use fast CSR for better performance
-      terminal: 'xterm-256color' // Explicitly set terminal type
+      terminal: 'xterm-256color', // Explicitly set terminal type
     });
-    
+
     // Add a direct handler for stdin to catch Ctrl+J at the lowest level
-    process.stdin.on('data', (data) => {
+    process.stdin.on('data', data => {
       // Check for Ctrl+J (ASCII 10) and Ctrl+K (ASCII 11)
       if (data.length === 1) {
-        if (data[0] === 10) { // Ctrl+J
+        if (data[0] === 10) {
+          // Ctrl+J
           this.container.scroll(5);
           this.screen.render();
-        } else if (data[0] === 11) { // Ctrl+K
+        } else if (data[0] === 11) {
+          // Ctrl+K
           this.container.scroll(-5);
           this.screen.render();
         }
@@ -79,7 +81,7 @@ export class TUI {
       inputBox: this.inputBox,
       addMessage: this.addMessage.bind(this),
       setStatus: this.setStatus.bind(this),
-      updateSidebar: this.updateSidebar.bind(this)
+      updateSidebar: this.updateSidebar.bind(this),
     };
 
     // Create the mode manager
@@ -88,8 +90,25 @@ export class TUI {
       this.container,
       this.statusBar,
       this.handleInput.bind(this),
-      this.handleModeChange.bind(this)
+      this.handleModeChange.bind(this),
     );
+
+    // Add direct key handlers for mode switching
+    this.screen.on('keypress', (ch, key) => {
+      if (!key || !key.ctrl) return;
+
+      // Handle specific mode shortcuts
+      if (key.name === 'e') {
+        this.modeManager.switchToMode('explore');
+        return false;
+      } else if (key.name === 'n') {
+        this.modeManager.switchToMode('note');
+        return false;
+      } else if (key.name === 't') {
+        this.modeManager.switchToMode('chat');
+        return false;
+      }
+    });
 
     // Initial sidebar update
     this.updateSidebar();
@@ -113,8 +132,8 @@ export class TUI {
       tags: true,
       style: {
         fg: 'cyan',
-        bold: true
-      }
+        bold: true,
+      },
     });
 
     // Create the sidebar
@@ -126,18 +145,18 @@ export class TUI {
       height: '100%-2',
       tags: true,
       border: {
-        type: 'line'
+        type: 'line',
       },
       style: {
         border: {
-          fg: 'blue'
-        }
+          fg: 'blue',
+        },
       },
       padding: {
         left: 1,
-        right: 1
+        right: 1,
       },
-      label: ' Info '
+      label: ' Info ',
     });
 
     // Create the main container
@@ -152,32 +171,32 @@ export class TUI {
       scrollbar: {
         ch: '█',
         track: {
-          bg: 'black'
+          bg: 'black',
         },
         style: {
-          inverse: true
-        }
+          inverse: true,
+        },
       },
       keys: true,
       vi: true, // Enable vi-like scrolling
       mouse: true,
       tags: true,
       border: {
-        type: 'line'
+        type: 'line',
       },
       style: {
         border: {
-          fg: 'blue'
-        }
+          fg: 'blue',
+        },
       },
       padding: {
         left: 1,
-        right: 1
+        right: 1,
       },
       label: ' Output ',
       keyable: true, // Ensure element can receive key events
       grabKeys: true, // Grab all key events
-      clickable: true // Allow clicking
+      clickable: true, // Allow clicking
     });
 
     // Create the status bar
@@ -187,11 +206,12 @@ export class TUI {
       left: 0,
       width: '100%',
       height: 1,
-      content: ' {bold}Mode:{/bold} None | Type a message or command | Tab to focus | Ctrl+j/k, Alt+j/k, F1/F2 to scroll | Ctrl+C to exit',
+      content:
+        ' {bold}Mode:{/bold} None | Type a message or command | Tab to focus | Ctrl+j/k, Alt+j/k, F1/F2 to scroll | Ctrl+C to exit',
       tags: true,
       style: {
-        fg: 'cyan'
-      }
+        fg: 'cyan',
+      },
     });
 
     // Create a box for the input prompt
@@ -203,14 +223,14 @@ export class TUI {
       height: 3,
       tags: true,
       border: {
-        type: 'line'
+        type: 'line',
       },
       style: {
         border: {
-          fg: 'blue'
-        }
+          fg: 'blue',
+        },
       },
-      label: ' Prompt '
+      label: ' Prompt ',
     });
 
     // Create the input box
@@ -224,8 +244,8 @@ export class TUI {
       style: {
         fg: 'white',
         focus: {
-          fg: 'cyan'
-        }
+          fg: 'cyan',
+        },
       },
       keys: true,
       mouse: true,
@@ -237,27 +257,39 @@ export class TUI {
       // Explicitly define which keys should be captured by the input
       // and not passed to the parent screen
       forceUnicode: true,
-      censor: false
+      censor: false,
     });
-    
-    // Add a special handler for the input box to capture Ctrl+J/K
+
+    // Add a special handler for the input box to capture Ctrl+J/K and mode shortcuts
     this.inputBox.on('keypress', (ch, key) => {
       if (!key) return;
-      
+
       // Handle Ctrl+J for scrolling down
-      if ((key.ctrl && (key.name === 'j' || key.name === 'n')) ||
-          ch === '\n' || ch === '\x0A') {
+      if ((key.ctrl && (key.name === 'j' || key.name === 'n')) || ch === '\n' || ch === '\x0A') {
         this.container.scroll(5);
         this.screen.render();
         return false;
       }
-      
+
       // Handle Ctrl+K for scrolling up
-      if ((key.ctrl && (key.name === 'k' || key.name === 'p')) ||
-          ch === '\x0B') {
+      if ((key.ctrl && (key.name === 'k' || key.name === 'p')) || ch === '\x0B') {
         this.container.scroll(-5);
         this.screen.render();
         return false;
+      }
+
+      // Handle mode shortcuts
+      if (key.ctrl) {
+        if (key.name === 'e') {
+          this.modeManager.switchToMode('explore');
+          return false;
+        } else if (key.name === 'n') {
+          this.modeManager.switchToMode('note');
+          return false;
+        } else if (key.name === 't') {
+          this.modeManager.switchToMode('chat');
+          return false;
+        }
       }
     });
   }
@@ -298,15 +330,17 @@ export class TUI {
     // Handle raw input events for Ctrl+J specifically
     this.screen.on('keypress', (ch, key) => {
       // Check for Ctrl+J (which can be represented in multiple ways)
-      if ((key && key.ctrl && (key.name === 'j' || key.name === 'n')) ||
-          ch === '\n' || ch === '\x0A') {
+      if (
+        (key && key.ctrl && (key.name === 'j' || key.name === 'n')) ||
+        ch === '\n' ||
+        ch === '\x0A'
+      ) {
         scrollDownHandler();
         return false;
       }
-      
+
       // Check for Ctrl+K
-      if ((key && key.ctrl && (key.name === 'k' || key.name === 'p')) ||
-          ch === '\x0B') {
+      if ((key && key.ctrl && (key.name === 'k' || key.name === 'p')) || ch === '\x0B') {
         scrollUpHandler();
         return false;
       }
@@ -315,11 +349,11 @@ export class TUI {
     // Also try the standard key binding approach as a fallback
     this.screen.key(['C-j', 'C-J', '\x0A', 'C-n'], scrollDownHandler); // \x0A is the ASCII code for Ctrl+J
     this.screen.key(['C-k', 'C-K', '\x0B', 'C-p'], scrollUpHandler); // \x0B is the ASCII code for Ctrl+K
-    
+
     // Also register on input box to ensure they work when input is focused
     this.inputBox.key(['C-j', 'C-J', '\x0A', 'C-n'], scrollDownHandler);
     this.inputBox.key(['C-k', 'C-K', '\x0B', 'C-p'], scrollUpHandler);
-    
+
     // Add direct key handlers for the container
     this.container.key(['C-j', 'C-J', '\x0A', 'C-n'], scrollDownHandler);
     this.container.key(['C-k', 'C-K', '\x0B', 'C-p'], scrollUpHandler);
@@ -334,13 +368,13 @@ export class TUI {
       this.container.scroll(-1);
       this.screen.render();
     });
-    
+
     // Add alternative key bindings for scrolling (using Alt+J/K as alternatives)
     this.screen.key(['M-j', 'S-down'], scrollDownHandler);
     this.screen.key(['M-k', 'S-up'], scrollUpHandler);
     this.inputBox.key(['M-j', 'S-down'], scrollDownHandler);
     this.inputBox.key(['M-k', 'S-up'], scrollUpHandler);
-    
+
     // Add function key alternatives
     this.screen.key('f1', scrollUpHandler);
     this.screen.key('f2', scrollDownHandler);
@@ -394,7 +428,7 @@ export class TUI {
         }
       } catch (err) {
         this.addMessage(
-          `{red-fg}Unexpected error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`
+          `{red-fg}Unexpected error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
         );
       }
 
@@ -432,7 +466,9 @@ export class TUI {
   private async handleInput(input: string): Promise<void> {
     const activeMode = this.modeManager.getActiveMode();
     if (!activeMode) {
-      this.addMessage('{yellow-fg}No active mode. Use /mode <name> to switch to a mode.{/yellow-fg}');
+      this.addMessage(
+        '{yellow-fg}No active mode. Use /mode <name> to switch to a mode.{/yellow-fg}',
+      );
       return;
     }
 
@@ -486,7 +522,7 @@ export class TUI {
   private updateSidebar(): void {
     const activeMode = this.modeManager.getActiveMode();
     let content = '{center}{bold}Dome CLI{/bold}{/center}\n\n';
-    
+
     // Add modes section
     content += '{bold}Modes:{/bold}\n';
     this.modeManager.getAllModes().forEach(mode => {
@@ -495,32 +531,34 @@ export class TUI {
       const prefix = isActive ? '▶ ' : '  ';
       content += `${prefix}{${config.color}-fg}${config.name}{/${config.color}-fg}\n`;
     });
-    
+
     // Add keybindings section
     content += '\n{bold}Keybindings:{/bold}\n';
     this.modeManager.getAllModes().forEach(mode => {
       const config = mode.getConfig();
       content += `  {cyan-fg}${config.shortcut}{/cyan-fg} - ${config.name} Mode\n`;
     });
-    
+
     // Add commands section
     content += '\n{bold}Commands:{/bold}\n';
     this.commandManager.getAllCommands().forEach(command => {
       content += `  {cyan-fg}/${command.getName()}{/cyan-fg}\n`;
     });
-    
+
     // Add navigation section
     content += '\n{bold}Navigation:{/bold}\n';
-    content += '  {cyan-fg}Ctrl+j{/cyan-fg} or {cyan-fg}Alt+j{/cyan-fg} or {cyan-fg}F2{/cyan-fg} - Scroll down\n';
-    content += '  {cyan-fg}Ctrl+k{/cyan-fg} or {cyan-fg}Alt+k{/cyan-fg} or {cyan-fg}F1{/cyan-fg} - Scroll up\n';
+    content +=
+      '  {cyan-fg}Ctrl+j{/cyan-fg} or {cyan-fg}Alt+j{/cyan-fg} or {cyan-fg}F2{/cyan-fg} - Scroll down\n';
+    content +=
+      '  {cyan-fg}Ctrl+k{/cyan-fg} or {cyan-fg}Alt+k{/cyan-fg} or {cyan-fg}F1{/cyan-fg} - Scroll up\n';
     content += '  {cyan-fg}Tab{/cyan-fg} - Toggle focus\n';
     content += '  {cyan-fg}j/k{/cyan-fg} - Scroll when focused\n';
-    
+
     // Add help section
     content += '\n{bold}Help:{/bold}\n';
     content += '  Type {cyan-fg}/help{/cyan-fg} for more info\n';
     content += '  Press {cyan-fg}Ctrl+C{/cyan-fg} to exit\n';
-    
+
     // Set the sidebar content
     this.sidebar.setContent(content);
     this.screen.render();
@@ -532,7 +570,9 @@ export class TUI {
    */
   private handleModeChange(mode: Mode): void {
     const config = mode.getConfig();
-    this.setStatus(` {bold}Mode:{/bold} {${config.color}-fg}${config.name}{/${config.color}-fg} | ${config.description} | Tab to focus | Ctrl+j/k, Alt+j/k, F1/F2 to scroll`);
+    this.setStatus(
+      ` {bold}Mode:{/bold} {${config.color}-fg}${config.name}{/${config.color}-fg} | ${config.description} | Tab to focus | Ctrl+j/k, Alt+j/k, F1/F2 to scroll`,
+    );
     this.updateSidebar();
   }
 

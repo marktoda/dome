@@ -20,8 +20,8 @@ export class ExploreMode extends BaseMode {
       id: 'explore',
       name: 'Explore',
       description: 'Browse and search your content',
-      shortcut: 'C-b', // Changed from C-e to C-b (for Browse)
-      color: 'blue'
+      shortcut: 'C-e', // Changed back to C-e for Explore
+      color: 'blue',
     });
   }
 
@@ -64,7 +64,7 @@ export class ExploreMode extends BaseMode {
       this.screen.render();
 
       const response = await listNotes();
-      
+
       // Handle different response formats
       if (Array.isArray(response)) {
         this.notes = response;
@@ -76,18 +76,24 @@ export class ExploreMode extends BaseMode {
 
       // Calculate total pages
       this.totalPages = Math.ceil(this.notes.length / this.pageSize);
-      
+
       // Display notes
       this.displayNotes();
 
       // Reset status
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     } catch (err) {
       this.container.setContent('');
       this.container.pushLine('{center}{bold}Explore Mode{/bold}{/center}');
-      this.container.pushLine(`{red-fg}Error loading notes: ${err instanceof Error ? err.message : String(err)}{/red-fg}`);
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.container.pushLine(
+        `{red-fg}Error loading notes: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+      );
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     }
   }
@@ -116,7 +122,7 @@ export class ExploreMode extends BaseMode {
       const title = note.title || 'Untitled';
       const content = note.body || note.content || '';
       const date = new Date(note.createdAt).toLocaleString();
-      
+
       this.container.pushLine(`{bold}${start + index + 1}. ${title}{/bold}`);
       this.container.pushLine(`{gray-fg}Created: ${date}{/gray-fg}`);
       this.container.pushLine(`${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
@@ -125,9 +131,13 @@ export class ExploreMode extends BaseMode {
 
     // Display pagination info
     this.container.pushLine('');
-    this.container.pushLine(`{center}Page ${this.currentPage + 1} of ${this.totalPages || 1}{/center}`);
-    this.container.pushLine('{center}Type {bold}next{/bold} or {bold}prev{/bold} to navigate pages{/center}');
-    
+    this.container.pushLine(
+      `{center}Page ${this.currentPage + 1} of ${this.totalPages || 1}{/center}`,
+    );
+    this.container.pushLine(
+      '{center}Type {bold}next{/bold} or {bold}prev{/bold} to navigate pages{/center}',
+    );
+
     this.screen.render();
   }
 
@@ -148,18 +158,26 @@ export class ExploreMode extends BaseMode {
 
     // Display results
     results.results.forEach((match: any, index: number) => {
-      this.container.pushLine(`{bold}${index + 1}. ${match.title || 'Untitled'}{/bold} (Score: ${match.score?.toFixed(2) || 'N/A'})`);
-      
+      this.container.pushLine(
+        `{bold}${index + 1}. ${match.title || 'Untitled'}{/bold} (Score: ${
+          match.score?.toFixed(2) || 'N/A'
+        })`,
+      );
+
       if (match.createdAt) {
-        this.container.pushLine(`{gray-fg}Created: ${new Date(match.createdAt).toLocaleString()}{/gray-fg}`);
+        this.container.pushLine(
+          `{gray-fg}Created: ${new Date(match.createdAt).toLocaleString()}{/gray-fg}`,
+        );
       }
-      
+
       if (match.excerpt) {
         this.container.pushLine(`${match.excerpt}`);
       } else if (match.body) {
-        this.container.pushLine(`${match.body.substring(0, 100)}${match.body.length > 100 ? '...' : ''}`);
+        this.container.pushLine(
+          `${match.body.substring(0, 100)}${match.body.length > 100 ? '...' : ''}`,
+        );
       }
-      
+
       this.container.pushLine('');
     });
 
@@ -167,7 +185,7 @@ export class ExploreMode extends BaseMode {
     this.container.pushLine('');
     this.container.pushLine(`{center}Found ${results.results.length} results{/center}`);
     this.container.pushLine('{center}Type {bold}back{/bold} to return to notes{/center}');
-    
+
     this.screen.render();
   }
 
@@ -212,11 +230,17 @@ export class ExploreMode extends BaseMode {
         this.searchResults = results;
         this.displaySearchResults(results);
 
-        this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+        this.statusBar.setContent(
+          ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+        );
         this.screen.render();
       } catch (err) {
-        this.container.pushLine(`{red-fg}Error searching: ${err instanceof Error ? err.message : String(err)}{/red-fg}`);
-        this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+        this.container.pushLine(
+          `{red-fg}Error searching: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+        );
+        this.statusBar.setContent(
+          ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+        );
         this.screen.render();
       }
     }

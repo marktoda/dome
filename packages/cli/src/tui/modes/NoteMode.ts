@@ -19,7 +19,7 @@ export class NoteMode extends BaseMode {
       name: 'Note',
       description: 'Create and edit notes',
       shortcut: 'C-n',
-      color: 'yellow'
+      color: 'yellow',
     });
   }
 
@@ -81,10 +81,16 @@ export class NoteMode extends BaseMode {
     this.container.pushLine('');
     this.container.pushLine('Enter the content for your note:');
     if (this.noteContent) {
-      this.container.pushLine(`Current: ${this.noteContent.substring(0, 100)}${this.noteContent.length > 100 ? '...' : ''}`);
+      this.container.pushLine(
+        `Current: ${this.noteContent.substring(0, 100)}${
+          this.noteContent.length > 100 ? '...' : ''
+        }`,
+      );
     }
     this.container.pushLine('');
-    this.container.pushLine('{gray-fg}(Type {bold}done{/bold} when finished or {bold}cancel{/bold} to cancel){/gray-fg}');
+    this.container.pushLine(
+      '{gray-fg}(Type {bold}done{/bold} when finished or {bold}cancel{/bold} to cancel){/gray-fg}',
+    );
     this.screen.render();
   }
 
@@ -100,7 +106,9 @@ export class NoteMode extends BaseMode {
     this.container.pushLine(`{bold}Content:{/bold}`);
     this.container.pushLine(this.noteContent);
     this.container.pushLine('');
-    this.container.pushLine('{gray-fg}Type {bold}save{/bold} to save the note or {bold}edit{/bold} to continue editing or {bold}cancel{/bold} to cancel{/gray-fg}');
+    this.container.pushLine(
+      '{gray-fg}Type {bold}save{/bold} to save the note or {bold}edit{/bold} to continue editing or {bold}cancel{/bold} to cancel{/gray-fg}',
+    );
     this.screen.render();
   }
 
@@ -114,7 +122,7 @@ export class NoteMode extends BaseMode {
 
       // Format the note
       const noteContent = `# ${this.noteTitle}\n\n${this.noteContent}`;
-      
+
       // Save the note
       const response = await addContent(noteContent);
 
@@ -122,22 +130,32 @@ export class NoteMode extends BaseMode {
       this.container.setContent('');
       this.container.pushLine('{center}{bold}Note Saved{/bold}{/center}');
       this.container.pushLine('');
-      this.container.pushLine(`{green-fg}Your note "${this.noteTitle}" has been saved successfully!{/green-fg}`);
+      this.container.pushLine(
+        `{green-fg}Your note "${this.noteTitle}" has been saved successfully!{/green-fg}`,
+      );
       if (response.id) {
         this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
       }
       this.container.pushLine('');
-      this.container.pushLine('Type {bold}new{/bold} to create another note or switch to another mode.');
-      
+      this.container.pushLine(
+        'Type {bold}new{/bold} to create another note or switch to another mode.',
+      );
+
       // Reset status
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
-      
+
       // Reset note state
       this.resetNote();
     } catch (err) {
-      this.container.pushLine(`{red-fg}Error saving note: ${err instanceof Error ? err.message : String(err)}{/red-fg}`);
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.container.pushLine(
+        `{red-fg}Error saving note: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+      );
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     }
   }

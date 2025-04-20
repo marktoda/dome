@@ -13,10 +13,7 @@ export class ModeCommand implements CommandHandler {
    * @param modeManager The mode manager
    * @param addMessage Function to add a message to the output
    */
-  constructor(
-    modeManager: ModeManager,
-    addMessage: (message: string) => void
-  ) {
+  constructor(modeManager: ModeManager, addMessage: (message: string) => void) {
     this.modeManager = modeManager;
     this.addMessage = addMessage;
   }
@@ -47,7 +44,9 @@ export class ModeCommand implements CommandHandler {
         const config = mode.getConfig();
         const isActive = this.modeManager.getActiveMode() === mode;
         const prefix = isActive ? '* ' : '  ';
-        this.addMessage(`${prefix}{${config.color}-fg}${config.name}{/${config.color}-fg}: ${config.description}`);
+        this.addMessage(
+          `${prefix}{${config.color}-fg}${config.name}{/${config.color}-fg}: ${config.description}`,
+        );
         this.addMessage(`    Shortcut: {cyan-fg}${config.shortcut}{/cyan-fg}`);
       });
       this.addMessage('\nUsage: /mode <name>');
@@ -56,7 +55,7 @@ export class ModeCommand implements CommandHandler {
 
     const modeName = args[0];
     const success = this.modeManager.switchToMode(modeName);
-    
+
     if (!success) {
       this.addMessage(`{red-fg}Error: Unknown mode "${modeName}"{/red-fg}`);
       this.addMessage('Available modes:');

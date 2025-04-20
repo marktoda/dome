@@ -38,7 +38,7 @@ export abstract class BaseMode implements Mode {
     screen: Widgets.Screen,
     container: Widgets.BoxElement,
     statusBar: Widgets.BoxElement,
-    inputHandler: (input: string) => Promise<void>
+    inputHandler: (input: string) => Promise<void>,
   ): void {
     this.screen = screen;
     this.container = container;

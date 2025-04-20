@@ -2,13 +2,13 @@
 
 import { TUI } from './core';
 import { ChatMode, ExploreMode, NoteMode } from './modes';
-import { 
-  HelpCommand, 
-  AddCommand, 
-  SearchCommand, 
-  ListCommand, 
+import {
+  HelpCommand,
+  AddCommand,
+  SearchCommand,
+  ListCommand,
   ModeCommand,
-  ExitCommand
+  ExitCommand,
 } from './commands';
 
 /**
@@ -17,17 +17,13 @@ import {
 export function startTui(): void {
   // Create the TUI
   const tui = new TUI();
-  
+
   // Get the TUI context
   const context = tui.getContext();
-  
+
   // Register modes
-  tui.registerModes([
-    new ChatMode(),
-    new ExploreMode(),
-    new NoteMode()
-  ]);
-  
+  tui.registerModes([new ChatMode(), new ExploreMode(), new NoteMode()]);
+
   // Register commands
   tui.registerCommands([
     new HelpCommand(tui.getModeManager(), tui.getCommandManager(), context.addMessage),
@@ -35,9 +31,9 @@ export function startTui(): void {
     new SearchCommand(context.addMessage, context.setStatus),
     new ListCommand(context.addMessage, context.setStatus),
     new ModeCommand(tui.getModeManager(), context.addMessage),
-    new ExitCommand()
+    new ExitCommand(),
   ]);
-  
+
   // Start the TUI with chat mode as default
   tui.start('chat');
 }

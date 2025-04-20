@@ -13,10 +13,7 @@ export class SearchCommand implements CommandHandler {
    * @param addMessage Function to add a message to the output
    * @param setStatus Function to set the status bar content
    */
-  constructor(
-    addMessage: (message: string) => void,
-    setStatus: (status: string) => void
-  ) {
+  constructor(addMessage: (message: string) => void, setStatus: (status: string) => void) {
     this.addMessage = addMessage;
     this.setStatus = setStatus;
   }
@@ -50,7 +47,7 @@ export class SearchCommand implements CommandHandler {
 
     try {
       this.setStatus(' {bold}Status:{/bold} Searching...');
-      
+
       // Perform search using the API
       const results = await search(query);
 
@@ -63,7 +60,7 @@ export class SearchCommand implements CommandHandler {
         // Display results
         results.results.slice(0, 5).forEach((match: any, index: number) => {
           this.addMessage(
-            `\n{bold}Result ${index + 1} (Score: ${match.score?.toFixed(2) || 'N/A'}){/bold}`
+            `\n{bold}Result ${index + 1} (Score: ${match.score?.toFixed(2) || 'N/A'}){/bold}`,
           );
           if (match.title) {
             this.addMessage(`{bold}Title:{/bold} ${match.title}`);
@@ -88,15 +85,13 @@ export class SearchCommand implements CommandHandler {
         // Show message if results were limited
         if (results.results.length > 5) {
           this.addMessage(
-            `\n{gray-fg}Showing 5 of ${results.results.length} results. Use the search command for more details.{/gray-fg}`
+            `\n{gray-fg}Showing 5 of ${results.results.length} results. Use the search command for more details.{/gray-fg}`,
           );
         }
       }
     } catch (err) {
       this.addMessage(
-        `{red-fg}Error searching: ${
-          err instanceof Error ? err.message : String(err)
-        }{/red-fg}`
+        `{red-fg}Error searching: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
       );
     }
   }

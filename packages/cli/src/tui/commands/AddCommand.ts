@@ -13,10 +13,7 @@ export class AddCommand implements CommandHandler {
    * @param addMessage Function to add a message to the output
    * @param setStatus Function to set the status bar content
    */
-  constructor(
-    addMessage: (message: string) => void,
-    setStatus: (status: string) => void
-  ) {
+  constructor(addMessage: (message: string) => void, setStatus: (status: string) => void) {
     this.addMessage = addMessage;
     this.setStatus = setStatus;
   }
@@ -50,7 +47,7 @@ export class AddCommand implements CommandHandler {
 
     try {
       this.setStatus(' {bold}Status:{/bold} Adding content...');
-      
+
       // Add content using the API
       const response = await addContent(content);
 
@@ -63,7 +60,7 @@ export class AddCommand implements CommandHandler {
       this.addMessage(
         `{red-fg}Error adding content: ${
           err instanceof Error ? err.message : String(err)
-        }{/red-fg}`
+        }{/red-fg}`,
       );
     }
   }

@@ -139,3 +139,4 @@ pnpm build
 
 # Run the CLI in development mode
 pnpm dev
+```

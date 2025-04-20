@@ -19,7 +19,7 @@ export class HelpCommand implements CommandHandler {
   constructor(
     modeManager: ModeManager,
     commandManager: CommandManager,
-    addMessage: (message: string) => void
+    addMessage: (message: string) => void,
   ) {
     this.modeManager = modeManager;
     this.commandManager = commandManager;
@@ -56,13 +56,13 @@ export class HelpCommand implements CommandHandler {
 
     // Show general help
     this.addMessage('{bold}Dome CLI Help{/bold}\n');
-    
+
     // Show mode help
     this.addMessage(this.modeManager.getHelpText());
-    
+
     // Show command help
     this.addMessage(this.commandManager.getHelpText());
-    
+
     // Show general keybindings
     this.addMessage('{bold}Global Keybindings:{/bold}');
     this.addMessage('  {cyan-fg}Ctrl+C{/cyan-fg} - Exit the application');

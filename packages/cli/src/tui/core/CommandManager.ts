@@ -71,11 +71,11 @@ export class CommandManager {
    */
   getHelpText(): string {
     let helpText = '{bold}Available Commands:{/bold}\n\n';
-    
+
     this.getAllCommands().forEach(handler => {
       helpText += `{cyan-fg}/${handler.getName()}{/cyan-fg}: ${handler.getDescription()}\n`;
     });
-    
+
     return helpText;
   }
 }

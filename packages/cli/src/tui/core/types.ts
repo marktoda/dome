@@ -19,7 +19,7 @@ export interface Mode {
    * Get mode configuration
    */
   getConfig(): ModeConfig;
-  
+
   /**
    * Initialize the mode
    * @param screen The blessed screen
@@ -31,25 +31,25 @@ export interface Mode {
     screen: Widgets.Screen,
     container: Widgets.BoxElement,
     statusBar: Widgets.BoxElement,
-    inputHandler: (input: string) => Promise<void>
+    inputHandler: (input: string) => Promise<void>,
   ): void;
-  
+
   /**
    * Activate the mode
    */
   activate(): void;
-  
+
   /**
    * Deactivate the mode
    */
   deactivate(): void;
-  
+
   /**
    * Handle input in this mode
    * @param input The input to handle
    */
   handleInput(input: string): Promise<void>;
-  
+
   /**
    * Get help text for this mode
    */
@@ -64,12 +64,12 @@ export interface CommandHandler {
    * Get command name
    */
   getName(): string;
-  
+
   /**
    * Get command description
    */
   getDescription(): string;
-  
+
   /**
    * Handle command
    * @param args Command arguments

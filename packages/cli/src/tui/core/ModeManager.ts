@@ -26,7 +26,7 @@ export class ModeManager {
     container: Widgets.BoxElement,
     statusBar: Widgets.BoxElement,
     inputHandler: (input: string) => Promise<void>,
-    onModeChange: (mode: Mode) => void
+    onModeChange: (mode: Mode) => void,
   ) {
     this.screen = screen;
     this.container = container;
@@ -42,7 +42,7 @@ export class ModeManager {
   registerMode(mode: Mode): void {
     const config = mode.getConfig();
     this.modes.set(config.id, mode);
-    
+
     // Initialize the mode
     mode.init(this.screen, this.container, this.statusBar, this.inputHandler);
   }
@@ -99,13 +99,13 @@ export class ModeManager {
     // Activate the new mode
     this.activeMode = mode;
     this.activeMode.activate();
-    
+
     // Trigger the mode change callback
     this.onModeChange(this.activeMode);
-    
+
     // Render the screen
     this.screen.render();
-    
+
     return true;
   }
 
@@ -127,13 +127,13 @@ export class ModeManager {
    */
   getHelpText(): string {
     let helpText = '{bold}Available Modes:{/bold}\n\n';
-    
+
     this.getAllModes().forEach(mode => {
       const config = mode.getConfig();
       helpText += `{${config.color}-fg}${config.name}{/${config.color}-fg}: ${config.description}\n`;
       helpText += `  Shortcut: {cyan-fg}${config.shortcut}{/cyan-fg}\n\n`;
     });
-    
+
     return helpText;
   }
 
@@ -141,10 +141,32 @@ export class ModeManager {
    * Set up keyboard shortcuts for mode switching
    */
   setupShortcuts(): void {
+    // First, set up a raw keypress handler to catch all mode shortcuts
+    this.screen.on('keypress', (ch, key) => {
+      if (!key || !key.ctrl) return;
+
+      // Check for mode shortcuts
+      this.getAllModes().forEach(mode => {
+        const config = mode.getConfig();
+        const shortcut = config.shortcut;
+
+        if (shortcut && shortcut.startsWith('C-')) {
+          const shortcutKey = shortcut.charAt(2).toLowerCase();
+
+          // Check if this keypress matches the shortcut
+          if (key.name === shortcutKey) {
+            this.switchToMode(config.id);
+            return false; // Prevent default handling
+          }
+        }
+      });
+    });
+
+    // Also set up the regular key bindings as a fallback
     this.getAllModes().forEach(mode => {
       const config = mode.getConfig();
       const shortcut = config.shortcut;
-      
+
       if (shortcut) {
         // Register the shortcut on both the screen and any input elements
         // to ensure it works regardless of focus
@@ -152,37 +174,60 @@ export class ModeManager {
           this.switchToMode(config.id);
           return false; // Prevent event propagation
         };
-        
+
         // Try multiple key binding formats for better compatibility
         // For example, 'C-n' might also be registered as 'C-N' and '\x0E' (ASCII code)
         let shortcuts = [shortcut];
-        
+
         // Add uppercase variant if it's a ctrl key
         if (shortcut.startsWith('C-') && shortcut.length === 3) {
           const upperKey = shortcut.charAt(2).toUpperCase();
           shortcuts.push(`C-${upperKey}`);
-          
+
           // Add ASCII code variant
           const keyCode = shortcut.charCodeAt(2) - 96; // Convert a-z to 1-26
           if (keyCode > 0 && keyCode <= 26) {
             shortcuts.push(String.fromCharCode(keyCode));
           }
         }
-        
+
         // Register on screen
         this.screen.key(shortcuts, shortcutHandler);
-        
+
         // Find and register on input elements and container
         const keyableElements = this.screen.children.filter(
           (element): element is Widgets.TextboxElement | Widgets.BoxElement =>
             element.type === 'textbox' ||
-            (element.type === 'box' && 'keyable' in element && element.keyable === true)
+            (element.type === 'box' && 'keyable' in element && element.keyable === true),
         );
-        
+
         keyableElements.forEach(element => {
           element.key(shortcuts, shortcutHandler);
         });
       }
     });
+
+    // Special handling for specific mode shortcuts that might be problematic
+    // Explicitly handle Ctrl+E (Explore mode)
+    const exploreMode = this.getMode('explore');
+    if (exploreMode) {
+      process.stdin.on('data', data => {
+        // Check for Ctrl+E (ASCII 5)
+        if (data.length === 1 && data[0] === 5) {
+          this.switchToMode('explore');
+        }
+      });
+    }
+
+    // Explicitly handle Ctrl+N (Note mode)
+    const noteMode = this.getMode('note');
+    if (noteMode) {
+      process.stdin.on('data', data => {
+        // Check for Ctrl+N (ASCII 14)
+        if (data.length === 1 && data[0] === 14) {
+          this.switchToMode('note');
+        }
+      });
+    }
   }
 }
