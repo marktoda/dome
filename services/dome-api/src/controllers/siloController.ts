@@ -203,13 +203,16 @@ export class SiloController {
       // Validate and parse query parameters
       const validatedParams = listNotesSchema.parse(c.req.query());
 
-      // TODO: Implement proper listing via siloService
-      // For now, we'll return a placeholder response
+      // Call the siloService to list notes
+      const result = await siloService.listNotes(c.env, validatedParams, userId);
+
       return c.json({
         success: true,
-        notes: [],
-        count: 0,
-        total: 0,
+        notes: result.notes,
+        count: result.count,
+        total: result.total,
+        limit: result.limit,
+        offset: result.offset
       });
     } catch (error) {
       this.logger.error(

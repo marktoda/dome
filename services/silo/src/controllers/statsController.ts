@@ -1,4 +1,5 @@
 import { getLogger, metrics } from '@dome/logging';
+import { SiloStatsResponse } from '@dome/common';
 import { MetadataService } from '../services/metadataService';
 
 /**
@@ -6,13 +7,13 @@ import { MetadataService } from '../services/metadataService';
  * Uses MetadataService to retrieve storage statistics
  */
 export class StatsController {
-  constructor(private env: any, private metadataService: MetadataService) {}
+  constructor(private env: any, private metadataService: MetadataService) { }
 
   /**
    * Get storage statistics
    * Retrieves total content count, total size, and counts by content type.
    */
-  async getStats() {
+  async getStats(): Promise<SiloStatsResponse> {
     try {
       // Get stats from MetadataService
       const stats = await this.metadataService.getStats();

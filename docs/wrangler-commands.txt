@@ -4,4 +4,4 @@ wrangler vectorize create-metadata-index dome-notes --property-name pageNum --ty
 
 wrangler vectorize create-metadata-index dome-notes --property-name userId  --type string
 
-wrangler r2 bucket notification create silo-content --queue content-events
+wrangler r2 bucket notification create silo-content  --event-type object-create  --queue content-events

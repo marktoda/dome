@@ -100,8 +100,11 @@ export const siloCreateUploadSchema = z.object({
  * Used to validate input for retrieving multiple content items
  */
 export const siloBatchGetSchema = z.object({
-  ids: z.array(z.string()).min(1, 'At least one ID is required'),
+  ids: z.array(z.string()).optional().default([]),
   userId: z.string().nullable().optional(),
+  contentType: z.string().optional(),
+  limit: z.number().positive().optional().default(50),
+  offset: z.number().min(0).optional().default(0),
 });
 
 /**
@@ -165,6 +168,12 @@ export interface SiloCreateUploadResponse {
 export interface SiloBatchGetResponse {
   /** Array of content items */
   items: SiloBatchGetItem[];
+  /** Total number of items matching the query (for pagination) */
+  total?: number;
+  /** Limit used for the query */
+  limit?: number;
+  /** Offset used for the query */
+  offset?: number;
 }
 
 /**

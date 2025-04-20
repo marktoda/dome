@@ -25,7 +25,8 @@ build-pkg PACKAGE: install
     pnpm --filter {{ PACKAGE }} build
 
 # Deploy a specific service (builds first)
-deploy SERVICE ENV="dev": build
+deploy SERVICE ENV="dev":
+    just build-pkg {{ SERVICE }}
     # Then deploy with wrangler
     wrangler -c services/{{ SERVICE }}/wrangler.toml deploy
 

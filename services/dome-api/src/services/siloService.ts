@@ -162,6 +162,68 @@ export class SiloService {
     }
   }
 
+  /**
+   * List notes for a user with optional filtering
+   *
+   * @param env - Cloudflare Workers environment bindings
+   * @param options - List options including contentType, limit, and offset
+   * @param userId - User ID for access control
+   * @returns Promise resolving to an array of notes with count and total
+   */
+  async listNotes(
+    env: Bindings,
+    options: { contentType?: string; limit?: number; offset?: number },
+    userId?: string
+  ) {
+    try {
+      if (!userId) {
+        throw new Error('User ID is required for listing notes');
+      }
+
+      const { contentType, limit = 50, offset = 0 } = options;
+      
+      // Use the batchGet method with empty IDs array to list all notes for the user
+      const response = await this.batchGet(env, {
+        ids: [], // Empty array triggers listing all notes for the user
+        userId,
+        contentType,
+        limit,
+        offset
+      });
+      
+      if (!response.items || response.items.length === 0) {
+        return {
+          notes: [],
+          count: 0,
+          total: response.total || 0,
+          limit,
+          offset
+        };
+      }
+      
+      // Map the batch items to notes
+      const notes = response.items.map(item => contentMapperService.mapBatchGetItemToNote(item));
+      
+      return {
+        notes,
+        count: notes.length,
+        total: response.total || 0,
+        limit,
+        offset
+      };
+    } catch (error) {
+      this.logger.error('Failed to list notes', {
+        userId,
+        options,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      
+      throw new ServiceError('Failed to list notes', {
+        cause: error instanceof Error ? error : new Error(String(error)),
+        context: { userId, options },
+      });
+    }
+  }
 }
 
 /**

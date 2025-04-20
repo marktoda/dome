@@ -179,17 +179,41 @@ export class ContentController {
 
   /**
    * Efficiently retrieve multiple content items
+   * If ids array is empty, fetches all content for the given user
    */
-  async batchGet(data: { ids: string[]; userId?: string | null }) {
-    // Validate input
-    const ids = data.ids;
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      throw new Error('Valid ids array is required');
-    }
+  async batchGet(data: {
+    ids?: string[];
+    userId?: string | null;
+    contentType?: string;
+    limit?: number;
+    offset?: number;
+  }) {
     const requestUserId = data.userId || null;
+    const ids = data.ids || [];
+    const contentType = data.contentType;
+    const limit = data.limit || 50;
+    const offset = data.offset || 0;
 
-    // Fetch metadata from D1 using MetadataService
-    const metadataItems = await this.metadataService.getMetadataByIds(ids);
+    let metadataItems: any[] = [];
+
+    // If ids array is empty, fetch all content for the user
+    if (ids.length === 0) {
+      if (!requestUserId) {
+        throw new Error('User ID is required when not providing specific content IDs');
+      }
+
+      // Get metadata for all user content with pagination and filtering
+      metadataItems = await this.metadataService.getMetadataByUserId(
+        requestUserId,
+        contentType,
+        limit,
+        offset
+      );
+    } else {
+      // Fetch metadata for specific IDs
+      metadataItems = await this.metadataService.getMetadataByIds(ids);
+    }
+    getLogger().info({ metadataItems }, 'Fetched metadata items');
 
     const results: Record<string, any> = {};
     const fetchPromises: Promise<void>[] = [];
@@ -214,6 +238,7 @@ export class ContentController {
       fetchPromises.push(
         (async () => {
           const obj = await this.r2Service.getObject(item.r2Key);
+          getLogger().info({ itemId: item.id, latency: Date.now() - startTime }, 'Fetched R2 object');
           metrics.timing('silo.r2.get.latency_ms', Date.now() - startTime);
           if (obj && item.size <= 1024 * 1024) {
             results[item.id].body = await obj.text();
@@ -227,7 +252,19 @@ export class ContentController {
     }
 
     await Promise.all(fetchPromises);
-    return { items: Object.values(results) };
+
+    // If this was a listing request (empty ids array), get the total count
+    let total = metadataItems.length;
+    if (ids.length === 0 && requestUserId) {
+      total = await this.metadataService.getContentCountForUser(requestUserId, contentType);
+    }
+
+    return {
+      items: Object.values(results),
+      total,
+      limit,
+      offset
+    };
   }
 
   /**
@@ -277,13 +314,13 @@ export class ContentController {
    */
   async processR2Event(event: R2Event) {
     try {
-      if (event.type !== 'object.created') {
-        getLogger().warn({ event }, 'Unsupported event type');
+      if (event.action !== 'PutObject') {
+        getLogger().warn({ event }, 'Unsupported event action: ' + event.action);
         return null;
       }
 
       const { key } = event.object;
-      getLogger().info({ key }, 'Processing R2 object created event');
+      getLogger().info({ key }, 'Processing R2 PutObject event');
 
       // Get object metadata from R2
       const obj = await this.r2Service.headObject(key);

@@ -7,6 +7,7 @@
     "dev": "wrangler dev --queue-consumer",
     "deploy": "wrangler deploy",
     "lint": "eslint src --ext .ts,.tsx",
+    "generate-migrations": "drizzle-kit generate",
     "test": "vitest run",
     "test:watch": "vitest"
   },

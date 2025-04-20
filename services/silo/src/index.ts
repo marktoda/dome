@@ -50,7 +50,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
         // Process each message in the batch
         const promises = batch.messages.map(async message => {
           const event = message.body;
-          if (event.type === 'object.created') {
+          if (event.action === 'PutObject') {
             // Extract key from the event
             const { key } = event.object;
 
@@ -60,7 +60,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
             // Acknowledge the message
             message.ack();
           } else {
-            getLogger().warn({ event }, 'Unsupported event type');
+            getLogger().warn({ event }, 'Unsupported event action: ' + event.action);
             message.ack(); // Acknowledge anyway to avoid retries
           }
         });

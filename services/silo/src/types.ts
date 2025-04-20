@@ -6,13 +6,13 @@
  * R2 Event structure for object-created events
  */
 export interface R2Event {
-  type: string;
-  time: string;
+  account: string;
+  bucket: string;
   eventTime: string;
+  action: string; // "PutObject" for new objects
   object: {
     key: string;
+    eTag: string;
     size: number;
-    etag: string;
-    httpEtag: string;
   };
 }

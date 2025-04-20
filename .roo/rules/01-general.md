@@ -12,6 +12,7 @@ This repository is organized as a monorepo with the following structure:
 - focus heavily on creating simple, readable and extensible code
 - the common/ package has all errors and middleware for api handlers
 - to update common packages in a service you need to pnpm i and pnpm build
+- we do not use `fetch` for inter-service communication -- only direct cloudflare worker RPC
 
 ### Core Directories
 

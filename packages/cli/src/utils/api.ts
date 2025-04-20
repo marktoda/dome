@@ -117,8 +117,8 @@ export async function addContent(content: string, title?: string, tags?: string[
     title: title || undefined,
     tags: tags || undefined
   };
-  
-  const response = await api.post('/notes/ingest', payload);
+
+  const response = await api.post('/notes', payload);
   return response.note || response;
 }
 
@@ -129,9 +129,7 @@ export async function addContent(content: string, title?: string, tags?: string[
  * @returns The response data
  */
 export async function addNote(context: string, content: string): Promise<any> {
-  // The new API doesn't have a direct equivalent to the old /note/:context endpoint
-  // Instead, we'll use the /notes/ingest endpoint with the context as metadata
-  return api.post('/notes/ingest', {
+  return api.post('/notes', {
     content,
     contentType: 'text/plain',
     metadata: { context }
@@ -156,11 +154,11 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
       params.status = filter;
     }
   }
-  
+
   // Use the correct endpoint based on type
   const endpoint = type === 'notes' ? '/notes' : '/tasks';
   const response = await api.get(endpoint, { params });
-  
+
   // Return the items array from the response
   if (type === 'notes') {
     return response.notes || [];
@@ -207,7 +205,7 @@ export async function search(query: string, limit: number = 10): Promise<any> {
     q: query,
     limit
   };
-  
+
   const response = await api.get('/notes/search', { params });
   return {
     results: response.results || [],
@@ -235,7 +233,7 @@ export async function chat(message: string): Promise<any> {
     maxContextItems: 5,
     includeSourceInfo: true
   };
-  
+
   const response = await api.post('/chat', payload);
   return response.response || response;
 }
