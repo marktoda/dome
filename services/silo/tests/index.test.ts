@@ -21,18 +21,6 @@ vi.mock('@dome/logging', () => ({
     warn: vi.fn(),
     debug: vi.fn(),
   })),
-}));
-
-vi.mock('../src/utils/logging', () => ({
-  logger: {
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-  },
-}));
-
-vi.mock('../src/utils/metrics', () => ({
   metrics: {
     increment: vi.fn(),
     gauge: vi.fn(),
@@ -43,17 +31,41 @@ vi.mock('../src/utils/metrics', () => ({
   },
 }));
 
-// Mock drizzle-orm/d1
-vi.mock('drizzle-orm/d1', () => ({
-  drizzle: vi.fn().mockReturnValue({
-    insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockResolvedValue({}),
-    }),
-  }),
+// Mock utils/wrap
+vi.mock('../src/utils/wrap', () => ({
+  wrap: vi.fn((_, fn) => fn()),
 }));
 
+// Mock services
+vi.mock('../src/services', () => {
+  const mockContentService = {
+    simplePut: vi.fn(),
+    createUpload: vi.fn(),
+    batchGet: vi.fn(),
+    delete: vi.fn(),
+  };
+  
+  const mockQueueService = {
+    processBatch: vi.fn(),
+    processObjectCreatedEvent: vi.fn(),
+  };
+  
+  const mockStatsService = {
+    getStats: vi.fn(),
+  };
+  
+  return {
+    createServices: vi.fn(() => ({
+      content: mockContentService,
+      queue: mockQueueService,
+      stats: mockStatsService,
+    })),
+  };
+});
+
 // Import mocks after they've been defined
-import { metrics } from '../src/utils/metrics';
+import { metrics } from '@dome/logging';
+import { createServices } from '../src/services';
 
 describe('Silo Service', () => {
   let silo: Silo;
@@ -84,201 +96,73 @@ describe('Silo Service', () => {
   });
 
   describe('RPC Methods', () => {
-    it('simplePut should store content and metadata', async () => {
-      // Mock the necessary methods
-      mockEnv.BUCKET = {
-        put: vi.fn().mockResolvedValue({}),
-      };
+    it('simplePut should delegate to content service', async () => {
+      const testData = { contentType: 'note', content: 'Test content' };
+      const expectedResult = { id: 'test-id', contentType: 'note', size: 123, createdAt: 1234567890 };
       
-      mockEnv.DB = {
-        prepare: vi.fn().mockReturnValue({
-          bind: vi.fn().mockReturnThis(),
-          run: vi.fn().mockResolvedValue({}),
-        }),
-      };
-      
-      // The drizzle mock is already set up globally
-      
-      const testData = {
-        contentType: 'note',
-        content: 'Test content',
-        userId: 'user123',
-      };
+      const services = (createServices as any)();
+      services.content.simplePut.mockResolvedValue(expectedResult);
       
       const result = await silo.simplePut(testData);
       
-      // Verify the result has expected properties
-      expect(result).toHaveProperty('id');
-      expect(result).toHaveProperty('contentType', 'note');
-      expect(result).toHaveProperty('size');
-      expect(result).toHaveProperty('createdAt');
-      
-      // Verify R2 bucket put was called
-      expect(mockEnv.BUCKET.put).toHaveBeenCalled();
-      
-      // Verify metrics were recorded
-      expect(metrics.increment).toHaveBeenCalledWith('silo.upload.bytes', expect.any(Number));
-      expect(metrics.timing).toHaveBeenCalledWith('silo.db.write.latency_ms', expect.any(Number));
+      expect(services.content.simplePut).toHaveBeenCalledWith(testData);
+      expect(result).toEqual(expectedResult);
     });
     
-    it('simplePut should validate input parameters', async () => {
-      // Test with empty content
-      const emptyData = {
-        contentType: 'note',
-        content: '',
-      };
+    it('createUpload should delegate to content service', async () => {
+      const testData = { contentType: 'note', size: 1024 };
+      const expectedResult = { id: 'test-id', uploadUrl: 'https://example.com' };
       
-      await expect(silo.simplePut(emptyData)).rejects.toThrow('Content cannot be empty');
+      const services = (createServices as any)();
+      services.content.createUpload.mockResolvedValue(expectedResult);
       
-      // Test with content exceeding size limit
-      const largeContent = new Array(1024 * 1024 + 1).fill('a').join('');
-      const largeData = {
-        contentType: 'note',
-        content: largeContent,
-      };
+      const result = await silo.createUpload(testData);
       
-      await expect(silo.simplePut(largeData)).rejects.toThrow('Content size exceeds maximum allowed size');
+      expect(services.content.createUpload).toHaveBeenCalledWith(testData);
+      expect(result).toEqual(expectedResult);
     });
-
-    describe('createUpload', () => {
-      beforeEach(() => {
-        // Mock the R2 bucket's createPresignedPost method
-        mockEnv.BUCKET = {
-          createPresignedPost: vi.fn().mockResolvedValue({
-            url: 'https://example.com/upload',
-            formData: {
-              key: 'upload/test-id',
-              'x-amz-algorithm': 'AWS4-HMAC-SHA256',
-              'x-amz-credential': 'test-credential',
-              'x-amz-date': '20250419T000000Z',
-              'x-amz-signature': 'test-signature',
-              policy: 'test-policy'
-            }
-          })
-        };
-      });
-
-      it('should generate pre-signed POST policy with default settings', async () => {
-        const testData = {
-          contentType: 'note',
-          size: 1024,
-          userId: 'user123'
-        };
-        
-        const result = await silo.createUpload(testData);
-        
-        // Verify the result has expected properties
-        expect(result).toHaveProperty('id');
-        expect(result).toHaveProperty('uploadUrl', 'https://example.com/upload');
-        expect(result).toHaveProperty('formData');
-        expect(result).toHaveProperty('expiresIn', 900); // Default 15 minutes
-        
-        // Verify R2 bucket createPresignedPost was called with correct parameters
-        expect(mockEnv.BUCKET.createPresignedPost).toHaveBeenCalledWith({
-          key: expect.stringMatching(/^upload\/.+/),
-          metadata: {
-            'x-user-id': 'user123',
-            'x-content-type': 'note'
-          },
-          conditions: [
-            ['content-length-range', 0, 100 * 1024 * 1024]
-          ],
-          expiration: 900
-        });
-        
-        // Verify metrics were recorded
-        expect(metrics.increment).toHaveBeenCalledWith('silo.presigned_post.created', 1);
-        expect(metrics.timing).toHaveBeenCalledWith('silo.presigned_post.latency_ms', expect.any(Number));
-      });
+    
+    it('batchGet should delegate to content service', async () => {
+      const testData = { ids: ['id1', 'id2'] };
+      const expectedResult = { items: [{ id: 'id1' }, { id: 'id2' }] };
       
-      it('should handle custom expiration time', async () => {
-        const testData = {
-          contentType: 'note',
-          size: 1024,
-          expirationSeconds: 3600 // 1 hour
-        };
-        
-        const result = await silo.createUpload(testData);
-        
-        expect(result.expiresIn).toBe(3600);
-        expect(mockEnv.BUCKET.createPresignedPost).toHaveBeenCalledWith(
-          expect.objectContaining({
-            expiration: 3600
-          })
-        );
-      });
+      const services = (createServices as any)();
+      services.content.batchGet.mockResolvedValue(expectedResult);
       
-      it('should include optional metadata and SHA256 hash', async () => {
-        const testData = {
-          contentType: 'note',
-          size: 1024,
-          metadata: { title: 'Test Note', tags: ['test', 'note'] },
-          sha256: 'abcdef1234567890'
-        };
-        
-        await silo.createUpload(testData);
-        
-        expect(mockEnv.BUCKET.createPresignedPost).toHaveBeenCalledWith(
-          expect.objectContaining({
-            metadata: expect.objectContaining({
-              'x-metadata': JSON.stringify(testData.metadata),
-              'x-sha256': 'abcdef1234567890'
-            })
-          })
-        );
-      });
+      const result = await silo.batchGet(testData);
       
-      it('should validate size parameter', async () => {
-        // Test with missing size
-        await expect(silo.createUpload({ contentType: 'note' }))
-          .rejects.toThrow(/size/i);
-        
-        // Test with negative size
-        await expect(silo.createUpload({ contentType: 'note', size: -10 }))
-          .rejects.toThrow(/positive/i);
-        
-        // Test with size exceeding maximum
-        const oversizedData = {
-          contentType: 'note',
-          size: 101 * 1024 * 1024 // 101 MiB
-        };
-        
-        await expect(silo.createUpload(oversizedData))
-          .rejects.toThrow(/exceeds maximum allowed size/i);
-      });
-      
-      it('should validate expiration time', async () => {
-        // Test with expiration time too short
-        await expect(silo.createUpload({
-          contentType: 'note',
-          size: 1024,
-          expirationSeconds: 30 // Too short
-        })).rejects.toThrow(/minimum/i);
-        
-        // Test with expiration time too long
-        await expect(silo.createUpload({
-          contentType: 'note',
-          size: 1024,
-          expirationSeconds: 7200 // Too long
-        })).rejects.toThrow(/maximum/i);
-      });
+      expect(services.content.batchGet).toHaveBeenCalledWith(testData);
+      expect(result).toEqual(expectedResult);
     });
-
-    it('batchGet should throw NotImplementedError', async () => {
-      await expect(silo.batchGet({})).rejects.toThrow(NotImplementedError);
+    
+    it('delete should delegate to content service', async () => {
+      const testData = { id: 'id1' };
+      const expectedResult = { success: true };
+      
+      const services = (createServices as any)();
+      services.content.delete.mockResolvedValue(expectedResult);
+      
+      const result = await silo.delete(testData);
+      
+      expect(services.content.delete).toHaveBeenCalledWith(testData);
+      expect(result).toEqual(expectedResult);
     });
-
-    it('delete should throw NotImplementedError', async () => {
-      await expect(silo.delete({})).rejects.toThrow(NotImplementedError);
-    });
-
-    it('stats should throw NotImplementedError', async () => {
-      await expect(silo.stats({})).rejects.toThrow(NotImplementedError);
+    
+    it('stats should delegate to stats service', async () => {
+      const expectedResult = { total: 10, totalSize: 1024, byType: { note: 5 } };
+      
+      const services = (createServices as any)();
+      services.stats.getStats.mockResolvedValue(expectedResult);
+      
+      const result = await silo.stats({});
+      
+      expect(services.stats.getStats).toHaveBeenCalled();
+      expect(result).toEqual(expectedResult);
     });
   });
 
   describe('Queue Consumer', () => {
-    it('should process queue messages', async () => {
+    it('should delegate to queue service', async () => {
       const mockBatch = {
         messages: [
           {
@@ -302,17 +186,11 @@ describe('Silo Service', () => {
         ackAll: vi.fn()
       };
 
+      const services = (createServices as any)();
+      
       await silo.queue(mockBatch as any);
       
-      // Verify metrics were recorded
-      expect(metrics.gauge).toHaveBeenCalledWith(
-        'silo.queue.batch_size',
-        1
-      );
-      expect(metrics.timing).toHaveBeenCalledWith(
-        'silo.queue.process_time_ms',
-        expect.any(Number)
-      );
+      expect(services.queue.processBatch).toHaveBeenCalledWith(mockBatch);
     });
   });
 });
