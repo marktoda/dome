@@ -104,17 +104,22 @@ notesRouter.put('/:id', siloController.updateNote.bind(siloController));
 notesRouter.delete('/:id', siloController.delete.bind(siloController));
 notesRouter.get('/', siloController.listNotes.bind(siloController));
 
+// Create a dedicated search router
+const searchRouter = new Hono();
+
+// Apply user ID middleware to all search routes
+searchRouter.use('*', userIdMiddleware);
+
 // Search endpoints - for semantic search over notes
-notesRouter.get('/search', searchController.search.bind(searchController));
-notesRouter.get('/search/stream', searchController.streamSearch.bind(searchController));
-// Additional search endpoint with a prefix to avoid conflict with /:id route
-notesRouter.get('/_search', searchController.search.bind(searchController));
+searchRouter.get('/', searchController.search.bind(searchController));
+searchRouter.get('/stream', searchController.streamSearch.bind(searchController));
 
 // Chat API route
 app.post('/chat', chatController.chat.bind(chatController));
 
 // Mount routers
 app.route('/notes', notesRouter);
+app.route('/search', searchRouter);
 
 // 404 handler for unknown routes
 app.notFound(c => {

@@ -125,6 +125,7 @@ export class SearchController {
 
       this.logger.info({ userId, q: parsed.q, params: parsed }, 'search');
       const results = await searchService.search(c.env, buildParams(userId, parsed));
+      this.logger.info({ userId, q: parsed.q, results }, 'search results');
       return c.json(formatSearchResponse(results));
     } catch (error) {
       this.logger.error({ err: error }, 'search error');
