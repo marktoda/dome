@@ -119,12 +119,12 @@ export class SiloService {
   }
 
   /**
-   * Get multiple contents by IDs and transform to notes
+   * Get multiple contents by IDs
    *
    * @param env - Cloudflare Workers environment bindings
    * @param ids - Content IDs
    * @param userId - Optional user ID for access control
-   * @returns Promise resolving to an array of notes
+   * @returns Promise resolving to an array of content objects
    */
   async getContentsAsNotes(env: Bindings, ids: string[], userId?: string) {
     try {

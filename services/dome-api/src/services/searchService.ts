@@ -121,20 +121,20 @@ export class SearchService {
         return emptyResults;
       }
 
-      // Get unique note IDs
-      const noteIds = [...new Set(searchResults.map(result => result.noteId))];
+      // Get unique content IDs
+      const contentIds = [...new Set(searchResults.map(result => result.noteId))];
 
-      // Retrieve note content from Silo
-      const notes = await siloService.getContentsAsNotes(env, noteIds, userId);
+      // Retrieve content from Silo
+      const contents = await siloService.getContentsAsNotes(env, contentIds, userId);
 
-      // Map note IDs to scores
+      // Map content IDs to scores
       const scoreMap = new Map<string, number>();
       for (const result of searchResults) {
         scoreMap.set(result.noteId, result.score);
       }
 
       // Filter and transform results
-      let filteredResults = notes
+      let filteredResults = contents
         .filter(note => {
           // Skip notes with missing required fields
           if (!note.id || !note.contentType) {
