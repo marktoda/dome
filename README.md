@@ -1,0 +1,197 @@
+# Dome: AI-Powered Exobrain Platform
+
+Dome is a modern, cloud-native platform for personal knowledge management, built on Cloudflare's edge infrastructure. It provides a secure, scalable, and efficient way to store, search, and interact with your personal knowledge base.
+
+## System Architecture
+
+Dome follows a microservices architecture built on Cloudflare Workers, with specialized services communicating through typed interfaces, queues, and shared data stores.
+
+```mermaid
+graph TD
+    Client[Client Applications] -->|HTTP Requests| DomeAPI[Dome API]
+
+    DomeAPI -->|Service Binding| Constellation[Constellation Service]
+    DomeAPI -->|Service Binding| Silo[Silo Service]
+    DomeAPI -->|Store/Query| D1[(D1 Database)]
+
+    Silo -->|Store Objects| R2[(R2 Storage)]
+    Silo -->|Enqueue Jobs| NEW_CONTENT[NEW_CONTENT Queue]
+    R2 -->|Object Events| CONTENT_EVENTS[CONTENT_EVENTS Queue]
+    Silo -->|Process Events| CONTENT_EVENTS
+
+    Constellation -->|Process Jobs| EMBED_QUEUE[Embed Queue]
+    Constellation -->|Generate Embeddings| WorkersAI[Workers AI]
+    Constellation -->|Store/Query Vectors| Vectorize[(Vectorize Index)]
+    
+    NEW_CONTENT -->|Trigger Embedding| Constellation
+
+    DomeCron[Dome Cron] -->|Scheduled Tasks| DomeAPI
+    DomeCron -->|Trigger| DomeNotify[Dome Notify]
+    DomeNotify -->|Read Data| D1
+```
+
+### Key Components
+
+#### 1. Dome API Service
+
+The primary entry point for client applications, handling HTTP requests and coordinating with other services.
+
+- Built with Hono framework
+- Provides RESTful API endpoints for notes, search, and chat
+- Handles authentication and authorization
+- Coordinates with other services via service bindings
+
+#### 2. Silo Service
+
+A unified content storage service designed to ingest, catalog, and serve user-generated content.
+
+- Persists content bodies in R2 and metadata in D1
+- Supports multiple content types (notes, code, articles, etc.)
+- Provides multiple upload paths (small sync API, direct-to-R2 POST)
+- Enables event-driven updates to downstream services
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant DomeAPI as Dome API
+    participant Silo
+    participant R2 as R2 Storage
+    participant D1 as D1 Database
+    participant Queue as NEW_CONTENT Queue
+    participant Constellation
+
+    %% Small content flow
+    Client->>DomeAPI: Create Note
+    DomeAPI->>Silo: simplePut()
+    Silo->>R2: Store Content
+    Silo->>D1: Store Metadata
+    Silo->>Queue: Notify NEW_CONTENT
+    Queue->>Constellation: Process for Embedding
+
+    %% Large content flow
+    Client->>DomeAPI: Request Upload
+    DomeAPI->>Silo: createUpload()
+    Silo-->>DomeAPI: Pre-signed URL
+    DomeAPI-->>Client: Pre-signed URL
+    Client->>R2: Direct Upload
+    R2->>Silo: Object Created Event
+    Silo->>D1: Update Metadata
+    Silo->>Queue: Notify NEW_CONTENT
+```
+
+#### 3. Constellation Service
+
+A dedicated service for handling all embedding and vector search operations.
+
+- Consumes text from queues and generates embeddings using Workers AI
+- Stores vectors in Vectorize index
+- Provides typed RPC interface for vector search
+- Handles preprocessing and chunking of content
+
+```mermaid
+sequenceDiagram
+    participant DomeAPI as Dome API
+    participant Queue as Embed Queue
+    participant Constellation
+    participant WorkersAI as Workers AI
+    participant Vectorize as Vectorize Index
+
+    %% Embedding flow
+    DomeAPI->>Queue: Enqueue Content
+    Queue->>Constellation: Process Batch
+    Constellation->>Constellation: Preprocess Text
+    Constellation->>WorkersAI: Generate Embeddings
+    Constellation->>Vectorize: Store Vectors
+
+    %% Search flow
+    DomeAPI->>Constellation: query()
+    Constellation->>WorkersAI: Embed Query
+    Constellation->>Vectorize: Vector Search
+    Vectorize-->>Constellation: Results
+    Constellation-->>DomeAPI: Search Results
+```
+
+#### 4. Supporting Services
+
+- **Dome Cron**: Handles scheduled tasks and periodic operations
+- **Dome Notify**: Manages notifications and alerts
+- **CLI**: Command-line interface for interacting with the platform
+
+#### 5. Infrastructure Components
+
+- **D1 Database**: SQL database for structured data
+- **R2 Storage**: Object storage for content bodies
+- **Vectorize**: Vector database for embeddings
+- **Workers AI**: AI models for embeddings and text processing
+- **Workers Queues**: Asynchronous processing of jobs
+
+## Technology Stack
+
+- **Runtime**: Cloudflare Workers (JavaScript/TypeScript)
+- **API Framework**: Hono
+- **Database ORM**: Drizzle
+- **Package Management**: pnpm workspaces
+- **Type Safety**: TypeScript, Zod
+- **Logging**: Structured logging with @dome/logging
+- **Metrics**: Custom metrics collection and reporting
+
+## Repository Structure
+
+```
+dome/
+├── services/               # Microservices
+│   ├── dome-api/           # Main API service
+│   ├── constellation/      # Embedding service
+│   ├── silo/               # Content storage service
+│   ├── dome-cron/          # Scheduled tasks
+│   └── dome-notify/        # Notifications
+├── packages/               # Shared libraries
+│   ├── common/             # Common utilities and types
+│   ├── logging/            # Logging infrastructure
+│   └── cli/                # Command-line interface
+├── docs/                   # Documentation
+├── infrastructure/         # Infrastructure as code
+└── templates/              # Templates for new services
+```
+
+## Development Workflow
+
+Dome uses a monorepo approach with pnpm workspaces:
+
+- Install dependencies: `pnpm install`
+- Build all packages: `pnpm build`
+- Run tests: `pnpm test`
+- Deploy services: `pnpm deploy`
+
+## Service Communication
+
+Services communicate through:
+
+1. **Service Bindings**: Direct, typed RPC calls between workers
+2. **Queues**: Asynchronous job processing
+3. **Shared Data Stores**: D1, R2, and Vectorize
+
+Example of service binding usage:
+
+```typescript
+// In dome-api
+const results = await env.CONSTELLATION.query(searchText, { userId }, 10);
+
+// In dome-api
+const uploadUrl = await env.SILO.createUpload({
+  contentType: 'note',
+  size: content.length,
+});
+```
+
+## Future Enhancements
+
+- **Hybrid Search**: Combining vector search with traditional text search
+- **Re-ranking**: Implementing re-ranking of search results
+- **Summarization**: Adding summarization capabilities
+- **Multi-model Support**: Supporting multiple embedding models
+- **Cross-user Search**: Implementing secure cross-user search
+
+## Getting Started
+
+See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for detailed setup instructions.

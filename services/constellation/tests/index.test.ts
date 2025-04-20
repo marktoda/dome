@@ -215,9 +215,15 @@ describe('Constellation', () => {
       const results = await constellation.query('test query', testFilter, 10);
 
       // Assert
-      expect(results).toHaveLength(1);
-      expect(results[0].score).toBe(0.95);
-      expect(results[0].metadata.userId).toBe('user-123');
+      // Check if results is an array (not an error object)
+      expect(Array.isArray(results)).toBe(true);
+      
+      // Type guard to ensure TypeScript knows we're working with an array
+      if (Array.isArray(results)) {
+        expect(results).toHaveLength(1);
+        expect(results[0].score).toBe(0.95);
+        expect(results[0].metadata.userId).toBe('user-123');
+      }
     });
 
     it('should use default topK when not provided', async () => {
