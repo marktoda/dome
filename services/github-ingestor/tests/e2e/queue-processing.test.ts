@@ -1,19 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { Miniflare } from 'miniflare';
 import { ulid } from 'ulid';
-
-// Note: The TypeScript errors in the other test files are related to the Miniflare types.
-// In a real implementation, you would need to add proper type definitions or use
-// @ts-ignore comments. For this example, we'll focus on the test logic.
+import { ExtendedMiniflare, asMiniflareWithCron } from '../types';
 
 describe('GitHub Ingestor E2E Tests - Queue Processing', () => {
-  let mf: any; // Using any to avoid TypeScript errors
+  let mf: ExtendedMiniflare;
   let env: any;
   
   beforeAll(async () => {
     // Set up Miniflare environment
-    // @ts-ignore - Ignoring TypeScript errors for Miniflare configuration
-    mf = new Miniflare({
+    mf = asMiniflareWithCron(new Miniflare({
       modules: true,
       scriptPath: 'dist/index.js',
       bindings: {
@@ -35,7 +31,7 @@ describe('GitHub Ingestor E2E Tests - Queue Processing', () => {
           fetch: vi.fn(),
         },
       },
-    });
+    } as any));
     
     env = await mf.getBindings();
     
@@ -109,7 +105,6 @@ describe('GitHub Ingestor E2E Tests - Queue Processing', () => {
     };
     
     // Send message to the queue
-    // @ts-ignore - Ignoring TypeScript errors for queue dispatch
     await mf.dispatchQueue('INGEST_QUEUE', message);
     
     // Wait for queue processing
@@ -179,7 +174,6 @@ describe('GitHub Ingestor E2E Tests - Queue Processing', () => {
     
     // Send messages to the queue
     for (const message of messages) {
-      // @ts-ignore - Ignoring TypeScript errors for queue dispatch
       await mf.dispatchQueue('INGEST_QUEUE', message);
     }
     
@@ -238,7 +232,6 @@ describe('GitHub Ingestor E2E Tests - Queue Processing', () => {
     };
     
     // Send message to the queue
-    // @ts-ignore - Ignoring TypeScript errors for queue dispatch
     await mf.dispatchQueue('INGEST_QUEUE', message);
     
     // Wait for first attempt and retry

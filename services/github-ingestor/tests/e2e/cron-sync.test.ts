@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
 import { Miniflare } from 'miniflare';
 import { ulid } from 'ulid';
+import { ExtendedMiniflare, MiniflareOptions, asMiniflareWithCron } from '../types';
 
 describe('GitHub Ingestor E2E Tests - Cron Sync', () => {
-  let mf: Miniflare;
+  let mf: ExtendedMiniflare;
   let env: any;
   
   beforeAll(async () => {
     // Set up Miniflare environment
-    mf = new Miniflare({
+    mf = asMiniflareWithCron(new Miniflare({
       modules: true,
       scriptPath: 'dist/index.js',
       bindings: {
@@ -30,7 +31,7 @@ describe('GitHub Ingestor E2E Tests - Cron Sync', () => {
           fetch: vi.fn(),
         },
       },
-    });
+    } as any));
     
     env = await mf.getBindings();
     

@@ -17,6 +17,7 @@
   "dependencies": {
     "@dome/common": "workspace:*",
     "@dome/logging": "workspace:*",
+    "@hono/zod-validator": "^0.1.8",
     "@octokit/app": "^14.0.0",
     "@octokit/rest": "^20.0.0",
     "drizzle-orm": "^0.29.0",

@@ -393,6 +393,9 @@ importers:
       '@dome/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+      '@hono/zod-validator':
+        specifier: ^0.1.8
+        version: 0.1.11(hono@3.12.12)(zod@3.24.3)
       '@octokit/app':
         specifier: ^14.0.0
         version: 14.1.0

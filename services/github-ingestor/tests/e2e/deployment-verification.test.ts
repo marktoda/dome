@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { Miniflare } from 'miniflare';
 import { ulid } from 'ulid';
 import * as crypto from 'crypto';
+import { ExtendedMiniflare, asMiniflareWithCron } from '../types';
 
 /**
  * Deployment Verification Test
@@ -14,14 +15,13 @@ import * as crypto from 'crypto';
  * 4. Queue processing
  */
 describe('GitHub Ingestor Deployment Verification', () => {
-  let mf: any; // Using any to avoid TypeScript errors
+  let mf: ExtendedMiniflare;
   let env: any;
   const webhookSecret = 'test-webhook-secret';
   
   beforeAll(async () => {
     // Set up Miniflare environment
-    // @ts-ignore - Ignoring TypeScript errors for Miniflare configuration
-    mf = new Miniflare({
+    mf = asMiniflareWithCron(new Miniflare({
       modules: true,
       scriptPath: 'dist/index.js',
       bindings: {
@@ -44,7 +44,7 @@ describe('GitHub Ingestor Deployment Verification', () => {
           fetch: vi.fn(),
         },
       },
-    });
+    } as any));
     
     env = await mf.getBindings();
     
@@ -144,7 +144,16 @@ describe('GitHub Ingestor Deployment Verification', () => {
     const res = await mf.dispatchFetch('http://localhost/health');
     expect(res.status).toBe(200);
     
-    const data = await res.json();
+    const data = await res.json() as {
+      status: string;
+      version: string;
+      environment: string;
+      components: {
+        database: {
+          status: string;
+        }
+      }
+    };
     expect(data.status).toBe('ok');
     expect(data.version).toBe('1.0.0-test');
     expect(data.environment).toBe('test');
@@ -155,7 +164,11 @@ describe('GitHub Ingestor Deployment Verification', () => {
     const res = await mf.dispatchFetch('http://localhost/status');
     expect(res.status).toBe(200);
     
-    const data = await res.json();
+    const data = await res.json() as {
+      status: string;
+      version: string;
+      repositories: any;
+    };
     expect(data.status).toBe('ok');
     expect(data.version).toBe('1.0.0-test');
     expect(data.repositories).toBeDefined();
@@ -217,7 +230,6 @@ describe('GitHub Ingestor Deployment Verification', () => {
     vi.clearAllMocks();
     
     // Trigger cron handler
-    // @ts-ignore - Ignoring TypeScript errors for cron dispatch
     await mf.dispatchCron('0 * * * *');
     
     // Wait for queue processing

@@ -2,15 +2,16 @@ import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } 
 import { Miniflare } from 'miniflare';
 import { ulid } from 'ulid';
 import * as crypto from 'crypto';
+import { ExtendedMiniflare, asMiniflareWithCron } from '../types';
 
 describe('GitHub Ingestor E2E Tests - Webhook Handling', () => {
-  let mf: Miniflare;
+  let mf: ExtendedMiniflare;
   let env: any;
   const webhookSecret = 'test-webhook-secret';
   
   beforeAll(async () => {
     // Set up Miniflare environment
-    mf = new Miniflare({
+    mf = asMiniflareWithCron(new Miniflare({
       modules: true,
       scriptPath: 'dist/index.js',
       bindings: {
@@ -32,7 +33,7 @@ describe('GitHub Ingestor E2E Tests - Webhook Handling', () => {
           fetch: vi.fn(),
         },
       },
-    });
+    } as any));
     
     env = await mf.getBindings();
     

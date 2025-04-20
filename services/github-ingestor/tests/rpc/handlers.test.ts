@@ -38,13 +38,29 @@ vi.mock('../../src/queue/service', () => ({
   QueueService: vi.fn().mockImplementation(() => mockQueueService)
 }));
 
-const mockServiceFactory = {
-  getRepositoryService: vi.fn().mockReturnValue(mockRepositoryService),
-  getQueueService: vi.fn().mockReturnValue(mockQueueService)
-};
+// Create a mock ServiceFactory class
+class MockServiceFactory {
+  private env: any;
+  
+  constructor(env: any) {
+    this.env = env;
+  }
+  
+  getRepositoryService = vi.fn().mockReturnValue(mockRepositoryService);
+  getQueueService = vi.fn().mockReturnValue(mockQueueService);
+  getContentService = vi.fn();
+  getGitHubService = vi.fn();
+  getWebhookService = vi.fn();
+  getStatisticsService = vi.fn();
+  createIngestor = vi.fn();
+  createIngestorFromRepository = vi.fn();
+}
+
+// Create an instance of the mock service factory
+const mockServiceFactory = new MockServiceFactory(mockEnv) as unknown as ServiceFactory;
 
 vi.mock('../../src/services', () => ({
-  ServiceFactory: vi.fn().mockImplementation(() => mockServiceFactory)
+  ServiceFactory: MockServiceFactory
 }));
 
 describe('RpcHandlers', () => {

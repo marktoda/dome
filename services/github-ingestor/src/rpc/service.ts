@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
-import { zod } from 'hono/zod';
+import { z } from 'zod';
+import { zValidator } from '@hono/zod-validator';
 import { Env } from '../types';
 import { ServiceFactory } from '../services';
 import { RpcHandlers } from './handlers';
@@ -47,40 +48,36 @@ export class RpcService {
       const startTime = Date.now();
       const method = c.req.method;
       const path = new URL(c.req.url).pathname;
-      
+
       logger.info({ method, path }, 'RPC request received');
       metrics.counter('rpc.request', 1, { method, path });
-      
+
       try {
         await next();
       } catch (error) {
         logError(error as Error, 'Error in RPC request', { method, path });
         metrics.counter('rpc.error', 1, { method, path });
-        
+
         return c.json({
           success: false,
           error: (error as Error).message
         }, 500);
       }
-      
+
       metrics.timing('rpc.response_time_ms', Date.now() - startTime, { method, path });
     });
 
     // Repository management endpoints
-    app.post('/repositories', zod.request({
-      json: createRepositorySchema
-    }), async (c) => {
-      const data = c.req.json();
+    app.post('/repositories', zValidator('json', createRepositorySchema), async (c) => {
+      const data = await c.req.json();
       const repository = await this.handlers.addRepository(data);
       return c.json({ success: true, data: repository });
     });
 
-    app.put('/repositories/:id', zod.request({
-      json: updateRepositorySchema
-    }), async (c) => {
+    app.put('/repositories/:id', zValidator('json', updateRepositorySchema), async (c) => {
       const id = c.req.param('id');
       const data = await c.req.json();
-      
+
       // Ensure the ID in the path matches the ID in the body
       if (data.id && data.id !== id) {
         return c.json({
@@ -88,10 +85,10 @@ export class RpcService {
           error: 'ID in path does not match ID in body'
         }, 400);
       }
-      
+
       // Set the ID from the path if not provided in the body
       const updateData = { ...data, id };
-      
+
       const repository = await this.handlers.updateRepository(updateData);
       return c.json({ success: true, data: repository });
     });
@@ -108,21 +105,17 @@ export class RpcService {
       return c.json({ success: true, data: repository });
     });
 
-    app.get('/repositories', zod.request({
-      query: listRepositoriesSchema
-    }), async (c) => {
-      const query = c.req.query();
+    app.get('/repositories', zValidator('query', listRepositoriesSchema), async (c) => {
+      const query = c.req.valid('query');
       const repositories = await this.handlers.listRepositories(query);
       return c.json({ success: true, data: repositories });
     });
 
     // Repository sync endpoints
-    app.post('/repositories/:id/sync', zod.request({
-      json: syncRepositorySchema
-    }), async (c) => {
+    app.post('/repositories/:id/sync', zValidator('json', syncRepositorySchema), async (c) => {
       const id = c.req.param('id');
       const data = await c.req.json();
-      
+
       // Ensure the ID in the path matches the ID in the body
       if (data.id && data.id !== id) {
         return c.json({
@@ -130,10 +123,10 @@ export class RpcService {
           error: 'ID in path does not match ID in body'
         }, 400);
       }
-      
+
       // Set the ID from the path if not provided in the body
       const syncData = { ...data, id };
-      
+
       const result = await this.handlers.syncRepository(syncData);
       return c.json({ success: result.success });
     });
@@ -145,18 +138,14 @@ export class RpcService {
     });
 
     // GitHub App installation endpoints
-    app.post('/installations', zod.request({
-      json: installationSchema
-    }), async (c) => {
+    app.post('/installations', zValidator('json', installationSchema), async (c) => {
       const data = await c.req.json();
       const installation = await this.handlers.addInstallation(data);
       return c.json({ success: true, data: installation });
     });
 
-    app.get('/installations', zod.request({
-      query: listInstallationsSchema
-    }), async (c) => {
-      const query = c.req.query();
+    app.get('/installations', zValidator('query', listInstallationsSchema), async (c) => {
+      const query = c.req.valid('query');
       const installations = await this.handlers.listInstallations(query);
       return c.json({ success: true, data: installations });
     });
@@ -168,10 +157,8 @@ export class RpcService {
     });
 
     // Statistics endpoints
-    app.get('/statistics', zod.request({
-      query: getStatisticsSchema
-    }), async (c) => {
-      const query = c.req.query();
+    app.get('/statistics', zValidator('query', getStatisticsSchema), async (c) => {
+      const query = c.req.valid('query');
       const statistics = await this.handlers.getStatistics(query);
       return c.json({ success: true, data: statistics });
     });

@@ -100,7 +100,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         }));
 
         await vectorize.upsert(vecs);
-        getLogger().info({ vectorCount: vecs.length }, 'upserted vectors');
+        getLogger().info({ vectorCount: vecs.length, vectors: vecs }, 'upserted vectors');
         processed += 1;
       } catch (err) {
         getLogger().error({ err, job }, 'embed failed');
