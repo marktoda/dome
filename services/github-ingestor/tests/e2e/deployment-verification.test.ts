@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { Miniflare } from 'miniflare';
 import { ulid } from 'ulid';
 import * as crypto from 'crypto';
-import { ExtendedMiniflare, asMiniflareWithCron } from '../types';
+import { ExtendedMiniflare } from '../types';
+import { createTestMiniflare } from './helpers';
 
 /**
  * Deployment Verification Test
@@ -21,30 +21,12 @@ describe('GitHub Ingestor Deployment Verification', () => {
   
   beforeAll(async () => {
     // Set up Miniflare environment
-    mf = asMiniflareWithCron(new Miniflare({
-      modules: true,
-      scriptPath: 'dist/index.js',
+    mf = createTestMiniflare({
       bindings: {
-        VERSION: '1.0.0-test',
-        ENVIRONMENT: 'test',
-        LOG_LEVEL: 'debug',
         GITHUB_WEBHOOK_SECRET: webhookSecret,
         GITHUB_TOKEN: 'test-github-token',
-      },
-      d1Databases: [
-        {
-          binding: 'DB',
-          database: ':memory:',
-          migrationsPath: 'src/db/migrations',
-        },
-      ],
-      queueConsumers: ['INGEST_QUEUE'],
-      serviceBindings: {
-        SILO: {
-          fetch: vi.fn(),
-        },
-      },
-    } as any));
+      }
+    });
     
     env = await mf.getBindings();
     

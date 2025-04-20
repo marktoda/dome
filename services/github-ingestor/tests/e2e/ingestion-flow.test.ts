@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from 'vitest';
-import { Miniflare } from 'miniflare';
 import { ulid } from 'ulid';
-import { ExtendedMiniflare, asMiniflareWithCron } from '../types';
+import { ExtendedMiniflare } from '../types';
+import { createTestMiniflare } from './helpers';
 
 describe('GitHub Ingestor E2E Tests - Ingestion Flow', () => {
   let mf: ExtendedMiniflare;
@@ -9,28 +9,7 @@ describe('GitHub Ingestor E2E Tests - Ingestion Flow', () => {
   
   beforeAll(async () => {
     // Set up Miniflare environment
-    mf = asMiniflareWithCron(new Miniflare({
-      modules: true,
-      scriptPath: 'dist/index.js',
-      bindings: {
-        VERSION: '1.0.0-test',
-        ENVIRONMENT: 'test',
-        LOG_LEVEL: 'debug',
-      },
-      d1Databases: [
-        {
-          binding: 'DB',
-          database: ':memory:',
-          migrationsPath: 'src/db/migrations',
-        },
-      ],
-      queueConsumers: ['INGEST_QUEUE'],
-      serviceBindings: {
-        SILO: {
-          fetch: vi.fn(),
-        },
-      },
-    } as any));
+    mf = createTestMiniflare({});
     
     env = await mf.getBindings();
     

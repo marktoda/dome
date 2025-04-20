@@ -1,3 +1,9 @@
+wrangler queues create ingest-queue
+wrangler queues create ingest-dead-letter
+wrangler queues create content-events
+wrangler queues create new-content
+wrangler queues create embed-dead-letter
+
 wrangler vectorize create dome-notes --dimensions=768 --metric=cosine
 
 wrangler vectorize create-metadata-index dome-notes --property-name pageNum --type number

@@ -114,10 +114,21 @@ describe('RpcService', () => {
       });
 
       const response = await rpcService.fetch(request);
-      const responseBody = await response.json();
+      
+      // Check if the response is valid JSON before parsing
+      const text = await response.text();
+      let responseBody;
+      try {
+        responseBody = JSON.parse(text);
+      } catch (e) {
+        console.error('Failed to parse response as JSON:', text);
+      }
 
       // Verify
       expect(response.status).toBe(500);
+      expect(responseBody).toBeDefined();
+      expect(responseBody.success).toBe(false);
+      expect(responseBody.error).toBe('Repository creation failed');
       expect(responseBody).toEqual({
         success: false,
         error: 'Repository creation failed'
