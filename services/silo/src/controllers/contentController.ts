@@ -3,6 +3,7 @@ import { ulid } from 'ulid';
 import { R2Service } from '../services/r2Service';
 import { MetadataService } from '../services/metadataService';
 import { QueueService } from '../services/queueService';
+import { R2Event } from '../types';
 
 /**
  * ContentController handles business logic for content operations
@@ -13,7 +14,7 @@ export class ContentController {
     private env: any,
     private r2Service: R2Service,
     private metadataService: MetadataService,
-    private queueService: QueueService
+    private queueService: QueueService,
   ) {}
 
   /**
@@ -38,14 +39,15 @@ export class ContentController {
 
       // Calculate content size
       const content = data.content;
-      const size = typeof content === 'string'
-        ? new TextEncoder().encode(content).length
-        : content.byteLength;
+      const size =
+        typeof content === 'string' ? new TextEncoder().encode(content).length : content.byteLength;
 
       // Check size limit (1MB for simplePut)
       const MAX_SIZE = 1024 * 1024; // 1MB
       if (size > MAX_SIZE) {
-        throw new Error(`Content size exceeds maximum allowed size of 1MB. Use createUpload for larger files.`);
+        throw new Error(
+          `Content size exceeds maximum allowed size of 1MB. Use createUpload for larger files.`,
+        );
       }
 
       // Create R2 key
@@ -65,33 +67,27 @@ export class ContentController {
       // Store content in R2 using R2Service
       await this.r2Service.putObject(r2Key, content, customMetadata);
 
-      // Store metadata in D1 using MetadataService
-      const now = Math.floor(Date.now() / 1000);
-
-      await this.metadataService.insertMetadata({
-        id,
-        userId,
-        contentType: data.contentType,
-        size,
-        r2Key,
-        createdAt: now,
-      });
+      // Note: We don't need to insert metadata here as it will be handled by the R2 event
+      // that gets triggered automatically after the R2 object is created
 
       // Record metrics
       metrics.increment('silo.upload.bytes', size);
-      metrics.timing('silo.db.write.latency_ms', Date.now() - startTime);
 
-      getLogger().info({
-        id,
-        contentType: data.contentType,
-        size
-      }, 'Content stored successfully');
+      const now = Math.floor(Date.now() / 1000);
+      getLogger().info(
+        {
+          id,
+          contentType: data.contentType,
+          size,
+        },
+        'Content stored successfully',
+      );
 
       return {
         id,
         contentType: data.contentType,
         size,
-        createdAt: now
+        createdAt: now,
       };
     } catch (error) {
       getLogger().error({ error }, 'Error in simplePut');
@@ -163,19 +159,22 @@ export class ContentController {
       metrics.increment('silo.presigned_post.created', 1);
       metrics.timing('silo.presigned_post.latency_ms', Date.now() - startTime);
 
-      getLogger().info({
-        id: contentId,
-        contentType: data.contentType,
-        size: data.size,
-        expirationSeconds
-      }, 'Pre-signed POST policy created successfully');
+      getLogger().info(
+        {
+          id: contentId,
+          contentType: data.contentType,
+          size: data.size,
+          expirationSeconds,
+        },
+        'Pre-signed POST policy created successfully',
+      );
 
       // Return the pre-signed URL, form fields, and content ID
       return {
         id: contentId,
         uploadUrl: presignedPost.url,
         formData: presignedPost.formData,
-        expiresIn: expirationSeconds
+        expiresIn: expirationSeconds,
       };
     } catch (error) {
       getLogger().error({ error }, 'Error in createUpload');
@@ -187,26 +186,26 @@ export class ContentController {
   /**
    * Efficiently retrieve multiple content items
    */
-  async batchGet(data: { ids: string[], userId?: string | null }) {
+  async batchGet(data: { ids: string[]; userId?: string | null }) {
     // Validate input
     const ids = data.ids;
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       throw new Error('Valid ids array is required');
     }
     const requestUserId = data.userId || null;
-    
+
     // Fetch metadata from D1 using MetadataService
     const metadataItems = await this.metadataService.getMetadataByIds(ids);
-    
+
     const results: Record<string, any> = {};
     const fetchPromises: Promise<void>[] = [];
-    
+
     for (const item of metadataItems) {
       // ACL check
       if (item.userId !== null && item.userId !== requestUserId) {
         continue;
       }
-      
+
       // Initialize result item
       results[item.id] = {
         id: item.id,
@@ -215,20 +214,24 @@ export class ContentController {
         size: item.size,
         createdAt: item.createdAt,
       };
-      
+
       // Fetch content or generate URL using R2Service
       const startTime = Date.now();
-      fetchPromises.push((async () => {
-        const obj = await this.r2Service.getObject(item.r2Key);
-        metrics.timing('silo.r2.get.latency_ms', Date.now() - startTime);
-        if (obj && item.size <= 1024 * 1024) {
-          results[item.id].body = await obj.text();
-        } else {
-          results[item.id].url = await this.r2Service.createPresignedUrl(item.r2Key, { expiresIn: 3600 });
-        }
-      })());
+      fetchPromises.push(
+        (async () => {
+          const obj = await this.r2Service.getObject(item.r2Key);
+          metrics.timing('silo.r2.get.latency_ms', Date.now() - startTime);
+          if (obj && item.size <= 1024 * 1024) {
+            results[item.id].body = await obj.text();
+          } else {
+            results[item.id].url = await this.r2Service.createPresignedUrl(item.r2Key, {
+              expiresIn: 3600,
+            });
+          }
+        })(),
+      );
     }
-    
+
     await Promise.all(fetchPromises);
     return { items: Object.values(results) };
   }
@@ -237,41 +240,129 @@ export class ContentController {
    * Delete content items
    * Implements deletion of content from R2 and metadata from D1 with ACL checks.
    */
-  async delete(data: { id: string, userId?: string | null }) {
+  async delete(data: { id: string; userId?: string | null }) {
     const { id } = data;
     if (!id) {
       throw new Error('Valid id is required');
     }
-    
+
     const requestUserId = data.userId || null;
-    
+
     // Fetch content metadata using MetadataService
     const metadataResult = await this.metadataService.getMetadataById(id);
     if (!metadataResult) {
       throw new Error('Content not found');
     }
-    
+
     if (metadataResult.userId !== requestUserId) {
       throw new Error('Unauthorized');
     }
-    
+
     // Delete object from R2 using R2Service
     await this.r2Service.deleteObject(metadataResult.r2Key);
-    
+
     // Delete from D1 using MetadataService
     await this.metadataService.deleteMetadata(id);
-    
+
     // Notify deletion using QueueService
     await this.queueService.sendNewContentMessage({
       id,
       userId: requestUserId,
-      deleted: true
+      deleted: true,
     });
-    
+
     metrics.increment('silo.rpc.delete.success', 1);
     getLogger().info({ id, userId: requestUserId }, 'Content deleted successfully');
-    
+
     return { success: true };
+  }
+
+  /**
+   * Process an R2 event from the queue
+   * This is called when an object is created in R2 via direct upload
+   */
+  async processR2Event(event: R2Event) {
+    try {
+      if (event.type !== 'object.created') {
+        getLogger().warn({ event }, 'Unsupported event type');
+        return null;
+      }
+
+      const { key } = event.object;
+      getLogger().info({ key }, 'Processing R2 object created event');
+
+      // Get object metadata from R2
+      const obj = await this.r2Service.headObject(key);
+      if (!obj) {
+        getLogger().warn({ key }, 'Object not found in R2');
+        return null;
+      }
+
+      // Extract metadata from R2 object
+      const userId = obj.customMetadata?.['x-user-id'] || obj.customMetadata?.userId || null;
+      const contentType =
+        obj.customMetadata?.['x-content-type'] ||
+        obj.customMetadata?.contentType ||
+        'application/octet-stream';
+      const sha256 = obj.customMetadata?.['x-sha256'] || null;
+
+      // Parse any additional metadata if present
+      let metadata = null;
+      if (obj.customMetadata?.['x-metadata'] || obj.customMetadata?.metadata) {
+        try {
+          metadata = JSON.parse(
+            obj.customMetadata?.['x-metadata'] || obj.customMetadata?.metadata || '{}',
+          );
+        } catch (e) {
+          getLogger().warn({ error: e }, 'Failed to parse metadata');
+        }
+      }
+
+      // Generate a content ID from the key
+      // For uploads, the key format is upload/{id}, so we extract the ID
+      // For direct puts, the key format is content/{id}
+      const id = key.startsWith('upload/')
+        ? key.substring(7)
+        : key.startsWith('content/')
+        ? key.substring(8)
+        : key;
+
+      // Store metadata in D1
+      const now = Math.floor(Date.now() / 1000);
+      await this.metadataService.insertMetadata({
+        id,
+        userId,
+        contentType,
+        size: obj.size,
+        r2Key: key,
+        sha256,
+        createdAt: now,
+      });
+
+      // Notify about new content
+      await this.queueService.sendNewContentMessage({
+        id,
+        userId,
+        contentType,
+        size: obj.size,
+        createdAt: now,
+        metadata,
+      });
+
+      metrics.increment('silo.r2.events.processed', 1);
+      getLogger().info({ id, key, contentType, size: obj.size }, 'R2 event processed successfully');
+
+      return {
+        id,
+        contentType,
+        size: obj.size,
+        createdAt: now,
+      };
+    } catch (error) {
+      metrics.increment('silo.r2.events.errors', 1);
+      getLogger().error({ error, event }, 'Error processing R2 event');
+      throw error;
+    }
   }
 }
 
@@ -279,7 +370,7 @@ export function createContentController(
   env: any,
   r2Service: R2Service,
   metadataService: MetadataService,
-  queueService: QueueService
+  queueService: QueueService,
 ): ContentController {
   return new ContentController(env, r2Service, metadataService, queueService);
 }

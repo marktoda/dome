@@ -13,21 +13,34 @@ export class R2Service {
    * @param content The content to store
    * @param metadata Custom metadata to store with the content
    */
-  async putObject(key: string, content: string | ArrayBuffer, metadata: Record<string, string> = {}) {
+  async putObject(
+    key: string,
+    content: string | ArrayBuffer,
+    metadata: Record<string, string> = {},
+  ) {
     const startTime = Date.now();
-    
+
     try {
       // Store in R2 with custom metadata
       await this.env.BUCKET.put(key, content, {
         httpMetadata: {
           contentType: 'application/octet-stream',
         },
-        customMetadata: metadata
+        customMetadata: metadata,
       });
-      
+
       metrics.timing('silo.r2.put.latency_ms', Date.now() - startTime);
-      getLogger().debug({ key, size: typeof content === 'string' ? new TextEncoder().encode(content).length : content.byteLength }, 'Content stored in R2');
-      
+      getLogger().debug(
+        {
+          key,
+          size:
+            typeof content === 'string'
+              ? new TextEncoder().encode(content).length
+              : content.byteLength,
+        },
+        'Content stored in R2',
+      );
+
       return true;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'put' });
@@ -42,17 +55,17 @@ export class R2Service {
    */
   async getObject(key: string) {
     const startTime = Date.now();
-    
+
     try {
       const object = await this.env.BUCKET.get(key);
-      
+
       metrics.timing('silo.r2.get.latency_ms', Date.now() - startTime);
-      
+
       if (!object) {
         getLogger().warn({ key }, 'Object not found in R2');
         return null;
       }
-      
+
       return object;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'get' });
@@ -67,13 +80,13 @@ export class R2Service {
    */
   async deleteObject(key: string) {
     const startTime = Date.now();
-    
+
     try {
       await this.env.BUCKET.delete(key);
-      
+
       metrics.timing('silo.r2.delete.latency_ms', Date.now() - startTime);
       getLogger().debug({ key }, 'Content deleted from R2');
-      
+
       return true;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'delete' });
@@ -88,17 +101,17 @@ export class R2Service {
    */
   async headObject(key: string) {
     const startTime = Date.now();
-    
+
     try {
       const object = await this.env.BUCKET.head(key);
-      
+
       metrics.timing('silo.r2.head.latency_ms', Date.now() - startTime);
-      
+
       if (!object) {
         getLogger().warn({ key }, 'Object not found in R2');
         return null;
       }
-      
+
       return object;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'head' });
@@ -118,14 +131,14 @@ export class R2Service {
     expiration?: number;
   }) {
     const startTime = Date.now();
-    
+
     try {
       // Note: Using type assertion as createPresignedPost is not in the type definitions
       const presignedPost = await (this.env.BUCKET as any).createPresignedPost(options);
-      
+
       metrics.timing('silo.r2.presigned_post.latency_ms', Date.now() - startTime);
       getLogger().debug({ key: options.key }, 'Pre-signed POST policy created');
-      
+
       return presignedPost;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'createPresignedPost' });
@@ -141,14 +154,14 @@ export class R2Service {
    */
   async createPresignedUrl(key: string, options: { expiresIn?: number } = {}) {
     const startTime = Date.now();
-    
+
     try {
       // Note: Using type assertion as createPresignedUrl is not in the type definitions
       const url = await (this.env.BUCKET as any).createPresignedUrl(key, options);
-      
+
       metrics.timing('silo.r2.presigned_url.latency_ms', Date.now() - startTime);
       getLogger().debug({ key }, 'Pre-signed URL created');
-      
+
       return url;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'createPresignedUrl' });

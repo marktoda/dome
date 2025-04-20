@@ -11,6 +11,20 @@ import { NotImplementedError } from '@dome/common';
 import { R2Event } from './types';
 import { wrap } from './utils/wrap';
 import { createServices, Services } from './services';
+import { z } from 'zod';
+import { zValidator } from '@hono/zod-validator';
+import {
+  simplePutSchema,
+  createUploadSchema,
+  batchGetSchema,
+  deleteSchema,
+  statsSchema,
+  SimplePutInput,
+  CreateUploadInput,
+  BatchGetInput,
+  DeleteInput,
+  StatsInput,
+} from './models';
 
 /**
  * Silo service main class
@@ -27,27 +41,55 @@ export default class Silo extends WorkerEntrypoint<Env> {
    * Queue consumer for processing R2 object-created events
    */
   async queue(batch: MessageBatch<R2Event>) {
-    await wrap(
-      { op: 'queue', size: batch.messages.length, ...this.env },
-      async () => {
-        try {
-          await this.services.queue.processBatch(batch);
-        } catch (error) {
-          metrics.increment('silo.queue.errors', 1);
-          getLogger().error({ error }, 'Queue processing error');
-          throw error; // Allow retry
-        }
-      });
+    await wrap({ op: 'queue', size: batch.messages.length, ...this.env }, async () => {
+      try {
+        // Process each message in the batch
+        const promises = batch.messages.map(async message => {
+          const event = message.body;
+          if (event.type === 'object.created') {
+            // Extract key from the event
+            const { key } = event.object;
+
+            // Get object metadata from R2
+            const obj = await this.services.content.processR2Event(event);
+
+            // Acknowledge the message
+            message.ack();
+          } else {
+            getLogger().warn({ event }, 'Unsupported event type');
+            message.ack(); // Acknowledge anyway to avoid retries
+          }
+        });
+
+        await Promise.all(promises);
+      } catch (error) {
+        metrics.increment('silo.queue.errors', 1);
+        getLogger().error({ error }, 'Queue processing error');
+        throw error; // Allow retry
+      }
+    });
   }
 
   /**
    * Synchronously store small content items
    */
-  async simplePut(data: any) {
+  async simplePut(data: SimplePutInput) {
     return wrap({ operation: 'simplePut' }, async () => {
       try {
-        return await this.services.content.simplePut(data);
+        // Validate input
+        const validatedData = simplePutSchema.parse(data);
+        return await this.services.content.simplePut(validatedData);
       } catch (error) {
+        if (error instanceof z.ZodError) {
+          getLogger().error({ error: error.errors }, 'Validation error in simplePut');
+          metrics.increment('silo.validation.errors', 1, { method: 'simplePut' });
+          throw new Error(
+            `Validation error: ${error.errors
+              .map(e => `${e.path.join('.')}: ${e.message}`)
+              .join(', ')}`,
+          );
+        }
+
         getLogger().error({ error }, 'Error in simplePut');
         metrics.increment('silo.rpc.errors', 1, { method: 'simplePut' });
         throw error;
@@ -58,11 +100,23 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Generate pre-signed forms for direct browser-to-R2 uploads
    */
-  async createUpload(data: any) {
+  async createUpload(data: CreateUploadInput) {
     return wrap({ operation: 'createUpload' }, async () => {
       try {
-        return await this.services.content.createUpload(data);
+        // Validate input
+        const validatedData = createUploadSchema.parse(data);
+        return await this.services.content.createUpload(validatedData);
       } catch (error) {
+        if (error instanceof z.ZodError) {
+          getLogger().error({ error: error.errors }, 'Validation error in createUpload');
+          metrics.increment('silo.validation.errors', 1, { method: 'createUpload' });
+          throw new Error(
+            `Validation error: ${error.errors
+              .map(e => `${e.path.join('.')}: ${e.message}`)
+              .join(', ')}`,
+          );
+        }
+
         getLogger().error({ error }, 'Error in createUpload');
         metrics.increment('silo.rpc.errors', 1, { method: 'createUpload' });
         throw error;
@@ -73,11 +127,23 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Efficiently retrieve multiple content items
    */
-  async batchGet(data: any) {
+  async batchGet(data: BatchGetInput) {
     return wrap({ operation: 'batchGet' }, async () => {
       try {
-        return await this.services.content.batchGet(data);
+        // Validate input
+        const validatedData = batchGetSchema.parse(data);
+        return await this.services.content.batchGet(validatedData);
       } catch (error) {
+        if (error instanceof z.ZodError) {
+          getLogger().error({ error: error.errors }, 'Validation error in batchGet');
+          metrics.increment('silo.validation.errors', 1, { method: 'batchGet' });
+          throw new Error(
+            `Validation error: ${error.errors
+              .map(e => `${e.path.join('.')}: ${e.message}`)
+              .join(', ')}`,
+          );
+        }
+
         getLogger().error({ error }, 'Error in batchGet');
         metrics.increment('silo.rpc.errors', 1, { method: 'batchGet' });
         throw error;
@@ -88,11 +154,23 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Delete content items
    */
-  async delete(data: any) {
+  async delete(data: DeleteInput) {
     return wrap({ operation: 'delete', id: data.id }, async () => {
       try {
-        return await this.services.content.delete(data);
+        // Validate input
+        const validatedData = deleteSchema.parse(data);
+        return await this.services.content.delete(validatedData);
       } catch (error) {
+        if (error instanceof z.ZodError) {
+          getLogger().error({ error: error.errors }, 'Validation error in delete');
+          metrics.increment('silo.validation.errors', 1, { method: 'delete' });
+          throw new Error(
+            `Validation error: ${error.errors
+              .map(e => `${e.path.join('.')}: ${e.message}`)
+              .join(', ')}`,
+          );
+        }
+
         getLogger().error({ error }, 'Error in delete');
         metrics.increment('silo.rpc.errors', 1, { method: 'delete' });
         throw error;
@@ -103,11 +181,23 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Get storage statistics
    */
-  async stats(data: any) {
+  async stats(data: StatsInput = {}) {
     return wrap({ operation: 'stats' }, async () => {
       try {
+        // Validate input (empty object is fine for stats)
+        statsSchema.parse(data);
         return await this.services.stats.getStats();
       } catch (error) {
+        if (error instanceof z.ZodError) {
+          getLogger().error({ error: error.errors }, 'Validation error in stats');
+          metrics.increment('silo.validation.errors', 1, { method: 'stats' });
+          throw new Error(
+            `Validation error: ${error.errors
+              .map(e => `${e.path.join('.')}: ${e.message}`)
+              .join(', ')}`,
+          );
+        }
+
         getLogger().error({ error }, 'Error in stats');
         metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
         throw error;

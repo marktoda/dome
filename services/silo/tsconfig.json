@@ -8,5 +8,6 @@
     "skipLibCheck": true,
     "types": ["./worker-configuration.d.ts", "@types/node"]
   },
-  "include": ["src/**/*", "tests/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["tests/**/*"]
 }

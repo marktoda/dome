@@ -20,18 +20,19 @@ export class MetadataService {
    */
   async insertMetadata(data: Omit<ContentMetadata, 'version'> & { sha256?: string | null }) {
     const startTime = Date.now();
-    
+
     try {
-      const result = await this.db.insert(contents)
+      const result = await this.db
+        .insert(contents)
         .values({
           ...data,
-          version: 1
+          version: 1,
         })
         .onConflictDoNothing();
-      
+
       metrics.timing('silo.d1.insert.latency_ms', Date.now() - startTime);
       getLogger().debug({ id: data.id }, 'Content metadata inserted');
-      
+
       return result;
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'insert' });
@@ -45,9 +46,10 @@ export class MetadataService {
    */
   async getMetadataById(id: string): Promise<ContentMetadata | null> {
     const startTime = Date.now();
-    
+
     try {
-      const result = await this.env.DB.prepare(`
+      const result = await this.env.DB.prepare(
+        `
         SELECT 
           id, 
           user_id as userId, 
@@ -59,10 +61,13 @@ export class MetadataService {
           version
         FROM contents
         WHERE id = ?
-      `).bind(id).first();
-      
+      `,
+      )
+        .bind(id)
+        .first();
+
       metrics.timing('silo.d1.get.latency_ms', Date.now() - startTime);
-      
+
       return result as ContentMetadata | null;
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get' });
@@ -76,12 +81,13 @@ export class MetadataService {
    */
   async getMetadataByIds(ids: string[]): Promise<ContentMetadata[]> {
     if (ids.length === 0) return [];
-    
+
     const startTime = Date.now();
-    
+
     try {
       const placeholders = ids.map(() => '?').join(',');
-      const { results } = await this.env.DB.prepare(`
+      const { results } = (await this.env.DB.prepare(
+        `
         SELECT 
           id, 
           user_id as userId, 
@@ -93,10 +99,13 @@ export class MetadataService {
           version
         FROM contents
         WHERE id IN (${placeholders})
-      `).bind(...ids).all() as { results: ContentMetadata[] };
-      
+      `,
+      )
+        .bind(...ids)
+        .all()) as { results: ContentMetadata[] };
+
       metrics.timing('silo.d1.get_many.latency_ms', Date.now() - startTime);
-      
+
       return results;
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get_many' });
@@ -110,16 +119,20 @@ export class MetadataService {
    */
   async deleteMetadata(id: string) {
     const startTime = Date.now();
-    
+
     try {
-      const result = await this.env.DB.prepare(`
+      const result = await this.env.DB.prepare(
+        `
         DELETE FROM contents
         WHERE id = ?
-      `).bind(id).run();
-      
+      `,
+      )
+        .bind(id)
+        .run();
+
       metrics.timing('silo.d1.delete.latency_ms', Date.now() - startTime);
       getLogger().debug({ id }, 'Content metadata deleted');
-      
+
       return result;
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'delete' });
@@ -133,34 +146,38 @@ export class MetadataService {
    */
   async getStats() {
     const startTime = Date.now();
-    
+
     try {
       // Total count and size
-      const countResult = await this.env.DB.prepare(`
+      const countResult = (await this.env.DB.prepare(
+        `
         SELECT COUNT(*) as total, SUM(size) as totalSize
         FROM contents
-      `).first() as { total: number; totalSize: number };
-      
+      `,
+      ).first()) as { total: number; totalSize: number };
+
       // Counts by content type
-      const typeResult = await this.env.DB.prepare(`
+      const typeResult = (await this.env.DB.prepare(
+        `
         SELECT content_type as contentType, COUNT(*) as count
         FROM contents
         GROUP BY content_type
-      `).all() as { results: Array<{ contentType: string; count: number }> };
-      
+      `,
+      ).all()) as { results: Array<{ contentType: string; count: number }> };
+
       const byType: Record<string, number> = {};
       for (const row of typeResult.results) {
         byType[row.contentType] = row.count;
       }
-      
+
       const stats = {
         total: countResult.total ?? 0,
         totalSize: countResult.totalSize ?? 0,
-        byType
+        byType,
       };
-      
+
       metrics.timing('silo.d1.stats.latency_ms', Date.now() - startTime);
-      
+
       return stats;
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'stats' });
