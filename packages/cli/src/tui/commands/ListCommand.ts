@@ -51,13 +51,8 @@ export class ListCommand implements CommandHandler {
 
       const response = type === 'notes' ? await listNotes() : await listTasks();
 
-      // Handle different response formats
-      let items: any[] = [];
-      if (Array.isArray(response)) {
-        items = response;
-      } else if (typeof response === 'object' && response !== null) {
-        items = (response as any).notes || (response as any).tasks || [];
-      }
+      // The response should already be an array from our updated API functions
+      const items = Array.isArray(response) ? response : [];
 
       if (items.length === 0) {
         this.addMessage(`No ${type} found.`);
@@ -67,23 +62,49 @@ export class ListCommand implements CommandHandler {
 
         items.forEach((item: any, index: number) => {
           if (type === 'notes') {
-            // Handle note item structure
+            // Handle note item structure with new API format
             const title = item.title || 'Untitled';
-            const content = item.body || item.content || '';
+            const content = item.body || '';
             const date = new Date(item.createdAt).toLocaleString();
+            
+            // Try to extract tags from metadata if available
+            let tags: string[] = [];
+            if (item.metadata) {
+              try {
+                const metadata = typeof item.metadata === 'string'
+                  ? JSON.parse(item.metadata)
+                  : item.metadata;
+                
+                if (metadata.tags && Array.isArray(metadata.tags)) {
+                  tags = metadata.tags;
+                }
+              } catch (e) {
+                // Ignore parsing errors
+              }
+            }
 
             this.addMessage(`{bold}${index + 1}. ${title}{/bold}`);
-            this.addMessage(`{gray-fg}Created: ${date}{/gray-fg}`);
+            this.addMessage(`{gray-fg}Created: ${date} | Type: ${item.contentType || 'text/plain'}{/gray-fg}`);
+            if (tags.length > 0) {
+              this.addMessage(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
+            }
             this.addMessage(`${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
             this.addMessage('');
           } else {
-            // Handle task item structure
-            const title = item.description || item.title || 'Untitled task';
-            const status = item.status || 'unknown';
+            // Handle task item structure with new API format
+            const title = item.title || 'Untitled task';
+            const description = item.description || '';
+            const status = item.status || 'pending';
+            const priority = item.priority || 'medium';
             const date = item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown';
+            const dueDate = item.dueDate ? new Date(item.dueDate).toLocaleString() : 'None';
 
             this.addMessage(`{bold}${index + 1}. ${title}{/bold}`);
-            this.addMessage(`{gray-fg}Status: ${status} | Created: ${date}{/gray-fg}`);
+            this.addMessage(`{gray-fg}Status: ${status} | Priority: ${priority} | Due: ${dueDate}{/gray-fg}`);
+            this.addMessage(`{gray-fg}Created: ${date}{/gray-fg}`);
+            if (description) {
+              this.addMessage(description.substring(0, 100) + (description.length > 100 ? '...' : ''));
+            }
             this.addMessage('');
           }
         });

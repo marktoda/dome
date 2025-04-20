@@ -62,8 +62,34 @@ export class ChatMode extends BaseMode {
       // Send message to API
       const response = await chat(input);
 
-      // Display response
-      this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold} ${response.message}`);
+      // Display response - handle the new API response format
+      let message = '';
+      
+      if (response && response.answer) {
+        message = response.answer;
+      } else if (response && typeof response === 'object') {
+        // Fallback to any available message property
+        message = response.message || response.content || JSON.stringify(response);
+      } else {
+        message = String(response);
+      }
+
+      this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold} ${message}`);
+      
+      // Display sources if available
+      if (response && response.sources && Array.isArray(response.sources) && response.sources.length > 0) {
+        this.container.pushLine('');
+        this.container.pushLine('{bold}Sources:{/bold}');
+        
+        response.sources.forEach((source: any, index: number) => {
+          if (source.title) {
+            this.container.pushLine(`${index + 1}. {underline}${source.title}{/underline}`);
+          }
+          if (source.snippet) {
+            this.container.pushLine(`   ${source.snippet.substring(0, 100)}${source.snippet.length > 100 ? '...' : ''}`);
+          }
+        });
+      }
       this.container.setScrollPerc(100);
 
       // Reset status

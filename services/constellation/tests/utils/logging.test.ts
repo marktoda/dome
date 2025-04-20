@@ -6,15 +6,37 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { logMetric, createTimer, getLogger } from '@dome/logging';
 
 // Mock the @dome/logging module
-vi.mock('@dome/logging', () => ({
-  getLogger: vi.fn().mockReturnValue({
+vi.mock('@dome/logging', () => {
+  const mockLogger = {
     info: vi.fn(),
     error: vi.fn(),
     warn: vi.fn(),
     debug: vi.fn(),
-  }),
-  BaseLogger: class { },
-}));
+  };
+
+  return {
+    getLogger: vi.fn().mockReturnValue(mockLogger),
+    BaseLogger: class {},
+    logMetric: vi.fn(),
+    createTimer: vi.fn(() => ({
+      stop: vi.fn(() => 100),
+    })),
+    metrics: {
+      increment: vi.fn(),
+      decrement: vi.fn(),
+      gauge: vi.fn(),
+      timing: vi.fn(),
+      startTimer: vi.fn(() => ({
+        stop: vi.fn(() => 100),
+      })),
+      trackOperation: vi.fn(),
+      getCounter: vi.fn(),
+      getGauge: vi.fn(),
+      reset: vi.fn(),
+    },
+    MetricsService: vi.fn(),
+  };
+});
 
 describe('Logging Utilities', () => {
   beforeEach(() => {

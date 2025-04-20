@@ -63,16 +63,8 @@ export class ExploreMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Loading notes...');
       this.screen.render();
 
-      const response = await listNotes();
-
-      // Handle different response formats
-      if (Array.isArray(response)) {
-        this.notes = response;
-      } else if (typeof response === 'object' && response !== null) {
-        this.notes = (response as any).notes || [];
-      } else {
-        this.notes = [];
-      }
+      // The updated listNotes function should already return an array
+      this.notes = await listNotes();
 
       // Calculate total pages
       this.totalPages = Math.ceil(this.notes.length / this.pageSize);
@@ -120,11 +112,30 @@ export class ExploreMode extends BaseMode {
     // Display notes
     pageNotes.forEach((note, index) => {
       const title = note.title || 'Untitled';
-      const content = note.body || note.content || '';
+      const content = note.body || '';
       const date = new Date(note.createdAt).toLocaleString();
+      
+      // Try to extract tags from metadata if available
+      let tags: string[] = [];
+      if (note.metadata) {
+        try {
+          const metadata = typeof note.metadata === 'string'
+            ? JSON.parse(note.metadata)
+            : note.metadata;
+          
+          if (metadata.tags && Array.isArray(metadata.tags)) {
+            tags = metadata.tags;
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
 
       this.container.pushLine(`{bold}${start + index + 1}. ${title}{/bold}`);
-      this.container.pushLine(`{gray-fg}Created: ${date}{/gray-fg}`);
+      this.container.pushLine(`{gray-fg}Created: ${date} | Type: ${note.contentType || 'text/plain'}{/gray-fg}`);
+      if (tags.length > 0) {
+        this.container.pushLine(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
+      }
       this.container.pushLine(`${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
       this.container.pushLine('');
     });
@@ -166,16 +177,37 @@ export class ExploreMode extends BaseMode {
 
       if (match.createdAt) {
         this.container.pushLine(
-          `{gray-fg}Created: ${new Date(match.createdAt).toLocaleString()}{/gray-fg}`,
+          `{gray-fg}Created: ${new Date(match.createdAt).toLocaleString()} | Type: ${match.contentType || 'text/plain'}{/gray-fg}`,
         );
       }
+      
+      // Try to extract tags from metadata if available
+      let tags: string[] = [];
+      if (match.metadata) {
+        try {
+          const metadata = typeof match.metadata === 'string'
+            ? JSON.parse(match.metadata)
+            : match.metadata;
+          
+          if (metadata.tags && Array.isArray(metadata.tags)) {
+            tags = metadata.tags;
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+      
+      if (tags.length > 0) {
+        this.container.pushLine(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
+      }
 
-      if (match.excerpt) {
-        this.container.pushLine(`${match.excerpt}`);
-      } else if (match.body) {
-        this.container.pushLine(
-          `${match.body.substring(0, 100)}${match.body.length > 100 ? '...' : ''}`,
-        );
+      // Display content - use body field from new API
+      if (match.body) {
+        const excerpt = match.body.length > 150
+          ? match.body.substring(0, 150) + '...'
+          : match.body;
+        
+        this.container.pushLine(excerpt);
       }
 
       this.container.pushLine('');
@@ -183,7 +215,8 @@ export class ExploreMode extends BaseMode {
 
     // Display pagination info
     this.container.pushLine('');
-    this.container.pushLine(`{center}Found ${results.results.length} results{/center}`);
+    const totalResults = results.pagination?.total || results.results.length;
+    this.container.pushLine(`{center}Found ${totalResults} results{/center}`);
     this.container.pushLine('{center}Type {bold}back{/bold} to return to notes{/center}');
 
     this.screen.render();

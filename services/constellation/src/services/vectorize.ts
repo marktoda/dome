@@ -43,8 +43,8 @@ export class VectorizeService {
     const batches =
       vecs.length > this.cfg.maxBatchSize
         ? Array.from({ length: Math.ceil(vecs.length / this.cfg.maxBatchSize) }, (_, i) =>
-          vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
-        )
+            vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
+          )
         : [vecs];
 
     for (const batch of batches) await this.upsertBatch(batch);
@@ -92,7 +92,6 @@ export class VectorizeService {
       const res = await this.idx.query(vector, { topK, filter, returnMetadata: true });
       metrics.increment('vectorize.query.success');
       metrics.gauge('vectorize.query.results', res.matches.length);
-
 
       return res.matches.map(m => ({
         id: m.id,

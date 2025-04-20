@@ -112,7 +112,9 @@ export class Embedder {
    * @private
    */
   private async processMultipleBatches(texts: string[]): Promise<number[][]> {
-    getLogger().debug(`Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`);
+    getLogger().debug(
+      `Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`,
+    );
 
     // Split texts into batches
     const batches = this.createBatches(texts);

@@ -7,15 +7,8 @@ import { MetricsService, metrics, logMetric } from '@dome/logging';
 import { getLogger } from '@dome/logging';
 
 // Mock the logging utilities
-vi.mock('@dome/logging', () => ({
-  logMetric: vi.fn(),
-  getLogger: vi.fn().mockReturnValue({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-  metrics: {
+vi.mock('@dome/logging', () => {
+  const mockMetricsService = {
     increment: vi.fn(),
     decrement: vi.fn(),
     gauge: vi.fn(),
@@ -27,31 +20,23 @@ vi.mock('@dome/logging', () => ({
     getCounter: vi.fn(),
     getGauge: vi.fn(),
     reset: vi.fn(),
-  },
-  MetricsService: vi.fn().mockImplementation(() => ({
-    increment: vi.fn(),
-    decrement: vi.fn(),
-    gauge: vi.fn(),
-    timing: vi.fn(),
-    startTimer: vi.fn().mockReturnValue({
-      stop: vi.fn().mockReturnValue(100),
-    }),
-    trackOperation: vi.fn(),
-    getCounter: vi.fn(),
-    getGauge: vi.fn(),
-    reset: vi.fn(),
-  })),
-}));
+  };
 
-// Mock the @dome/logging module
-vi.mock('@dome/logging', () => ({
-  getLogger: vi.fn().mockReturnValue({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
+  return {
+    logMetric: vi.fn(),
+    getLogger: vi.fn().mockReturnValue({
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }),
+    metrics: mockMetricsService,
+    MetricsService: vi.fn().mockImplementation(() => mockMetricsService),
+    createTimer: vi.fn(() => ({
+      stop: vi.fn(() => 100),
+    })),
+  };
+});
 
 describe('Metrics Utilities', () => {
   beforeEach(() => {

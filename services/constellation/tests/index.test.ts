@@ -36,21 +36,43 @@ interface TestMessageBatch<T> {
 }
 
 // Mock dependencies
-vi.mock('@dome/logging', () => ({
-  withLogger: vi.fn((_, fn) => fn()),
-  getLogger: vi.fn(() => ({
-    info: vi.fn(),
-    debug: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    child: vi.fn().mockReturnValue({
+vi.mock('@dome/logging', () => {
+  const mockMetricsService = {
+    increment: vi.fn(),
+    decrement: vi.fn(),
+    gauge: vi.fn(),
+    timing: vi.fn(),
+    startTimer: vi.fn(() => ({
+      stop: vi.fn(() => 100),
+    })),
+    trackOperation: vi.fn(),
+    getCounter: vi.fn(),
+    getGauge: vi.fn(),
+    reset: vi.fn(),
+  };
+
+  return {
+    withLogger: vi.fn((_, fn) => fn()),
+    getLogger: vi.fn(() => ({
       info: vi.fn(),
       debug: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
-    }),
-  })),
-}));
+      child: vi.fn().mockReturnValue({
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      }),
+    })),
+    logMetric: vi.fn(),
+    createTimer: vi.fn(() => ({
+      stop: vi.fn(() => 100),
+    })),
+    metrics: mockMetricsService,
+    MetricsService: vi.fn(() => mockMetricsService),
+  };
+});
 
 // Mock cloudflare:workers
 vi.mock('cloudflare:workers', () => ({

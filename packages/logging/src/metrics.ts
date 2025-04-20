@@ -17,12 +17,16 @@ export function logMetric(name: string, value: number, tags: Record<string, stri
   // Create a structured log with metric data as top-level fields
   // This ensures Cloudflare properly parses the metrics instead of embedding them in the message
   const metric_type = tags.type || 'gauge';
+  
+  // Create a copy of tags without the 'type' property to avoid duplication
+  const { type, ...restTags } = tags;
+  
   getLogger().info(
     {
       metric_name: name,
       metric_value: value,
       metric_type,
-      ...tags,
+      ...restTags,
     },
     'Metric recorded',
   );

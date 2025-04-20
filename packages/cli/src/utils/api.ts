@@ -110,8 +110,16 @@ export const api = {
  * @param content The content to add
  * @returns The response data
  */
-export async function addContent(content: string): Promise<any> {
-  return api.post('/notes/ingest', { content });
+export async function addContent(content: string, title?: string, tags?: string[]): Promise<any> {
+  const payload = {
+    content,
+    contentType: 'text/plain',
+    title: title || undefined,
+    tags: tags || undefined
+  };
+  
+  const response = await api.post('/notes/ingest', payload);
+  return response.note || response;
 }
 
 /**
@@ -121,7 +129,13 @@ export async function addContent(content: string): Promise<any> {
  * @returns The response data
  */
 export async function addNote(context: string, content: string): Promise<any> {
-  return api.post(`/note/${context}`, { content });
+  // The new API doesn't have a direct equivalent to the old /note/:context endpoint
+  // Instead, we'll use the /notes/ingest endpoint with the context as metadata
+  return api.post('/notes/ingest', {
+    content,
+    contentType: 'text/plain',
+    metadata: { context }
+  });
 }
 
 /**
@@ -131,13 +145,28 @@ export async function addNote(context: string, content: string): Promise<any> {
  * @returns The response data
  */
 export async function listItems(type: 'notes' | 'tasks', filter?: string): Promise<any> {
-  const params: Record<string, string> = {};
+  const params: Record<string, any> = {};
   if (filter) {
-    params.filter = filter;
+    // The new API uses different filtering parameters
+    if (type === 'notes') {
+      // For notes, we might filter by contentType
+      params.contentType = filter;
+    } else {
+      // For tasks, we might filter by status or priority
+      params.status = filter;
+    }
   }
+  
   // Use the correct endpoint based on type
   const endpoint = type === 'notes' ? '/notes' : '/tasks';
-  return api.get(endpoint, { params });
+  const response = await api.get(endpoint, { params });
+  
+  // Return the items array from the response
+  if (type === 'notes') {
+    return response.notes || [];
+  } else {
+    return response.tasks || [];
+  }
 }
 
 /**
@@ -164,7 +193,8 @@ export async function listTasks(filter?: string): Promise<any[]> {
  * @returns The response data
  */
 export async function showItem(id: string): Promise<any> {
-  return api.get(`/notes/${id}`);
+  const response = await api.get(`/notes/${id}`);
+  return response.note || response;
 }
 
 /**
@@ -172,8 +202,18 @@ export async function showItem(id: string): Promise<any> {
  * @param query The search query
  * @returns The response data
  */
-export async function search(query: string): Promise<any> {
-  return api.get('/notes/search', { params: { q: query } });
+export async function search(query: string, limit: number = 10): Promise<any> {
+  const params = {
+    q: query,
+    limit
+  };
+  
+  const response = await api.get('/notes/search', { params });
+  return {
+    results: response.results || [],
+    pagination: response.pagination || { total: 0, limit, offset: 0, hasMore: false },
+    query
+  };
 }
 
 /**
@@ -182,5 +222,20 @@ export async function search(query: string): Promise<any> {
  * @returns The response data
  */
 export async function chat(message: string): Promise<any> {
-  return api.post('/chat', { message });
+  // The new chat API expects a messages array with role and content
+  const payload = {
+    messages: [
+      {
+        role: 'user',
+        content: message
+      }
+    ],
+    stream: false,
+    enhanceWithContext: true,
+    maxContextItems: 5,
+    includeSourceInfo: true
+  };
+  
+  const response = await api.post('/chat', payload);
+  return response.response || response;
 }

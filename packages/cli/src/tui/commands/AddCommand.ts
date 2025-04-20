@@ -53,8 +53,9 @@ export class AddCommand implements CommandHandler {
 
       // Display success message
       this.addMessage(`{green-fg}Content added successfully!{/green-fg}`);
-      if (response.id) {
+      if (response && response.id) {
         this.addMessage(`{bold}ID:{/bold} ${response.id}`);
+        this.addMessage(`{bold}Title:{/bold} ${response.title || 'Untitled'}`);
       }
     } catch (err) {
       this.addMessage(

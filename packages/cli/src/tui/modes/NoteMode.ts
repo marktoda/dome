@@ -120,11 +120,9 @@ export class NoteMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Saving note...');
       this.screen.render();
 
-      // Format the note
-      const noteContent = `# ${this.noteTitle}\n\n${this.noteContent}`;
-
-      // Save the note
-      const response = await addContent(noteContent);
+      // Save the note using the updated API
+      // Pass the title separately instead of formatting it into the content
+      const response = await addContent(this.noteContent, this.noteTitle);
 
       // Show success message
       this.container.setContent('');
@@ -133,8 +131,9 @@ export class NoteMode extends BaseMode {
       this.container.pushLine(
         `{green-fg}Your note "${this.noteTitle}" has been saved successfully!{/green-fg}`,
       );
-      if (response.id) {
+      if (response && response.id) {
         this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
+        this.container.pushLine(`{bold}Content Type:{/bold} ${response.contentType || 'text/plain'}`);
       }
       this.container.pushLine('');
       this.container.pushLine(

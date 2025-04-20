@@ -158,11 +158,11 @@ Implement the core Silo service with cloudflare worker entrypoint interface and 
    export default class Silo implements WorkerEntrypoint<Env> {
      // Store environment for use in methods
      env!: Env;
-     
+
      async queue(batch: MessageBatch<R2Event>) {
        // Queue consumer logic will be implemented in Stage 5
      }
-     
+
      async simplePut(data: any) {
        // Implement in Stage 3
      }
@@ -185,8 +185,8 @@ Implement the core Silo service with cloudflare worker entrypoint interface and 
    }
    ```
 
-3. Set up basic logging and metrics utilities in `src/utils/`
-4. Create test stubs for RPC handlers
+2. Set up basic logging and metrics utilities in `src/utils/`
+3. Create test stubs for RPC handlers
 
 **Dependencies**
 
@@ -848,4 +848,3 @@ The Silo service provides a unified solution for content storage in the Dome app
 - Simplified content retrieval for RAG operations
 
 This implementation plan provides a clear roadmap for building the Silo service, with each stage delivering a working component that can be tested and validated independently.
-

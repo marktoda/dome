@@ -74,7 +74,7 @@ describe('ApiClient', () => {
 
     await addContent('test content');
 
-    expect(mockPost).toHaveBeenCalledWith('/ingest', { content: 'test content' }, undefined);
+    expect(mockPost).toHaveBeenCalledWith('/notes/ingest', { content: 'test content' }, undefined);
   });
 
   test('addNote should call post with the correct parameters', async () => {
@@ -106,7 +106,7 @@ describe('ApiClient', () => {
 
     await listItems('notes', 'tag:work');
 
-    expect(mockGet).toHaveBeenCalledWith('/list/notes', { params: { filter: 'tag:work' } });
+    expect(mockGet).toHaveBeenCalledWith('/notes', { params: { filter: 'tag:work' } });
   });
 
   test('showItem should call get with the correct parameters', async () => {
@@ -122,7 +122,7 @@ describe('ApiClient', () => {
 
     await showItem('123');
 
-    expect(mockGet).toHaveBeenCalledWith('/show/123', undefined);
+    expect(mockGet).toHaveBeenCalledWith('/notes/123', undefined);
   });
 
   test('search should call get with the correct parameters', async () => {
@@ -138,7 +138,7 @@ describe('ApiClient', () => {
 
     await search('test query');
 
-    expect(mockGet).toHaveBeenCalledWith('/search', { params: { q: 'test query' } });
+    expect(mockGet).toHaveBeenCalledWith('/notes/search', { params: { q: 'test query' } });
   });
 
   test('chat should call post with the correct parameters', async () => {
