@@ -1,4 +1,4 @@
-import { NoteVectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
+import { VectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
 import { getLogger, metrics } from '@dome/logging';
 import { VectorWithMetadata } from '../types';
 
@@ -80,7 +80,7 @@ export class VectorizeService {
 
   public async query(
     vector: number[],
-    filter: Partial<NoteVectorMeta> = {},
+    filter: Partial<VectorMeta> = {},
     topK = 10,
   ): Promise<VectorSearchResult[]> {
     if (!vector?.length) return [];
@@ -96,10 +96,8 @@ export class VectorizeService {
       return res.matches.map(m => ({
         id: m.id,
         score: m.score,
-        // metadata is optional in SDK type, so supply a fallback object first,
-        // then cast to our stricter NoteVectorMeta to satisfy TS.
         // TODO: make metadata required?
-        metadata: (m.metadata ?? {}) as unknown as NoteVectorMeta,
+        metadata: (m.metadata ?? {}) as unknown as VectorMeta,
       }));
     } catch (err) {
       metrics.increment('vectorize.query.errors');

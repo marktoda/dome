@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Constellation from '../src/index';
-import { EmbedJob, NoteVectorMeta } from '@dome/common';
+import { SiloEmbedJob, VectorMeta } from '@dome/common';
 import { getLogger } from '@dome/logging';
 
 // Define types needed for testing
@@ -77,9 +77,9 @@ vi.mock('@dome/logging', () => {
 // Mock cloudflare:workers
 vi.mock('cloudflare:workers', () => ({
   WorkerEntrypoint: class WorkerEntrypoint {
-    constructor() {}
-    fetch() {}
-    queue() {}
+    constructor() { }
+    fetch() { }
+    queue() { }
   },
 }));
 
@@ -132,15 +132,16 @@ describe('Constellation', () => {
   let mockEnv: Env;
 
   // Test data
-  const testJob: EmbedJob = {
+  const testJob: SiloEmbedJob = {
     userId: 'user-123',
-    noteId: 'note-456',
+    contentType: 'note',
+    contentId: 'note-456',
     text: 'This is a test note for embedding',
     created: Date.now(),
     version: 1,
   };
 
-  const testFilter: Partial<NoteVectorMeta> = {
+  const testFilter: Partial<VectorMeta> = {
     userId: 'user-123',
   };
 
@@ -191,7 +192,7 @@ describe('Constellation', () => {
       expect(getLogger().info).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: testJob.userId,
-          noteId: testJob.noteId,
+          contentId: testJob.contentId,
         }),
         expect.any(String),
       );

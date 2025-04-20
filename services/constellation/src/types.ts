@@ -6,7 +6,7 @@
  * of the service's core functionality.
  */
 
-import { NoteVectorMeta } from '@dome/common';
+import { VectorMeta } from '@dome/common';
 
 /**
  * Vector with metadata for upsert operations
@@ -14,18 +14,19 @@ import { NoteVectorMeta } from '@dome/common';
  * Represents a complete vector with its embedding values and associated metadata
  * ready for storage in the Vectorize index.
  *
- * @property id - Unique identifier for the vector, typically in the format "note:{noteId}:{chunkIndex}"
+ * @property id - Unique identifier for the vector, typically in the format "content:{contentId}:{chunkIndex}"
  * @property values - The actual vector embedding as an array of floating-point numbers
  * @property metadata - Associated metadata for filtering and identification
  *
  * @example
  * ```typescript
  * const vector: VectorWithMetadata = {
- *   id: 'note:note123:0',
+ *   id: 'content:content123:0',
  *   values: [0.1, 0.2, 0.3, ...], // 384-dimensional vector
  *   metadata: {
  *     userId: 'user123',
- *     noteId: 'note123',
+ *     contentId: 'content123',
+ *     contentType: 'note',
  *     createdAt: 1650000000,
  *     version: 1
  *   }
@@ -35,7 +36,7 @@ import { NoteVectorMeta } from '@dome/common';
 export interface VectorWithMetadata {
   id: string;
   values: number[];
-  metadata: NoteVectorMeta;
+  metadata: VectorMeta;
 }
 
 /**
@@ -55,7 +56,7 @@ export interface VectorWithMetadata {
  * @example
  * ```typescript
  * // Process a queue message
- * async function processMessage(message: QueueMessage<EmbedJob>) {
+ * async function processMessage(message: QueueMessage<SiloEmbedJob>) {
  *   try {
  *     await processJob(message.body);
  *     message.ack();

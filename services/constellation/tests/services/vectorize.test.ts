@@ -9,7 +9,7 @@ import {
   createVectorizeService,
 } from '../../src/services/vectorize';
 import { VectorWithMetadata } from '../../src/types';
-import { NoteVectorMeta, VectorSearchResult } from '@dome/common';
+import { VectorMeta, VectorSearchResult } from '@dome/common';
 
 // Mock the logger and metrics
 vi.mock('@dome/logging', () => ({
@@ -53,7 +53,8 @@ describe('VectorizeService', () => {
             score: 0.95,
             metadata: {
               userId: 'user1',
-              noteId: 'note1',
+              contentId: 'note1',
+              contentType: 'note',
               createdAt: 1650000000,
               version: 1,
             },
@@ -84,7 +85,8 @@ describe('VectorizeService', () => {
           values: [0.1, 0.2, 0.3],
           metadata: {
             userId: 'user1',
-            noteId: 'note1',
+            contentId: 'note1',
+            contentType: 'note',
             createdAt: 1650000000,
             version: 1,
           },
@@ -117,7 +119,8 @@ describe('VectorizeService', () => {
           values: [0.1, 0.2, 0.3],
           metadata: {
             userId: 'user1',
-            noteId: `note${i}`,
+            contentId: `note${i}`,
+            contentType: 'note',
             createdAt: 1650000000,
             version: 1,
           },
@@ -151,7 +154,8 @@ describe('VectorizeService', () => {
           values: [0.1, 0.2, 0.3],
           metadata: {
             userId: 'user1',
-            noteId: 'note1',
+            contentId: 'note1',
+            contentType: 'note',
             createdAt: 1650000000,
             version: 1,
           },
@@ -179,7 +183,8 @@ describe('VectorizeService', () => {
           values: [0.1, 0.2, 0.3],
           metadata: {
             userId: 'user1',
-            noteId: 'note1',
+            contentId: 'note1',
+            contentType: 'note',
             createdAt: 1650000000,
             version: 1,
           },
@@ -198,7 +203,7 @@ describe('VectorizeService', () => {
       const vectorizeService = new VectorizeService(mockVectorize);
 
       const queryVector = [0.1, 0.2, 0.3];
-      const filter: Partial<NoteVectorMeta> = { userId: 'user1' };
+      const filter: Partial<VectorMeta> = { userId: 'user1' };
       const topK = 5;
 
       await vectorizeService.query(queryVector, filter, topK);
@@ -220,7 +225,8 @@ describe('VectorizeService', () => {
           score: 0.95,
           metadata: {
             userId: 'user1',
-            noteId: 'note1',
+            contentId: 'note1',
+            contentType: 'note',
             createdAt: 1650000000,
             version: 1,
           },

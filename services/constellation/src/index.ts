@@ -1,5 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { EmbedJob, NoteVectorMeta, VectorSearchResult } from '@dome/common';
+import { SiloEmbedJob, VectorMeta, VectorSearchResult } from '@dome/common';
 
 import { withLogger, getLogger, metrics } from '@dome/logging';
 import { createPreprocessor } from './services/preprocessor';
@@ -34,8 +34,8 @@ async function wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T>) {
 export default class Constellation extends WorkerEntrypoint<Env> {
   /* ------- embed a batch of notes -------------------------------------- */
   private async embedBatch(
-    jobs: EmbedJob[],
-    dead?: (j: EmbedJob) => Promise<void>,
+    jobs: SiloEmbedJob[],
+    dead?: (j: SiloEmbedJob) => Promise<void>,
   ): Promise<number> {
     const { preprocessor, embedder, vectorize } = services(this.env);
     let ok = 0;
@@ -50,11 +50,12 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         }
 
         const vecs = (await embedder.embed(chunks)).map((v, i) => ({
-          id: `note:${job.noteId}:${i}`,
+          id: `content:${job.contentId}:${i}`,
           values: v,
-          metadata: <NoteVectorMeta>{
+          metadata: <VectorMeta>{
             userId: job.userId,
-            noteId: job.noteId,
+            contentId: job.contentId,
+            contentType: job.contentType,
             createdAt: (job.created / 1000) | 0,
             version: job.version,
           },
@@ -74,7 +75,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   }
 
   /* ------- queue consumer ---------------------------------------------- */
-  async queue(batch: MessageBatch<EmbedJob>) {
+  async queue(batch: MessageBatch<SiloEmbedJob>) {
     await wrap(
       { service: 'constellation', op: 'queue', size: batch.messages.length, ...this.env },
       async () => {
@@ -91,9 +92,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   }
 
   /* ------- rpc: embed --------------------------------------------------- */
-  public async embed(job: EmbedJob) {
+  public async embed(job: SiloEmbedJob) {
     await wrap(
-      { service: 'constellation', op: 'embed', note: job.noteId, user: job.userId, ...this.env },
+      { service: 'constellation', op: 'embed', content: job.contentId, user: job.userId, ...this.env },
       async () => {
         metrics.increment('rpc.embed.requests');
         await this.embedBatch([job]);
@@ -105,7 +106,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   /* ------- rpc: query --------------------------------------------------- */
   public async query(
     text: string,
-    filter: Partial<NoteVectorMeta>,
+    filter: Partial<VectorMeta>,
     topK = 10,
   ): Promise<VectorSearchResult[]> {
     return wrap({ service: 'constellation', op: 'query', filter, topK, ...this.env }, async () => {
