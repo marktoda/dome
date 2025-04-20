@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { constellationService } from '../../src/services/constellationService';
-import { contentMapperService } from '../../src/services/contentMapperService';
 import { ServiceError, SiloEmbedJob, VectorSearchResult, VectorIndexStats } from '@dome/common';
 
 // Mock dependencies
@@ -11,12 +10,6 @@ vi.mock('@dome/logging', () => ({
     error: vi.fn(),
     warn: vi.fn(),
   }),
-}));
-
-vi.mock('../../src/services/contentMapperService', () => ({
-  contentMapperService: {
-    mapVectorResultsToNoteIds: vi.fn(),
-  },
 }));
 
 describe('ConstellationService', () => {
@@ -67,10 +60,10 @@ describe('ConstellationService', () => {
     },
   ];
 
-  // Mock note search results
-  const mockNoteResults = [
-    { noteId: 'note-123', score: 0.95 },
-    { noteId: 'note-456', score: 0.85 },
+  // Mock content search results
+  const mockContentResults = [
+    { contentId: 'note-123', score: 0.95 },
+    { contentId: 'note-456', score: 0.85 },
   ];
 
   // Mock vector stats
@@ -161,7 +154,6 @@ describe('ConstellationService', () => {
     it('should search notes successfully', async () => {
       // Arrange
       vi.mocked(mockEnv.CONSTELLATION.query).mockResolvedValue(mockVectorResults);
-      vi.mocked(contentMapperService.mapVectorResultsToNoteIds).mockReturnValue(mockNoteResults);
       const topK = 5;
 
       // Act
@@ -178,10 +170,12 @@ describe('ConstellationService', () => {
         { userId: mockUserId },
         topK,
       );
-      expect(contentMapperService.mapVectorResultsToNoteIds).toHaveBeenCalledWith(
-        mockVectorResults,
-      );
-      expect(results).toEqual(mockNoteResults);
+      
+      // Verify the results have the expected structure
+      expect(results).toHaveLength(mockVectorResults.length);
+      expect(results[0]).toHaveProperty('contentId');
+      expect(results[0]).toHaveProperty('score');
+      expect(results[0].contentId).toBe(mockVectorResults[0].metadata.contentId);
     });
 
     it('should handle errors when searching notes', async () => {
@@ -198,7 +192,6 @@ describe('ConstellationService', () => {
     it('should use default topK when not specified', async () => {
       // Arrange
       vi.mocked(mockEnv.CONSTELLATION.query).mockResolvedValue(mockVectorResults);
-      vi.mocked(contentMapperService.mapVectorResultsToNoteIds).mockReturnValue(mockNoteResults);
 
       // Act
       await constellationService.searchNotes(mockEnv as any, mockText, mockUserId);

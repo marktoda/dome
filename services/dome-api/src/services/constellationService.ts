@@ -7,7 +7,6 @@ import {
   VectorIndexStats,
 } from '@dome/common';
 import { getLogger } from '@dome/logging';
-import { contentMapperService } from './contentMapperService';
 
 /**
  * Configuration constants for text processing
@@ -117,13 +116,51 @@ export class ConstellationService {
     query: string,
     userId: string,
     topK: number = DEFAULT_TOP_K,
-  ): Promise<Array<{ noteId: string; score: number }>> {
+  ): Promise<Array<{ contentId: string; score: number }>> {
     try {
       const filter: Partial<VectorMeta> = { userId };
 
       const results = await this.query(env, query, filter, topK);
 
-      return contentMapperService.mapVectorResultsToNoteIds(results);
+      // Inline the mapVectorResultsToContentIds logic
+      // Add detailed logging to understand the metadata structure
+      if (results.length > 0) {
+        const firstResult = results[0];
+        this.logger.debug('First search result metadata:', {
+          metadata: firstResult.metadata,
+          hasContentId: 'contentId' in firstResult.metadata,
+          metadataKeys: Object.keys(firstResult.metadata)
+        });
+      }
+      
+      return results.map(result => {
+        // Check if metadata exists
+        if (!result.metadata) {
+          this.logger.warn('Missing metadata in search result:', { id: result.id });
+          return { contentId: '', score: result.score };
+        }
+        
+        // Extract contentId with more robust checks
+        let contentId = '';
+        const metadata = result.metadata as any;
+        
+        if (metadata.hasOwnProperty('contentId') && metadata.contentId) {
+          contentId = metadata.contentId;
+        } else {
+          // Try to extract contentId from the vector ID (format: content:contentId:chunkIndex)
+          const idParts = result.id.split(':');
+          if (idParts.length >= 2 && idParts[0] === 'content') {
+            contentId = idParts[1];
+          }
+        }
+        
+        this.logger.debug(`Mapped result ${result.id} to contentId: ${contentId}`);
+        
+        return {
+          contentId,
+          score: result.score,
+        };
+      });
     } catch (error) {
       this.logger.error('Failed to search notes', {
         query,

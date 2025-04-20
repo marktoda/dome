@@ -14,8 +14,8 @@ import {
   SiloBatchGetItem,
   SiloDeleteResponse,
   SiloStatsResponse,
+  SiloContent,
 } from '@dome/common';
-import { contentMapperService } from './contentMapperService';
 
 /**
  * Service for interacting with the Silo content storage service
@@ -103,7 +103,7 @@ export class SiloService {
       }
 
       const item = response.items[0];
-      return contentMapperService.mapBatchGetItemToNote(item);
+      return this.mapBatchGetItemToContent(item);
     } catch (error) {
       this.logger.error('Failed to get content as note', {
         id,
@@ -128,20 +128,46 @@ export class SiloService {
    */
   async getContentsAsNotes(env: Bindings, ids: string[], userId?: string) {
     try {
+      this.logger.debug('getContentsAsNotes called with', {
+        idsCount: ids.length,
+        firstFewIds: ids.slice(0, 5),
+        userId
+      });
+      
       if (ids.length === 0) {
+        this.logger.debug('No IDs provided to getContentsAsNotes, returning empty array');
         return [];
       }
 
+      this.logger.debug('Calling batchGet with', { ids, userId });
       const response = await this.batchGet(env, {
         ids,
         userId,
       });
 
       if (!response.items || response.items.length === 0) {
+        this.logger.debug('No items returned from batchGet', {
+          responseHasItems: !!response.items,
+          itemsLength: response.items?.length || 0
+        });
         return [];
       }
 
-      return response.items.map(item => contentMapperService.mapBatchGetItemToNote(item));
+      this.logger.debug('Items returned from batchGet', {
+        itemsCount: response.items.length,
+        firstItemId: response.items[0]?.id,
+        firstItemUserId: response.items[0]?.userId
+      });
+      
+      return response.items.map(item => {
+        const content = this.mapBatchGetItemToContent(item);
+        this.logger.debug('Mapped item to content', {
+          itemId: item.id,
+          contentId: content.id,
+          contentTitle: content.title?.substring(0, 20)
+        });
+        return content;
+      });
     } catch (error) {
       this.logger.error('Failed to get contents as notes', {
         ids,
@@ -196,7 +222,7 @@ export class SiloService {
       }
 
       // Map the batch items to notes
-      const notes = response.items.map(item => contentMapperService.mapBatchGetItemToNote(item));
+      const notes = response.items.map(item => this.mapBatchGetItemToContent(item));
 
       return {
         notes,
@@ -217,6 +243,43 @@ export class SiloService {
         context: { userId, options },
       });
     }
+  }
+
+  /**
+   * Map a Silo BatchGetItem to a SiloContent object
+   *
+   * @param item - The Silo batch get item to map
+   * @returns A SiloContent object
+   */
+  private mapBatchGetItemToContent(item: SiloBatchGetItem): SiloContent {
+    // Extract title from metadata if available
+    let title = '';
+    let metadata: Record<string, any> = {};
+
+    try {
+      // Attempt to parse metadata from the content if it exists
+      if (item.body) {
+        const firstLine = item.body.split('\n')[0].trim();
+        if (firstLine) {
+          title = firstLine;
+        }
+      }
+    } catch (error) {
+      // If parsing fails, use a default title
+      title = `Content ${item.id}`;
+    }
+
+    return {
+      id: item.id,
+      userId: item.userId || null,
+      title: title,
+      body: item.body || '',
+      contentType: item.contentType as ContentType,
+      size: item.size,
+      createdAt: item.createdAt * 1000, // Convert seconds to milliseconds
+      updatedAt: item.createdAt * 1000, // Use same timestamp for updatedAt initially
+      metadata: metadata,
+    };
   }
 }
 

@@ -122,7 +122,7 @@ export class SearchService {
       }
 
       // Get unique content IDs
-      const contentIds = [...new Set(searchResults.map(result => result.noteId))];
+      const contentIds = [...new Set(searchResults.map(result => result.contentId))];
 
       // Retrieve content from Silo
       const contents = await siloService.getContentsAsNotes(env, contentIds, userId);
@@ -130,7 +130,7 @@ export class SearchService {
       // Map content IDs to scores
       const scoreMap = new Map<string, number>();
       for (const result of searchResults) {
-        scoreMap.set(result.noteId, result.score);
+        scoreMap.set(result.contentId, result.score);
       }
 
       // Filter and transform results
