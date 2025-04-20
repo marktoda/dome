@@ -14,6 +14,9 @@ export * from './embedding';
 // Export silo content types
 export * from './siloContent';
 
+// Export queue message types
+export * from './queueMessages';
+
 /**
  * Service information interface
  */

@@ -202,9 +202,8 @@ export async function search(query: string, limit: number = 10): Promise<any> {
     limit,
   };
 
-  // Use a different path that won't be captured by the /:id route
-  // Adding a prefix like '_search' should prevent it from matching the /:id pattern
-  const response = await api.get('/notes/_search', { params });
+  // Use the dedicated search endpoint
+  const response = await api.get('/search', { params });
   
   return {
     results: response.results || [],

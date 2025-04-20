@@ -5,7 +5,7 @@ import { getLogger, metrics } from '@dome/logging';
  * This service encapsulates all interactions with Cloudflare Queues
  */
 export class QueueService {
-  constructor(private env: any) {}
+  constructor(private env: any) { }
 
   /**
    * Send a message to the NEW_CONTENT queue
@@ -18,7 +18,7 @@ export class QueueService {
       await this.env.NEW_CONTENT.send(message);
 
       metrics.timing('silo.queue.send.latency_ms', Date.now() - startTime);
-      getLogger().debug({ message }, 'Message sent to NEW_CONTENT queue');
+      getLogger().info({ message }, 'Message sent to NEW_CONTENT queue');
 
       return true;
     } catch (error) {

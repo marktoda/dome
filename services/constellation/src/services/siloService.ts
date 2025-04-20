@@ -1,17 +1,21 @@
 import { getLogger, metrics } from '@dome/logging';
 import { z } from 'zod';
 import { SiloEmbedJob, ContentType, NewContentMessageSchema, NewContentMessage } from '@dome/common';
+import { SiloService as SiloBinding } from '../types';
 
 /**
  * Service for interacting with the Silo service
  * Provides methods to fetch content from Silo
  */
 export class SiloService {
+  private silo: SiloBinding;
   /**
    * Create a new SiloService
    * @param env The environment bindings
    */
-  constructor(private env: Env) { }
+  constructor(private env: Env) {
+    this.silo = env.SILO as unknown as SiloBinding;
+  }
 
   /**
    * Fetch content from Silo by ID
@@ -23,37 +27,24 @@ export class SiloService {
     const startTime = Date.now();
 
     try {
-      // Make an RPC call to Silo to fetch the content
-      // This assumes there's a SILO binding in the environment
-      if (!this.env.SILO) {
-        throw new Error('SILO binding not available');
+      // Use the fetch method to make an RPC call to the batchGet method
+      const result = await this.silo.batchGet({ ids: [contentId], userId });
+
+      if (!result.items || result.items.length === 0) {
+        getLogger().error({ contentId, userId }, 'Content not found');
+        throw new Error(`Content not found: ${contentId}`);
       }
 
-      // Use the fetch method to call the Silo API
-      const response = await this.env.SILO.fetch(`/notes/${contentId}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': userId || ''
-        }
-      });
+      const item = result.items[0];
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch content: ${response.status} ${response.statusText}`);
-      }
-
-      const result = await response.json() as {
-        note?: {
-          body?: string;
-          id: string;
-        }
-      };
-
-      if (!result.note || !result.note.body) {
+      // Check if the content body is available
+      if (!item.body) {
+        getLogger().error({ contentId, userId }, 'Content body not available');
         throw new Error(`Content body not available for: ${contentId}`);
       }
 
       metrics.timing('constellation.silo.fetch.latency_ms', Date.now() - startTime);
-      return result.note.body;
+      return item.body;
     } catch (error) {
       metrics.increment('constellation.silo.fetch.errors', 1);
       getLogger().error({ error, contentId, userId }, 'Error fetching content from Silo');
@@ -97,7 +88,7 @@ export class SiloService {
           message
         }, 'Invalid message format from new-content queue');
       } else {
-        getLogger().error({ error, message }, 'Error converting message to embed job');
+        getLogger().error({ error: JSON.stringify(error), message }, 'Error converting message to embed job');
       }
       throw error;
     }
