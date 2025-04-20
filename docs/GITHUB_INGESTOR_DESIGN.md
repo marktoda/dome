@@ -1,12 +1,13 @@
-# GitHub Code Ingestion Worker Design
+# GitHub Code Ingestion Worker Design (Revised)
 
-Based on our discussion and the existing architecture, I'll design a new worker called `github-ingestor` that will periodically fetch code from GitHub repositories and store it in the Silo service, with the ability to extend to other sources like Notion and Linear in the future.
+Based on our discussion and feedback, this is a revised design for the `github-ingestor` worker that will fetch code from GitHub repositories and store it in the Silo service, with the ability to extend to other sources like Notion and Linear in the future.
 
 ## 1. High-Level Architecture
 
 ```mermaid
 graph TD
-    subgraph Scheduled Tasks
+    subgraph Ingestion Triggers
+        Webhook[GitHub Webhook Worker]
         GithubCron[GitHub Ingestor Cron]
     end
 
@@ -20,9 +21,13 @@ graph TD
         Constellation[Constellation Service]
     end
 
+    GitHub[GitHub API] --> Webhook
+    Webhook -->|Enqueue Jobs| IngestQueue[INGEST_QUEUE]
     GithubCron -->|Fetch Repo Config| DB
-    GithubCron -->|GitHub API| GitHub[GitHub API]
-    GithubCron -->|Store Content| Silo
+    GithubCron -->|Conditional Requests| GitHub
+    GithubCron -->|Enqueue Jobs| IngestQueue
+    IngestQueue -->|Process Jobs| IngestWorker[Ingest Worker]
+    IngestWorker -->|Stream Content| Silo
     Silo -->|Store Metadata| DB
     Silo -->|Store Content| R2
     Silo -->|Notify| Constellation
@@ -31,791 +36,182 @@ graph TD
     class GitHub external
 ```
 
-## 2. Database Schema
+## 2. Key Improvements
 
-We'll need to add a new table to the D1 database to store repository configurations:
+Based on feedback, the revised design includes these key improvements:
+
+1. **Webhook-First Approach**: Primary ingestion via GitHub webhooks for near real-time updates and API quota savings
+2. **Streaming & Chunking**: Process large repositories in chunks to stay within Worker limits
+3. **Content Deduplication**: Use Git blob SHA-1 for deduplication in Silo/R2
+4. **ETag & Conditional Requests**: Reduce API usage with proper caching
+5. **Back-Pressure & Yielding**: Handle long-running operations gracefully
+6. **Per-User Auth**: Proper GitHub App integration for private repository access
+7. **Improved Schema**: Better table design with tenant isolation
+8. **Common Ingestion Contract**: Abstract interface for all content sources
+9. **Enhanced Error Handling**: Proper retries and dead-letter queues
+10. **Better Metrics**: Consistent tagging across providers
+
+## 3. Database Schema
 
 ```sql
-CREATE TABLE github_repositories (
+-- Main repository configuration table
+CREATE TABLE provider_repositories (
   id TEXT PRIMARY KEY,                -- ulid/uuid
-  userId TEXT,                        -- NULL for public repos, user ID for private repos
-  owner TEXT NOT NULL,                -- GitHub repository owner/organization
-  repo TEXT NOT NULL,                 -- GitHub repository name
-  branch TEXT NOT NULL DEFAULT 'main',-- Branch to monitor
+  userId TEXT NOT NULL,               -- User who added this repository (NULL for system repos)
+  provider TEXT NOT NULL,             -- 'github', 'linear', 'notion'
+  owner TEXT NOT NULL,                -- Repository owner/organization
+  repo TEXT NOT NULL,                 -- Repository name
+  branch TEXT NOT NULL DEFAULT 'main',-- Branch to monitor (GitHub only)
   lastSyncedAt INTEGER,               -- Last successful sync timestamp (epoch seconds)
-  lastCommitSha TEXT,                 -- Last processed commit SHA
+  lastCommitSha TEXT,                 -- Last processed commit SHA (GitHub only)
+  etag TEXT,                          -- ETag for conditional requests
+  rateLimitReset INTEGER,             -- When rate limit resets (epoch seconds)
+  retryCount INTEGER DEFAULT 0,       -- Number of failed attempts
+  nextRetryAt INTEGER,                -- When to retry after failure (epoch seconds)
   isPrivate BOOLEAN NOT NULL DEFAULT false, -- Whether the repo is private
   includePatterns TEXT,               -- JSON array of glob patterns to include (null = all)
   excludePatterns TEXT,               -- JSON array of glob patterns to exclude
   createdAt INTEGER NOT NULL,         -- When this config was created (epoch seconds)
-  updatedAt INTEGER NOT NULL          -- When this config was last updated (epoch seconds)
+  updatedAt INTEGER NOT NULL,         -- When this config was last updated (epoch seconds)
+  UNIQUE (userId, provider, owner, repo) -- Prevent duplicates per user
 );
 
-CREATE UNIQUE INDEX idx_github_repositories_owner_repo ON github_repositories(owner, repo);
-CREATE INDEX idx_github_repositories_userId ON github_repositories(userId);
+-- Authentication credentials for providers
+CREATE TABLE provider_credentials (
+  id TEXT PRIMARY KEY,                -- ulid/uuid
+  userId TEXT NOT NULL,               -- User who owns these credentials
+  provider TEXT NOT NULL,             -- 'github', 'linear', 'notion'
+  installationId TEXT,                -- GitHub App installation ID
+  accessToken TEXT,                   -- User access token (encrypted)
+  refreshToken TEXT,                  -- Refresh token (encrypted)
+  tokenExpiry INTEGER,                -- When the token expires (epoch seconds)
+  createdAt INTEGER NOT NULL,         -- When these credentials were created (epoch seconds)
+  updatedAt INTEGER NOT NULL,         -- When these credentials were last updated (epoch seconds)
+  UNIQUE (userId, provider)           -- One credential set per user per provider
+);
+
+-- Content blob deduplication table
+CREATE TABLE content_blobs (
+  sha TEXT PRIMARY KEY,               -- Content SHA-1 hash
+  size INTEGER NOT NULL,              -- Content size in bytes
+  r2Key TEXT NOT NULL UNIQUE,         -- R2 storage key
+  mimeType TEXT NOT NULL,             -- Content MIME type
+  createdAt INTEGER NOT NULL          -- When this blob was created (epoch seconds)
+);
 ```
 
-## 3. Worker Components
+## 4. Common Ingestion Contract
 
-### 3.1 Main Worker Structure
-
-```typescript
-// src/index.ts
-import { WorkerEntrypoint } from 'cloudflare:workers';
-import { getLogger, metrics } from '@dome/logging';
-import { createServices, Services } from './services';
-import { GithubIngestorEnv } from './types';
-
-export default class GithubIngestor extends WorkerEntrypoint<GithubIngestorEnv> {
-  private services: Services;
-
-  constructor(ctx: ExecutionContext, env: GithubIngestorEnv) {
-    super(ctx, env);
-    this.services = createServices(env);
-  }
-
-  /**
-   * Scheduled handler that runs every hour to check for repository updates
-   */
-  async scheduled(event: ScheduledEvent, env: GithubIngestorEnv, ctx: ExecutionContext) {
-    const logger = getLogger();
-    logger.info('Starting scheduled GitHub repository sync');
-    
-    try {
-      // Process all repositories
-      await this.services.github.syncAllRepositories();
-      
-      logger.info('Completed scheduled GitHub repository sync');
-    } catch (error) {
-      logger.error({ error }, 'Error during scheduled GitHub repository sync');
-      metrics.increment('github_ingestor.scheduled.errors', 1);
-    }
-  }
-
-  /**
-   * RPC methods for managing repository configurations
-   */
-  async addRepository(data: AddRepositoryInput): Promise<AddRepositoryResponse> {
-    return await this.services.config.addRepository(data);
-  }
-
-  async updateRepository(data: UpdateRepositoryInput): Promise<UpdateRepositoryResponse> {
-    return await this.services.config.updateRepository(data);
-  }
-
-  async removeRepository(data: RemoveRepositoryInput): Promise<RemoveRepositoryResponse> {
-    return await this.services.config.removeRepository(data);
-  }
-
-  async listRepositories(data: ListRepositoriesInput): Promise<ListRepositoriesResponse> {
-    return await this.services.config.listRepositories(data);
-  }
-
-  async getRepository(data: GetRepositoryInput): Promise<GetRepositoryResponse> {
-    return await this.services.config.getRepository(data);
-  }
-
-  /**
-   * Manual trigger to sync a specific repository
-   */
-  async syncRepository(data: SyncRepositoryInput): Promise<SyncRepositoryResponse> {
-    return await this.services.github.syncRepository(data.id);
-  }
-}
-```
-
-### 3.2 Services Structure
+To support multiple content providers (GitHub, Linear, Notion), we'll define a common ingestion contract:
 
 ```typescript
-// src/services/index.ts
-import { GithubIngestorEnv } from '../types';
-import { ConfigService } from './config';
-import { GithubService } from './github';
-import { ContentService } from './content';
-
-export interface Services {
-  config: ConfigService;
-  github: GithubService;
-  content: ContentService;
-}
-
-export function createServices(env: GithubIngestorEnv): Services {
-  const config = new ConfigService(env);
-  const content = new ContentService(env);
-  const github = new GithubService(env, config, content);
-
-  return {
-    config,
-    github,
-    content
-  };
-}
-```
-
-### 3.3 GitHub Service
-
-```typescript
-// src/services/github.ts
-import { getLogger, metrics } from '@dome/logging';
-import { GithubIngestorEnv } from '../types';
-import { ConfigService } from './config';
-import { ContentService } from './content';
-import { minimatch } from 'minimatch';
-
-export class GithubService {
-  private env: GithubIngestorEnv;
-  private configService: ConfigService;
-  private contentService: ContentService;
-  private logger = getLogger();
-
-  constructor(env: GithubIngestorEnv, configService: ConfigService, contentService: ContentService) {
-    this.env = env;
-    this.configService = configService;
-    this.contentService = contentService;
-  }
-
-  /**
-   * Sync all repositories in the database
-   */
-  async syncAllRepositories(): Promise<void> {
-    const timer = metrics.startTimer('github_ingestor.sync_all.duration_ms');
-    const repositories = await this.configService.getAllRepositories();
-    
-    this.logger.info({ count: repositories.length }, 'Syncing all repositories');
-    
-    // Process repositories in parallel with a concurrency limit
-    const concurrencyLimit = 5;
-    for (let i = 0; i < repositories.length; i += concurrencyLimit) {
-      const batch = repositories.slice(i, i + concurrencyLimit);
-      await Promise.all(batch.map(repo => this.syncRepository(repo.id)));
-    }
-    
-    timer.stop();
-  }
-
-  /**
-   * Sync a specific repository
-   */
-  async syncRepository(repoId: string): Promise<void> {
-    const timer = metrics.startTimer('github_ingestor.sync_repo.duration_ms');
-    
-    try {
-      // Get repository configuration
-      const repo = await this.configService.getRepositoryById(repoId);
-      if (!repo) {
-        throw new Error(`Repository with ID ${repoId} not found`);
-      }
-      
-      this.logger.info({ repoId, owner: repo.owner, repo: repo.repo }, 'Syncing repository');
-      
-      // Check if there are new commits
-      const latestCommit = await this.getLatestCommit(repo.owner, repo.repo, repo.branch);
-      
-      if (latestCommit.sha === repo.lastCommitSha) {
-        this.logger.info({ repoId, sha: latestCommit.sha }, 'Repository already up to date');
-        
-        // Update last synced timestamp even if no changes
-        await this.configService.updateLastSynced(repoId, latestCommit.sha);
-        return;
-      }
-      
-      // Get repository contents
-      const contents = await this.getRepositoryContents(repo.owner, repo.repo, repo.branch);
-      
-      // Filter contents based on include/exclude patterns
-      const filteredContents = this.filterContents(contents, repo);
-      
-      // Process each file
-      let processedCount = 0;
-      for (const file of filteredContents) {
-        if (await this.processFile(file, repo)) {
-          processedCount++;
-        }
-      }
-      
-      // Update last synced timestamp and commit SHA
-      await this.configService.updateLastSynced(repoId, latestCommit.sha);
-      
-      this.logger.info({ repoId, processedCount }, 'Repository sync completed');
-      metrics.increment('github_ingestor.files_processed', processedCount);
-      
-    } catch (error) {
-      this.logger.error({ repoId, error }, 'Error syncing repository');
-      metrics.increment('github_ingestor.sync_repo.errors', 1);
-      throw error;
-    } finally {
-      timer.stop();
-    }
-  }
-
-  /**
-   * Get the latest commit for a repository branch
-   */
-  private async getLatestCommit(owner: string, repo: string, branch: string): Promise<{ sha: string, date: string }> {
-    const url = `https://api.github.com/repos/${owner}/${repo}/commits/${branch}`;
-    const response = await this.githubApiRequest(url);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to get latest commit: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    return {
-      sha: data.sha,
-      date: data.commit.committer.date
-    };
-  }
-
-  /**
-   * Get all files in a repository
-   */
-  private async getRepositoryContents(owner: string, repo: string, branch: string): Promise<GithubFile[]> {
-    // Use the Git Tree API to get all files in one request
-    const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-    const response = await this.githubApiRequest(url);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to get repository contents: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    // Filter to only include blob objects (files)
-    return data.tree
-      .filter((item: any) => item.type === 'blob')
-      .map((item: any) => ({
-        path: item.path,
-        sha: item.sha,
-        size: item.size,
-        url: item.url
-      }));
-  }
-
-  /**
-   * Filter repository contents based on include/exclude patterns
-   */
-  private filterContents(contents: GithubFile[], repo: RepositoryConfig): GithubFile[] {
-    // Parse include/exclude patterns
-    const includePatterns = repo.includePatterns ? JSON.parse(repo.includePatterns) : null;
-    const excludePatterns = repo.excludePatterns ? JSON.parse(repo.excludePatterns) : [];
-    
-    return contents.filter(file => {
-      // Skip files larger than 10MB
-      if (file.size > 10 * 1024 * 1024) {
-        return false;
-      }
-      
-      // Skip binary files and images based on extension
-      const extension = file.path.split('.').pop()?.toLowerCase();
-      if (this.isBinaryOrImageExtension(extension)) {
-        return false;
-      }
-      
-      // Check exclude patterns first
-      for (const pattern of excludePatterns) {
-        if (minimatch(file.path, pattern)) {
-          return false;
-        }
-      }
-      
-      // If include patterns are specified, file must match at least one
-      if (includePatterns && includePatterns.length > 0) {
-        return includePatterns.some((pattern: string) => minimatch(file.path, pattern));
-      }
-      
-      // If no include patterns, include all files that weren't excluded
-      return true;
-    });
-  }
-
-  /**
-   * Check if a file extension is likely a binary or image file
-   */
-  private isBinaryOrImageExtension(extension?: string): boolean {
-    if (!extension) return false;
-    
-    const binaryExtensions = [
-      // Images
-      'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff', 'webp', 'svg', 'ico',
-      // Binaries
-      'exe', 'dll', 'so', 'dylib', 'bin', 'obj', 'o',
-      // Archives
-      'zip', 'tar', 'gz', 'rar', '7z', 'jar',
-      // Media
-      'mp3', 'mp4', 'avi', 'mov', 'flv', 'wav', 'ogg',
-      // Documents
-      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'
-    ];
-    
-    return binaryExtensions.includes(extension);
-  }
-
-  /**
-   * Process a single file from GitHub
-   */
-  private async processFile(file: GithubFile, repo: RepositoryConfig): Promise<boolean> {
-    try {
-      // Get file content
-      const content = await this.getFileContent(file.url);
-      
-      // Store in Silo
-      await this.contentService.storeContent({
-        path: file.path,
-        content,
-        metadata: {
-          repoId: repo.id,
-          owner: repo.owner,
-          repo: repo.repo,
-          branch: repo.branch,
-          sha: file.sha,
-          size: file.size,
-          userId: repo.userId
-        }
-      });
-      
-      return true;
-    } catch (error) {
-      this.logger.error({ file, error }, 'Error processing file');
-      metrics.increment('github_ingestor.process_file.errors', 1);
-      return false;
-    }
-  }
-
-  /**
-   * Get the content of a file from GitHub
-   */
-  private async getFileContent(url: string): Promise<string> {
-    const response = await this.githubApiRequest(url);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to get file content: ${response.status} ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    
-    // GitHub API returns content as base64 encoded
-    return atob(data.content);
-  }
-
-  /**
-   * Make a request to the GitHub API with authentication
-   */
-  private async githubApiRequest(url: string): Promise<Response> {
-    const headers = new Headers({
-      'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'Dome-GitHub-Ingestor'
-    });
-    
-    // Add authentication token if available
-    if (this.env.GITHUB_TOKEN) {
-      headers.append('Authorization', `token ${this.env.GITHUB_TOKEN}`);
-    }
-    
-    return fetch(url, { headers });
-  }
-}
-
-interface GithubFile {
+// src/ingestors/base.ts
+export interface ItemMetadata {
+  id: string;
   path: string;
   sha: string;
   size: number;
-  url: string;
+  mimeType: string;
+  provider: string;
+  repoId: string;
+  userId: string | null;
+  [key: string]: any; // Additional provider-specific metadata
 }
 
-interface RepositoryConfig {
+export interface ContentItem {
+  metadata: ItemMetadata;
+  getContent(): Promise<ReadableStream | string>;
+}
+
+export interface IngestorConfig {
   id: string;
   userId: string | null;
-  owner: string;
-  repo: string;
-  branch: string;
-  lastSyncedAt: number | null;
-  lastCommitSha: string | null;
-  isPrivate: boolean;
-  includePatterns: string | null;
-  excludePatterns: string | null;
-}
-```
-
-### 3.4 Content Service
-
-```typescript
-// src/services/content.ts
-import { getLogger, metrics } from '@dome/logging';
-import { GithubIngestorEnv } from '../types';
-import { ulid } from 'ulid';
-
-export class ContentService {
-  private env: GithubIngestorEnv;
-  private logger = getLogger();
-
-  constructor(env: GithubIngestorEnv) {
-    this.env = env;
-  }
-
-  /**
-   * Store content in Silo
-   */
-  async storeContent(data: StoreContentInput): Promise<string> {
-    const timer = metrics.startTimer('github_ingestor.store_content.duration_ms');
-    
-    try {
-      // Generate a unique ID for the content
-      const contentId = ulid();
-      
-      // Store in Silo using the simplePut RPC method
-      await this.env.SILO.simplePut({
-        id: contentId,
-        userId: data.metadata.userId,
-        contentType: 'code',
-        body: data.content,
-        metadata: {
-          source: 'github',
-          path: data.path,
-          repoId: data.metadata.repoId,
-          owner: data.metadata.owner,
-          repo: data.metadata.repo,
-          branch: data.metadata.branch,
-          sha: data.metadata.sha,
-          size: data.metadata.size
-        }
-      });
-      
-      this.logger.debug({ contentId, path: data.path }, 'Content stored in Silo');
-      metrics.increment('github_ingestor.content_stored', 1);
-      
-      return contentId;
-    } catch (error) {
-      this.logger.error({ path: data.path, error }, 'Error storing content in Silo');
-      metrics.increment('github_ingestor.store_content.errors', 1);
-      throw error;
-    } finally {
-      timer.stop();
-    }
-  }
+  provider: string;
+  [key: string]: any; // Provider-specific configuration
 }
 
-interface StoreContentInput {
-  path: string;
-  content: string;
-  metadata: {
-    repoId: string;
-    owner: string;
-    repo: string;
-    branch: string;
-    sha: string;
-    size: number;
-    userId: string | null;
-  };
-}
-```
-
-### 3.5 Config Service
-
-```typescript
-// src/services/config.ts
-import { getLogger, metrics } from '@dome/logging';
-import { GithubIngestorEnv } from '../types';
-import { ulid } from 'ulid';
-import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
-import { githubRepositories } from '../db/schema';
-
-export class ConfigService {
-  private env: GithubIngestorEnv;
-  private logger = getLogger();
-  private db: ReturnType<typeof drizzle>;
-
-  constructor(env: GithubIngestorEnv) {
-    this.env = env;
-    this.db = drizzle(env.DB);
-  }
-
-  /**
-   * Add a new repository configuration
-   */
-  async addRepository(data: AddRepositoryInput): Promise<AddRepositoryResponse> {
-    const timer = metrics.startTimer('github_ingestor.add_repository.duration_ms');
-    
-    try {
-      const now = Math.floor(Date.now() / 1000);
-      const id = ulid();
-      
-      // Insert repository configuration
-      await this.db.insert(githubRepositories).values({
-        id,
-        userId: data.userId,
-        owner: data.owner,
-        repo: data.repo,
-        branch: data.branch || 'main',
-        isPrivate: data.isPrivate || false,
-        includePatterns: data.includePatterns ? JSON.stringify(data.includePatterns) : null,
-        excludePatterns: data.excludePatterns ? JSON.stringify(data.excludePatterns) : null,
-        createdAt: now,
-        updatedAt: now
-      });
-      
-      this.logger.info({ id, owner: data.owner, repo: data.repo }, 'Repository configuration added');
-      metrics.increment('github_ingestor.repositories_added', 1);
-      
-      return { id };
-    } catch (error) {
-      this.logger.error({ data, error }, 'Error adding repository configuration');
-      metrics.increment('github_ingestor.add_repository.errors', 1);
-      throw error;
-    } finally {
-      timer.stop();
-    }
-  }
-
-  /**
-   * Update an existing repository configuration
-   */
-  async updateRepository(data: UpdateRepositoryInput): Promise<UpdateRepositoryResponse> {
-    const timer = metrics.startTimer('github_ingestor.update_repository.duration_ms');
-    
-    try {
-      const now = Math.floor(Date.now() / 1000);
-      
-      // Update repository configuration
-      await this.db.update(githubRepositories)
-        .set({
-          owner: data.owner,
-          repo: data.repo,
-          branch: data.branch,
-          isPrivate: data.isPrivate,
-          includePatterns: data.includePatterns ? JSON.stringify(data.includePatterns) : null,
-          excludePatterns: data.excludePatterns ? JSON.stringify(data.excludePatterns) : null,
-          updatedAt: now
-        })
-        .where(eq(githubRepositories.id, data.id));
-      
-      this.logger.info({ id: data.id }, 'Repository configuration updated');
-      metrics.increment('github_ingestor.repositories_updated', 1);
-      
-      return { success: true };
-    } catch (error) {
-      this.logger.error({ data, error }, 'Error updating repository configuration');
-      metrics.increment('github_ingestor.update_repository.errors', 1);
-      throw error;
-    } finally {
-      timer.stop();
-    }
-  }
-
-  /**
-   * Remove a repository configuration
-   */
-  async removeRepository(data: RemoveRepositoryInput): Promise<RemoveRepositoryResponse> {
-    const timer = metrics.startTimer('github_ingestor.remove_repository.duration_ms');
-    
-    try {
-      // Delete repository configuration
-      await this.db.delete(githubRepositories)
-        .where(eq(githubRepositories.id, data.id));
-      
-      this.logger.info({ id: data.id }, 'Repository configuration removed');
-      metrics.increment('github_ingestor.repositories_removed', 1);
-      
-      return { success: true };
-    } catch (error) {
-      this.logger.error({ data, error }, 'Error removing repository configuration');
-      metrics.increment('github_ingestor.remove_repository.errors', 1);
-      throw error;
-    } finally {
-      timer.stop();
-    }
-  }
-
-  /**
-   * List repository configurations
-   */
-  async listRepositories(data: ListRepositoriesInput): Promise<ListRepositoriesResponse> {
-    const timer = metrics.startTimer('github_ingestor.list_repositories.duration_ms');
-    
-    try {
-      // Query repository configurations
-      let query = this.db.select().from(githubRepositories);
-      
-      // Filter by user ID if provided
-      if (data.userId) {
-        query = query.where(eq(githubRepositories.userId, data.userId));
-      }
-      
-      const repositories = await query;
-      
-      return { repositories };
-    } catch (error) {
-      this.logger.error({ data, error }, 'Error listing repository configurations');
-      metrics.increment('github_ingestor.list_repositories.errors', 1);
-      throw error;
-    } finally {
-      timer.stop();
-    }
-  }
-
-  /**
-   * Get a repository configuration by ID
-   */
-  async getRepository(data: GetRepositoryInput): Promise<GetRepositoryResponse> {
-    const timer = metrics.startTimer('github_ingestor.get_repository.duration_ms');
-    
-    try {
-      // Query repository configuration
-      const repository = await this.db.select()
-        .from(githubRepositories)
-        .where(eq(githubRepositories.id, data.id))
-        .limit(1);
-      
-      if (repository.length === 0) {
-        throw new Error(`Repository with ID ${data.id} not found`);
-      }
-      
-      return { repository: repository[0] };
-    } catch (error) {
-      this.logger.error({ data, error }, 'Error getting repository configuration');
-      metrics.increment('github_ingestor.get_repository.errors', 1);
-      throw error;
-    } finally {
-      timer.stop();
-    }
-  }
-
-  /**
-   * Get all repository configurations
-   */
-  async getAllRepositories(): Promise<any[]> {
-    return await this.db.select().from(githubRepositories);
-  }
-
-  /**
-   * Get a repository configuration by ID
-   */
-  async getRepositoryById(id: string): Promise<any> {
-    const repositories = await this.db.select()
-      .from(githubRepositories)
-      .where(eq(githubRepositories.id, id))
-      .limit(1);
-    
-    return repositories.length > 0 ? repositories[0] : null;
-  }
-
-  /**
-   * Update the last synced timestamp and commit SHA for a repository
-   */
-  async updateLastSynced(id: string, commitSha: string): Promise<void> {
-    const now = Math.floor(Date.now() / 1000);
-    
-    await this.db.update(githubRepositories)
-      .set({
-        lastSyncedAt: now,
-        lastCommitSha: commitSha,
-        updatedAt: now
-      })
-      .where(eq(githubRepositories.id, id));
-  }
-}
-
-interface AddRepositoryInput {
-  userId: string | null;
-  owner: string;
-  repo: string;
-  branch?: string;
-  isPrivate?: boolean;
-  includePatterns?: string[];
-  excludePatterns?: string[];
-}
-
-interface AddRepositoryResponse {
-  id: string;
-}
-
-interface UpdateRepositoryInput {
-  id: string;
-  owner?: string;
-  repo?: string;
-  branch?: string;
-  isPrivate?: boolean;
-  includePatterns?: string[];
-  excludePatterns?: string[];
-}
-
-interface UpdateRepositoryResponse {
-  success: boolean;
-}
-
-interface RemoveRepositoryInput {
-  id: string;
-}
-
-interface RemoveRepositoryResponse {
-  success: boolean;
-}
-
-interface ListRepositoriesInput {
-  userId?: string;
-}
-
-interface ListRepositoriesResponse {
-  repositories: any[];
-}
-
-interface GetRepositoryInput {
-  id: string;
-}
-
-interface GetRepositoryResponse {
-  repository: any;
-}
-```
-
-### 3.6 Database Schema
-
-```typescript
-// src/db/schema.ts
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
-
-export const githubRepositories = sqliteTable('github_repositories', {
-  id: text('id').primaryKey(),
-  userId: text('userId'),
-  owner: text('owner').notNull(),
-  repo: text('repo').notNull(),
-  branch: text('branch').notNull().default('main'),
-  lastSyncedAt: integer('lastSyncedAt'),
-  lastCommitSha: text('lastCommitSha'),
-  isPrivate: integer('isPrivate', { mode: 'boolean' }).notNull().default(false),
-  includePatterns: text('includePatterns'),
-  excludePatterns: text('excludePatterns'),
-  createdAt: integer('createdAt').notNull(),
-  updatedAt: integer('updatedAt').notNull()
-});
-```
-
-### 3.7 Types
-
-```typescript
-// src/types.ts
-export interface GithubIngestorEnv {
-  // D1 Database
-  DB: D1Database;
+export interface Ingestor {
+  // Get configuration for this ingestor
+  getConfig(): IngestorConfig;
   
-  // Service bindings
-  SILO: any; // Silo service binding
+  // List all items that need to be ingested
+  listItems(): Promise<ItemMetadata[]>;
   
-  // Secrets
-  GITHUB_TOKEN: string;
+  // Get content for a specific item
+  fetchContent(metadata: ItemMetadata): Promise<ContentItem>;
+  
+  // Check if an item has changed since last sync
+  hasChanged(metadata: ItemMetadata): Promise<boolean>;
+  
+  // Update sync status after successful ingestion
+  updateSyncStatus(metadata: ItemMetadata): Promise<void>;
 }
 ```
 
-## 4. Wrangler Configuration
+## 5. Webhook-First Approach
+
+The revised design prioritizes webhooks for real-time updates:
+
+1. **GitHub App**: Register a GitHub App that can receive webhook events
+2. **Webhook Worker**: Dedicated worker to handle webhook events
+3. **Event Processing**: Process push events to detect file changes
+4. **Job Enqueuing**: Enqueue specific changed files for processing
+5. **Fallback Cron**: Use scheduled cron as a fallback for missed webhooks
+
+Benefits:
+- Near real-time updates
+- Significant API quota savings
+- Processes only changed files instead of scanning entire repositories
+
+## 6. Content Deduplication
+
+The revised design implements content deduplication:
+
+1. **Content Hashing**: Use Git blob SHA-1 as the content identifier
+2. **Blob Storage**: Store unique content blobs in R2 once
+3. **Reference Tracking**: Track references to blobs from multiple files
+4. **Storage Efficiency**: Dramatically reduce R2 storage usage for repositories with shared code
+
+## 7. Streaming & Back-Pressure
+
+To handle large repositories and stay within Worker limits:
+
+1. **Chunked Processing**: Process repositories in batches with yielding between chunks
+2. **Streaming Content**: Use ReadableStream for large files
+3. **Graceful Yielding**: Implement proper yielding to avoid CPU time limits
+4. **Concurrency Control**: Limit parallel operations to avoid memory issues
+
+Example:
+```typescript
+// Process repositories in chunks with yielding
+for (let i = 0; i < repositories.length; i += BATCH_SIZE) {
+  const batch = repositories.slice(i, i + BATCH_SIZE);
+  await Promise.all(batch.map(repo => processRepository(repo)));
+  
+  // Yield to avoid CPU time limit
+  await scheduler.wait(1);
+}
+```
+
+## 8. Error Handling & Retries
+
+Enhanced error handling:
+
+1. **Error Classification**: Distinguish between transient and permanent errors
+2. **Exponential Backoff**: Implement exponential backoff for retries
+3. **Rate Limit Handling**: Track and respect GitHub API rate limits
+4. **Dead-Letter Queue**: Send persistently failing jobs to a dead-letter queue
+5. **Monitoring**: Track error rates and types for alerting
+
+## 9. Wrangler Configuration
 
 ```toml
 # wrangler.toml
 name = "github-ingestor"
 main = "src/index.ts"
 compatibility_date = "2023-10-30"
-compatibility_flags = ["nodejs_als"]
 
-# Trigger the worker every hour
+# Trigger the worker every hour as fallback
 [triggers]
 crons = ["0 * * * *"]
 
@@ -831,25 +227,33 @@ binding = "SILO"
 service = "silo"
 environment = "production"
 
+# Queues
+[[queues.producers]]
+binding = "INGEST_QUEUE"
+queue = "ingest-queue"
+
+[[queues.consumers]]
+binding = "INGEST_QUEUE"
+queue = "ingest-queue"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 5
+
+[[queues.producers]]
+binding = "DEAD_LETTER_QUEUE"
+queue = "ingest-dead-letter"
+
+# Secrets
+# - GITHUB_APP_ID
+# - GITHUB_PRIVATE_KEY
+# - GITHUB_WEBHOOK_SECRET
+# - GITHUB_TOKEN (service account)
+
 # Environment variables
 [vars]
 LOG_LEVEL = "info"
 VERSION = "1.0.0"
 ENVIRONMENT = "prod"
-
-# Development environment
-[env.dev]
-name = "github-ingestor-dev"
-[env.dev.vars]
-LOG_LEVEL = "debug"
-ENVIRONMENT = "dev"
-
-# Staging environment
-[env.staging]
-name = "github-ingestor-staging"
-[env.staging.vars]
-LOG_LEVEL = "info"
-ENVIRONMENT = "staging"
 
 # Observability
 [observability]
@@ -857,59 +261,34 @@ enabled = true
 head_sampling_rate = 1
 ```
 
-## 5. Metrics and Monitoring
+## 10. Implementation Plan
 
-The worker will emit the following metrics:
+1. **Stage 1: GitHub App & Webhook Setup**
+   - Register GitHub App with webhook capabilities
+   - Implement webhook worker to receive events
+   - Set up authentication flow for private repositories
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `github_ingestor.sync_all.duration_ms` | timing | Time taken to sync all repositories |
-| `github_ingestor.sync_repo.duration_ms` | timing | Time taken to sync a single repository |
-| `github_ingestor.store_content.duration_ms` | timing | Time taken to store content in Silo |
-| `github_ingestor.files_processed` | counter | Number of files processed |
-| `github_ingestor.content_stored` | counter | Number of content items stored in Silo |
-| `github_ingestor.scheduled.errors` | counter | Number of errors during scheduled execution |
-| `github_ingestor.sync_repo.errors` | counter | Number of errors during repository sync |
-| `github_ingestor.process_file.errors` | counter | Number of errors during file processing |
-| `github_ingestor.store_content.errors` | counter | Number of errors during content storage |
-| `github_ingestor.repositories_added` | counter | Number of repository configurations added |
-| `github_ingestor.repositories_updated` | counter | Number of repository configurations updated |
-| `github_ingestor.repositories_removed` | counter | Number of repository configurations removed |
+2. **Stage 2: Schema & Database Setup**
+   - Create D1 database with improved schema
+   - Implement repository and credential management
 
-## 6. Extension Points for Future Sources
+3. **Stage 3: Common Ingestion Contract**
+   - Define and implement the common ingestion interface
+   - Create the GitHub ingestor implementation
 
-The worker is designed to be extensible for other content sources like Notion and Linear in the future:
+4. **Stage 4: Content Deduplication**
+   - Implement content blob storage and reference tracking
+   - Modify Silo integration to use content deduplication
 
-1. The database schema can be extended with new tables for other source configurations
-2. New service classes can be added for each source (e.g., `NotionService`, `LinearService`)
-3. The main worker can be extended with new scheduled handlers and RPC methods for each source
-4. The content service can be reused for storing content from any source in Silo
+5. **Stage 5: Streaming & Error Handling**
+   - Implement streaming for large files
+   - Add proper error handling, retries, and dead-letter queue
 
-## 7. Implementation Plan
+6. **Stage 6: Integration & Testing**
+   - Integrate with Dome API for repository management
+   - Comprehensive testing with real repositories
+   - Performance and load testing
 
-1. **Stage 1: Setup and Infrastructure**
-   - Create the `github-ingestor` service directory
-   - Configure wrangler.toml with required bindings
-   - Create D1 database and apply schema migrations
-   - Set up logging and metrics
-
-2. **Stage 2: Core Services**
-   - Implement the Config Service for managing repository configurations
-   - Implement the Content Service for storing content in Silo
-   - Implement the GitHub Service for fetching repository contents
-
-3. **Stage 3: Worker Implementation**
-   - Implement the main worker class with scheduled handler
-   - Implement RPC methods for managing repository configurations
-   - Add error handling and metrics
-
-4. **Stage 4: Testing and Deployment**
-   - Write unit tests for all components
-   - Test with real GitHub repositories
-   - Deploy to staging environment
-   - Monitor performance and fix any issues
-
-5. **Stage 5: Integration with Dome API**
-   - Add RPC methods to Dome API for managing repository configurations
-   - Create UI for adding and managing GitHub repositories
-   - Test end-to-end flow
+7. **Stage 7: Monitoring & Deployment**
+   - Set up monitoring dashboards and alerts
+   - Staged deployment to production

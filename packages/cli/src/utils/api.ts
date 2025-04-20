@@ -202,7 +202,10 @@ export async function search(query: string, limit: number = 10): Promise<any> {
     limit,
   };
 
-  const response = await api.get('/notes/search', { params });
+  // Use a different path that won't be captured by the /:id route
+  // Adding a prefix like '_search' should prevent it from matching the /:id pattern
+  const response = await api.get('/notes/_search', { params });
+  
   return {
     results: response.results || [],
     pagination: response.pagination || { total: 0, limit, offset: 0, hasMore: false },

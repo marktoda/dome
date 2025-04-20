@@ -107,6 +107,8 @@ notesRouter.get('/', siloController.listNotes.bind(siloController));
 // Search endpoints - for semantic search over notes
 notesRouter.get('/search', searchController.search.bind(searchController));
 notesRouter.get('/search/stream', searchController.streamSearch.bind(searchController));
+// Additional search endpoint with a prefix to avoid conflict with /:id route
+notesRouter.get('/_search', searchController.search.bind(searchController));
 
 // Chat API route
 app.post('/chat', chatController.chat.bind(chatController));
