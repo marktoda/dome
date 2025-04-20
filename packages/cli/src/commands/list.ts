@@ -44,6 +44,11 @@ export function listCommand(program: Command): void {
           return;
         }
 
+        // Display pagination info if available
+        if (result.total !== undefined) {
+          console.log(`Showing ${items.length} of ${result.total} total ${type}`);
+        }
+
         console.log(heading(`${type.charAt(0).toUpperCase() + type.slice(1)}`));
 
         if (type === 'notes') {

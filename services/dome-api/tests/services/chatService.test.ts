@@ -13,8 +13,8 @@ vi.mock('../../src/services/searchService', () => {
 
   return {
     searchService: {
-      search: mockSearch
-    }
+      search: mockSearch,
+    },
   };
 });
 
@@ -247,7 +247,7 @@ describe('ChatService', () => {
         });
 
         // Verify we get a mock response
-        expect(response).toBe("This is a mock response for testing purposes.");
+        expect(response).toBe('This is a mock response for testing purposes.');
       } finally {
         // Restore original NODE_ENV
         process.env.NODE_ENV = originalEnv;

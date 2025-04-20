@@ -13,7 +13,7 @@ export const logWriter = {
   write: (obj: any) => {
     // Ensure we're outputting a single, flat JSON object
     console.log(JSON.stringify(obj));
-  }
+  },
 };
 
 export const baseLogger = pino({

@@ -68,34 +68,34 @@ describe('Service Integration Tests', () => {
 
     // Reset mocks
     vi.clearAllMocks();
-    
+
     // Create mock service implementations
     const mockR2Service = {
       env: mockEnv,
       putObject: vi.fn().mockResolvedValue(true),
-      getObject: vi.fn().mockImplementation((key) => {
+      getObject: vi.fn().mockImplementation(key => {
         return Promise.resolve({
           text: () => Promise.resolve(`Content for ${key}`),
         });
       }),
       deleteObject: vi.fn().mockResolvedValue(true),
       headObject: vi.fn().mockResolvedValue({
-        customMetadata: { 'x-content-type': 'note' }
+        customMetadata: { 'x-content-type': 'note' },
       }),
       createPresignedPost: vi.fn().mockResolvedValue({
         url: 'https://example.com/upload',
-        formData: { key: 'test-key' }
+        formData: { key: 'test-key' },
       }),
       createPresignedUrl: vi.fn().mockResolvedValue('https://example.com/download'),
     };
-    
+
     const mockMetadataService = {
       env: mockEnv,
       db: mockD1Database,
-      insertMetadata: vi.fn().mockImplementation((data) => {
+      insertMetadata: vi.fn().mockImplementation(data => {
         return Promise.resolve(data);
       }),
-      getMetadataById: vi.fn().mockImplementation((id) => {
+      getMetadataById: vi.fn().mockImplementation(id => {
         return Promise.resolve({
           id,
           userId: 'user-123',
@@ -106,16 +106,18 @@ describe('Service Integration Tests', () => {
           version: 1,
         });
       }),
-      getMetadataByIds: vi.fn().mockImplementation((ids) => {
-        return Promise.resolve(ids.map((id: string) => ({
-          id,
-          userId: 'user-123',
-          contentType: 'note',
-          size: 100,
-          r2Key: `content/${id}`,
-          createdAt: Date.now(),
-          version: 1,
-        })));
+      getMetadataByIds: vi.fn().mockImplementation(ids => {
+        return Promise.resolve(
+          ids.map((id: string) => ({
+            id,
+            userId: 'user-123',
+            contentType: 'note',
+            size: 100,
+            r2Key: `content/${id}`,
+            createdAt: Date.now(),
+            version: 1,
+          })),
+        );
       }),
       deleteMetadata: vi.fn().mockResolvedValue({ success: true }),
       getStats: vi.fn().mockResolvedValue({
@@ -125,36 +127,33 @@ describe('Service Integration Tests', () => {
           note: { count: 5, size: 500 },
           document: { count: 3, size: 300 },
           image: { count: 2, size: 224 },
-        }
+        },
       }),
     };
-    
+
     const mockQueueService = {
       env: mockEnv,
       sendNewContentMessage: vi.fn().mockResolvedValue({ success: true }),
       processObjectCreatedEvent: vi.fn().mockResolvedValue({}),
       processBatch: vi.fn().mockResolvedValue({}),
     };
-    
+
     // Mock the createServices function
     services = {
       r2: mockR2Service,
       metadata: mockMetadataService,
       queue: mockQueueService,
     };
-    
+
     // Create controllers directly with mocked services using type casting
     contentController = createContentController(
       mockEnv,
       mockR2Service as any,
       mockMetadataService as any,
-      mockQueueService as any
+      mockQueueService as any,
     );
-    
-    statsController = createStatsController(
-      mockEnv,
-      mockMetadataService as any
-    );
+
+    statsController = createStatsController(mockEnv, mockMetadataService as any);
   });
 
   describe('Content Flow Integration', () => {
@@ -163,7 +162,7 @@ describe('Service Integration Tests', () => {
       const testContent = 'Test content';
       const testId = 'test-id-123';
       const testUserId = 'user-123';
-      
+
       // Mock the database response for metadata insertion
       mockD1Database.prepare().first.mockResolvedValueOnce({
         id: testId,
@@ -174,29 +173,29 @@ describe('Service Integration Tests', () => {
         created_at: Date.now(),
         version: 1,
       });
-      
+
       // Test the content controller
       const result = await contentController.simplePut({
         contentType: 'note',
         content: testContent,
         userId: testUserId,
       });
-      
+
       // We're only verifying the result in integration tests
       // since we're testing the integration between components,
       // not the specific implementation details
-      
+
       // Verify the result
       expect(result).toHaveProperty('id');
       expect(result).toHaveProperty('contentType', 'note');
       expect(result).toHaveProperty('size');
       expect(result).toHaveProperty('createdAt');
     });
-    
+
     it('should retrieve content with metadata', async () => {
       const testId = 'test-id-123';
       const testUserId = 'user-123';
-      
+
       // Mock database response for metadata retrieval
       mockD1Database.prepare().all.mockResolvedValueOnce([
         {
@@ -207,34 +206,34 @@ describe('Service Integration Tests', () => {
           r2_key: `content/${testId}`,
           created_at: Date.now(),
           version: 1,
-        }
+        },
       ]);
-      
+
       // Mock R2 response for content retrieval
       mockR2Bucket.get.mockResolvedValueOnce({
         body: new ReadableStream(),
         text: () => Promise.resolve('Test content'),
       });
-      
+
       // Test the batch get functionality
       const result = await contentController.batchGet({
         ids: [testId],
         userId: testUserId,
       });
-      
+
       // We're only verifying the result in integration tests
-      
+
       // Verify the result
       expect(result).toHaveProperty('items');
       expect(result.items).toHaveLength(1);
       expect(result.items[0]).toHaveProperty('id', testId);
       expect(result.items[0]).toHaveProperty('contentType', 'note');
     });
-    
+
     it('should delete content and metadata', async () => {
       const testId = 'test-id-123';
       const testUserId = 'user-123';
-      
+
       // Mock database response for metadata retrieval
       mockD1Database.prepare().first.mockResolvedValueOnce({
         id: testId,
@@ -245,20 +244,20 @@ describe('Service Integration Tests', () => {
         created_at: Date.now(),
         version: 1,
       });
-      
+
       // Test the delete functionality
       const result = await contentController.delete({
         id: testId,
         userId: testUserId,
       });
-      
+
       // We're only verifying the result in integration tests
-      
+
       // Verify the result
       expect(result).toHaveProperty('success', true);
     });
   });
-  
+
   describe('Stats Integration', () => {
     it('should retrieve storage statistics', async () => {
       // Mock database response for stats query
@@ -266,18 +265,18 @@ describe('Service Integration Tests', () => {
         total: 10,
         total_size: 1024,
       });
-      
+
       mockD1Database.prepare().all.mockResolvedValueOnce([
         { content_type: 'note', count: 5, total_size: 500 },
         { content_type: 'document', count: 3, total_size: 300 },
         { content_type: 'image', count: 2, total_size: 224 },
       ]);
-      
+
       // Test the stats functionality
       const result = await statsController.getStats();
-      
+
       // We're only verifying the result in integration tests
-      
+
       // Verify the result
       expect(result).toHaveProperty('total', 10);
       expect(result).toHaveProperty('totalSize', 1024);

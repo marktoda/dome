@@ -66,15 +66,14 @@ export class ListCommand implements CommandHandler {
             const title = item.title || 'Untitled';
             const content = item.body || '';
             const date = new Date(item.createdAt).toLocaleString();
-            
+
             // Try to extract tags from metadata if available
             let tags: string[] = [];
             if (item.metadata) {
               try {
-                const metadata = typeof item.metadata === 'string'
-                  ? JSON.parse(item.metadata)
-                  : item.metadata;
-                
+                const metadata =
+                  typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+
                 if (metadata.tags && Array.isArray(metadata.tags)) {
                   tags = metadata.tags;
                 }
@@ -84,7 +83,9 @@ export class ListCommand implements CommandHandler {
             }
 
             this.addMessage(`{bold}${index + 1}. ${title}{/bold}`);
-            this.addMessage(`{gray-fg}Created: ${date} | Type: ${item.contentType || 'text/plain'}{/gray-fg}`);
+            this.addMessage(
+              `{gray-fg}Created: ${date} | Type: ${item.contentType || 'text/plain'}{/gray-fg}`,
+            );
             if (tags.length > 0) {
               this.addMessage(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
             }
@@ -100,10 +101,14 @@ export class ListCommand implements CommandHandler {
             const dueDate = item.dueDate ? new Date(item.dueDate).toLocaleString() : 'None';
 
             this.addMessage(`{bold}${index + 1}. ${title}{/bold}`);
-            this.addMessage(`{gray-fg}Status: ${status} | Priority: ${priority} | Due: ${dueDate}{/gray-fg}`);
+            this.addMessage(
+              `{gray-fg}Status: ${status} | Priority: ${priority} | Due: ${dueDate}{/gray-fg}`,
+            );
             this.addMessage(`{gray-fg}Created: ${date}{/gray-fg}`);
             if (description) {
-              this.addMessage(description.substring(0, 100) + (description.length > 100 ? '...' : ''));
+              this.addMessage(
+                description.substring(0, 100) + (description.length > 100 ? '...' : ''),
+              );
             }
             this.addMessage('');
           }

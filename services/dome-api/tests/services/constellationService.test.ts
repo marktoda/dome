@@ -112,9 +112,9 @@ describe('ConstellationService', () => {
       vi.mocked(mockEnv.CONSTELLATION.query).mockRejectedValue(error);
 
       // Act & Assert
-      await expect(
-        constellationService.query(mockEnv as any, mockText)
-      ).rejects.toThrow(ServiceError);
+      await expect(constellationService.query(mockEnv as any, mockText)).rejects.toThrow(
+        ServiceError,
+      );
     });
 
     it('should use default topK when not specified', async () => {
@@ -153,9 +153,7 @@ describe('ConstellationService', () => {
       vi.mocked(mockEnv.CONSTELLATION.stats).mockRejectedValue(error);
 
       // Act & Assert
-      await expect(
-        constellationService.getStats(mockEnv as any)
-      ).rejects.toThrow(ServiceError);
+      await expect(constellationService.getStats(mockEnv as any)).rejects.toThrow(ServiceError);
     });
   });
 
@@ -180,7 +178,9 @@ describe('ConstellationService', () => {
         { userId: mockUserId },
         topK,
       );
-      expect(contentMapperService.mapVectorResultsToNoteIds).toHaveBeenCalledWith(mockVectorResults);
+      expect(contentMapperService.mapVectorResultsToNoteIds).toHaveBeenCalledWith(
+        mockVectorResults,
+      );
       expect(results).toEqual(mockNoteResults);
     });
 
@@ -191,7 +191,7 @@ describe('ConstellationService', () => {
 
       // Act & Assert
       await expect(
-        constellationService.searchNotes(mockEnv as any, mockText, mockUserId)
+        constellationService.searchNotes(mockEnv as any, mockText, mockUserId),
       ).rejects.toThrow(ServiceError);
     });
 

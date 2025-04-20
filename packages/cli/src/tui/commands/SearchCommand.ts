@@ -69,15 +69,14 @@ export class SearchCommand implements CommandHandler {
           if (match.contentType) {
             this.addMessage(`{bold}Type:{/bold} ${match.contentType}`);
           }
-          
+
           // Try to extract tags from metadata if available
           let tags: string[] = [];
           if (match.metadata) {
             try {
-              const metadata = typeof match.metadata === 'string'
-                ? JSON.parse(match.metadata)
-                : match.metadata;
-              
+              const metadata =
+                typeof match.metadata === 'string' ? JSON.parse(match.metadata) : match.metadata;
+
               if (metadata.tags && Array.isArray(metadata.tags)) {
                 tags = metadata.tags;
               }
@@ -85,19 +84,18 @@ export class SearchCommand implements CommandHandler {
               // Ignore parsing errors
             }
           }
-          
+
           if (tags.length > 0) {
             this.addMessage(`{bold}Tags:{/bold} ${tags.join(', ')}`);
           }
-          
+
           this.addMessage(`{bold}Created:{/bold} ${new Date(match.createdAt).toLocaleString()}`);
 
           // Display content excerpt - use body field from new API
           if (match.body) {
-            const excerpt = match.body.length > 200
-              ? match.body.substring(0, 200) + '...'
-              : match.body;
-            
+            const excerpt =
+              match.body.length > 200 ? match.body.substring(0, 200) + '...' : match.body;
+
             this.addMessage('\n{bold}Excerpt:{/bold}');
             this.addMessage(excerpt);
           }

@@ -212,7 +212,7 @@ export class SiloController {
         count: result.count,
         total: result.total,
         limit: result.limit,
-        offset: result.offset
+        offset: result.offset,
       });
     } catch (error) {
       this.logger.error(

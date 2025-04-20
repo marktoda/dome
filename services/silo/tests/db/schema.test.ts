@@ -5,7 +5,7 @@ describe('Database Schema', () => {
   it('should define the contents table with all required columns', () => {
     // Verify the table exists
     expect(contents).toBeDefined();
-    
+
     // Check that all expected columns exist
     expect(contents.id).toBeDefined();
     expect(contents.userId).toBeDefined();
@@ -22,7 +22,7 @@ describe('Database Schema', () => {
     expect(schema).toHaveProperty('contents');
     expect(schema.contents).toBe(contents);
   });
-  
+
   it('should match the expected schema structure', () => {
     // Verify the table has the expected columns
     expect(contents.id).toBeDefined();
@@ -33,7 +33,7 @@ describe('Database Schema', () => {
     expect(contents.sha256).toBeDefined();
     expect(contents.createdAt).toBeDefined();
     expect(contents.version).toBeDefined();
-    
+
     // Verify the schema definition in the source code
     // This is a more indirect way to test the schema structure
     // by checking the source file content
@@ -54,7 +54,7 @@ export const contents = sqliteTable('contents', {
 export const schema = {
   contents,
 };`;
-    
+
     // Verify the schema source contains expected constraints
     expect(schemaSource).toContain('primaryKey()');
     expect(schemaSource).toContain('notNull()');

@@ -7,7 +7,7 @@ import { MetadataService } from '../services/metadataService';
  * Uses MetadataService to retrieve storage statistics
  */
 export class StatsController {
-  constructor(private env: any, private metadataService: MetadataService) { }
+  constructor(private env: any, private metadataService: MetadataService) {}
 
   /**
    * Get storage statistics

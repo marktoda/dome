@@ -31,7 +31,7 @@ describe('wrap utility', () => {
         id: '123',
         service: 'silo',
       }),
-      expect.any(Function)
+      expect.any(Function),
     );
     expect(fn).toHaveBeenCalled();
   });
@@ -45,7 +45,7 @@ describe('wrap utility', () => {
   it('should log and rethrow errors', async () => {
     const error = new Error('Test error');
     const fn = vi.fn().mockRejectedValue(error);
-    
+
     // Create a new mock for the logger
     const mockLogger = {
       info: vi.fn(),
@@ -53,10 +53,10 @@ describe('wrap utility', () => {
       warn: vi.fn(),
       debug: vi.fn(),
     };
-    
+
     // Override the getLogger mock for this test
     vi.mocked(getLogger).mockReturnValue(mockLogger as any);
-    
+
     // Execute the function and catch the error
     try {
       await wrap({}, fn);
@@ -64,12 +64,9 @@ describe('wrap utility', () => {
       expect(true).toBe(false);
     } catch (e: any) {
       expect(e.message).toBe('Test error');
-      
+
       // Verify the error was logged
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        { err: error },
-        'Unhandled error'
-      );
+      expect(mockLogger.error).toHaveBeenCalledWith({ err: error }, 'Unhandled error');
     }
   });
 

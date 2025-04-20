@@ -74,7 +74,16 @@ describe('ApiClient', () => {
 
     await addContent('test content');
 
-    expect(mockPost).toHaveBeenCalledWith('/notes/ingest', { content: 'test content' }, undefined);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/notes',
+      {
+        content: 'test content',
+        contentType: 'text/plain',
+        title: undefined,
+        tags: undefined,
+      },
+      undefined,
+    );
   });
 
   test('addNote should call post with the correct parameters', async () => {
@@ -90,7 +99,15 @@ describe('ApiClient', () => {
 
     await addNote('meeting', 'test note');
 
-    expect(mockPost).toHaveBeenCalledWith('/note/meeting', { content: 'test note' }, undefined);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/notes',
+      {
+        content: 'test note',
+        contentType: 'text/plain',
+        metadata: { context: 'meeting' },
+      },
+      undefined,
+    );
   });
 
   test('listItems should call get with the correct parameters', async () => {
@@ -106,7 +123,7 @@ describe('ApiClient', () => {
 
     await listItems('notes', 'tag:work');
 
-    expect(mockGet).toHaveBeenCalledWith('/notes', { params: { filter: 'tag:work' } });
+    expect(mockGet).toHaveBeenCalledWith('/notes', { params: { contentType: 'tag:work' } });
   });
 
   test('showItem should call get with the correct parameters', async () => {
@@ -138,7 +155,9 @@ describe('ApiClient', () => {
 
     await search('test query');
 
-    expect(mockGet).toHaveBeenCalledWith('/notes/search', { params: { q: 'test query' } });
+    expect(mockGet).toHaveBeenCalledWith('/notes/search', {
+      params: { q: 'test query', limit: 10 },
+    });
   });
 
   test('chat should call post with the correct parameters', async () => {
@@ -154,6 +173,16 @@ describe('ApiClient', () => {
 
     await chat('hello');
 
-    expect(mockPost).toHaveBeenCalledWith('/chat', { message: 'hello' }, undefined);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/chat',
+      {
+        messages: [{ role: 'user', content: 'hello' }],
+        stream: false,
+        enhanceWithContext: true,
+        maxContextItems: 5,
+        includeSourceInfo: true,
+      },
+      undefined,
+    );
   });
 });

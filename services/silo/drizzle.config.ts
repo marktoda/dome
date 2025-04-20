@@ -1,4 +1,4 @@
-import type { Config } from "drizzle-kit";
+import type { Config } from 'drizzle-kit';
 
 /**
  * Drizzle Kit config
@@ -7,12 +7,11 @@ import type { Config } from "drizzle-kit";
  * - `schema` points to the file where you define your tables.
  */
 export default {
-  dialect: "sqlite",
-  schema: "./src/db/schema.ts",
+  dialect: 'sqlite',
+  schema: './src/db/schema.ts',
   // dbCredentials: {
   //   // Wrangler stores the local sqlite file here:
   //   url: ".wrangler/state/v3/d1/silo/db.sqlite"
   // },
-  out: "./migrations"             // SQL migrations will be placed here
+  out: './migrations', // SQL migrations will be placed here
 } satisfies Config;
-

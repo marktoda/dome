@@ -133,7 +133,9 @@ export class NoteMode extends BaseMode {
       );
       if (response && response.id) {
         this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
-        this.container.pushLine(`{bold}Content Type:{/bold} ${response.contentType || 'text/plain'}`);
+        this.container.pushLine(
+          `{bold}Content Type:{/bold} ${response.contentType || 'text/plain'}`,
+        );
       }
       this.container.pushLine('');
       this.container.pushLine(

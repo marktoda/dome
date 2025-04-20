@@ -50,11 +50,7 @@ export class MetadataService {
 
     try {
       try {
-        const result = await this.db
-          .select()
-          .from(contents)
-          .where(eq(contents.id, id))
-          .get();
+        const result = await this.db.select().from(contents).where(eq(contents.id, id)).get();
 
         metrics.timing('silo.d1.get.latency_ms', Date.now() - startTime);
 
@@ -116,10 +112,7 @@ export class MetadataService {
 
     try {
       try {
-        const result = await this.db
-          .delete(contents)
-          .where(eq(contents.id, id))
-          .run();
+        const result = await this.db.delete(contents).where(eq(contents.id, id)).run();
 
         metrics.timing('silo.d1.delete.latency_ms', Date.now() - startTime);
         getLogger().debug({ id }, 'Content metadata deleted');
@@ -147,10 +140,9 @@ export class MetadataService {
     userId: string,
     contentType?: string,
     limit: number = 50,
-    offset: number = 0
+    offset: number = 0,
   ): Promise<SiloContentMetadata[]> {
     const startTime = Date.now();
-
 
     try {
       try {
@@ -169,8 +161,8 @@ export class MetadataService {
           .offset(offset)
           .all();
 
-        getLogger().info({ userId, contentType, limit, offset }, "Query parameters");
-        getLogger().info({ resultCount: results.length }, "Results count");
+        getLogger().info({ userId, contentType, limit, offset }, 'Query parameters');
+        getLogger().info({ resultCount: results.length }, 'Results count');
 
         metrics.timing('silo.d1.get_by_user.latency_ms', Date.now() - startTime);
 
@@ -240,7 +232,7 @@ export class MetadataService {
         const countResult = await this.db
           .select({
             total: count(),
-            totalSize: sum(contents.size)
+            totalSize: sum(contents.size),
           })
           .from(contents)
           .get();
@@ -249,7 +241,7 @@ export class MetadataService {
         const typeResults = await this.db
           .select({
             contentType: contents.contentType,
-            count: count()
+            count: count(),
           })
           .from(contents)
           .groupBy(contents.contentType)

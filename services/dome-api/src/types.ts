@@ -14,7 +14,6 @@ import type {
   SiloBatchGetResponse,
   SiloDeleteResponse,
   SiloStatsResponse,
-
 } from '@dome/common';
 
 /**
@@ -36,11 +35,7 @@ export interface ConstellationService {
   /**
    * Perform a vector similarity search
    */
-  query(
-    text: string,
-    filter?: Partial<VectorMeta>,
-    topK?: number,
-  ): Promise<VectorSearchResult[]>;
+  query(text: string, filter?: Partial<VectorMeta>, topK?: number): Promise<VectorSearchResult[]>;
 
   /**
    * Get statistics about the vector index

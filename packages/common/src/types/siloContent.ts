@@ -58,7 +58,6 @@ export interface SiloEmbedJob {
   contentType: ContentType;
 }
 
-
 /**
  * Schema for simplePut RPC method
  * Used to validate input for storing small content items synchronously

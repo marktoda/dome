@@ -16,7 +16,7 @@ export class ContentController {
     private r2Service: R2Service,
     private metadataService: MetadataService,
     private queueService: QueueService,
-  ) { }
+  ) {}
 
   /**
    * Store small content items synchronously
@@ -207,7 +207,7 @@ export class ContentController {
         requestUserId,
         contentType,
         limit,
-        offset
+        offset,
       );
     } else {
       // Fetch metadata for specific IDs
@@ -238,7 +238,10 @@ export class ContentController {
       fetchPromises.push(
         (async () => {
           const obj = await this.r2Service.getObject(item.r2Key);
-          getLogger().info({ itemId: item.id, latency: Date.now() - startTime }, 'Fetched R2 object');
+          getLogger().info(
+            { itemId: item.id, latency: Date.now() - startTime },
+            'Fetched R2 object',
+          );
           metrics.timing('silo.r2.get.latency_ms', Date.now() - startTime);
           if (obj && item.size <= 1024 * 1024) {
             results[item.id].body = await obj.text();
@@ -263,7 +266,7 @@ export class ContentController {
       items: Object.values(results),
       total,
       limit,
-      offset
+      offset,
     };
   }
 
@@ -355,8 +358,8 @@ export class ContentController {
       const id = key.startsWith('upload/')
         ? key.substring(7)
         : key.startsWith('content/')
-          ? key.substring(8)
-          : key;
+        ? key.substring(8)
+        : key;
 
       // Store metadata in D1
       const now = Math.floor(Date.now() / 1000);

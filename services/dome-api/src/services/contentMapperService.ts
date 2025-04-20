@@ -4,7 +4,7 @@ import {
   ContentType,
   VectorSearchResult,
   SiloSimplePutResponse,
-  SiloBatchGetItem
+  SiloBatchGetItem,
 } from '@dome/common';
 import {
   ConstellationEmbedJob,
@@ -43,13 +43,13 @@ enum TaskStatus {
   PENDING = 'pending',
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
-  CANCELLED = 'cancelled'
+  CANCELLED = 'cancelled',
 }
 
 enum TaskPriority {
   LOW = 'low',
   MEDIUM = 'medium',
-  HIGH = 'high'
+  HIGH = 'high',
 }
 
 interface Task {
@@ -106,8 +106,12 @@ export class ContentMapperService {
     results: ConstellationVectorSearchResult[] | VectorSearchResult[],
   ): Array<{ noteId: string; score: number }> {
     return results.map(result => ({
-      noteId: 'noteId' in result.metadata ? result.metadata.noteId :
-        'contentId' in result.metadata ? result.metadata.contentId || '' : '',
+      noteId:
+        'noteId' in result.metadata
+          ? result.metadata.noteId
+          : 'contentId' in result.metadata
+          ? result.metadata.contentId || ''
+          : '',
       score: result.score,
     }));
   }

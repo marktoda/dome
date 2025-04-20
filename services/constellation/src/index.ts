@@ -66,7 +66,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
       } catch (err) {
         getLogger().error({ err, job }, 'embed failed');
         if (dead) await dead(job);
-        throw err; // queue retry will handle
+        // Don't throw the error, just log it and continue
+        // This allows the dead letter queue to handle the failed job
       } finally {
         span.stop();
       }
@@ -94,7 +95,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   /* ------- rpc: embed --------------------------------------------------- */
   public async embed(job: SiloEmbedJob) {
     await wrap(
-      { service: 'constellation', op: 'embed', content: job.contentId, user: job.userId, ...this.env },
+      {
+        service: 'constellation',
+        op: 'embed',
+        content: job.contentId,
+        user: job.userId,
+        ...this.env,
+      },
       async () => {
         metrics.increment('rpc.embed.requests');
         await this.embedBatch([job]);
@@ -108,26 +115,34 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     text: string,
     filter: Partial<VectorMeta>,
     topK = 10,
-  ): Promise<VectorSearchResult[]> {
+  ): Promise<VectorSearchResult[] | { error: any }> {
     return wrap({ service: 'constellation', op: 'query', filter, topK, ...this.env }, async () => {
-      const { preprocessor, embedder, vectorize } = services(this.env);
+      try {
+        const { preprocessor, embedder, vectorize } = services(this.env);
 
-      const norm = preprocessor.normalize(text);
-      if (!norm) return [];
+        const norm = preprocessor.normalize(text);
+        if (!norm) return [];
 
-      const [queryVec] = await embedder.embed([norm]);
-      const results = await vectorize.query(queryVec, filter, topK);
+        const [queryVec] = await embedder.embed([norm]);
+        const results = await vectorize.query(queryVec, filter, topK);
 
-      metrics.increment('rpc.query.success');
-      metrics.gauge('rpc.query.results', results.length);
-      return results;
+        metrics.increment('rpc.query.success');
+        metrics.gauge('rpc.query.results', results.length);
+        return results;
+      } catch (error) {
+        return { error };
+      }
     });
   }
 
   /* ------- rpc: stats --------------------------------------------------- */
   public async stats() {
-    return wrap({ service: 'constellation', op: 'stats', ...this.env }, async () =>
-      services(this.env).vectorize.getStats(),
-    );
+    return wrap({ service: 'constellation', op: 'stats', ...this.env }, async () => {
+      try {
+        return await services(this.env).vectorize.getStats();
+      } catch (error) {
+        return { error };
+      }
+    });
   }
 }

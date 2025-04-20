@@ -20,12 +20,26 @@ vi.mock('../../src/services/constellationService', () => ({
 
 // Mock logger
 vi.mock('@dome/logging', () => ({
-  getLogger: () => ({
+  getLogger: vi.fn(() => ({
     info: vi.fn(),
     debug: vi.fn(),
     error: vi.fn(),
     warn: vi.fn(),
-  }),
+    child: vi.fn(() => ({
+      info: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+    })),
+  })),
+  metrics: {
+    increment: vi.fn(),
+    gauge: vi.fn(),
+    timing: vi.fn(),
+    startTimer: vi.fn(() => ({
+      stop: vi.fn(),
+    })),
+  },
 }));
 
 describe('Search API Integration Tests', () => {
@@ -80,10 +94,8 @@ describe('Search API Integration Tests', () => {
     // Create a new Hono app for each test
     app = new Hono();
 
-    // Add middleware
-    app.use('*', userIdMiddleware);
-
-    // Add routes
+    // Add middleware and routes
+    app.use('/api/*', userIdMiddleware);
     app.get('/api/search', searchController.search);
     app.get('/api/search/stream', searchController.streamSearch);
 
@@ -98,7 +110,7 @@ describe('Search API Integration Tests', () => {
   describe('GET /api/search', () => {
     it('should return search results successfully', async () => {
       // Arrange
-      const req = new Request('http://localhost/api/search?q=test+query', {
+      const req = new Request('http://localhost:8787/api/search?q=test+query', {
         method: 'GET',
         headers: {
           'x-user-id': mockUserId,
@@ -128,7 +140,7 @@ describe('Search API Integration Tests', () => {
 
     it('should return 400 when query is too short', async () => {
       // Arrange
-      const req = new Request('http://localhost/api/search?q=ab', {
+      const req = new Request('http://localhost:8787/api/search?q=ab', {
         method: 'GET',
         headers: {
           'x-user-id': mockUserId,
@@ -153,7 +165,7 @@ describe('Search API Integration Tests', () => {
 
     it('should return 400 when query is missing', async () => {
       // Arrange
-      const req = new Request('http://localhost/api/search', {
+      const req = new Request('http://localhost:8787/api/search', {
         method: 'GET',
         headers: {
           'x-user-id': mockUserId,
@@ -178,7 +190,7 @@ describe('Search API Integration Tests', () => {
 
     it('should return 401 when user ID is missing', async () => {
       // Arrange
-      const req = new Request('http://localhost/api/search?q=test+query', {
+      const req = new Request('http://localhost:8787/api/search?q=test+query', {
         method: 'GET',
       });
 
@@ -200,11 +212,9 @@ describe('Search API Integration Tests', () => {
 
     it('should handle service errors', async () => {
       // Arrange
-      vi.mocked(searchService.search).mockRejectedValue(
-        new Error('Search service error'),
-      );
+      vi.mocked(searchService.search).mockRejectedValue(new Error('Search service error'));
 
-      const req = new Request('http://localhost/api/search?q=test+query', {
+      const req = new Request('http://localhost:8787/api/search?q=test+query', {
         method: 'GET',
         headers: {
           'x-user-id': mockUserId,
@@ -230,7 +240,7 @@ describe('Search API Integration Tests', () => {
   describe('GET /api/search/stream', () => {
     it('should return streaming search results with correct headers', async () => {
       // Arrange
-      const req = new Request('http://localhost/api/search/stream?q=test+query', {
+      const req = new Request('http://localhost:8787/api/search/stream?q=test+query', {
         method: 'GET',
         headers: {
           'x-user-id': mockUserId,
@@ -254,7 +264,7 @@ describe('Search API Integration Tests', () => {
 
     it('should return 400 when query is missing', async () => {
       // Arrange
-      const req = new Request('http://localhost/api/search/stream', {
+      const req = new Request('http://localhost:8787/api/search/stream', {
         method: 'GET',
         headers: {
           'x-user-id': mockUserId,

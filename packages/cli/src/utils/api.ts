@@ -115,7 +115,7 @@ export async function addContent(content: string, title?: string, tags?: string[
     content,
     contentType: 'text/plain',
     title: title || undefined,
-    tags: tags || undefined
+    tags: tags || undefined,
   };
 
   const response = await api.post('/notes', payload);
@@ -132,7 +132,7 @@ export async function addNote(context: string, content: string): Promise<any> {
   return api.post('/notes', {
     content,
     contentType: 'text/plain',
-    metadata: { context }
+    metadata: { context },
   });
 }
 
@@ -159,12 +159,8 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
   const endpoint = type === 'notes' ? '/notes' : '/tasks';
   const response = await api.get(endpoint, { params });
 
-  // Return the items array from the response
-  if (type === 'notes') {
-    return response.notes || [];
-  } else {
-    return response.tasks || [];
-  }
+  // Return the full response object
+  return response;
 }
 
 /**
@@ -172,7 +168,7 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
  * @param filter Optional filter criteria
  * @returns The response data with notes
  */
-export async function listNotes(filter?: string): Promise<any[]> {
+export async function listNotes(filter?: string): Promise<any> {
   return listItems('notes', filter);
 }
 
@@ -181,7 +177,7 @@ export async function listNotes(filter?: string): Promise<any[]> {
  * @param filter Optional filter criteria
  * @returns The response data with tasks
  */
-export async function listTasks(filter?: string): Promise<any[]> {
+export async function listTasks(filter?: string): Promise<any> {
   return listItems('tasks', filter);
 }
 
@@ -203,14 +199,14 @@ export async function showItem(id: string): Promise<any> {
 export async function search(query: string, limit: number = 10): Promise<any> {
   const params = {
     q: query,
-    limit
+    limit,
   };
 
   const response = await api.get('/notes/search', { params });
   return {
     results: response.results || [],
     pagination: response.pagination || { total: 0, limit, offset: 0, hasMore: false },
-    query
+    query,
   };
 }
 
@@ -225,13 +221,13 @@ export async function chat(message: string): Promise<any> {
     messages: [
       {
         role: 'user',
-        content: message
-      }
+        content: message,
+      },
     ],
     stream: false,
     enhanceWithContext: true,
     maxContextItems: 5,
-    includeSourceInfo: true
+    includeSourceInfo: true,
   };
 
   const response = await api.post('/chat', payload);

@@ -50,19 +50,21 @@ describe('SiloController', () => {
   };
 
   // Create mock context
-  const createMockContext = (options: {
-    userId?: string;
-    body?: any;
-    params?: Record<string, string>;
-    query?: Record<string, string>;
-    path?: string;
-    method?: string;
-  } = {}) => {
+  const createMockContext = (
+    options: {
+      userId?: string;
+      body?: any;
+      params?: Record<string, string>;
+      query?: Record<string, string>;
+      path?: string;
+      method?: string;
+    } = {},
+  ) => {
     const mockJson = vi.fn();
     const mockReq = {
       json: vi.fn().mockResolvedValue(options.body || {}),
-      param: vi.fn((name) => options.params?.[name] || null),
-      query: vi.fn((name) => options.query?.[name] || null),
+      param: vi.fn(name => options.params?.[name] || null),
+      query: vi.fn(name => options.query?.[name] || null),
       path: options.path || '/api/notes',
       method: options.method || 'GET',
     };
@@ -71,7 +73,7 @@ describe('SiloController', () => {
       env: mockEnv,
       req: mockReq,
       json: mockJson,
-      get: vi.fn().mockImplementation((key) => {
+      get: vi.fn().mockImplementation(key => {
         if (key === 'userId') return options.userId || mockUserId;
         return null;
       }),
@@ -93,7 +95,7 @@ describe('SiloController', () => {
         body: 'This is a test note',
         contentType: 'text/plain',
       };
-      
+
       const mockContext = createMockContext({
         userId: mockUserId,
         body: mockBody,
@@ -105,7 +107,7 @@ describe('SiloController', () => {
         id: 'note-123',
         contentType: 'note' as const,
         size: 100,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
 
       // Act
@@ -120,10 +122,7 @@ describe('SiloController', () => {
         }),
       );
 
-      expect(mockContext.json).toHaveBeenCalledWith(
-        { success: true, id: 'note-123' },
-        201
-      );
+      expect(mockContext.json).toHaveBeenCalledWith({ success: true, id: 'note-123' }, 201);
     });
 
     it('should handle validation errors', async () => {
@@ -168,7 +167,7 @@ describe('SiloController', () => {
             details: expect.any(Array),
           },
         },
-        400
+        400,
       );
     });
   });
@@ -189,11 +188,7 @@ describe('SiloController', () => {
       const response = await siloController.get(mockContext as any);
 
       // Assert
-      expect(siloService.getContentAsNote).toHaveBeenCalledWith(
-        mockEnv,
-        'note-123',
-        mockUserId
-      );
+      expect(siloService.getContentAsNote).toHaveBeenCalledWith(mockEnv, 'note-123', mockUserId);
 
       expect(mockContext.json).toHaveBeenCalledWith({
         success: true,
@@ -221,7 +216,7 @@ describe('SiloController', () => {
           success: false,
           error: { code: 'NOT_FOUND', message: 'Note not found' },
         },
-        404
+        404,
       );
     });
 
@@ -252,7 +247,7 @@ describe('SiloController', () => {
             message: 'Failed to get note',
           },
         },
-        503
+        503,
       );
     });
   });
@@ -273,8 +268,8 @@ describe('SiloController', () => {
           ...mockNote,
           id: 'note-456',
           title: 'Another Note',
-          contentType: 'note' as const
-        }
+          contentType: 'note' as const,
+        },
       ];
       vi.mocked(siloService.getContentsAsNotes).mockResolvedValue(mockNotes);
 
@@ -285,7 +280,7 @@ describe('SiloController', () => {
       expect(siloService.getContentsAsNotes).toHaveBeenCalledWith(
         mockEnv,
         ['note-123', 'note-456'],
-        mockUserId
+        mockUserId,
       );
 
       expect(mockContext.json).toHaveBeenCalledWith({
@@ -313,7 +308,7 @@ describe('SiloController', () => {
           success: false,
           error: { code: 'BAD_REQUEST', message: 'No IDs provided' },
         },
-        400
+        400,
       );
     });
   });
@@ -326,7 +321,7 @@ describe('SiloController', () => {
         contentType: 'text/plain',
         title: 'Test Note Title',
       };
-      
+
       const mockContext = createMockContext({
         userId: mockUserId,
         body: mockBody,
@@ -338,7 +333,7 @@ describe('SiloController', () => {
         id: 'note-123',
         contentType: 'text/plain',
         size: 100,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
       vi.mocked(siloService.getContentAsNote).mockResolvedValue(mockNote);
 
@@ -355,18 +350,14 @@ describe('SiloController', () => {
         }),
       );
 
-      expect(siloService.getContentAsNote).toHaveBeenCalledWith(
-        mockEnv,
-        'note-123',
-        mockUserId
-      );
+      expect(siloService.getContentAsNote).toHaveBeenCalledWith(mockEnv, 'note-123', mockUserId);
 
       expect(mockContext.json).toHaveBeenCalledWith(
         {
           success: true,
           note: mockNote,
         },
-        201
+        201,
       );
     });
 
@@ -412,7 +403,7 @@ describe('SiloController', () => {
             details: expect.any(Array),
           },
         },
-        400
+        400,
       );
     });
   });
@@ -424,7 +415,7 @@ describe('SiloController', () => {
         title: 'Updated Title',
         body: 'Updated content',
       };
-      
+
       const mockContext = createMockContext({
         userId: mockUserId,
         body: mockBody,
@@ -438,14 +429,14 @@ describe('SiloController', () => {
         .mockResolvedValueOnce({
           ...mockNote,
           ...mockBody,
-          contentType: 'note' as const
+          contentType: 'note' as const,
         }); // Second call for updated note
-      
+
       vi.mocked(siloService.simplePut).mockResolvedValue({
         id: 'note-123',
         contentType: 'text/plain',
         size: 100,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
 
       // Act
@@ -493,7 +484,7 @@ describe('SiloController', () => {
           success: false,
           error: { code: 'NOT_FOUND', message: 'Note not found' },
         },
-        404
+        404,
       );
     });
   });
@@ -514,10 +505,10 @@ describe('SiloController', () => {
       const response = await siloController.delete(mockContext as any);
 
       // Assert
-      expect(siloService.delete).toHaveBeenCalledWith(
-        mockEnv,
-        { id: 'note-123', userId: mockUserId }
-      );
+      expect(siloService.delete).toHaveBeenCalledWith(mockEnv, {
+        id: 'note-123',
+        userId: mockUserId,
+      });
 
       expect(mockContext.json).toHaveBeenCalledWith({ success: true });
     });
@@ -549,7 +540,7 @@ describe('SiloController', () => {
             message: 'Failed to delete note',
           },
         },
-        503
+        503,
       );
     });
   });

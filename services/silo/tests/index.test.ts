@@ -213,9 +213,9 @@ describe('Silo Service', () => {
     it('should handle service errors in simplePut', async () => {
       const testData = { contentType: 'note', content: 'Test content' };
       const serviceError = new Error('Service error');
-      
+
       mockContentController.simplePut.mockRejectedValue(serviceError);
-      
+
       await expect(silo.simplePut(testData)).rejects.toThrow('Service error');
       expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'simplePut' });
     });
@@ -223,19 +223,21 @@ describe('Silo Service', () => {
     it('should handle service errors in createUpload', async () => {
       const testData = { contentType: 'note', size: 1024 };
       const serviceError = new Error('Upload service error');
-      
+
       mockContentController.createUpload.mockRejectedValue(serviceError);
-      
+
       await expect(silo.createUpload(testData)).rejects.toThrow('Upload service error');
-      expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'createUpload' });
+      expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, {
+        method: 'createUpload',
+      });
     });
 
     it('should handle service errors in batchGet', async () => {
       const testData = { ids: ['id1', 'id2'] };
       const serviceError = new Error('Batch get error');
-      
+
       mockContentController.batchGet.mockRejectedValue(serviceError);
-      
+
       await expect(silo.batchGet(testData)).rejects.toThrow('Batch get error');
       expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'batchGet' });
     });
@@ -243,18 +245,18 @@ describe('Silo Service', () => {
     it('should handle service errors in delete', async () => {
       const testData = { id: 'id1' };
       const serviceError = new Error('Delete error');
-      
+
       mockContentController.delete.mockRejectedValue(serviceError);
-      
+
       await expect(silo.delete(testData)).rejects.toThrow('Delete error');
       expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'delete' });
     });
 
     it('should handle service errors in stats', async () => {
       const serviceError = new Error('Stats error');
-      
+
       mockStatsController.getStats.mockRejectedValue(serviceError);
-      
+
       await expect(silo.stats({})).rejects.toThrow('Stats error');
       expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'stats' });
     });

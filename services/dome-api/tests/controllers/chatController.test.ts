@@ -38,20 +38,22 @@ describe('ChatController', () => {
   const mockUserId = 'user-123';
 
   // Create mock context
-  const createMockContext = (options: {
-    userId?: string;
-    body?: any;
-    headers?: Record<string, string>;
-    query?: Record<string, string>;
-  } = {}) => {
+  const createMockContext = (
+    options: {
+      userId?: string;
+      body?: any;
+      headers?: Record<string, string>;
+      query?: Record<string, string>;
+    } = {},
+  ) => {
     const mockJson = vi.fn();
     const mockReq = {
       json: vi.fn().mockResolvedValue(options.body || {}),
-      header: vi.fn((name) => {
+      header: vi.fn(name => {
         if (name === 'x-user-id') return options.headers?.['x-user-id'] || null;
         return null;
       }),
-      query: vi.fn((name) => {
+      query: vi.fn(name => {
         if (name === 'userId') return options.query?.['userId'] || null;
         return options.query?.[name] || null;
       }),
@@ -63,7 +65,7 @@ describe('ChatController', () => {
       env: mockEnv,
       req: mockReq,
       json: mockJson,
-      get: vi.fn().mockImplementation((key) => {
+      get: vi.fn().mockImplementation(key => {
         if (key === 'userId') return options.userId || mockUserId;
         return null;
       }),
@@ -81,10 +83,8 @@ describe('ChatController', () => {
   describe('chat', () => {
     it('should return chat response successfully', async () => {
       // Arrange
-      const mockMessages = [
-        { role: 'user', content: 'Hello, how are you?' },
-      ];
-      
+      const mockMessages = [{ role: 'user', content: 'Hello, how are you?' }];
+
       const mockContext = createMockContext({
         userId: mockUserId,
         body: {
@@ -119,10 +119,8 @@ describe('ChatController', () => {
 
     it('should handle streaming response', async () => {
       // Arrange
-      const mockMessages = [
-        { role: 'user', content: 'Stream a response to me.' },
-      ];
-      
+      const mockMessages = [{ role: 'user', content: 'Stream a response to me.' }];
+
       const mockContext = createMockContext({
         userId: mockUserId,
         body: {
@@ -156,10 +154,8 @@ describe('ChatController', () => {
 
     it('should throw error when user ID is missing', async () => {
       // Arrange
-      const mockMessages = [
-        { role: 'user', content: 'Hello, how are you?' },
-      ];
-      
+      const mockMessages = [{ role: 'user', content: 'Hello, how are you?' }];
+
       const mockContext = createMockContext({
         userId: undefined,
         body: {
@@ -214,10 +210,8 @@ describe('ChatController', () => {
 
     it('should handle service errors', async () => {
       // Arrange
-      const mockMessages = [
-        { role: 'user', content: 'Hello, how are you?' },
-      ];
-      
+      const mockMessages = [{ role: 'user', content: 'Hello, how are you?' }];
+
       const mockContext = createMockContext({
         userId: mockUserId,
         body: {
@@ -251,7 +245,7 @@ describe('ChatController', () => {
         { role: 'system', content: 'System message' },
         // No user message
       ];
-      
+
       const mockContext = createMockContext({
         userId: mockUserId,
         body: {

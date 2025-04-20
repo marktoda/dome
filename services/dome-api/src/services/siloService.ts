@@ -13,7 +13,7 @@ import {
   SiloBatchGetResponse,
   SiloBatchGetItem,
   SiloDeleteResponse,
-  SiloStatsResponse
+  SiloStatsResponse,
 } from '@dome/common';
 import { contentMapperService } from './contentMapperService';
 
@@ -32,10 +32,7 @@ export class SiloService {
    * @param data - Simple put request data (legacy format)
    * @returns Promise resolving to the simple put response
    */
-  async simplePut(
-    env: Bindings,
-    data: SiloSimplePutInput,
-  ): Promise<SiloSimplePutResponse> {
+  async simplePut(env: Bindings, data: SiloSimplePutInput): Promise<SiloSimplePutResponse> {
     return env.SILO.simplePut(data);
   }
 
@@ -48,7 +45,7 @@ export class SiloService {
    */
   async createUpload(
     env: Bindings,
-    data: SiloCreateUploadInput
+    data: SiloCreateUploadInput,
   ): Promise<SiloCreateUploadResponse> {
     return env.SILO.createUpload(data);
   }
@@ -60,10 +57,7 @@ export class SiloService {
    * @param data - Batch get request data
    * @returns Promise resolving to a map of ID to item (legacy format)
    */
-  async batchGet(
-    env: Bindings,
-    data: SiloBatchGetInput
-  ): Promise<SiloBatchGetResponse> {
+  async batchGet(env: Bindings, data: SiloBatchGetInput): Promise<SiloBatchGetResponse> {
     return env.SILO.batchGet(data);
   }
 
@@ -173,7 +167,7 @@ export class SiloService {
   async listNotes(
     env: Bindings,
     options: { contentType?: string; limit?: number; offset?: number },
-    userId?: string
+    userId?: string,
   ) {
     try {
       if (!userId) {
@@ -181,35 +175,35 @@ export class SiloService {
       }
 
       const { contentType, limit = 50, offset = 0 } = options;
-      
+
       // Use the batchGet method with empty IDs array to list all notes for the user
       const response = await this.batchGet(env, {
         ids: [], // Empty array triggers listing all notes for the user
         userId,
         contentType,
         limit,
-        offset
+        offset,
       });
-      
+
       if (!response.items || response.items.length === 0) {
         return {
           notes: [],
           count: 0,
           total: response.total || 0,
           limit,
-          offset
+          offset,
         };
       }
-      
+
       // Map the batch items to notes
       const notes = response.items.map(item => contentMapperService.mapBatchGetItemToNote(item));
-      
+
       return {
         notes,
         count: notes.length,
         total: response.total || 0,
         limit,
-        offset
+        offset,
       };
     } catch (error) {
       this.logger.error('Failed to list notes', {
@@ -217,7 +211,7 @@ export class SiloService {
         options,
         error: error instanceof Error ? error.message : String(error),
       });
-      
+
       throw new ServiceError('Failed to list notes', {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: { userId, options },

@@ -83,7 +83,7 @@ describe('Silo Security and Access Control', () => {
       const ownerUserId = 'user-123';
       const otherUserId = 'user-456';
       const contentId = 'private-content-123';
-      
+
       // Mock private content metadata
       const privateContentMetadata = {
         id: contentId,
@@ -94,36 +94,36 @@ describe('Silo Security and Access Control', () => {
         createdAt: Date.now(),
         version: 1,
       };
-      
+
       // Mock metadata service to return the private content
       mockMetadataService.getMetadataByIds = vi.fn().mockResolvedValue([privateContentMetadata]);
-      
+
       // Test access by owner
       const ownerResult = await contentController.batchGet({
         ids: [contentId],
         userId: ownerUserId,
       });
-      
+
       // Owner should be able to access their content
       expect(ownerResult.items).toHaveLength(1);
       expect(ownerResult.items[0].id).toBe(contentId);
-      
+
       // Test access by another user
       const otherUserResult = await contentController.batchGet({
         ids: [contentId],
         userId: otherUserId,
       });
-      
+
       // Other user should not see the private content
       expect(otherUserResult.items).toHaveLength(0);
     });
-    
+
     it('should enforce authorization for content deletion', async () => {
       // Setup test data
       const ownerUserId = 'user-123';
       const otherUserId = 'user-456';
       const contentId = 'private-content-123';
-      
+
       // Mock private content metadata
       const privateContentMetadata = {
         id: contentId,
@@ -134,10 +134,10 @@ describe('Silo Security and Access Control', () => {
         createdAt: Date.now(),
         version: 1,
       };
-      
+
       // Mock metadata service to return the private content
       mockMetadataService.getMetadataById = vi.fn().mockResolvedValue(privateContentMetadata);
-      
+
       // Test deletion by owner
       const deleteByOwner = async () => {
         return await contentController.delete({
@@ -145,13 +145,13 @@ describe('Silo Security and Access Control', () => {
           userId: ownerUserId,
         });
       };
-      
+
       // Owner should be able to delete their content
       await expect(deleteByOwner()).resolves.toEqual({ success: true });
       expect(mockR2Service.deleteObject).toHaveBeenCalledWith(`content/${contentId}`);
-      
+
       vi.clearAllMocks();
-      
+
       // Test deletion by another user
       const deleteByOtherUser = async () => {
         return await contentController.delete({
@@ -159,7 +159,7 @@ describe('Silo Security and Access Control', () => {
           userId: otherUserId,
         });
       };
-      
+
       // Other user should not be able to delete the content
       await expect(deleteByOtherUser()).rejects.toThrow('Unauthorized');
       expect(mockR2Service.deleteObject).not.toHaveBeenCalled();

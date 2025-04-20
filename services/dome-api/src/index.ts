@@ -61,7 +61,7 @@ initLogging(app, {
 }); // Initialize logging with service info
 
 // Log application startup
-getLogger().info('Application starting',);
+getLogger().info('Application starting');
 app.use('*', cors());
 app.use('*', createErrorMiddleware(formatZodError));
 app.use('*', createSimpleAuthMiddleware()); // Simple auth middleware for now

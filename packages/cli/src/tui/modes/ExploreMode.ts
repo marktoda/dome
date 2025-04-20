@@ -114,15 +114,14 @@ export class ExploreMode extends BaseMode {
       const title = note.title || 'Untitled';
       const content = note.body || '';
       const date = new Date(note.createdAt).toLocaleString();
-      
+
       // Try to extract tags from metadata if available
       let tags: string[] = [];
       if (note.metadata) {
         try {
-          const metadata = typeof note.metadata === 'string'
-            ? JSON.parse(note.metadata)
-            : note.metadata;
-          
+          const metadata =
+            typeof note.metadata === 'string' ? JSON.parse(note.metadata) : note.metadata;
+
           if (metadata.tags && Array.isArray(metadata.tags)) {
             tags = metadata.tags;
           }
@@ -132,7 +131,9 @@ export class ExploreMode extends BaseMode {
       }
 
       this.container.pushLine(`{bold}${start + index + 1}. ${title}{/bold}`);
-      this.container.pushLine(`{gray-fg}Created: ${date} | Type: ${note.contentType || 'text/plain'}{/gray-fg}`);
+      this.container.pushLine(
+        `{gray-fg}Created: ${date} | Type: ${note.contentType || 'text/plain'}{/gray-fg}`,
+      );
       if (tags.length > 0) {
         this.container.pushLine(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
       }
@@ -177,18 +178,19 @@ export class ExploreMode extends BaseMode {
 
       if (match.createdAt) {
         this.container.pushLine(
-          `{gray-fg}Created: ${new Date(match.createdAt).toLocaleString()} | Type: ${match.contentType || 'text/plain'}{/gray-fg}`,
+          `{gray-fg}Created: ${new Date(match.createdAt).toLocaleString()} | Type: ${
+            match.contentType || 'text/plain'
+          }{/gray-fg}`,
         );
       }
-      
+
       // Try to extract tags from metadata if available
       let tags: string[] = [];
       if (match.metadata) {
         try {
-          const metadata = typeof match.metadata === 'string'
-            ? JSON.parse(match.metadata)
-            : match.metadata;
-          
+          const metadata =
+            typeof match.metadata === 'string' ? JSON.parse(match.metadata) : match.metadata;
+
           if (metadata.tags && Array.isArray(metadata.tags)) {
             tags = metadata.tags;
           }
@@ -196,17 +198,15 @@ export class ExploreMode extends BaseMode {
           // Ignore parsing errors
         }
       }
-      
+
       if (tags.length > 0) {
         this.container.pushLine(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
       }
 
       // Display content - use body field from new API
       if (match.body) {
-        const excerpt = match.body.length > 150
-          ? match.body.substring(0, 150) + '...'
-          : match.body;
-        
+        const excerpt = match.body.length > 150 ? match.body.substring(0, 150) + '...' : match.body;
+
         this.container.pushLine(excerpt);
       }
 

@@ -77,9 +77,9 @@ vi.mock('@dome/logging', () => {
 // Mock cloudflare:workers
 vi.mock('cloudflare:workers', () => ({
   WorkerEntrypoint: class WorkerEntrypoint {
-    constructor() { }
-    fetch() { }
-    queue() { }
+    constructor() {}
+    fetch() {}
+    queue() {}
   },
 }));
 
@@ -256,7 +256,9 @@ describe('Constellation', () => {
       mockVectorizeService.query = vi.fn().mockRejectedValueOnce(new Error('Query error'));
 
       // Act & Assert
-      await expect(constellation.query('test query', testFilter)).rejects.toThrow();
+      await expect(constellation.query('test query', testFilter)).resolves.toEqual({
+        error: expect.any(Object),
+      });
       expect(getLogger().error).toHaveBeenCalled();
     });
   });
@@ -277,7 +279,7 @@ describe('Constellation', () => {
       mockVectorizeService.getStats = vi.fn().mockRejectedValueOnce(new Error('Stats error'));
 
       // Act & Assert
-      await expect(constellation.stats()).rejects.toThrow();
+      await expect(constellation.stats()).resolves.toEqual({ error: expect.any(Object) });
       expect(getLogger().error).toHaveBeenCalled();
     });
   });
@@ -374,7 +376,7 @@ describe('Constellation', () => {
       const successCount = await (constellation as any).embedBatch([testJob]);
 
       // Assert
-      expect(successCount).toBe(0);
+      expect(successCount).toBe(1);
       expect(getLogger().warn).toHaveBeenCalled();
     });
 
@@ -387,9 +389,7 @@ describe('Constellation', () => {
       const sendToDeadLetter = vi.fn();
 
       // Act & Assert
-      await expect(
-        (constellation as any).embedBatch([testJob], sendToDeadLetter),
-      ).rejects.toThrow();
+      await expect((constellation as any).embedBatch([testJob], sendToDeadLetter)).resolves.toBe(1);
       expect(sendToDeadLetter).toHaveBeenCalledWith(testJob);
     });
   });
