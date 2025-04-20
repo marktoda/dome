@@ -200,9 +200,12 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
           const norm = preprocessor.normalize(text);
           if (!norm) return [];
+          getLogger().info({ norm }, 'normalized text');
 
           const [queryVec] = await embedder.embed([norm]);
+          getLogger().info({ queryVec }, 'got embedding for the query');
           const results = await vectorize.query(queryVec, filter, topK);
+          getLogger().info({ results }, 'query results');
 
           metrics.increment('rpc.query.success');
           metrics.gauge('rpc.query.results', results.length);
