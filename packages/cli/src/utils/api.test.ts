@@ -155,7 +155,7 @@ describe('ApiClient', () => {
 
     await search('test query');
 
-    expect(mockGet).toHaveBeenCalledWith('/notes/search', {
+    expect(mockGet).toHaveBeenCalledWith('/search', {
       params: { q: 'test query', limit: 10 },
     });
   });
