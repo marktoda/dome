@@ -49,7 +49,7 @@ export class RpcService {
       const method = c.req.method;
       const path = new URL(c.req.url).pathname;
 
-      logger.info({ method, path }, 'RPC request received');
+      logger().info({ method, path }, 'RPC request received');
       metrics.counter('rpc.request', 1, { method, path });
 
       try {

@@ -25,7 +25,7 @@ export async function handleWebhookRequest(request: Request, env: Env): Promise<
       return new Response('Missing X-GitHub-Event header', { status: 400 });
     }
     
-    logger.info({ eventType, deliveryId }, 'Received GitHub webhook');
+    logger().info({ eventType, deliveryId }, 'Received GitHub webhook');
     metrics.counter('webhook.received', 1, { event_type: eventType });
     
     // Clone the request to read the body
@@ -35,7 +35,7 @@ export async function handleWebhookRequest(request: Request, env: Env): Promise<
     try {
       payload = await clonedRequest.json();
     } catch (error) {
-      logger.warn({ eventType, deliveryId }, 'Invalid JSON payload');
+      logger().warn({ eventType, deliveryId }, 'Invalid JSON payload');
       return new Response('Invalid JSON payload', { status: 400 });
     }
     
@@ -52,7 +52,7 @@ export async function handleWebhookRequest(request: Request, env: Env): Promise<
     );
     
     if (!isValid) {
-      logger.warn({ eventType, deliveryId }, 'Invalid webhook signature');
+      logger().warn({ eventType, deliveryId }, 'Invalid webhook signature');
       metrics.counter('webhook.invalid_signature', 1, { event_type: eventType });
       return new Response('Invalid signature', { status: 401 });
     }
@@ -65,7 +65,7 @@ export async function handleWebhookRequest(request: Request, env: Env): Promise<
     
     switch (eventType) {
       case 'ping':
-        logger.info({ hook_id: payload.hook_id, zen: payload.zen }, 'Received ping event');
+        logger().info({ hook_id: payload.hook_id, zen: payload.zen }, 'Received ping event');
         metrics.counter('webhook.ping', 1);
         return new Response('Pong!');
         
@@ -84,7 +84,7 @@ export async function handleWebhookRequest(request: Request, env: Env): Promise<
         break;
         
       default:
-        logger.info({ eventType }, 'Ignoring unsupported event type');
+        logger().info({ eventType }, 'Ignoring unsupported event type');
         return new Response('Event type not supported', { status: 202 });
     }
     

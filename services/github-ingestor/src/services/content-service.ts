@@ -78,7 +78,7 @@ export class ContentService {
       .first<ContentMetadata>();
       
       if (existingBlob) {
-        logger.info({ sha }, 'Content already exists, skipping storage');
+        logger().info({ sha }, 'Content already exists, skipping storage');
         timer.stop({ exists: 'true' });
         return existingBlob;
       }
@@ -134,7 +134,7 @@ export class ContentService {
         r2Key,
       };
       
-      logger.info({ sha, size, r2Key }, 'Stored content in Silo');
+      logger().info({ sha, size, r2Key }, 'Stored content in Silo');
       
       metrics.counter('content_service.content_stored', 1, {
         mime_type: contentMetadata.mimeType,
@@ -320,7 +320,7 @@ export class ContentService {
       const deleted = result.meta.changes || 0;
       
       if (deleted > 0) {
-        logger.info({ repoId, count: deleted }, 'Deleted content references for repository');
+        logger().info({ repoId, count: deleted }, 'Deleted content references for repository');
         metrics.counter('content_service.references_deleted', deleted);
       }
       
@@ -386,7 +386,7 @@ export class ContentService {
       const references = await this.getContentReferences(sha);
       
       if (references.length > 0) {
-        logger.info({ sha, referenceCount: references.length }, 'Content still has references, not deleting');
+        logger().info({ sha, referenceCount: references.length }, 'Content still has references, not deleting');
         timer.stop({ has_references: 'true' });
         return false;
       }
@@ -408,7 +408,7 @@ export class ContentService {
       .bind(sha)
       .run();
       
-      logger.info({ sha }, 'Deleted content from Silo');
+      logger().info({ sha }, 'Deleted content from Silo');
       metrics.counter('content_service.content_deleted', 1);
       
       timer.stop({ deleted: 'true' });

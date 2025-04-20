@@ -522,7 +522,7 @@ export class GitHubApiClient {
     
     // Log rate limit if it's getting low
     if (rateLimit.remaining < rateLimit.limit * 0.1) {
-      logger.warn({
+      logger().warn({
         rateLimit,
         resetIn: rateLimit.reset - Math.floor(Date.now() / 1000),
       }, 'GitHub API rate limit is getting low');
@@ -540,7 +540,7 @@ export class GitHubApiClient {
     
     // If it's a rate limit error, log it
     if (normalizedError instanceof GitHubApiError && normalizedError.isRateLimitError) {
-      logger.warn({
+      logger().warn({
         error: normalizedError,
         method: options.method,
         url: options.url,

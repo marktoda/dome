@@ -30,25 +30,25 @@ export class QueueService {
   validateMessage(message: IngestMessage): boolean {
     // Check required fields
     if (!message.repoId || !message.provider || !message.owner || !message.repo) {
-      logger.warn({ message }, 'Invalid message: missing required fields');
+      logger().warn({ message }, 'Invalid message: missing required fields');
       return false;
     }
 
     // Check provider
     if (message.provider !== 'github') {
-      logger.warn({ provider: message.provider }, 'Unsupported provider');
+      logger().warn({ provider: message.provider }, 'Unsupported provider');
       return false;
     }
 
     // Check message type
     if (message.type !== 'repository' && message.type !== 'file') {
-      logger.warn({ type: message.type }, 'Invalid message type');
+      logger().warn({ type: message.type }, 'Invalid message type');
       return false;
     }
 
     // For file messages, check path and sha
     if (message.type === 'file' && (!message.path || !message.sha)) {
-      logger.warn({ message }, 'Invalid file message: missing path or sha');
+      logger().warn({ message }, 'Invalid file message: missing path or sha');
       return false;
     }
 
@@ -124,7 +124,7 @@ export class QueueService {
     // Send the message to the queue
     await this.env.INGEST_QUEUE.send(message);
     
-    logger.info(
+    logger().info(
       { repoId, owner, repo, messageId },
       'Enqueued repository for ingestion'
     );
@@ -185,7 +185,7 @@ export class QueueService {
     // Send the message to the queue
     await this.env.INGEST_QUEUE.send(message);
     
-    logger.info(
+    logger().info(
       { repoId, owner, repo, path, messageId },
       'Enqueued file for ingestion'
     );
@@ -256,7 +256,7 @@ export class QueueService {
       }
     }
     
-    logger.info(
+    logger().info(
       { repoId, owner, repo, fileCount: files.length },
       'Enqueued files for ingestion'
     );
@@ -297,7 +297,7 @@ export class QueueService {
     // Send the message to the queue
     await this.env.DEAD_LETTER_QUEUE.send(deadLetterMessage);
     
-    logger.info(
+    logger().info(
       {
         messageType: message.type,
         repoId: message.repoId,
@@ -330,7 +330,7 @@ export class QueueService {
       const hasChanged = await ingestor.hasChanged(metadata);
       
       if (!hasChanged) {
-        logger.info(
+        logger().info(
           { path: metadata.path, sha: metadata.sha },
           'File has not changed, skipping'
         );
@@ -353,6 +353,11 @@ export class QueueService {
       });
       
       // Add content reference
+      // Ensure path is defined
+      if (!metadata.path) {
+        throw new Error(`Missing path in metadata for item ${metadata.id}`);
+      }
+
       await contentService.addContentReference({
         id: metadata.id,
         repoId: metadata.repoId,
@@ -365,7 +370,7 @@ export class QueueService {
       // Update sync status
       await ingestor.updateSyncStatus(metadata);
       
-      logger.info(
+      logger().info(
         { path: metadata.path, sha: metadata.sha },
         'Processed file successfully'
       );
@@ -393,7 +398,7 @@ export class QueueService {
       const items = await ingestor.listItems();
       
       if (items.length === 0) {
-        logger.info(
+        logger().info(
           { repoId },
           'No changes detected in repository'
         );
@@ -438,7 +443,7 @@ export class QueueService {
         await ingestor.updateSyncStatus(lastItem);
       }
       
-      logger.info(
+      logger().info(
         { repoId, itemCount: items.length, processedCount },
         'Processed repository items'
       );

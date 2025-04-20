@@ -43,6 +43,12 @@ export interface ContentItem {
   metadata: ContentMetadata;
   content: string;
   embedding?: number[];
+  
+  /**
+   * Get content for this item
+   * @returns Content as a string or ReadableStream
+   */
+  getContent(): Promise<ReadableStream | string>;
 }
 
 /**

@@ -20,7 +20,7 @@ export class WebhookService {
     // Only process pushes to the default branch
     const branchName = ref.replace('refs/heads/', '');
     if (branchName !== repository.default_branch) {
-      logger.info(
+      logger().info(
         { repository: repository.full_name, branch: branchName },
         'Ignoring push to non-default branch'
       );
@@ -28,7 +28,7 @@ export class WebhookService {
       return false;
     }
     
-    logger.info(
+    logger().info(
       {
         repository: repository.full_name,
         before,
@@ -49,7 +49,7 @@ export class WebhookService {
       .all();
       
       if (!repoResult.results.length) {
-        logger.info(
+        logger().info(
           { repository: repository.full_name },
           'Repository not found in database, ignoring'
         );
@@ -61,7 +61,7 @@ export class WebhookService {
       for (const repo of repoResult.results) {
         // Skip if the commit is already processed
         if (repo.lastCommitSha === after) {
-          logger.info(
+          logger().info(
             { repository: repository.full_name, commit: after },
             'Commit already processed'
           );
@@ -70,7 +70,7 @@ export class WebhookService {
         
         // Identify changed files from the commits
         const changedFiles = this.identifyChangedFiles(commits);
-        logger.info(
+        logger().info(
           {
             repository: repository.full_name,
             changedFiles: changedFiles.length
@@ -93,7 +93,7 @@ export class WebhookService {
         // Update the last commit SHA
         await this.updateLastCommitSha(String(repo.id), after);
         
-        logger.info(
+        logger().info(
           { repository: repository.full_name, repoId: repo.id },
           'Enqueued repository for processing'
         );
@@ -118,7 +118,7 @@ export class WebhookService {
   async processInstallationEvent(payload: GitHubInstallationEvent): Promise<boolean> {
     const { action, installation, repositories } = payload;
     
-    logger.info(
+    logger().info(
       {
         action,
         installation_id: installation.id,
@@ -162,7 +162,7 @@ export class WebhookService {
           break;
           
         default:
-          logger.info({ action }, 'Ignoring installation action');
+          logger().info({ action }, 'Ignoring installation action');
           break;
       }
       
@@ -187,7 +187,7 @@ export class WebhookService {
   ): Promise<boolean> {
     const { action, installation, repositories_added, repositories_removed } = payload;
     
-    logger.info(
+    logger().info(
       {
         action,
         installation_id: installation.id,
@@ -361,7 +361,7 @@ export class WebhookService {
     .all();
     
     if (existingInstallation.results.length > 0) {
-      logger.info(
+      logger().info(
         { userId, installationId },
         'Installation already exists in database'
       );
@@ -384,7 +384,7 @@ export class WebhookService {
     )
     .run();
     
-    logger.info(
+    logger().info(
       { userId, installationId },
       'Added installation to database'
     );
@@ -406,7 +406,7 @@ export class WebhookService {
     )
     .run();
     
-    logger.info(
+    logger().info(
       { userId, installationId },
       'Removed installation from database'
     );
@@ -434,7 +434,7 @@ export class WebhookService {
     .all();
     
     if (existingRepo.results.length > 0) {
-      logger.info(
+      logger().info(
         { owner, repo, userId },
         'Repository already exists in database'
       );
@@ -462,7 +462,7 @@ export class WebhookService {
     )
     .run();
     
-    logger.info(
+    logger().info(
       { owner, repo, userId },
       'Added repository to database'
     );
@@ -490,7 +490,7 @@ export class WebhookService {
     )
     .run();
     
-    logger.info(
+    logger().info(
       { owner, repo, userId },
       'Removed repository from database'
     );

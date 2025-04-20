@@ -19,7 +19,7 @@ export async function processQueueBatch(
   const startTime = performance.now();
   const batchSize = batch.messages.length;
   
-  logger.info({ batchSize }, 'Processing ingest queue batch');
+  logger().info({ batchSize }, 'Processing ingest queue batch');
   metrics.gauge('queue.batch_size', batchSize);
   
   // Process each message in the batch
@@ -51,7 +51,7 @@ export async function processQueueBatch(
 async function processIngestMessage(message: IngestMessage, env: Env): Promise<void> {
   const { type } = message;
   
-  logger.info({ type, message }, 'Processing ingest message');
+  logger().info({ type, message }, 'Processing ingest message');
   
   switch (type) {
     case 'repository':
@@ -73,7 +73,7 @@ async function processIngestMessage(message: IngestMessage, env: Env): Promise<v
 async function processRepositoryMessage(message: IngestMessage, env: Env): Promise<void> {
   const { repoId, userId, provider, owner, repo, branch, isPrivate, includePatterns, excludePatterns } = message;
   
-  logger.info(
+  logger().info(
     { repoId, owner, repo, branch },
     'Processing repository ingest message'
   );
@@ -97,7 +97,7 @@ async function processRepositoryMessage(message: IngestMessage, env: Env): Promi
     
     // List all items that need to be ingested
     const items = await ingestor.listItems();
-    logger.info(
+    logger().info(
       { repoId, owner, repo, itemCount: items.length },
       'Listed repository items'
     );
@@ -113,7 +113,7 @@ async function processRepositoryMessage(message: IngestMessage, env: Env): Promi
       .bind(now, now, repoId)
       .run();
       
-      logger.info(
+      logger().info(
         { repoId, owner, repo },
         'No changes detected, updated sync timestamp'
       );
@@ -155,7 +155,7 @@ async function processRepositoryMessage(message: IngestMessage, env: Env): Promi
       const lastItem = items[items.length - 1];
       await ingestor.updateSyncStatus(lastItem);
       
-      logger.info(
+      logger().info(
         { repoId, owner, repo, itemCount: items.length },
         'Processed repository items and updated sync status'
       );
@@ -189,7 +189,7 @@ async function processFileMessage(message: IngestMessage, env: Env): Promise<voi
     throw new Error('File message missing required path or sha');
   }
   
-  logger.info(
+  logger().info(
     { repoId, owner, repo, path, sha },
     'Processing file ingest message'
   );
@@ -214,22 +214,27 @@ async function processFileMessage(message: IngestMessage, env: Env): Promise<voi
     // Create metadata for this file
     const metadata: ItemMetadata = {
       id: `${repoId}:${path}`,
-      path,
-      sha,
-      size: 0, // Will be updated when content is fetched
-      mimeType: getMimeType(path),
+      title: path.split('/').pop() || '',
+      url: `https://github.com/${owner}/${repo}/blob/${message.branch || 'main'}/${path}`,
       provider: 'github',
-      repoId,
-      userId,
+      providerType: 'repository',
       owner,
-      repo
+      repository: repo,
+      path,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      size: 0, // Will be updated when content is fetched
+      contentType: getMimeType(path),
+      sha,
+      repoId,
+      userId
     };
     
     // Process the file
     const contentService = new ContentService(env);
     await processItem(metadata, ingestor, contentService);
     
-    logger.info(
+    logger().info(
       { repoId, path, sha },
       'Processed file successfully'
     );
@@ -273,7 +278,7 @@ async function sendToDeadLetterQueue(
   
   await env.DEAD_LETTER_QUEUE.send(deadLetterMessage);
   
-  logger.info(
+  logger().info(
     {
       messageType: message.type,
       errorMessage: error.message,
@@ -299,7 +304,7 @@ async function processItem(
   const hasChanged = await ingestor.hasChanged(metadata);
   
   if (!hasChanged) {
-    logger.info(
+    logger().info(
       { path: metadata.path, sha: metadata.sha },
       'Item has not changed, skipping'
     );
@@ -320,6 +325,11 @@ async function processItem(
   });
   
   // Add content reference
+  // Ensure path is defined
+  if (!metadata.path) {
+    throw new Error(`Missing path in metadata for item ${metadata.id}`);
+  }
+
   await contentService.addContentReference({
     id: metadata.id,
     repoId: metadata.repoId,
@@ -329,7 +339,7 @@ async function processItem(
     mimeType: metadata.mimeType
   });
   
-  logger.info(
+  logger().info(
     { path: metadata.path, sha: metadata.sha },
     'Processed item successfully'
   );

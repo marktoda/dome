@@ -239,12 +239,91 @@ export class GitHubIngestor extends BaseIngestor {
     
     try {
       // Try to get the repository info to test the connection
-      // Try to get the repository info to test the connection
       await this.client.getCommit(this.options.owner, this.options.repo, this.options.branch);
       return true;
     } catch (error) {
       getLogger().error({ error }, 'Failed to connect to GitHub');
       return false;
+    }
+  }
+  
+  /**
+   * Check if an item has changed since last ingestion
+   * @param metadata Content metadata
+   * @returns Whether the item has changed
+   */
+  async hasChanged(metadata: ContentMetadata): Promise<boolean> {
+    if (!this.client || !this.env) {
+      throw new Error('Ingestor not initialized');
+    }
+    
+    // If no SHA is provided, assume it has changed
+    if (!metadata.sha) {
+      return true;
+    }
+    
+    try {
+      // Check if the file exists in the database with the same SHA
+      const existingContent = await this.env.DB.prepare(`
+        SELECT sha FROM content_blobs
+        WHERE id = ?
+      `)
+      .bind(metadata.id)
+      .first<{ sha: string }>();
+      
+      // If the content doesn't exist or has a different SHA, it has changed
+      return !existingContent || existingContent.sha !== metadata.sha;
+    } catch (error) {
+      // If there's an error, assume it has changed
+      getLogger().warn({ error, path: metadata.path }, 'Error checking if content has changed');
+      return true;
+    }
+  }
+  
+  /**
+   * Fetch content for an item
+   * @param metadata Content metadata
+   * @returns Content item
+   */
+  async fetchContent(metadata: ContentMetadata): Promise<ContentItem> {
+    if (!this.client || !this.env) {
+      throw new Error('Ingestor not initialized');
+    }
+    
+    if (!metadata.path || !metadata.sha) {
+      throw new Error('Missing required metadata: path or sha');
+    }
+    
+    try {
+      // Get the file content from GitHub
+      const content = await this.client.getContent(
+        this.options.owner,
+        this.options.repo,
+        metadata.path,
+        this.options.branch
+      );
+      
+      if (!content) {
+        throw new Error(`Failed to fetch content for ${metadata.path}`);
+      }
+      
+      // Create a GitHubContentItem
+      const contentItem = new GitHubContentItem(
+        metadata,
+        this.client,
+        this.options.owner,
+        this.options.repo
+      );
+      
+      // Set the content directly if available
+      if (typeof content === 'object' && (content as any).content) {
+        contentItem.content = (content as any).content;
+      }
+      
+      return contentItem;
+    } catch (error) {
+      getLogger().error({ error, path: metadata.path }, 'Failed to fetch content');
+      throw error;
     }
   }
   
@@ -347,11 +426,20 @@ export class GitHubIngestor extends BaseIngestor {
       contentType: getMimeType(path)
     };
     
-    // Create content item
-    return {
+    // Create a GitHubContentItem
+    const contentItem = new GitHubContentItem(
       metadata,
-      content: typeof content === 'object' ? ((content as any).content || '') : ''
-    };
+      this.client,
+      this.options.owner,
+      this.options.repo
+    );
+    
+    // Set the content directly if available
+    if (typeof content === 'object' && (content as any).content) {
+      contentItem.content = (content as any).content;
+    }
+    
+    return contentItem;
   }
   
   /**

@@ -33,7 +33,7 @@ export class CronService {
     try {
       const repositories = await this.repositoryService.getRepositoriesToSync(limit, provider);
       
-      logger.info({
+      logger().info({
         count: repositories.length,
         provider
       }, 'Found repositories to sync');
@@ -108,7 +108,7 @@ export class CronService {
       
       // If we got a 304 Not Modified, no need to sync
       if (!commitResponse.data) {
-        logger.info({
+        logger().info({
           owner: repository.owner,
           repo: repository.repo,
           branch: repository.branch
@@ -124,7 +124,7 @@ export class CronService {
       
       // If the commit hasn't changed, no need to sync
       if (repoStatus?.lastCommitSha && repoStatus.lastCommitSha === newCommitSha) {
-        logger.info({
+        logger().info({
           owner: repository.owner,
           repo: repository.repo,
           branch: repository.branch,
@@ -136,7 +136,7 @@ export class CronService {
       }
       
       // Repository needs to be synced
-      logger.info({
+      logger().info({
         owner: repository.owner,
         repo: repository.repo,
         branch: repository.branch,
@@ -155,7 +155,7 @@ export class CronService {
         if (rateLimitReset && repository.id) {
           await this.updateRepositoryRateLimit(repository.id, rateLimitReset);
           
-          logger.warn({
+          logger().warn({
             owner: repository.owner,
             repo: repository.repo,
             rateLimitReset: new Date(rateLimitReset * 1000).toISOString()
@@ -219,7 +219,7 @@ export class CronService {
         await this.repositoryService.updateSyncStatus(repository.id, status);
       }
       
-      logger.info({
+      logger().info({
         owner: repository.owner,
         repo: repository.repo,
         branch: repository.branch

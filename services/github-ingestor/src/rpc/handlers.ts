@@ -79,7 +79,7 @@ export class RpcHandlers {
         repository.excludePatterns
       );
       
-      logger.info({
+      logger().info({
         id,
         userId: request.userId,
         provider: request.provider,
@@ -149,7 +149,7 @@ export class RpcHandlers {
         throw new Error(`Failed to retrieve updated repository: ${request.id}`);
       }
       
-      logger.info({
+      logger().info({
         id: request.id,
         changes: Object.keys(request).filter(k => k !== 'id').join(', ')
       }, 'Updated repository configuration via RPC');
@@ -193,9 +193,9 @@ export class RpcHandlers {
       const deleted = await repositoryService.deleteRepository(id);
       
       if (deleted) {
-        logger.info({ id }, 'Removed repository configuration via RPC');
+        logger().info({ id }, 'Removed repository configuration via RPC');
       } else {
-        logger.warn({ id }, 'Repository not found for removal via RPC');
+        logger().warn({ id }, 'Repository not found for removal via RPC');
       }
       
       timer.stop({ deleted: deleted.toString() });
@@ -327,7 +327,7 @@ export class RpcHandlers {
         repository.excludePatterns
       );
       
-      logger.info({
+      logger().info({
         id: request.id,
         force: request.force
       }, 'Triggered repository sync via RPC');
@@ -460,7 +460,7 @@ export class RpcHandlers {
       )
       .run();
       
-      logger.info({
+      logger().info({
         userId,
         installationId
       }, 'Added GitHub App installation via RPC');
@@ -550,9 +550,9 @@ export class RpcHandlers {
       const deleted = result.meta.changes > 0;
       
       if (deleted) {
-        logger.info({ id }, 'Removed GitHub App installation via RPC');
+        logger().info({ id }, 'Removed GitHub App installation via RPC');
       } else {
-        logger.warn({ id }, 'GitHub App installation not found for removal via RPC');
+        logger().warn({ id }, 'GitHub App installation not found for removal via RPC');
       }
       
       timer.stop({ deleted: deleted.toString() });

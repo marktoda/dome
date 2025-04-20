@@ -122,48 +122,45 @@ export class SearchService {
       }
 
       // Get unique content IDs
-      this.logger.debug('Search results from constellation', {
+      console.log('DOME-DEBUG: Search results from constellation', JSON.stringify({
         resultCount: searchResults.length,
         firstResult: searchResults.length > 0 ? {
-          id: searchResults[0].id,
-          score: searchResults[0].score,
-          metadata: searchResults[0].metadata
-        } : null,
-        hasContentId: searchResults.length > 0 ? 'contentId' in searchResults[0] : false
-      });
+          contentId: searchResults[0].contentId,
+          score: searchResults[0].score
+        } : null
+      }));
       
       const contentIds = [...new Set(searchResults.map(result => {
         const contentId = result.contentId;
-        this.logger.debug('Extracted contentId from search result', {
-          resultId: result.id,
+        console.log('DOME-DEBUG: Extracted contentId from search result', JSON.stringify({
           contentId,
-          metadata: result.metadata
-        });
+          score: result.score
+        }));
         return contentId;
       }))];
       
-      this.logger.debug('Unique content IDs extracted', {
+      console.log('DOME-DEBUG: Unique content IDs extracted', JSON.stringify({
         contentIdsCount: contentIds.length,
         firstFewContentIds: contentIds.slice(0, 5)
-      });
+      }));
 
       // Retrieve content from Silo
-      this.logger.debug('Calling siloService.getContentsAsNotes', {
+      console.log('DOME-DEBUG: Calling siloService.getContentsAsNotes', JSON.stringify({
         contentIdsCount: contentIds.length,
         userId
-      });
+      }));
       const contents = await siloService.getContentsAsNotes(env, contentIds, userId);
-      this.logger.debug('Results from siloService.getContentsAsNotes', {
+      console.log('DOME-DEBUG: Results from siloService.getContentsAsNotes', JSON.stringify({
         contentsCount: contents.length,
         firstContentId: contents.length > 0 ? contents[0].id : null
-      });
+      }));
 
       // Map content IDs to scores
       const scoreMap = new Map<string, number>();
       for (const result of searchResults) {
         scoreMap.set(result.contentId, result.score);
       }
-      this.logger.debug('Created score map', { scoreMapSize: scoreMap.size });
+      console.log('DOME-DEBUG: Created score map', JSON.stringify({ scoreMapSize: scoreMap.size }));
 
       // Filter and transform results
       let filteredResults = contents

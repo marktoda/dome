@@ -128,44 +128,49 @@ export class SiloService {
    */
   async getContentsAsNotes(env: Bindings, ids: string[], userId?: string) {
     try {
-      this.logger.debug('getContentsAsNotes called with', {
+      // Use console.log directly for debugging
+      console.log('DOME-DEBUG: getContentsAsNotes called with', JSON.stringify({
         idsCount: ids.length,
         firstFewIds: ids.slice(0, 5),
         userId
-      });
+      }));
       
       if (ids.length === 0) {
-        this.logger.debug('No IDs provided to getContentsAsNotes, returning empty array');
+        console.log('DOME-DEBUG: No IDs provided to getContentsAsNotes, returning empty array');
         return [];
       }
 
-      this.logger.debug('Calling batchGet with', { ids, userId });
+      console.log('DOME-DEBUG: Calling batchGet with', JSON.stringify({
+        idsCount: ids.length,
+        userId
+      }));
+      
       const response = await this.batchGet(env, {
         ids,
         userId,
       });
 
       if (!response.items || response.items.length === 0) {
-        this.logger.debug('No items returned from batchGet', {
+        console.log('DOME-DEBUG: No items returned from batchGet', JSON.stringify({
           responseHasItems: !!response.items,
           itemsLength: response.items?.length || 0
-        });
+        }));
         return [];
       }
 
-      this.logger.debug('Items returned from batchGet', {
+      console.log('DOME-DEBUG: Items returned from batchGet', JSON.stringify({
         itemsCount: response.items.length,
         firstItemId: response.items[0]?.id,
         firstItemUserId: response.items[0]?.userId
-      });
+      }));
       
       return response.items.map(item => {
         const content = this.mapBatchGetItemToContent(item);
-        this.logger.debug('Mapped item to content', {
+        console.log('DOME-DEBUG: Mapped item to content', JSON.stringify({
           itemId: item.id,
           contentId: content.id,
           contentTitle: content.title?.substring(0, 20)
-        });
+        }));
         return content;
       });
     } catch (error) {

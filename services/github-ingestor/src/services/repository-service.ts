@@ -80,7 +80,7 @@ export class RepositoryService {
       )
       .run();
       
-      logger.info({
+      logger().info({
         id,
         userId: config.userId,
         provider: config.provider,
@@ -209,7 +209,7 @@ export class RepositoryService {
       const updated = result.meta.changes > 0;
       
       if (updated) {
-        logger.info({ id }, 'Updated repository configuration');
+        logger().info({ id }, 'Updated repository configuration');
       }
       
       timer.stop({ updated: updated.toString() });
@@ -240,7 +240,7 @@ export class RepositoryService {
       const deleted = result.meta.changes > 0;
       
       if (deleted) {
-        logger.info({ id }, 'Deleted repository configuration');
+        logger().info({ id }, 'Deleted repository configuration');
         metrics.counter('repository_service.repositories_deleted', 1);
       }
       
@@ -503,7 +503,7 @@ export class RepositoryService {
       const updated = result.meta.changes > 0;
       
       if (updated) {
-        logger.error({ id, error, retryCount, nextRetryAt }, 'Repository sync error');
+        logger().error({ id, error, retryCount, nextRetryAt }, 'Repository sync error');
         
         metrics.counter('repository_service.sync_errors', 1, {
           transient: isTransient.toString()
@@ -543,7 +543,7 @@ export class RepositoryService {
       const updated = result.meta.changes > 0;
       
       if (updated) {
-        logger.info({ id }, 'Reset repository retry count');
+        logger().info({ id }, 'Reset repository retry count');
       }
       
       timer.stop({ updated: updated.toString() });
