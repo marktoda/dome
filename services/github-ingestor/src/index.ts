@@ -14,12 +14,14 @@ initPolyfills();
 import { handleWebhook } from './webhook/http';
 import { processQueueBatch } from './queue/processor';
 import { handleCron } from './cron/handler';
-import { initLogger, logger, createRequestLogger, createRepoLogger } from './utils/logging';
+import { initLogger, createRequestLogger, createRepoLogger } from './utils/logging';
+import { getLogger } from '@dome/logging';
 import { metrics } from './utils/metrics';
 import { Hono } from 'hono';
 import { ServiceFactory } from './services';
 import { RpcService } from './rpc/service';
 import { ulid } from 'ulid';
+import { wrap } from './utils/wrap';
 
 /**
  * GitHub Ingestor Worker Entry Point class for handling HTTP requests, cron events, and queue messages
@@ -49,15 +51,16 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
   private createApp(): Hono {
     const app = new Hono();
 
-    // Initialize logger with environment variables
+    // Initialize logger and metrics with environment variables
     initLogger(this.env);
+    metrics.init(this.env);
 
     // GitHub webhook endpoint
     app.post('/webhook', async (c) => {
       try {
         return await handleWebhook(c.req.raw, this.env);
       } catch (error) {
-        logger.error({ error }, 'Error handling webhook');
+        getLogger().error({ error }, 'Error handling webhook');
         return new Response('Internal server error', { status: 500 });
       }
     });
@@ -176,7 +179,9 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
           queue: queueMetrics,
           recent_errors: recentErrors?.results || [],
           memory_usage: {
-            rss: process.memoryUsage?.()?.rss || 0,
+            // Cloudflare Workers don't provide memory usage metrics
+            // Use a placeholder value that won't cause runtime errors
+            rss: 0,
           },
         });
       } catch (error) {
@@ -210,19 +215,19 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
    * @returns HTTP response
    */
   async fetch(request: Request): Promise<Response> {
-    try {
+    return wrap({ operation: 'fetch', method: request.method, path: new URL(request.url).pathname }, async () => {
       metrics.counter('http.request', 1, {
         method: request.method,
         path: new URL(request.url).pathname
       });
 
       return this.app.fetch(request, this.env, this.ctx);
-    } catch (error) {
-      logger.error({ error, url: request.url }, 'Unhandled error in fetch handler');
+    }).catch(error => {
+      getLogger().error({ error, url: request.url }, 'Unhandled error in fetch handler');
       metrics.counter('http.error', 1);
 
       return new Response('Internal server error', { status: 500 });
-    }
+    });
   }
 
   /**
@@ -230,18 +235,18 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
    * @param controller Scheduled controller
    */
   async scheduled(controller: ScheduledController): Promise<void> {
-    try {
-      logger.info({ cron: controller.cron }, 'Running scheduled repository sync');
+    await wrap({ operation: 'scheduled', cron: controller.cron }, async () => {
+      getLogger().info({ cron: controller.cron }, 'Running scheduled repository sync');
       metrics.counter('cron.triggered', 1);
 
       // Run the cron handler
       await handleCron(this.env, this.ctx);
 
-      logger.info('Scheduled repository sync completed');
-    } catch (error) {
-      logger.error({ error }, 'Error in scheduled repository sync');
+      getLogger().info('Scheduled repository sync completed');
+    }).catch(error => {
+      getLogger().error({ error }, 'Error in scheduled repository sync');
       metrics.counter('cron.error', 1);
-    }
+    });
   }
 
   /**
@@ -249,20 +254,20 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
    * @param batch Message batch
    */
   async queue(batch: MessageBatch<IngestMessage>): Promise<void> {
-    try {
-      logger.info({ messageCount: batch.messages.length }, 'Processing queue batch');
+    await wrap({ operation: 'queue', messageCount: batch.messages.length }, async () => {
+      getLogger().info({ messageCount: batch.messages.length }, 'Processing queue batch');
       metrics.counter('queue.batch_received', 1, {
         message_count: batch.messages.length.toString()
       });
 
       await processQueueBatch(batch, this.env);
 
-      logger.info('Queue batch processing completed');
-    } catch (error) {
-      logger.error({ error }, 'Unhandled error in queue processor');
+      getLogger().info('Queue batch processing completed');
+    }).catch(error => {
+      getLogger().error({ error }, 'Unhandled error in queue processor');
       metrics.counter('queue.unhandled_error', 1);
       throw error; // Rethrow to trigger retry
-    }
+    });
   }
 
   /**

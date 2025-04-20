@@ -30,7 +30,7 @@ export async function handleCron(env: Env, ctx: ExecutionContext): Promise<void>
   const startTime = Date.now();
   const cronService = new CronService(env);
   
-  logger.info('Starting cron handler for GitHub repository sync');
+  logger().info('Starting cron handler for GitHub repository sync');
   metrics.counter('cron.handler.invocations', 1);
   
   try {
@@ -38,7 +38,7 @@ export async function handleCron(env: Env, ctx: ExecutionContext): Promise<void>
     const repositories = await cronService.getRepositoriesToSync(MAX_REPOSITORIES);
     
     if (repositories.length === 0) {
-      logger.info('No repositories need to be synced');
+      logger().info('No repositories need to be synced');
       metrics.timing('cron.handler.duration_ms', Date.now() - startTime);
       return;
     }
@@ -46,7 +46,7 @@ export async function handleCron(env: Env, ctx: ExecutionContext): Promise<void>
     // Prioritize repositories
     const prioritizedRepos = cronService.prioritizeRepositories(repositories);
     
-    logger.info({ count: prioritizedRepos.length }, 'Processing repositories for sync');
+    logger().info({ count: prioritizedRepos.length }, 'Processing repositories for sync');
     metrics.gauge('cron.handler.repositories_to_sync', prioritizedRepos.length);
     
     // Process repositories in batches with concurrency limit
@@ -79,7 +79,7 @@ export async function handleCron(env: Env, ctx: ExecutionContext): Promise<void>
         // Check if we're running out of time (30 seconds is a safe limit for a 60-second cron)
         const elapsedTime = Date.now() - startTime;
         if (elapsedTime > 30000) {
-          logger.warn(
+          logger().warn(
             { processed: i + CONCURRENCY_LIMIT, total: prioritizedRepos.length, elapsedTime },
             'Approaching time limit, stopping early'
           );
@@ -90,7 +90,7 @@ export async function handleCron(env: Env, ctx: ExecutionContext): Promise<void>
     }
     
     const duration = Date.now() - startTime;
-    logger.info({ duration }, 'Completed cron handler for GitHub repository sync');
+    logger().info({ duration }, 'Completed cron handler for GitHub repository sync');
     metrics.timing('cron.handler.duration_ms', duration);
   } catch (error) {
     const duration = Date.now() - startTime;

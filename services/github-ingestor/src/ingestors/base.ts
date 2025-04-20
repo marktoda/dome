@@ -1,118 +1,296 @@
 /**
- * Common ingestion contract for all content providers
- * This defines the interface that all ingestors must implement
+ * Base Ingestor Interface
+ * 
+ * This file defines the common interface for all content ingestors.
+ * It provides a standardized contract that all ingestors (GitHub, Notion, Linear, etc.)
+ * must implement, ensuring consistent behavior and extensibility.
  */
 
+import { getLogger } from '@dome/logging';
+import { metrics } from '../utils/metrics';
+
 /**
- * Metadata for a content item
+ * Content metadata common across all providers
  */
-export interface ItemMetadata {
+export interface ContentMetadata {
   id: string;
-  path: string;
-  sha: string;
-  size: number;
-  mimeType: string;
+  title: string;
+  url: string;
   provider: string;
-  repoId: string;
-  userId: string | null;
-  [key: string]: any; // Additional provider-specific metadata
+  providerType: string;
+  owner: string;
+  repository?: string;
+  path?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  size: number;
+  contentType: string;
+  language?: string;
+  authors?: string[];
+  tags?: string[];
+  [key: string]: any; // Allow provider-specific metadata
 }
 
 /**
- * Content item with metadata and content access
+ * Alias for ContentMetadata for backward compatibility
+ */
+export type ItemMetadata = ContentMetadata;
+
+/**
+ * Content item with metadata and actual content
  */
 export interface ContentItem {
-  metadata: ItemMetadata;
-  getContent(): Promise<ReadableStream | string>;
+  metadata: ContentMetadata;
+  content: string;
+  embedding?: number[];
 }
 
 /**
- * Configuration for an ingestor
+ * Ingestion options common across all providers
  */
-export interface IngestorConfig {
-  id: string;
-  userId: string | null;
-  provider: string;
-  [key: string]: any; // Provider-specific configuration
+export interface IngestionOptions {
+  userId?: string;
+  includePatterns?: string[];
+  excludePatterns?: string[];
+  maxSize?: number;
+  maxItems?: number;
+  recursive?: boolean;
+  includeArchived?: boolean;
+  [key: string]: any; // Allow provider-specific options
 }
 
 /**
- * Common interface for all content ingestors
+ * Ingestion result
+ */
+export interface IngestionResult {
+  success: boolean;
+  itemsProcessed: number;
+  itemsIngested: number;
+  itemsSkipped: number;
+  itemsFailed: number;
+  totalSize: number;
+  errors: Error[];
+  warnings: string[];
+  duration: number;
+}
+
+/**
+ * Base ingestor interface that all provider-specific ingestors must implement
  */
 export interface Ingestor {
   /**
-   * Get configuration for this ingestor
+   * Get the provider name
    */
-  getConfig(): IngestorConfig;
+  getProviderName(): string;
   
   /**
-   * List all items that need to be ingested
+   * Get the provider type
    */
-  listItems(): Promise<ItemMetadata[]>;
+  getProviderType(): string;
   
   /**
-   * Get content for a specific item
-   * @param metadata Item metadata
+   * Initialize the ingestor with environment and options
    */
-  fetchContent(metadata: ItemMetadata): Promise<ContentItem>;
+  initialize(env: any, options?: any): Promise<void>;
   
   /**
-   * Check if an item has changed since last sync
-   * @param metadata Item metadata
+   * Test the connection to the provider
    */
-  hasChanged(metadata: ItemMetadata): Promise<boolean>;
+  testConnection(): Promise<boolean>;
+  
+  /**
+   * Ingest content from the provider
+   */
+  ingest(options: IngestionOptions): Promise<IngestionResult>;
+  
+  /**
+   * Ingest a specific item from the provider
+   */
+  ingestItem(itemId: string, options?: IngestionOptions): Promise<ContentItem | null>;
+  
+  /**
+   * List available items from the provider
+   */
+  listItems(options?: IngestionOptions): Promise<ContentMetadata[]>;
+  
+  /**
+   * Check if an item has changed since last ingestion
+   */
+  hasChanged(metadata: ContentMetadata): Promise<boolean>;
+  
+  /**
+   * Fetch content for an item
+   */
+  fetchContent(metadata: ContentMetadata): Promise<ContentItem>;
   
   /**
    * Update sync status after successful ingestion
-   * @param metadata Item metadata
    */
-  updateSyncStatus(metadata: ItemMetadata): Promise<void>;
+  updateSyncStatus(metadata: ContentMetadata): Promise<void>;
 }
 
 /**
- * Base class for ingestors with common functionality
+ * Base ingestor implementation with common functionality
  */
 export abstract class BaseIngestor implements Ingestor {
-  protected config: IngestorConfig;
-
-  constructor(config: IngestorConfig) {
-    this.config = config;
+  protected env: any;
+  protected options: any;
+  
+  /**
+   * Create a new ingestor
+   */
+  constructor() {
+    this.env = {};
+    this.options = {};
   }
-
+  
   /**
-   * Get configuration for this ingestor
+   * Get the provider name
    */
-  getConfig(): IngestorConfig {
-    return this.config;
+  abstract getProviderName(): string;
+  
+  /**
+   * Get the provider type
+   */
+  abstract getProviderType(): string;
+  
+  /**
+   * Initialize the ingestor with environment and options
+   */
+  async initialize(env: any, options?: any): Promise<void> {
+    this.env = env;
+    this.options = options || {};
+    
+    getLogger().info(
+      { provider: this.getProviderName(), type: this.getProviderType() },
+      'Initializing ingestor'
+    );
   }
-
+  
   /**
-   * List all items that need to be ingested
-   * Must be implemented by subclasses
+   * Test the connection to the provider
    */
-  abstract listItems(): Promise<ItemMetadata[]>;
-
+  abstract testConnection(): Promise<boolean>;
+  
   /**
-   * Get content for a specific item
-   * Must be implemented by subclasses
-   * @param metadata Item metadata
+   * Ingest content from the provider
    */
-  abstract fetchContent(metadata: ItemMetadata): Promise<ContentItem>;
-
+  abstract ingest(options: IngestionOptions): Promise<IngestionResult>;
+  
   /**
-   * Check if an item has changed since last sync
-   * Default implementation compares SHA hashes
-   * @param metadata Item metadata
+   * Ingest a specific item from the provider
    */
-  async hasChanged(metadata: ItemMetadata): Promise<boolean> {
-    // Default implementation - subclasses should override with more efficient checks
-    return true;
-  }
-
+  abstract ingestItem(itemId: string, options?: IngestionOptions): Promise<ContentItem | null>;
+  
+  /**
+   * List available items from the provider
+   */
+  abstract listItems(options?: IngestionOptions): Promise<ContentMetadata[]>;
+  
+  /**
+   * Check if an item has changed since last ingestion
+   */
+  abstract hasChanged(metadata: ContentMetadata): Promise<boolean>;
+  
+  /**
+   * Fetch content for an item
+   */
+  abstract fetchContent(metadata: ContentMetadata): Promise<ContentItem>;
+  
   /**
    * Update sync status after successful ingestion
-   * Must be implemented by subclasses
-   * @param metadata Item metadata
    */
-  abstract updateSyncStatus(metadata: ItemMetadata): Promise<void>;
+  abstract updateSyncStatus(metadata: ContentMetadata): Promise<void>;
+  
+  /**
+   * Track ingestion metrics
+   */
+  protected trackIngestionMetrics(result: IngestionResult, options: IngestionOptions): void {
+    const tags = {
+      provider: this.getProviderName(),
+      type: this.getProviderType(),
+      user_id: options.userId || 'anonymous',
+      success: result.success.toString(),
+    };
+    
+    metrics.counter('ingestion.items_processed', result.itemsProcessed, tags);
+    metrics.counter('ingestion.items_ingested', result.itemsIngested, tags);
+    metrics.counter('ingestion.items_skipped', result.itemsSkipped, tags);
+    metrics.counter('ingestion.items_failed', result.itemsFailed, tags);
+    metrics.counter('ingestion.bytes_processed', result.totalSize, tags);
+    metrics.timing('ingestion.duration_ms', result.duration, tags);
+    
+    if (result.errors.length > 0) {
+      metrics.counter('ingestion.errors', result.errors.length, tags);
+    }
+    
+    if (result.warnings.length > 0) {
+      metrics.counter('ingestion.warnings', result.warnings.length, tags);
+    }
+  }
+  
+  /**
+   * Create a default ingestion result
+   */
+  protected createDefaultResult(): IngestionResult {
+    return {
+      success: true,
+      itemsProcessed: 0,
+      itemsIngested: 0,
+      itemsSkipped: 0,
+      itemsFailed: 0,
+      totalSize: 0,
+      errors: [],
+      warnings: [],
+      duration: 0,
+    };
+  }
+  
+  /**
+   * Check if a path matches include/exclude patterns
+   */
+  protected shouldIncludePath(path: string, options: IngestionOptions): boolean {
+    // If no patterns are specified, include everything
+    if (!options.includePatterns?.length && !options.excludePatterns?.length) {
+      return true;
+    }
+    
+    // Check exclude patterns first (exclude takes precedence)
+    if (options.excludePatterns?.length) {
+      for (const pattern of options.excludePatterns) {
+        if (this.pathMatchesPattern(path, pattern)) {
+          return false;
+        }
+      }
+    }
+    
+    // If include patterns are specified, at least one must match
+    if (options.includePatterns?.length) {
+      for (const pattern of options.includePatterns) {
+        if (this.pathMatchesPattern(path, pattern)) {
+          return true;
+        }
+      }
+      // If we get here, no include pattern matched
+      return false;
+    }
+    
+    // No include patterns and didn't match any exclude patterns
+    return true;
+  }
+  
+  /**
+   * Check if a path matches a glob pattern
+   */
+  private pathMatchesPattern(path: string, pattern: string): boolean {
+    // Convert glob pattern to regex
+    // This is a simplified implementation - for production, use a proper glob library
+    const regexPattern = pattern
+      .replace(/\./g, '\\.')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
+    
+    const regex = new RegExp(`^${regexPattern}$`, 'i');
+    return regex.test(path);
+  }
 }

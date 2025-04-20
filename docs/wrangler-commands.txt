@@ -4,10 +4,11 @@ wrangler queues create content-events
 wrangler queues create new-content
 wrangler queues create embed-dead-letter
 
-wrangler vectorize create dome-notes --dimensions=768 --metric=cosine
-
-wrangler vectorize create-metadata-index dome-notes --property-name pageNum --type number
-
-wrangler vectorize create-metadata-index dome-notes --property-name userId  --type string
+wrangler d1 create silo
+wrangler d1 create github-ingestor
 
 wrangler r2 bucket notification create silo-content  --event-type object-create  --queue content-events
+
+wrangler vectorize create dome-notes --dimensions=768 --metric=cosine
+wrangler vectorize create-metadata-index dome-notes --property-name userId  --type string
+

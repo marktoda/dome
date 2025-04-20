@@ -11,7 +11,7 @@ crons = ["0 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "github-ingestor"
-database_id = "your-database-id"
+database_id = "08d66bbb-c86c-40d3-8df3-1d9902fc52f4"
 
 # Service bindings
 [[services]]

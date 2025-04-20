@@ -6,16 +6,35 @@ import { metrics as domeMetrics } from '@dome/logging';
  */
 export class GitHubIngestorMetrics {
   private readonly prefix = 'github_ingestor';
-  private readonly defaultTags: Record<string, string>;
+  private defaultTagsBase: Record<string, string>;
+  private envTags: Record<string, string> = {};
   // Internal counters for tracking metrics in memory
   private counters: Map<string, number> = new Map();
 
   constructor() {
-    this.defaultTags = {
+    this.defaultTagsBase = {
       service: 'github-ingestor',
-      version: process.env.VERSION || 'unknown',
-      environment: process.env.ENVIRONMENT || 'development',
+      version: 'unknown', // Will be set during initialization
+      environment: 'development', // Will be set during initialization
     };
+  }
+
+  /**
+   * Initialize metrics with environment variables
+   * @param env Environment variables
+   */
+  public init(env: { VERSION: string; ENVIRONMENT: string }): void {
+    this.envTags = {
+      version: env.VERSION || 'unknown',
+      environment: env.ENVIRONMENT || 'development',
+    };
+  }
+
+  /**
+   * Get the combined default tags
+   */
+  private get defaultTags(): Record<string, string> {
+    return { ...this.defaultTagsBase, ...this.envTags };
   }
 
   /**

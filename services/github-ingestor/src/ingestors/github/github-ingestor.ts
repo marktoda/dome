@@ -1,25 +1,30 @@
-import { BaseIngestor, ContentItem, IngestorConfig, ItemMetadata } from '../base';
+import {
+  BaseIngestor,
+  ContentItem,
+  ContentMetadata,
+  IngestionOptions,
+  IngestionResult
+} from '../base';
 import { GitHubApiClient } from '../../github/api-client';
 import { getInstallationToken, getServiceToken, getUserToken } from '../../github/auth';
-import { calculateSha1, generateR2Key, getMimeType, isBinaryFile, shouldIncludeFile } from '../../github/content-utils';
-import { logger, logError } from '../../utils/logging';
+import { getMimeType, isBinaryFile, shouldIncludeFile } from '../../github/content-utils';
+import { logger as getLogger, logError } from '../../utils/logging';
 import { metrics } from '../../utils/metrics';
 import { Env } from '../../types';
+import { wrap } from '../../utils/wrap';
 
 // Define ReadableStream type to match the interface in base.ts
 type ReadableStream = globalThis.ReadableStream;
 
 /**
- * GitHub-specific ingestor configuration
+ * GitHub-specific ingestion options
  */
-export interface GitHubIngestorConfig extends IngestorConfig {
+export interface GitHubIngestionOptions extends IngestionOptions {
   owner: string;
   repo: string;
   branch: string;
   lastCommitSha?: string;
   etag?: string;
-  includePatterns?: string[];
-  excludePatterns?: string[];
   isPrivate: boolean;
 }
 
@@ -27,8 +32,10 @@ export interface GitHubIngestorConfig extends IngestorConfig {
  * GitHub-specific content item
  */
 export class GitHubContentItem implements ContentItem {
+  public content: string = '';
+  
   constructor(
-    public metadata: ItemMetadata,
+    public metadata: ContentMetadata,
     private client: GitHubApiClient,
     private owner: string,
     private repo: string
@@ -82,24 +89,80 @@ export class GitHubContentItem implements ContentItem {
 /**
  * GitHub ingestor implementation
  */
+/**
+ * GitHub ingestor implementation
+ * Extends the BaseIngestor to provide GitHub-specific functionality
+ */
 export class GitHubIngestor extends BaseIngestor {
-  private client: GitHubApiClient;
-  private env: Env;
+  private client: GitHubApiClient | null = null;
+  protected env: Env | null = null;
+  protected options: GitHubIngestionOptions = {
+    owner: '',
+    repo: '',
+    branch: '',
+    isPrivate: false
+  };
   
   /**
-   * Create a new GitHub ingestor
-   * @param config Ingestor configuration
-   * @param token GitHub API token
-   * @param env Environment
+   * Get the provider name
    */
-  constructor(
-    config: GitHubIngestorConfig,
-    token: string,
-    env: Env
-  ) {
-    super(config);
-    this.client = new GitHubApiClient(token);
+  getProviderName(): string {
+    return 'github';
+  }
+  
+  /**
+   * Get the provider type
+   */
+  getProviderType(): string {
+    return 'repository';
+  }
+  
+  /**
+   * Initialize the ingestor with environment and options
+   */
+  async initialize(env: Env, options?: GitHubIngestionOptions): Promise<void> {
+    await super.initialize(env, options);
+    
     this.env = env;
+    
+    if (options) {
+      this.options = {
+        ...this.options,
+        ...options
+      };
+    }
+    
+    // Get appropriate token based on repository privacy
+    let token: string;
+    if (this.options.isPrivate && this.options.userId) {
+      // For private repositories, use user token
+      token = await getUserToken(this.options.userId, env);
+    } else if (this.options.isPrivate) {
+      // For private system repositories, use GitHub App installation token
+      const installationId = await env.DB.prepare(`
+        SELECT installationId
+        FROM provider_credentials
+        WHERE provider = 'github'
+        AND userId = ?
+      `)
+      .bind(this.options.userId || 'system')
+      .first<{ installationId: string }>();
+
+      if (!installationId) {
+        throw new Error(`No GitHub App installation found for repository ${this.options.owner}/${this.options.repo}`);
+      }
+
+      token = await getInstallationToken(
+        env.GITHUB_APP_ID,
+        env.GITHUB_PRIVATE_KEY,
+        installationId.installationId
+      );
+    } else {
+      // For public repositories, use service token
+      token = getServiceToken(env);
+    }
+    
+    this.client = new GitHubApiClient(token);
   }
 
   /**
@@ -114,6 +177,10 @@ export class GitHubIngestor extends BaseIngestor {
    * @param excludePatterns Exclude patterns
    * @param env Environment
    * @returns GitHub ingestor
+   */
+  /**
+   * Create a GitHub ingestor for a repository
+   * Factory method to create and initialize a GitHub ingestor
    */
   static async forRepository(
     repoId: string,
@@ -139,11 +206,11 @@ export class GitHubIngestor extends BaseIngestor {
     .bind(repoId)
     .first<{ lastCommitSha?: string; etag?: string }>();
 
-    // Create ingestor configuration
-    const config: GitHubIngestorConfig = {
-      id: repoId,
-      userId,
-      provider: 'github',
+    // Create ingestor and initialize it
+    const ingestor = new GitHubIngestor();
+    
+    await ingestor.initialize(env, {
+      userId: userId || undefined,
       owner,
       repo,
       branch,
@@ -151,72 +218,167 @@ export class GitHubIngestor extends BaseIngestor {
       etag: repoConfig?.etag,
       includePatterns,
       excludePatterns,
-      isPrivate
-    };
+      isPrivate,
+      id: repoId
+    });
 
-    // Get appropriate token based on repository privacy
-    let token: string;
-    if (isPrivate && userId) {
-      // For private repositories, use user token
-      token = await getUserToken(userId, env);
-    } else if (isPrivate) {
-      // For private system repositories, use GitHub App installation token
-      const installationId = await env.DB.prepare(`
-        SELECT installationId
-        FROM provider_credentials
-        WHERE provider = 'github'
-        AND userId = ?
-      `)
-      .bind(userId || 'system')
-      .first<{ installationId: string }>();
-
-      if (!installationId) {
-        throw new Error(`No GitHub App installation found for repository ${owner}/${repo}`);
-      }
-
-      token = await getInstallationToken(
-        env.GITHUB_APP_ID,
-        env.GITHUB_PRIVATE_KEY,
-        installationId.installationId
-      );
-    } else {
-      // For public repositories, use service token
-      token = getServiceToken(env);
-    }
-
-    return new GitHubIngestor(config, token, env);
-  }
-
-  /**
-   * Get configuration for this ingestor
-   */
-  getConfig(): GitHubIngestorConfig {
-    return this.config as GitHubIngestorConfig;
+    return ingestor;
   }
 
   /**
    * List all items that need to be ingested
    * @returns Array of item metadata
    */
-  async listItems(): Promise<ItemMetadata[]> {
+  /**
+   * Test the connection to GitHub
+   */
+  async testConnection(): Promise<boolean> {
+    if (!this.client || !this.env) {
+      throw new Error('Ingestor not initialized');
+    }
+    
+    try {
+      // Try to get the repository info to test the connection
+      // Try to get the repository info to test the connection
+      await this.client.getCommit(this.options.owner, this.options.repo, this.options.branch);
+      return true;
+    } catch (error) {
+      getLogger().error({ error }, 'Failed to connect to GitHub');
+      return false;
+    }
+  }
+  
+  /**
+   * Ingest content from GitHub
+   */
+  async ingest(options: IngestionOptions): Promise<IngestionResult> {
+    return wrap({
+      operation: 'ingest',
+      provider: this.getProviderName(),
+      owner: this.options.owner,
+      repo: this.options.repo
+    }, async () => {
+      if (!this.client || !this.env) {
+        throw new Error('Ingestor not initialized');
+      }
+      
+      const result = this.createDefaultResult();
+      const startTime = performance.now();
+      
+      try {
+        // List items to ingest
+        const items = await this.listItems(options);
+        result.itemsProcessed = items.length;
+        
+        // Process each item
+        for (const item of items) {
+          try {
+            const contentItem = await this.ingestItem(item.id, options);
+            if (contentItem) {
+              result.itemsIngested++;
+              result.totalSize += item.size;
+            } else {
+              result.itemsSkipped++;
+            }
+          } catch (error) {
+            result.itemsFailed++;
+            result.errors.push(error as Error);
+            getLogger().error({ error, item }, 'Failed to ingest item');
+          }
+        }
+        
+        // Update metrics
+        result.duration = Math.round(performance.now() - startTime);
+        this.trackIngestionMetrics(result, options);
+        
+        return result;
+      } catch (error) {
+        result.success = false;
+        result.errors.push(error as Error);
+        result.duration = Math.round(performance.now() - startTime);
+        this.trackIngestionMetrics(result, options);
+        throw error;
+      }
+    });
+  }
+  
+  /**
+   * Ingest a specific item from GitHub
+   */
+  async ingestItem(itemId: string, options?: IngestionOptions): Promise<ContentItem | null> {
+    if (!this.client || !this.env) {
+      throw new Error('Ingestor not initialized');
+    }
+    
+    // Parse the item ID to get the path
+    const parts = itemId.split(':');
+    if (parts.length !== 2) {
+      throw new Error(`Invalid item ID: ${itemId}`);
+    }
+    
+    const repoId = parts[0];
+    const path = parts[1];
+    
+    // Get the file content
+    const content = await this.client.getContent(
+      this.options.owner,
+      this.options.repo,
+      path,
+      this.options.branch
+    );
+    
+    if (!content) {
+      return null;
+    }
+    
+    // Create metadata
+    const metadata: ContentMetadata = {
+      id: itemId,
+      title: path.split('/').pop() || '',
+      url: `https://github.com/${this.options.owner}/${this.options.repo}/blob/${this.options.branch}/${path}`,
+      provider: this.getProviderName(),
+      providerType: this.getProviderType(),
+      owner: this.options.owner,
+      repository: this.options.repo,
+      path,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      size: typeof content === 'object' ? ((content as any).size || 0) : 0,
+      contentType: getMimeType(path)
+    };
+    
+    // Create content item
+    return {
+      metadata,
+      content: typeof content === 'object' ? ((content as any).content || '') : ''
+    };
+  }
+  
+  /**
+   * List available items from GitHub
+   */
+  async listItems(options?: IngestionOptions): Promise<ContentMetadata[]> {
+    if (!this.client || !this.env) {
+      throw new Error('Ingestor not initialized');
+    }
+    
     const timer = metrics.startTimer('github_ingestor.list_items');
-    const config = this.getConfig();
     
     try {
       // Get the latest commit for the branch
       const commitResponse = await this.client.getCommit(
-        config.owner,
-        config.repo,
-        config.branch,
-        config.etag
+        this.options.owner,
+        this.options.repo,
+        this.options.branch,
+        this.options.etag
       );
       
       // If we got a 304 Not Modified, return empty array
       if (!commitResponse.data) {
-        logger.info({
-          owner: config.owner,
-          repo: config.repo,
-          branch: config.branch
+        getLogger().info({
+          owner: this.options.owner,
+          repo: this.options.repo,
+          branch: this.options.branch
         }, 'Repository not modified since last sync');
         
         timer.stop({ notModified: 'true' });
@@ -228,11 +390,11 @@ export class GitHubIngestor extends BaseIngestor {
       const newEtag = commitResponse.etag;
       
       // If the commit hasn't changed, return empty array
-      if (config.lastCommitSha && config.lastCommitSha === newCommitSha) {
-        logger.info({
-          owner: config.owner,
-          repo: config.repo,
-          branch: config.branch,
+      if (this.options.lastCommitSha && this.options.lastCommitSha === newCommitSha) {
+        getLogger().info({
+          owner: this.options.owner,
+          repo: this.options.repo,
+          branch: this.options.branch,
           commitSha: newCommitSha
         }, 'Repository commit unchanged since last sync');
         
@@ -242,18 +404,18 @@ export class GitHubIngestor extends BaseIngestor {
       
       // Get the repository tree
       const treeResponse = await this.client.getTree(
-        config.owner,
-        config.repo,
+        this.options.owner,
+        this.options.repo,
         newCommitSha,
         true // recursive
       );
       
       if (!treeResponse.data) {
-        throw new Error(`Failed to get tree for ${config.owner}/${config.repo}@${newCommitSha}`);
+        throw new Error(`Failed to get tree for ${this.options.owner}/${this.options.repo}@${newCommitSha}`);
       }
       
       // Filter and map tree items to metadata
-      const items: ItemMetadata[] = [];
+      const items: ContentMetadata[] = [];
       
       for (const item of treeResponse.data.tree) {
         // Skip directories
@@ -262,7 +424,7 @@ export class GitHubIngestor extends BaseIngestor {
         }
         
         // Apply include/exclude filters
-        if (!shouldIncludeFile(item.path, config.includePatterns, config.excludePatterns)) {
+        if (!this.shouldIncludePath(item.path, options || this.options)) {
           continue;
         }
         
@@ -273,25 +435,30 @@ export class GitHubIngestor extends BaseIngestor {
         
         // Create metadata
         items.push({
-          id: `${config.id}:${item.path}`,
+          id: `${this.options.id}:${item.path}`,
+          title: item.path.split('/').pop() || '',
+          url: `https://github.com/${this.options.owner}/${this.options.repo}/blob/${this.options.branch}/${item.path}`,
+          provider: this.getProviderName(),
+          providerType: this.getProviderType(),
+          owner: this.options.owner,
+          repository: this.options.repo,
           path: item.path,
-          sha: item.sha,
+          createdAt: new Date(),
+          updatedAt: new Date(),
           size: item.size || 0,
-          mimeType: getMimeType(item.path),
-          provider: 'github',
-          repoId: config.id,
-          userId: config.userId,
+          contentType: getMimeType(item.path),
+          sha: item.sha,
           commitSha: newCommitSha,
           etag: newEtag,
-          owner: config.owner,
-          repo: config.repo
+          repoId: this.options.id,
+          userId: this.options.userId
         });
       }
       
-      logger.info({
-        owner: config.owner,
-        repo: config.repo,
-        branch: config.branch,
+      getLogger().info({
+        owner: this.options.owner,
+        repo: this.options.repo,
+        branch: this.options.branch,
         commitSha: newCommitSha,
         itemCount: items.length
       }, 'Listed repository items');
@@ -300,53 +467,20 @@ export class GitHubIngestor extends BaseIngestor {
       return items;
     } catch (error) {
       timer.stop({ error: 'true' });
-      logError(error as Error, `Failed to list items for ${config.owner}/${config.repo}`);
+      logError(error as Error, `Failed to list items for ${this.options.owner}/${this.options.repo}`);
       throw error;
     }
   }
 
   /**
-   * Get content for a specific item
-   * @param metadata Item metadata
-   * @returns Content item
-   */
-  async fetchContent(metadata: ItemMetadata): Promise<ContentItem> {
-    const config = this.getConfig();
-    
-    return new GitHubContentItem(
-      metadata,
-      this.client,
-      config.owner,
-      config.repo
-    );
-  }
-
-  /**
-   * Check if an item has changed since last sync
-   * @param metadata Item metadata
-   * @returns Whether the item has changed
-   */
-  async hasChanged(metadata: ItemMetadata): Promise<boolean> {
-    // Check if the file exists in the database with the same SHA
-    const existingFile = await this.env.DB.prepare(`
-      SELECT sha
-      FROM repository_files
-      WHERE repoId = ?
-      AND path = ?
-    `)
-    .bind(metadata.repoId, metadata.path)
-    .first<{ sha: string }>();
-    
-    // If the file doesn't exist or the SHA has changed, it has changed
-    return !existingFile || existingFile.sha !== metadata.sha;
-  }
-
-  /**
    * Update sync status after successful ingestion
-   * @param metadata Item metadata
+   * Helper method to update the database with sync status
    */
-  async updateSyncStatus(metadata: ItemMetadata): Promise<void> {
-    const config = this.getConfig();
+  async updateSyncStatus(metadata: ContentMetadata): Promise<void> {
+    if (!this.env) {
+      throw new Error('Ingestor not initialized');
+    }
+    
     const now = Math.floor(Date.now() / 1000);
     
     // Update repository sync status
@@ -363,7 +497,7 @@ export class GitHubIngestor extends BaseIngestor {
       metadata.commitSha,
       metadata.etag,
       now,
-      config.id
+      this.options.id
     )
     .run();
     
@@ -374,7 +508,7 @@ export class GitHubIngestor extends BaseIngestor {
       WHERE repoId = ?
       AND path = ?
     `)
-    .bind(config.id, metadata.path)
+    .bind(this.options.id, metadata.path)
     .first<{ id: string }>();
     
     if (existingFile) {
@@ -391,7 +525,7 @@ export class GitHubIngestor extends BaseIngestor {
       .bind(
         metadata.sha,
         metadata.size,
-        metadata.mimeType,
+        metadata.contentType,
         now,
         now,
         existingFile.id
@@ -410,7 +544,7 @@ export class GitHubIngestor extends BaseIngestor {
         metadata.path,
         metadata.sha,
         metadata.size,
-        metadata.mimeType,
+        metadata.contentType,
         now,
         now,
         now
