@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { zValidator } from '@hono/zod-validator';
 import type { ServiceInfo } from '@dome/common';
 import {
   createRequestContextMiddleware,
@@ -8,16 +7,14 @@ import {
   responseHandlerMiddleware,
   createSimpleAuthMiddleware,
   formatZodError,
-  NotImplementedError,
 } from '@dome/common';
 import { userIdMiddleware } from './middleware/userIdMiddleware';
 import { initLogging, getLogger } from '@dome/logging';
 import type { Bindings } from './types';
-import { SearchController } from './controllers/searchController';
+import { searchController } from './controllers/searchController';
 import { fileController } from './controllers/fileController';
-import { noteController } from './controllers/noteController';
-import { taskController } from './controllers/taskController';
 import { chatController } from './controllers/chatController';
+import { siloController } from './controllers/siloController';
 
 // Service information
 const serviceInfo: ServiceInfo = {
@@ -110,49 +107,24 @@ const notesRouter = new Hono();
 notesRouter.use('*', userIdMiddleware);
 
 // Ingest endpoint - for adding new notes, files, etc.
-notesRouter.post('/ingest', noteController.ingest.bind(noteController));
+notesRouter.post('/', siloController.ingest.bind(siloController));
+notesRouter.post('/upload', siloController.createUpload.bind(siloController));
 
 // CRUD operations for notes
-notesRouter.get('/', noteController.listNotes.bind(noteController));
+notesRouter.get('/:id', siloController.get.bind(siloController));
+notesRouter.put('/:id', siloController.updateNote.bind(siloController));
+notesRouter.delete('/:id', siloController.delete.bind(siloController));
+notesRouter.get('/', siloController.listNotes.bind(siloController));
 
 // Search endpoints - for semantic search over notes
-notesRouter.get('/search', SearchController.search);
-notesRouter.get('/search/stream', SearchController.streamSearch);
-
-// Note CRUD operations with ID parameter
-notesRouter.get('/:id', noteController.getNote.bind(noteController));
-notesRouter.put('/:id', noteController.updateNote.bind(noteController));
-notesRouter.delete('/:id', noteController.deleteNote.bind(noteController));
-
-// File attachment endpoints
-notesRouter.post('/files', fileController.uploadFile.bind(fileController));
-notesRouter.get('/:id/file', fileController.getFileAttachment.bind(fileController));
-notesRouter.post('/:id/process-file', fileController.processFileContent.bind(fileController));
-notesRouter.delete('/:id/file', fileController.deleteFileAttachment.bind(fileController));
-
-// Tasks API routes
-const tasksRouter = new Hono();
-
-// CRUD operations for tasks
-tasksRouter.post('/', taskController.createTask.bind(taskController));
-tasksRouter.get('/', taskController.listTasks.bind(taskController));
-tasksRouter.get('/:id', taskController.getTask.bind(taskController));
-tasksRouter.put('/:id', taskController.updateTask.bind(taskController));
-tasksRouter.delete('/:id', taskController.deleteTask.bind(taskController));
-
-// Complete task
-tasksRouter.post('/:id/complete', taskController.completeTask.bind(taskController));
-
-// Add reminder to task
-tasksRouter.post('/:id/remind', taskController.addReminder.bind(taskController));
+notesRouter.get('/search', searchController.search.bind(searchController));
+notesRouter.get('/search/stream', searchController.streamSearch.bind(searchController));
 
 // Chat API route
 app.post('/chat', chatController.chat.bind(chatController));
 
 // Mount routers
 app.route('/notes', notesRouter);
-app.route('/tasks', tasksRouter);
-
 
 // 404 handler for unknown routes
 app.notFound(c => {

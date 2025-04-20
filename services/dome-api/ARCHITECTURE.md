@@ -121,10 +121,12 @@ The Dome API service follows a layered architecture:
 ### Key Components
 
 1. **API Endpoints**: RESTful endpoints for client interactions
+
    - Defined in `src/index.ts`
    - Uses Hono framework for routing and middleware
 
 2. **Controllers**: Handle HTTP requests and responses
+
    - Note Controller: `src/controllers/noteController.ts`
    - Task Controller: `src/controllers/taskController.ts`
    - File Controller: `src/controllers/fileController.ts`
@@ -132,6 +134,7 @@ The Dome API service follows a layered architecture:
    - Chat Controller: `src/controllers/chatController.ts`
 
 3. **Service Layer**: Business logic implementation
+
    - Note Service: `src/services/noteService.ts`
    - Task Service: `src/services/taskService.ts`
    - File Attachment Service: `src/services/fileAttachmentService.ts`
@@ -140,11 +143,13 @@ The Dome API service follows a layered architecture:
    - Constellation Service: `src/services/constellationService.ts`
 
 4. **Repositories**: Data access layer
+
    - Note Repository: `src/repositories/noteRepository.ts`
    - Task Repository: `src/repositories/taskRepository.ts`
    - Reminder Repository: `src/repositories/reminderRepository.ts`
 
 5. **External Services**:
+
    - Constellation: Vector embedding and search
    - Workers AI: AI model access
    - R2 Storage: File storage
@@ -293,7 +298,7 @@ sequenceDiagram
     ConstellationService-->>NoteService: success
     NoteService-->>DomeAPI: note
     DomeAPI-->>Client: note (201 Created)
-    
+
     Note right of Constellation: Asynchronous processing
     EmbedQueue->>Constellation: batch of embedJobs
     Constellation->>Constellation: process embeddings
@@ -389,12 +394,12 @@ sequenceDiagram
     DomeAPI->>TaskController: createTask()
     TaskController->>TaskRepo: create()
     TaskRepo-->>TaskController: task
-    
+
     alt With Reminder
         TaskController->>ReminderRepo: create()
         ReminderRepo-->>TaskController: reminder
     end
-    
+
     TaskController-->>DomeAPI: task, reminder
     DomeAPI-->>Client: task, reminder (201 Created)
 
@@ -424,7 +429,7 @@ sequenceDiagram
     Client->>DomeAPI: POST /chat
     DomeAPI->>ChatController: chat()
     ChatController->>ChatService: generateResponse()
-    
+
     alt With Context Enhancement
         ChatService->>SearchService: search()
         SearchService->>ConstellationService: query()
@@ -433,9 +438,10 @@ sequenceDiagram
         ConstellationService-->>SearchService: search results
         SearchService-->>ChatService: relevant notes
     end
-    
+
     ChatService->>WorkersAI: run(model, messages)
     WorkersAI-->>ChatService: AI response
     ChatService-->>ChatController: enhanced response
     ChatController-->>DomeAPI: formatted response
     DomeAPI-->>Client: chat response
+```

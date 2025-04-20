@@ -28,35 +28,41 @@ services/dome-api/tests/
 ### Controllers
 
 Controller tests focus on verifying that:
+
 - Controllers properly handle HTTP requests and responses
 - Input validation works correctly
 - Controllers delegate to the appropriate services
 - Error handling is implemented correctly
 
 Key controller tests:
+
 - `noteController.test.ts`: Tests for note creation, retrieval, updating, and deletion
 - `searchController.test.ts`: Tests for search functionality and streaming responses
 
 ### Services
 
 Service tests focus on verifying that:
+
 - Business logic is implemented correctly
 - Services interact properly with repositories
 - Error handling is implemented correctly
 - Edge cases are handled appropriately
 
 Key service tests:
+
 - `noteService.test.ts`: Tests for note operations including embedding processing
 - `searchService.test.ts`: Tests for search functionality, caching, and pagination
 
 ### Repositories
 
 Repository tests focus on verifying that:
+
 - Data access operations work correctly
 - Database queries are constructed properly
 - Error handling is implemented correctly
 
 Key repository tests:
+
 - `noteRepository.test.ts`: Tests for note CRUD operations
 - `reminderRepository.test.ts`: Tests for reminder operations
 - `taskRepository.test.ts`: Tests for task operations
@@ -66,6 +72,7 @@ Key repository tests:
 Integration tests verify the complete flow from API endpoints through controllers to services and repositories. These tests use a Hono app instance to simulate HTTP requests and verify responses.
 
 Key integration tests:
+
 - `notes.test.ts`: Tests for note API endpoints
 - `search.test.ts`: Tests for search API endpoints
 - `chatStreaming.test.ts`: Tests for chat streaming functionality
@@ -75,6 +82,7 @@ Key integration tests:
 ### Note Controller and Service
 
 1. **Note Creation**
+
    - Create a note with valid data
    - Create a note with a provided title
    - Create a note with generated title
@@ -82,17 +90,20 @@ Key integration tests:
    - Handle service errors during creation
 
 2. **Note Retrieval**
+
    - Get a note by ID
    - Handle not found errors
    - Handle unauthorized access
 
 3. **Note Listing**
+
    - List notes for a user
    - Apply content type filtering
    - Apply pagination
    - Handle service errors
 
 4. **Note Updates**
+
    - Update a note with valid data
    - Handle validation errors during update
    - Handle not found errors
@@ -107,6 +118,7 @@ Key integration tests:
 ### Search Controller and Service
 
 1. **Basic Search**
+
    - Search with valid query
    - Handle short queries (less than 3 characters)
    - Apply content type filtering
@@ -114,11 +126,13 @@ Key integration tests:
    - Apply pagination
 
 2. **Search Caching**
+
    - Use cached results when available
    - Regenerate cache when expired
    - Clear cache
 
 3. **Streaming Search**
+
    - Stream search results
    - Handle errors during streaming
    - Verify proper NDJSON format
@@ -146,6 +160,7 @@ The test coverage goals for the dome-api service are:
 - **Function Coverage**: 90% or higher
 
 Priority areas for coverage:
+
 1. Core business logic in services
 2. Error handling paths
 3. Edge cases and validation
@@ -171,6 +186,7 @@ pnpm test:watch
 ## Continuous Integration
 
 Tests are automatically run as part of the CI/CD pipeline. The pipeline:
+
 1. Installs dependencies
 2. Runs linting
 3. Runs tests

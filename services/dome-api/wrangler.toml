@@ -34,6 +34,11 @@ binding = "CONSTELLATION"
 service = "constellation"
 environment = "production"
 
+[[services]]
+binding = "SILO"
+service = "silo"
+environment = "production"
+
 # For local development
 [dev]
 port = 8787
@@ -49,6 +54,11 @@ vars = { ENVIRONMENT = "production" }
 [[env.production.services]]
 binding = "CONSTELLATION"
 service = "constellation"
+environment = "production"
+
+[[env.production.services]]
+binding = "SILO"
+service = "silo"
 environment = "production"
 
 [env.staging]

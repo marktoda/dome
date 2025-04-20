@@ -23,11 +23,13 @@ All endpoints require authentication via a user ID. This can be provided in one 
 2. Via the `userId` query parameter
 
 Example:
+
 ```
 GET /notes?userId=user-123
 ```
 
 Or:
+
 ```
 GET /notes
 X-User-Id: user-123
@@ -50,14 +52,14 @@ The API uses standard HTTP status codes to indicate the success or failure of re
 
 ### Common Error Codes
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `NOT_FOUND` | 404 | The requested resource was not found |
-| `VALIDATION_ERROR` | 400 | The request data failed validation |
-| `UNAUTHORIZED` | 401 | Authentication is required or failed |
-| `INTERNAL_SERVER_ERROR` | 500 | An unexpected error occurred |
-| `EMBEDDING_ERROR` | 500 | An error occurred during text embedding |
-| `SEARCH_ERROR` | 500 | An error occurred during search |
+| Code                    | HTTP Status | Description                             |
+| ----------------------- | ----------- | --------------------------------------- |
+| `NOT_FOUND`             | 404         | The requested resource was not found    |
+| `VALIDATION_ERROR`      | 400         | The request data failed validation      |
+| `UNAUTHORIZED`          | 401         | Authentication is required or failed    |
+| `INTERNAL_SERVER_ERROR` | 500         | An unexpected error occurred            |
+| `EMBEDDING_ERROR`       | 500         | An error occurred during text embedding |
+| `SEARCH_ERROR`          | 500         | An error occurred during search         |
 
 ## Base URL
 
@@ -103,13 +105,13 @@ Create a new note by ingesting content.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `content` | string | Yes | The content of the note |
-| `contentType` | string | No | The content type (default: "text/plain") |
-| `title` | string | No | The title of the note (generated from content if not provided) |
-| `metadata` | object | No | Additional metadata for the note |
-| `tags` | array | No | Tags for the note |
+| Field         | Type   | Required | Description                                                    |
+| ------------- | ------ | -------- | -------------------------------------------------------------- |
+| `content`     | string | Yes      | The content of the note                                        |
+| `contentType` | string | No       | The content type (default: "text/plain")                       |
+| `title`       | string | No       | The title of the note (generated from content if not provided) |
+| `metadata`    | object | No       | Additional metadata for the note                               |
+| `tags`        | array  | No       | Tags for the note                                              |
 
 **Response**
 
@@ -136,11 +138,11 @@ List notes for the authenticated user.
 
 **Query Parameters**
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `contentType` | string | No | Filter notes by content type |
-| `limit` | number | No | Maximum number of notes to return (default: 50) |
-| `offset` | number | No | Number of notes to skip (default: 0) |
+| Parameter     | Type   | Required | Description                                     |
+| ------------- | ------ | -------- | ----------------------------------------------- |
+| `contentType` | string | No       | Filter notes by content type                    |
+| `limit`       | number | No       | Maximum number of notes to return (default: 50) |
+| `offset`      | number | No       | Number of notes to skip (default: 0)            |
 
 **Response**
 
@@ -158,7 +160,7 @@ List notes for the authenticated user.
       "createdAt": 1713634958000,
       "updatedAt": 1713634958000,
       "embeddingStatus": "completed"
-    },
+    }
     // More notes...
   ],
   "count": 1,
@@ -172,9 +174,9 @@ Get a specific note by ID.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the note to retrieve |
+| Parameter | Type   | Description                    |
+| --------- | ------ | ------------------------------ |
+| `id`      | string | The ID of the note to retrieve |
 
 **Response**
 
@@ -201,9 +203,9 @@ Update a specific note by ID.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the note to update |
+| Parameter | Type   | Description                  |
+| --------- | ------ | ---------------------------- |
+| `id`      | string | The ID of the note to update |
 
 **Request Body**
 
@@ -244,9 +246,9 @@ Delete a specific note by ID.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the note to delete |
+| Parameter | Type   | Description                  |
+| --------- | ------ | ---------------------------- |
+| `id`      | string | The ID of the note to delete |
 
 **Response**
 
@@ -265,15 +267,15 @@ Search for notes using semantic search.
 
 **Query Parameters**
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `q` | string | Yes | The search query (minimum 3 characters) |
-| `limit` | number | No | Maximum number of results to return (default: 10) |
-| `offset` | number | No | Number of results to skip (default: 0) |
-| `contentType` | string | No | Filter results by content type |
-| `startDate` | number | No | Filter results by start date (timestamp in ms) |
-| `endDate` | number | No | Filter results by end date (timestamp in ms) |
-| `useCache` | boolean | No | Whether to use cached results (default: false) |
+| Parameter     | Type    | Required | Description                                       |
+| ------------- | ------- | -------- | ------------------------------------------------- |
+| `q`           | string  | Yes      | The search query (minimum 3 characters)           |
+| `limit`       | number  | No       | Maximum number of results to return (default: 10) |
+| `offset`      | number  | No       | Number of results to skip (default: 0)            |
+| `contentType` | string  | No       | Filter results by content type                    |
+| `startDate`   | number  | No       | Filter results by start date (timestamp in ms)    |
+| `endDate`     | number  | No       | Filter results by end date (timestamp in ms)      |
+| `useCache`    | boolean | No       | Whether to use cached results (default: false)    |
 
 **Response**
 
@@ -292,7 +294,7 @@ Search for notes using semantic search.
       "updatedAt": 1713634958000,
       "score": 0.92,
       "embeddingStatus": "completed"
-    },
+    }
     // More results...
   ],
   "pagination": {
@@ -332,10 +334,10 @@ Upload a file and create a note with it.
 
 Multipart form data with the following fields:
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `file` | File | Yes | The file to upload |
-| `title` | string | Yes | The title for the note |
+| Field   | Type   | Required | Description            |
+| ------- | ------ | -------- | ---------------------- |
+| `file`  | File   | Yes      | The file to upload     |
+| `title` | string | Yes      | The title for the note |
 
 **Response**
 
@@ -362,9 +364,9 @@ Get a file attachment for a note.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the note |
+| Parameter | Type   | Description        |
+| --------- | ------ | ------------------ |
+| `id`      | string | The ID of the note |
 
 **Response**
 
@@ -376,9 +378,9 @@ Process the content of a file attachment.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the note |
+| Parameter | Type   | Description        |
+| --------- | ------ | ------------------ |
+| `id`      | string | The ID of the note |
 
 **Response**
 
@@ -405,9 +407,9 @@ Delete a file attachment.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the note |
+| Parameter | Type   | Description        |
+| --------- | ------ | ------------------ |
+| `id`      | string | The ID of the note |
 
 **Response**
 
@@ -436,14 +438,14 @@ Create a new task.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `title` | string | Yes | The title of the task |
-| `description` | string | No | The description of the task |
-| `priority` | string | No | The priority of the task (low, medium, high, urgent) |
-| `dueDate` | number | No | The due date of the task (timestamp in ms) |
-| `reminderTime` | number | No | When to send a reminder (timestamp in ms) |
-| `deliveryMethod` | string | No | How to deliver the reminder (email, push, sms) |
+| Field            | Type   | Required | Description                                          |
+| ---------------- | ------ | -------- | ---------------------------------------------------- |
+| `title`          | string | Yes      | The title of the task                                |
+| `description`    | string | No       | The description of the task                          |
+| `priority`       | string | No       | The priority of the task (low, medium, high, urgent) |
+| `dueDate`        | number | No       | The due date of the task (timestamp in ms)           |
+| `reminderTime`   | number | No       | When to send a reminder (timestamp in ms)            |
+| `deliveryMethod` | string | No       | How to deliver the reminder (email, push, sms)       |
 
 **Response**
 
@@ -479,13 +481,13 @@ List tasks for the authenticated user.
 
 **Query Parameters**
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `status` | string | No | Filter tasks by status (pending, completed) |
-| `priority` | string | No | Filter tasks by priority (low, medium, high, urgent) |
-| `dueDate` | number | No | Filter tasks due before this date (timestamp in ms) |
-| `limit` | number | No | Maximum number of tasks to return (default: 50) |
-| `offset` | number | No | Number of tasks to skip (default: 0) |
+| Parameter  | Type   | Required | Description                                          |
+| ---------- | ------ | -------- | ---------------------------------------------------- |
+| `status`   | string | No       | Filter tasks by status (pending, completed)          |
+| `priority` | string | No       | Filter tasks by priority (low, medium, high, urgent) |
+| `dueDate`  | number | No       | Filter tasks due before this date (timestamp in ms)  |
+| `limit`    | number | No       | Maximum number of tasks to return (default: 50)      |
+| `offset`   | number | No       | Number of tasks to skip (default: 0)                 |
 
 **Response**
 
@@ -504,7 +506,7 @@ List tasks for the authenticated user.
       "createdAt": 1713634958000,
       "updatedAt": 1713634958000,
       "completedAt": null
-    },
+    }
     // More tasks...
   ],
   "count": 1,
@@ -518,9 +520,9 @@ Get a specific task by ID.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the task to retrieve |
+| Parameter | Type   | Description                    |
+| --------- | ------ | ------------------------------ |
+| `id`      | string | The ID of the task to retrieve |
 
 **Response**
 
@@ -558,9 +560,9 @@ Update a specific task by ID.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the task to update |
+| Parameter | Type   | Description                  |
+| --------- | ------ | ---------------------------- |
+| `id`      | string | The ID of the task to update |
 
 **Request Body**
 
@@ -609,9 +611,9 @@ Mark a task as completed.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the task to complete |
+| Parameter | Type   | Description                    |
+| --------- | ------ | ------------------------------ |
+| `id`      | string | The ID of the task to complete |
 
 **Response**
 
@@ -639,9 +641,9 @@ Add a reminder to a task.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the task |
+| Parameter | Type   | Description        |
+| --------- | ------ | ------------------ |
+| `id`      | string | The ID of the task |
 
 **Request Body**
 
@@ -652,10 +654,10 @@ Add a reminder to a task.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `remindAt` | number | Yes | When to send the reminder (timestamp in ms) |
-| `deliveryMethod` | string | No | How to deliver the reminder (email, push, sms) |
+| Field            | Type   | Required | Description                                    |
+| ---------------- | ------ | -------- | ---------------------------------------------- |
+| `remindAt`       | number | Yes      | When to send the reminder (timestamp in ms)    |
+| `deliveryMethod` | string | No       | How to deliver the reminder (email, push, sms) |
 
 **Response**
 
@@ -679,9 +681,9 @@ Delete a specific task by ID.
 
 **Path Parameters**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | The ID of the task to delete |
+| Parameter | Type   | Description                  |
+| --------- | ------ | ---------------------------- |
+| `id`      | string | The ID of the task to delete |
 
 **Response**
 
@@ -720,14 +722,14 @@ Process a chat request with RAG enhancement.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `messages` | array | Yes | Array of chat messages |
-| `stream` | boolean | No | Whether to stream the response (default: false) |
-| `enhanceWithContext` | boolean | No | Whether to enhance with context from notes (default: true) |
-| `maxContextItems` | number | No | Maximum number of context items to include (default: 5) |
-| `includeSourceInfo` | boolean | No | Whether to include source info in the response (default: true) |
-| `suggestAddCommand` | boolean | No | Whether to suggest add commands (default: true) |
+| Field                | Type    | Required | Description                                                    |
+| -------------------- | ------- | -------- | -------------------------------------------------------------- |
+| `messages`           | array   | Yes      | Array of chat messages                                         |
+| `stream`             | boolean | No       | Whether to stream the response (default: false)                |
+| `enhanceWithContext` | boolean | No       | Whether to enhance with context from notes (default: true)     |
+| `maxContextItems`    | number  | No       | Maximum number of context items to include (default: 5)        |
+| `includeSourceInfo`  | boolean | No       | Whether to include source info in the response (default: true) |
+| `suggestAddCommand`  | boolean | No       | Whether to suggest add commands (default: true)                |
 
 **Response (JSON)**
 

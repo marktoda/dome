@@ -289,11 +289,11 @@ environment = "production"
 
 The Dome API service uses the following environment variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `VERSION` | API version | `0.1.0` |
+| Variable      | Description            | Default       |
+| ------------- | ---------------------- | ------------- |
+| `VERSION`     | API version            | `0.1.0`       |
 | `ENVIRONMENT` | Deployment environment | `development` |
-| `LOG_LEVEL` | Logging level | `debug` |
+| `LOG_LEVEL`   | Logging level          | `debug`       |
 
 These variables can be set in `.dev.vars` for local development or in the Cloudflare dashboard for deployed environments.
 
@@ -304,11 +304,13 @@ These variables can be set in `.dev.vars` for local development or in the Cloudf
 #### 1. Embedding Not Working
 
 **Symptoms**:
+
 - Notes are not being embedded
 - Search returns no results
 - `embeddingStatus` remains "pending"
 
 **Solutions**:
+
 - Check if the Constellation service is running
 - Verify the service binding is correctly configured in `wrangler.toml`
 - Check the queue depth for embedding jobs
@@ -317,10 +319,12 @@ These variables can be set in `.dev.vars` for local development or in the Cloudf
 #### 2. Search Not Returning Expected Results
 
 **Symptoms**:
+
 - Search returns no results or unexpected results
 - Search is slow
 
 **Solutions**:
+
 - Verify the note has been embedded (check Vectorize index)
 - Check if the search query is properly formatted
 - Ensure metadata filters are correctly applied
@@ -329,10 +333,12 @@ These variables can be set in `.dev.vars` for local development or in the Cloudf
 #### 3. File Uploads Failing
 
 **Symptoms**:
+
 - File uploads return errors
 - Files are not being stored
 
 **Solutions**:
+
 - Check R2 bucket configuration
 - Verify file size limits (max 100MB)
 - Check file content type handling
@@ -341,10 +347,12 @@ These variables can be set in `.dev.vars` for local development or in the Cloudf
 #### 4. Database Errors
 
 **Symptoms**:
+
 - API returns 500 errors
 - Database operations fail
 
 **Solutions**:
+
 - Check D1 database configuration
 - Verify migrations have been applied
 - Check for schema mismatches

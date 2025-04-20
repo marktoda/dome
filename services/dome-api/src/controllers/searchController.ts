@@ -1,7 +1,28 @@
 import { Context } from 'hono';
+import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { Bindings } from '../types';
-import { searchService, PaginatedSearchResults } from '../services/searchService';
+import { searchService } from '../services/searchService';
+
+// Import the PaginatedSearchResults interface from the service file
+export interface PaginatedSearchResults {
+  results: Array<{
+    id: string;
+    title: string;
+    body: string;
+    contentType: string;
+    createdAt: number;
+    updatedAt: number;
+    score: number;
+  }>;
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+  query: string;
+}
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { getLogger } from '@dome/logging';
 import { ServiceError } from '@dome/common';
@@ -10,26 +31,36 @@ import { ServiceError } from '@dome/common';
 /*                             Validation Schema                              */
 /* -------------------------------------------------------------------------- */
 
-const SearchQuery = z.object({
-  q: z.string().min(1),
-  limit: z.coerce.number().int().positive().optional(),
-  offset: z.coerce.number().int().min(0).optional(),
+const SearchQuerySchema = z.object({
+  q: z.string().min(1, 'Search query is required'),
+  limit: z.coerce.number().int().positive().optional().default(10),
+  offset: z.coerce.number().int().min(0).optional().default(0),
   contentType: z.string().optional(),
   startDate: z.coerce.number().int().optional(),
   endDate: z.coerce.number().int().optional(),
-  useCache: z.coerce.boolean().optional(),
+  useCache: z.coerce.boolean().optional().default(true),
 });
 
-type SearchQueryInput = z.infer<typeof SearchQuery>;
+export type SearchQueryInput = z.infer<typeof SearchQuerySchema>;
 
 /* -------------------------------------------------------------------------- */
 /*                               Util Helpers                                 */
 /* -------------------------------------------------------------------------- */
 
-function tooShort(q: string) {
+/**
+ * Check if search query is too short
+ * @param q Search query
+ * @returns True if query is too short
+ */
+function tooShort(q: string): boolean {
   return q.trim().length < 3;
 }
 
+/**
+ * Generate empty results response
+ * @param q Search query
+ * @returns Empty results response
+ */
 function emptyResults(q: string) {
   return {
     success: true,
@@ -45,6 +76,12 @@ function emptyResults(q: string) {
   };
 }
 
+/**
+ * Build search parameters from parsed input
+ * @param userId User ID
+ * @param parsed Parsed search query input
+ * @returns Search parameters
+ */
 function buildParams(userId: string, parsed: SearchQueryInput) {
   const { q, ...rest } = parsed;
   return { userId, query: q, ...rest };
@@ -52,6 +89,8 @@ function buildParams(userId: string, parsed: SearchQueryInput) {
 
 /**
  * Format search results for response
+ * @param results Paginated search results
+ * @returns Formatted search response
  */
 function formatSearchResponse(results: PaginatedSearchResults) {
   return {
@@ -63,85 +102,88 @@ function formatSearchResponse(results: PaginatedSearchResults) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                              Search Controller                              */
+/*                              Search Controller                             */
 /* -------------------------------------------------------------------------- */
 
 export class SearchController {
+  private logger = getLogger();
+
   /**
    * JSON search endpoint
+   * @param c Hono context
+   * @returns Response with search results
    */
-  static async search(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
-    const log = getLogger();
+  async search(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
     try {
-      const parsed = SearchQuery.parse(c.req.query()) as SearchQueryInput;
+      const parsed = SearchQuerySchema.parse(c.req.query());
       const userId = c.get('userId');
 
       if (tooShort(parsed.q)) {
-        log.warn({ userId, q: parsed.q }, 'query too short');
+        this.logger.warn({ userId, q: parsed.q }, 'query too short');
         return c.json(emptyResults(parsed.q));
       }
 
-      log.info({ userId, q: parsed.q, params: parsed }, 'search');
+      this.logger.info({ userId, q: parsed.q, params: parsed }, 'search');
       const results = await searchService.search(c.env, buildParams(userId, parsed));
       return c.json(formatSearchResponse(results));
     } catch (error) {
-      log.error({ err: error }, 'search error');
-      
+      this.logger.error({ err: error }, 'search error');
+
       if (error instanceof z.ZodError) {
-        return c.json({
-          success: false,
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Invalid search parameters',
-            details: error.errors,
-          }
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid search parameters',
+              details: error.errors,
+            },
+          },
+          400,
+        );
       }
-      
+
       if (error instanceof ServiceError) {
         const statusCode = error.status || 500;
-        return new Response(
-          JSON.stringify({
+        return c.json(
+          {
             success: false,
             error: {
               code: error.code || 'SEARCH_ERROR',
               message: error.message,
-            }
-          }),
-          {
-            status: statusCode,
-            headers: { 'Content-Type': 'application/json' }
-          }
+            },
+          },
+          statusCode as any,
         );
       }
-      
-      return new Response(
-        JSON.stringify({
+
+      return c.json(
+        {
           success: false,
           error: {
             code: 'SEARCH_ERROR',
             message: error instanceof Error ? error.message : 'An error occurred during search',
-          }
-        }),
-        {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        }
+          },
+        },
+        500,
       );
     }
   }
 
   /**
    * NDJSON streaming search endpoint
+   * @param c Hono context
+   * @returns Streaming response with search results
    */
-  static async streamSearch(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
-    const log = getLogger();
+  async streamSearch(
+    c: Context<{ Bindings: Bindings; Variables: UserIdContext }>,
+  ): Promise<Response> {
     try {
-      const parsed = SearchQuery.parse(c.req.query()) as SearchQueryInput;
+      const parsed = SearchQuerySchema.parse(c.req.query());
       const userId = c.get('userId');
 
       if (tooShort(parsed.q)) {
-        log.warn({ userId, q: parsed.q }, 'query too short');
+        this.logger.warn({ userId, q: parsed.q }, 'query too short');
         return c.json(emptyResults(parsed.q));
       }
 
@@ -151,7 +193,7 @@ export class SearchController {
       (async () => {
         try {
           const searchResults = await searchService.search(c.env, buildParams(userId, parsed));
-          
+
           // Write metadata first
           await writer.write(
             new TextEncoder().encode(
@@ -159,10 +201,10 @@ export class SearchController {
                 type: 'metadata',
                 pagination: searchResults.pagination,
                 query: searchResults.query,
-              }) + '\n'
-            )
+              }) + '\n',
+            ),
           );
-          
+
           // Then stream individual results
           for (const result of searchResults.results) {
             await writer.write(
@@ -170,12 +212,12 @@ export class SearchController {
                 JSON.stringify({
                   type: 'result',
                   data: result,
-                }) + '\n'
-              )
+                }) + '\n',
+              ),
             );
           }
         } catch (err) {
-          log.error({ err }, 'stream search error');
+          this.logger.error({ err }, 'stream search error');
           await writer.write(
             new TextEncoder().encode(
               JSON.stringify({
@@ -196,38 +238,36 @@ export class SearchController {
         headers: { 'Content-Type': 'application/x-ndjson' },
       });
     } catch (error) {
-      log.error({ err: error }, 'stream search setup error');
-      
+      this.logger.error({ err: error }, 'stream search setup error');
+
       if (error instanceof z.ZodError) {
-        return new Response(
-          JSON.stringify({
+        return c.json(
+          {
             success: false,
             error: {
               code: 'VALIDATION_ERROR',
               message: 'Invalid search parameters',
               details: error.errors,
-            }
-          }),
-          {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' }
-          }
+            },
+          },
+          400,
         );
       }
-      
-      return new Response(
-        JSON.stringify({
+
+      return c.json(
+        {
           success: false,
           error: {
             code: 'SEARCH_ERROR',
-            message: error instanceof Error ? error.message : 'An error occurred during search setup',
-          }
-        }),
-        {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        }
+            message:
+              error instanceof Error ? error.message : 'An error occurred during search setup',
+          },
+        },
+        500,
       );
     }
   }
 }
+
+// Export singleton instance
+export const searchController = new SearchController();

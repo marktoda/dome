@@ -1,38 +1,9 @@
 import { Bindings } from '../types';
-import { Note } from '../models/note';
-import { NoteRepository } from '../repositories/noteRepository';
-import { vectorizeService, SearchResult } from './vectorizeService';
-import { getLogger } from '@dome/logging';
 import { ServiceError } from '@dome/common';
-import { z } from 'zod';
-
-/**
- * Search result interface with note content
- */
-export interface NoteSearchResult {
-  id: string;
-  title: string;
-  body: string;
-  score: number;
-  createdAt: number;
-  updatedAt: number;
-  contentType: string;
-  metadata?: string;
-}
-
-/**
- * Paginated search results interface
- */
-export interface PaginatedSearchResults {
-  results: NoteSearchResult[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-  query: string;
-}
+import { getLogger } from '@dome/logging';
+import { constellationService } from './constellationService';
+import { siloService } from './siloService';
+import { contentMapperService } from './contentMapperService';
 
 /**
  * Search options interface
@@ -45,186 +16,202 @@ export interface SearchOptions {
   contentType?: string;
   startDate?: number;
   endDate?: number;
-  useCache?: boolean;
 }
 
 /**
- * Search options validation schema
+ * Search result interface
  */
-export const searchOptionsSchema = z.object({
-  userId: z.string().min(1, 'User ID is required'),
-  query: z.string().min(1, 'Query is required'),
-  limit: z.number().int().positive().optional().default(10),
-  offset: z.number().int().min(0).optional().default(0),
-  contentType: z.string().optional(),
-  startDate: z.number().int().optional(),
-  endDate: z.number().int().optional(),
-  useCache: z.boolean().optional().default(true),
-});
+export interface SearchResult {
+  id: string;
+  title: string;
+  body: string;
+  contentType: string;
+  createdAt: number;
+  updatedAt: number;
+  score: number;
+}
 
 /**
- * Service for searching notes using Constellation
+ * Paginated search results interface
+ */
+export interface PaginatedSearchResults {
+  results: SearchResult[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+  query: string;
+}
+
+/**
+ * Service for searching notes using semantic search
+ * This service handles:
+ * - Semantic search via Constellation
+ * - Content retrieval via Silo
+ * - Result transformation and pagination
  */
 export class SearchService {
-  private noteRepository: NoteRepository;
-  private cache: Map<string, { timestamp: number; results: NoteSearchResult[] }>;
-  private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache TTL
+  private logger = getLogger();
+  private cache: Map<string, PaginatedSearchResults>;
+  private cacheTTL: number = 5 * 60 * 1000; // 5 minutes
+  private cacheTimestamps: Map<string, number>;
 
-  /**
-   * Constructor
-   */
   constructor() {
-    this.noteRepository = new NoteRepository();
     this.cache = new Map();
+    this.cacheTimestamps = new Map();
   }
 
   /**
-   * Generate a cache key for search options
-   * @param options Search options
-   * @returns Cache key string
-   */
-  private generateCacheKey(options: SearchOptions): string {
-    const { userId, query, contentType, startDate, endDate } = options;
-    return `${userId}:${query}:${contentType || ''}:${startDate || ''}:${endDate || ''}`;
-  }
-
-  /**
-   * Search notes using semantic search via Constellation
-   * @param env Environment bindings
-   * @param options Search options
-   * @returns Promise<NoteSearchResult[]>
-   */
-  /**
-   * Search notes using semantic search via Constellation
-   * @param env Environment bindings
-   * @param options Search options
-   * @returns Promise<PaginatedSearchResults>
+   * Search for notes using semantic search
+   *
+   * @param env - Cloudflare Workers environment bindings
+   * @param options - Search options
+   * @returns Promise resolving to paginated search results
    */
   async searchNotes(env: Bindings, options: SearchOptions): Promise<PaginatedSearchResults> {
     try {
-      // Validate options
-      const validatedOptions = searchOptionsSchema.parse(options);
-      const cacheKey = this.generateCacheKey(validatedOptions);
+      const { userId, query, limit = 10, offset = 0, contentType, startDate, endDate } = options;
 
-      // Check cache if enabled
-      if (validatedOptions.useCache) {
-        const cachedResult = this.cache.get(cacheKey);
-        if (cachedResult && Date.now() - cachedResult.timestamp < this.CACHE_TTL_MS) {
-          getLogger().info(
-            { userId: validatedOptions.userId, query: validatedOptions.query },
-            'Using cached search results'
-          );
-
-          // Apply pagination to cached results
-          const paginatedResults = this.paginateResults(
-            cachedResult.results,
-            validatedOptions.offset || 0,
-            validatedOptions.limit || 10
-          );
-
-          return paginatedResults;
-        }
-      }
-
-      // Build filter for Constellation query
-      const filter: Record<string, any> = {};
-
-      // Add optional filters
-      if (validatedOptions.startDate && validatedOptions.endDate) {
-        filter.createdAt = {
-          $gte: validatedOptions.startDate,
-          $lte: validatedOptions.endDate,
-        };
-      } else if (validatedOptions.startDate) {
-        filter.createdAt = {
-          $gte: validatedOptions.startDate,
-        };
-      } else if (validatedOptions.endDate) {
-        filter.createdAt = {
-          $lte: validatedOptions.endDate,
-        };
-      }
-
-      // Query Constellation via vectorizeService
-      const searchResults = await vectorizeService.queryVectors(env, validatedOptions.query, {
-        topK: validatedOptions.limit,
-        filter,
+      this.logger.debug('Searching notes', {
+        userId,
+        query,
+        limit,
+        offset,
+        contentType,
+        startDate,
+        endDate,
       });
 
-      // Get notes for the search results
-      const noteIds = searchResults.map(result => result.metadata.noteId);
-      const uniqueNoteIds = [...new Set(noteIds)];
+      // Generate cache key
+      const cacheKey = this.generateCacheKey(options);
 
-      // Fetch notes from the database
-      const notes: Note[] = [];
-      for (const noteId of uniqueNoteIds) {
-        try {
-          getLogger().info({ noteId }, 'Fetching note from repository');
-          const note = await this.noteRepository.findById(env, noteId);
-          if (!note) {
-            getLogger().warn({ noteId }, 'Note not found in repository');
-            continue;
-          } else {
-            getLogger().info({ noteId }, 'Note found in repository');
-
-            notes.push(note);
-          }
-        } catch (error) {
-          getLogger().warn(
-            { err: error, noteId },
-            `Error fetching note ${noteId}`
-          );
-          // Continue with next note
-        }
-      }
-
-      // Filter notes by content type if specified
-      const filteredNotes = validatedOptions.contentType
-        ? notes.filter(note => note.contentType === validatedOptions.contentType)
-        : notes;
-
-      // Map search results to note search results
-      const noteSearchResults: NoteSearchResult[] = [];
-
-      for (const result of searchResults) {
-        const note = filteredNotes.find(n => n.id === result.metadata.noteId);
-        if (note) {
-          noteSearchResults.push({
-            id: note.id,
-            title: note.title,
-            body: note.body,
-            score: result.score,
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt,
-            contentType: note.contentType,
-            metadata: note.metadata,
-          });
-        }
-      }
-
-      // Sort by score (highest first)
-      noteSearchResults.sort((a, b) => b.score - a.score);
-
-      // Store in cache if caching is enabled
-      if (validatedOptions.useCache) {
-        this.cache.set(cacheKey, {
-          timestamp: Date.now(),
-          results: noteSearchResults,
+      // Check cache
+      const cachedResults = this.getFromCache(cacheKey);
+      if (cachedResults) {
+        this.logger.debug('Returning cached search results', {
+          userId,
+          query,
+          resultCount: cachedResults.results.length,
         });
+        return cachedResults;
       }
+
+      // Perform semantic search using Constellation
+      const searchResults = await constellationService.searchNotes(
+        env,
+        query,
+        userId,
+        limit * 2, // Fetch more results to account for filtering
+      );
+
+      if (searchResults.length === 0) {
+        const emptyResults: PaginatedSearchResults = {
+          results: [],
+          pagination: {
+            total: 0,
+            limit,
+            offset,
+            hasMore: false,
+          },
+          query,
+        };
+
+        this.addToCache(cacheKey, emptyResults);
+        return emptyResults;
+      }
+
+      // Get unique note IDs
+      const noteIds = [...new Set(searchResults.map(result => result.noteId))];
+
+      // Retrieve note content from Silo
+      const notes = await siloService.getContentsAsNotes(env, noteIds, userId);
+
+      // Map note IDs to scores
+      const scoreMap = new Map<string, number>();
+      for (const result of searchResults) {
+        scoreMap.set(result.noteId, result.score);
+      }
+
+      // Filter and transform results
+      let filteredResults = notes
+        .filter(note => {
+          // Skip notes with missing required fields
+          if (!note.id || !note.contentType) {
+            return false;
+          }
+
+          // Apply content type filter if specified
+          if (contentType && note.contentType !== contentType) {
+            return false;
+          }
+
+          // Apply date range filter if specified
+          const createdAt = note.createdAt || 0;
+          if (startDate && createdAt < startDate) {
+            return false;
+          }
+
+          if (endDate && createdAt > endDate) {
+            return false;
+          }
+
+          return true;
+        })
+        .map(note => {
+          // Ensure all required fields are present
+          if (!note.id || !note.contentType) {
+            throw new Error('Note is missing required fields');
+          }
+
+          const createdAt = note.createdAt || Date.now();
+          const updatedAt = note.updatedAt || createdAt;
+
+          return {
+            id: note.id,
+            title: note.title || '',
+            body: note.body || '',
+            contentType: note.contentType,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            score: scoreMap.get(note.id) || 0,
+          } as SearchResult;
+        })
+        .sort((a, b) => b.score - a.score);
 
       // Apply pagination
-      return this.paginateResults(
-        noteSearchResults,
-        validatedOptions.offset || 0,
-        validatedOptions.limit || 10,
-        validatedOptions.query
-      );
+      const total = filteredResults.length;
+      filteredResults = filteredResults.slice(offset, offset + limit);
+
+      const results: PaginatedSearchResults = {
+        results: filteredResults,
+        pagination: {
+          total,
+          limit,
+          offset,
+          hasMore: offset + limit < total,
+        },
+        query,
+      };
+
+      // Cache results
+      this.addToCache(cacheKey, results);
+
+      this.logger.debug('Search completed successfully', {
+        userId,
+        query,
+        resultCount: filteredResults.length,
+        total,
+      });
+
+      return results;
     } catch (error) {
-      getLogger().error(
-        { err: error, options },
-        'Error searching notes'
-      );
+      this.logger.error('Search failed', {
+        options,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
       throw new ServiceError('Failed to search notes', {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: { options },
@@ -233,59 +220,86 @@ export class SearchService {
   }
 
   /**
-   * Combined search for notes
-   * @param env Environment bindings
-   * @param options Search options
-   * @returns Promise<NoteSearchResult[]>
-   */
-  /**
-   * Paginate search results
-   * @param results Full result set
-   * @param offset Offset for pagination
-   * @param limit Limit for pagination
-   * @param query Original search query
-   * @returns Paginated search results
-   */
-  private paginateResults(
-    results: NoteSearchResult[],
-    offset: number,
-    limit: number,
-    query: string = ''
-  ): PaginatedSearchResults {
-    const total = results.length;
-    const paginatedResults = results.slice(offset, offset + limit);
-
-    return {
-      results: paginatedResults,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + limit < total,
-      },
-      query,
-    };
-  }
-
-  /**
-   * Clear the search cache
-   */
-  clearCache(): void {
-    this.cache.clear();
-    getLogger().info('Search cache cleared');
-  }
-
-  /**
-   * Combined search for notes
-   * @param env Environment bindings
-   * @param options Search options
-   * @returns Promise<PaginatedSearchResults>
+   * Search for notes (alias for searchNotes)
+   *
+   * @param env - Cloudflare Workers environment bindings
+   * @param options - Search options
+   * @returns Promise resolving to paginated search results
    */
   async search(env: Bindings, options: SearchOptions): Promise<PaginatedSearchResults> {
-    // With Constellation, we can just use the searchNotes method
     return this.searchNotes(env, options);
+  }
+
+  /**
+   * Generate a cache key from search options
+   *
+   * @param options - Search options
+   * @returns Cache key string
+   */
+  private generateCacheKey(options: SearchOptions): string {
+    const { userId, query, limit = 10, offset = 0, contentType, startDate, endDate } = options;
+    return `${userId}:${query}:${limit}:${offset}:${contentType || ''}:${startDate || ''}:${
+      endDate || ''
+    }`;
+  }
+
+  /**
+   * Get results from cache if available and not expired
+   *
+   * @param key - Cache key
+   * @returns Cached results or undefined if not found or expired
+   */
+  private getFromCache(key: string): PaginatedSearchResults | undefined {
+    const timestamp = this.cacheTimestamps.get(key);
+    if (!timestamp) {
+      return undefined;
+    }
+
+    const now = Date.now();
+    if (now - timestamp > this.cacheTTL) {
+      // Cache expired, remove it
+      this.cache.delete(key);
+      this.cacheTimestamps.delete(key);
+      return undefined;
+    }
+
+    return this.cache.get(key);
+  }
+
+  /**
+   * Add results to cache
+   *
+   * @param key - Cache key
+   * @param results - Results to cache
+   */
+  private addToCache(key: string, results: PaginatedSearchResults): void {
+    this.cache.set(key, results);
+    this.cacheTimestamps.set(key, Date.now());
+
+    // Prune cache if it gets too large
+    if (this.cache.size > 100) {
+      this.pruneCache();
+    }
+  }
+
+  /**
+   * Prune the oldest entries from the cache
+   */
+  private pruneCache(): void {
+    // Sort timestamps by age (oldest first)
+    const sortedEntries = [...this.cacheTimestamps.entries()].sort((a, b) => a[1] - b[1]);
+
+    // Remove the oldest 20% of entries
+    const entriesToRemove = Math.ceil(sortedEntries.length * 0.2);
+    for (let i = 0; i < entriesToRemove; i++) {
+      const [key] = sortedEntries[i];
+      this.cache.delete(key);
+      this.cacheTimestamps.delete(key);
+    }
   }
 }
 
-// Export singleton instance
+/**
+ * Singleton instance of the search service
+ */
 export const searchService = new SearchService();

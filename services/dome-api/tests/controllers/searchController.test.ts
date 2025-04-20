@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SearchController } from '../../src/controllers/searchController';
+import { searchController } from '../../src/controllers/searchController';
 import { searchService, PaginatedSearchResults } from '../../src/services/searchService';
 import { ServiceError } from '@dome/common';
 import { z } from 'zod';
@@ -73,7 +73,7 @@ describe('SearchController', () => {
       env: mockEnv,
       get: vi.fn().mockReturnValue(mockUserId),
       req: {
-        query: vi.fn((key: string) => query[key] || ''),
+        query: vi.fn().mockReturnValue(query),
       },
       json: mockJson,
     };
@@ -99,7 +99,7 @@ describe('SearchController', () => {
       vi.mocked(searchService.search).mockResolvedValue(mockSearchResults);
 
       // Act
-      const response = await SearchController.search(mockContext as any);
+      const response = await searchController.search(mockContext as any);
 
       // Assert
       expect(searchService.search).toHaveBeenCalledWith(
@@ -127,7 +127,7 @@ describe('SearchController', () => {
       });
 
       // Act
-      const response = await SearchController.search(mockContext as any);
+      const response = await searchController.search(mockContext as any);
 
       // Assert
       expect(searchService.search).not.toHaveBeenCalled();
@@ -164,19 +164,20 @@ describe('SearchController', () => {
       });
 
       // Act
-      const response = await SearchController.search(mockContext as any);
+      const response = await searchController.search(mockContext as any);
 
       // Assert
-      expect(response.status).toBe(400);
-      const responseBody = await response.json();
-      expect(responseBody).toEqual({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid search parameters',
-          details: expect.any(Array),
+      expect(mockContext.json).toHaveBeenCalledWith(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid search parameters',
+            details: expect.any(Array),
+          },
         },
-      });
+        400,
+      );
     });
 
     it('should handle service errors', async () => {
@@ -192,18 +193,19 @@ describe('SearchController', () => {
       vi.mocked(searchService.search).mockRejectedValue(serviceError);
 
       // Act
-      const response = await SearchController.search(mockContext as any);
+      const response = await searchController.search(mockContext as any);
 
       // Assert
-      expect(response.status).toBe(503);
-      const responseBody = await response.json();
-      expect(responseBody).toEqual({
-        success: false,
-        error: {
-          code: 'SEARCH_ERROR',
-          message: 'Search service error',
+      expect(mockContext.json).toHaveBeenCalledWith(
+        {
+          success: false,
+          error: {
+            code: 'SERVICE_ERROR',
+            message: 'Search service error',
+          },
         },
-      });
+        500,
+      );
     });
 
     it('should handle generic errors', async () => {
@@ -216,18 +218,19 @@ describe('SearchController', () => {
       vi.mocked(searchService.search).mockRejectedValue(error);
 
       // Act
-      const response = await SearchController.search(mockContext as any);
+      const response = await searchController.search(mockContext as any);
 
       // Assert
-      expect(response.status).toBe(500);
-      const responseBody = await response.json();
-      expect(responseBody).toEqual({
-        success: false,
-        error: {
-          code: 'SEARCH_ERROR',
-          message: 'Unexpected error',
+      expect(mockContext.json).toHaveBeenCalledWith(
+        {
+          success: false,
+          error: {
+            code: 'SEARCH_ERROR',
+            message: 'Unexpected error',
+          },
         },
-      });
+        500,
+      );
     });
   });
 
@@ -248,7 +251,7 @@ describe('SearchController', () => {
         close: vi.fn().mockResolvedValue(undefined),
       };
       const mockReadable = {};
-      
+
       (global as any).TransformStream = vi.fn().mockImplementation(() => ({
         readable: mockReadable,
         writable: {
@@ -262,7 +265,7 @@ describe('SearchController', () => {
       }));
 
       // Act
-      const response = await SearchController.streamSearch(mockContext as any);
+      const response = await searchController.streamSearch(mockContext as any);
 
       // Assert
       expect(searchService.search).toHaveBeenCalledWith(
@@ -309,19 +312,20 @@ describe('SearchController', () => {
       });
 
       // Act
-      const response = await SearchController.streamSearch(mockContext as any);
+      const response = await searchController.streamSearch(mockContext as any);
 
       // Assert
-      expect(response.status).toBe(400);
-      const responseBody = await response.json();
-      expect(responseBody).toEqual({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid search parameters',
-          details: expect.any(Array),
+      expect(mockContext.json).toHaveBeenCalledWith(
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid search parameters',
+            details: expect.any(Array),
+          },
         },
-      });
+        400,
+      );
     });
 
     it('should handle errors during streaming', async () => {
@@ -339,7 +343,7 @@ describe('SearchController', () => {
         close: vi.fn().mockResolvedValue(undefined),
       };
       const mockReadable = {};
-      
+
       (global as any).TransformStream = vi.fn().mockImplementation(() => ({
         readable: mockReadable,
         writable: {
@@ -353,7 +357,7 @@ describe('SearchController', () => {
       }));
 
       // Act
-      const response = await SearchController.streamSearch(mockContext as any);
+      const response = await searchController.streamSearch(mockContext as any);
 
       // Assert
       expect(response.headers.get('Content-Type')).toBe('application/x-ndjson');
@@ -362,9 +366,7 @@ describe('SearchController', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
 
       // Verify the writer was used to write the error
-      expect(mockWriter.write).toHaveBeenCalledWith(
-        expect.any(Uint8Array)
-      );
+      expect(mockWriter.write).toHaveBeenCalledWith(expect.any(Uint8Array));
       expect(mockWriter.close).toHaveBeenCalled();
     });
   });

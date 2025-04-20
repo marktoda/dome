@@ -45,4 +45,5 @@ export type Bindings = {
   EMBED_QUEUE: Queue<EmbedJob>;
   AI?: WorkersAI; // Optional to support testing environments
   CONSTELLATION?: ConstellationService; // Optional to support testing environments
+  SILO?: Fetcher; // Silo service binding
 };
