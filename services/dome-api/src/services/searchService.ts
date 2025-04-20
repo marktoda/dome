@@ -3,7 +3,6 @@ import { ServiceError } from '@dome/common';
 import { getLogger } from '@dome/logging';
 import { constellationService } from './constellationService';
 import { siloService } from './siloService';
-import { contentMapperService } from './contentMapperService';
 
 /**
  * Search options interface

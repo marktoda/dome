@@ -10,7 +10,7 @@ vi.mock('../../src/services/searchService', () => {
     },
     query: '',
   });
-  
+
   return {
     searchService: {
       search: mockSearch
@@ -46,6 +46,8 @@ describe('ChatService', () => {
     RAW: {} as R2Bucket,
     EVENTS: {} as Queue<any>,
     EMBED_QUEUE: {} as Queue<any>,
+    CONSTELLATION: {} as any,
+    SILO: {} as any,
   };
 
   // Mock search results
@@ -230,6 +232,8 @@ describe('ChatService', () => {
         RAW: {} as R2Bucket,
         EVENTS: {} as Queue<any>,
         EMBED_QUEUE: {} as Queue<any>,
+        CONSTELLATION: {} as any,
+        SILO: {} as any,
       };
 
       // Test messages

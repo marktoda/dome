@@ -1,13 +1,12 @@
 import { Bindings, ConstellationService as ConstellationBinding } from '../types';
 import {
   ServiceError,
-  EmbedJob,
-  NoteVectorMeta,
+  SiloEmbedJob,
+  VectorMeta,
   VectorSearchResult,
   VectorIndexStats,
 } from '@dome/common';
 import { getLogger } from '@dome/logging';
-import { Note } from '../models/note';
 import { contentMapperService } from './contentMapperService';
 
 /**
@@ -28,92 +27,6 @@ export class ConstellationService {
   private logger = getLogger();
 
   /**
-   * Enqueues a text for asynchronous embedding via Constellation
-   *
-   * @param env - Cloudflare Workers environment bindings
-   * @param userId - User ID associated with the text
-   * @param noteId - Note ID associated with the text
-   * @param text - Text to embed
-   * @returns Promise resolving when the job is enqueued
-   */
-  async enqueueEmbedding(
-    env: Bindings,
-    userId: string,
-    noteId: string,
-    text: string,
-  ): Promise<void> {
-    try {
-      this.logger.debug('Enqueuing embedding job', { userId, noteId, textLength: text.length });
-
-      const job: EmbedJob = {
-        userId,
-        noteId,
-        text: this.preprocess(text),
-        created: Date.now(),
-        version: 1,
-      };
-
-      await env.EMBED_QUEUE!.send(job);
-
-      this.logger.debug('Successfully enqueued embedding job', { userId, noteId });
-    } catch (error) {
-      this.logger.error('Failed to enqueue embedding job', {
-        userId,
-        noteId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      throw new ServiceError('Failed to enqueue embedding job', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        context: { userId, noteId },
-      });
-    }
-  }
-
-  /**
-   * Directly embeds text using Constellation (use sparingly)
-   *
-   * @param env - Cloudflare Workers environment bindings
-   * @param userId - User ID associated with the text
-   * @param noteId - Note ID associated with the text
-   * @param text - Text to embed
-   * @returns Promise resolving when the embedding is complete
-   */
-  async embedDirectly(env: Bindings, userId: string, noteId: string, text: string): Promise<void> {
-    try {
-      this.validateConstellationBinding(env.CONSTELLATION);
-      this.logger.debug('Embedding text directly', {
-        userId,
-        noteId,
-        textLength: text.length,
-      });
-
-      const job: EmbedJob = {
-        userId,
-        noteId,
-        text: this.preprocess(text),
-        created: Date.now(),
-        version: 1,
-      };
-
-      await env.CONSTELLATION!.embed(job);
-
-      this.logger.debug('Successfully embedded text directly', { userId, noteId });
-    } catch (error) {
-      this.logger.error('Failed to embed directly', {
-        userId,
-        noteId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      throw new ServiceError('Failed to embed directly', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        context: { userId, noteId },
-      });
-    }
-  }
-
-  /**
    * Query for similar embeddings using the Constellation service
    *
    * @param env - Cloudflare Workers environment bindings
@@ -125,7 +38,7 @@ export class ConstellationService {
   async query(
     env: Bindings,
     text: string,
-    filter?: Partial<NoteVectorMeta>,
+    filter?: Partial<VectorMeta>,
     topK: number = DEFAULT_TOP_K,
   ): Promise<VectorSearchResult[]> {
     try {
@@ -206,7 +119,7 @@ export class ConstellationService {
     topK: number = DEFAULT_TOP_K,
   ): Promise<Array<{ noteId: string; score: number }>> {
     try {
-      const filter: Partial<NoteVectorMeta> = { userId };
+      const filter: Partial<VectorMeta> = { userId };
 
       const results = await this.query(env, query, filter, topK);
 

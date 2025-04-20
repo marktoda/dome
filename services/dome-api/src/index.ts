@@ -12,7 +12,6 @@ import { userIdMiddleware } from './middleware/userIdMiddleware';
 import { initLogging, getLogger } from '@dome/logging';
 import type { Bindings } from './types';
 import { searchController } from './controllers/searchController';
-import { fileController } from './controllers/fileController';
 import { chatController } from './controllers/chatController';
 import { siloController } from './controllers/siloController';
 
@@ -58,22 +57,11 @@ app.use('*', async (c, next) => {
 
 app.use('*', createRequestContextMiddleware());
 initLogging(app, {
-  extraBindings: {
-    service: serviceInfo.name,
-    version: serviceInfo.version,
-    environment: serviceInfo.environment,
-  },
+  extraBindings: { ...serviceInfo },
 }); // Initialize logging with service info
 
 // Log application startup
-getLogger().info(
-  {
-    service: serviceInfo.name,
-    version: serviceInfo.version,
-    environment: serviceInfo.environment,
-  },
-  'Application starting',
-);
+getLogger().info('Application starting',);
 app.use('*', cors());
 app.use('*', createErrorMiddleware(formatZodError));
 app.use('*', createSimpleAuthMiddleware()); // Simple auth middleware for now

@@ -2,18 +2,19 @@ import { Bindings } from '../types';
 import { ServiceError } from '@dome/common';
 import { getLogger } from '@dome/logging';
 import {
-  SiloContentMetadata,
-  SiloSimplePutRequest,
+  ContentType,
+  SiloSimplePutInput,
+  SiloCreateUploadInput,
+  SiloBatchGetInput,
+  SiloDeleteInput,
+  SiloStatsInput,
   SiloSimplePutResponse,
-  SiloCreateUploadRequest,
   SiloCreateUploadResponse,
-  SiloBatchGetRequest,
   SiloBatchGetResponse,
   SiloBatchGetItem,
-  SiloDeleteRequest,
   SiloDeleteResponse,
-  SiloStatsResponse,
-} from '../types/siloTypes';
+  SiloStatsResponse
+} from '@dome/common';
 import { contentMapperService } from './contentMapperService';
 
 /**
@@ -25,68 +26,6 @@ export class SiloService {
   private logger = getLogger();
 
   /**
-   * Call a Silo RPC method with proper error handling
-   *
-   * @param env - Cloudflare Workers environment bindings
-   * @param method - RPC method name
-   * @param data - Request data
-   * @returns Promise resolving to the response
-   */
-  private async callRPC<T>(env: Bindings, method: string, data: any): Promise<T> {
-    try {
-      this.logger.debug('Calling Silo RPC', {
-        method,
-        data: { ...data, content: data.content ? '[CONTENT]' : undefined },
-      });
-
-      const headers = new Headers({ 'Content-Type': 'application/json' });
-      if (data.userId) {
-        headers.set('x-user-id', data.userId);
-      }
-
-      const response = await (env.SILO as any).fetch(
-        new Request(`http://silo/rpc/${method}`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(data),
-        }),
-      );
-
-      if (!response.ok) {
-        let errorBody: any;
-        try {
-          errorBody = await response.json();
-        } catch {
-          errorBody = await response.text();
-        }
-
-        this.logger.error('Silo RPC failed', {
-          method,
-          status: response.status,
-          error: errorBody,
-        });
-
-        throw new ServiceError(`Silo RPC ${method} failed`, {
-          context: { status: response.status, error: errorBody },
-        });
-      }
-
-      const result = (await response.json()) as T;
-      this.logger.debug('Silo RPC succeeded', { method, result });
-      return result;
-    } catch (error) {
-      this.logger.error('Error calling Silo RPC', {
-        method,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      throw new ServiceError(`Error calling Silo RPC method ${method}`, {
-        cause: error instanceof Error ? error : new Error(String(error)),
-      });
-    }
-  }
-
-  /**
    * Store content directly using the simple put API
    *
    * @param env - Cloudflare Workers environment bindings
@@ -95,17 +34,9 @@ export class SiloService {
    */
   async simplePut(
     env: Bindings,
-    data: { body: any; contentType?: string; id?: string; userId?: string },
-  ): Promise<{ id: string; contentType: string; size: number; createdAt: number }> {
-    // Convert from legacy format to new type
-    const request: SiloSimplePutRequest = {
-      id: data.id,
-      userId: data.userId,
-      content: data.body,
-      contentType: data.contentType || 'text/plain',
-    };
-
-    return this.callRPC<SiloSimplePutResponse>(env, 'simplePut', request);
+    data: SiloSimplePutInput,
+  ): Promise<SiloSimplePutResponse> {
+    return env.SILO.simplePut(data);
   }
 
   /**
@@ -117,23 +48,9 @@ export class SiloService {
    */
   async createUpload(
     env: Bindings,
-    data: { size: number; contentType?: string; sha256?: string; userId?: string },
-  ): Promise<{
-    id: string;
-    uploadUrl: string;
-    formData: Record<string, string>;
-    expiresIn: number;
-  }> {
-    // Convert from legacy format to new type
-    const request: SiloCreateUploadRequest = {
-      contentType: data.contentType || 'application/octet-stream',
-      size: data.size,
-      metadata: {},
-      userId: data.userId,
-      sha256: data.sha256,
-    };
-
-    return this.callRPC<SiloCreateUploadResponse>(env, 'createUpload', request);
+    data: SiloCreateUploadInput
+  ): Promise<SiloCreateUploadResponse> {
+    return env.SILO.createUpload(data);
   }
 
   /**
@@ -145,25 +62,9 @@ export class SiloService {
    */
   async batchGet(
     env: Bindings,
-    data: { ids: string[]; userId?: string },
-  ): Promise<Record<string, any>> {
-    // Convert from legacy format to new type
-    const request: SiloBatchGetRequest = {
-      ids: data.ids,
-      userId: data.userId,
-    };
-
-    const response = await this.callRPC<SiloBatchGetResponse>(env, 'batchGet', request);
-
-    // Convert from new type to legacy format
-    const resultMap: Record<string, any> = {};
-    if (response.items) {
-      for (const item of response.items) {
-        resultMap[item.id] = item;
-      }
-    }
-
-    return resultMap;
+    data: SiloBatchGetInput
+  ): Promise<SiloBatchGetResponse> {
+    return env.SILO.batchGet(data);
   }
 
   /**
@@ -173,13 +74,8 @@ export class SiloService {
    * @param data - Delete request data
    * @returns Promise resolving to the delete response
    */
-  async delete(env: Bindings, data: { id: string; userId?: string }): Promise<SiloDeleteResponse> {
-    const request: SiloDeleteRequest = {
-      id: data.id,
-      userId: data.userId,
-    };
-
-    return this.callRPC<SiloDeleteResponse>(env, 'delete', request);
+  async delete(env: Bindings, data: SiloDeleteInput): Promise<SiloDeleteResponse> {
+    return env.SILO.delete(data);
   }
 
   /**
@@ -189,7 +85,7 @@ export class SiloService {
    * @returns Promise resolving to the stats response
    */
   async stats(env: Bindings): Promise<SiloStatsResponse> {
-    return this.callRPC<SiloStatsResponse>(env, 'stats', {});
+    return env.SILO.stats({});
   }
 
   /**
@@ -202,7 +98,7 @@ export class SiloService {
    */
   async getContentAsNote(env: Bindings, id: string, userId?: string) {
     try {
-      const response = await this.callRPC<SiloBatchGetResponse>(env, 'batchGet', {
+      const response = await this.batchGet(env, {
         ids: [id],
         userId,
       });
@@ -242,7 +138,7 @@ export class SiloService {
         return [];
       }
 
-      const response = await this.callRPC<SiloBatchGetResponse>(env, 'batchGet', {
+      const response = await this.batchGet(env, {
         ids,
         userId,
       });
@@ -266,41 +162,6 @@ export class SiloService {
     }
   }
 
-  /**
-   * Get content by ID and transform to a task
-   *
-   * @param env - Cloudflare Workers environment bindings
-   * @param id - Content ID
-   * @param userId - Optional user ID for access control
-   * @returns Promise resolving to the task
-   */
-  async getContentAsTask(env: Bindings, id: string, userId?: string) {
-    try {
-      const response = await this.callRPC<SiloBatchGetResponse>(env, 'batchGet', {
-        ids: [id],
-        userId,
-      });
-
-      if (!response.items || response.items.length === 0) {
-        this.logger.warn('Content not found', { id, userId });
-        return null;
-      }
-
-      const item = response.items[0];
-      return contentMapperService.mapBatchGetItemToTask(item);
-    } catch (error) {
-      this.logger.error('Failed to get content as task', {
-        id,
-        userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      throw new ServiceError('Failed to get content as task', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        context: { id, userId },
-      });
-    }
-  }
 }
 
 /**

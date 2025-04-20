@@ -1,17 +1,77 @@
-import { ServiceError } from '@dome/common';
-import { Note, CreateNoteData, UpdateNoteData, NotePage } from '../models/note';
-import { Task, CreateTaskData, UpdateTaskData, TaskStatus, TaskPriority } from '../models/task';
 import {
-  SiloContentMetadata,
-  SiloSimplePutRequest,
+  ServiceError,
+  SiloContent,
+  ContentType,
+  VectorSearchResult,
   SiloSimplePutResponse,
-  SiloBatchGetItem,
-} from '../types/siloTypes';
+  SiloBatchGetItem
+} from '@dome/common';
 import {
   ConstellationEmbedJob,
   ConstellationVectorMeta,
   ConstellationVectorSearchResult,
 } from '../types/constellationTypes';
+
+// Legacy type definitions for backward compatibility
+// These will be removed once all code is migrated to use SiloContent
+interface Note {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  contentType: string;
+  createdAt: number;
+  updatedAt?: number;
+  metadata?: string;
+}
+
+interface CreateNoteData {
+  userId: string;
+  title: string;
+  body: string;
+  contentType: string;
+  metadata?: string;
+}
+
+interface NotePage {
+  noteId: string;
+  pageNum: number;
+  content: string;
+}
+
+enum TaskStatus {
+  PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled'
+}
+
+enum TaskPriority {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high'
+}
+
+interface Task {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate?: number;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+interface CreateTaskData {
+  userId: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate?: number;
+}
 
 /**
  * ContentMapperService
@@ -21,98 +81,47 @@ import {
  */
 export class ContentMapperService {
   /**
-   * Map a dome-api Note to a Silo SimplePutRequest
-   *
-   * @param note - The note to map
-   * @returns A Silo SimplePutRequest object
-   */
-  mapNoteToPutRequest(note: Note | CreateNoteData): SiloSimplePutRequest {
-    return {
-      id: 'id' in note ? note.id : undefined,
-      userId: note.userId,
-      content: note.body,
-      contentType: note.contentType,
-      metadata: {
-        title: note.title,
-        ...(note.metadata ? JSON.parse(note.metadata) : {}),
-      },
-    };
-  }
-
-  /**
-   * Map a Silo SimplePutResponse to a partial dome-api Note
-   *
-   * @param response - The Silo response to map
-   * @returns A partial Note object
-   */
-  mapPutResponseToNote(response: SiloSimplePutResponse): Partial<Note> {
-    return {
-      id: response.id,
-      contentType: response.contentType,
-      createdAt: response.createdAt * 1000, // Convert seconds to milliseconds
-      updatedAt: response.createdAt * 1000, // Use same timestamp for updatedAt initially
-    };
-  }
-
-  /**
-   * Map a dome-api Note to a Constellation EmbedJob
-   *
-   * @param note - The note to map
-   * @param text - Optional text override (if different from note.body)
-   * @returns A Constellation EmbedJob object
-   */
-  mapNoteToEmbedJob(note: Note, text?: string): ConstellationEmbedJob {
-    return {
-      userId: note.userId,
-      noteId: note.id,
-      text: text || note.body,
-      created: Date.now(),
-      version: 1,
-    };
-  }
-
-  /**
-   * Map a dome-api NotePage to a Constellation EmbedJob
-   *
-   * @param notePage - The note page to map
-   * @param userId - The user ID associated with the note page
-   * @returns A Constellation EmbedJob object
-   */
-  mapNotePageToEmbedJob(notePage: NotePage, userId: string): ConstellationEmbedJob {
-    return {
-      userId: userId,
-      noteId: `${notePage.noteId}_page_${notePage.pageNum}`,
-      text: notePage.content,
-      created: Date.now(),
-      version: 1,
-    };
-  }
-
-  /**
-   * Map Constellation VectorSearchResults to Note IDs
+   * Map VectorSearchResults to Content IDs
    *
    * @param results - The vector search results to map
-   * @returns An array of note IDs with their scores
+   * @returns An array of content IDs with their scores
    */
-  mapVectorResultsToNoteIds(
-    results: ConstellationVectorSearchResult[],
-  ): Array<{ noteId: string; score: number }> {
+  mapVectorResultsToContentIds(
+    results: VectorSearchResult[],
+  ): Array<{ contentId: string; score: number }> {
     return results.map(result => ({
-      noteId: result.metadata.noteId,
+      contentId: result.metadata.contentId,
       score: result.score,
     }));
   }
 
   /**
-   * Map a Silo BatchGetItem to a partial dome-api Note
+   * Map VectorSearchResults to Note IDs (legacy method)
+   *
+   * @param results - The vector search results to map
+   * @returns An array of note IDs with their scores
+   * @deprecated Use mapVectorResultsToContentIds instead
+   */
+  mapVectorResultsToNoteIds(
+    results: ConstellationVectorSearchResult[] | VectorSearchResult[],
+  ): Array<{ noteId: string; score: number }> {
+    return results.map(result => ({
+      noteId: 'noteId' in result.metadata ? result.metadata.noteId :
+        'contentId' in result.metadata ? result.metadata.contentId || '' : '',
+      score: result.score,
+    }));
+  }
+
+  /**
+   * Map a Silo BatchGetItem to a SiloContent object
    *
    * @param item - The Silo batch get item to map
-   * @returns A partial Note object
+   * @returns A SiloContent object
    */
-  mapBatchGetItemToNote(item: SiloBatchGetItem): Partial<Note> {
+  mapBatchGetItemToNote(item: SiloBatchGetItem): SiloContent {
     // Extract title from metadata if available
     let title = '';
-    let metadata = '';
+    let metadata: Record<string, any> = {};
 
     try {
       // Attempt to parse metadata from the content if it exists
@@ -129,84 +138,14 @@ export class ContentMapperService {
 
     return {
       id: item.id,
-      userId: item.userId || '',
+      userId: item.userId || null,
       title: title,
       body: item.body || '',
-      contentType: item.contentType,
+      contentType: item.contentType as ContentType,
+      size: item.size,
       createdAt: item.createdAt * 1000, // Convert seconds to milliseconds
       updatedAt: item.createdAt * 1000, // Use same timestamp for updatedAt initially
       metadata: metadata,
-    };
-  }
-
-  /**
-   * Map a dome-api Task to a Silo SimplePutRequest
-   *
-   * @param task - The task to map
-   * @returns A Silo SimplePutRequest object
-   */
-  mapTaskToPutRequest(task: Task | CreateTaskData): SiloSimplePutRequest {
-    return {
-      id: 'id' in task ? task.id : undefined,
-      userId: task.userId,
-      content: JSON.stringify({
-        title: task.title,
-        description: task.description || '',
-        status: task.status,
-        priority: task.priority,
-        dueDate: task.dueDate,
-      }),
-      contentType: 'application/json',
-      metadata: {
-        type: 'task',
-        status: task.status,
-        priority: task.priority,
-        dueDate: task.dueDate,
-      },
-    };
-  }
-
-  /**
-   * Map a Silo BatchGetItem to a dome-api Task
-   *
-   * @param item - The Silo batch get item to map
-   * @returns A partial Task object
-   */
-  mapBatchGetItemToTask(item: SiloBatchGetItem): Partial<Task> {
-    let taskData: {
-      title: string;
-      description?: string;
-      status: TaskStatus;
-      priority: TaskPriority;
-      dueDate?: number;
-    } = {
-      title: '',
-      status: TaskStatus.PENDING,
-      priority: TaskPriority.MEDIUM,
-    };
-
-    try {
-      // Parse the task data from the content
-      if (item.body) {
-        taskData = JSON.parse(item.body);
-      }
-    } catch (error) {
-      throw new ServiceError('Failed to parse task data', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-        context: { itemId: item.id },
-      });
-    }
-
-    return {
-      id: item.id,
-      userId: item.userId || '',
-      title: taskData.title,
-      description: taskData.description,
-      status: taskData.status,
-      priority: taskData.priority,
-      dueDate: taskData.dueDate,
-      createdAt: item.createdAt * 1000, // Convert seconds to milliseconds
-      updatedAt: item.createdAt * 1000, // Use same timestamp for updatedAt initially
     };
   }
 }

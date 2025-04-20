@@ -34,6 +34,7 @@ dev: build
     wrangler dev \
       -c services/dome-api/wrangler.toml \
       -c services/constellation/wrangler.toml \
+      -c services/silo/wrangler.toml \
       --experimental-vectorize-bind-to-prod
 
 # Run tests for all packages

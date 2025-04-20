@@ -5,23 +5,11 @@ import { zValidator } from '@hono/zod-validator';
 import { siloService } from '../services/siloService';
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { getLogger } from '@dome/logging';
-import { ServiceError } from '@dome/common';
+import { ServiceError, siloSimplePutSchema, siloCreateUploadSchema } from '@dome/common';
 
 /**
  * Validation schemas for Silo endpoints
  */
-const simplePutSchema = z.object({
-  body: z.string().min(1, 'Body is required'),
-  contentType: z.string().optional(),
-  id: z.string().optional(),
-});
-
-const createUploadSchema = z.object({
-  size: z.number().int().positive('Size must be positive'),
-  contentType: z.string().optional(),
-  sha256: z.string().optional(),
-});
-
 const ingestSchema = z.object({
   content: z.string().min(1, 'Content is required'),
   contentType: z.string().default('text/plain'),
@@ -58,7 +46,7 @@ export class SiloController {
     try {
       const userId = c.get('userId');
       const body = await c.req.json();
-      const data = simplePutSchema.parse(body);
+      const data = siloSimplePutSchema.parse(body);
       const result = await siloService.simplePut(c.env, {
         ...data,
         userId,
@@ -102,7 +90,7 @@ export class SiloController {
     try {
       const userId = c.get('userId');
       const body = await c.req.json();
-      const data = createUploadSchema.parse(body);
+      const data = siloCreateUploadSchema.parse(body);
       const result = await siloService.createUpload(c.env, {
         ...data,
         userId,
@@ -312,8 +300,8 @@ export class SiloController {
       // Create the note via siloService
       // Note: We can't directly pass metadata to simplePut, so we'll need to retrieve and update the note after creation
       const result = await siloService.simplePut(c.env, {
-        body: validatedData.content,
-        contentType: validatedData.contentType,
+        content: validatedData.content,
+        contentType: validatedData.contentType as any,
         userId,
       });
 
@@ -403,8 +391,8 @@ export class SiloController {
       // Update the note via siloService
       await siloService.simplePut(c.env, {
         id: noteId,
-        body: updatedNote.body || '',
-        contentType: updatedNote.contentType || 'text/plain',
+        content: updatedNote.body || '',
+        contentType: (updatedNote.contentType || 'text/plain') as any,
         userId,
       });
 
