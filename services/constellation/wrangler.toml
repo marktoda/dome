@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_als"]
 
 # Queue consumer configuration
 [[queues.consumers]]
-queue = "embed-queue"
+queue = "new-content"
 max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 3
@@ -25,6 +25,11 @@ index_name = "dome-notes"
 # Workers AI binding
 [ai]
 binding = "AI"
+
+# Service binding for Silo
+[[services]]
+binding = "SILO"
+service = "silo"
 
 # For local development
 [dev]

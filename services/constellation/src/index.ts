@@ -1,23 +1,36 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { SiloEmbedJob, VectorMeta, VectorSearchResult } from '@dome/common';
+import {
+  SiloEmbedJob,
+  VectorMeta,
+  VectorSearchResult,
+  NewContentMessageSchema,
+} from '@dome/common';
+import { z } from 'zod';
 
 import { withLogger, getLogger, metrics } from '@dome/logging';
 import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
 import { createVectorizeService } from './services/vectorize';
+import { createSiloService } from './services/siloService';
 
 /* -------------------------------------------------------------------------- */
-/*  helpers                                                                    */
+/* helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const services = (env: Env) => ({
+type DeadQueue = Env['EMBED_DEAD'];
+
+const buildServices = (env: Env) => ({
   preprocessor: createPreprocessor(),
   embedder: createEmbedder(env.AI),
   vectorize: createVectorizeService(env.VECTORIZE),
+  silo: createSiloService(env),
 });
 
-async function wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T>) {
-  return withLogger(meta, async () => {
+const runWithLog = <T>(
+  meta: Record<string, unknown>,
+  fn: () => Promise<T>,
+): Promise<T> =>
+  withLogger(meta, async () => {
     try {
       return await fn();
     } catch (err) {
@@ -25,30 +38,55 @@ async function wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T>) {
       throw err;
     }
   });
-}
+
+// Define a type for dead letter queue payloads
+type DeadLetterPayload =
+  | { error: string; originalMessage: unknown }
+  | { err: string; job: SiloEmbedJob };
+
+const sendToDeadLetter = async (
+  queue: DeadQueue | undefined,
+  payload: DeadLetterPayload,
+) => {
+  if (!queue) return;
+  try {
+    await queue.send(payload);
+  } catch (err) {
+    getLogger().error({ err, payload }, 'Failed to write to dead‑letter queue');
+  }
+};
 
 /* -------------------------------------------------------------------------- */
-/*  worker                                                                     */
+/* worker                                                                     */
 /* -------------------------------------------------------------------------- */
 
 export default class Constellation extends WorkerEntrypoint<Env> {
-  /* ------- embed a batch of notes -------------------------------------- */
+  /** Lazily created bundle of service clients (re‑used for every call) */
+  private _services?: ReturnType<typeof buildServices>;
+  private get services() {
+    return (this._services ??= buildServices(this.env));
+  }
+
+  /* ----------------------- embed a batch of notes ----------------------- */
+
   private async embedBatch(
     jobs: SiloEmbedJob[],
-    dead?: (j: SiloEmbedJob) => Promise<void>,
+    deadQueue?: DeadQueue,
   ): Promise<number> {
-    const { preprocessor, embedder, vectorize } = services(this.env);
-    let ok = 0;
+    let processed = 0;
 
     for (const job of jobs) {
       const span = metrics.startTimer('process_job');
       try {
+        const { preprocessor, embedder, vectorize } = this.services;
+
         const chunks = preprocessor.process(job.text);
-        if (!chunks.length) {
+        if (chunks.length === 0) {
           getLogger().warn({ job }, 'no text');
           continue;
         }
 
+        getLogger().info({ chunks: chunks.length }, 'preprocesed chunks');
         const vecs = (await embedder.embed(chunks)).map((v, i) => ({
           id: `content:${job.contentId}:${i}`,
           values: v,
@@ -56,45 +94,82 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             userId: job.userId,
             contentId: job.contentId,
             contentType: job.contentType,
-            createdAt: (job.created / 1000) | 0,
+            createdAt: Math.floor(job.created / 1000),
             version: job.version,
           },
         }));
 
         await vectorize.upsert(vecs);
-        ok++;
+        getLogger().info({ vectorCount: vecs.length }, 'upserted vectors');
+        processed += 1;
       } catch (err) {
         getLogger().error({ err, job }, 'embed failed');
-        if (dead) await dead(job);
-        // Don't throw the error, just log it and continue
-        // This allows the dead letter queue to handle the failed job
+        await sendToDeadLetter(deadQueue, { err: String(err), job });
       } finally {
         span.stop();
       }
     }
-    return ok;
+
+    return processed;
   }
 
-  /* ------- queue consumer ---------------------------------------------- */
-  async queue(batch: MessageBatch<SiloEmbedJob>) {
-    await wrap(
+  /* ---------------------------- queue consumer -------------------------- */
+
+  async queue(batch: MessageBatch<Record<string, unknown>>) {
+    await runWithLog(
       { service: 'constellation', op: 'queue', size: batch.messages.length, ...this.env },
       async () => {
         metrics.gauge('queue.batch_size', batch.messages.length);
 
-        const ok = await this.embedBatch(
-          batch.messages.map(m => m.body),
-          j => this.env.EMBED_DEAD?.send(j),
-        );
+        const embedJobs: SiloEmbedJob[] = [];
 
-        metrics.increment('queue.jobs_processed', ok);
+        for (const msg of batch.messages) {
+          const jobOrErr = await this.parseMessage(msg);
+          if (jobOrErr instanceof Error) {
+            await sendToDeadLetter(this.env.EMBED_DEAD, {
+              error: jobOrErr.message,
+              originalMessage: msg.body,
+            });
+          } else {
+            embedJobs.push(jobOrErr);
+          }
+          msg.ack(); // always ack exactly once
+        }
+
+        if (embedJobs.length) {
+          getLogger().info({ count: embedJobs.length }, 'Processing embed jobs');
+          const ok = await this.embedBatch(embedJobs, this.env.EMBED_DEAD);
+          metrics.increment('queue.jobs_processed', ok);
+        }
       },
     );
   }
 
-  /* ------- rpc: embed --------------------------------------------------- */
+  /** Validate + convert a single queue message */
+  private async parseMessage(msg: Message<Record<string, unknown>>): Promise<SiloEmbedJob | Error> {
+    if (!msg.body) return new Error('Message body is empty');
+
+    const validation = NewContentMessageSchema.safeParse(msg.body);
+    if (!validation.success) {
+      const issues = validation.error.issues
+        .map(i => `${i.path.join('.')}: ${i.message}`)
+        .join(', ');
+      getLogger().error({ issues }, 'Invalid message body');
+      return new Error(`Validation error: ${issues}`);
+    }
+
+    try {
+      // At this point, we know the message body conforms to NewContentMessage schema
+      return await this.services.silo.convertToEmbedJob(validation.data);
+    } catch (err) {
+      return err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  /* ---------------------------- rpc: embed ------------------------------ */
+
   public async embed(job: SiloEmbedJob) {
-    await wrap(
+    await runWithLog(
       {
         service: 'constellation',
         op: 'embed',
@@ -110,39 +185,47 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     );
   }
 
-  /* ------- rpc: query --------------------------------------------------- */
+  /* ---------------------------- rpc: query ------------------------------ */
+
   public async query(
     text: string,
     filter: Partial<VectorMeta>,
     topK = 10,
-  ): Promise<VectorSearchResult[] | { error: any }> {
-    return wrap({ service: 'constellation', op: 'query', filter, topK, ...this.env }, async () => {
-      try {
-        const { preprocessor, embedder, vectorize } = services(this.env);
+  ): Promise<VectorSearchResult[] | { error: unknown }> {
+    return runWithLog(
+      { service: 'constellation', op: 'query', filter, topK, ...this.env },
+      async () => {
+        try {
+          const { preprocessor, embedder, vectorize } = this.services;
 
-        const norm = preprocessor.normalize(text);
-        if (!norm) return [];
+          const norm = preprocessor.normalize(text);
+          if (!norm) return [];
 
-        const [queryVec] = await embedder.embed([norm]);
-        const results = await vectorize.query(queryVec, filter, topK);
+          const [queryVec] = await embedder.embed([norm]);
+          const results = await vectorize.query(queryVec, filter, topK);
 
-        metrics.increment('rpc.query.success');
-        metrics.gauge('rpc.query.results', results.length);
-        return results;
-      } catch (error) {
-        return { error };
-      }
-    });
+          metrics.increment('rpc.query.success');
+          metrics.gauge('rpc.query.results', results.length);
+          return results;
+        } catch (error) {
+          return { error };
+        }
+      },
+    );
   }
 
-  /* ------- rpc: stats --------------------------------------------------- */
+  /* ---------------------------- rpc: stats ------------------------------ */
+
   public async stats() {
-    return wrap({ service: 'constellation', op: 'stats', ...this.env }, async () => {
-      try {
-        return await services(this.env).vectorize.getStats();
-      } catch (error) {
-        return { error };
-      }
-    });
+    return runWithLog(
+      { service: 'constellation', op: 'stats', ...this.env },
+      async () => {
+        try {
+          return await this.services.vectorize.getStats();
+        } catch (error) {
+          return { error };
+        }
+      },
+    );
   }
 }
