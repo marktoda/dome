@@ -209,6 +209,55 @@ describe('Silo Service', () => {
       // Restore mock
       vi.restoreAllMocks();
     });
+
+    it('should handle service errors in simplePut', async () => {
+      const testData = { contentType: 'note', content: 'Test content' };
+      const serviceError = new Error('Service error');
+      
+      mockContentController.simplePut.mockRejectedValue(serviceError);
+      
+      await expect(silo.simplePut(testData)).rejects.toThrow('Service error');
+      expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'simplePut' });
+    });
+
+    it('should handle service errors in createUpload', async () => {
+      const testData = { contentType: 'note', size: 1024 };
+      const serviceError = new Error('Upload service error');
+      
+      mockContentController.createUpload.mockRejectedValue(serviceError);
+      
+      await expect(silo.createUpload(testData)).rejects.toThrow('Upload service error');
+      expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'createUpload' });
+    });
+
+    it('should handle service errors in batchGet', async () => {
+      const testData = { ids: ['id1', 'id2'] };
+      const serviceError = new Error('Batch get error');
+      
+      mockContentController.batchGet.mockRejectedValue(serviceError);
+      
+      await expect(silo.batchGet(testData)).rejects.toThrow('Batch get error');
+      expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'batchGet' });
+    });
+
+    it('should handle service errors in delete', async () => {
+      const testData = { id: 'id1' };
+      const serviceError = new Error('Delete error');
+      
+      mockContentController.delete.mockRejectedValue(serviceError);
+      
+      await expect(silo.delete(testData)).rejects.toThrow('Delete error');
+      expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'delete' });
+    });
+
+    it('should handle service errors in stats', async () => {
+      const serviceError = new Error('Stats error');
+      
+      mockStatsController.getStats.mockRejectedValue(serviceError);
+      
+      await expect(silo.stats({})).rejects.toThrow('Stats error');
+      expect(metrics.increment).toHaveBeenCalledWith('silo.rpc.errors', 1, { method: 'stats' });
+    });
   });
 
   describe('Queue Consumer', () => {
@@ -248,6 +297,73 @@ describe('Silo Service', () => {
 
       expect(mockContentController.processR2Event).toHaveBeenCalledWith(mockBatch.messages[0].body);
       expect(mockBatch.messages[0].ack).toHaveBeenCalled();
+    });
+  });
+
+  describe('Error Handling', () => {
+    it('should handle queue processing errors', async () => {
+      const mockBatch = {
+        messages: [
+          {
+            id: '1',
+            timestamp: Date.now(),
+            body: {
+              type: 'object.created',
+              time: new Date().toISOString(),
+              eventTime: new Date().toISOString(),
+              object: {
+                key: 'content/123',
+                size: 1024,
+                etag: 'etag123',
+                httpEtag: 'httpEtag123',
+              },
+            },
+            ack: vi.fn(),
+          },
+        ],
+        queue: 'test-queue',
+        retryAll: vi.fn(),
+        ackAll: vi.fn(),
+      };
+
+      // Simulate an error in processing
+      mockContentController.processR2Event.mockRejectedValue(new Error('Processing error'));
+
+      await expect(silo.queue(mockBatch as any)).rejects.toThrow('Processing error');
+      expect(metrics.increment).toHaveBeenCalledWith('silo.queue.errors', 1);
+      expect(mockBatch.messages[0].ack).not.toHaveBeenCalled();
+    });
+
+    it('should handle unsupported event types', async () => {
+      const mockBatch = {
+        messages: [
+          {
+            id: '1',
+            timestamp: Date.now(),
+            body: {
+              type: 'object.deleted', // Unsupported event type
+              time: new Date().toISOString(),
+              eventTime: new Date().toISOString(),
+              object: {
+                key: 'content/123',
+                size: 1024,
+                etag: 'etag123',
+                httpEtag: 'httpEtag123',
+              },
+            },
+            ack: vi.fn(),
+          },
+        ],
+        queue: 'test-queue',
+        retryAll: vi.fn(),
+        ackAll: vi.fn(),
+      };
+
+      await silo.queue(mockBatch as any);
+
+      // Should acknowledge the message even for unsupported event types
+      expect(mockBatch.messages[0].ack).toHaveBeenCalled();
+      expect(mockContentController.processR2Event).not.toHaveBeenCalled();
     });
   });
 });

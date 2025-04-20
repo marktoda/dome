@@ -4,6 +4,7 @@ import { R2Service } from '../services/r2Service';
 import { MetadataService } from '../services/metadataService';
 import { QueueService } from '../services/queueService';
 import { R2Event } from '../types';
+import { SiloSimplePutResponse, SiloSimplePutInput, ContentType } from '@dome/common';
 
 /**
  * ContentController handles business logic for content operations
@@ -15,19 +16,12 @@ export class ContentController {
     private r2Service: R2Service,
     private metadataService: MetadataService,
     private queueService: QueueService,
-  ) {}
+  ) { }
 
   /**
    * Store small content items synchronously
    */
-  async simplePut(data: {
-    id?: string;
-    contentType: string;
-    content: string | ArrayBuffer;
-    userId?: string;
-    metadata?: Record<string, any>;
-    acl?: { public?: boolean };
-  }) {
+  async simplePut(data: SiloSimplePutInput): Promise<SiloSimplePutResponse> {
     const startTime = Date.now();
 
     try {
@@ -52,11 +46,12 @@ export class ContentController {
 
       // Create R2 key
       const r2Key = `content/${id}`;
+      const contentType = data.contentType || 'note';
 
       // Create custom metadata
       const customMetadata: Record<string, string> = {
         userId: userId || '',
-        contentType: data.contentType,
+        contentType,
       };
 
       // Add optional metadata if provided
@@ -77,7 +72,7 @@ export class ContentController {
       getLogger().info(
         {
           id,
-          contentType: data.contentType,
+          contentType,
           size,
         },
         'Content stored successfully',
@@ -85,7 +80,7 @@ export class ContentController {
 
       return {
         id,
-        contentType: data.contentType,
+        contentType,
         size,
         createdAt: now,
       };
@@ -103,7 +98,6 @@ export class ContentController {
     contentType: string;
     size: number;
     metadata?: Record<string, any>;
-    acl?: { public?: boolean };
     expirationSeconds?: number;
     sha256?: string;
     userId?: string;
@@ -324,8 +318,8 @@ export class ContentController {
       const id = key.startsWith('upload/')
         ? key.substring(7)
         : key.startsWith('content/')
-        ? key.substring(8)
-        : key;
+          ? key.substring(8)
+          : key;
 
       // Store metadata in D1
       const now = Math.floor(Date.now() / 1000);

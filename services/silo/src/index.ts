@@ -7,24 +7,28 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getLogger, metrics } from '@dome/logging';
-import { NotImplementedError } from '@dome/common';
 import { R2Event } from './types';
 import { wrap } from './utils/wrap';
 import { createServices, Services } from './services';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import {
-  simplePutSchema,
-  createUploadSchema,
-  batchGetSchema,
-  deleteSchema,
-  statsSchema,
-  SimplePutInput,
-  CreateUploadInput,
-  BatchGetInput,
-  DeleteInput,
-  StatsInput,
-} from './models';
+  siloSimplePutSchema,
+  siloCreateUploadSchema,
+  siloBatchGetSchema,
+  siloDeleteSchema,
+  siloStatsSchema,
+  SiloSimplePutInput,
+  SiloCreateUploadInput,
+  SiloBatchGetInput,
+  SiloDeleteInput,
+  SiloStatsInput,
+  SiloSimplePutResponse,
+  SiloCreateUploadResponse,
+  SiloBatchGetResponse,
+  SiloDeleteResponse,
+  SiloStatsResponse,
+} from '@dome/common';
 
 /**
  * Silo service main class
@@ -73,11 +77,11 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Synchronously store small content items
    */
-  async simplePut(data: SimplePutInput) {
+  async simplePut(data: SiloSimplePutInput): Promise<SiloSimplePutResponse> {
     return wrap({ operation: 'simplePut' }, async () => {
       try {
         // Validate input
-        const validatedData = simplePutSchema.parse(data);
+        const validatedData = siloSimplePutSchema.parse(data);
         return await this.services.content.simplePut(validatedData);
       } catch (error) {
         if (error instanceof z.ZodError) {
@@ -100,11 +104,11 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Generate pre-signed forms for direct browser-to-R2 uploads
    */
-  async createUpload(data: CreateUploadInput) {
+  async createUpload(data: SiloCreateUploadInput): Promise<SiloCreateUploadResponse> {
     return wrap({ operation: 'createUpload' }, async () => {
       try {
         // Validate input
-        const validatedData = createUploadSchema.parse(data);
+        const validatedData = siloCreateUploadSchema.parse(data);
         return await this.services.content.createUpload(validatedData);
       } catch (error) {
         if (error instanceof z.ZodError) {
@@ -127,11 +131,11 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Efficiently retrieve multiple content items
    */
-  async batchGet(data: BatchGetInput) {
+  async batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse> {
     return wrap({ operation: 'batchGet' }, async () => {
       try {
         // Validate input
-        const validatedData = batchGetSchema.parse(data);
+        const validatedData = siloBatchGetSchema.parse(data);
         return await this.services.content.batchGet(validatedData);
       } catch (error) {
         if (error instanceof z.ZodError) {
@@ -154,11 +158,11 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Delete content items
    */
-  async delete(data: DeleteInput) {
+  async delete(data: SiloDeleteInput): Promise<SiloDeleteResponse> {
     return wrap({ operation: 'delete', id: data.id }, async () => {
       try {
         // Validate input
-        const validatedData = deleteSchema.parse(data);
+        const validatedData = siloDeleteSchema.parse(data);
         return await this.services.content.delete(validatedData);
       } catch (error) {
         if (error instanceof z.ZodError) {
@@ -181,11 +185,11 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Get storage statistics
    */
-  async stats(data: StatsInput = {}) {
+  async stats(data: SiloStatsInput = {}): Promise<SiloStatsResponse> {
     return wrap({ operation: 'stats' }, async () => {
       try {
         // Validate input (empty object is fine for stats)
-        statsSchema.parse(data);
+        siloStatsSchema.parse(data);
         return await this.services.stats.getStats();
       } catch (error) {
         if (error instanceof z.ZodError) {

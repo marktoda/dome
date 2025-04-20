@@ -1,7 +1,7 @@
 import { getLogger, metrics } from '@dome/logging';
 import { drizzle } from 'drizzle-orm/d1';
 import { contents } from '../db/schema';
-import { ContentMetadata } from '../types';
+import { SiloContentMetadata } from '@dome/common';
 
 /**
  * MetadataService - A wrapper around D1 for content metadata operations
@@ -18,7 +18,7 @@ export class MetadataService {
    * Insert new content metadata
    * Uses onConflictDoNothing for idempotent operations
    */
-  async insertMetadata(data: Omit<ContentMetadata, 'version'> & { sha256?: string | null }) {
+  async insertMetadata(data: Omit<SiloContentMetadata, 'version'> & { sha256?: string | null }) {
     const startTime = Date.now();
 
     try {
@@ -44,18 +44,18 @@ export class MetadataService {
   /**
    * Get content metadata by ID
    */
-  async getMetadataById(id: string): Promise<ContentMetadata | null> {
+  async getMetadataById(id: string): Promise<SiloContentMetadata | null> {
     const startTime = Date.now();
 
     try {
       const result = await this.env.DB.prepare(
         `
-        SELECT 
-          id, 
-          user_id as userId, 
-          content_type as contentType, 
-          size, 
-          r2_key as r2Key, 
+        SELECT
+          id,
+          user_id as userId,
+          content_type as contentType,
+          size,
+          r2_key as r2Key,
           sha256,
           created_at as createdAt,
           version
@@ -68,7 +68,7 @@ export class MetadataService {
 
       metrics.timing('silo.d1.get.latency_ms', Date.now() - startTime);
 
-      return result as ContentMetadata | null;
+      return result as SiloContentMetadata | null;
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get' });
       getLogger().error({ error, id }, 'Error getting content metadata');
@@ -79,7 +79,7 @@ export class MetadataService {
   /**
    * Get content metadata for multiple IDs
    */
-  async getMetadataByIds(ids: string[]): Promise<ContentMetadata[]> {
+  async getMetadataByIds(ids: string[]): Promise<SiloContentMetadata[]> {
     if (ids.length === 0) return [];
 
     const startTime = Date.now();
@@ -88,12 +88,12 @@ export class MetadataService {
       const placeholders = ids.map(() => '?').join(',');
       const { results } = (await this.env.DB.prepare(
         `
-        SELECT 
-          id, 
-          user_id as userId, 
-          content_type as contentType, 
-          size, 
-          r2_key as r2Key, 
+        SELECT
+          id,
+          user_id as userId,
+          content_type as contentType,
+          size,
+          r2_key as r2Key,
           sha256,
           created_at as createdAt,
           version
@@ -102,7 +102,7 @@ export class MetadataService {
       `,
       )
         .bind(...ids)
-        .all()) as { results: ContentMetadata[] };
+        .all()) as { results: SiloContentMetadata[] };
 
       metrics.timing('silo.d1.get_many.latency_ms', Date.now() - startTime);
 

@@ -16,19 +16,3 @@ export interface R2Event {
     httpEtag: string;
   };
 }
-
-/**
- * Content metadata structure
- */
-export interface ContentMetadata {
-  id: string;
-  userId: string | null;
-  contentType: string;
-  size: number;
-  r2Key: string;
-  sha256?: string;
-  createdAt: number;
-  version: number;
-}
-
-// Use the Cloudflare types for MessageBatch
