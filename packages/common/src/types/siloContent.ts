@@ -60,6 +60,7 @@ export interface SiloContent {
 
   // Content fields
   title?: string;
+  summary?: string;
   body: string;
 
   // Additional metadata as a generic record
