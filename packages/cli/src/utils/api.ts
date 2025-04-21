@@ -166,18 +166,18 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
     return Array.isArray(response.notes)
       ? response.notes
       : Array.isArray(response.items)
-      ? response.items
-      : Array.isArray(response)
-      ? response
-      : [];
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
   } else {
     return Array.isArray(response.tasks)
       ? response.tasks
       : Array.isArray(response.items)
-      ? response.items
-      : Array.isArray(response)
-      ? response
-      : [];
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
   }
 }
 
@@ -252,8 +252,6 @@ export async function chat(message: string): Promise<any> {
   };
 
   const response = await api.post('/chat', payload);
-
-  console.log('Raw API response:', JSON.stringify(response, null, 2));
 
   // Handle the response structure properly
   if (response && response.success === true && typeof response.response === 'string') {

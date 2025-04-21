@@ -12,21 +12,83 @@ export class ChatMode extends BaseMode {
    * @param containerWidth The width of the container
    * @returns void - pushes lines directly to the container
    */
+  /**
+   * Enhanced text wrapping function that handles various edge cases
+   * @param text The text to wrap
+   * @param containerWidth The width of the container
+   * @returns void - pushes lines directly to the container
+   */
   private wrapText(text: string, containerWidth: number): void {
+    // Safety check for container width
+    if (containerWidth <= 0) {
+      containerWidth = 80; // Fallback to a reasonable default
+    }
+    
+    // Reserve some space for safety margin
+    const safeWidth = Math.max(containerWidth - 2, 10);
+    
+    // Handle empty or undefined text
+    if (!text) {
+      this.container.pushLine('');
+      return;
+    }
+    
     // Split the text into lines and handle each line
     const lines = text.split('\n');
     for (const line of lines) {
-      // If the line is shorter than the container width, add it directly
-      if (line.length <= containerWidth) {
+      // Skip empty lines but preserve them in output
+      if (line.trim() === '') {
+        this.container.pushLine('');
+        continue;
+      }
+      
+      // If the line is shorter than the safe width, add it directly
+      if (line.length <= safeWidth) {
         this.container.pushLine(line);
-      } else {
-        // Otherwise, wrap the line to fit the container width
-        let remainingText = line;
-        while (remainingText.length > 0) {
-          const chunk = remainingText.substring(0, containerWidth);
-          this.container.pushLine(chunk);
-          remainingText = remainingText.substring(containerWidth);
+        continue;
+      }
+      
+      // For longer lines, use word-based wrapping when possible
+      let currentLine = '';
+      const words = line.split(' ');
+      
+      for (let i = 0; i < words.length; i++) {
+        let word = words[i];
+        
+        // Handle very long words (like URLs) by breaking them up
+        if (word.length > safeWidth) {
+          // If we have content in the current line, push it first
+          if (currentLine) {
+            this.container.pushLine(currentLine);
+            currentLine = '';
+          }
+          
+          // Break up the long word
+          while (word.length > safeWidth) {
+            const chunk = word.substring(0, safeWidth - 1) + '-';
+            this.container.pushLine(chunk);
+            word = word.substring(safeWidth - 1);
+          }
+          
+          // Add the remainder to the current line
+          currentLine = word;
+        } else {
+          // Check if adding this word would exceed the line width
+          const testLine = currentLine ? currentLine + ' ' + word : word;
+          
+          if (testLine.length <= safeWidth) {
+            currentLine = testLine;
+          } else {
+            // Line would be too long, push current line and start a new one
+            this.container.pushLine(currentLine);
+            currentLine = word;
+          }
         }
+      }
+      
+      // Push any remaining content
+      if (currentLine) {
+        this.container.pushLine(currentLine);
       }
     }
   }
