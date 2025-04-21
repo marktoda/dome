@@ -143,7 +143,10 @@ export async function addNote(context: string, content: string): Promise<any> {
  * @returns The response data
  */
 export async function listItems(type: 'notes' | 'tasks', filter?: string): Promise<any> {
-  const params: Record<string, any> = {};
+  const params: Record<string, any> = {
+    fields: 'title,summary,body,tags,contentType,createdAt'
+  };
+
   if (filter) {
     // The new API uses different filtering parameters
     if (type === 'notes') {
@@ -158,26 +161,34 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
   // Use the correct endpoint based on type
   const endpoint = type === 'notes' ? '/notes' : '/tasks';
   const response = await api.get(endpoint, { params });
-
   // Extract the items array from the response
   // The API might return items in different properties based on the type
+  let items = [];
+  
   if (type === 'notes') {
-    return Array.isArray(response.notes)
+    items = Array.isArray(response.notes)
       ? response.notes
       : Array.isArray(response.items)
-      ? response.items
-      : Array.isArray(response)
-      ? response
-      : [];
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
   } else {
-    return Array.isArray(response.tasks)
+    items = Array.isArray(response.tasks)
       ? response.tasks
       : Array.isArray(response.items)
-      ? response.items
-      : Array.isArray(response)
-      ? response
-      : [];
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
   }
+  
+  // Return an object with the appropriate property containing the items array
+  return {
+    [type]: items,
+    items: items,
+    total: response.total || items.length
+  };
 }
 
 /**
@@ -217,6 +228,7 @@ export async function search(query: string, limit: number = 10): Promise<any> {
   const params = {
     q: query,
     limit,
+    fields: 'title,summary,body,tags,contentType,createdAt',
   };
 
   // Use the dedicated search endpoint

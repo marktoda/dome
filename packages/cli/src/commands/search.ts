@@ -47,6 +47,10 @@ export function searchCommand(program: Command): void {
           if (match.title) {
             console.log(formatKeyValue('Title', match.title));
           }
+          
+          if (match.summary) {
+            console.log(formatKeyValue('Summary', match.summary));
+          }
 
           if (match.tags && match.tags.length > 0) {
             console.log(formatKeyValue('Tags', match.tags.join(', ')));

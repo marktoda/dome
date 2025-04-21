@@ -21,11 +21,9 @@ binding = "NEW_CONTENT_AI"
 queue = "new-content-ai"
 
 [[queues.consumers]]
-binding = "CONTENT_EVENTS"
 queue = "content-events"
 
 [[queues.consumers]]
-binding = "ENRICHED_CONTENT"
 queue = "enriched-content"
 
 [vars]

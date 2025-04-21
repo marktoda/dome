@@ -412,6 +412,7 @@ export class ContentController {
       throw new Error('User ID is required when not providing specific content IDs');
     }
 
+    logger.info({ userId, contentType }, 'fetching all metadata for user');
     return this.metadataService.getMetadataByUserId(userId, contentType, limit, offset);
   }
 }

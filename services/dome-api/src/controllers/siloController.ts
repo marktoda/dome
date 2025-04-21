@@ -10,6 +10,7 @@ import {
   siloSimplePutSchema,
   siloCreateUploadSchema,
   ContentCategory,
+  SiloBatchGetResponse,
 } from '@dome/common';
 
 /**
@@ -215,8 +216,8 @@ export class SiloController {
 
       return c.json({
         success: true,
-        notes: result.notes,
-        count: result.count,
+        notes: result.items,
+        count: result.items,
         total: result.total,
         limit: result.limit,
         offset: result.offset,

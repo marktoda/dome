@@ -53,16 +53,22 @@ export function listCommand(program: Command): void {
 
         if (type === 'notes') {
           // Format notes as a table
-          const headers = ['ID', 'Title', 'Content', 'Created', 'Tags'];
+          const headers = ['ID', 'Title', 'Summary', 'Content', 'Created', 'Tags'];
           const rows = items.map((note: any) => {
             // Truncate content if it's too long
             const content = note.body || '';
             const truncatedContent =
               content.length > 50 ? content.substring(0, 47) + '...' : content;
+              
+            // Truncate summary if it's too long
+            const summary = note.summary || '';
+            const truncatedSummary =
+              summary.length > 50 ? summary.substring(0, 47) + '...' : summary;
 
             return [
               note.id,
               note.title || '(No title)',
+              truncatedSummary || '(No summary)',
               truncatedContent,
               new Date(note.createdAt).toLocaleString(),
               (note.tags || []).join(', '),

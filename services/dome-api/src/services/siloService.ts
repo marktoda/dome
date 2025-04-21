@@ -247,7 +247,7 @@ export class SiloService {
     env: Bindings,
     options: { category?: string; limit?: number; offset?: number },
     userId?: string,
-  ) {
+  ): Promise<SiloBatchGetResponse> {
     try {
       if (!userId) {
         throw new Error('User ID is required for listing notes');
@@ -264,22 +264,8 @@ export class SiloService {
         offset,
       });
 
-      if (!response.items || response.items.length === 0) {
-        return {
-          notes: [],
-          count: 0,
-          total: response.total || 0,
-          limit,
-          offset,
-        };
-      }
-
-      // Map the batch items to notes
-      const notes = response.items.map(item => this.mapBatchGetItemToContent(item));
-
       return {
-        notes,
-        count: notes.length,
+        items: response.items,
         total: response.total || 0,
         limit,
         offset,
@@ -296,44 +282,6 @@ export class SiloService {
         context: { userId, options },
       });
     }
-  }
-
-  /**
-   * Map a Silo BatchGetItem to a SiloContent object
-   *
-   * @param item - The Silo batch get item to map
-   * @returns A SiloContent object
-   */
-  private mapBatchGetItemToContent(item: SiloBatchGetItem): SiloContent {
-    // Extract title from metadata if available
-    let title = '';
-    let metadata: Record<string, any> = {};
-
-    try {
-      // Attempt to parse metadata from the content if it exists
-      if (item.body) {
-        const firstLine = item.body.split('\n')[0].trim();
-        if (firstLine) {
-          title = firstLine;
-        }
-      }
-    } catch (error) {
-      // If parsing fails, use a default title
-      title = `Content ${item.id}`;
-    }
-
-    return {
-      id: item.id,
-      userId: item.userId || null,
-      title: title,
-      body: item.body || '',
-      category: item.category,
-      mimeType: item.mimeType,
-      size: item.size,
-      createdAt: item.createdAt * 1000, // Convert seconds to milliseconds
-      updatedAt: item.createdAt * 1000, // Use same timestamp for updatedAt initially
-      metadata: metadata,
-    };
   }
 }
 
