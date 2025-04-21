@@ -150,22 +150,22 @@ export class SiloService {
    */
   async getContentsAsNotes(env: Bindings, ids: string[], userId?: string) {
     try {
-      // Use console.log directly for debugging
-      console.log('DOME-DEBUG: getContentsAsNotes called with', JSON.stringify({
+      // Use getLogger().info for debugging
+      this.logger.info({
         idsCount: ids.length,
         firstFewIds: ids.slice(0, 5),
         userId
-      }));
+      }, 'getContentsAsNotes called');
       
       if (ids.length === 0) {
-        console.log('DOME-DEBUG: No IDs provided to getContentsAsNotes, returning empty array');
+        this.logger.info('No IDs provided to getContentsAsNotes, returning empty array');
         return [];
       }
 
-      console.log('DOME-DEBUG: Calling batchGet with', JSON.stringify({
+      this.logger.info({
         idsCount: ids.length,
         userId
-      }));
+      }, 'Calling batchGet');
       
       const response = await this.batchGet(env, {
         ids,
@@ -173,26 +173,26 @@ export class SiloService {
       });
 
       if (!response.items || response.items.length === 0) {
-        console.log('DOME-DEBUG: No items returned from batchGet', JSON.stringify({
+        this.logger.info({
           responseHasItems: !!response.items,
           itemsLength: response.items?.length || 0
-        }));
+        }, 'No items returned from batchGet');
         return [];
       }
 
-      console.log('DOME-DEBUG: Items returned from batchGet', JSON.stringify({
+      this.logger.info({
         itemsCount: response.items.length,
         firstItemId: response.items[0]?.id,
         firstItemUserId: response.items[0]?.userId
-      }));
+      }, 'Items returned from batchGet');
       
       return response.items.map(item => {
         const content = this.mapBatchGetItemToContent(item);
-        console.log('DOME-DEBUG: Mapped item to content', JSON.stringify({
+        this.logger.info({
           itemId: item.id,
           contentId: content.id,
           contentTitle: content.title?.substring(0, 20)
-        }));
+        }, 'Mapped item to content');
         return content;
       });
     } catch (error) {

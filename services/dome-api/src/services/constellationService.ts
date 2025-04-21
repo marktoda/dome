@@ -43,17 +43,17 @@ export class ConstellationService {
     try {
       this.validateConstellationBinding(env.CONSTELLATION);
 
-      console.log('DOME-DEBUG: query called with', JSON.stringify({
+      this.logger.info({
         text,
         filter,
         topK
-      }));
+      }, 'query called');
 
       const processedText = this.preprocess(text);
-      console.log('DOME-DEBUG: Preprocessed text', JSON.stringify({
+      this.logger.info({
         original: text,
         processed: processedText
-      }));
+      }, 'Preprocessed text');
       
       this.logger.debug('Querying embeddings', {
         textLength: text.length,
@@ -61,17 +61,17 @@ export class ConstellationService {
         topK,
       });
 
-      console.log('DOME-DEBUG: Calling env.CONSTELLATION.query with', JSON.stringify({
+      this.logger.info({
         processedTextLength: processedText.length,
         filter,
         topK
-      }));
+      }, 'Calling env.CONSTELLATION.query');
       const results = await env.CONSTELLATION!.query(processedText, filter, topK);
 
-      console.log('DOME-DEBUG: Query results', JSON.stringify({
+      this.logger.info({
         resultCount: results.length,
         firstResultId: results.length > 0 ? results[0].id : null
-      }));
+      }, 'Query results');
       
       this.logger.debug('Successfully queried embeddings', {
         resultCount: results.length,
@@ -139,37 +139,37 @@ export class ConstellationService {
     topK: number = DEFAULT_TOP_K,
   ): Promise<Array<{ contentId: string; score: number }>> {
     try {
-      console.log('DOME-DEBUG: searchNotes called with', JSON.stringify({
+      this.logger.info({
         query,
         userId,
         topK
-      }));
+      }, 'searchNotes called');
       
       const filter: Partial<VectorMeta> = { userId };
-      console.log('DOME-DEBUG: Using filter for vector search', JSON.stringify(filter));
+      this.logger.info(filter, 'Using filter for vector search');
 
       const results = await this.query(env, query, filter, topK);
-      console.log('DOME-DEBUG: Vector search returned results', JSON.stringify({
+      this.logger.info({
         resultCount: results.length
-      }));
+      }, 'Vector search returned results');
 
       // Inline the mapVectorResultsToContentIds logic
       // Add detailed logging to understand the metadata structure
       if (results.length > 0) {
         const firstResult = results[0];
-        console.log('DOME-DEBUG: First search result', JSON.stringify({
+        this.logger.info({
           id: firstResult.id,
           score: firstResult.score,
           metadata: firstResult.metadata,
           hasContentId: 'contentId' in firstResult.metadata,
           metadataKeys: Object.keys(firstResult.metadata)
-        }));
+        }, 'First search result');
       }
       
       const mappedResults = results.map(result => {
         // Check if metadata exists
         if (!result.metadata) {
-          console.log('DOME-DEBUG: Missing metadata in search result:', JSON.stringify({ id: result.id }));
+          this.logger.info({ id: result.id }, 'Missing metadata in search result');
           return { contentId: '', score: result.score };
         }
         
@@ -187,11 +187,11 @@ export class ConstellationService {
           }
         }
         
-        console.log('DOME-DEBUG: Mapped result', JSON.stringify({
+        this.logger.info({
           id: result.id,
           contentId,
           score: result.score
-        }));
+        }, 'Mapped result');
         
         return {
           contentId,
@@ -199,10 +199,10 @@ export class ConstellationService {
         };
       });
       
-      console.log('DOME-DEBUG: Final mapped results', JSON.stringify({
+      this.logger.info({
         count: mappedResults.length,
         firstFew: mappedResults.slice(0, 3)
-      }));
+      }, 'Final mapped results');
       
       return mappedResults;
     } catch (error) {

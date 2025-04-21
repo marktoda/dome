@@ -29,7 +29,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230914.0",
     "@types/node": "^20.8.0",
-    "drizzle-kit": "^0.20.18",
+    "drizzle-kit": "^0.31.0",
     "eslint": "^8.50.0",
     "miniflare": "^3.20231030.0",
     "prettier": "^3.0.0",

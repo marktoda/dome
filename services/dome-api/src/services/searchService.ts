@@ -122,45 +122,45 @@ export class SearchService {
       }
 
       // Get unique content IDs
-      console.log('DOME-DEBUG: Search results from constellation', JSON.stringify({
+      this.logger.info({
         resultCount: searchResults.length,
         firstResult: searchResults.length > 0 ? {
           contentId: searchResults[0].contentId,
           score: searchResults[0].score
         } : null
-      }));
+      }, 'Search results from constellation');
       
       const contentIds = [...new Set(searchResults.map(result => {
         const contentId = result.contentId;
-        console.log('DOME-DEBUG: Extracted contentId from search result', JSON.stringify({
+        this.logger.info({
           contentId,
           score: result.score
-        }));
+        }, 'Extracted contentId from search result');
         return contentId;
       }))];
       
-      console.log('DOME-DEBUG: Unique content IDs extracted', JSON.stringify({
+      this.logger.info({
         contentIdsCount: contentIds.length,
         firstFewContentIds: contentIds.slice(0, 5)
-      }));
+      }, 'Unique content IDs extracted');
 
       // Retrieve content from Silo
-      console.log('DOME-DEBUG: Calling siloService.getContentsAsNotes', JSON.stringify({
+      this.logger.info({
         contentIdsCount: contentIds.length,
         userId
-      }));
+      }, 'Calling siloService.getContentsAsNotes');
       const contents = await siloService.getContentsAsNotes(env, contentIds, userId);
-      console.log('DOME-DEBUG: Results from siloService.getContentsAsNotes', JSON.stringify({
+      this.logger.info({
         contentsCount: contents.length,
         firstContentId: contents.length > 0 ? contents[0].id : null
-      }));
+      }, 'Results from siloService.getContentsAsNotes');
 
       // Map content IDs to scores
       const scoreMap = new Map<string, number>();
       for (const result of searchResults) {
         scoreMap.set(result.contentId, result.score);
       }
-      console.log('DOME-DEBUG: Created score map', JSON.stringify({ scoreMapSize: scoreMap.size }));
+      this.logger.info({ scoreMapSize: scoreMap.size }, 'Created score map');
 
       // Filter and transform results
       let filteredResults = contents

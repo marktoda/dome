@@ -290,8 +290,9 @@ export class SiloController {
 
       // Validate request body
       const body = await c.req.json();
-      this.logger.debug({ requestBody: body }, 'Received ingest request data');
+      this.logger.info({ requestBody: body }, 'Received ingest request data');
       const validatedData = ingestSchema.parse(body);
+      this.logger.info({ ingestRequest: validatedData }, 'Validated Ingest data');
 
       // Get user ID from context (set by middleware)
       const userId = c.get('userId');

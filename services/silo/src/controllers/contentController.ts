@@ -25,6 +25,19 @@ export class ContentController {
     const startTime = Date.now();
 
     try {
+      // Add debug logging for the input data
+      getLogger().info({
+        contentType: data.contentType,
+        userId: data.userId,
+        hasId: !!data.id,
+        contentIsString: typeof data.content === 'string',
+        contentLength: typeof data.content === 'string'
+          ? data.content.length
+          : data.content.byteLength,
+        content: data.content,
+        hasMetadata: !!data.metadata
+      }, 'simplePut input data');
+
       // Generate a unique ID if not provided
       const id = data.id || ulid();
 
