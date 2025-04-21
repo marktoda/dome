@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { searchController, PaginatedSearchResults } from '../../src/controllers/searchController';
-import { searchService } from '../../src/services/searchService';
+import { searchController } from '../../src/controllers/searchController';
+import { searchService, PaginatedSearchResults } from '../../src/services/searchService';
 import { ServiceError } from '@dome/common';
 import { z } from 'zod';
 
@@ -40,6 +40,7 @@ describe('SearchController', () => {
       {
         id: 'note-123',
         title: 'Test Note',
+        summary: 'Test note summary',
         body: 'This is a test note',
         score: 0.95,
         createdAt: 1617235678000,
@@ -50,6 +51,7 @@ describe('SearchController', () => {
       {
         id: 'note-456',
         title: 'Another Test Note',
+        summary: 'Another test note summary',
         body: 'This is another test note',
         score: 0.85,
         createdAt: 1617235679000,

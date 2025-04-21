@@ -5,6 +5,7 @@ import { MetadataService } from '../services/metadataService';
 import { QueueService } from '../services/queueService';
 import { R2Event } from '../types';
 import {
+  SiloContentMetadata,
   SiloSimplePutResponse,
   SiloSimplePutInput,
   ContentCategory,
@@ -406,7 +407,7 @@ export class ContentController {
     contentType: string | undefined,
     limit: number,
     offset: number,
-  ) {
+  ): Promise<SiloContentMetadata[]> {
     if (!userId) {
       logger.warn('User ID is required when not providing specific content IDs');
       throw new Error('User ID is required when not providing specific content IDs');

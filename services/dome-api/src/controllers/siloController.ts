@@ -150,7 +150,7 @@ export class SiloController {
         'Get note request received',
       );
 
-      const note = await siloService.getContentAsNote(c.env, id, userId);
+      const note = await siloService.batchGet(c.env, { ids: [id], userId });
 
       if (!note) {
         return c.json(
@@ -212,7 +212,7 @@ export class SiloController {
       const validatedParams = listNotesSchema.parse(c.req.query());
 
       // Call the siloService to list notes
-      const result = await siloService.listNotes(c.env, validatedParams, userId);
+      const result = await siloService.batchGet(c.env, Object.assign({ userId }, validatedParams));
 
       return c.json({
         success: true,
@@ -269,7 +269,7 @@ export class SiloController {
         );
       }
 
-      const notes = await siloService.getContentsAsNotes(c.env, ids, userId);
+      const notes = await siloService.batchGet(c.env, { ids, userId });
 
       return c.json({
         success: true,
@@ -319,7 +319,7 @@ export class SiloController {
       });
 
       // Get the created note
-      const note = await siloService.getContentAsNote(c.env, result.id, userId);
+      const note = await siloService.get(c.env, { id: result.id, userId });
 
       // Return the created note
       return c.json(
@@ -378,17 +378,7 @@ export class SiloController {
       );
 
       // Get the existing note
-      const existingNote = await siloService.getContentAsNote(c.env, noteId, userId);
-
-      if (!existingNote) {
-        return c.json(
-          {
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Note not found' },
-          },
-          404,
-        );
-      }
+      const existingNote = await siloService.get(c.env, { id: noteId, userId });
 
       // Validate request body
       const body = await c.req.json();
@@ -411,7 +401,7 @@ export class SiloController {
       });
 
       // Get the updated note
-      const note = await siloService.getContentAsNote(c.env, noteId, userId);
+      const note = await siloService.get(c.env, { id: noteId, userId });
 
       // Return the updated note
       return c.json({

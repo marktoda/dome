@@ -24,6 +24,7 @@ export interface SearchOptions {
 export interface SearchResult {
   id: string;
   title: string;
+  summary: string;
   body: string;
   category: string;
   mimeType: string;
@@ -140,9 +141,9 @@ export class SearchService {
           firstResult:
             searchResults.length > 0
               ? {
-                  contentId: searchResults[0].contentId,
-                  score: searchResults[0].score,
-                }
+                contentId: searchResults[0].contentId,
+                score: searchResults[0].score,
+              }
               : null,
         },
         'Search results from constellation',
@@ -180,11 +181,11 @@ export class SearchService {
         },
         'Calling siloService.getContentsAsNotes',
       );
-      const contents = await siloService.getContentsAsNotes(env, contentIds, userId);
+      const contents = await siloService.batchGet(env, { ids: contentIds, userId });
       this.logger.info(
         {
-          contentsCount: contents.length,
-          firstContentId: contents.length > 0 ? contents[0].id : null,
+          contentsCount: contents.items.length,
+          firstContentId: contents.items.length > 0 ? contents.items[0].id : null,
         },
         'Results from siloService.getContentsAsNotes',
       );
@@ -197,7 +198,7 @@ export class SearchService {
       this.logger.info({ scoreMapSize: scoreMap.size }, 'Created score map');
 
       // Filter and transform results
-      let filteredResults = contents
+      let filteredResults = contents.items
         .filter(note => {
           // Skip notes with missing required fields
           if (!note.id || !note.category) {
@@ -233,16 +234,15 @@ export class SearchService {
           }
 
           const createdAt = note.createdAt || Date.now();
-          const updatedAt = note.updatedAt || createdAt;
 
           return {
             id: note.id,
             title: note.title || '',
+            summary: note.summary || '',
             body: note.body || '',
             category: note.category,
             mimeType: note.mimeType || 'text/plain',
             createdAt: createdAt,
-            updatedAt: updatedAt,
             score: scoreMap.get(note.id) || 0,
           } as SearchResult;
         })
@@ -315,9 +315,8 @@ export class SearchService {
       startDate,
       endDate,
     } = options;
-    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${
-      startDate || ''
-    }:${endDate || ''}`;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''
+      }:${endDate || ''}`;
   }
 
   /**

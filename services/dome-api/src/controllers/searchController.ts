@@ -2,29 +2,8 @@ import { Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { Bindings } from '../types';
-import { searchService } from '../services/searchService';
+import { searchService, PaginatedSearchResults } from '../services/searchService';
 import { trackTiming, trackOperation, incrementCounter, getMetrics } from '../utils/metrics';
-
-// Import the PaginatedSearchResults interface from the service file
-export interface PaginatedSearchResults {
-  results: Array<{
-    id: string;
-    title: string;
-    body: string;
-    category: string;
-    mimeType: string;
-    createdAt: number;
-    updatedAt: number;
-    score: number;
-  }>;
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-  query: string;
-}
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { getLogger } from '@dome/logging';
 import { ServiceError } from '@dome/common';

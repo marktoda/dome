@@ -66,6 +66,7 @@ describe('Search API Integration Tests', () => {
       {
         id: 'note-123',
         title: 'Test Note',
+        summary: 'Test note summary',
         body: 'This is a test note',
         score: 0.95,
         createdAt: 1617235678000,
@@ -76,6 +77,7 @@ describe('Search API Integration Tests', () => {
       {
         id: 'note-456',
         title: 'Another Test Note',
+        summary: 'Another test note summary',
         body: 'This is another test note',
         score: 0.85,
         createdAt: 1617235679000,

@@ -35,6 +35,8 @@ export type MimeType = z.infer<typeof MimeTypeSchema>;
 export interface SiloContentMetadata {
   id: string;
   userId: string | null;
+  title?: string;
+  summary?: string;
   category: ContentCategory;
   mimeType: MimeType;
   size: number;
@@ -213,6 +215,8 @@ export interface SiloBatchGetItem {
   userId: string | null;
   /** Category of content (note, code, etc.) */
   category: ContentCategory;
+  title?: string;
+  summary?: string;
   /** MIME type of the content */
   mimeType: MimeType;
   /** Size of the content in bytes */
