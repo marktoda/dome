@@ -1,0 +1,28 @@
+{
+  "name": "dome-infrastructure",
+  "version": "1.0.0",
+  "description": "Dome infrastructure as code using Pulumi",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "preview": "pulumi preview",
+    "up": "pulumi up",
+    "refresh": "pulumi refresh",
+    "destroy": "pulumi destroy",
+    "import": "ts-node scripts/import-existing.ts",
+    "validate": "ts-node scripts/validate.ts"
+  },
+  "dependencies": {
+    "@pulumi/cloudflare": "^5.49.1",
+    "@pulumi/command": "^0.7.2",
+    "@pulumi/pulumi": "^3.163.0",
+    "dotenv": "^16.5.0",
+    "readline-sync": "^1.4.10"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.86",
+    "@types/readline-sync": "^1.4.8",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}

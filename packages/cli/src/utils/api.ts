@@ -111,7 +111,6 @@ export const api = {
  * @returns The response data
  */
 export async function addContent(content: string, title?: string, tags?: string[]): Promise<any> {
-  console.log('adding content', content);
   const payload = {
     content,
     contentType: 'text/plain',

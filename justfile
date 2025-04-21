@@ -74,21 +74,61 @@ setup-local: install build
     @echo "Local development environment setup complete!"
 
 # Pulumi commands
+# Preview infrastructure changes without deploying
 pulumi-preview ENV="dev":
-    cd infrastructure && pnpm exec pulumi preview --stack {{ ENV }}
+    cd infra && pnpm exec pulumi preview --stack {{ ENV }}
 
+# Deploy infrastructure changes
 pulumi-up ENV="dev":
-    cd infrastructure && pnpm exec pulumi up --stack {{ ENV }} --yes
+    cd infra && pnpm exec pulumi up --stack {{ ENV }} --yes
 
+# Destroy infrastructure (use with caution)
 pulumi-destroy ENV="dev":
-    cd infrastructure && pnpm exec pulumi destroy --stack {{ ENV }} --yes
+    cd infra && pnpm exec pulumi destroy --stack {{ ENV }} --yes
 
+# Initialize a new Pulumi stack
 pulumi-stack-init ENV:
-    cd infrastructure && pnpm exec pulumi stack init {{ ENV }}
+    cd infra && pnpm exec pulumi stack init {{ ENV }}
 
-# Deploy all services using Pulumi
-deploy-all ENV="dev": build
-    just pulumi-up {{ ENV }}
+# Deploy all infrastructure resources across all environments
+deploy-all: build
+    @echo "Deploying all infrastructure resources across all environments"
+    cd infra && pnpm exec ts-node scripts/deploy.ts dev up
+    cd infra && pnpm exec ts-node scripts/deploy.ts staging up
+    cd infra && pnpm exec ts-node scripts/deploy.ts prod up
+
+# Deploy only the development environment resources
+deploy-dev: build
+    @echo "Deploying development environment resources"
+    cd infra && pnpm exec ts-node scripts/deploy.ts dev up
+
+# Deploy only the staging environment resources
+deploy-staging: build
+    @echo "Deploying staging environment resources"
+    cd infra && pnpm exec ts-node scripts/deploy.ts staging up
+
+# Deploy only the production environment resources
+deploy-prod: build
+    @echo "Deploying production environment resources"
+    cd infra && pnpm exec ts-node scripts/deploy.ts prod up
+
+# Preview changes without deploying
+preview-all:
+    @echo "Previewing changes for all environments"
+    cd infra && pnpm exec ts-node scripts/deploy.ts dev preview
+    cd infra && pnpm exec ts-node scripts/deploy.ts staging preview
+    cd infra && pnpm exec ts-node scripts/deploy.ts prod preview
+
+# Destroy the development environment (for testing purposes)
+destroy-dev:
+    @echo "WARNING: This will destroy all resources in the development environment"
+    @echo "Are you sure you want to continue? (y/n)"
+    @read -r response; \
+    if [ "$$response" = "y" ]; then \
+        cd infra && pnpm exec ts-node scripts/deploy.ts dev destroy; \
+    else \
+        echo "Operation cancelled"; \
+    fi
 
 # Create a new TypeScript service with Hono
 new-service NAME:

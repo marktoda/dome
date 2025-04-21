@@ -1,0 +1,4 @@
+config:
+  cloudflare:accountId: ${CLOUDFLARE_ACCOUNT_ID}
+  dome-infrastructure:environment: dev
+  dome-infrastructure:logLevel: debug

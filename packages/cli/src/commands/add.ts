@@ -21,14 +21,11 @@ export function addCommand(program: Command): void {
         process.exit(1);
       }
 
-      // Log the content for debugging
-      console.log(`Received content: "${content}"`);
-      console.log(`Content length: ${content.length}`);
-
       try {
         // Check if content is a file path
         if (fs.existsSync(content) && fs.statSync(content).isFile()) {
-          const spinner = createSpinner(`Adding file: ${path.basename(content)}`);
+          const fileName = path.basename(content);
+          const spinner = createSpinner(`Adding file: ${fileName}`);
           spinner.start();
 
           // Read file content
@@ -37,15 +34,18 @@ export function addCommand(program: Command): void {
           // Add file content
           await addContent(fileContent);
 
-          spinner.succeed(`Added file: ${path.basename(content)}`);
+          spinner.succeed(`Added file: ${fileName}`);
         } else {
           // Add text content
-          const spinner = createSpinner('Adding content');
+          const contentPreview = content.length > 40
+            ? `${content.substring(0, 40)}...`
+            : content;
+          const spinner = createSpinner(`Adding: "${contentPreview}"`);
           spinner.start();
 
           await addContent(content);
 
-          spinner.succeed('Content added successfully');
+          spinner.succeed('Added to dome');
         }
       } catch (err) {
         console.log(

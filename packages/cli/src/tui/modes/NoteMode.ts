@@ -128,9 +128,13 @@ export class NoteMode extends BaseMode {
     // Use execSync for better terminal handling
     return new Promise((resolve, reject) => {
       try {
-        // Completely exit the blessed app to avoid terminal conflicts
-        this.screen.destroy();
-
+        // Save the current terminal state
+        const originalStdin = process.stdin.isRaw;
+        
+        // Leave the alternate screen buffer temporarily
+        this.screen.program.normalBuffer();
+        this.screen.program.clear();
+        
         // Use execSync for better terminal handling - this blocks until editor exits
         const { execSync } = require('child_process');
         const editor = this.getEditor();
@@ -141,12 +145,19 @@ export class NoteMode extends BaseMode {
             env: process.env,
           });
 
-          // Re-initialize the screen
+          // Return to the alternate screen buffer and restore the TUI
           process.nextTick(() => {
+            // Return to alternate buffer
+            this.screen.program.alternateBuffer();
+            
+            // Restore raw mode if it was enabled
+            if (originalStdin) {
+              process.stdin.setRawMode(true);
+            }
+            
             // Force a redraw of the screen
             this.screen.program.clear();
             this.screen.program.cursorReset();
-            this.screen.program.alternateBuffer();
             this.screen.realloc();
             this.screen.render();
 
@@ -154,11 +165,19 @@ export class NoteMode extends BaseMode {
             resolve();
           });
         } catch (error) {
-          // Re-initialize the screen even on error
+          // Return to the alternate screen buffer and restore the TUI even on error
           process.nextTick(() => {
+            // Return to alternate buffer
+            this.screen.program.alternateBuffer();
+            
+            // Restore raw mode if it was enabled
+            if (originalStdin) {
+              process.stdin.setRawMode(true);
+            }
+            
+            // Force a redraw of the screen
             this.screen.program.clear();
             this.screen.program.cursorReset();
-            this.screen.program.alternateBuffer();
             this.screen.realloc();
             this.screen.render();
 
@@ -177,12 +196,13 @@ export class NoteMode extends BaseMode {
   /**
    * Parse note content from file
    */
-  private parseNoteContent(filePath: string): { title: string; content: string; tags: string[] } {
+  private parseNoteContent(filePath: string): { title: string; content: string; tags: string[]; summary?: string } {
     const fileContent = fs.readFileSync(filePath, 'utf8');
     const lines = fileContent.split('\n');
 
     let title = 'Untitled Note';
     let tags: string[] = [];
+    let summary: string | undefined = undefined;
     let contentStartIndex = 0;
 
     // Parse metadata
@@ -201,6 +221,11 @@ export class NoteMode extends BaseMode {
         }
         continue;
       }
+      
+      if (line.startsWith('Summary:')) {
+        summary = line.substring(8).trim();
+        continue;
+      }
 
       if (line.includes('<!-- Write your note content below this line -->')) {
         contentStartIndex = i + 1;
@@ -209,7 +234,7 @@ export class NoteMode extends BaseMode {
 
       // If we've gone through several lines without finding the marker,
       // assume content starts after a reasonable number of metadata lines
-      if (i >= 5) {
+      if (i >= 7) { // Increased to account for possible summary line
         contentStartIndex = i;
         break;
       }
@@ -217,7 +242,7 @@ export class NoteMode extends BaseMode {
 
     const content = lines.slice(contentStartIndex).join('\n').trim();
 
-    return { title, content, tags };
+    return { title, content, tags, summary };
   }
 
   /**
@@ -268,6 +293,9 @@ export class NoteMode extends BaseMode {
         this.container.pushLine(
           `{bold}Content Type:{/bold} ${response.contentType || 'text/plain'}`,
         );
+        
+        // Show that the note will be processed for title and summary
+        this.container.pushLine('{gray-fg}Note will be processed to generate title and summary.{/gray-fg}');
       }
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
@@ -361,6 +389,11 @@ export class NoteMode extends BaseMode {
           ? new Date(result.createdAt).toLocaleString()
           : 'Unknown date';
         this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (${date})`);
+        
+        // Display summary if available
+        if (result.summary) {
+          this.container.pushLine(`   {gray-fg}${result.summary.substring(0, 80)}${result.summary.length > 80 ? '...' : ''}{/gray-fg}`);
+        }
       });
 
       this.container.pushLine('');
@@ -402,6 +435,11 @@ export class NoteMode extends BaseMode {
           const title = note.title || 'Untitled Note';
           const date = note.createdAt ? new Date(note.createdAt).toLocaleString() : 'Unknown date';
           this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (${date})`);
+          
+          // Display summary if available
+          if (note.summary) {
+            this.container.pushLine(`   {gray-fg}${note.summary.substring(0, 80)}${note.summary.length > 80 ? '...' : ''}{/gray-fg}`);
+          }
         });
 
         this.container.pushLine('');
@@ -464,11 +502,15 @@ export class NoteMode extends BaseMode {
         ? new Date(fullNote.createdAt).toISOString()
         : new Date().toISOString();
       const tags = fullNote.tags ? fullNote.tags.join(', ') : '';
-
+      
+      // Include summary in the metadata if available
+      const summary = fullNote.summary || '';
+      
       const fileContent = [
         `# ${title}`,
         `Date: ${date}`,
         `Tags: ${tags}`,
+        summary ? `Summary: ${summary}` : '',
         '',
         '<!-- Write your note content below this line -->',
         content,
@@ -506,6 +548,9 @@ export class NoteMode extends BaseMode {
       );
       if (response && response.id) {
         this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
+        
+        // Show that the note will be processed for title and summary
+        this.container.pushLine('{gray-fg}Note will be processed to generate title and summary.{/gray-fg}');
       }
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
