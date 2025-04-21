@@ -58,7 +58,29 @@ export class SiloService {
    * @returns Promise resolving to a map of ID to item (legacy format)
    */
   async batchGet(env: Bindings, data: SiloBatchGetInput): Promise<SiloBatchGetResponse> {
-    return env.SILO.batchGet(data);
+    try {
+      console.log('DOME-DEBUG: batchGet called with', JSON.stringify({
+        ids: data.ids,
+        userId: data.userId
+      }));
+      
+      const response = await env.SILO.batchGet(data);
+      
+      console.log('DOME-DEBUG: batchGet response', JSON.stringify({
+        hasItems: !!response.items,
+        itemsCount: response.items?.length || 0,
+        firstItemId: response.items?.[0]?.id || null,
+        total: response.total || 0
+      }));
+      
+      return response;
+    } catch (error) {
+      console.log('DOME-DEBUG: batchGet error', JSON.stringify({
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : typeof error
+      }));
+      throw error;
+    }
   }
 
   /**

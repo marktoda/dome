@@ -69,6 +69,7 @@
           boost
           catch2
           cmake
+          nodePackages.ts-node
           cargo-edit
           cargo-watch
           rust-analyzer

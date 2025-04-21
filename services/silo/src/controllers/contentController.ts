@@ -16,7 +16,7 @@ export class ContentController {
     private r2Service: R2Service,
     private metadataService: MetadataService,
     private queueService: QueueService,
-  ) {}
+  ) { }
 
   /**
    * Store small content items synchronously
@@ -188,86 +188,125 @@ export class ContentController {
     limit?: number;
     offset?: number;
   }) {
-    const requestUserId = data.userId || null;
-    const ids = data.ids || [];
-    const contentType = data.contentType;
-    const limit = data.limit || 50;
-    const offset = data.offset || 0;
+    try {
+      getLogger().info({
+        ids: data.ids,
+        userId: data.userId,
+        contentType: data.contentType,
+        limit: data.limit,
+        offset: data.offset
+      }, 'batchGet called');
 
-    let metadataItems: any[] = [];
+      const requestUserId = data.userId || null;
+      const ids = data.ids || [];
+      const contentType = data.contentType;
+      const limit = data.limit || 50;
+      const offset = data.offset || 0;
 
-    // If ids array is empty, fetch all content for the user
-    if (ids.length === 0) {
-      if (!requestUserId) {
-        throw new Error('User ID is required when not providing specific content IDs');
+      let metadataItems: any[] = [];
+
+      // If ids array is empty, fetch all content for the user
+      if (ids.length === 0) {
+        if (!requestUserId) {
+          getLogger().warn('User ID is required when not providing specific content IDs');
+          throw new Error('User ID is required when not providing specific content IDs');
+        }
+
+        getLogger().info({ requestUserId, contentType, limit, offset }, 'Fetching all content for user');
+        // Get metadata for all user content with pagination and filtering
+        metadataItems = await this.metadataService.getMetadataByUserId(
+          requestUserId,
+          contentType,
+          limit,
+          offset,
+        );
+      } else {
+        getLogger().info({ idsCount: ids.length, requestUserId }, 'Fetching metadata for specific IDs');
+        // Fetch metadata for specific IDs, filtering by userId if provided
+        metadataItems = await this.metadataService.getMetadataByIds(ids);
       }
 
-      // Get metadata for all user content with pagination and filtering
-      metadataItems = await this.metadataService.getMetadataByUserId(
-        requestUserId,
-        contentType,
+      getLogger().info({ metadataItemsCount: metadataItems.length }, 'Fetched metadata items');
+
+      const results: Record<string, any> = {};
+      const fetchPromises: Promise<void>[] = [];
+
+      for (const item of metadataItems) {
+        // ACL check
+        if (item.userId !== null && item.userId !== requestUserId) {
+          continue;
+        }
+
+        // Initialize result item
+        results[item.id] = {
+          id: item.id,
+          userId: item.userId,
+          contentType: item.contentType,
+          size: item.size,
+          createdAt: item.createdAt,
+        };
+
+        // Fetch content or generate URL using R2Service
+        const startTime = Date.now();
+        fetchPromises.push(
+          (async () => {
+            const obj = await this.r2Service.getObject(item.r2Key);
+            getLogger().info(
+              { itemId: item.id, latency: Date.now() - startTime },
+              'Fetched R2 object',
+            );
+            metrics.timing('silo.r2.get.latency_ms', Date.now() - startTime);
+            if (obj && item.size <= 1024 * 1024) {
+              results[item.id].body = await obj.text();
+            } else {
+              results[item.id].url = await this.r2Service.createPresignedUrl(item.r2Key, {
+                expiresIn: 3600,
+              });
+            }
+          })(),
+        );
+      }
+
+      await Promise.all(fetchPromises);
+
+      // If this was a listing request (empty ids array), get the total count
+      let total = metadataItems.length;
+      if (ids.length === 0 && requestUserId) {
+        total = await this.metadataService.getContentCountForUser(requestUserId, contentType);
+      }
+
+      getLogger().info({
+        itemsCount: Object.values(results).length,
+        total
+      }, 'Returning batchGet results');
+
+      return {
+        items: Object.values(results),
+        total,
         limit,
         offset,
-      );
-    } else {
-      // Fetch metadata for specific IDs
-      metadataItems = await this.metadataService.getMetadataByIds(ids);
-    }
-    getLogger().info({ metadataItems }, 'Fetched metadata items');
-
-    const results: Record<string, any> = {};
-    const fetchPromises: Promise<void>[] = [];
-
-    for (const item of metadataItems) {
-      // ACL check
-      if (item.userId !== null && item.userId !== requestUserId) {
-        continue;
-      }
-
-      // Initialize result item
-      results[item.id] = {
-        id: item.id,
-        userId: item.userId,
-        contentType: item.contentType,
-        size: item.size,
-        createdAt: item.createdAt,
       };
 
-      // Fetch content or generate URL using R2Service
-      const startTime = Date.now();
-      fetchPromises.push(
-        (async () => {
-          const obj = await this.r2Service.getObject(item.r2Key);
-          getLogger().info(
-            { itemId: item.id, latency: Date.now() - startTime },
-            'Fetched R2 object',
-          );
-          metrics.timing('silo.r2.get.latency_ms', Date.now() - startTime);
-          if (obj && item.size <= 1024 * 1024) {
-            results[item.id].body = await obj.text();
-          } else {
-            results[item.id].url = await this.r2Service.createPresignedUrl(item.r2Key, {
-              expiresIn: 3600,
-            });
-          }
-        })(),
-      );
+    } catch (error) {
+      getLogger().error({
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : String(error),
+        ids: data.ids,
+        userId: data.userId,
+        errorType: error instanceof Error ? error.constructor.name : typeof error
+      }, 'Error in batchGet');
+
+      // Return empty results instead of throwing
+      return {
+        items: [],
+        total: 0,
+        limit: data.limit || 50,
+        offset: data.offset || 0
+      };
     }
-
-    await Promise.all(fetchPromises);
-
-    // If this was a listing request (empty ids array), get the total count
-    let total = metadataItems.length;
-    if (ids.length === 0 && requestUserId) {
-      total = await this.metadataService.getContentCountForUser(requestUserId, contentType);
-    }
-
-    return {
-      items: Object.values(results),
-      total,
-      limit,
-      offset,
-    };
   }
 
   /**
@@ -358,8 +397,8 @@ export class ContentController {
       const id = key.startsWith('upload/')
         ? key.substring(7)
         : key.startsWith('content/')
-        ? key.substring(8)
-        : key;
+          ? key.substring(8)
+          : key;
 
       // Store metadata in D1
       const now = Math.floor(Date.now() / 1000);

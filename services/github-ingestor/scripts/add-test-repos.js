@@ -1,19 +1,26 @@
+#!/usr/bin/env node
 /**
  * Add Test Repositories Script
- *
+ * 
  * This script adds a few public GitHub repositories to the GitHub Ingestor
  * for testing purposes. It uses the RPC API to add the repositories.
- *
+ * 
  * Usage:
- *   ts-node add-test-repos.ts [--worker-url URL]
- *
+ *   node add-test-repos.js [--worker-url URL]
+ * 
  * Options:
- *   --worker-url URL  The URL of the GitHub Ingestor worker
+ *   --worker-url URL  The URL of the GitHub Ingestor worker 
  *                     (default: https://github-ingestor.chatter-9999.workers.dev)
  */
 
-import { ulid } from 'ulid';
-// Using built-in fetch API in modern Node.js
+const { randomBytes } = require('crypto');
+
+// Simple ULID implementation since we can't use the ulid package
+function generateId() {
+  const timestamp = Math.floor(Date.now() / 1000).toString(16).padStart(8, '0');
+  const random = randomBytes(10).toString('hex');
+  return timestamp + random;
+}
 
 // List of public repositories to add
 const TEST_REPOSITORIES = [
@@ -38,13 +45,16 @@ for (let i = 0; i < args.length; i++) {
 /**
  * Add a repository to the GitHub Ingestor
  */
-async function addRepository(owner: string, repo: string, branch: string): Promise<string> {
-  const id = ulid();
-
+async function addRepository(owner, repo, branch) {
+  const id = generateId();
+  
   console.log(`Adding repository ${owner}/${repo} (branch: ${branch}) with ID ${id}...`);
-
+  
   try {
-    const response = await fetch(`${workerUrl}/rpc/repositories`, {
+    const url = `${workerUrl}/rpc/repositories`;
+    console.log(`Making request to: ${url}`);
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -61,12 +71,15 @@ async function addRepository(owner: string, repo: string, branch: string): Promi
         excludePatterns: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.git/**', '**/artifacts/**', '**/cache/**']
       })
     });
-
+    
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`Response status: ${response.status} ${response.statusText}`);
+      console.error(`Response headers:`, Object.fromEntries([...response.headers.entries()]));
+      console.error(`Response body: ${errorText}`);
       throw new Error(`Failed to add repository: ${response.status} ${response.statusText} - ${errorText}`);
     }
-
+    
     const result = await response.json();
     console.log(`Successfully added repository ${owner}/${repo} with ID ${id}`);
     console.log(JSON.stringify(result, null, 2));
@@ -80,11 +93,14 @@ async function addRepository(owner: string, repo: string, branch: string): Promi
 /**
  * Trigger a sync for a repository
  */
-async function syncRepository(id: string): Promise<void> {
+async function syncRepository(id) {
   console.log(`Triggering sync for repository ${id}...`);
-
+  
   try {
-    const response = await fetch(`${workerUrl}/rpc/repositories/${id}/sync`, {
+    const url = `${workerUrl}/rpc/repositories/${id}/sync`;
+    console.log(`Making request to: ${url}`);
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -93,12 +109,15 @@ async function syncRepository(id: string): Promise<void> {
         force: true
       })
     });
-
+    
     if (!response.ok) {
       const errorText = await response.text();
+      console.error(`Response status: ${response.status} ${response.statusText}`);
+      console.error(`Response headers:`, Object.fromEntries([...response.headers.entries()]));
+      console.error(`Response body: ${errorText}`);
       throw new Error(`Failed to sync repository: ${response.status} ${response.statusText} - ${errorText}`);
     }
-
+    
     const result = await response.json();
     console.log(`Successfully triggered sync for repository ${id}`);
     console.log(JSON.stringify(result, null, 2));
@@ -108,22 +127,69 @@ async function syncRepository(id: string): Promise<void> {
 }
 
 /**
+ * Check if the worker is running
+ */
+async function checkHealth() {
+  console.log(`Checking if the GitHub Ingestor is running at ${workerUrl}...`);
+  
+  try {
+    const response = await fetch(`${workerUrl}/health`);
+    
+    if (response.ok) {
+      const result = await response.json();
+      console.log(`Health check successful:`, result);
+      return true;
+    } else {
+      const errorText = await response.text();
+      console.error(`Health check failed: ${response.status} ${response.statusText}`);
+      console.error(`Response body: ${errorText}`);
+      
+      // Try the status endpoint as a fallback
+      console.log(`Trying status endpoint as fallback...`);
+      const statusResponse = await fetch(`${workerUrl}/status`);
+      
+      if (statusResponse.ok) {
+        const statusResult = await statusResponse.json();
+        console.log(`Status check successful:`, statusResult);
+        return true;
+      } else {
+        const statusErrorText = await statusResponse.text();
+        console.error(`Status check failed: ${statusResponse.status} ${statusResponse.statusText}`);
+        console.error(`Response body: ${statusErrorText}`);
+        return false;
+      }
+    }
+  } catch (error) {
+    console.error(`Error checking health:`, error);
+    return false;
+  }
+}
+
+/**
  * Main function
  */
-async function main(): Promise<void> {
+async function main() {
   console.log(`Adding test repositories to GitHub Ingestor at ${workerUrl}...`);
-
+  
+  // Check if the worker is running
+  const isHealthy = await checkHealth();
+  
+  if (!isHealthy) {
+    console.warn(`WARNING: The GitHub Ingestor may not be running or accessible at ${workerUrl}`);
+    console.log(`Continuing anyway...`);
+  }
+  
   // Add each repository
   for (const repo of TEST_REPOSITORIES) {
     const id = await addRepository(repo.owner, repo.repo, repo.branch);
-
+    
     // Trigger a sync for the repository
     await syncRepository(id);
-
+    
     // Wait a bit between repositories to avoid rate limiting
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
-
+  
   console.log('Done!');
 }
 

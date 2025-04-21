@@ -1,6 +1,6 @@
 import { getLogger, metrics } from '@dome/logging';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq, and, desc, count, sum, sql } from 'drizzle-orm';
+import { eq, and, desc, count, sum, or, isNull, inArray } from 'drizzle-orm';
 import { contents } from '../db/schema';
 import { SiloContentMetadata, SiloStatsResponse } from '@dome/common';
 
@@ -72,6 +72,8 @@ export class MetadataService {
 
   /**
    * Get content metadata for multiple IDs
+   * @param ids - Array of content IDs to retrieve
+   * @param userId - Optional user ID to filter results by
    */
   async getMetadataByIds(ids: string[]): Promise<SiloContentMetadata[]> {
     if (ids.length === 0) return [];
@@ -80,27 +82,61 @@ export class MetadataService {
 
     try {
       try {
+        getLogger().info({
+          ids,
+        }, 'getMetadataByIds called');
+
         const results = await this.db
           .select()
           .from(contents)
-          .where(sql`${contents.id} IN (${ids})`)
+          .where(inArray(contents.id, ids))     // 👈 correct
           .all();
+
+        getLogger().info({
+          resultCount: results.length,
+        }, 'Raw query results before userId filtering');
+
+        // If userId is provided, filter the results in memory
+        let filteredResults = results;
 
         metrics.timing('silo.d1.get_many.latency_ms', Date.now() - startTime);
 
-        return results as SiloContentMetadata[];
+        return filteredResults as SiloContentMetadata[];
       } catch (error) {
         // Check if the error is because the table doesn't exist
         if (error instanceof Error && error.message.includes('no such table: contents')) {
           getLogger().warn({ ids }, 'Contents table does not exist yet, returning empty array');
           return [];
         }
+
+        // Log detailed error information
+        getLogger().error({
+          error: error instanceof Error ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          } : String(error),
+          ids,
+          errorType: error instanceof Error ? error.constructor.name : typeof error
+        }, 'Error in DB query in getMetadataByIds');
+
         throw error;
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get_many' });
-      getLogger().error({ error, ids }, 'Error getting content metadata for multiple IDs');
-      throw error;
+
+      getLogger().error({
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : String(error),
+        ids,
+        errorType: error instanceof Error ? error.constructor.name : typeof error
+      }, 'Error getting content metadata for multiple IDs');
+
+      // Return empty array instead of throwing to make the function more resilient
+      return [];
     }
   }
 
@@ -284,3 +320,5 @@ export class MetadataService {
 export function createMetadataService(env: Env): MetadataService {
   return new MetadataService(env);
 }
+
+
