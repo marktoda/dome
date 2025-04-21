@@ -61,6 +61,7 @@ This repository is organized as a monorepo with the following structure:
 ## Preferred Tooling
 
 - Use Wrangler CLI commands directly instead of pnpm scripts
+- wrangler.toml compatibility version 2025-04-15
 - Example: `wrangler deploy` rather than `pnpm run deploy`
 - Use pnpm for package management and script execution
 - Use TypeScript for type-safe development

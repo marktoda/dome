@@ -1,6 +1,6 @@
 name = "github-ingestor"
 main = "src/index.ts"
-compatibility_date = "2023-10-30"
+compatibility_date = "2025-04-15"
 compatibility_flags = ["nodejs_als"]
 
 # Trigger the worker every hour as fallback
@@ -41,12 +41,28 @@ LOG_LEVEL = "info"
 VERSION = "1.0.0"
 ENVIRONMENT = "prod"
 
+# GitHub-related environment variables
+# These are sensitive values that should be set using wrangler secrets
+# GITHUB_APP_ID = ""
+# GITHUB_PRIVATE_KEY = ""
+# GITHUB_WEBHOOK_SECRET = ""
+# GITHUB_TOKEN = ""
+# GITHUB_CLIENT_ID = ""
+# GITHUB_CLIENT_SECRET = ""
+
 # Development environment variables
 [env.dev]
 name = "github-ingestor-dev"
 [env.dev.vars]
 LOG_LEVEL = "debug"
 ENVIRONMENT = "dev"
+# GitHub-related environment variables should be set using wrangler secrets for dev environment
+# GITHUB_APP_ID = ""
+# GITHUB_PRIVATE_KEY = ""
+# GITHUB_WEBHOOK_SECRET = ""
+# GITHUB_TOKEN = ""
+# GITHUB_CLIENT_ID = ""
+# GITHUB_CLIENT_SECRET = ""
 
 # Staging environment variables
 [env.staging]
@@ -54,6 +70,13 @@ name = "github-ingestor-staging"
 [env.staging.vars]
 LOG_LEVEL = "info"
 ENVIRONMENT = "staging"
+# GitHub-related environment variables should be set using wrangler secrets for staging environment
+# GITHUB_APP_ID = ""
+# GITHUB_PRIVATE_KEY = ""
+# GITHUB_WEBHOOK_SECRET = ""
+# GITHUB_TOKEN = ""
+# GITHUB_CLIENT_ID = ""
+# GITHUB_CLIENT_SECRET = ""
 
 [observability]
 enabled = true

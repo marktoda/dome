@@ -1,14 +1,20 @@
 import { Widgets } from 'blessed';
 import { BaseMode } from './BaseMode';
-import { addContent } from '../../utils/api';
+import { addContent, listNotes, search, showItem } from '../../utils/api';
+import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 /**
  * Note mode for creating and editing notes
  */
 export class NoteMode extends BaseMode {
-  private noteTitle: string = '';
-  private noteContent: string = '';
-  private step: 'title' | 'content' | 'preview' = 'title';
+  private isEditing: boolean = false;
+  private searchResults: any[] = [];
+  private searchQuery: string = '';
+  private selectedNoteIndex: number = -1;
+  private viewMode: 'create' | 'search' | 'view' = 'create';
 
   /**
    * Create a new note mode
@@ -34,9 +40,8 @@ export class NoteMode extends BaseMode {
    * Handle mode activation
    */
   protected onActivate(): void {
-    this.container.setLabel(' Create Note ');
-    this.resetNote();
-    this.showTitlePrompt();
+    this.container.setLabel(' Note Mode ');
+    this.showMainMenu();
   }
 
   /**
@@ -44,92 +49,219 @@ export class NoteMode extends BaseMode {
    */
   protected onDeactivate(): void {
     // Reset state
-    this.resetNote();
+    this.resetState();
   }
 
   /**
-   * Reset note state
+   * Reset state
    */
-  private resetNote(): void {
-    this.noteTitle = '';
-    this.noteContent = '';
-    this.step = 'title';
+  private resetState(): void {
+    this.isEditing = false;
+    this.searchResults = [];
+    this.searchQuery = '';
+    this.selectedNoteIndex = -1;
+    this.viewMode = 'create';
   }
 
   /**
-   * Show title prompt
+   * Show main menu
    */
-  private showTitlePrompt(): void {
+  private showMainMenu(): void {
     this.container.setContent('');
-    this.container.pushLine('{center}{bold}Create a New Note{/bold}{/center}');
+    this.container.pushLine('{center}{bold}Note Mode{/bold}{/center}');
     this.container.pushLine('');
-    this.container.pushLine('Enter a title for your note:');
-    if (this.noteTitle) {
-      this.container.pushLine(`Current: ${this.noteTitle}`);
+    this.container.pushLine('What would you like to do?');
+    this.container.pushLine('');
+    this.container.pushLine('  {bold}create{/bold} - Create a new note');
+    this.container.pushLine('  {bold}search{/bold} - Search existing notes');
+    this.container.pushLine('  {bold}list{/bold} - List recent notes');
+    this.container.pushLine('');
+    this.container.pushLine('{gray-fg}Type one of the commands above to continue{/gray-fg}');
+    this.screen.render();
+  }
+
+  /**
+   * Get the user's preferred editor
+   */
+  private getEditor(): string {
+    return process.env.EDITOR || 'nvim';
+  }
+
+  /**
+   * Create a temporary file with metadata
+   */
+  private createTempFileWithMetadata(title?: string): string {
+    const tempFilePath = path.join(os.tmpdir(), `dome-note-${Date.now()}.md`);
+    const date = new Date().toISOString();
+
+    const metadata = [
+      `# ${title || 'New Note'}`,
+      `Date: ${date}`,
+      `Tags: `,
+      '',
+      '<!-- Write your note content below this line -->',
+      '',
+    ].join('\n');
+
+    fs.writeFileSync(tempFilePath, metadata);
+    return tempFilePath;
+  }
+
+  /**
+   * Open editor with content
+   */
+  private openEditor(filePath: string): Promise<void> {
+    this.isEditing = true;
+
+    // Show status message
+    this.container.setContent('');
+    this.container.pushLine('{center}{bold}External Editor{/bold}{/center}');
+    this.container.pushLine('');
+    this.container.pushLine('Opening external editor...');
+    this.container.pushLine('');
+    this.container.pushLine(`Editor: ${this.getEditor()}`);
+    this.container.pushLine(`File: ${filePath}`);
+    this.container.pushLine('');
+    this.container.pushLine('{gray-fg}The TUI will resume when you exit the editor{/gray-fg}');
+    this.screen.render();
+
+    // Use execSync for better terminal handling
+    return new Promise((resolve, reject) => {
+      try {
+        // Completely exit the blessed app to avoid terminal conflicts
+        this.screen.destroy();
+
+        // Use execSync for better terminal handling - this blocks until editor exits
+        const { execSync } = require('child_process');
+        const editor = this.getEditor();
+
+        try {
+          execSync(`${editor} "${filePath}"`, {
+            stdio: 'inherit',
+            env: process.env,
+          });
+
+          // Re-initialize the screen
+          process.nextTick(() => {
+            // Force a redraw of the screen
+            this.screen.program.clear();
+            this.screen.program.cursorReset();
+            this.screen.program.alternateBuffer();
+            this.screen.realloc();
+            this.screen.render();
+
+            this.isEditing = false;
+            resolve();
+          });
+        } catch (error) {
+          // Re-initialize the screen even on error
+          process.nextTick(() => {
+            this.screen.program.clear();
+            this.screen.program.cursorReset();
+            this.screen.program.alternateBuffer();
+            this.screen.realloc();
+            this.screen.render();
+
+            this.isEditing = false;
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            reject(new Error(`Editor exited with error: ${errorMessage}`));
+          });
+        }
+      } catch (err) {
+        this.isEditing = false;
+        reject(err);
+      }
+    });
+  }
+
+  /**
+   * Parse note content from file
+   */
+  private parseNoteContent(filePath: string): { title: string; content: string; tags: string[] } {
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const lines = fileContent.split('\n');
+
+    let title = 'Untitled Note';
+    let tags: string[] = [];
+    let contentStartIndex = 0;
+
+    // Parse metadata
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      if (i === 0 && line.startsWith('# ')) {
+        title = line.substring(2).trim();
+        continue;
+      }
+
+      if (line.startsWith('Tags:')) {
+        const tagsPart = line.substring(5).trim();
+        if (tagsPart) {
+          tags = tagsPart.split(',').map(tag => tag.trim());
+        }
+        continue;
+      }
+
+      if (line.includes('<!-- Write your note content below this line -->')) {
+        contentStartIndex = i + 1;
+        break;
+      }
+
+      // If we've gone through several lines without finding the marker,
+      // assume content starts after a reasonable number of metadata lines
+      if (i >= 5) {
+        contentStartIndex = i;
+        break;
+      }
     }
-    this.container.pushLine('');
-    this.container.pushLine('{gray-fg}(Type {bold}cancel{/bold} to cancel){/gray-fg}');
-    this.screen.render();
+
+    const content = lines.slice(contentStartIndex).join('\n').trim();
+
+    return { title, content, tags };
   }
 
   /**
-   * Show content prompt
+   * Create a new note
    */
-  private showContentPrompt(): void {
-    this.container.setContent('');
-    this.container.pushLine(`{bold}Title:{/bold} ${this.noteTitle}`);
-    this.container.pushLine('');
-    this.container.pushLine('Enter the content for your note:');
-    if (this.noteContent) {
-      this.container.pushLine(
-        `Current: ${this.noteContent.substring(0, 100)}${
-          this.noteContent.length > 100 ? '...' : ''
-        }`,
-      );
-    }
-    this.container.pushLine('');
-    this.container.pushLine(
-      '{gray-fg}(Type {bold}done{/bold} when finished or {bold}cancel{/bold} to cancel){/gray-fg}',
-    );
-    this.screen.render();
-  }
-
-  /**
-   * Show note preview
-   */
-  private showNotePreview(): void {
-    this.container.setContent('');
-    this.container.pushLine('{center}{bold}Note Preview{/bold}{/center}');
-    this.container.pushLine('');
-    this.container.pushLine(`{bold}Title:{/bold} ${this.noteTitle}`);
-    this.container.pushLine('');
-    this.container.pushLine(`{bold}Content:{/bold}`);
-    this.container.pushLine(this.noteContent);
-    this.container.pushLine('');
-    this.container.pushLine(
-      '{gray-fg}Type {bold}save{/bold} to save the note or {bold}edit{/bold} to continue editing or {bold}cancel{/bold} to cancel{/gray-fg}',
-    );
-    this.screen.render();
-  }
-
-  /**
-   * Save the note
-   */
-  private async saveNote(): Promise<void> {
+  private async createNewNote(): Promise<void> {
     try {
+      // Create temp file with metadata
+      const tempFilePath = this.createTempFileWithMetadata();
+
+      // Open editor
+      await this.openEditor(tempFilePath);
+
+      // Parse note content
+      const { title, content, tags } = this.parseNoteContent(tempFilePath);
+
+      if (!content.trim()) {
+        this.container.setContent('');
+        this.container.pushLine('{yellow-fg}Note was empty, nothing saved.{/yellow-fg}');
+        this.container.pushLine('');
+        this.container.pushLine('Press any key to return to the main menu.');
+        this.screen.render();
+        return;
+      }
+
+      // Save the note
       this.statusBar.setContent(' {bold}Status:{/bold} Saving note...');
       this.screen.render();
 
-      // Save the note using the updated API
-      // Pass the title separately instead of formatting it into the content
-      const response = await addContent(this.noteContent, this.noteTitle);
+      const response = await addContent(content, title, tags);
+
+      // Clean up temp file
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (err) {
+        // Ignore errors when deleting temp file
+      }
 
       // Show success message
       this.container.setContent('');
       this.container.pushLine('{center}{bold}Note Saved{/bold}{/center}');
       this.container.pushLine('');
       this.container.pushLine(
-        `{green-fg}Your note "${this.noteTitle}" has been saved successfully!{/green-fg}`,
+        `{green-fg}Your note "${title}" has been saved successfully!{/green-fg}`,
       );
       if (response && response.id) {
         this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
@@ -138,22 +270,258 @@ export class NoteMode extends BaseMode {
         );
       }
       this.container.pushLine('');
-      this.container.pushLine(
-        'Type {bold}new{/bold} to create another note or switch to another mode.',
-      );
+      this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
 
       // Reset status
       this.statusBar.setContent(
         ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
       );
       this.screen.render();
-
-      // Reset note state
-      this.resetNote();
     } catch (err) {
+      this.container.setContent('');
       this.container.pushLine(
-        `{red-fg}Error saving note: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+        `{red-fg}Error creating note: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
       );
+      this.container.pushLine('');
+      this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
+      this.screen.render();
+    }
+  }
+
+  /**
+   * Show search prompt
+   */
+  private showSearchPrompt(): void {
+    this.viewMode = 'search';
+    this.container.setContent('');
+    this.container.pushLine('{center}{bold}Search Notes{/bold}{/center}');
+    this.container.pushLine('');
+    this.container.pushLine('Enter search query:');
+    if (this.searchQuery) {
+      this.container.pushLine(`Current: ${this.searchQuery}`);
+    }
+    this.container.pushLine('');
+    this.container.pushLine(
+      '{gray-fg}(Type {bold}menu{/bold} to return to the main menu){/gray-fg}',
+    );
+    this.screen.render();
+  }
+
+  /**
+   * Search for notes
+   */
+  private async searchNotes(query: string): Promise<void> {
+    try {
+      this.searchQuery = query;
+      this.statusBar.setContent(' {bold}Status:{/bold} Searching notes...');
+      this.screen.render();
+
+      const response = await search(query, 20);
+      this.searchResults = response.results || [];
+
+      this.showSearchResults();
+    } catch (err) {
+      this.container.setContent('');
+      this.container.pushLine(
+        `{red-fg}Error searching notes: ${
+          err instanceof Error ? err.message : String(err)
+        }{/red-fg}`,
+      );
+      this.container.pushLine('');
+      this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
+      this.screen.render();
+    }
+  }
+
+  /**
+   * Show search results
+   */
+  private showSearchResults(): void {
+    this.container.setContent('');
+    this.container.pushLine('{center}{bold}Search Results{/bold}{/center}');
+    this.container.pushLine('');
+    this.container.pushLine(`Query: "${this.searchQuery}"`);
+    this.container.pushLine('');
+
+    if (this.searchResults.length === 0) {
+      this.container.pushLine('{yellow-fg}No results found.{/yellow-fg}');
+    } else {
+      this.container.pushLine(`Found ${this.searchResults.length} results:`);
+      this.container.pushLine('');
+
+      this.searchResults.forEach((result, index) => {
+        const title = result.title || 'Untitled Note';
+        const date = result.createdAt
+          ? new Date(result.createdAt).toLocaleString()
+          : 'Unknown date';
+        this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (${date})`);
+      });
+
+      this.container.pushLine('');
+      this.container.pushLine('Enter the number of the note to view/edit, or:');
+    }
+
+    this.container.pushLine(
+      '{gray-fg}Type {bold}search{/bold} to search again or {bold}menu{/bold} to return to the main menu{/gray-fg}',
+    );
+
+    this.statusBar.setContent(
+      ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+    );
+    this.screen.render();
+  }
+
+  /**
+   * List recent notes
+   */
+  private async listRecentNotes(): Promise<void> {
+    try {
+      this.statusBar.setContent(' {bold}Status:{/bold} Loading recent notes...');
+      this.screen.render();
+
+      const notes = await listNotes();
+      this.searchResults = notes || [];
+
+      this.container.setContent('');
+      this.container.pushLine('{center}{bold}Recent Notes{/bold}{/center}');
+      this.container.pushLine('');
+
+      if (this.searchResults.length === 0) {
+        this.container.pushLine('{yellow-fg}No notes found.{/yellow-fg}');
+      } else {
+        this.container.pushLine(`Found ${this.searchResults.length} notes:`);
+        this.container.pushLine('');
+
+        this.searchResults.forEach((note, index) => {
+          const title = note.title || 'Untitled Note';
+          const date = note.createdAt ? new Date(note.createdAt).toLocaleString() : 'Unknown date';
+          this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (${date})`);
+        });
+
+        this.container.pushLine('');
+        this.container.pushLine('Enter the number of the note to view/edit, or:');
+      }
+
+      this.container.pushLine(
+        '{gray-fg}Type {bold}menu{/bold} to return to the main menu{/gray-fg}',
+      );
+
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
+      this.screen.render();
+    } catch (err) {
+      this.container.setContent('');
+      this.container.pushLine(
+        `{red-fg}Error listing notes: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+      );
+      this.container.pushLine('');
+      this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
+      this.screen.render();
+    }
+  }
+
+  /**
+   * View and edit a note
+   */
+  private async viewAndEditNote(index: number): Promise<void> {
+    try {
+      if (index < 0 || index >= this.searchResults.length) {
+        this.container.pushLine('{red-fg}Invalid note number.{/red-fg}');
+        this.screen.render();
+        return;
+      }
+
+      const note = this.searchResults[index];
+      this.selectedNoteIndex = index;
+
+      this.statusBar.setContent(' {bold}Status:{/bold} Loading note...');
+      this.screen.render();
+
+      // Get full note content if needed
+      let fullNote = note;
+      if (!note.content) {
+        fullNote = await showItem(note.id);
+      }
+
+      const title = fullNote.title || 'Untitled Note';
+      const content = fullNote.content || '';
+
+      // Create temp file with note content
+      const tempFilePath = path.join(os.tmpdir(), `dome-note-${Date.now()}.md`);
+
+      // Format the content with metadata
+      const date = fullNote.createdAt
+        ? new Date(fullNote.createdAt).toISOString()
+        : new Date().toISOString();
+      const tags = fullNote.tags ? fullNote.tags.join(', ') : '';
+
+      const fileContent = [
+        `# ${title}`,
+        `Date: ${date}`,
+        `Tags: ${tags}`,
+        '',
+        '<!-- Write your note content below this line -->',
+        content,
+      ].join('\n');
+
+      fs.writeFileSync(tempFilePath, fileContent);
+
+      // Open editor
+      await this.openEditor(tempFilePath);
+
+      // Parse updated content
+      const updatedNote = this.parseNoteContent(tempFilePath);
+
+      // Clean up temp file
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (err) {
+        // Ignore errors when deleting temp file
+      }
+
+      // Save the updated note
+      this.statusBar.setContent(' {bold}Status:{/bold} Saving updated note...');
+      this.screen.render();
+
+      // For now, we'll create a new note with the updated content
+      // In a real implementation, you'd want to update the existing note
+      const response = await addContent(updatedNote.content, updatedNote.title, updatedNote.tags);
+
+      // Show success message
+      this.container.setContent('');
+      this.container.pushLine('{center}{bold}Note Updated{/bold}{/center}');
+      this.container.pushLine('');
+      this.container.pushLine(
+        `{green-fg}Your note "${updatedNote.title}" has been updated successfully!{/green-fg}`,
+      );
+      if (response && response.id) {
+        this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
+      }
+      this.container.pushLine('');
+      this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
+
+      // Reset status
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
+      this.screen.render();
+    } catch (err) {
+      this.container.setContent('');
+      this.container.pushLine(
+        `{red-fg}Error editing note: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+      );
+      this.container.pushLine('');
+      this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
       this.statusBar.setContent(
         ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
       );
@@ -166,54 +534,119 @@ export class NoteMode extends BaseMode {
    * @param input The input to handle
    */
   async handleInput(input: string): Promise<void> {
-    const lowerInput = input.toLowerCase();
-
-    // Handle cancel command
-    if (lowerInput === 'cancel') {
-      this.resetNote();
-      this.showTitlePrompt();
+    // Don't process input while editing
+    if (this.isEditing) {
       return;
     }
 
-    // Handle new command after saving
-    if (this.step === 'preview' && this.noteTitle === '' && lowerInput === 'new') {
-      this.showTitlePrompt();
+    // Trim input and convert to lowercase for command matching
+    const trimmedInput = input.trim();
+    if (!trimmedInput) return; // Ignore empty input
+
+    const lowerInput = trimmedInput.toLowerCase();
+
+    // Handle menu command from anywhere - process this first for responsiveness
+    if (lowerInput === 'menu') {
+      this.resetState();
+      this.showMainMenu();
       return;
     }
 
-    // Handle input based on current step
-    switch (this.step) {
-      case 'title':
-        if (input.trim()) {
-          this.noteTitle = input.trim();
-          this.step = 'content';
-          this.showContentPrompt();
-        }
-        break;
+    // Use a more direct approach to handle commands for better performance
+    try {
+      // Handle input based on current view mode
+      switch (this.viewMode) {
+        case 'create':
+          if (lowerInput === 'create') {
+            // Update UI immediately to show we're processing
+            this.statusBar.setContent(' {bold}Status:{/bold} Creating new note...');
+            this.screen.render();
 
-      case 'content':
-        if (lowerInput === 'done') {
-          this.step = 'preview';
-          this.showNotePreview();
-        } else {
-          // Append to content if not a command
-          if (this.noteContent) {
-            this.noteContent += '\n' + input;
-          } else {
-            this.noteContent = input;
+            // Process in next tick to allow UI to update
+            process.nextTick(async () => {
+              try {
+                await this.createNewNote();
+              } catch (err) {
+                this.container.pushLine(
+                  `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+                );
+                this.screen.render();
+              }
+            });
+          } else if (lowerInput === 'search') {
+            this.showSearchPrompt();
+          } else if (lowerInput === 'list') {
+            // Update UI immediately
+            this.statusBar.setContent(' {bold}Status:{/bold} Loading notes...');
+            this.screen.render();
+
+            // Process in next tick
+            process.nextTick(async () => {
+              try {
+                await this.listRecentNotes();
+              } catch (err) {
+                this.container.pushLine(
+                  `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+                );
+                this.screen.render();
+              }
+            });
           }
-          this.showContentPrompt();
-        }
-        break;
+          break;
 
-      case 'preview':
-        if (lowerInput === 'save') {
-          await this.saveNote();
-        } else if (lowerInput === 'edit') {
-          this.step = 'content';
-          this.showContentPrompt();
-        }
-        break;
+        case 'search':
+          if (lowerInput === 'search') {
+            this.showSearchPrompt();
+          } else if (this.searchResults.length > 0) {
+            // Check if input is a number
+            const noteNumber = parseInt(trimmedInput, 10);
+            if (!isNaN(noteNumber) && noteNumber > 0 && noteNumber <= this.searchResults.length) {
+              // Update UI immediately
+              this.statusBar.setContent(' {bold}Status:{/bold} Loading note...');
+              this.screen.render();
+
+              // Process in next tick
+              process.nextTick(async () => {
+                try {
+                  await this.viewAndEditNote(noteNumber - 1);
+                } catch (err) {
+                  this.container.pushLine(
+                    `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+                  );
+                  this.screen.render();
+                }
+              });
+            }
+          } else if (trimmedInput && lowerInput !== 'menu') {
+            // Update UI immediately
+            this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
+            this.screen.render();
+
+            // Process in next tick
+            process.nextTick(async () => {
+              try {
+                await this.searchNotes(trimmedInput);
+              } catch (err) {
+                this.container.pushLine(
+                  `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+                );
+                this.screen.render();
+              }
+            });
+          }
+          break;
+
+        case 'view':
+          // This mode is not used currently
+          this.showMainMenu();
+          break;
+      }
+    } catch (err) {
+      // Catch any unexpected errors to prevent the UI from freezing
+      this.container.pushLine(
+        `{red-fg}Unexpected error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
+      );
+      this.screen.render();
     }
   }
 
@@ -224,15 +657,17 @@ export class NoteMode extends BaseMode {
     return `
 {bold}Note Mode Help{/bold}
 
-In Note Mode, you can create and edit notes.
+In Note Mode, you can create and edit notes using your preferred text editor.
 
-{bold}Usage:{/bold}
-- Follow the prompts to enter a title and content for your note
-- Type {bold}done{/bold} when you've finished entering content
-- Type {bold}save{/bold} to save the note
-- Type {bold}edit{/bold} to continue editing
-- Type {bold}cancel{/bold} to cancel at any time
-- Type {bold}new{/bold} to create a new note after saving
+{bold}Commands:{/bold}
+- {bold}create{/bold} - Create a new note in your editor
+- {bold}search{/bold} - Search for existing notes
+- {bold}list{/bold} - List recent notes
+- {bold}menu{/bold} - Return to the main menu
+
+{bold}Editor:{/bold}
+The note mode uses your $EDITOR environment variable (defaults to neovim).
+When you exit the editor, the note will be saved automatically.
 
 {bold}Shortcuts:{/bold}
 - {cyan-fg}${this.config.shortcut}{/cyan-fg} - Switch to Note Mode

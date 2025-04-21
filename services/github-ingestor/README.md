@@ -1,172 +1,221 @@
 # GitHub Ingestor Service
 
-This service is responsible for ingesting content from GitHub repositories into the Dome platform. It provides a standardized way to fetch, process, and store GitHub content for use by other services.
+The GitHub Ingestor service is responsible for ingesting data from GitHub repositories, processing it, and storing it in the Silo service. This service is a critical component in the content ingestion pipeline.
 
-## Architecture
+## Features
 
-The GitHub Ingestor follows a modular architecture designed for extensibility and maintainability:
+- Efficient ingestion of GitHub repositories via webhooks and scheduled fallback
+- Processing of repository content to make it suitable for embedding
+- Deduplication of content to optimize storage usage
+- Streaming and chunking of large repositories to stay within Worker limits
+- Proper error handling and retry mechanisms
 
-### Core Components
+## Setup
 
-- **Base Ingestor Interface**: Defines a common contract for all content ingestors (GitHub, Notion, Linear, etc.)
-- **GitHub Ingestor Implementation**: Implements the base interface for GitHub-specific functionality
-- **Webhook Handling**: Processes GitHub webhook events to trigger ingestion
-- **Queue Processing**: Handles asynchronous ingestion tasks
-- **Scheduled Sync**: Periodically syncs repositories to ensure content is up-to-date
-- **RPC Interface**: Provides methods for other services to interact with the ingestor
+### Prerequisites
 
-### Directory Structure
+- Cloudflare Workers account with access to D1, Queues, and Service Bindings
+- GitHub App for webhook integration and API access
+- pnpm workspace setup
 
-```
-services/github-ingestor/
-├── src/
-│   ├── index.ts                 # Main entry point
-│   ├── types.ts                 # Type definitions
-│   ├── cron/                    # Scheduled tasks
-│   ├── db/                      # Database schema and migrations
-│   ├── github/                  # GitHub-specific utilities
-│   ├── ingestors/               # Ingestor implementations
-│   │   ├── base.ts              # Base ingestor interface
-│   │   └── github/              # GitHub ingestor implementation
-│   ├── queue/                   # Queue processing
-│   ├── rpc/                     # RPC interface
-│   ├── services/                # Service implementations
-│   ├── utils/                   # Utility functions
-│   │   ├── logging.ts           # Logging utilities
-│   │   ├── metrics.ts           # Metrics collection
-│   │   ├── polyfills.ts         # Environment polyfills
-│   │   └── wrap.ts              # Function wrapper for logging/metrics
-│   └── webhook/                 # Webhook handling
-└── tests/                       # Tests
-```
+### Environment Variables Configuration
 
-## Ingestor Interface
+The service requires several GitHub-related environment variables that should be set using Cloudflare's secret management:
 
-The base ingestor interface (`src/ingestors/base.ts`) defines a common contract that all content ingestors must implement. This ensures consistent behavior and makes it easy to add new content sources in the future.
+#### GitHub App Credentials
 
-Key interfaces:
+These credentials are used for webhook authentication and API access:
 
-- `ContentMetadata`: Common metadata across all providers
-- `ContentItem`: Content with metadata
-- `IngestionOptions`: Options for ingestion
-- `IngestionResult`: Result of ingestion
-- `Ingestor`: Base interface for all ingestors
-- `BaseIngestor`: Abstract implementation with common functionality
+- `GITHUB_APP_ID`: The ID of your GitHub App
+- `GITHUB_PRIVATE_KEY`: The private key for your GitHub App (PEM format)
+- `GITHUB_WEBHOOK_SECRET`: The webhook secret for your GitHub App
 
-## Adding a New Ingestor
+#### GitHub API Access
 
-To add a new content source (e.g., Notion, Linear), follow these steps:
+These credentials are used for OAuth authentication and API access:
 
-1. Create a new directory under `src/ingestors/` for the new provider
-2. Implement the `Ingestor` interface or extend the `BaseIngestor` class
-3. Add provider-specific utilities under a new directory (e.g., `src/notion/`)
-4. Update the webhook handler if the provider supports webhooks
-5. Add queue processing for the new provider
-6. Implement RPC methods for the new provider
-7. Add tests for the new implementation
+- `GITHUB_TOKEN`: A service account token for GitHub API access
+- `GITHUB_CLIENT_ID`: The client ID for OAuth authentication
+- `GITHUB_CLIENT_SECRET`: The client secret for OAuth authentication
 
-### Example: Implementing a Notion Ingestor
+#### Setting Up Secrets
 
-```typescript
-import {
-  BaseIngestor,
-  ContentItem,
-  ContentMetadata,
-  IngestionOptions,
-  IngestionResult,
-} from '../base';
+To set up these secrets using Cloudflare Wrangler CLI:
 
-export class NotionIngestor extends BaseIngestor {
-  // Implement required methods from BaseIngestor
-  getProviderName(): string {
-    return 'notion';
-  }
+```bash
+# For production environment
+wrangler secret put GITHUB_APP_ID
+wrangler secret put GITHUB_PRIVATE_KEY
+wrangler secret put GITHUB_WEBHOOK_SECRET
+wrangler secret put GITHUB_TOKEN
+wrangler secret put GITHUB_CLIENT_ID
+wrangler secret put GITHUB_CLIENT_SECRET
 
-  getProviderType(): string {
-    return 'document';
-  }
+# For development environment
+wrangler secret put GITHUB_APP_ID --env dev
+wrangler secret put GITHUB_PRIVATE_KEY --env dev
+wrangler secret put GITHUB_WEBHOOK_SECRET --env dev
+wrangler secret put GITHUB_TOKEN --env dev
+wrangler secret put GITHUB_CLIENT_ID --env dev
+wrangler secret put GITHUB_CLIENT_SECRET --env dev
 
-  async testConnection(): Promise<boolean> {
-    // Implement Notion-specific connection test
-  }
-
-  async ingest(options: IngestionOptions): Promise<IngestionResult> {
-    // Implement Notion-specific ingestion logic
-  }
-
-  async ingestItem(itemId: string, options?: IngestionOptions): Promise<ContentItem | null> {
-    // Implement Notion-specific item ingestion
-  }
-
-  async listItems(options?: IngestionOptions): Promise<ContentMetadata[]> {
-    // Implement Notion-specific item listing
-  }
-}
+# For staging environment
+wrangler secret put GITHUB_APP_ID --env staging
+wrangler secret put GITHUB_PRIVATE_KEY --env staging
+wrangler secret put GITHUB_WEBHOOK_SECRET --env staging
+wrangler secret put GITHUB_TOKEN --env staging
+wrangler secret put GITHUB_CLIENT_ID --env staging
+wrangler secret put GITHUB_CLIENT_SECRET --env staging
 ```
 
-## Error Handling and Logging
+When prompted, enter the appropriate values for each secret.
 
-The service uses a standardized approach to error handling and logging:
+### Database Setup and Migration
 
-- All functions should use the `wrap` utility to ensure consistent logging and metrics
-- Errors should be caught and logged with appropriate context
-- Metrics should be collected for all operations
-- Use the common logging package (`@dome/logging`) for consistency across services
+The GitHub Ingestor service uses Cloudflare D1 for database storage. The database schema includes tables for repository configuration, credentials, content blobs, and repository files.
 
-Example:
+#### Creating the Database
 
-```typescript
-import { wrap } from '../utils/wrap';
-import { getLogger } from '@dome/logging';
+If you haven't created the D1 database yet:
 
-async function processItem(item: ContentItem): Promise<void> {
-  return wrap({ operation: 'processItem', itemId: item.metadata.id }, async () => {
-    try {
-      // Process the item
-      getLogger().info({ item }, 'Processing item');
+```bash
+# Create a new D1 database
+wrangler d1 create github-ingestor
 
-      // Return the result
-      return result;
-    } catch (error) {
-      getLogger().error({ error, item }, 'Failed to process item');
-      throw error;
-    }
-  });
-}
+# This will output a database_id that you should update in your wrangler.toml file
 ```
+
+#### Running Migrations
+
+To set up or update the database schema:
+
+```bash
+# Apply migrations to production
+wrangler d1 migrations apply github-ingestor
+
+# Apply migrations to development
+wrangler d1 migrations apply github-ingestor --env dev
+
+# Apply migrations to staging
+wrangler d1 migrations apply github-ingestor --env staging
+```
+
+#### Verifying Database Setup
+
+To verify that your database is correctly set up:
+
+```bash
+# Run the database check script
+node scripts/check-database.js
+```
+
+This script will check the database schema and report any issues.
 
 ## Deployment
 
-The service is deployed as a Cloudflare Worker. Key considerations:
+### Development Environment
 
-- Environment variables are accessed through the `env` object, not `process.env`
-- Use polyfills for APIs not available in the Cloudflare Workers runtime
-- Avoid using Node.js-specific APIs
-- Initialize services in the constructor to ensure proper setup
+For local development and testing:
+
+```bash
+# Start the worker in development mode
+wrangler dev
+
+# Or using pnpm
+pnpm run dev
+```
+
+### Staging Environment
+
+For deploying to the staging environment:
+
+```bash
+# Deploy to staging
+wrangler deploy --env staging
+
+# Or using pnpm
+pnpm run deploy:staging
+```
+
+### Production Environment
+
+For deploying to the production environment:
+
+```bash
+# Deploy to production
+wrangler deploy
+
+# Or using pnpm
+pnpm run deploy
+```
 
 ## Testing
 
-The service includes several types of tests:
+### Unit Tests
 
-- Unit tests for individual components
-- Integration tests for service interactions
-- E2E tests for complete workflows
-- Deployment verification tests
-
-Run tests with:
+To run the unit test suite:
 
 ```bash
 pnpm test
 ```
 
-## Metrics and Monitoring
+### Endpoint Testing
 
-The service collects metrics for all operations using the common metrics package. Key metrics:
+To test the service endpoints after deployment:
 
-- Ingestion counts (processed, ingested, skipped, failed)
-- Processing times
-- Error counts
-- API rate limit usage
-- Queue processing statistics
+```bash
+# Test endpoints with default URL (localhost:8787)
+node test-endpoints.js
 
-These metrics are available in the monitoring dashboard.
+# Test endpoints with a specific URL
+node test-endpoints.js https://github-ingestor.your-worker.workers.dev
+```
+
+This script tests the following endpoints:
+
+- Root endpoint (/)
+- Health endpoint (/health)
+- Status endpoint (/status)
+
+### Service Diagnostics
+
+For more comprehensive service diagnostics:
+
+```bash
+# Run the diagnostic script with default URL
+node scripts/diagnose-service.js
+
+# Run the diagnostic script with a specific URL
+node scripts/diagnose-service.js --worker-url https://github-ingestor.your-worker.workers.dev
+```
+
+This script performs a series of tests to diagnose issues with the GitHub Ingestor service.
+
+## API Endpoints
+
+- `GET /`: Service information
+- `GET /health`: Health check endpoint
+- `GET /status`: Detailed status information
+- `POST /webhook`: GitHub webhook endpoint
+- `/rpc/*`: RPC endpoints for internal service communication
+
+## Monitoring
+
+The service includes comprehensive logging and metrics collection:
+
+- Structured logging with request IDs
+- Health check metrics
+- Queue processing metrics
+- Error tracking
+
+## Troubleshooting
+
+If you encounter issues with the GitHub Ingestor service, refer to the [Troubleshooting Guide](./TROUBLESHOOTING.md) for detailed information on diagnosing and resolving common problems.
+
+Quick troubleshooting steps:
+
+1. Check the health endpoint for component status
+2. Verify that all required environment variables are set
+3. Check Cloudflare Workers logs for detailed error information
+4. Ensure the database schema is properly initialized
+5. Run the diagnostic scripts to identify specific issues

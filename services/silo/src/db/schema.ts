@@ -10,6 +10,8 @@ export const contents = sqliteTable('contents', {
   sha256: text('sha256'),
   createdAt: integer('created_at').notNull(),
   version: integer('version').default(1),
+  title: text('title'),
+  summary: text('summary'),
 });
 
 export const schema = {

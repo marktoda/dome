@@ -63,6 +63,10 @@ export interface SiloBatchGetItem {
   size: number;
   /** Unix timestamp (seconds) when the content was created */
   createdAt: number;
+  /** AI-generated title for the content */
+  title?: string;
+  /** AI-generated summary of the content */
+  summary?: string;
   /** Content body for small items (≤ 1MB), only included for small items */
   body?: string;
   /** Pre-signed URL for downloading large items (> 1MB), only included for large items */

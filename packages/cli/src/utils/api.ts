@@ -166,18 +166,18 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
     return Array.isArray(response.notes)
       ? response.notes
       : Array.isArray(response.items)
-        ? response.items
-        : Array.isArray(response)
-          ? response
-          : [];
+      ? response.items
+      : Array.isArray(response)
+      ? response
+      : [];
   } else {
     return Array.isArray(response.tasks)
       ? response.tasks
       : Array.isArray(response.items)
-        ? response.items
-        : Array.isArray(response)
-          ? response
-          : [];
+      ? response.items
+      : Array.isArray(response)
+      ? response
+      : [];
   }
 }
 

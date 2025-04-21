@@ -300,3 +300,7 @@ head_sampling_rate = 1
 7. **Stage 7: Monitoring & Deployment**
    - Set up monitoring dashboards and alerts
    - Staged deployment to production
+
+## 11. Document Status
+
+This design document has been reviewed and is current as of April 21, 2025. It accurately reflects the architecture and design of the GitHub Ingestor service.

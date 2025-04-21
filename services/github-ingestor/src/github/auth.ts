@@ -29,14 +29,14 @@ async function generateJWT(appId: string, privateKey: string): Promise<string> {
     .replace(/-----BEGIN RSA PRIVATE KEY-----/, '')
     .replace(/-----END RSA PRIVATE KEY-----/, '')
     .replace(/\n/g, '');
-  
+
   // Base64 decode the PEM contents to get the key data
   const binaryKey = atob(pemContents);
   const keyData = new Uint8Array(binaryKey.length);
   for (let i = 0; i < binaryKey.length; i++) {
     keyData[i] = binaryKey.charCodeAt(i);
   }
-  
+
   // Import the private key
   const key = await crypto.subtle.importKey(
     'pkcs8',
@@ -46,9 +46,9 @@ async function generateJWT(appId: string, privateKey: string): Promise<string> {
       hash: 'SHA-256',
     },
     false,
-    ['sign']
+    ['sign'],
   );
-  
+
   // Create JWT header and payload
   const now = Math.floor(Date.now() / 1000);
   const header = {
@@ -60,25 +60,27 @@ async function generateJWT(appId: string, privateKey: string): Promise<string> {
     exp: now + 600, // Expires in 10 minutes
     iss: appId,
   };
-  
+
   // Encode header and payload
   const encoder = new TextEncoder();
-  const headerEncoded = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  const payloadEncoded = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  
+  const headerEncoded = btoa(JSON.stringify(header))
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+  const payloadEncoded = btoa(JSON.stringify(payload))
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+
   // Create signature
   const dataToSign = encoder.encode(`${headerEncoded}.${payloadEncoded}`);
-  const signature = await crypto.subtle.sign(
-    { name: 'RSASSA-PKCS1-v1_5' },
-    key,
-    dataToSign
-  );
-  
+  const signature = await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, key, dataToSign);
+
   // Convert signature to base64url
   const signatureArray = new Uint8Array(signature);
   let signatureEncoded = btoa(String.fromCharCode(...signatureArray));
   signatureEncoded = signatureEncoded.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  
+
   // Return the complete JWT
   return `${headerEncoded}.${payloadEncoded}.${signatureEncoded}`;
 }
@@ -100,29 +102,29 @@ export async function getInstallationToken(
   try {
     // Generate JWT for GitHub App authentication
     const jwt = await generateJWT(appId, privateKey);
-    
+
     // Use the JWT to request an installation token
     const response = await fetch(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
       {
         method: 'POST',
         headers: {
-          'Accept': 'application/vnd.github.v3+json',
-          'Authorization': `Bearer ${jwt}`,
+          Accept: 'application/vnd.github.v3+json',
+          Authorization: `Bearer ${jwt}`,
           'User-Agent': 'GitHub-Ingestor-Cloudflare-Worker',
         },
-      }
+      },
     );
-    
+
     if (!response.ok) {
       throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
     }
-    
+
     const data = await response.json();
     // Type assertion for data
     const responseData = data as { token: string; expires_at: string };
     const token = responseData.token;
-    
+
     if (!token) {
       throw new Error('No token in GitHub API response');
     }

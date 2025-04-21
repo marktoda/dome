@@ -7,7 +7,7 @@ import { getLogger } from '@dome/logging';
 export class LlmService {
   private readonly MODEL_NAME = '@cf/google/gemma-7b-it-lora';
 
-  constructor(private env: Env) { }
+  constructor(private env: Env) {}
 
   /**
    * Process content with LLM based on content type

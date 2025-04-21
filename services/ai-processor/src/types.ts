@@ -6,7 +6,6 @@ export interface Queue<T> {
   sendBatch(messages: T[]): Promise<void>;
 }
 
-
 export interface SiloBinding {
   batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
 }

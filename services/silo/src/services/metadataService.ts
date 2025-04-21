@@ -333,6 +333,57 @@ export class MetadataService {
       throw error;
     }
   }
+
+  /**
+   * Update content metadata with enriched information (title, summary)
+   */
+  async updateEnrichedMetadata(
+    id: string,
+    data: { title?: string; summary?: string },
+  ): Promise<void> {
+    const startTime = Date.now();
+
+    try {
+      try {
+        // Only update if there's data to update
+        if (!data.title && !data.summary) {
+          getLogger().warn({ id }, 'No enriched data to update');
+          return;
+        }
+
+        // Build the update object with only the fields that are provided
+        const updateData: { title?: string; summary?: string } = {};
+        if (data.title) updateData.title = data.title;
+        if (data.summary) updateData.summary = data.summary;
+
+        // Execute the update
+        const result = await this.db
+          .update(contents)
+          .set(updateData)
+          .where(eq(contents.id, id))
+          .run();
+
+        metrics.timing('silo.d1.update_enriched.latency_ms', Date.now() - startTime);
+        getLogger().info(
+          { id, hasTitle: !!data.title, hasSummary: !!data.summary },
+          'Content metadata enriched',
+        );
+
+        return;
+      } catch (error) {
+        // Check if the error is because the table doesn't exist
+        if (error instanceof Error && error.message.includes('no such table: contents')) {
+          getLogger().warn({ id }, 'Contents table does not exist yet, nothing to update');
+          return;
+        }
+        throw error;
+      }
+    } catch (error) {
+      metrics.increment('silo.d1.errors', 1, { operation: 'update_enriched' });
+      getLogger().error({ error, id }, 'Error updating enriched content metadata');
+      throw error;
+    }
+  }
 }
 
 export function createMetadataService(env: Env): MetadataService {

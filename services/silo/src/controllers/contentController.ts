@@ -10,6 +10,7 @@ import {
   ContentCategory,
   SiloBatchGetResponse,
   SiloBatchGetItem,
+  EnrichedContentMessage,
 } from '@dome/common';
 
 // ---------------------------------------------------------------------------
@@ -35,7 +36,7 @@ export class ContentController {
     private readonly r2Service: R2Service,
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
-  ) { }
+  ) {}
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -202,6 +203,36 @@ export class ContentController {
     logger.info({ id, userId }, 'Content deleted successfully');
 
     return { success: true };
+  }
+
+  /** Process enriched content from AI processor */
+  async processEnrichedContent(message: EnrichedContentMessage): Promise<void> {
+    try {
+      const { id, userId, metadata } = message;
+
+      logger.info(
+        {
+          id,
+          userId,
+          hasTitle: !!metadata.title,
+          hasSummary: !!metadata.summary,
+        },
+        'Processing enriched content',
+      );
+
+      // Update metadata with title and summary
+      await this.metadataService.updateEnrichedMetadata(id, {
+        title: metadata.title,
+        summary: metadata.summary,
+      });
+
+      metrics.increment('silo.enriched_content.processed');
+      logger.info({ id, userId }, 'Content enriched successfully');
+    } catch (error) {
+      metrics.increment('silo.enriched_content.errors');
+      logger.error({ error, messageId: message.id }, 'Error processing enriched content');
+      throw error;
+    }
   }
 
   /** Handle R2 PutObject events emitted via queue. */

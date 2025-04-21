@@ -274,8 +274,8 @@ importers:
         specifier: ^1.2.1
         version: 1.6.1(@types/node@22.14.1)
       wrangler:
-        specifier: ^3.28.1
-        version: 3.114.6(@cloudflare/workers-types@4.20250415.0)(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+        specifier: ^4.10.0
+        version: 4.11.1(@cloudflare/workers-types@4.20250415.0)(bufferutil@4.0.9)(utf-8-validate@5.0.10)
 
   services/constellation:
     dependencies:

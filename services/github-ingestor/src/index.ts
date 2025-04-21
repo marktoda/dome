@@ -51,13 +51,61 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
     initLogger(this.env);
     metrics.init(this.env);
 
+    // Root endpoint
+    app.get('/', c => {
+      return c.json({
+        service: 'github-ingestor',
+        version: this.env.VERSION,
+        environment: this.env.ENVIRONMENT,
+        description: 'GitHub Ingestor service for processing GitHub repositories',
+        endpoints: {
+          '/': 'Service information',
+          '/health': 'Health check endpoint',
+          '/status': 'Detailed status information',
+          '/webhook': 'GitHub webhook endpoint (POST only)',
+          '/rpc/*': 'RPC endpoints for internal service communication',
+        },
+      });
+    });
+
     // GitHub webhook endpoint
     app.post('/webhook', async c => {
+      const requestId = c.req.header('x-request-id') || ulid();
+      const requestLogger = createRequestLogger(requestId);
+
       try {
         return await handleWebhook(c.req.raw, this.env);
       } catch (error) {
-        getLogger().error({ error }, 'Error handling webhook');
-        return new Response('Internal server error', { status: 500 });
+        const errorObj = error as Error;
+        requestLogger.error(
+          {
+            error: errorObj,
+            errorStack: errorObj.stack,
+            errorName: errorObj.name,
+          },
+          'Error handling webhook',
+        );
+
+        metrics.counter('webhook.error', 1);
+
+        return new Response(
+          JSON.stringify({
+            status: 'error',
+            error: {
+              message: errorObj.message,
+              name: errorObj.name,
+              stack: this.env.ENVIRONMENT === 'dev' ? errorObj.stack : undefined,
+            },
+            request_id: requestId,
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          },
+        );
       }
     });
 
@@ -71,27 +119,96 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
         // Check database connection
         let dbStatus = 'ok';
         let dbError = null;
+        let dbDetails = null;
 
         try {
-          // Simple query to check DB connection
-          await this.env.DB.prepare('SELECT 1').first();
+          // More comprehensive database check
+          // First check basic connectivity
+          const result = await this.env.DB.prepare('SELECT 1 as connected').first();
+
+          if (!result || result.connected !== 1) {
+            throw new Error('Database connectivity check failed');
+          }
+
+          // Then check if required tables exist
+          const tableCheck = await this.env.DB.prepare(
+            `
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND (
+              name='provider_repositories' OR
+              name='provider_credentials' OR
+              name='content_blobs'
+            )
+          `,
+          ).all();
+
+          const tables = tableCheck.results?.map((row: any) => row.name) || [];
+          const requiredTables = ['provider_repositories', 'provider_credentials', 'content_blobs'];
+          const missingTables = requiredTables.filter(table => !tables.includes(table));
+
+          if (missingTables.length > 0) {
+            dbStatus = 'warning';
+            dbDetails = `Missing tables: ${missingTables.join(', ')}`;
+            requestLogger.warn({ missingTables }, 'Database missing required tables');
+          } else {
+            dbDetails = 'All required tables present';
+          }
         } catch (error) {
           dbStatus = 'error';
           dbError = (error as Error).message;
-          requestLogger.error({ error }, 'Database health check failed');
+          requestLogger.error(
+            {
+              error,
+              errorStack: (error as Error).stack,
+              errorName: (error as Error).name,
+            },
+            'Database health check failed',
+          );
         }
 
         // Check queue status
         const queueStatus = 'ok'; // Queue binding doesn't provide a way to check health
 
+        // Check GitHub credentials
+        let githubStatus = 'unknown';
+        let githubError = null;
+
+        // Check if required GitHub environment variables are set
+        const requiredGithubVars = [
+          'GITHUB_APP_ID',
+          'GITHUB_PRIVATE_KEY',
+          'GITHUB_WEBHOOK_SECRET',
+          'GITHUB_TOKEN',
+        ];
+
+        const missingVars = requiredGithubVars.filter(
+          varName =>
+            !this.env[varName as keyof Env] ||
+            (this.env[varName as keyof Env] as string).trim() === '',
+        );
+
+        if (missingVars.length > 0) {
+          githubStatus = 'error';
+          githubError = `Missing required environment variables: ${missingVars.join(', ')}`;
+          requestLogger.error({ missingVars }, 'Missing required GitHub environment variables');
+        } else {
+          githubStatus = 'ok';
+        }
+
         // Determine overall status (ok only if all components are ok)
-        const overallStatus = dbStatus === 'ok' && queueStatus === 'ok' ? 'ok' : 'error';
+        const overallStatus =
+          dbStatus === 'ok' && queueStatus === 'ok' && githubStatus === 'ok'
+            ? 'ok'
+            : dbStatus === 'error' || githubStatus === 'error'
+            ? 'error'
+            : 'warning';
 
         // Record metrics
         const duration = Math.round(performance.now() - startTime);
         metrics.trackHealthCheck(overallStatus as any, duration);
         metrics.trackHealthCheck(dbStatus as any, duration, 'database');
         metrics.trackHealthCheck(queueStatus as any, duration, 'queue');
+        metrics.trackHealthCheck(githubStatus as any, duration, 'github');
 
         // Return health status
         return c.json({
@@ -103,15 +220,29 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
             database: {
               status: dbStatus,
               error: dbError,
+              details: dbDetails,
             },
             queue: {
               status: queueStatus,
+            },
+            github: {
+              status: githubStatus,
+              error: githubError,
             },
           },
           uptime: Math.floor(performance.now() / 1000),
         });
       } catch (error) {
-        requestLogger.error({ error }, 'Health check failed');
+        const errorObj = error as Error;
+        requestLogger.error(
+          {
+            error: errorObj,
+            errorStack: errorObj.stack,
+            errorName: errorObj.name,
+          },
+          'Health check failed',
+        );
+
         metrics.trackHealthCheck('error', Math.round(performance.now() - startTime));
 
         return c.json(
@@ -120,7 +251,12 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
             version: this.env.VERSION,
             environment: this.env.ENVIRONMENT,
             request_id: requestId,
-            error: (error as Error).message,
+            error: {
+              message: errorObj.message,
+              name: errorObj.name,
+              stack: this.env.ENVIRONMENT === 'dev' ? errorObj.stack : undefined,
+            },
+            timestamp: new Date().toISOString(),
           },
           500,
         );
@@ -188,7 +324,16 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
           },
         });
       } catch (error) {
-        requestLogger.error({ error }, 'Status check failed');
+        const errorObj = error as Error;
+        requestLogger.error(
+          {
+            error: errorObj,
+            errorStack: errorObj.stack,
+            errorName: errorObj.name,
+          },
+          'Status check failed',
+        );
+
         metrics.counter('status.error', 1);
 
         return c.json(
@@ -197,7 +342,12 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
             version: this.env.VERSION,
             environment: this.env.ENVIRONMENT,
             request_id: requestId,
-            error: (error as Error).message,
+            error: {
+              message: errorObj.message,
+              name: errorObj.name,
+              stack: this.env.ENVIRONMENT === 'dev' ? errorObj.stack : undefined,
+            },
+            timestamp: new Date().toISOString(),
           },
           500,
         );
@@ -232,10 +382,39 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
         return this.app.fetch(request, this.env, this.ctx);
       },
     ).catch(error => {
-      getLogger().error({ error, url: request.url }, 'Unhandled error in fetch handler');
+      const errorObj = error as Error;
+      const requestId = ulid();
+      getLogger().error(
+        {
+          error: errorObj,
+          errorStack: errorObj.stack,
+          errorName: errorObj.name,
+          url: request.url,
+          requestId,
+        },
+        'Unhandled error in fetch handler',
+      );
+
       metrics.counter('http.error', 1);
 
-      return new Response('Internal server error', { status: 500 });
+      return new Response(
+        JSON.stringify({
+          status: 'error',
+          error: {
+            message: errorObj.message,
+            name: errorObj.name,
+            stack: this.env.ENVIRONMENT === 'dev' ? errorObj.stack : undefined,
+          },
+          request_id: requestId,
+          timestamp: new Date().toISOString(),
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      );
     });
   }
 
@@ -253,7 +432,17 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
 
       getLogger().info('Scheduled repository sync completed');
     }).catch(error => {
-      getLogger().error({ error }, 'Error in scheduled repository sync');
+      const errorObj = error as Error;
+      getLogger().error(
+        {
+          error: errorObj,
+          errorStack: errorObj.stack,
+          errorName: errorObj.name,
+          cron: controller.cron,
+        },
+        'Error in scheduled repository sync',
+      );
+
       metrics.counter('cron.error', 1);
     });
   }
@@ -273,7 +462,17 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
 
       getLogger().info('Queue batch processing completed');
     }).catch(error => {
-      getLogger().error({ error }, 'Unhandled error in queue processor');
+      const errorObj = error as Error;
+      getLogger().error(
+        {
+          error: errorObj,
+          errorStack: errorObj.stack,
+          errorName: errorObj.name,
+          messageCount: batch.messages.length,
+        },
+        'Unhandled error in queue processor',
+      );
+
       metrics.counter('queue.unhandled_error', 1);
       throw error; // Rethrow to trigger retry
     });

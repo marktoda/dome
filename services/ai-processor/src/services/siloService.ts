@@ -1,5 +1,4 @@
 import { getLogger } from '@dome/logging';
-import { SiloBatchGetInput, SiloBatchGetResponse } from '@dome/common';
 import { SiloBinding } from '../types';
 
 /**
@@ -17,7 +16,7 @@ export class SiloService {
    */
   async fetchContent(contentId: string, userId: string | null): Promise<string> {
     try {
-      getLogger().debug({ contentId, userId }, 'Fetching content from Silo');
+      getLogger().info({ contentId, userId }, 'Fetching content from Silo');
 
       // Use the batchGet method to fetch the content
       const result = await this.silo.batchGet({ ids: [contentId], userId });

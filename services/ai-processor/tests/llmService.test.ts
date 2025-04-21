@@ -32,10 +32,10 @@ describe('LlmService', () => {
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks();
-    
+
     // Create a new instance for each test
     llmService = new LlmService(mockAi as any);
-    
+
     // Default mock implementation for AI.run
     mockAi.run.mockResolvedValue({
       response: JSON.stringify({
@@ -51,17 +51,17 @@ describe('LlmService', () => {
     it('should process note content correctly', async () => {
       const content = 'This is a test note.\nTODO: Finish the test';
       const result = await llmService.processContent(content, 'note');
-      
+
       // Check that AI was called with the right model
       expect(mockAi.run).toHaveBeenCalledWith('@cf/meta/llama-3-8b-instruct', expect.anything());
-      
+
       // Check that the prompt contains note-specific instructions
       const prompt = mockAi.run.mock.calls[0][1].messages[0].content;
       expect(prompt).toContain('Analyze the following note');
       expect(prompt).toContain('concise title');
       expect(prompt).toContain('TODOs mentioned');
       expect(prompt).toContain('reminders mentioned');
-      
+
       // Check that the result contains expected fields
       expect(result).toHaveProperty('title', 'Test Title');
       expect(result).toHaveProperty('summary', 'Test summary.');
@@ -88,20 +88,20 @@ describe('LlmService', () => {
           topics: ['testing', 'functions'],
         }),
       });
-      
+
       const content = '// TODO: Implement this function\nfunction test() { return true; }';
       const result = await llmService.processContent(content, 'code');
-      
+
       // Check that AI was called with the right model
       expect(mockAi.run).toHaveBeenCalledWith('@cf/meta/llama-3-8b-instruct', expect.anything());
-      
+
       // Check that the prompt contains code-specific instructions
       const prompt = mockAi.run.mock.calls[0][1].messages[0].content;
       expect(prompt).toContain('Analyze the following code');
       expect(prompt).toContain('TODOs in comments');
       expect(prompt).toContain('functions/classes/components');
       expect(prompt).toContain('Programming language');
-      
+
       // Check that the result contains expected fields
       expect(result).toHaveProperty('title', 'Test Function');
       expect(result).toHaveProperty('summary', 'A test function that returns true.');
@@ -112,7 +112,7 @@ describe('LlmService', () => {
       expect(result).toHaveProperty('topics', ['testing', 'functions']);
       expect(result).toHaveProperty('processingVersion', 1);
     });
-    
+
     it('should process article content correctly', async () => {
       // Mock AI to return article-specific response
       mockAi.run.mockResolvedValue({
@@ -128,16 +128,17 @@ describe('LlmService', () => {
           },
         }),
       });
-      
-      const content = 'This is a test article.\nIt talks about testing.\nWritten by John Doe from Test Org.';
+
+      const content =
+        'This is a test article.\nIt talks about testing.\nWritten by John Doe from Test Org.';
       const result = await llmService.processContent(content, 'article');
-      
+
       // Check that the prompt contains article-specific instructions
       const prompt = mockAi.run.mock.calls[0][1].messages[0].content;
       expect(prompt).toContain('Analyze the following article');
       expect(prompt).toContain('Key points or takeaways');
       expect(prompt).toContain('Entities mentioned');
-      
+
       // Check that the result contains expected fields
       expect(result).toHaveProperty('title', 'Test Article');
       expect(result).toHaveProperty('summary');
@@ -150,10 +151,10 @@ describe('LlmService', () => {
     it('should handle AI errors gracefully', async () => {
       // Mock AI to throw an error
       mockAi.run.mockRejectedValue(new Error('AI processing failed'));
-      
+
       const content = 'This is a test note.';
       const result = await llmService.processContent(content, 'note');
-      
+
       // Check that we get a fallback result
       expect(result).toHaveProperty('title');
       expect(result).toHaveProperty('summary', 'Content processing failed');
@@ -166,10 +167,10 @@ describe('LlmService', () => {
       mockAi.run.mockResolvedValue({
         response: 'This is not valid JSON',
       });
-      
+
       const content = 'This is a test note.';
       const result = await llmService.processContent(content, 'note');
-      
+
       // Check that we get a fallback result
       expect(result).toHaveProperty('title');
       expect(result).toHaveProperty('error', 'Response parsing failed');
@@ -178,12 +179,13 @@ describe('LlmService', () => {
     it('should handle partial JSON responses', async () => {
       // Mock AI to return JSON embedded in text
       mockAi.run.mockResolvedValue({
-        response: 'Here is the analysis:\n\n{"title": "Embedded JSON", "summary": "This is embedded in text."}\n\nHope this helps!',
+        response:
+          'Here is the analysis:\n\n{"title": "Embedded JSON", "summary": "This is embedded in text."}\n\nHope this helps!',
       });
-      
+
       const content = 'This is a test note.';
       const result = await llmService.processContent(content, 'note');
-      
+
       // Check that we extracted the JSON correctly
       expect(result).toHaveProperty('title', 'Embedded JSON');
       expect(result).toHaveProperty('summary', 'This is embedded in text.');
@@ -193,17 +195,17 @@ describe('LlmService', () => {
       // Create a very long content string
       const longContent = 'A'.repeat(10000);
       await llmService.processContent(longContent, 'note');
-      
+
       // Check that the content was truncated in the prompt
       const aiCallArgs = mockAi.run.mock.calls[0][1];
       expect(aiCallArgs.messages[0].content.length).toBeLessThan(10000);
       expect(aiCallArgs.messages[0].content).toContain('[Content truncated');
     });
-    
+
     it('should use default prompt for unknown content types', async () => {
       const content = 'This is some content with unknown type.';
       await llmService.processContent(content, 'unknown-type');
-      
+
       // Check that the default prompt was used
       const prompt = mockAi.run.mock.calls[0][1].messages[0].content;
       expect(prompt).toContain('Analyze the following content');
@@ -211,26 +213,26 @@ describe('LlmService', () => {
       expect(prompt).not.toContain('Analyze the following code');
       expect(prompt).not.toContain('Analyze the following article');
     });
-    
+
     it('should generate a fallback title from the first line', async () => {
       // Mock the AI to throw an error to trigger fallback
       mockAi.run.mockRejectedValue(new Error('AI error'));
-      
+
       const content = 'First line as title\nSecond line\nThird line';
       const result = await llmService.processContent(content, 'note');
-      
+
       // Check that the first line was used as title
       expect(result).toHaveProperty('title', 'First line as title');
     });
-    
+
     it('should truncate long first lines for fallback titles', async () => {
       // Mock the AI to throw an error to trigger fallback
       mockAi.run.mockRejectedValue(new Error('AI error'));
-      
+
       const longFirstLine = 'A'.repeat(100);
       const content = `${longFirstLine}\nSecond line`;
       const result = await llmService.processContent(content, 'note');
-      
+
       // Check that the title was truncated
       expect(result.title.length).toBeLessThan(longFirstLine.length);
       expect(result.title).toContain('...');

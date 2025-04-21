@@ -1,6 +1,6 @@
 name = "silo"
 main = "src/index.ts"
-compatibility_date = "2023-10-30"
+compatibility_date = "2025-04-15"
 compatibility_flags = ["nodejs_als"]
 
 [[r2_buckets]]
@@ -23,6 +23,10 @@ queue = "new-content-ai"
 [[queues.consumers]]
 binding = "CONTENT_EVENTS"
 queue = "content-events"
+
+[[queues.consumers]]
+binding = "ENRICHED_CONTENT"
+queue = "enriched-content"
 
 [vars]
 LOG_LEVEL = "info"

@@ -166,7 +166,7 @@ export class ChatMode extends BaseMode {
         const newContent = [
           ...lines.slice(0, headerLines),
           '{yellow-fg}[Older messages removed to prevent overflow]{/yellow-fg}',
-          ...lines.slice(lines.length - linesToKeep)
+          ...lines.slice(lines.length - linesToKeep),
         ].join('\n');
 
         this.container.setContent(newContent);
@@ -307,16 +307,16 @@ export class ChatMode extends BaseMode {
         } else if (typeof apiResponse === 'string') {
           // If the response is already a string, use it directly
           // Apply length limit to prevent overflow
-          message = apiResponse.length > 10000 ?
-            apiResponse.substring(0, 10000) + '... [response truncated due to length]' :
-            apiResponse;
+          message =
+            apiResponse.length > 10000
+              ? apiResponse.substring(0, 10000) + '... [response truncated due to length]'
+              : apiResponse;
         } else if (apiResponse && apiResponse.success === false && apiResponse.error) {
           // Handle error responses that include an error message
           const errorMsg = apiResponse.error.message || 'Unknown error';
           // Truncate error messages to prevent overflow
-          const truncatedError = errorMsg.length > 500 ?
-            errorMsg.substring(0, 500) + '... [error truncated]' :
-            errorMsg;
+          const truncatedError =
+            errorMsg.length > 500 ? errorMsg.substring(0, 500) + '... [error truncated]' : errorMsg;
 
           message = apiResponse.response || `Error: ${truncatedError}`;
 
@@ -332,24 +332,25 @@ export class ChatMode extends BaseMode {
           return;
         } else if (apiResponse && apiResponse.answer) {
           // Apply length limit to prevent overflow
-          message = apiResponse.answer.length > 10000 ?
-            apiResponse.answer.substring(0, 10000) + '... [response truncated due to length]' :
-            apiResponse.answer;
+          message =
+            apiResponse.answer.length > 10000
+              ? apiResponse.answer.substring(0, 10000) + '... [response truncated due to length]'
+              : apiResponse.answer;
         } else if (apiResponse && typeof apiResponse === 'object') {
           try {
             // Format and truncate JSON responses
             const jsonString = JSON.stringify(apiResponse, null, 2);
-            message = jsonString.length > 2000 ?
-              jsonString.substring(0, 2000) + '... [JSON response truncated]' :
-              jsonString;
+            message =
+              jsonString.length > 2000
+                ? jsonString.substring(0, 2000) + '... [JSON response truncated]'
+                : jsonString;
           } catch (e) {
             // Fallback to any available message property with truncation
-            message = (
+            message =
               apiResponse.message ||
               apiResponse.content ||
               apiResponse.response ||
-              String(apiResponse)
-            );
+              String(apiResponse);
 
             if (message.length > 5000) {
               message = message.substring(0, 5000) + '... [response truncated due to length]';
@@ -357,9 +358,10 @@ export class ChatMode extends BaseMode {
           }
         } else {
           const stringResponse = String(apiResponse);
-          message = stringResponse.length > 5000 ?
-            stringResponse.substring(0, 5000) + '... [response truncated due to length]' :
-            stringResponse;
+          message =
+            stringResponse.length > 5000
+              ? stringResponse.substring(0, 5000) + '... [response truncated due to length]'
+              : stringResponse;
         }
 
         // Add the Dome label
@@ -386,9 +388,10 @@ export class ChatMode extends BaseMode {
         // Handle any exceptions during the chat API call
         this.container.pushLine(`{bold}{red-fg}Error:{/red-fg}{/bold}`);
         const errorMessage = chatError instanceof Error ? chatError.message : String(chatError);
-        const truncatedError = errorMessage.length > 500 ?
-          errorMessage.substring(0, 500) + '... [error message truncated]' :
-          errorMessage;
+        const truncatedError =
+          errorMessage.length > 500
+            ? errorMessage.substring(0, 500) + '... [error message truncated]'
+            : errorMessage;
 
         this.wrapText(
           `I encountered an error while processing your request: ${truncatedError}`,
@@ -405,13 +408,12 @@ export class ChatMode extends BaseMode {
       this.screen.render();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      const truncatedError = errorMessage.length > 500 ?
-        errorMessage.substring(0, 500) + '... [error message truncated]' :
-        errorMessage;
+      const truncatedError =
+        errorMessage.length > 500
+          ? errorMessage.substring(0, 500) + '... [error message truncated]'
+          : errorMessage;
 
-      this.container.pushLine(
-        `{red-fg}Error: ${truncatedError}{/red-fg}`,
-      );
+      this.container.pushLine(`{red-fg}Error: ${truncatedError}{/red-fg}`);
       this.statusBar.setContent(
         ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
       );
@@ -450,30 +452,29 @@ In Chat Mode, you can have a conversation with Dome AI.
     try {
       // Limit the number of sources to display
       const maxSources = 5;
-      const sourcesToDisplay = sources.length > maxSources ?
-        sources.slice(0, maxSources) :
-        sources;
+      const sourcesToDisplay = sources.length > maxSources ? sources.slice(0, maxSources) : sources;
 
       this.container.pushLine('');
       this.container.pushLine('{bold}Sources:{/bold}');
 
       if (sources.length > maxSources) {
-        this.container.pushLine(`{italic}(Showing ${maxSources} of ${sources.length} sources){/italic}`);
+        this.container.pushLine(
+          `{italic}(Showing ${maxSources} of ${sources.length} sources){/italic}`,
+        );
       }
 
       sourcesToDisplay.forEach((source: any, index: number) => {
         // Handle title with truncation if needed
         if (source.title) {
-          const title = source.title.length > 80 ?
-            source.title.substring(0, 80) + '...' :
-            source.title;
+          const title =
+            source.title.length > 80 ? source.title.substring(0, 80) + '...' : source.title;
           this.container.pushLine(`${index + 1}. {underline}${title}{/underline}`);
         }
 
         // Handle snippet with truncation
         if (source.snippet) {
-          const snippet = source.snippet.substring(0, 100) +
-            (source.snippet.length > 100 ? '...' : '');
+          const snippet =
+            source.snippet.substring(0, 100) + (source.snippet.length > 100 ? '...' : '');
 
           // Use the wrapping function to handle long snippets properly
           this.container.pushLine('   '); // Indent

@@ -89,7 +89,8 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
 
         // Track batch processing time
         metrics.timing('ai_processor.batch.duration_ms', duration);
-      });
+      },
+    );
   }
 
   /**
@@ -99,9 +100,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
    * @param llmService LLM service for processing content
    * @param siloService Silo service for fetching content
    */
-  async processMessage(
-    message: NewContentMessage,
-  ) {
+  async processMessage(message: NewContentMessage) {
     const { id, userId, category, mimeType, deleted } = message;
 
     // Use category as contentType, fallback to mimeType or 'note'
@@ -152,9 +151,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
       getLogger().info(
         {
           id,
-          userId,
-          category,
-          mimeType,
+          enrichedMessage,
           hasSummary: !!metadata.summary,
           hasTodos: Array.isArray(metadata.todos) && metadata.todos.length > 0,
         },
@@ -179,8 +176,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
       throw error;
     }
   }
-};
-
+}
 
 /**
  * Check if a content type is processable by the LLM

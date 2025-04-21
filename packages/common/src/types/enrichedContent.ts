@@ -10,20 +10,24 @@ export const EnrichedMetadataSchema = z.object({
   summary: z.string().optional(),
 
   // Extracted items
-  todos: z.array(
-    z.object({
-      text: z.string(),
-      dueDate: z.string().optional(), // ISO date if detected
-      priority: z.enum(['high', 'medium', 'low']).optional(),
-    })
-  ).optional(),
+  todos: z
+    .array(
+      z.object({
+        text: z.string(),
+        dueDate: z.string().optional(), // ISO date if detected
+        priority: z.enum(['high', 'medium', 'low']).optional(),
+      }),
+    )
+    .optional(),
 
-  reminders: z.array(
-    z.object({
-      text: z.string(),
-      reminderTime: z.string().optional(), // ISO date if detected
-    })
-  ).optional(),
+  reminders: z
+    .array(
+      z.object({
+        text: z.string(),
+        reminderTime: z.string().optional(), // ISO date if detected
+      }),
+    )
+    .optional(),
 
   // Classification
   topics: z.array(z.string()).optional(),

@@ -96,11 +96,11 @@ describe('AI Processor Worker', () => {
           },
           timestamp: new Date(),
           attempts: 1,
-          retry: () => { },
+          retry: () => {},
           ack: () => Promise.resolve({}),
         },
       ],
-      retryAll: () => { },
+      retryAll: () => {},
       ackAll: () => Promise.resolve({}),
     };
   });
@@ -121,15 +121,17 @@ describe('AI Processor Worker', () => {
       expect(mockLlmService.processContent).toHaveBeenCalledWith('Test content body', 'note');
 
       // Check that enriched content was published
-      expect(mockEnv.ENRICHED_CONTENT.send).toHaveBeenCalledWith(expect.objectContaining({
-        id: 'content-1',
-        userId: 'user-1',
-        contentType: 'note',
-        metadata: expect.objectContaining({
-          title: 'Test Title',
-          summary: 'Test summary.',
+      expect(mockEnv.ENRICHED_CONTENT.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'content-1',
+          userId: 'user-1',
+          contentType: 'note',
+          metadata: expect.objectContaining({
+            title: 'Test Title',
+            summary: 'Test summary.',
+          }),
         }),
-      }));
+      );
     });
 
     it('should skip deleted content', async () => {
@@ -208,7 +210,7 @@ describe('AI Processor Worker', () => {
             timestamp: new Date(),
             attempts: 0,
             retry: () => Promise.resolve(),
-            ack: () => Promise.resolve()
+            ack: () => Promise.resolve(),
           },
           {
             id: 'message-2',
@@ -223,9 +225,9 @@ describe('AI Processor Worker', () => {
             timestamp: new Date(),
             attempts: 0,
             retry: () => Promise.resolve(),
-            ack: () => Promise.resolve()
-          }
-        ]
+            ack: () => Promise.resolve(),
+          },
+        ],
       };
 
       // Process the batch

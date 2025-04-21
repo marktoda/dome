@@ -30,10 +30,10 @@ describe('SiloService', () => {
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks();
-    
+
     // Create a new instance for each test
     siloService = new SiloService(mockSilo as any);
-    
+
     // Default mock implementation for batchGet
     mockSilo.batchGet.mockResolvedValue({
       items: [
@@ -55,13 +55,13 @@ describe('SiloService', () => {
   describe('fetchContent', () => {
     it('should fetch content from Silo successfully', async () => {
       const result = await siloService.fetchContent('test-id', 'test-user');
-      
+
       // Check that Silo was called with the right parameters
       expect(mockSilo.batchGet).toHaveBeenCalledWith({
         ids: ['test-id'],
         userId: 'test-user',
       });
-      
+
       // Check that the result is the content body
       expect(result).toBe('Test content body');
     });
@@ -74,10 +74,10 @@ describe('SiloService', () => {
         limit: 10,
         offset: 0,
       });
-      
+
       // Check that the function throws an error
       await expect(siloService.fetchContent('test-id', 'test-user')).rejects.toThrow(
-        'Content not found: test-id'
+        'Content not found: test-id',
       );
     });
 
@@ -98,10 +98,10 @@ describe('SiloService', () => {
         limit: 10,
         offset: 0,
       });
-      
+
       // Check that the function throws an error
       await expect(siloService.fetchContent('test-id', 'test-user')).rejects.toThrow(
-        'Content body not available for: test-id'
+        'Content body not available for: test-id',
       );
     });
 
@@ -123,20 +123,20 @@ describe('SiloService', () => {
         limit: 10,
         offset: 0,
       });
-      
+
       // Check that the function throws an error mentioning URL
       await expect(siloService.fetchContent('test-id', 'test-user')).rejects.toThrow(
-        'Content body not available for: test-id (URL available)'
+        'Content body not available for: test-id (URL available)',
       );
     });
 
     it('should handle Silo API errors', async () => {
       // Mock Silo to throw an error
       mockSilo.batchGet.mockRejectedValue(new Error('Silo API error'));
-      
+
       // Check that the function throws the same error
       await expect(siloService.fetchContent('test-id', 'test-user')).rejects.toThrow(
-        'Silo API error'
+        'Silo API error',
       );
     });
   });
