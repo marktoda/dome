@@ -1,34 +1,7 @@
-import { NewContentMessage } from '@dome/common';
-
 // Define Cloudflare Workers types
 export interface Queue<T> {
   send(message: T): Promise<void>;
   sendBatch(messages: T[]): Promise<void>;
-}
-
-export interface Ai {
-  run<T = any>(model: string, options: any): Promise<T>;
-}
-
-/**
- * Environment bindings for the AI Processor service
- * Extends the global Env interface from worker-configuration.d.ts
- */
-export interface Env {
-  // Queue bindings with specific types
-  NEW_CONTENT: Queue<NewContentMessage>;
-  ENRICHED_CONTENT: Queue<EnrichedContentMessage>;
-  
-  // Service bindings with specific types
-  SILO: SiloBinding;
-  
-  // AI binding
-  AI: Ai;
-  
-  // Environment variables
-  LOG_LEVEL: string;
-  VERSION: string;
-  ENVIRONMENT: string;
 }
 
 /**
@@ -101,12 +74,4 @@ export interface Todo {
 export interface Reminder {
   text: string;
   reminderTime?: string; // ISO date if detected
-}
-
-/**
- * Message batch from queue
- */
-export interface MessageBatch<T> {
-  queue: string;
-  messages: { id: string; body: T; timestamp: number }[];
 }

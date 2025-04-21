@@ -1,12 +1,13 @@
 import { getLogger } from '@dome/logging';
-import { Ai } from '../types';
 
 /**
  * LLM Service for processing content with AI
  * Handles different content types with specialized prompts
  */
 export class LlmService {
-  constructor(private ai: Ai) {}
+  private readonly MODEL_NAME = '@cf/google/gemma-7b-it-lora';
+
+  constructor(private env: Env) { }
 
   /**
    * Process content with LLM based on content type
@@ -25,12 +26,19 @@ export class LlmService {
         'Processing content with LLM',
       );
 
-      const response = await this.ai.run('@cf/meta/llama-3-8b-instruct', {
+      const raw = await this.env.AI.run(this.MODEL_NAME, {
         messages: [{ role: 'user', content: prompt }],
+        stream: false,
       });
 
+      if (raw instanceof ReadableStream) {
+        // ...convert the stream to text or throw – but you said stream: false,
+        // so this branch should never run
+        throw new Error('Unexpected streaming response');
+      }
+
       // Parse and validate the response
-      const metadata = this.parseResponse(response.response);
+      const metadata = this.parseResponse(raw.response || '');
 
       getLogger().info(
         {
@@ -46,7 +54,7 @@ export class LlmService {
       return {
         ...metadata,
         processingVersion: 1,
-        modelUsed: '@cf/meta/llama-3-8b-instruct',
+        modelUsed: this.MODEL_NAME,
       };
     } catch (error) {
       getLogger().error(
@@ -97,7 +105,7 @@ export class LlmService {
       3. Any TODOs mentioned (with priority and due dates if specified)
       4. Any reminders mentioned (with times if specified)
       5. Key topics or categories
-      
+
       Format the response as a JSON object with the following structure:
       {
         "title": "...",
@@ -106,7 +114,7 @@ export class LlmService {
         "reminders": [{"text": "...", "reminderTime": "..."}],
         "topics": ["topic1", "topic2"]
       }
-      
+
       Note:
       ${this.truncateContent(content, 8000)}
     `;
@@ -125,7 +133,7 @@ export class LlmService {
       3. Any TODOs in comments
       4. Key functions/classes/components
       5. Programming language and frameworks used
-      
+
       Format the response as a JSON object with the following structure:
       {
         "title": "...",
@@ -136,7 +144,7 @@ export class LlmService {
         "frameworks": ["framework1", "framework2"],
         "topics": ["topic1", "topic2"]
       }
-      
+
       Code:
       ${this.truncateContent(content, 8000)}
     `;
@@ -155,7 +163,7 @@ export class LlmService {
       3. Key points or takeaways
       4. Main topics or categories
       5. Entities mentioned (people, organizations, products)
-      
+
       Format the response as a JSON object with the following structure:
       {
         "title": "...",
@@ -168,7 +176,7 @@ export class LlmService {
           "products": ["product1", "product2"]
         }
       }
-      
+
       Article:
       ${this.truncateContent(content, 8000)}
     `;
@@ -186,14 +194,14 @@ export class LlmService {
       1. A concise title (max 5-7 words)
       2. A concise summary (max 2-3 sentences)
       3. Key topics or categories
-      
+
       Format the response as a JSON object with the following structure:
       {
         "title": "...",
         "summary": "...",
         "topics": ["topic1", "topic2"]
       }
-      
+
       Content:
       ${this.truncateContent(content, 8000)}
     `;
@@ -271,6 +279,6 @@ export class LlmService {
  * @param ai The AI binding
  * @returns A new LLM service instance
  */
-export function createLlmService(ai: Ai): LlmService {
-  return new LlmService(ai);
+export function createLlmService(env: Env): LlmService {
+  return new LlmService(env);
 }

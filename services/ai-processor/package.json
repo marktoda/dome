@@ -12,7 +12,6 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.20240320.1",
     "@dome/common": "workspace:*",
     "@dome/logging": "workspace:*",
     "zod": "^3.22.4"

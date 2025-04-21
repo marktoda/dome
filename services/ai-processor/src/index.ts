@@ -1,7 +1,8 @@
+import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getLogger, initLogging, metrics } from './utils/logging';
 import { createLlmService } from './services/llmService';
 import { createSiloService } from './services/siloService';
-import { Env, EnrichedContentMessage, MessageBatch } from './types';
+import { EnrichedContentMessage, SiloBinding } from './types';
 import { NewContentMessage } from '@dome/common';
 
 /**
@@ -11,17 +12,17 @@ import { NewContentMessage } from '@dome/common';
  * extracts metadata using LLM, and publishes results to the
  * ENRICHED_CONTENT queue.
  */
-export default {
+export default class AiProcessor extends WorkerEntrypoint<Env> {
   /**
    * Queue handler for processing messages
    * @param batch Batch of messages from the queue
    * @param env Environment bindings
    */
-  async queue(batch: MessageBatch<NewContentMessage>, env: Env) {
+  async queue(batch: MessageBatch<NewContentMessage>) {
     // Initialize services
-    initLogging(env);
-    const llmService = createLlmService(env.AI);
-    const siloService = createSiloService(env.SILO);
+    initLogging(this.env);
+    const llmService = createLlmService(this.env);
+    const siloService = createSiloService(this.env.SILO as unknown as SiloBinding);
 
     const startTime = Date.now();
     const queueName = batch.queue;
@@ -42,7 +43,7 @@ export default {
     // Process each message in the batch
     for (const message of batch.messages) {
       try {
-        await processMessage(message.body, env, llmService, siloService);
+        await processMessage(message.body, this.env, llmService, siloService);
       } catch (error) {
         getLogger().error(
           {
@@ -69,7 +70,7 @@ export default {
 
     // Track batch processing time
     metrics.timing('ai_processor.batch.duration_ms', duration);
-  },
+  }
 };
 
 /**

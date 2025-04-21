@@ -257,9 +257,6 @@ importers:
 
   services/ai-processor:
     dependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20240320.1
-        version: 4.20250415.0
       '@dome/common':
         specifier: workspace:*
         version: link:../../packages/common
