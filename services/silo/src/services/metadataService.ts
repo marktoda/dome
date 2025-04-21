@@ -192,7 +192,7 @@ export class MetadataService {
    */
   async getMetadataByUserId(
     userId: string,
-    contentType?: string,
+    category?: string,
     limit: number = 50,
     offset: number = 0,
   ): Promise<SiloContentMetadata[]> {
@@ -201,8 +201,8 @@ export class MetadataService {
     try {
       try {
         // Build the query conditions
-        const conditions = contentType
-          ? and(eq(contents.userId, userId), eq(contents.contentType, contentType))
+        const conditions = category
+          ? and(eq(contents.userId, userId), eq(contents.category, category))
           : eq(contents.userId, userId);
 
         // Execute the query with all conditions
@@ -215,7 +215,7 @@ export class MetadataService {
           .offset(offset)
           .all();
 
-        getLogger().info({ userId, contentType, limit, offset }, 'Query parameters');
+        getLogger().info({ userId, category, limit, offset }, 'Query parameters');
         getLogger().info({ resultCount: results.length }, 'Results count');
 
         metrics.timing('silo.d1.get_by_user.latency_ms', Date.now() - startTime);
@@ -239,14 +239,14 @@ export class MetadataService {
   /**
    * Get total count of content for a user with optional filtering
    */
-  async getContentCountForUser(userId: string, contentType?: string): Promise<number> {
+  async getContentCountForUser(userId: string, category?: string): Promise<number> {
     const startTime = Date.now();
 
     try {
       try {
         // Build the query conditions
-        const conditions = contentType
-          ? and(eq(contents.userId, userId), eq(contents.contentType, contentType))
+        const conditions = category
+          ? and(eq(contents.userId, userId), eq(contents.category, category))
           : eq(contents.userId, userId);
 
         // Execute the query with all conditions
@@ -291,19 +291,19 @@ export class MetadataService {
           .from(contents)
           .get();
 
-        // Counts by content type
-        const typeResults = await this.db
+        // Counts by category
+        const categoryResults = await this.db
           .select({
-            contentType: contents.contentType,
+            category: contents.category,
             count: count(),
           })
           .from(contents)
-          .groupBy(contents.contentType)
+          .groupBy(contents.category)
           .all();
 
         const byType: Record<string, number> = {};
-        for (const row of typeResults) {
-          byType[row.contentType] = row.count;
+        for (const row of categoryResults) {
+          byType[row.category] = row.count;
         }
 
         const stats = {

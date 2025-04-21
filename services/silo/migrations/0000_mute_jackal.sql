@@ -1,7 +1,8 @@
 CREATE TABLE `contents` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text,
-	`content_type` text NOT NULL,
+	`category` text NOT NULL,
+	`mime_type` text NOT NULL,
 	`size` integer NOT NULL,
 	`r2_key` text NOT NULL,
 	`sha256` text,

@@ -10,7 +10,7 @@ bucket_name = "silo-content"
 [[d1_databases]]
 binding = "DB"
 database_name = "silo"
-database_id = "b3c8a2a6-8269-492b-bbfe-0a627dae516e"
+database_id = "baf652ea-e575-4019-b95c-c9d44d02c1aa"
 
 [[queues.producers]]
 binding = "NEW_CONTENT"

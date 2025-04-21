@@ -4,7 +4,7 @@ import { R2Service } from '../services/r2Service';
 import { MetadataService } from '../services/metadataService';
 import { QueueService } from '../services/queueService';
 import { R2Event } from '../types';
-import { SiloSimplePutResponse, SiloSimplePutInput, ContentType } from '@dome/common';
+import { SiloSimplePutResponse, SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 
 /**
  * ContentController handles business logic for content operations
@@ -28,7 +28,8 @@ export class ContentController {
       // Add debug logging for the input data
       getLogger().info(
         {
-          contentType: data.contentType,
+          category: data.category,
+          mimeType: data.mimeType,
           userId: data.userId,
           hasId: !!data.id,
           contentIsString: typeof data.content === 'string',
@@ -61,12 +62,14 @@ export class ContentController {
 
       // Create R2 key
       const r2Key = `content/${id}`;
-      const contentType = data.contentType || 'note';
+      const category = data.category || 'note';
+      const mimeType = data.mimeType || this.deriveMimeType(category, data.content);
 
       // Create custom metadata
       const customMetadata: Record<string, string> = {
         userId: userId || '',
-        contentType,
+        category,
+        mimeType,
       };
 
       // Add optional metadata if provided
@@ -87,7 +90,8 @@ export class ContentController {
       getLogger().info(
         {
           id,
-          contentType,
+          category,
+          mimeType,
           size,
         },
         'Content stored successfully',
@@ -95,7 +99,8 @@ export class ContentController {
 
       return {
         id,
-        contentType,
+        category,
+        mimeType,
         size,
         createdAt: now,
       };
@@ -107,10 +112,33 @@ export class ContentController {
   }
 
   /**
+   * Helper method to derive MIME type if not provided
+   * @param category Content category
+   * @param content Content data
+   * @returns Appropriate MIME type
+   */
+  private deriveMimeType(category: string, content: string | ArrayBuffer): string {
+    if (category === 'note') return 'text/markdown';
+    if (category === 'code') {
+      // Try to detect language from content if it's a string
+      if (typeof content === 'string') {
+        if (content.includes('function') || content.includes('const ')) return 'application/javascript';
+        if (content.includes('def ') || content.includes('import ')) return 'application/python';
+        // Add more language detection logic as needed
+      }
+      return 'application/javascript'; // Default for code
+    }
+    if (category === 'document') return 'application/pdf';
+    if (category === 'article') return 'text/html';
+    return 'text/plain'; // Default fallback
+  }
+
+  /**
    * Generate pre-signed forms for direct browser-to-R2 uploads
    */
   async createUpload(data: {
-    contentType: string;
+    category: string;
+    mimeType: string;
     size: number;
     metadata?: Record<string, any>;
     expirationSeconds?: number;
@@ -141,7 +169,8 @@ export class ContentController {
       // Prepare metadata for the upload
       const metadata: Record<string, string> = {
         'x-user-id': userId || '',
-        'x-content-type': data.contentType,
+        'x-category': data.category,
+        'x-mime-type': data.mimeType,
       };
 
       // Add optional SHA256 hash if provided
@@ -171,7 +200,8 @@ export class ContentController {
       getLogger().info(
         {
           id: contentId,
-          contentType: data.contentType,
+          category: data.category,
+          mimeType: data.mimeType,
           size: data.size,
           expirationSeconds,
         },
@@ -405,10 +435,14 @@ export class ContentController {
 
       // Extract metadata from R2 object
       const userId = obj.customMetadata?.['x-user-id'] || obj.customMetadata?.userId || null;
-      const contentType =
-        obj.customMetadata?.['x-content-type'] ||
-        obj.customMetadata?.contentType ||
-        'application/octet-stream';
+      const category =
+        obj.customMetadata?.['x-category'] ||
+        obj.customMetadata?.category ||
+        'note';
+      const mimeType =
+        obj.customMetadata?.['x-mime-type'] ||
+        obj.customMetadata?.mimeType ||
+        'text/plain';
       const sha256 = obj.customMetadata?.['x-sha256'] || null;
 
       // Parse any additional metadata if present
@@ -437,7 +471,8 @@ export class ContentController {
       await this.metadataService.insertMetadata({
         id,
         userId,
-        contentType,
+        category,
+        mimeType,
         size: obj.size,
         r2Key: key,
         sha256,
@@ -448,18 +483,20 @@ export class ContentController {
       await this.queueService.sendNewContentMessage({
         id,
         userId,
-        contentType,
+        category,
+        mimeType,
         size: obj.size,
         createdAt: now,
         metadata,
       });
 
       metrics.increment('silo.r2.events.processed', 1);
-      getLogger().info({ id, key, contentType, size: obj.size }, 'R2 event processed successfully');
+      getLogger().info({ id, key, category, mimeType, size: obj.size }, 'R2 event processed successfully');
 
       return {
         id,
-        contentType,
+        category,
+        mimeType,
         size: obj.size,
         createdAt: now,
       };

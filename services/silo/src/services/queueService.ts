@@ -1,17 +1,18 @@
 import { getLogger, metrics } from '@dome/logging';
+import { NewContentMessage } from 'packages/common';
 
 /**
  * QueueService - A wrapper around Queue operations
  * This service encapsulates all interactions with Cloudflare Queues
  */
 export class QueueService {
-  constructor(private env: any) {}
+  constructor(private env: any) { }
 
   /**
    * Send a message to the NEW_CONTENT queue
    * @param message The message to send
    */
-  async sendNewContentMessage(message: any) {
+  async sendNewContentMessage(message: NewContentMessage) {
     const startTime = Date.now();
 
     try {

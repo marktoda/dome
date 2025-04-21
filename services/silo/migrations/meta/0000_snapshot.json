@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ccad2ecc-2378-4cd1-9211-86f66dde81dc",
+  "id": "d17148c4-7939-441d-9d7a-5e4869a91b33",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "contents": {
@@ -21,8 +21,15 @@
           "notNull": false,
           "autoincrement": false
         },
-        "content_type": {
-          "name": "content_type",
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime_type": {
+          "name": "mime_type",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -68,7 +75,9 @@
       "indexes": {
         "contents_r2_key_unique": {
           "name": "contents_r2_key_unique",
-          "columns": ["r2_key"],
+          "columns": [
+            "r2_key"
+          ],
           "isUnique": true
         }
       },
