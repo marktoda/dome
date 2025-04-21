@@ -111,6 +111,7 @@ export const api = {
  * @returns The response data
  */
 export async function addContent(content: string, title?: string, tags?: string[]): Promise<any> {
+  console.log('adding content', content);
   const payload = {
     content,
     contentType: 'text/plain',
@@ -204,7 +205,7 @@ export async function search(query: string, limit: number = 10): Promise<any> {
 
   // Use the dedicated search endpoint
   const response = await api.get('/search', { params });
-  
+
   return {
     results: response.results || [],
     pagination: response.pagination || { total: 0, limit, offset: 0, hasMore: false },

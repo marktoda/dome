@@ -205,8 +205,11 @@ export class ExploreMode extends BaseMode {
 
       // Display content - use body field from new API
       if (match.body) {
-        const excerpt = match.body.length > 150 ? match.body.substring(0, 150) + '...' : match.body;
-
+        // Show a more generous excerpt in the TUI
+        const excerpt = match.body.length > 300 ? match.body.substring(0, 300) + '...' : match.body;
+        
+        // Add a label for clarity
+        this.container.pushLine('{bold}Content:{/bold}');
         this.container.pushLine(excerpt);
       }
 

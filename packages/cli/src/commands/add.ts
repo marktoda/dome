@@ -21,6 +21,10 @@ export function addCommand(program: Command): void {
         process.exit(1);
       }
 
+      // Log the content for debugging
+      console.log(`Received content: "${content}"`);
+      console.log(`Content length: ${content.length}`);
+
       try {
         // Check if content is a file path
         if (fs.existsSync(content) && fs.statSync(content).isFile()) {

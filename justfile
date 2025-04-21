@@ -1,4 +1,3 @@
-# Dome Cloudflare Justfile
 # Usage: just <command>
 
 # List all available commands
@@ -165,6 +164,12 @@ tui:
     @echo "Starting the prompt-based CLI TUI..."
     pnpm --filter cli start tui
 
-cli *ARGS:
-    @echo "Starting the prompt‑based CLI"
-    pnpm --filter cli start {{ ARGS }}
+set positional-arguments := true
+
+cli *args:
+    cmd="$1"; shift || true; \
+    if [ "$cmd" = "add" ]; then \
+        pnpm --filter cli start "$cmd" "$*"; \
+    else \
+        pnpm --filter cli start "$cmd" "$@"; \
+    fi

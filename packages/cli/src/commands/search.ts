@@ -42,7 +42,7 @@ export function searchCommand(program: Command): void {
         results.results.slice(0, limit).forEach((match: any, index: number) => {
           console.log(subheading(`Result ${index + 1} (Score: ${match.score.toFixed(2)})`));
           console.log(formatKeyValue('ID', match.id));
-          console.log(formatKeyValue('Type', match.type));
+          console.log(formatKeyValue('Type', match.contentType || 'text/plain'));
 
           if (match.title) {
             console.log(formatKeyValue('Title', match.title));
@@ -54,10 +54,15 @@ export function searchCommand(program: Command): void {
 
           console.log(formatKeyValue('Created', new Date(match.createdAt).toLocaleString()));
 
-          // Display content excerpt
-          if (match.excerpt) {
-            console.log('\nExcerpt:');
-            console.log(match.excerpt);
+          // Display content body
+          if (match.body) {
+            console.log('\nContent:');
+            // Limit the content to a reasonable length for display
+            const maxLength = 200;
+            const content = match.body.length > maxLength
+              ? match.body.substring(0, maxLength) + '...'
+              : match.body;
+            console.log(content);
           }
 
           console.log('\n' + '-'.repeat(50) + '\n');
