@@ -2,8 +2,8 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getLogger, initLogging, metrics } from './utils/logging';
 import { createLlmService } from './services/llmService';
 import { createSiloService } from './services/siloService';
-import { EnrichedContentMessage, SiloBinding } from './types';
-import { NewContentMessage } from '@dome/common';
+import { SiloBinding } from './types';
+import { EnrichedContentMessage, NewContentMessage } from '@dome/common';
 
 /**
  * AI Processor Worker
@@ -125,7 +125,8 @@ async function processMessage(
     const enrichedMessage: EnrichedContentMessage = {
       id,
       userId,
-      contentType, // Using our derived contentType
+      category: category as any, // Using category from the message
+      mimeType: mimeType as any, // Using mimeType from the message
       metadata,
       timestamp: Date.now(),
     };
@@ -136,7 +137,8 @@ async function processMessage(
       {
         id,
         userId,
-        contentType,
+        category,
+        mimeType,
         hasSummary: !!metadata.summary,
         hasTodos: Array.isArray(metadata.todos) && metadata.todos.length > 0,
       },
@@ -151,7 +153,8 @@ async function processMessage(
         error: error instanceof Error ? error.message : String(error),
         id,
         userId,
-        contentType,
+        category,
+        mimeType,
       },
       'Error processing content',
     );

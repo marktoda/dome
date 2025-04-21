@@ -7,7 +7,7 @@
 import { z } from 'zod';
 
 // Content category enum (what the content represents)
-const ContentCategoryEnum = z.enum(['note', 'code', 'document', 'article', 'other']);
+export const ContentCategoryEnum = z.enum(['note', 'code', 'document', 'article', 'other']);
 export type ContentCategory = z.infer<typeof ContentCategoryEnum>;
 
 // Common MIME types (how to parse/render the content)
@@ -25,7 +25,7 @@ const CommonMimeTypeEnum = z.enum([
 ]);
 
 // Allow either common MIME types or custom string MIME types
-const MimeTypeSchema = z.union([CommonMimeTypeEnum, z.string()]);
+export const MimeTypeSchema = z.union([CommonMimeTypeEnum, z.string()]);
 export type MimeType = z.infer<typeof MimeTypeSchema>;
 
 /**

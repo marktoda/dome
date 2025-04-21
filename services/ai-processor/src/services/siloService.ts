@@ -1,5 +1,6 @@
 import { getLogger } from '@dome/logging';
-import { SiloBinding, SiloBatchGetResponse } from '../types';
+import { SiloBinding } from '../types';
+import { SiloBatchGetResponse } from '@dome/common';
 
 /**
  * Service for interacting with the Silo service
@@ -45,7 +46,8 @@ export class SiloService {
         {
           contentId,
           userId,
-          contentType: item.contentType,
+          category: item.category,
+          mimeType: item.mimeType,
           contentSize: item.body.length,
         },
         'Successfully fetched content from Silo',

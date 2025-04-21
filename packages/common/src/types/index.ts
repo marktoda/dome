@@ -17,6 +17,9 @@ export * from './siloContent';
 // Export queue message types
 export * from './queueMessages';
 
+// Export enriched content types
+export * from './enrichedContent';
+
 /**
  * Service information interface
  */
