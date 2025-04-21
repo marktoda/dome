@@ -1,8 +1,14 @@
 import { NewContentMessage } from '@dome/common';
 
-// Import types from worker-configuration.d.ts
-type Queue<T> = import('../worker-configuration').Queue<T>;
-type Ai = import('../worker-configuration').Ai;
+// Define Cloudflare Workers types
+export interface Queue<T> {
+  send(message: T): Promise<void>;
+  sendBatch(messages: T[]): Promise<void>;
+}
+
+export interface Ai {
+  run<T = any>(model: string, options: any): Promise<T>;
+}
 
 /**
  * Environment bindings for the AI Processor service

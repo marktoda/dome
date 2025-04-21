@@ -1,4 +1,5 @@
 import { getLogger } from '@dome/logging';
+import { Ai } from '../types';
 
 /**
  * LLM Service for processing content with AI

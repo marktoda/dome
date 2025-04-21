@@ -7,10 +7,6 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Env, IngestMessage } from './types';
-import { initPolyfills } from './utils/polyfills';
-
-// Initialize polyfills
-initPolyfills();
 import { handleWebhook } from './webhook/http';
 import { processQueueBatch } from './queue/processor';
 import { handleCron } from './cron/handler';

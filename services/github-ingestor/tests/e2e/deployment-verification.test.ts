@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { ulid } from 'ulid';
-import * as crypto from 'crypto';
 import { ExtendedMiniflare } from '../types';
 import { createTestMiniflare } from './helpers';
+import { createSignedWebhook } from '../crypto-helpers';
 
 /**
  * Deployment Verification Test
@@ -118,14 +118,8 @@ describe('GitHub Ingestor Deployment Verification', () => {
   });
 
   // Helper function to create a signed webhook payload
-  function createSignedWebhook(payload: any): { signature: string; body: string } {
-    const body = JSON.stringify(payload);
-    const signature = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
-
-    return {
-      signature: `sha256=${signature}`,
-      body,
-    };
+  async function createSignedPayload(payload: any): Promise<{ signature: string; body: string }> {
+    return await createSignedWebhook(payload, webhookSecret);
   }
 
   it('should verify health check endpoint', async () => {
@@ -190,7 +184,7 @@ describe('GitHub Ingestor Deployment Verification', () => {
     };
 
     // Sign the webhook payload
-    const { signature, body } = createSignedWebhook(pushPayload);
+    const { signature, body } = await createSignedPayload(pushPayload);
 
     // Send webhook request
     const res = await mf.dispatchFetch('http://localhost/webhook', {

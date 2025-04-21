@@ -3,10 +3,7 @@ import { contentBlobs } from '../db/schema';
 import { logger, logError } from '../utils/logging';
 import { metrics } from '../utils/metrics';
 import { Env } from '../types';
-import { initPolyfills } from '../utils/polyfills';
 
-// Initialize polyfills
-initPolyfills();
 import { calculateSha1, generateR2Key } from '../github/content-utils';
 
 /**

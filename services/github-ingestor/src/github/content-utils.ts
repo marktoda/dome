@@ -1,8 +1,4 @@
 import { minimatch } from 'minimatch';
-import { initPolyfills } from '../utils/polyfills';
-
-// Initialize polyfills
-initPolyfills();
 
 /**
  * Common MIME types for file extensions

@@ -49,8 +49,6 @@ for (let i = 0; i < args.length; i++) {
 // Alternative API paths to try if the primary path fails
 const API_PATHS = [
   '/rpc/repositories', // Primary path based on the code
-  '/repositories', // Alternative without /rpc prefix
-  '/api/repositories', // Alternative with /api prefix
 ];
 
 /**
@@ -254,7 +252,7 @@ async function diagnoseService() {
     // Test various endpoints
     console.log(`\nTesting various endpoints to identify routing issues...`);
 
-    const endpoints = ['/', '/health', '/status', '/rpc', '/repositories', '/api/repositories'];
+    const endpoints = ['/', '/health', '/status', '/rpc'];
 
     for (const endpoint of endpoints) {
       try {

@@ -16,11 +16,6 @@ import {
 //  Types / Constants
 // ---------------------------------------------------------------------------
 
-/** Generic env shape – adjust as needed without breaking callers */
-interface Env {
-  [key: string]: unknown;
-}
-
 const KB = 1024;
 const MB = KB * KB;
 const SIMPLE_PUT_MAX_SIZE = 1 * MB; // 1 MiB
@@ -40,7 +35,7 @@ export class ContentController {
     private readonly r2Service: R2Service,
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
-  ) {}
+  ) { }
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */

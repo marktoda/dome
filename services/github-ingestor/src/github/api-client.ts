@@ -1,9 +1,5 @@
 import { Octokit } from '@octokit/rest';
 import { App } from '@octokit/app';
-import { initPolyfills } from '../utils/polyfills';
-
-// Initialize polyfills
-initPolyfills();
 import { logger, logError } from '../utils/logging';
 import { metrics } from '../utils/metrics';
 import { GitHubContent, GitHubTree, GitHubCommit } from '../types';

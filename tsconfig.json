@@ -11,17 +11,15 @@
     "sourceMap": true,
     "outDir": "dist",
     "baseUrl": ".",
-    "composite": true,
-    "declarationMap": true,
     "paths": {
       "@dome/common": ["packages/common/src"],
       "@dome/common/*": ["packages/common/src/*"],
-      "@dome/logging": ["packages/logging/dist"],
-      "@dome/logging/*": ["packages/logging/dist/*"],
+      "@dome/logging": ["packages/logging/src"],
+      "@dome/logging/*": ["packages/logging/src/*"],
       "@dome/cli": ["packages/cli/src"],
       "@dome/cli/*": ["packages/cli/src/*"],
-      "@dome/metrics": ["packages/metrics/dist"],
-      "@dome/metrics/*": ["packages/metrics/dist/*"]
+      "@dome/metrics": ["packages/metrics/src"],
+      "@dome/metrics/*": ["packages/metrics/src/*"]
     }
   },
   "exclude": ["node_modules", "dist"]

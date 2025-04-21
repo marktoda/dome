@@ -1,6 +1,6 @@
-import { createR2Service, R2Service } from './r2Service';
-import { createMetadataService, MetadataService } from './metadataService';
-import { createQueueService, QueueService } from './queueService';
+import { createR2Service } from './r2Service';
+import { createMetadataService } from './metadataService';
+import { createQueueService } from './queueService';
 import { createContentController, ContentController } from '../controllers/contentController';
 import { createStatsController, StatsController } from '../controllers/statsController';
 
