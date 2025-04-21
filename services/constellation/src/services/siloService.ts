@@ -2,7 +2,8 @@ import { getLogger, metrics } from '@dome/logging';
 import { z } from 'zod';
 import {
   SiloEmbedJob,
-  ContentType,
+  ContentCategory,
+  MimeType,
   NewContentMessageSchema,
   NewContentMessage,
 } from '@dome/common';
@@ -87,7 +88,8 @@ export class SiloService {
         text,
         created: (validatedMessage.createdAt || Math.floor(Date.now() / 1000)) * 1000, // Convert seconds to milliseconds
         version: 1, // Default version
-        contentType: (validatedMessage.contentType as ContentType) || 'note',
+        category: (validatedMessage.category as ContentCategory) || 'note',
+        mimeType: (validatedMessage.mimeType as MimeType) || 'text/markdown',
       };
     } catch (error) {
       if (error instanceof z.ZodError) {

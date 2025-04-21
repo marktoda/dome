@@ -30,7 +30,8 @@ export interface SiloService {
  *   metadata: {
  *     userId: 'user123',
  *     contentId: 'content123',
- *     contentType: 'note',
+ *     category: 'note',
+ *     mimeType: 'text/markdown',
  *     createdAt: 1650000000,
  *     version: 1
  *   }

@@ -54,7 +54,8 @@ describe('VectorizeService', () => {
             metadata: {
               userId: 'user1',
               contentId: 'note1',
-              contentType: 'note',
+              category: 'note',
+              mimeType: 'text/markdown',
               createdAt: 1650000000,
               version: 1,
             },
@@ -86,7 +87,8 @@ describe('VectorizeService', () => {
           metadata: {
             userId: 'user1',
             contentId: 'note1',
-            contentType: 'note',
+            category: 'note',
+            mimeType: 'text/markdown',
             createdAt: 1650000000,
             version: 1,
           },
@@ -120,7 +122,8 @@ describe('VectorizeService', () => {
           metadata: {
             userId: 'user1',
             contentId: `note${i}`,
-            contentType: 'note',
+            category: 'note',
+            mimeType: 'text/markdown',
             createdAt: 1650000000,
             version: 1,
           },
@@ -155,7 +158,8 @@ describe('VectorizeService', () => {
           metadata: {
             userId: 'user1',
             contentId: 'note1',
-            contentType: 'note',
+            category: 'note',
+            mimeType: 'text/markdown',
             createdAt: 1650000000,
             version: 1,
           },
@@ -184,7 +188,8 @@ describe('VectorizeService', () => {
           metadata: {
             userId: 'user1',
             contentId: 'note1',
-            contentType: 'note',
+            category: 'note',
+            mimeType: 'text/markdown',
             createdAt: 1650000000,
             version: 1,
           },
@@ -226,7 +231,8 @@ describe('VectorizeService', () => {
           metadata: {
             userId: 'user1',
             contentId: 'note1',
-            contentType: 'note',
+            category: 'note',
+            mimeType: 'text/markdown',
             createdAt: 1650000000,
             version: 1,
           },

@@ -84,7 +84,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           metadata: <VectorMeta>{
             userId: job.userId,
             contentId: job.contentId,
-            contentType: job.contentType,
+            category: job.category,
+            mimeType: job.mimeType,
             createdAt: Math.floor(job.created / 1000),
             version: job.version,
           },

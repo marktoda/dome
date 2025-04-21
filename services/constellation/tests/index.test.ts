@@ -134,7 +134,8 @@ describe('Constellation', () => {
   // Test data
   const testJob: SiloEmbedJob = {
     userId: 'user-123',
-    contentType: 'note',
+    category: 'note',
+    mimeType: 'text/markdown',
     contentId: 'note-456',
     text: 'This is a test note for embedding',
     created: Date.now(),
