@@ -1,0 +1,22 @@
+{
+  "name": "@dome/scripts",
+  "version": "0.1.0",
+  "description": "Utility scripts for dome",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "ingest-norg": "ts-node src/ingest-norg.ts"
+  },
+  "dependencies": {
+    "@dome/common": "workspace:*",
+    "chalk": "^4.1.2",
+    "glob": "^10.3.10"
+  },
+  "devDependencies": {
+    "@types/node": "^18.15.11",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4"
+  }
+}

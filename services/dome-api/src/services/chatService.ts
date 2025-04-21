@@ -89,7 +89,7 @@ export class ChatService {
       }
 
       // Call Workers AI
-      const response = await env.AI.run('@cf/meta/llama-3-8b-instruct-fast', {
+      const response = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
         messages: promptMessages,
       });
 

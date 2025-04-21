@@ -1,0 +1,52 @@
+name = "ai-processor"
+main = "src/index.ts"
+compatibility_date = "2023-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Queue consumer for NEW_CONTENT
+[[queues.consumers]]
+queue = "new-content"
+binding = "NEW_CONTENT"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+
+# Queue producer for ENRICHED_CONTENT
+[[queues.producers]]
+queue = "enriched-content"
+binding = "ENRICHED_CONTENT"
+
+# AI binding for Workers AI
+[ai]
+binding = "AI"
+
+# Binding to Silo service for content fetching
+[[services]]
+binding = "SILO"
+service = "silo"
+
+[vars]
+LOG_LEVEL = "info"
+VERSION = "0.1.0"
+ENVIRONMENT = "dev"
+
+# Dev environment
+[env.dev]
+name = "ai-processor-dev"
+[env.dev.vars]
+LOG_LEVEL = "debug"
+ENVIRONMENT = "dev"
+
+# Staging environment
+[env.staging]
+name = "ai-processor-staging"
+[env.staging.vars]
+LOG_LEVEL = "info"
+ENVIRONMENT = "staging"
+
+# Production environment
+[env.prod]
+name = "ai-processor"
+[env.prod.vars]
+LOG_LEVEL = "info"
+ENVIRONMENT = "prod"

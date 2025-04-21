@@ -202,6 +202,7 @@ export class SiloService {
       this.logger.info(
         {
           itemsCount: response.items.length,
+          items: response.items,
           firstItemId: response.items[0]?.id,
           firstItemUserId: response.items[0]?.userId,
         },
