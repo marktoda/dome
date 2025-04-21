@@ -91,15 +91,6 @@ export class SearchCommand implements CommandHandler {
 
           this.addMessage(`{bold}Created:{/bold} ${new Date(match.createdAt).toLocaleString()}`);
 
-          // Display content excerpt - use body field from new API
-          if (match.body) {
-            const excerpt =
-              match.body.length > 200 ? match.body.substring(0, 200) + '...' : match.body;
-
-            this.addMessage('\n{bold}Excerpt:{/bold}');
-            this.addMessage(excerpt);
-          }
-
           this.addMessage('{gray-fg}' + '-'.repeat(50) + '{/gray-fg}');
         });
 

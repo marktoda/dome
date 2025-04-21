@@ -310,22 +310,17 @@ export class SiloController {
       this.logger.debug({ generatedTitle: title }, 'Generated title for note');
 
       // Create the note via siloService
-      // Note: We can't directly pass metadata to simplePut, so we'll need to retrieve and update the note after creation
-      const result = await siloService.simplePut(c.env, {
+      await siloService.simplePut(c.env, {
         content: validatedData.content,
         category: (validatedData.category || 'note') as ContentCategory,
         mimeType: validatedData.mimeType || 'text/markdown',
         userId,
       });
 
-      // Get the created note
-      const note = await siloService.get(c.env, { id: result.id, userId });
-
       // Return the created note
       return c.json(
         {
           success: true,
-          note,
         },
         201,
       );
