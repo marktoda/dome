@@ -6,8 +6,27 @@
 
 import { z } from 'zod';
 
-const ContentTypeEnum = z.enum(['note', 'code', 'text/plain']);
-export type ContentType = z.infer<typeof ContentTypeEnum>;
+// Content category enum (what the content represents)
+const ContentCategoryEnum = z.enum(['note', 'code', 'document', 'article', 'other']);
+export type ContentCategory = z.infer<typeof ContentCategoryEnum>;
+
+// Common MIME types (how to parse/render the content)
+const CommonMimeTypeEnum = z.enum([
+  'text/plain',
+  'text/markdown',
+  'text/html',
+  'application/json',
+  'application/javascript',
+  'application/python',
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  // Add other common MIME types as needed
+]);
+
+// Allow either common MIME types or custom string MIME types
+const MimeTypeSchema = z.union([CommonMimeTypeEnum, z.string()]);
+export type MimeType = z.infer<typeof MimeTypeSchema>;
 
 /**
  * Content metadata structure
@@ -16,7 +35,8 @@ export type ContentType = z.infer<typeof ContentTypeEnum>;
 export interface SiloContentMetadata {
   id: string;
   userId: string | null;
-  contentType: ContentType;
+  category: ContentCategory;
+  mimeType: MimeType;
   size: number;
   r2Key: string;
   sha256?: string;
@@ -32,7 +52,8 @@ export interface SiloContent {
   // Metadata fields
   id: string;
   userId: string | null;
-  contentType: ContentType;
+  category: ContentCategory;
+  mimeType: MimeType;
   size: number;
   createdAt: number;
   updatedAt?: number;
@@ -55,7 +76,8 @@ export interface SiloEmbedJob {
   text: string;
   created: number;
   version: number;
-  contentType: ContentType;
+  category: ContentCategory;
+  mimeType: MimeType;
 }
 
 /**
@@ -64,7 +86,8 @@ export interface SiloEmbedJob {
  */
 export const siloSimplePutSchema = z.object({
   id: z.string().optional(),
-  contentType: ContentTypeEnum.default('note'),
+  category: ContentCategoryEnum.default('note'),
+  mimeType: MimeTypeSchema.default('text/markdown'),
   content: z.union([z.string(), z.instanceof(ArrayBuffer)]).refine(
     val => {
       // Check if content is not empty
@@ -86,7 +109,8 @@ export const siloSimplePutSchema = z.object({
  * Used to validate input for generating pre-signed forms for direct browser-to-R2 uploads
  */
 export const siloCreateUploadSchema = z.object({
-  contentType: ContentTypeEnum.default('note'),
+  category: ContentCategoryEnum.default('note'),
+  mimeType: MimeTypeSchema.default('text/markdown'),
   size: z.number().positive('Size must be a positive number'),
   metadata: z.record(z.string(), z.any()).optional(),
   expirationSeconds: z.number().min(60).max(3600).optional(), // Default 15 minutes, max 1 hour
@@ -101,7 +125,8 @@ export const siloCreateUploadSchema = z.object({
 export const siloBatchGetSchema = z.object({
   ids: z.array(z.string()).optional().default([]),
   userId: z.string().nullable().optional(),
-  contentType: z.string().optional(),
+  category: z.string().optional(),
+  mimeType: z.string().optional(),
   limit: z.number().positive().optional().default(50),
   offset: z.number().min(0).optional().default(0),
 });
@@ -137,8 +162,10 @@ export type SiloSimplePutInput = z.input<typeof siloSimplePutSchema>;
 export interface SiloSimplePutResponse {
   /** Unique identifier for the content */
   id: string;
-  /** Type of content (note, code, etc.) */
-  contentType: ContentType;
+  /** Category of content (note, code, etc.) */
+  category: ContentCategory;
+  /** MIME type of the content */
+  mimeType: MimeType;
   /** Size of the content in bytes */
   size: number;
   /** Unix timestamp (seconds) when the content was created */
@@ -183,8 +210,10 @@ export interface SiloBatchGetItem {
   id: string;
   /** User ID who owns the content, or null for public content */
   userId: string | null;
-  /** Type of content (note, code, etc.) */
-  contentType: ContentType;
+  /** Category of content (note, code, etc.) */
+  category: ContentCategory;
+  /** MIME type of the content */
+  mimeType: MimeType;
   /** Size of the content in bytes */
   size: number;
   /** Unix timestamp (seconds) when the content was created */
@@ -224,8 +253,10 @@ export interface SiloStatsResponse {
 export interface SiloProcessR2EventResponse {
   /** Unique identifier for the content */
   id: string;
-  /** Type of content (note, code, etc.) */
-  contentType: string;
+  /** Category of content (note, code, etc.) */
+  category: ContentCategory;
+  /** MIME type of the content */
+  mimeType: MimeType;
   /** Size of the content in bytes */
   size: number;
   /** Unix timestamp (seconds) when the content was created */

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ContentType } from './siloContent';
+import { ContentCategory, MimeType } from './siloContent';
 
 /**
  * Schema for messages sent to the new-content queue
@@ -12,7 +12,8 @@ export const NewContentMessageSchema = z.object({
   userId: z.string().nullable(),
 
   // Optional fields for content creation/update
-  contentType: z.string().optional(),
+  category: z.string().optional(),
+  mimeType: z.string().optional(),
   size: z.number().int().positive().optional(),
   createdAt: z.number().int().optional(),
   metadata: z.union([z.record(z.string(), z.any()), z.null()]).optional(),

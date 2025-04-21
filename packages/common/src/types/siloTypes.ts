@@ -4,7 +4,7 @@
  * This file contains type definitions for the return values of Silo service RPC methods.
  */
 
-import { ContentType } from './siloContent';
+import { ContentCategory, MimeType } from './siloContent';
 
 /**
  * SimplePut RPC method return type
@@ -13,8 +13,10 @@ import { ContentType } from './siloContent';
 export interface SiloSimplePutResponse {
   /** Unique identifier for the content */
   id: string;
-  /** Type of content (note, code, etc.) */
-  contentType: ContentType;
+  /** Category of content (note, code, etc.) */
+  category: ContentCategory;
+  /** MIME type of the content */
+  mimeType: MimeType;
   /** Size of the content in bytes */
   size: number;
   /** Unix timestamp (seconds) when the content was created */
@@ -53,8 +55,10 @@ export interface SiloBatchGetItem {
   id: string;
   /** User ID who owns the content, or null for public content */
   userId: string | null;
-  /** Type of content (note, code, etc.) */
-  contentType: ContentType;
+  /** Category of content (note, code, etc.) */
+  category: ContentCategory;
+  /** MIME type of the content */
+  mimeType: MimeType;
   /** Size of the content in bytes */
   size: number;
   /** Unix timestamp (seconds) when the content was created */
@@ -94,8 +98,10 @@ export interface SiloStatsResponse {
 export interface SiloProcessR2EventResponse {
   /** Unique identifier for the content */
   id: string;
-  /** Type of content (note, code, etc.) */
-  contentType: string;
+  /** Category of content (note, code, etc.) */
+  category: ContentCategory;
+  /** MIME type of the content */
+  mimeType: MimeType;
   /** Size of the content in bytes */
   size: number;
   /** Unix timestamp (seconds) when the content was created */

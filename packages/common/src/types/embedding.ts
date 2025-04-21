@@ -6,7 +6,7 @@
  * These types are shared between the service and its clients.
  */
 
-import { SiloEmbedJob, ContentType } from './siloContent';
+import { SiloEmbedJob, ContentCategory, MimeType } from './siloContent';
 
 // Re-export the types from siloContent
 export { SiloEmbedJob };
@@ -18,7 +18,8 @@ export { SiloEmbedJob };
 export interface VectorMeta {
   userId: string;
   contentId: string;
-  contentType: ContentType;
+  category: ContentCategory;
+  mimeType: MimeType;
   createdAt: number;
   version: number;
 }
