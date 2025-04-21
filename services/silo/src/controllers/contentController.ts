@@ -24,9 +24,9 @@ interface Env {
 const KB = 1024;
 const MB = KB * KB;
 const SIMPLE_PUT_MAX_SIZE = 1 * MB; // 1 MiB
-const UPLOAD_MAX_SIZE = 100 * MB;   // 100 MiB
+const UPLOAD_MAX_SIZE = 100 * MB; // 100 MiB
 const PRESIGNED_POST_TTL_SECONDS = 15 * 60; // 15 min
-const PRESIGNED_URL_TTL_SECONDS = 60 * 60;  // 60 min
+const PRESIGNED_URL_TTL_SECONDS = 60 * 60; // 60 min
 
 const logger = getLogger();
 
@@ -40,7 +40,7 @@ export class ContentController {
     private readonly r2Service: R2Service,
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
-  ) { }
+  ) {}
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -150,13 +150,7 @@ export class ContentController {
     try {
       logger.info(params, 'batchGet called');
 
-      const {
-        ids = [],
-        userId = null,
-        contentType,
-        limit = 50,
-        offset = 0,
-      } = params;
+      const { ids = [], userId = null, contentType, limit = 50, offset = 0 } = params;
 
       const metadataItems =
         ids.length === 0
@@ -166,7 +160,7 @@ export class ContentController {
       const results: Record<string, SiloBatchGetItem> = {};
 
       await Promise.all(
-        metadataItems.map(async (item) => {
+        metadataItems.map(async item => {
           if (item.userId !== null && item.userId !== userId) return; // ACL check
 
           results[item.id] = item;
@@ -260,7 +254,10 @@ export class ContentController {
       });
 
       metrics.increment('silo.r2.events.processed');
-      logger.info({ id, key, category, mimeType, size: obj.size }, 'R2 event processed successfully');
+      logger.info(
+        { id, key, category, mimeType, size: obj.size },
+        'R2 event processed successfully',
+      );
 
       return { id, category, mimeType, size: obj.size, createdAt };
     } catch (error) {
@@ -351,7 +348,9 @@ export class ContentController {
   }
 
   private contentSize(content: string | ArrayBuffer) {
-    return typeof content === 'string' ? new TextEncoder().encode(content).length : content.byteLength;
+    return typeof content === 'string'
+      ? new TextEncoder().encode(content).length
+      : content.byteLength;
   }
 
   private logInput(message: string, input: SiloSimplePutInput) {

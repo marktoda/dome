@@ -32,7 +32,7 @@ export function chatCommand(program: Command): void {
           console.log(chalk.bold.blue('Dome: '));
 
           const response = await chat(options.message);
-          console.log(response.message);
+          console.log(response);
         } else {
           // Start interactive chat mode
           console.log(heading('Interactive Chat'));
@@ -60,7 +60,7 @@ export function chatCommand(program: Command): void {
               process.stdout.write(chalk.bold.blue('Dome: '));
 
               const response = await chat(userMessage);
-              console.log(response.message);
+              console.log(response);
             } catch (err) {
               console.log(error(`Error: ${err instanceof Error ? err.message : String(err)}`));
             }

@@ -163,13 +163,21 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
   // Extract the items array from the response
   // The API might return items in different properties based on the type
   if (type === 'notes') {
-    return Array.isArray(response.notes) ? response.notes :
-      Array.isArray(response.items) ? response.items :
-        Array.isArray(response) ? response : [];
+    return Array.isArray(response.notes)
+      ? response.notes
+      : Array.isArray(response.items)
+      ? response.items
+      : Array.isArray(response)
+      ? response
+      : [];
   } else {
-    return Array.isArray(response.tasks) ? response.tasks :
-      Array.isArray(response.items) ? response.items :
-        Array.isArray(response) ? response : [];
+    return Array.isArray(response.tasks)
+      ? response.tasks
+      : Array.isArray(response.items)
+      ? response.items
+      : Array.isArray(response)
+      ? response
+      : [];
   }
 }
 
@@ -244,5 +252,18 @@ export async function chat(message: string): Promise<any> {
   };
 
   const response = await api.post('/chat', payload);
-  return response.response || response;
+
+  console.log('Raw API response:', JSON.stringify(response, null, 2));
+
+  // Handle the response structure properly
+  if (response && response.success === true && typeof response.response === 'string') {
+    // Return just the response text if it's available
+    return response.response;
+  } else if (response && typeof response === 'string') {
+    // If the response itself is a string, return it directly
+    return response;
+  }
+
+  // Fallback to the entire response object if the expected structure isn't found
+  return response;
 }

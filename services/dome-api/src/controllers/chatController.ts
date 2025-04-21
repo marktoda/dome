@@ -109,20 +109,53 @@ export class ChatController {
 
       // Otherwise, use regular response
       getLogger().info({ userId }, 'Generating chat response');
-      const response = await chatService.generateResponse(c.env, chatOptions);
 
-      getLogger().info(
-        {
-          userId,
-          responseLength:
-            typeof response === 'string' ? response.length : JSON.stringify(response).length,
-        },
-        'Chat response successfully generated',
-      );
-      return c.json({
-        success: true,
-        response,
-      });
+      try {
+        const response = await chatService.generateResponse(c.env, chatOptions);
+
+        // Ensure we have a valid response
+        if (response === undefined) {
+          getLogger().warn({ userId }, 'Chat response was undefined');
+          return c.json({
+            success: false,
+            error: {
+              code: 'CHAT_ERROR',
+              message: 'Failed to generate chat response',
+            },
+            response:
+              "I'm sorry, but I couldn't generate a response at this time. Please try again later.",
+          });
+        }
+
+        getLogger().info(
+          {
+            userId,
+            responseLength:
+              typeof response === 'string' ? response.length : JSON.stringify(response).length,
+          },
+          'Chat response successfully generated',
+        );
+        return c.json({
+          success: true,
+          response,
+        });
+      } catch (chatError) {
+        getLogger().error({ err: chatError, userId }, 'Error generating chat response');
+
+        // Return a graceful error response instead of throwing
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'CHAT_ERROR',
+              message: 'Failed to generate chat response',
+            },
+            response:
+              "I apologize, but I'm experiencing technical difficulties. Please try again later.",
+          },
+          200,
+        ); // Return 200 status to allow the client to display the error message
+      }
     } catch (error) {
       getLogger().error(
         {

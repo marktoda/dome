@@ -73,7 +73,7 @@ export interface MetricsService {
     method: string,
     statusCode: number,
     duration: number,
-    tags?: Record<string, string>
+    tags?: Record<string, string>,
   ): void;
 
   /**
@@ -87,7 +87,7 @@ export interface MetricsService {
     status: 'ok' | 'warning' | 'error',
     duration: number,
     component?: string,
-    tags?: Record<string, string>
+    tags?: Record<string, string>,
   ): void;
 
   /**

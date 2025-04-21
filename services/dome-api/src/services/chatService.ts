@@ -27,12 +27,49 @@ export interface ChatOptions {
  * Service for chat operations
  */
 export class ChatService {
+  // Model to use for chat
+  private readonly MODEL_NAME = '@cf/google/gemma-3-12b-it';
+  // Maximum context window size for the model (in tokens)
+  private readonly MAX_CONTEXT_WINDOW = 80000;
+  // Approximate tokens per character (used for estimation)
+  private readonly TOKENS_PER_CHAR = 0.25;
+  // Reserve tokens for the model's response
+  private readonly RESPONSE_TOKEN_RESERVE = 2000;
+  // Maximum system prompt size in tokens
+  private readonly MAX_SYSTEM_PROMPT_TOKENS = 10000;
+
+  /**
+   * Estimate the number of tokens in a text
+   * @param text The text to estimate tokens for
+   * @returns Estimated token count
+   */
+  private estimateTokens(text: string): number {
+    return Math.ceil(text.length * this.TOKENS_PER_CHAR);
+  }
+
+  /**
+   * Truncate text to fit within a token limit
+   * @param text Text to truncate
+   * @param maxTokens Maximum tokens allowed
+   * @returns Truncated text
+   */
+  private truncateToTokenLimit(text: string, maxTokens: number): string {
+    const estimatedTokens = this.estimateTokens(text);
+    if (estimatedTokens <= maxTokens) {
+      return text;
+    }
+
+    // Simple truncation based on character count
+    const maxChars = Math.floor(maxTokens / this.TOKENS_PER_CHAR);
+    return text.substring(0, maxChars) + '... [truncated due to length]';
+  }
+
   async getSystemPrompt(env: Bindings, options: ChatOptions): Promise<ChatMessage> {
     const {
       messages,
       userId,
       enhanceWithContext = true,
-      maxContextItems = 5,
+      maxContextItems = 10, // Increased from 5 to 10 since we have a larger context window
       includeSourceInfo = true,
     } = options;
 
@@ -43,6 +80,7 @@ export class ChatService {
       throw new ServiceError('At least one user message is required');
     }
 
+    getLogger().info({ lastMessage: lastUserMessage }, 'Retrieving context for system prompt');
     // Retrieve relevant context if enhanceWithContext is true
     let formattedContext = '';
     if (enhanceWithContext) {
@@ -55,12 +93,56 @@ export class ChatService {
 
       // Format context for inclusion in the prompt
       formattedContext = this.formatContextForPrompt(context, includeSourceInfo);
+
+      // Log context size information
+      const contextTokens = this.estimateTokens(formattedContext);
+      getLogger().info(
+        {
+          contextLength: formattedContext.length,
+          estimatedTokens: contextTokens,
+          maxAllowed: this.MAX_SYSTEM_PROMPT_TOKENS,
+        },
+        'Got context for system prompt',
+      );
+
+      // Limit context size if it's too large
+      if (contextTokens > this.MAX_SYSTEM_PROMPT_TOKENS) {
+        getLogger().warn(
+          {
+            originalLength: formattedContext.length,
+            originalTokens: contextTokens,
+          },
+          'Context is too large, truncating',
+        );
+        formattedContext = this.truncateToTokenLimit(
+          formattedContext,
+          this.MAX_SYSTEM_PROMPT_TOKENS,
+        );
+        getLogger().info(
+          {
+            newLength: formattedContext.length,
+            newTokens: this.estimateTokens(formattedContext),
+          },
+          'Context truncated',
+        );
+      }
     }
 
     // Create a system message with context if available
+    const systemPrompt = this.createSystemPrompt(formattedContext);
+
+    // Log system prompt size information
+    getLogger().info(
+      {
+        systemPromptLength: systemPrompt.length,
+        estimatedTokens: this.estimateTokens(systemPrompt),
+      },
+      'Created system prompt',
+    );
+
     return {
       role: 'system',
-      content: this.createSystemPrompt(formattedContext),
+      content: systemPrompt,
     };
   }
 
@@ -75,6 +157,7 @@ export class ChatService {
       const { messages } = options;
 
       const systemMessage = await this.getSystemPrompt(env, options);
+      getLogger().info({ systemMessage }, 'Got system prompt');
 
       // Combine system message with user messages
       const promptMessages = [systemMessage, ...messages];
@@ -85,20 +168,43 @@ export class ChatService {
         if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
           return 'This is a mock response for testing purposes.';
         }
-        throw new ServiceError('Workers AI binding is not available');
+
+        getLogger().warn('Workers AI binding is not available, using fallback response');
+        return "I'm sorry, but I'm unable to process your request at the moment due to a technical issue. The AI service is currently unavailable. Please try again later.";
       }
 
-      // Call Workers AI
-      const response = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
-        messages: promptMessages,
-      });
+      try {
+        // Call Workers AI with timeout and error handling
+        getLogger().info({ model: this.MODEL_NAME }, 'Calling Workers AI');
+        const response = await Promise.race([
+          env.AI.run(this.MODEL_NAME, {
+            messages: promptMessages,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('AI request timed out after 15 seconds')), 15000),
+          ),
+        ]);
 
-      return response.response;
+        // Check if we have a valid response
+        if (!response || !response.response) {
+          getLogger().warn('AI returned an invalid or empty response, using fallback');
+          return "I'm sorry, but I couldn't generate a proper response at this time. Please try again with a different question.";
+        }
+
+        getLogger().info({ responseLength: response.response.length }, 'Got valid AI response');
+        return response.response;
+      } catch (aiError) {
+        // Handle specific AI service errors
+        getLogger().error({ err: aiError }, 'Error from AI service');
+
+        // Provide a fallback response instead of throwing
+        return "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.";
+      }
     } catch (error) {
       getLogger().error({ err: error }, 'Error generating chat response');
-      throw new ServiceError('Failed to generate chat response', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-      });
+
+      // Instead of throwing, return a fallback response
+      return "I apologize, but I'm experiencing technical difficulties. Please try again later or contact support if the issue persists.";
     }
   }
 
@@ -146,38 +252,68 @@ export class ChatService {
               await writer.close();
               return;
             }
-            throw new ServiceError('Workers AI binding is not available');
+
+            // Provide a fallback response instead of throwing
+            getLogger().warn('Workers AI binding is not available, using fallback response');
+            const fallbackResponse =
+              "I'm sorry, but I'm unable to process your request at the moment due to a technical issue. The AI service is currently unavailable. Please try again later.";
+            await writer.write(new TextEncoder().encode(fallbackResponse));
+            await writer.close();
+            return;
           }
 
-          // Call Workers AI with streaming
-          const response = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
-            messages: promptMessages,
-            stream: true,
-          });
+          // Set up a timeout for the AI request
+          const timeoutId = setTimeout(async () => {
+            getLogger().warn('AI streaming request timed out');
+            await writer.write(
+              new TextEncoder().encode(
+                "I'm sorry, but the request is taking too long to process. Please try again later.",
+              ),
+            );
+            await writer.close();
+          }, 15000); // 15 second timeout
 
-          // Stream each chunk as it becomes available
-          for await (const chunk of response) {
-            const text = chunk.response;
-            if (text) {
-              await writer.write(new TextEncoder().encode(text));
+          try {
+            // Call Workers AI with streaming
+            getLogger().info({ model: this.MODEL_NAME }, 'Calling Workers AI with streaming');
+            const response = await env.AI.run(this.MODEL_NAME, {
+              messages: promptMessages,
+              stream: true,
+            });
+
+            // Clear the timeout since we got a response
+            clearTimeout(timeoutId);
+
+            // Stream each chunk as it becomes available
+            for await (const chunk of response) {
+              const text = chunk.response;
+              if (text) {
+                await writer.write(new TextEncoder().encode(text));
+              }
             }
-          }
 
-          // Close the stream
-          await writer.close();
+            // Close the stream
+            await writer.close();
+          } catch (aiError) {
+            // Clear the timeout
+            clearTimeout(timeoutId);
+
+            // Handle AI-specific errors
+            getLogger().error({ err: aiError }, 'Error from AI streaming service');
+            await writer.write(
+              new TextEncoder().encode(
+                "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.",
+              ),
+            );
+            await writer.close();
+          }
         } catch (error) {
           getLogger().error({ err: error }, 'Error in stream chat');
 
-          // Write error to stream
-          const errorJson =
-            JSON.stringify({
-              error: {
-                code: 'CHAT_ERROR',
-                message: error instanceof Error ? error.message : 'An unexpected error occurred',
-              },
-            }) + '\n';
-
-          await writer.write(new TextEncoder().encode(errorJson));
+          // Provide a user-friendly error message
+          const errorMessage =
+            "I apologize, but I'm experiencing technical difficulties. Please try again later.";
+          await writer.write(new TextEncoder().encode(errorMessage));
           await writer.close();
         }
       })();
@@ -185,9 +321,20 @@ export class ChatService {
       return readable;
     } catch (error) {
       getLogger().error({ err: error }, 'Error setting up streaming chat response');
-      throw new ServiceError('Failed to set up streaming chat response', {
-        cause: error instanceof Error ? error : new Error(String(error)),
-      });
+
+      // Create a stream with an error message instead of throwing
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+
+      writer
+        .write(
+          new TextEncoder().encode(
+            "I apologize, but I'm experiencing technical difficulties. Please try again later or contact support if the issue persists.",
+          ),
+        )
+        .then(() => writer.close());
+
+      return readable;
     }
   }
 

@@ -5,7 +5,12 @@ import { zValidator } from '@hono/zod-validator';
 import { siloService } from '../services/siloService';
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { getLogger } from '@dome/logging';
-import { ServiceError, siloSimplePutSchema, siloCreateUploadSchema, ContentCategory } from '@dome/common';
+import {
+  ServiceError,
+  siloSimplePutSchema,
+  siloCreateUploadSchema,
+  ContentCategory,
+} from '@dome/common';
 
 /**
  * Validation schemas for Silo endpoints

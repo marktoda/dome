@@ -24,7 +24,7 @@ export const metrics = {
         const duration = Date.now() - start;
         getLogger().debug({ name, duration, tags, additionalTags }, 'Timer stopped');
         return duration;
-      }
+      },
     };
   },
   trackOperation: (name: string, success: boolean, tags?: Record<string, string>) => {
@@ -38,7 +38,7 @@ export const metrics = {
   },
   trackHealthCheck: (status: string, latency: number, service: string) => {
     getLogger().debug({ status, latency, service }, 'Health check tracked');
-  }
+  },
 };
 
 /**
@@ -49,21 +49,21 @@ export function metricsMiddleware() {
     const startTime = performance.now();
     const path = c.req.path;
     const method = c.req.method;
-    
+
     // Track request start
     metrics.counter('api.request_started', 1, { path, method });
-    
+
     try {
       // Execute the request handler
       await next();
-      
+
       // Calculate request duration
       const duration = Math.round(performance.now() - startTime);
       const statusCode = c.res.status;
-      
+
       // Track API request metrics
       metrics.trackApiRequest(path, method, statusCode, duration);
-      
+
       // Track successful requests
       if (statusCode < 400) {
         metrics.counter('api.request_success', 1, { path, method, status: statusCode.toString() });
@@ -74,20 +74,20 @@ export function metricsMiddleware() {
     } catch (error: unknown) {
       // Calculate request duration even for errors
       const duration = Math.round(performance.now() - startTime);
-      
+
       // Track error
       metrics.counter('api.request_error', 1, {
         path,
         method,
-        error_type: error instanceof Error ? error.name : 'Unknown'
+        error_type: error instanceof Error ? error.name : 'Unknown',
       });
-      
+
       // Track API request metrics with 500 status code for unhandled errors
       metrics.trackApiRequest(path, method, 500, duration);
-      
+
       // Log the error
       getLogger().error({ error, path, method, duration }, 'Request error in metrics middleware');
-      
+
       // Re-throw the error to be handled by error middleware
       throw error;
     }
@@ -98,7 +98,11 @@ export function metricsMiddleware() {
  * Initialize metrics with environment variables
  * @param env Environment variables
  */
-export function initMetrics(env: { VERSION?: string; ENVIRONMENT?: string; [key: string]: any }): void {
+export function initMetrics(env: {
+  VERSION?: string;
+  ENVIRONMENT?: string;
+  [key: string]: any;
+}): void {
   metrics.init(env);
   getLogger().info('Metrics initialized');
 }

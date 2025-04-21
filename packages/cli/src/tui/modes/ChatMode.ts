@@ -7,6 +7,30 @@ import { chat } from '../../utils/api';
  */
 export class ChatMode extends BaseMode {
   /**
+   * Helper function to wrap text to fit the container width
+   * @param text The text to wrap
+   * @param containerWidth The width of the container
+   * @returns void - pushes lines directly to the container
+   */
+  private wrapText(text: string, containerWidth: number): void {
+    // Split the text into lines and handle each line
+    const lines = text.split('\n');
+    for (const line of lines) {
+      // If the line is shorter than the container width, add it directly
+      if (line.length <= containerWidth) {
+        this.container.pushLine(line);
+      } else {
+        // Otherwise, wrap the line to fit the container width
+        let remainingText = line;
+        while (remainingText.length > 0) {
+          const chunk = remainingText.substring(0, containerWidth);
+          this.container.pushLine(chunk);
+          remainingText = remainingText.substring(containerWidth);
+        }
+      }
+    }
+  }
+  /**
    * Create a new chat mode
    */
   constructor() {
@@ -50,8 +74,15 @@ export class ChatMode extends BaseMode {
    * @param input The input to handle
    */
   async handleInput(input: string): Promise<void> {
-    // Display user message
-    this.container.pushLine(`{bold}{green-fg}You:{/green-fg}{/bold} ${input}`);
+    // Display user message with proper wrapping
+    this.container.pushLine(`{bold}{green-fg}You:{/green-fg}{/bold}`);
+
+    // Get the container width (minus padding and borders)
+    const containerWidth = (this.container as any).width - 4;
+
+    // Use the helper function to wrap the text
+    this.wrapText(input, containerWidth);
+
     this.screen.render();
 
     try {
@@ -60,43 +91,90 @@ export class ChatMode extends BaseMode {
       this.screen.render();
 
       // Send message to API
-      const response = await chat(input);
+      try {
+        const apiResponse = await chat(input);
 
-      // Display response - handle the new API response format
-      let message = '';
+        // Display response - handle the new API response format
+        let message = '';
 
-      if (response && response.answer) {
-        message = response.answer;
-      } else if (response && typeof response === 'object') {
-        // Fallback to any available message property
-        message = response.message || response.content || JSON.stringify(response);
-      } else {
-        message = String(response);
+        console.log('Chat response received:', typeof apiResponse, apiResponse);
+
+        if (apiResponse === undefined) {
+          message = "Sorry, I couldn't generate a response at this time.";
+        } else if (typeof apiResponse === 'string') {
+          // If the response is already a string, use it directly
+          message = apiResponse;
+        } else if (apiResponse && apiResponse.success === false && apiResponse.error) {
+          // Handle error responses that include an error message
+          message =
+            apiResponse.response || `Error: ${apiResponse.error.message || 'Unknown error'}`;
+          // Add error styling
+          this.container.pushLine(`{bold}{red-fg}Error:{/red-fg}{/bold}`);
+          this.wrapText(message, containerWidth);
+
+          // Reset status and render
+          this.statusBar.setContent(
+            ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+          );
+          this.screen.render();
+          return;
+        } else if (apiResponse && apiResponse.answer) {
+          message = apiResponse.answer;
+        } else if (apiResponse && typeof apiResponse === 'object') {
+          // Fallback to any available message property
+          message =
+            apiResponse.message ||
+            apiResponse.content ||
+            apiResponse.response ||
+            JSON.stringify(apiResponse);
+        } else {
+          message = String(apiResponse);
+        }
+
+        // Add the Dome label
+        this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
+
+        // Use the helper function to wrap the text
+        this.wrapText(message, containerWidth);
+
+        // Display sources if available
+        try {
+          if (
+            apiResponse &&
+            apiResponse.sources &&
+            Array.isArray(apiResponse.sources) &&
+            apiResponse.sources.length > 0
+          ) {
+            this.container.pushLine('');
+            this.container.pushLine('{bold}Sources:{/bold}');
+
+            apiResponse.sources.forEach((source: any, index: number) => {
+              if (source.title) {
+                this.container.pushLine(`${index + 1}. {underline}${source.title}{/underline}`);
+              }
+              if (source.snippet) {
+                this.container.pushLine(
+                  `   ${source.snippet.substring(0, 100)}${
+                    source.snippet.length > 100 ? '...' : ''
+                  }`,
+                );
+              }
+            });
+          }
+        } catch (sourceError) {
+          // Ignore errors when processing sources
+          this.container.pushLine('{italic}(Error displaying sources){/italic}');
+        }
+      } catch (chatError) {
+        // Handle any exceptions during the chat API call
+        this.container.pushLine(`{bold}{red-fg}Error:{/red-fg}{/bold}`);
+        const errorMessage = chatError instanceof Error ? chatError.message : String(chatError);
+        this.wrapText(
+          `I encountered an error while processing your request: ${errorMessage}`,
+          containerWidth,
+        );
       }
 
-      this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold} ${message}`);
-
-      // Display sources if available
-      if (
-        response &&
-        response.sources &&
-        Array.isArray(response.sources) &&
-        response.sources.length > 0
-      ) {
-        this.container.pushLine('');
-        this.container.pushLine('{bold}Sources:{/bold}');
-
-        response.sources.forEach((source: any, index: number) => {
-          if (source.title) {
-            this.container.pushLine(`${index + 1}. {underline}${source.title}{/underline}`);
-          }
-          if (source.snippet) {
-            this.container.pushLine(
-              `   ${source.snippet.substring(0, 100)}${source.snippet.length > 100 ? '...' : ''}`,
-            );
-          }
-        });
-      }
       this.container.setScrollPerc(100);
 
       // Reset status

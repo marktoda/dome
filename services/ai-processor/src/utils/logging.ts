@@ -14,14 +14,14 @@ export function getLogger(): any {
 export function initLogging(env: { LOG_LEVEL?: string; ENVIRONMENT?: string; VERSION?: string }) {
   // The @dome/logging package handles configuration internally
   // We just need to add some context for our service
-  
+
   getLogger().info(
     {
       level: env.LOG_LEVEL || 'info',
       environment: env.ENVIRONMENT || 'dev',
       version: env.VERSION || '0.1.0',
     },
-    'Initialized logging for ai-processor service'
+    'Initialized logging for ai-processor service',
   );
 }
 

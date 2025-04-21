@@ -21,7 +21,7 @@ const metrics = createMetrics('my-service');
 // Initialize with environment variables
 metrics.init({
   VERSION: '1.0.0',
-  ENVIRONMENT: 'production'
+  ENVIRONMENT: 'production',
 });
 
 // Record metrics
@@ -40,11 +40,11 @@ const metrics = createMetrics('my-service');
 async function performOperation() {
   // Start a timer
   const timer = metrics.startTimer('operation');
-  
+
   try {
     // Perform the operation
     await someAsyncOperation();
-    
+
     // Stop the timer with success tag
     timer.stop({ success: 'true' });
   } catch (error) {
@@ -65,7 +65,7 @@ const metrics = createMetrics('my-service');
 async function handleRequest(request) {
   const startTime = performance.now();
   let statusCode = 200;
-  
+
   try {
     // Process the request
     const response = await processRequest(request);
@@ -75,13 +75,9 @@ async function handleRequest(request) {
     throw error;
   } finally {
     const duration = performance.now() - startTime;
-    metrics.trackApiRequest(
-      request.path,
-      request.method,
-      statusCode,
-      duration,
-      { user_type: request.userType }
-    );
+    metrics.trackApiRequest(request.path, request.method, statusCode, duration, {
+      user_type: request.userType,
+    });
   }
 }
 ```
@@ -99,9 +95,9 @@ async function processItem(item) {
     metrics.trackOperation('item_processing', true, { type: item.type });
     return true;
   } catch (error) {
-    metrics.trackOperation('item_processing', false, { 
+    metrics.trackOperation('item_processing', false, {
       type: item.type,
-      error: error.name
+      error: error.name,
     });
     return false;
   }
@@ -117,25 +113,22 @@ const metrics = createMetrics('my-service');
 
 async function checkHealth() {
   const startTime = performance.now();
-  
+
   try {
     // Check database connection
     const dbStatus = await checkDatabase();
     const duration = performance.now() - startTime;
-    
-    metrics.trackHealthCheck(
-      dbStatus.ok ? 'ok' : 'error',
-      duration,
-      'database',
-      { region: 'us-east-1' }
-    );
-    
+
+    metrics.trackHealthCheck(dbStatus.ok ? 'ok' : 'error', duration, 'database', {
+      region: 'us-east-1',
+    });
+
     return dbStatus;
   } catch (error) {
     const duration = performance.now() - startTime;
     metrics.trackHealthCheck('error', duration, 'database', {
       error: error.name,
-      region: 'us-east-1'
+      region: 'us-east-1',
     });
     throw error;
   }

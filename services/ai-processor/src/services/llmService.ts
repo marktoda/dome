@@ -17,53 +17,53 @@ export class LlmService {
     try {
       // Select the appropriate prompt based on content type
       const prompt = this.getPromptForContentType(content, contentType);
-      
+
       // Process with LLM
       getLogger().debug(
         { contentType, contentLength: content.length },
-        'Processing content with LLM'
+        'Processing content with LLM',
       );
-      
+
       const response = await this.ai.run('@cf/meta/llama-3-8b-instruct', {
         messages: [{ role: 'user', content: prompt }],
       });
-      
+
       // Parse and validate the response
       const metadata = this.parseResponse(response.response);
-      
+
       getLogger().info(
-        { 
+        {
           contentType,
           hasSummary: !!metadata.summary,
           hasTodos: Array.isArray(metadata.todos) && metadata.todos.length > 0,
           hasReminders: Array.isArray(metadata.reminders) && metadata.reminders.length > 0,
-          topics: metadata.topics
+          topics: metadata.topics,
         },
-        'Successfully processed content with LLM'
+        'Successfully processed content with LLM',
       );
-      
+
       return {
         ...metadata,
         processingVersion: 1,
-        modelUsed: '@cf/meta/llama-3-8b-instruct'
+        modelUsed: '@cf/meta/llama-3-8b-instruct',
       };
     } catch (error) {
       getLogger().error(
         { error, contentType, contentLength: content.length },
-        'Error processing content with LLM'
+        'Error processing content with LLM',
       );
-      
+
       // Return minimal metadata on error
       return {
         title: this.generateFallbackTitle(content),
-        summary: "Content processing failed",
+        summary: 'Content processing failed',
         processingVersion: 1,
         modelUsed: '@cf/meta/llama-3-8b-instruct',
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
-  
+
   /**
    * Get the appropriate prompt for the content type
    * @param content The content to process
@@ -82,7 +82,7 @@ export class LlmService {
         return this.getDefaultPrompt(content);
     }
   }
-  
+
   /**
    * Get prompt for processing notes
    * @param content The note content
@@ -110,7 +110,7 @@ export class LlmService {
       ${this.truncateContent(content, 8000)}
     `;
   }
-  
+
   /**
    * Get prompt for processing code
    * @param content The code content
@@ -140,7 +140,7 @@ export class LlmService {
       ${this.truncateContent(content, 8000)}
     `;
   }
-  
+
   /**
    * Get prompt for processing articles
    * @param content The article content
@@ -172,7 +172,7 @@ export class LlmService {
       ${this.truncateContent(content, 8000)}
     `;
   }
-  
+
   /**
    * Get default prompt for unknown content types
    * @param content The content to process
@@ -197,7 +197,7 @@ export class LlmService {
       ${this.truncateContent(content, 8000)}
     `;
   }
-  
+
   /**
    * Parse the LLM response into a structured object
    * @param response The raw response from the LLM
@@ -208,23 +208,23 @@ export class LlmService {
       // Try to extract JSON from the response
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       const jsonString = jsonMatch ? jsonMatch[0] : response;
-      
+
       return JSON.parse(jsonString);
     } catch (error) {
       getLogger().error(
         { error, response: response.substring(0, 200) + '...' },
-        'Failed to parse LLM response'
+        'Failed to parse LLM response',
       );
-      
+
       // Return a minimal valid object
       return {
-        title: "Untitled Content",
-        summary: "Failed to generate summary from content",
-        error: "Response parsing failed"
+        title: 'Untitled Content',
+        summary: 'Failed to generate summary from content',
+        error: 'Response parsing failed',
       };
     }
   }
-  
+
   /**
    * Generate a fallback title when processing fails
    * @param content The original content
@@ -237,14 +237,14 @@ export class LlmService {
       if (firstLine && firstLine.length <= 50) {
         return firstLine;
       }
-      
+
       // Otherwise use the first few characters
       return content.substring(0, 40).trim() + '...';
     } catch (error) {
-      return "Untitled Content";
+      return 'Untitled Content';
     }
   }
-  
+
   /**
    * Truncate content to fit within LLM context window
    * @param content The content to truncate
@@ -255,14 +255,13 @@ export class LlmService {
     if (content.length <= maxLength) {
       return content;
     }
-    
+
     getLogger().info(
       { originalLength: content.length, truncatedLength: maxLength },
-      'Truncating content to fit LLM context window'
+      'Truncating content to fit LLM context window',
     );
-    
-    return content.substring(0, maxLength) + 
-      '\n\n[Content truncated due to length limitations]';
+
+    return content.substring(0, maxLength) + '\n\n[Content truncated due to length limitations]';
   }
 }
 

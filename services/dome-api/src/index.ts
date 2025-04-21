@@ -90,16 +90,16 @@ app.get('/', c => {
 // Health check endpoint
 app.get('/health', c => {
   getLogger().info({ path: '/health' }, 'Health check endpoint accessed');
-  
+
   // Start a timer for the health check
   const timer = metrics.startTimer('health.check');
-  
+
   // Track health check with metrics
   metrics.trackHealthCheck('ok', 0, 'api');
-  
+
   // Stop the timer and get the duration
   const duration = timer.stop();
-  
+
   return c.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -108,9 +108,9 @@ app.get('/health', c => {
     metrics: {
       counters: {
         requests: metrics.getCounter('api.request'),
-        errors: metrics.getCounter('api.error')
-      }
-    }
+        errors: metrics.getCounter('api.error'),
+      },
+    },
   });
 });
 

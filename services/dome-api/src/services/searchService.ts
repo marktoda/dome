@@ -73,7 +73,16 @@ export class SearchService {
    */
   async searchNotes(env: Bindings, options: SearchOptions): Promise<PaginatedSearchResults> {
     try {
-      const { userId, query, limit = 10, offset = 0, category, mimeType, startDate, endDate } = options;
+      const {
+        userId,
+        query,
+        limit = 10,
+        offset = 0,
+        category,
+        mimeType,
+        startDate,
+        endDate,
+      } = options;
 
       this.logger.debug('Searching notes', {
         userId,
@@ -199,7 +208,7 @@ export class SearchService {
           if (category && note.category !== category) {
             return false;
           }
-          
+
           // Apply MIME type filter if specified
           if (mimeType && note.mimeType !== mimeType) {
             return false;
@@ -296,10 +305,19 @@ export class SearchService {
    * @returns Cache key string
    */
   private generateCacheKey(options: SearchOptions): string {
-    const { userId, query, limit = 10, offset = 0, category, mimeType, startDate, endDate } = options;
-    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''}:${
-      endDate || ''
-    }`;
+    const {
+      userId,
+      query,
+      limit = 10,
+      offset = 0,
+      category,
+      mimeType,
+      startDate,
+      endDate,
+    } = options;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${
+      startDate || ''
+    }:${endDate || ''}`;
   }
 
   /**

@@ -10,11 +10,11 @@ The Dome project follows a structured deployment process that ensures reliabilit
 
 The project supports the following deployment environments:
 
-| Environment | Purpose | Access |
-|-------------|---------|--------|
-| Development | For development and testing | Developers |
-| Staging | For pre-production testing | Developers, QA |
-| Production | For live, user-facing services | End users |
+| Environment | Purpose                        | Access         |
+| ----------- | ------------------------------ | -------------- |
+| Development | For development and testing    | Developers     |
+| Staging     | For pre-production testing     | Developers, QA |
+| Production  | For live, user-facing services | End users      |
 
 ### 1.2 Deployment Workflow
 
@@ -299,11 +299,14 @@ The production environment is used for live, user-facing services:
 All services use structured logging:
 
 ```typescript
-logger.info({
-  event: 'request_processed',
-  userId: request.userId,
-  duration: performance.now() - startTime,
-}, 'Request processed successfully');
+logger.info(
+  {
+    event: 'request_processed',
+    userId: request.userId,
+    duration: performance.now() - startTime,
+  },
+  'Request processed successfully',
+);
 ```
 
 Logs are collected and can be viewed in the Cloudflare dashboard or exported to external logging systems.
@@ -344,20 +347,24 @@ Monitoring dashboards are available in the Cloudflare dashboard and provide visi
 #### 9.1.1 Wrangler Authentication Issues
 
 **Symptoms**:
+
 - `Error: Authentication error`
 - `Error: You must be logged in to use this command`
 
 **Solutions**:
+
 - Run `wrangler login` to authenticate
 - Check that you have the correct permissions in Cloudflare
 
 #### 9.1.2 Resource Binding Issues
 
 **Symptoms**:
+
 - `Error: Could not find binding`
 - `Error: Resource not found`
 
 **Solutions**:
+
 - Verify that the resource exists in the Cloudflare dashboard
 - Check that the resource ID is correct in `wrangler.toml`
 - Ensure you have the correct permissions for the resource
@@ -365,10 +372,12 @@ Monitoring dashboards are available in the Cloudflare dashboard and provide visi
 #### 9.1.3 Environment Variable Issues
 
 **Symptoms**:
+
 - `Error: Missing required environment variable`
 - `Error: Invalid configuration`
 
 **Solutions**:
+
 - Check that all required environment variables are set
 - Verify that environment variables have the correct values
 - Ensure secrets are set for the correct environment
@@ -376,10 +385,12 @@ Monitoring dashboards are available in the Cloudflare dashboard and provide visi
 #### 9.1.4 Service Binding Issues
 
 **Symptoms**:
+
 - `Error: Service binding failed`
 - `Error: Service not found`
 
 **Solutions**:
+
 - Verify that the service exists and is deployed
 - Check that the service name is correct in `wrangler.toml`
 - Ensure you have the correct permissions for the service

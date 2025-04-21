@@ -124,7 +124,10 @@ export class SearchController {
       // Track search query metrics
       incrementCounter('search.query', 1, {
         query_length: parsed.q.length.toString(),
-        has_filters: (parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate) ? 'true' : 'false'
+        has_filters:
+          parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate
+            ? 'true'
+            : 'false',
       });
 
       if (tooShort(parsed.q)) {
@@ -134,20 +137,23 @@ export class SearchController {
       }
 
       this.logger.info({ userId, q: parsed.q, params: parsed }, 'search');
-      
+
       // Track search operation with timing
       const results = await trackTiming('search.execution', {
         query_length: parsed.q.length.toString(),
-        has_filters: (parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate) ? 'true' : 'false'
+        has_filters:
+          parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate
+            ? 'true'
+            : 'false',
       })(async () => {
         return await searchService.search(c.env, buildParams(userId, parsed));
       });
-      
+
       // Track result count
       incrementCounter('search.results', results.results.length, {
-        has_results: results.results.length > 0 ? 'true' : 'false'
+        has_results: results.results.length > 0 ? 'true' : 'false',
       });
-      
+
       this.logger.info({ userId, q: parsed.q, results }, 'search results');
       return c.json(formatSearchResponse(results));
     } catch (error) {
@@ -155,7 +161,7 @@ export class SearchController {
 
       // Track search error with metrics
       incrementCounter('search.error', 1, {
-        error_type: error instanceof Error ? error.name : 'unknown'
+        error_type: error instanceof Error ? error.name : 'unknown',
       });
 
       if (error instanceof z.ZodError) {
@@ -177,7 +183,7 @@ export class SearchController {
         const statusCode = error.status || 500;
         incrementCounter('search.service_error', 1, {
           code: error.code || 'UNKNOWN',
-          status: statusCode.toString()
+          status: statusCode.toString(),
         });
         return c.json(
           {
@@ -220,7 +226,10 @@ export class SearchController {
       // Track streaming search query metrics
       incrementCounter('search.stream_query', 1, {
         query_length: parsed.q.length.toString(),
-        has_filters: (parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate) ? 'true' : 'false'
+        has_filters:
+          parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate
+            ? 'true'
+            : 'false',
       });
 
       if (tooShort(parsed.q)) {
@@ -236,15 +245,18 @@ export class SearchController {
         // Start a timer for the streaming search
         const timer = getMetrics().startTimer('search.stream_execution', {
           query_length: parsed.q.length.toString(),
-          has_filters: (parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate) ? 'true' : 'false'
+          has_filters:
+            parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate
+              ? 'true'
+              : 'false',
         });
-        
+
         try {
           const searchResults = await searchService.search(c.env, buildParams(userId, parsed));
-          
+
           // Track result count
           incrementCounter('search.stream_results', searchResults.results.length, {
-            has_results: searchResults.results.length > 0 ? 'true' : 'false'
+            has_results: searchResults.results.length > 0 ? 'true' : 'false',
           });
 
           // Write metadata first
@@ -271,12 +283,12 @@ export class SearchController {
           }
         } catch (err) {
           this.logger.error({ err }, 'stream search error');
-          
+
           // Track search error
           incrementCounter('search.stream_error', 1, {
-            error_type: err instanceof Error ? err.name : 'unknown'
+            error_type: err instanceof Error ? err.name : 'unknown',
           });
-          
+
           await writer.write(
             new TextEncoder().encode(
               JSON.stringify({
@@ -292,7 +304,7 @@ export class SearchController {
           // Stop the timer in finally block to ensure it's always recorded
           timer.stop({
             success: 'false',
-            error: 'true'
+            error: 'true',
           });
           writer.close();
         }
@@ -306,7 +318,7 @@ export class SearchController {
 
       // Track stream search setup error with metrics
       incrementCounter('search.stream_setup_error', 1, {
-        error_type: error instanceof Error ? error.name : 'unknown'
+        error_type: error instanceof Error ? error.name : 'unknown',
       });
 
       if (error instanceof z.ZodError) {

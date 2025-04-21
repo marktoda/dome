@@ -8,7 +8,7 @@ export interface Env extends globalThis.Env {
   // Queue bindings with specific types
   NEW_CONTENT: Queue<NewContentMessage>;
   ENRICHED_CONTENT: Queue<EnrichedContentMessage>;
-  
+
   // Service bindings with specific types
   SILO: SiloBinding;
 }

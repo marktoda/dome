@@ -51,9 +51,9 @@ export class ListCommand implements CommandHandler {
 
       // Show a loading message
       this.addMessage(`{gray-fg}Fetching ${type} from the server...{/gray-fg}`);
-      
+
       const response = type === 'notes' ? await listNotes() : await listTasks();
-      
+
       // Update status to show we're processing the data
       this.setStatus(` {bold}Status:{/bold} Processing ${type}...`);
 
@@ -120,13 +120,13 @@ export class ListCommand implements CommandHandler {
           }
         });
       }
-      
+
       // Update status to show completion
       this.setStatus(` {bold}Status:{/bold} ${items.length} ${type} listed successfully`);
     } catch (err) {
       // Provide more detailed error information for debugging
       this.addMessage(`{red-fg}Error listing ${type}:{/red-fg}`);
-      
+
       if (err instanceof Error) {
         this.addMessage(`{red-fg}Message: ${err.message}{/red-fg}`);
         if (err.stack) {
@@ -135,9 +135,11 @@ export class ListCommand implements CommandHandler {
       } else {
         this.addMessage(`{red-fg}${String(err)}{/red-fg}`);
       }
-      
-      this.addMessage('{yellow-fg}Try again later or contact support if the issue persists.{/yellow-fg}');
-      
+
+      this.addMessage(
+        '{yellow-fg}Try again later or contact support if the issue persists.{/yellow-fg}',
+      );
+
       // Update status to show error
       this.setStatus(` {bold}Status:{/bold} {red-fg}Error listing ${type}{/red-fg}`);
     }

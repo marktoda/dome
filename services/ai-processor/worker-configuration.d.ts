@@ -6,13 +6,13 @@ interface Env {
   // Queue bindings
   NEW_CONTENT: Queue<any>;
   ENRICHED_CONTENT: Queue<any>;
-  
+
   // Service bindings
   SILO: any;
-  
+
   // AI binding
   AI: Ai;
-  
+
   // Environment variables
   LOG_LEVEL: string;
   VERSION: string;

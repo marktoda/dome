@@ -134,7 +134,7 @@ export class ServiceMetrics implements MetricsService {
     method: string,
     statusCode: number,
     duration: number,
-    tags: Record<string, string> = {}
+    tags: Record<string, string> = {},
   ): void {
     const requestTags = {
       path,
@@ -164,7 +164,7 @@ export class ServiceMetrics implements MetricsService {
     status: 'ok' | 'warning' | 'error',
     duration: number,
     component?: string,
-    tags: Record<string, string> = {}
+    tags: Record<string, string> = {},
   ): void {
     const healthTags: Record<string, string> = { status, ...tags };
     if (component) healthTags.component = component;
@@ -195,7 +195,7 @@ export class ServiceMetrics implements MetricsService {
    */
   public static createMetrics(
     serviceName: string,
-    defaultTags: Record<string, string> = {}
+    defaultTags: Record<string, string> = {},
   ): ServiceMetrics {
     return new ServiceMetrics(serviceName, defaultTags);
   }
@@ -209,7 +209,7 @@ export class ServiceMetrics implements MetricsService {
  */
 export function createMetrics(
   serviceName: string,
-  defaultTags: Record<string, string> = {}
+  defaultTags: Record<string, string> = {},
 ): ServiceMetrics {
   return ServiceMetrics.createMetrics(serviceName, defaultTags);
 }
