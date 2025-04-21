@@ -110,10 +110,12 @@ export class LlmService {
       {
         "title": "...",
         "summary": "...",
-        "todos": [{"text": "...", "dueDate": "...", "priority": "..."}],
+        "todos": [{"text": "...", "dueDate": "...", "priority": "high|medium|low"}],
         "reminders": [{"text": "...", "reminderTime": "..."}],
         "topics": ["topic1", "topic2"]
       }
+
+      Note that priority values must be lowercase: "high", "medium", or "low".
 
       Note:
       ${this.truncateContent(content, 8000)}
@@ -218,7 +220,19 @@ export class LlmService {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       const jsonString = jsonMatch ? jsonMatch[0] : response;
 
-      return JSON.parse(jsonString);
+      const parsed = JSON.parse(jsonString);
+      
+      // Normalize priority values to lowercase
+      if (parsed.todos && Array.isArray(parsed.todos)) {
+        parsed.todos = parsed.todos.map((todo: { priority?: string; [key: string]: any }) => {
+          if (todo.priority) {
+            todo.priority = todo.priority.toLowerCase();
+          }
+          return todo;
+        });
+      }
+
+      return parsed;
     } catch (error) {
       getLogger().error(
         { error, response: response.substring(0, 200) + '...' },
