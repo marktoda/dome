@@ -1,16 +1,28 @@
 import { NewContentMessage } from '@dome/common';
 
+// Import types from worker-configuration.d.ts
+type Queue<T> = import('../worker-configuration').Queue<T>;
+type Ai = import('../worker-configuration').Ai;
+
 /**
  * Environment bindings for the AI Processor service
  * Extends the global Env interface from worker-configuration.d.ts
  */
-export interface Env extends globalThis.Env {
+export interface Env {
   // Queue bindings with specific types
   NEW_CONTENT: Queue<NewContentMessage>;
   ENRICHED_CONTENT: Queue<EnrichedContentMessage>;
-
+  
   // Service bindings with specific types
   SILO: SiloBinding;
+  
+  // AI binding
+  AI: Ai;
+  
+  // Environment variables
+  LOG_LEVEL: string;
+  VERSION: string;
+  ENVIRONMENT: string;
 }
 
 /**

@@ -1,10 +1,3 @@
-import { App } from '@octokit/app';
-// Temporarily comment out this import until we can install the package
-// import { createAppAuth } from '@octokit/auth-app';
-import { initPolyfills } from '../utils/polyfills';
-
-// Initialize polyfills
-initPolyfills();
 import { logger, logError } from '../utils/logging';
 import { metrics } from '../utils/metrics';
 import { Env } from '../types';
@@ -24,6 +17,73 @@ export class GitHubAuthError extends Error {
 }
 
 /**
+ * Generate a JWT for GitHub App authentication using Web Crypto API
+ * This is a Cloudflare Workers compatible implementation that doesn't rely on Node.js crypto
+ * @param appId GitHub App ID
+ * @param privateKey GitHub App private key in PEM format
+ * @returns JWT token
+ */
+async function generateJWT(appId: string, privateKey: string): Promise<string> {
+  // Remove header, footer, and newlines from private key
+  const pemContents = privateKey
+    .replace(/-----BEGIN RSA PRIVATE KEY-----/, '')
+    .replace(/-----END RSA PRIVATE KEY-----/, '')
+    .replace(/\n/g, '');
+  
+  // Base64 decode the PEM contents to get the key data
+  const binaryKey = atob(pemContents);
+  const keyData = new Uint8Array(binaryKey.length);
+  for (let i = 0; i < binaryKey.length; i++) {
+    keyData[i] = binaryKey.charCodeAt(i);
+  }
+  
+  // Import the private key
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    keyData,
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      hash: 'SHA-256',
+    },
+    false,
+    ['sign']
+  );
+  
+  // Create JWT header and payload
+  const now = Math.floor(Date.now() / 1000);
+  const header = {
+    alg: 'RS256',
+    typ: 'JWT',
+  };
+  const payload = {
+    iat: now - 60, // Issued 60 seconds ago to account for clock drift
+    exp: now + 600, // Expires in 10 minutes
+    iss: appId,
+  };
+  
+  // Encode header and payload
+  const encoder = new TextEncoder();
+  const headerEncoded = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const payloadEncoded = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  
+  // Create signature
+  const dataToSign = encoder.encode(`${headerEncoded}.${payloadEncoded}`);
+  const signature = await crypto.subtle.sign(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    key,
+    dataToSign
+  );
+  
+  // Convert signature to base64url
+  const signatureArray = new Uint8Array(signature);
+  let signatureEncoded = btoa(String.fromCharCode(...signatureArray));
+  signatureEncoded = signatureEncoded.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  
+  // Return the complete JWT
+  return `${headerEncoded}.${payloadEncoded}.${signatureEncoded}`;
+}
+
+/**
  * Get a GitHub App installation token
  * @param appId GitHub App ID
  * @param privateKey GitHub App private key
@@ -38,24 +98,34 @@ export async function getInstallationToken(
   const timer = metrics.startTimer('github_auth.get_installation_token');
 
   try {
-    const app = new App({
-      appId,
-      privateKey,
-    });
-
-    // Temporary implementation until we can install @octokit/auth-app
-    // This is a placeholder that will be replaced with the actual implementation
-    const auth = {
-      createAppAuth: () => ({
-        getInstallationAccessToken: async () => ({
-          token: 'placeholder-token',
-          expiresAt: new Date(Date.now() + 3600000).toISOString(),
-        }),
-      }),
-    };
-
-    // Use the temporary auth implementation
-    const { token } = await auth.createAppAuth().getInstallationAccessToken();
+    // Generate JWT for GitHub App authentication
+    const jwt = await generateJWT(appId, privateKey);
+    
+    // Use the JWT to request an installation token
+    const response = await fetch(
+      `https://api.github.com/app/installations/${installationId}/access_tokens`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/vnd.github.v3+json',
+          'Authorization': `Bearer ${jwt}`,
+          'User-Agent': 'GitHub-Ingestor-Cloudflare-Worker',
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    // Type assertion for data
+    const responseData = data as { token: string; expires_at: string };
+    const token = responseData.token;
+    
+    if (!token) {
+      throw new Error('No token in GitHub API response');
+    }
 
     metrics.trackOperation('github_auth.get_installation_token', true);
     timer.stop();

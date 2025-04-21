@@ -222,7 +222,6 @@ export async function search(query: string, limit: number = 10): Promise<any> {
 
   // Use the dedicated search endpoint
   const response = await api.get('/search', { params });
-  console.log(response);
 
   return {
     results: response.results || [],

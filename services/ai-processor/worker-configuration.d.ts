@@ -2,23 +2,6 @@
  * Type definitions for Cloudflare Workers
  */
 
-interface Env {
-  // Queue bindings
-  NEW_CONTENT: Queue<any>;
-  ENRICHED_CONTENT: Queue<any>;
-
-  // Service bindings
-  SILO: any;
-
-  // AI binding
-  AI: Ai;
-
-  // Environment variables
-  LOG_LEVEL: string;
-  VERSION: string;
-  ENVIRONMENT: string;
-}
-
 /**
  * Cloudflare Queue interface
  */
@@ -32,16 +15,6 @@ interface Queue<T> {
  */
 interface Ai {
   run<T = any>(model: string, options: any): Promise<T>;
-}
-
-/**
- * Worker entrypoint interface
- */
-interface WorkerEntrypoint<E = Env> {
-  fetch?: (request: Request, env: E, ctx: ExecutionContext) => Promise<Response>;
-  scheduled?: (event: ScheduledEvent, env: E, ctx: ExecutionContext) => Promise<void>;
-  queue?: (batch: MessageBatch<any>, env: E) => Promise<void>;
-  email?: (message: ForwardableEmailMessage, env: E, ctx: ExecutionContext) => Promise<void>;
 }
 
 /**
@@ -78,3 +51,36 @@ interface ForwardableEmailMessage {
   readonly raw: ReadableStream;
   forward(to: string | string[]): Promise<void>;
 }
+
+/**
+ * Worker entrypoint interface
+ */
+interface WorkerEntrypoint<E = Env> {
+  fetch?: (request: Request, env: E, ctx: ExecutionContext) => Promise<Response>;
+  scheduled?: (event: ScheduledEvent, env: E, ctx: ExecutionContext) => Promise<void>;
+  queue?: (batch: MessageBatch<any>, env: E) => Promise<void>;
+  email?: (message: ForwardableEmailMessage, env: E, ctx: ExecutionContext) => Promise<void>;
+}
+
+/**
+ * Environment bindings
+ */
+interface Env {
+  // Queue bindings
+  NEW_CONTENT: Queue<any>;
+  ENRICHED_CONTENT: Queue<any>;
+  
+  // Service bindings
+  SILO: any;
+  
+  // AI binding
+  AI: Ai;
+  
+  // Environment variables
+  LOG_LEVEL: string;
+  VERSION: string;
+  ENVIRONMENT: string;
+}
+
+// Export an empty object to make this a module
+export {};
