@@ -229,5 +229,15 @@ export class ModeManager {
         }
       });
     }
+    // Explicitly handle Ctrl+T (Chat mode)
+    const chatMode = this.getMode('chat');
+    if (chatMode) {
+      process.stdin.on('data', data => {
+        // Check for Ctrl+T (ASCII 20)
+        if (data.length === 1 && data[0] === 20) {
+          this.switchToMode('chat');
+        }
+      });
+    }
   }
 }

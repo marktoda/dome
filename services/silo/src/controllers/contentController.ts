@@ -36,7 +36,7 @@ export class ContentController {
     private readonly r2Service: R2Service,
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
-  ) {}
+  ) { }
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -252,12 +252,14 @@ export class ContentController {
         return null;
       }
 
+      logger.info({ r2Metadata: obj }, 'R2 object metadata retrieved');
       const { userId, category, mimeType, sha256, metadata } = this.parseCustomMetadata(
         obj.customMetadata,
       );
       const id = this.extractIdFromKey(key);
       const createdAt = Math.floor(Date.now() / 1000);
 
+      logger.info({ userId, category, mimeType, sha256, metadata }, 'storing metadata into d1');
       await this.metadataService.insertMetadata({
         id,
         userId,
@@ -356,9 +358,9 @@ export class ContentController {
     const rawMetadata = pick('x-metadata', 'metadata');
 
     return {
-      userId: pick('x-user-id', 'userId') ?? null,
+      userId: pick('x-user-id', 'user-id') ?? null,
       category: pick('x-category', 'category') ?? 'note',
-      mimeType: pick('x-mime-type', 'mimeType') ?? 'text/plain',
+      mimeType: pick('x-mime-type', 'mime-type') ?? 'text/plain',
       sha256: pick('x-sha256', 'sha256') ?? null,
       metadata: rawMetadata ? this.safeJsonParse(rawMetadata) : null,
     };

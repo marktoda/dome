@@ -98,16 +98,14 @@ export class MetadataService {
         getLogger().info(
           {
             resultCount: results.length,
+            results,
           },
-          'Raw query results before userId filtering',
+          'getMetadataByIds result',
         );
-
-        // If userId is provided, filter the results in memory
-        let filteredResults = results;
 
         metrics.timing('silo.d1.get_many.latency_ms', Date.now() - startTime);
 
-        return filteredResults as SiloContentMetadata[];
+        return results as SiloContentMetadata[];
       } catch (error) {
         // Check if the error is because the table doesn't exist
         if (error instanceof Error && error.message.includes('no such table: contents')) {
@@ -121,10 +119,10 @@ export class MetadataService {
             error:
               error instanceof Error
                 ? {
-                    name: error.name,
-                    message: error.message,
-                    stack: error.stack,
-                  }
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
                 : String(error),
             ids,
             errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -142,10 +140,10 @@ export class MetadataService {
           error:
             error instanceof Error
               ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
               : String(error),
           ids,
           errorType: error instanceof Error ? error.constructor.name : typeof error,
