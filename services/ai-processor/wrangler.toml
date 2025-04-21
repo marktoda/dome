@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 # Queue consumer for NEW_CONTENT
 [[queues.consumers]]
-queue = "new-content"
+queue = "new-content-ai"
 binding = "NEW_CONTENT"
 max_batch_size = 10
 max_batch_timeout = 5

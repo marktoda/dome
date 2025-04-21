@@ -6,7 +6,7 @@ import { NewContentMessage } from 'packages/common';
  * This service encapsulates all interactions with Cloudflare Queues
  */
 export class QueueService {
-  constructor(private env: any) {}
+  constructor(private env: any) { }
 
   /**
    * Send a message to the NEW_CONTENT queue
@@ -16,7 +16,8 @@ export class QueueService {
     const startTime = Date.now();
 
     try {
-      await this.env.NEW_CONTENT.send(message);
+      await this.env.NEW_CONTENT_CONSTELLATION.send(message);
+      await this.env.NEW_CONTENT_AI.send(message);
 
       metrics.timing('silo.queue.send.latency_ms', Date.now() - startTime);
       getLogger().info({ message }, 'Message sent to NEW_CONTENT queue');

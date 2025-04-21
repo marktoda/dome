@@ -13,8 +13,12 @@ database_name = "silo"
 database_id = "baf652ea-e575-4019-b95c-c9d44d02c1aa"
 
 [[queues.producers]]
-binding = "NEW_CONTENT"
-queue = "new-content"
+binding = "NEW_CONTENT_CONSTELLATION"
+queue = "new-content-constellation"
+
+[[queues.producers]]
+binding = "NEW_CONTENT_AI"
+queue = "new-content-ai"
 
 [[queues.consumers]]
 binding = "CONTENT_EVENTS"

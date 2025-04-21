@@ -1,7 +1,8 @@
 wrangler queues create ingest-queue
 wrangler queues create ingest-dead-letter
 wrangler queues create content-events
-wrangler queues create new-content
+wrangler queues create new-content-constellation
+wrangler queues create new-content-ai
 wrangler queues create embed-dead-letter
 wrangler queues create enriched-content
 
