@@ -1,13 +1,13 @@
 import { getLogger } from '@dome/logging';
+import { SiloBatchGetInput, SiloBatchGetResponse } from '@dome/common';
 import { SiloBinding } from '../types';
-import { SiloBatchGetResponse } from '@dome/common';
 
 /**
  * Service for interacting with the Silo service
  * Provides methods to fetch content from Silo
  */
 export class SiloService {
-  constructor(private silo: SiloBinding) {}
+  constructor(private readonly silo: SiloBinding) {}
 
   /**
    * Fetch content from Silo by ID
@@ -70,9 +70,9 @@ export class SiloService {
 
 /**
  * Create a new Silo service instance
- * @param silo The Silo binding
+ * @param env The environment bindings
  * @returns A new Silo service instance
  */
-export function createSiloService(silo: SiloBinding): SiloService {
-  return new SiloService(silo);
+export function createSiloService(env: Env): SiloService {
+  return new SiloService(env.SILO as unknown as SiloBinding);
 }

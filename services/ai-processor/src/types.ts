@@ -1,6 +1,4 @@
-import {
-  SiloBatchGetResponse,
-} from '@dome/common';
+import { SiloBatchGetInput, SiloBatchGetResponse } from '@dome/common';
 
 // Define Cloudflare Workers types
 export interface Queue<T> {
@@ -8,11 +6,9 @@ export interface Queue<T> {
   sendBatch(messages: T[]): Promise<void>;
 }
 
-/**
- * Silo service binding interface
- */
+
 export interface SiloBinding {
-  batchGet(data: { ids: string[]; userId?: string | null }): Promise<SiloBatchGetResponse>;
+  batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
 }
 
 /**

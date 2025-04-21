@@ -50,3 +50,7 @@ name = "ai-processor"
 [env.prod.vars]
 LOG_LEVEL = "info"
 ENVIRONMENT = "prod"
+
+[observability]
+enabled = true
+head_sampling_rate = 1 # optional. default = 1.
