@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MetricsService, metrics, logMetric, createTimer } from './metrics';
 import { getLogger } from './getLogger';
+import { createServiceMetrics } from './index';
 
 // Mock the getLogger function
 vi.mock('./getLogger', () => ({
@@ -291,6 +292,66 @@ describe('Metrics Utilities', () => {
       expect(metrics.getCounter).toBeDefined();
       expect(metrics.getGauge).toBeDefined();
       expect(metrics.reset).toBeDefined();
+    });
+  });
+
+  // New tests for the standardized metrics interface
+  describe('createServiceMetrics', () => {
+    it('should create a service-specific metrics interface', () => {
+      const serviceMetrics = createServiceMetrics('test-service');
+
+      expect(serviceMetrics.counter).toBeDefined();
+      expect(serviceMetrics.gauge).toBeDefined();
+      expect(serviceMetrics.timing).toBeDefined();
+      expect(serviceMetrics.startTimer).toBeDefined();
+      expect(serviceMetrics.trackOperation).toBeDefined();
+    });
+
+    it('should prefix metric names with the service name', () => {
+      const serviceMetrics = createServiceMetrics('test-service');
+      const spy = vi.spyOn(metrics, 'increment');
+
+      serviceMetrics.counter('requests', 1);
+
+      expect(spy).toHaveBeenCalledWith('test-service.requests', 1, {});
+    });
+
+    it('should correctly pass through gauge metrics', () => {
+      const serviceMetrics = createServiceMetrics('test-service');
+      const spy = vi.spyOn(metrics, 'gauge');
+
+      serviceMetrics.gauge('memory', 100, { region: 'us-east' });
+
+      expect(spy).toHaveBeenCalledWith('test-service.memory', 100, { region: 'us-east' });
+    });
+
+    it('should correctly pass through timing metrics', () => {
+      const serviceMetrics = createServiceMetrics('test-service');
+      const spy = vi.spyOn(metrics, 'timing');
+
+      serviceMetrics.timing('response_time', 42, { endpoint: '/api' });
+
+      expect(spy).toHaveBeenCalledWith('test-service.response_time', 42, { endpoint: '/api' });
+    });
+
+    it('should create a timer with the service name prefix', () => {
+      const serviceMetrics = createServiceMetrics('test-service');
+      const mockTimer = { stop: vi.fn().mockReturnValue(100) };
+      vi.spyOn(metrics, 'startTimer').mockReturnValue(mockTimer);
+
+      const timer = serviceMetrics.startTimer('operation');
+
+      expect(metrics.startTimer).toHaveBeenCalledWith('test-service.operation');
+      expect(timer).toBe(mockTimer);
+    });
+
+    it('should correctly track operations with the service name prefix', () => {
+      const serviceMetrics = createServiceMetrics('test-service');
+      const spy = vi.spyOn(metrics, 'trackOperation');
+
+      serviceMetrics.trackOperation('database_query', true, { table: 'users' });
+
+      expect(spy).toHaveBeenCalledWith('test-service.database_query', true, { table: 'users' });
     });
   });
 });

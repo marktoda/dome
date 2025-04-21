@@ -26,10 +26,7 @@ const buildServices = (env: Env) => ({
   silo: createSiloService(env),
 });
 
-const runWithLog = <T>(
-  meta: Record<string, unknown>,
-  fn: () => Promise<T>,
-): Promise<T> =>
+const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
   withLogger(meta, async () => {
     try {
       return await fn();
@@ -44,10 +41,7 @@ type DeadLetterPayload =
   | { error: string; originalMessage: unknown }
   | { err: string; job: SiloEmbedJob };
 
-const sendToDeadLetter = async (
-  queue: DeadQueue | undefined,
-  payload: DeadLetterPayload,
-) => {
+const sendToDeadLetter = async (queue: DeadQueue | undefined, payload: DeadLetterPayload) => {
   if (!queue) return;
   try {
     await queue.send(payload);
@@ -69,10 +63,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /* ----------------------- embed a batch of notes ----------------------- */
 
-  private async embedBatch(
-    jobs: SiloEmbedJob[],
-    deadQueue?: DeadQueue,
-  ): Promise<number> {
+  private async embedBatch(jobs: SiloEmbedJob[], deadQueue?: DeadQueue): Promise<number> {
     let processed = 0;
 
     for (const job of jobs) {
@@ -220,15 +211,12 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   /* ---------------------------- rpc: stats ------------------------------ */
 
   public async stats() {
-    return runWithLog(
-      { service: 'constellation', op: 'stats', ...this.env },
-      async () => {
-        try {
-          return await this.services.vectorize.getStats();
-        } catch (error) {
-          return { error };
-        }
-      },
-    );
+    return runWithLog({ service: 'constellation', op: 'stats', ...this.env }, async () => {
+      try {
+        return await this.services.vectorize.getStats();
+      } catch (error) {
+        return { error };
+      }
+    });
   }
 }

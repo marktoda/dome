@@ -37,12 +37,12 @@ export function createTestMiniflare(options: {
       queueConsumers: ['INGEST_QUEUE'],
       // Use string binding for service bindings to avoid validation errors
       serviceBindings: siloService ? { SILO: 'silo-service' } : {},
-    } as any)
+    } as any),
   );
 
   // If we're mocking the SILO service, attach the mock to the env
   if (mockSiloFetch) {
-    mf.getBindings().then((env) => {
+    mf.getBindings().then(env => {
       // @ts-ignore - We're adding the mock to the env
       env.SILO = siloService;
     });

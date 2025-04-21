@@ -205,13 +205,14 @@ if (results.length === 0) {
 The service supports both user-specific (private) and public vectors through a special handling of the `userId` field:
 
 1. When storing vectors:
+
    ```typescript
    // For private vectors
    const metadata = {
      userId: 'user123',
      // other metadata...
    };
-   
+
    // For public vectors
    const metadata = {
      userId: 'public', // Special sentinel value
@@ -223,14 +224,11 @@ The service supports both user-specific (private) and public vectors through a s
    ```typescript
    // The service automatically includes both user-specific and public vectors
    // by transforming { userId: 'user123' } into { userId: { $in: ['user123', 'public'] } }
-   const results = await env.CONSTELLATION.query(
-     'Search query text',
-     { userId: 'user123' },
-     10
-   );
+   const results = await env.CONSTELLATION.query('Search query text', { userId: 'user123' }, 10);
    ```
 
 This approach ensures that:
+
 - Private vectors are only accessible to their owners
 - Public vectors are accessible to everyone
 - No special handling is needed in the client code

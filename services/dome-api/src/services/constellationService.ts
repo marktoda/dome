@@ -43,36 +43,48 @@ export class ConstellationService {
     try {
       this.validateConstellationBinding(env.CONSTELLATION);
 
-      this.logger.info({
-        text,
-        filter,
-        topK
-      }, 'query called');
+      this.logger.info(
+        {
+          text,
+          filter,
+          topK,
+        },
+        'query called',
+      );
 
       const processedText = this.preprocess(text);
-      this.logger.info({
-        original: text,
-        processed: processedText
-      }, 'Preprocessed text');
-      
+      this.logger.info(
+        {
+          original: text,
+          processed: processedText,
+        },
+        'Preprocessed text',
+      );
+
       this.logger.debug('Querying embeddings', {
         textLength: text.length,
         filter,
         topK,
       });
 
-      this.logger.info({
-        processedTextLength: processedText.length,
-        filter,
-        topK
-      }, 'Calling env.CONSTELLATION.query');
+      this.logger.info(
+        {
+          processedTextLength: processedText.length,
+          filter,
+          topK,
+        },
+        'Calling env.CONSTELLATION.query',
+      );
       const results = await env.CONSTELLATION!.query(processedText, filter, topK);
 
-      this.logger.info({
-        resultCount: results.length,
-        firstResultId: results.length > 0 ? results[0].id : null
-      }, 'Query results');
-      
+      this.logger.info(
+        {
+          resultCount: results.length,
+          firstResultId: results.length > 0 ? results[0].id : null,
+        },
+        'Query results',
+      );
+
       this.logger.debug('Successfully queried embeddings', {
         resultCount: results.length,
       });
@@ -139,44 +151,53 @@ export class ConstellationService {
     topK: number = DEFAULT_TOP_K,
   ): Promise<Array<{ contentId: string; score: number }>> {
     try {
-      this.logger.info({
-        query,
-        userId,
-        topK
-      }, 'searchNotes called');
-      
+      this.logger.info(
+        {
+          query,
+          userId,
+          topK,
+        },
+        'searchNotes called',
+      );
+
       const filter: Partial<VectorMeta> = { userId };
       this.logger.info(filter, 'Using filter for vector search');
 
       const results = await this.query(env, query, filter, topK);
-      this.logger.info({
-        resultCount: results.length
-      }, 'Vector search returned results');
+      this.logger.info(
+        {
+          resultCount: results.length,
+        },
+        'Vector search returned results',
+      );
 
       // Inline the mapVectorResultsToContentIds logic
       // Add detailed logging to understand the metadata structure
       if (results.length > 0) {
         const firstResult = results[0];
-        this.logger.info({
-          id: firstResult.id,
-          score: firstResult.score,
-          metadata: firstResult.metadata,
-          hasContentId: 'contentId' in firstResult.metadata,
-          metadataKeys: Object.keys(firstResult.metadata)
-        }, 'First search result');
+        this.logger.info(
+          {
+            id: firstResult.id,
+            score: firstResult.score,
+            metadata: firstResult.metadata,
+            hasContentId: 'contentId' in firstResult.metadata,
+            metadataKeys: Object.keys(firstResult.metadata),
+          },
+          'First search result',
+        );
       }
-      
+
       const mappedResults = results.map(result => {
         // Check if metadata exists
         if (!result.metadata) {
           this.logger.info({ id: result.id }, 'Missing metadata in search result');
           return { contentId: '', score: result.score };
         }
-        
+
         // Extract contentId with more robust checks
         let contentId = '';
         const metadata = result.metadata as any;
-        
+
         if (metadata.hasOwnProperty('contentId') && metadata.contentId) {
           contentId = metadata.contentId;
         } else {
@@ -186,24 +207,30 @@ export class ConstellationService {
             contentId = idParts[1];
           }
         }
-        
-        this.logger.info({
-          id: result.id,
-          contentId,
-          score: result.score
-        }, 'Mapped result');
-        
+
+        this.logger.info(
+          {
+            id: result.id,
+            contentId,
+            score: result.score,
+          },
+          'Mapped result',
+        );
+
         return {
           contentId,
           score: result.score,
         };
       });
-      
-      this.logger.info({
-        count: mappedResults.length,
-        firstFew: mappedResults.slice(0, 3)
-      }, 'Final mapped results');
-      
+
+      this.logger.info(
+        {
+          count: mappedResults.length,
+          firstFew: mappedResults.slice(0, 3),
+        },
+        'Final mapped results',
+      );
+
       return mappedResults;
     } catch (error) {
       this.logger.error('Failed to search notes', {

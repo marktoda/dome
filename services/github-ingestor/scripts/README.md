@@ -87,6 +87,7 @@ The script tests various endpoints of the GitHub Ingestor service and reports de
 3. Response body content
 
 It tests the following endpoints:
+
 - `/` (root endpoint)
 - `/health` (health check endpoint)
 - `/status` (status endpoint)
@@ -163,6 +164,7 @@ The script includes detailed error logging to help diagnose these issues. Check 
 You can modify the script to add different repositories or change the include/exclude patterns for file types. You can also specify a different worker URL using the `--worker-url` parameter.
 
 The default include patterns are:
+
 - `**/*.md` - Markdown files
 - `**/*.sol` - Solidity files
 - `**/*.js` - JavaScript files
@@ -171,6 +173,7 @@ The default include patterns are:
 - `**/*.yml`, `**/*.yaml` - YAML files
 
 The default exclude patterns are:
+
 - `**/node_modules/**` - Node.js dependencies
 - `**/dist/**` - Distribution directories
 - `**/build/**` - Build directories

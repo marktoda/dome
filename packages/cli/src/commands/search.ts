@@ -59,9 +59,10 @@ export function searchCommand(program: Command): void {
             console.log('\nContent:');
             // Limit the content to a reasonable length for display
             const maxLength = 200;
-            const content = match.body.length > maxLength
-              ? match.body.substring(0, maxLength) + '...'
-              : match.body;
+            const content =
+              match.body.length > maxLength
+                ? match.body.substring(0, maxLength) + '...'
+                : match.body;
             console.log(content);
           }
 

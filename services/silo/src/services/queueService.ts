@@ -5,7 +5,7 @@ import { getLogger, metrics } from '@dome/logging';
  * This service encapsulates all interactions with Cloudflare Queues
  */
 export class QueueService {
-  constructor(private env: any) { }
+  constructor(private env: any) {}
 
   /**
    * Send a message to the NEW_CONTENT queue

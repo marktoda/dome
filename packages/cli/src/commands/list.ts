@@ -57,10 +57,9 @@ export function listCommand(program: Command): void {
           const rows = items.map((note: any) => {
             // Truncate content if it's too long
             const content = note.body || '';
-            const truncatedContent = content.length > 50
-              ? content.substring(0, 47) + '...'
-              : content;
-            
+            const truncatedContent =
+              content.length > 50 ? content.substring(0, 47) + '...' : content;
+
             return [
               note.id,
               note.title || '(No title)',

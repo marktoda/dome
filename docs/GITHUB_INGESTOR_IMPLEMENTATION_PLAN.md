@@ -54,6 +54,7 @@ Set up the project structure, configure Cloudflare resources, and establish the 
 **Technical Tasks**
 
 1. Create service directory structure:
+
    ```
    services/github-ingestor/
    ├── src/
@@ -83,6 +84,7 @@ Set up the project structure, configure Cloudflare resources, and establish the 
    ```
 
 2. Configure `wrangler.toml` with required bindings:
+
    ```toml
    name = "github-ingestor"
    main = "src/index.ts"
@@ -128,6 +130,7 @@ Set up the project structure, configure Cloudflare resources, and establish the 
    ```
 
 3. Create D1 database schema migration:
+
    ```sql
    -- Main repository configuration table
    CREATE TABLE provider_repositories (
@@ -180,12 +183,14 @@ Set up the project structure, configure Cloudflare resources, and establish the 
 6. Set up logging and metrics utilities
 
 **Dependencies**
+
 - Cloudflare Workers account with access to D1, R2, and Queues
 - pnpm workspace setup
 - Drizzle ORM for D1 database operations
 - Hono for RPC routing
 
 **Acceptance Criteria**
+
 - Project structure is set up correctly
 - `wrangler.toml` is configured with all required bindings
 - D1 database schema can be applied with `wrangler d1 migrations apply`
@@ -202,6 +207,7 @@ Implement the common ingestion contract and GitHub API client to establish the f
 **Technical Tasks**
 
 1. Implement the common ingestion contract in `src/ingestors/base.ts`:
+
    ```typescript
    // src/ingestors/base.ts
    export interface ItemMetadata {
@@ -231,22 +237,23 @@ Implement the common ingestion contract and GitHub API client to establish the f
    export interface Ingestor {
      // Get configuration for this ingestor
      getConfig(): IngestorConfig;
-     
+
      // List all items that need to be ingested
      listItems(): Promise<ItemMetadata[]>;
-     
+
      // Get content for a specific item
      fetchContent(metadata: ItemMetadata): Promise<ContentItem>;
-     
+
      // Check if an item has changed since last sync
      hasChanged(metadata: ItemMetadata): Promise<boolean>;
-     
+
      // Update sync status after successful ingestion
      updateSyncStatus(metadata: ItemMetadata): Promise<void>;
    }
    ```
 
 2. Implement the GitHub API client in `src/github/api.ts`:
+
    ```typescript
    // src/github/api.ts
    export class GitHubClient {
@@ -275,9 +282,14 @@ Implement the common ingestion contract and GitHub API client to establish the f
    ```
 
 3. Implement GitHub authentication in `src/github/auth.ts`:
+
    ```typescript
    // src/github/auth.ts
-   export async function getInstallationToken(appId: string, privateKey: string, installationId: string) {
+   export async function getInstallationToken(
+     appId: string,
+     privateKey: string,
+     installationId: string,
+   ) {
      // Implement GitHub App authentication to get installation token
    }
 
@@ -289,11 +301,13 @@ Implement the common ingestion contract and GitHub API client to establish the f
 4. Create test stubs for GitHub API client
 
 **Dependencies**
+
 - Stage 1 completion
 - GitHub API documentation
 - JWT library for GitHub App authentication
 
 **Acceptance Criteria**
+
 - Common ingestion contract is properly defined
 - GitHub API client can make authenticated requests to GitHub API
 - GitHub App authentication works for installation tokens
@@ -310,6 +324,7 @@ Implement the GitHub-specific ingestor that conforms to the common ingestion con
 **Technical Tasks**
 
 1. Implement the GitHub ingestor in `src/ingestors/github.ts`:
+
    ```typescript
    // src/ingestors/github.ts
    import { Ingestor, IngestorConfig, ItemMetadata, ContentItem } from './base';
@@ -364,11 +379,13 @@ Implement the GitHub-specific ingestor that conforms to the common ingestion con
 4. Add unit tests for the GitHub ingestor
 
 **Dependencies**
+
 - Stage 2 completion
 - Glob pattern matching library
 - Streaming utilities
 
 **Acceptance Criteria**
+
 - GitHub ingestor correctly implements the common ingestion contract
 - File listing works with conditional requests
 - Content fetching works for both small and large files
@@ -386,6 +403,7 @@ Implement the webhook handler to process GitHub webhook events and enqueue jobs 
 **Technical Tasks**
 
 1. Implement the webhook handler in `src/webhook/handler.ts`:
+
    ```typescript
    // src/webhook/handler.ts
    import { Env } from '../types';
@@ -395,19 +413,19 @@ Implement the webhook handler to process GitHub webhook events and enqueue jobs 
 
    export async function handleWebhook(request: Request, env: Env): Promise<Response> {
      const startTime = Date.now();
-     
+
      try {
        // Verify webhook signature
        const payload = await request.json();
        const signature = request.headers.get('x-hub-signature-256');
-       
+
        if (!signature || !verifyGitHubWebhook(payload, signature, env.GITHUB_WEBHOOK_SECRET)) {
          return new Response('Invalid signature', { status: 401 });
        }
-       
+
        // Process webhook event
        const event = request.headers.get('x-github-event');
-       
+
        switch (event) {
          case 'push':
            await handlePushEvent(payload, env);
@@ -418,7 +436,7 @@ Implement the webhook handler to process GitHub webhook events and enqueue jobs 
          default:
            logger.info({ event }, 'Ignoring unsupported event type');
        }
-       
+
        metrics.timing('github.webhook.process_time_ms', Date.now() - startTime);
        return new Response('OK');
      } catch (error) {
@@ -434,11 +452,13 @@ Implement the webhook handler to process GitHub webhook events and enqueue jobs 
 4. Implement unit tests for webhook handler
 
 **Dependencies**
+
 - Stage 2 completion
 - GitHub webhook documentation
 - Crypto library for signature verification
 
 **Acceptance Criteria**
+
 - Webhook handler correctly verifies webhook signatures
 - Push events are processed and changed files are enqueued
 - Installation events update the credentials database
@@ -455,6 +475,7 @@ Implement the cron handler to periodically check for repository updates and enqu
 **Technical Tasks**
 
 1. Implement the cron handler in `src/cron/handler.ts`:
+
    ```typescript
    // src/cron/handler.ts
    import { Env } from '../types';
@@ -465,11 +486,12 @@ Implement the cron handler to periodically check for repository updates and enqu
 
    export async function handleCron(env: Env): Promise<void> {
      const startTime = Date.now();
-     
+
      try {
        // Get repositories due for sync
        const now = Math.floor(Date.now() / 1000);
-       const repos = await env.DB.prepare(`
+       const repos = await env.DB.prepare(
+         `
          SELECT id, userId, owner, repo, branch, lastSyncedAt, lastCommitSha, etag, 
                 isPrivate, includePatterns, excludePatterns, retryCount
          FROM provider_repositories
@@ -480,10 +502,11 @@ Implement the cron handler to periodically check for repository updates and enqu
            OR (nextRetryAt IS NOT NULL AND nextRetryAt < ?)
          )
          LIMIT 50
-       `)
-       .bind(now - 3600, now) // Sync repos not updated in the last hour
-       .all();
-       
+       `,
+       )
+         .bind(now - 3600, now) // Sync repos not updated in the last hour
+         .all();
+
        // Process repositories in batches with yielding
        for (const repo of repos.results) {
          try {
@@ -504,10 +527,12 @@ Implement the cron handler to periodically check for repository updates and enqu
 4. Implement unit tests for cron handler
 
 **Dependencies**
+
 - Stage 2 and 3 completion
 - GitHub API rate limit documentation
 
 **Acceptance Criteria**
+
 - Cron handler correctly identifies repositories due for sync
 - Conditional requests are used to minimize API usage
 - Changed files are correctly identified and enqueued
@@ -526,6 +551,7 @@ Implement the queue processor to handle ingestion jobs and store content in the 
 **Technical Tasks**
 
 1. Implement the queue processor in `src/queue/processor.ts`:
+
    ```typescript
    // src/queue/processor.ts
    import { Env, IngestJob, MessageBatch } from '../types';
@@ -537,16 +563,16 @@ Implement the queue processor to handle ingestion jobs and store content in the 
    export async function processQueue(batch: MessageBatch<IngestJob>, env: Env): Promise<void> {
      const startTime = Date.now();
      metrics.gauge('github.queue.batch_size', batch.messages.length);
-     
+
      try {
        // Process messages in parallel with concurrency limit
        const concurrencyLimit = 5;
        const messages = [...batch.messages];
-       
+
        for (let i = 0; i < messages.length; i += concurrencyLimit) {
          const chunk = messages.slice(i, i + concurrencyLimit);
          await Promise.all(chunk.map(message => processMessage(message.body, env)));
-         
+
          // Yield to avoid CPU time limit
          if (i + concurrencyLimit < messages.length) {
            await new Promise(resolve => setTimeout(resolve, 1));
@@ -565,10 +591,12 @@ Implement the queue processor to handle ingestion jobs and store content in the 
 4. Implement error handling and dead-letter queue
 
 **Dependencies**
+
 - Stage 2 and 3 completion
 - Silo service API documentation
 
 **Acceptance Criteria**
+
 - Queue processor correctly handles ingestion jobs
 - Content is properly deduplicated using SHA-1 hashes
 - Large files are streamed to Silo
@@ -586,6 +614,7 @@ Implement the main worker entry point to handle HTTP requests, cron events, and 
 **Technical Tasks**
 
 1. Implement the main worker entry point in `src/index.ts`:
+
    ```typescript
    // src/index.ts
    import { Env, IngestJob, MessageBatch } from './types';
@@ -598,22 +627,22 @@ Implement the main worker entry point to handle HTTP requests, cron events, and 
    export default {
      async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
        const url = new URL(request.url);
-       
+
        // Handle webhook requests
        if (url.pathname === '/webhook') {
          return handleWebhook(request, env);
        }
-       
+
        // Handle health check
        if (url.pathname === '/health') {
          return new Response('OK');
        }
-       
+
        // Handle other API endpoints
-       
+
        return new Response('Not found', { status: 404 });
      },
-     
+
      async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
        try {
          await handleCron(env);
@@ -621,10 +650,10 @@ Implement the main worker entry point to handle HTTP requests, cron events, and 
          logger.error({ error }, 'Error in scheduled handler');
        }
      },
-     
+
      async queue(batch: MessageBatch<IngestJob>, env: Env): Promise<void> {
        await processQueue(batch, env);
-     }
+     },
    };
    ```
 
@@ -633,9 +662,11 @@ Implement the main worker entry point to handle HTTP requests, cron events, and 
 4. Implement unit tests for the main worker
 
 **Dependencies**
+
 - Stages 4, 5, and 6 completion
 
 **Acceptance Criteria**
+
 - Main worker correctly routes HTTP requests
 - Scheduled events trigger the cron handler
 - Queue messages are processed by the queue processor
@@ -652,12 +683,14 @@ Integrate the GitHub Ingestor with the Dome API for repository management.
 **Technical Tasks**
 
 1. Implement repository management endpoints in Dome API:
+
    ```typescript
    // In Dome API
-   app.post('/api/repositories/github', async (c) => {
+   app.post('/api/repositories/github', async c => {
      const userId = c.get('userId');
-     const { owner, repo, branch, isPrivate, includePatterns, excludePatterns } = await c.req.json();
-     
+     const { owner, repo, branch, isPrivate, includePatterns, excludePatterns } =
+       await c.req.json();
+
      // Create repository configuration in GitHub Ingestor
      const response = await c.env.GITHUB_INGESTOR.fetch(
        new Request('http://github-ingestor/repositories', {
@@ -676,7 +709,7 @@ Integrate the GitHub Ingestor with the Dome API for repository management.
          }),
        }),
      );
-     
+
      return c.json(await response.json());
    });
    ```
@@ -686,10 +719,12 @@ Integrate the GitHub Ingestor with the Dome API for repository management.
 4. Implement unit tests for API integration
 
 **Dependencies**
+
 - Stage 7 completion
 - Access to Dome API codebase
 
 **Acceptance Criteria**
+
 - Dome API can create and manage GitHub repository configurations
 - GitHub App installation flow works correctly
 - Repository listing and management works correctly
@@ -706,6 +741,7 @@ Implement comprehensive testing and monitoring for the GitHub Ingestor.
 
 1. Implement integration tests using Miniflare
 2. Set up monitoring dashboards for:
+
    - Webhook event processing
    - Cron job execution
    - Queue depth and processing time
@@ -713,6 +749,7 @@ Implement comprehensive testing and monitoring for the GitHub Ingestor.
    - GitHub API rate limit usage
 
 3. Implement structured logging:
+
    ```typescript
    // In src/utils/logging.ts
    export const logger = {
@@ -742,11 +779,13 @@ Implement comprehensive testing and monitoring for the GitHub Ingestor.
 4. Set up alerts for critical errors
 
 **Dependencies**
+
 - Stages 1-8 completion
 - Miniflare for testing
 - Cloudflare dashboard for monitoring
 
 **Acceptance Criteria**
+
 - Integration tests pass for all components
 - Monitoring dashboards provide visibility into service performance
 - Structured logging works correctly
@@ -777,6 +816,7 @@ graph TD
 ### Content Deduplication Strategy
 
 - **Content Hashing**:
+
   - Use Git blob SHA-1 as the content identifier
   - Store unique content blobs in R2 once
   - Track references to blobs from multiple files
@@ -790,6 +830,7 @@ graph TD
 ### Error Handling & Retries
 
 - **Error Classification**:
+
   - Distinguish between transient and permanent errors
   - Implement exponential backoff for retries
   - Track and respect GitHub API rate limits
@@ -803,6 +844,7 @@ graph TD
 ### Performance Optimization
 
 - **Batch Processing**:
+
   - Process repositories and files in batches
   - Use parallel processing with concurrency limits
   - Implement proper yielding to avoid CPU time limits
@@ -815,6 +857,7 @@ graph TD
 ### Security Considerations
 
 - **Authentication**:
+
   - Use GitHub App for webhook authentication
   - Encrypt user tokens in database
   - Implement proper token rotation and refresh
@@ -827,17 +870,20 @@ graph TD
 ## 5. Roll-out Strategy
 
 1. **Development Phase**:
+
    - Set up development environment with test repositories
    - Implement and test each stage sequentially
    - Conduct code reviews and unit testing
 
 2. **Staging Deployment**:
+
    - Deploy to staging environment
    - Test with real GitHub repositories
    - Verify webhook processing and event flow
    - Load test with simulated traffic
 
 3. **Production Rollout**:
+
    - Register GitHub App for production
    - Configure webhook endpoints
    - Deploy GitHub Ingestor worker with feature flag

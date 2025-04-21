@@ -12,21 +12,21 @@ export interface Env {
   GITHUB_TOKEN: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
-  
+
   // Service bindings
   SILO: Fetcher; // Silo service binding for content storage
-  
+
   // Database bindings
   DB: D1Database; // D1 database for metadata storage
-  
+
   // Queue bindings
   INGEST_QUEUE: Queue<IngestMessage>; // Queue for ingestion tasks
   DEAD_LETTER_QUEUE: Queue<DeadLetterMessage>; // Queue for failed ingestion tasks
-  
+
   // Environment configuration
-  LOG_LEVEL: "info" | "debug";
+  LOG_LEVEL: 'info' | 'debug';
   VERSION: string;
-  ENVIRONMENT: "prod" | "dev" | "staging";
+  ENVIRONMENT: 'prod' | 'dev' | 'staging';
 }
 
 /**
@@ -111,11 +111,7 @@ export interface DeadLetterMessage {
 /**
  * GitHub webhook event types
  */
-export type GitHubWebhookEvent =
-  | 'push'
-  | 'installation'
-  | 'installation_repositories'
-  | 'ping';
+export type GitHubWebhookEvent = 'push' | 'installation' | 'installation_repositories' | 'ping';
 
 /**
  * GitHub webhook payload for push events

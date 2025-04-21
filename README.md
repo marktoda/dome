@@ -22,7 +22,7 @@ graph TD
     Constellation -->|Process Jobs| EMBED_QUEUE[Embed Queue]
     Constellation -->|Generate Embeddings| WorkersAI[Workers AI]
     Constellation -->|Store/Query Vectors| Vectorize[(Vectorize Index)]
-    
+
     NEW_CONTENT -->|Trigger Embedding| Constellation
 
     DomeCron[Dome Cron] -->|Scheduled Tasks| DomeAPI

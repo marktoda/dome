@@ -1,6 +1,11 @@
 import { getLogger, metrics } from '@dome/logging';
 import { z } from 'zod';
-import { SiloEmbedJob, ContentType, NewContentMessageSchema, NewContentMessage } from '@dome/common';
+import {
+  SiloEmbedJob,
+  ContentType,
+  NewContentMessageSchema,
+  NewContentMessage,
+} from '@dome/common';
 import { SiloService as SiloBinding } from '../types';
 
 /**
@@ -70,7 +75,10 @@ export class SiloService {
 
       // Fetch the content from Silo
       const text = await this.fetchContent(validatedMessage.id, validatedMessage.userId);
-      getLogger().info({ contentId: validatedMessage.id, userId: validatedMessage.userId }, 'Fetched content from Silo');
+      getLogger().info(
+        { contentId: validatedMessage.id, userId: validatedMessage.userId },
+        'Fetched content from Silo',
+      );
 
       // Create a SiloEmbedJob
       return {
@@ -79,16 +87,22 @@ export class SiloService {
         text,
         created: (validatedMessage.createdAt || Math.floor(Date.now() / 1000)) * 1000, // Convert seconds to milliseconds
         version: 1, // Default version
-        contentType: validatedMessage.contentType as ContentType || 'note'
+        contentType: (validatedMessage.contentType as ContentType) || 'note',
       };
     } catch (error) {
       if (error instanceof z.ZodError) {
-        getLogger().error({
-          error: error.errors,
-          message
-        }, 'Invalid message format from new-content queue');
+        getLogger().error(
+          {
+            error: error.errors,
+            message,
+          },
+          'Invalid message format from new-content queue',
+        );
       } else {
-        getLogger().error({ error: JSON.stringify(error), message }, 'Error converting message to embed job');
+        getLogger().error(
+          { error: JSON.stringify(error), message },
+          'Error converting message to embed job',
+        );
       }
       throw error;
     }

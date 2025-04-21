@@ -56,7 +56,7 @@ export class GitHubIngestorMetrics {
     // Update internal counter
     const currentValue = this.counters.get(name) || 0;
     this.counters.set(name, currentValue + value);
-    
+
     // Send to metrics service
     domeMetrics.increment(`${this.prefix}.${name}`, value, this.addDefaultTags(tags));
   }
@@ -108,7 +108,7 @@ export class GitHubIngestorMetrics {
   public trackOperation(name: string, success: boolean, tags: Record<string, string> = {}): void {
     const metricName = `${name}.${success ? 'success' : 'failure'}`;
     this.counter(metricName, 1, tags);
-    
+
     // Also track as a gauge for success rate calculation
     this.gauge(`${name}.success_rate`, success ? 1 : 0, tags);
   }
@@ -126,7 +126,7 @@ export class GitHubIngestorMetrics {
     limit: number,
     reset: number,
     scope: string = 'core',
-    owner?: string
+    owner?: string,
   ): void {
     const tags: Record<string, string> = { scope };
     if (owner) tags.owner = owner;
@@ -135,7 +135,7 @@ export class GitHubIngestorMetrics {
     this.gauge('github_api.rate_limit.limit', limit, tags);
     this.gauge('github_api.rate_limit.reset', reset, tags);
     this.gauge('github_api.rate_limit.usage_percent', 100 - (remaining / limit) * 100, tags);
-    
+
     // Track if we're approaching the limit (less than 10% remaining)
     if (remaining / limit < 0.1) {
       this.counter('github_api.rate_limit.approaching_limit', 1, tags);
@@ -157,7 +157,7 @@ export class GitHubIngestorMetrics {
     fileCount: number,
     totalSize: number,
     duration: number,
-    isPrivate: boolean
+    isPrivate: boolean,
   ): void {
     const tags = {
       owner,
@@ -168,7 +168,7 @@ export class GitHubIngestorMetrics {
     this.counter('repository.files_processed', fileCount, tags);
     this.counter('repository.bytes_processed', totalSize, tags);
     this.timing('repository.processing_time_ms', duration, tags);
-    this.gauge('repository.processing_speed_kbps', (totalSize / 1024) / (duration / 1000), tags);
+    this.gauge('repository.processing_speed_kbps', totalSize / 1024 / (duration / 1000), tags);
     this.gauge('repository.avg_file_size_bytes', totalSize / Math.max(1, fileCount), tags);
   }
 
@@ -179,12 +179,7 @@ export class GitHubIngestorMetrics {
    * @param statusCode HTTP status code
    * @param duration Request duration in milliseconds
    */
-  public trackApiRequest(
-    path: string,
-    method: string,
-    statusCode: number,
-    duration: number
-  ): void {
+  public trackApiRequest(path: string, method: string, statusCode: number, duration: number): void {
     const tags = {
       path,
       method,
@@ -194,7 +189,7 @@ export class GitHubIngestorMetrics {
 
     this.counter('api.request', 1, tags);
     this.timing('api.request_duration_ms', duration, tags);
-    
+
     // Track errors separately
     if (statusCode >= 400) {
       this.counter('api.error', 1, tags);
@@ -212,16 +207,16 @@ export class GitHubIngestorMetrics {
     queueName: string,
     messageCount: number,
     successCount: number,
-    duration: number
+    duration: number,
   ): void {
     const tags = { queue: queueName };
-    
+
     this.counter('queue.messages_processed', messageCount, tags);
     this.counter('queue.messages_succeeded', successCount, tags);
     this.counter('queue.messages_failed', messageCount - successCount, tags);
     this.timing('queue.batch_processing_ms', duration, tags);
     this.gauge('queue.success_rate', (successCount / Math.max(1, messageCount)) * 100, tags);
-    this.gauge('queue.messages_per_second', (messageCount / (duration / 1000)), tags);
+    this.gauge('queue.messages_per_second', messageCount / (duration / 1000), tags);
   }
 
   /**
@@ -235,18 +230,18 @@ export class GitHubIngestorMetrics {
     event: string,
     statusCode: number,
     duration: number,
-    owner?: string
+    owner?: string,
   ): void {
     const tags: Record<string, string> = {
       event,
       status_code: statusCode.toString(),
     };
-    
+
     if (owner) tags.owner = owner;
-    
+
     this.counter('webhook.received', 1, tags);
     this.timing('webhook.processing_ms', duration, tags);
-    
+
     // Track errors separately
     if (statusCode >= 400) {
       this.counter('webhook.error', 1, tags);
@@ -262,20 +257,20 @@ export class GitHubIngestorMetrics {
   public trackHealthCheck(
     status: 'ok' | 'warning' | 'error',
     duration: number,
-    component?: string
+    component?: string,
   ): void {
     const tags: Record<string, string> = { status };
     if (component) tags.component = component;
-    
+
     this.counter('health.check', 1, tags);
     this.timing('health.check_duration_ms', duration, tags);
-    
+
     // Track a numeric value for the status (0 = error, 1 = warning, 2 = ok)
     // This makes it easier to create alerts based on status
     const statusValue = status === 'ok' ? 2 : status === 'warning' ? 1 : 0;
     this.gauge('health.status', statusValue, tags);
   }
-  
+
   /**
    * Get the current value of a counter
    * @param name Counter name

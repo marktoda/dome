@@ -9,94 +9,94 @@ initPolyfills();
  */
 const MIME_TYPES: Record<string, string> = {
   // Text files
-  'txt': 'text/plain',
-  'md': 'text/markdown',
-  'markdown': 'text/markdown',
-  'html': 'text/html',
-  'htm': 'text/html',
-  'css': 'text/css',
-  'csv': 'text/csv',
-  'xml': 'text/xml',
-  
+  txt: 'text/plain',
+  md: 'text/markdown',
+  markdown: 'text/markdown',
+  html: 'text/html',
+  htm: 'text/html',
+  css: 'text/css',
+  csv: 'text/csv',
+  xml: 'text/xml',
+
   // Programming languages
-  'js': 'application/javascript',
-  'mjs': 'application/javascript',
-  'cjs': 'application/javascript',
-  'jsx': 'application/javascript',
-  'ts': 'application/typescript',
-  'tsx': 'application/typescript',
-  'json': 'application/json',
-  'py': 'text/x-python',
-  'rb': 'text/x-ruby',
-  'java': 'text/x-java',
-  'c': 'text/x-c',
-  'cpp': 'text/x-c++',
-  'h': 'text/x-c',
-  'hpp': 'text/x-c++',
-  'cs': 'text/x-csharp',
-  'go': 'text/x-go',
-  'rs': 'text/x-rust',
-  'php': 'text/x-php',
-  'swift': 'text/x-swift',
-  'kt': 'text/x-kotlin',
-  'scala': 'text/x-scala',
-  'pl': 'text/x-perl',
-  'sh': 'text/x-shellscript',
-  'bash': 'text/x-shellscript',
-  'zsh': 'text/x-shellscript',
-  'fish': 'text/x-shellscript',
-  'sql': 'text/x-sql',
-  'graphql': 'text/x-graphql',
-  'yaml': 'text/yaml',
-  'yml': 'text/yaml',
-  'toml': 'text/toml',
-  
+  js: 'application/javascript',
+  mjs: 'application/javascript',
+  cjs: 'application/javascript',
+  jsx: 'application/javascript',
+  ts: 'application/typescript',
+  tsx: 'application/typescript',
+  json: 'application/json',
+  py: 'text/x-python',
+  rb: 'text/x-ruby',
+  java: 'text/x-java',
+  c: 'text/x-c',
+  cpp: 'text/x-c++',
+  h: 'text/x-c',
+  hpp: 'text/x-c++',
+  cs: 'text/x-csharp',
+  go: 'text/x-go',
+  rs: 'text/x-rust',
+  php: 'text/x-php',
+  swift: 'text/x-swift',
+  kt: 'text/x-kotlin',
+  scala: 'text/x-scala',
+  pl: 'text/x-perl',
+  sh: 'text/x-shellscript',
+  bash: 'text/x-shellscript',
+  zsh: 'text/x-shellscript',
+  fish: 'text/x-shellscript',
+  sql: 'text/x-sql',
+  graphql: 'text/x-graphql',
+  yaml: 'text/yaml',
+  yml: 'text/yaml',
+  toml: 'text/toml',
+
   // Images
-  'jpg': 'image/jpeg',
-  'jpeg': 'image/jpeg',
-  'png': 'image/png',
-  'gif': 'image/gif',
-  'webp': 'image/webp',
-  'svg': 'image/svg+xml',
-  'ico': 'image/x-icon',
-  
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  ico: 'image/x-icon',
+
   // Documents
-  'pdf': 'application/pdf',
-  'doc': 'application/msword',
-  'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'xls': 'application/vnd.ms-excel',
-  'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'ppt': 'application/vnd.ms-powerpoint',
-  'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+
   // Archives
-  'zip': 'application/zip',
-  'tar': 'application/x-tar',
-  'gz': 'application/gzip',
-  'tgz': 'application/gzip',
+  zip: 'application/zip',
+  tar: 'application/x-tar',
+  gz: 'application/gzip',
+  tgz: 'application/gzip',
   '7z': 'application/x-7z-compressed',
-  'rar': 'application/x-rar-compressed',
-  
+  rar: 'application/x-rar-compressed',
+
   // Audio
-  'mp3': 'audio/mpeg',
-  'wav': 'audio/wav',
-  'ogg': 'audio/ogg',
-  'flac': 'audio/flac',
-  
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  flac: 'audio/flac',
+
   // Video
-  'mp4': 'video/mp4',
-  'webm': 'video/webm',
-  'avi': 'video/x-msvideo',
-  'mov': 'video/quicktime',
-  
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  avi: 'video/x-msvideo',
+  mov: 'video/quicktime',
+
   // Fonts
-  'ttf': 'font/ttf',
-  'otf': 'font/otf',
-  'woff': 'font/woff',
-  'woff2': 'font/woff2',
-  
+  ttf: 'font/ttf',
+  otf: 'font/otf',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+
   // Other
-  'wasm': 'application/wasm',
+  wasm: 'application/wasm',
 };
 
 /**
@@ -104,27 +104,84 @@ const MIME_TYPES: Record<string, string> = {
  */
 const BINARY_EXTENSIONS = new Set([
   // Images
-  'jpg', 'jpeg', 'png', 'gif', 'webp', 'ico', 'bmp', 'tiff', 'tif',
-  
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'ico',
+  'bmp',
+  'tiff',
+  'tif',
+
   // Documents
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-  
+  'pdf',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+
   // Archives
-  'zip', 'tar', 'gz', 'tgz', '7z', 'rar', 'bz2', 'xz',
-  
+  'zip',
+  'tar',
+  'gz',
+  'tgz',
+  '7z',
+  'rar',
+  'bz2',
+  'xz',
+
   // Audio
-  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a',
-  
+  'mp3',
+  'wav',
+  'ogg',
+  'flac',
+  'aac',
+  'm4a',
+
   // Video
-  'mp4', 'webm', 'avi', 'mov', 'mkv', 'flv', 'wmv',
-  
+  'mp4',
+  'webm',
+  'avi',
+  'mov',
+  'mkv',
+  'flv',
+  'wmv',
+
   // Fonts
-  'ttf', 'otf', 'woff', 'woff2', 'eot',
-  
+  'ttf',
+  'otf',
+  'woff',
+  'woff2',
+  'eot',
+
   // Other
-  'exe', 'dll', 'so', 'dylib', 'bin', 'dat', 'db', 'sqlite', 'class',
-  'jar', 'war', 'ear', 'pyc', 'pyo', 'o', 'obj', 'a', 'lib', 'out',
-  'wasm', 'iso', 'img', 'dmg', 'pkg',
+  'exe',
+  'dll',
+  'so',
+  'dylib',
+  'bin',
+  'dat',
+  'db',
+  'sqlite',
+  'class',
+  'jar',
+  'war',
+  'ear',
+  'pyc',
+  'pyo',
+  'o',
+  'obj',
+  'a',
+  'lib',
+  'out',
+  'wasm',
+  'iso',
+  'img',
+  'dmg',
+  'pkg',
 ]);
 
 /**
@@ -135,7 +192,7 @@ const DEFAULT_EXCLUDE_PATTERNS = [
   '.*',
   '**/.*',
   '**/.*/**',
-  
+
   // Build artifacts
   '**/node_modules/**',
   '**/dist/**',
@@ -145,7 +202,7 @@ const DEFAULT_EXCLUDE_PATTERNS = [
   '**/output/**',
   '**/bin/**',
   '**/obj/**',
-  
+
   // Package manager files
   '**/package-lock.json',
   '**/yarn.lock',
@@ -154,7 +211,7 @@ const DEFAULT_EXCLUDE_PATTERNS = [
   '**/Gemfile.lock',
   '**/poetry.lock',
   '**/Cargo.lock',
-  
+
   // Large data files
   '**/*.min.js',
   '**/*.min.css',
@@ -162,7 +219,7 @@ const DEFAULT_EXCLUDE_PATTERNS = [
   '**/*.bundle.css',
   '**/*.chunk.js',
   '**/*.chunk.css',
-  
+
   // Binary files
   '**/*.jpg',
   '**/*.jpeg',
@@ -185,7 +242,7 @@ const DEFAULT_EXCLUDE_PATTERNS = [
   '**/*.otf',
   '**/*.woff',
   '**/*.woff2',
-  
+
   // Specific files
   '**/LICENSE',
   '**/CHANGELOG.md',
@@ -224,32 +281,29 @@ export function isBinaryFile(path: string): boolean {
 export function shouldIncludeFile(
   path: string,
   includePatterns: string[] | null = null,
-  excludePatterns: string[] | null = null
+  excludePatterns: string[] | null = null,
 ): boolean {
   // Apply exclude patterns first (including defaults)
-  const allExcludePatterns = [
-    ...(excludePatterns || []),
-    ...DEFAULT_EXCLUDE_PATTERNS,
-  ];
-  
+  const allExcludePatterns = [...(excludePatterns || []), ...DEFAULT_EXCLUDE_PATTERNS];
+
   for (const pattern of allExcludePatterns) {
     if (minimatch(path, pattern, { dot: true })) {
       return false;
     }
   }
-  
+
   // If no include patterns are specified, include all files
   if (!includePatterns || includePatterns.length === 0) {
     return true;
   }
-  
+
   // Apply include patterns
   for (const pattern of includePatterns) {
     if (minimatch(path, pattern, { dot: true })) {
       return true;
     }
   }
-  
+
   // If include patterns are specified but none match, exclude the file
   return false;
 }
@@ -263,35 +317,35 @@ export function isBinaryContent(content: Uint8Array): boolean {
   // Check for common binary file signatures
   if (content.length >= 4) {
     // PNG signature
-    if (content[0] === 0x89 && content[1] === 0x50 && content[2] === 0x4E && content[3] === 0x47) {
+    if (content[0] === 0x89 && content[1] === 0x50 && content[2] === 0x4e && content[3] === 0x47) {
       return true;
     }
-    
+
     // JPEG signature
-    if (content[0] === 0xFF && content[1] === 0xD8 && content[2] === 0xFF) {
+    if (content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff) {
       return true;
     }
-    
+
     // GIF signature
     if (content[0] === 0x47 && content[1] === 0x49 && content[2] === 0x46 && content[3] === 0x38) {
       return true;
     }
-    
+
     // PDF signature
     if (content[0] === 0x25 && content[1] === 0x50 && content[2] === 0x44 && content[3] === 0x46) {
       return true;
     }
-    
+
     // ZIP signature
-    if (content[0] === 0x50 && content[1] === 0x4B && content[2] === 0x03 && content[3] === 0x04) {
+    if (content[0] === 0x50 && content[1] === 0x4b && content[2] === 0x03 && content[3] === 0x04) {
       return true;
     }
   }
-  
+
   // Count null bytes and control characters
   let nullCount = 0;
   let controlCount = 0;
-  
+
   for (let i = 0; i < Math.min(content.length, 1000); i++) {
     if (content[i] === 0) {
       nullCount++;
@@ -299,7 +353,7 @@ export function isBinaryContent(content: Uint8Array): boolean {
       controlCount++;
     }
   }
-  
+
   // If more than 10% of the first 1000 bytes are null or control characters, it's likely binary
   const threshold = Math.min(content.length, 1000) * 0.1;
   return nullCount > threshold || controlCount > threshold;
@@ -324,10 +378,8 @@ export function getContentSample(content: string | Uint8Array): Uint8Array {
  * @returns SHA-1 hash as hex string
  */
 export async function calculateSha1(content: string | Uint8Array): Promise<string> {
-  const data = typeof content === 'string'
-    ? new TextEncoder().encode(content)
-    : content;
-  
+  const data = typeof content === 'string' ? new TextEncoder().encode(content) : content;
+
   const hashBuffer = await crypto.subtle.digest('SHA-1', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');

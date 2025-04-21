@@ -170,7 +170,7 @@ describe('ConstellationService', () => {
         { userId: mockUserId },
         topK,
       );
-      
+
       // Verify the results have the expected structure
       expect(results).toHaveLength(mockVectorResults.length);
       expect(results[0]).toHaveProperty('contentId');

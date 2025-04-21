@@ -22,17 +22,19 @@ export class R2Service {
 
     try {
       // Add debug logging for the content being stored
-      getLogger().info({
-        key,
-        contentIsString: typeof content === 'string',
-        contentLength: typeof content === 'string'
-          ? content.length
-          : content.byteLength,
-        contentPreview: typeof content === 'string'
-          ? `${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
-          : '[Binary data]',
-        metadataKeys: Object.keys(metadata)
-      }, 'putObject input data');
+      getLogger().info(
+        {
+          key,
+          contentIsString: typeof content === 'string',
+          contentLength: typeof content === 'string' ? content.length : content.byteLength,
+          contentPreview:
+            typeof content === 'string'
+              ? `${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`
+              : '[Binary data]',
+          metadataKeys: Object.keys(metadata),
+        },
+        'putObject input data',
+      );
 
       // Store in R2 with custom metadata
       await this.env.BUCKET.put(key, content, {

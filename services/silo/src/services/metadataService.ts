@@ -82,19 +82,25 @@ export class MetadataService {
 
     try {
       try {
-        getLogger().info({
-          ids,
-        }, 'getMetadataByIds called');
+        getLogger().info(
+          {
+            ids,
+          },
+          'getMetadataByIds called',
+        );
 
         const results = await this.db
           .select()
           .from(contents)
-          .where(inArray(contents.id, ids))     // 👈 correct
+          .where(inArray(contents.id, ids)) // 👈 correct
           .all();
 
-        getLogger().info({
-          resultCount: results.length,
-        }, 'Raw query results before userId filtering');
+        getLogger().info(
+          {
+            resultCount: results.length,
+          },
+          'Raw query results before userId filtering',
+        );
 
         // If userId is provided, filter the results in memory
         let filteredResults = results;
@@ -110,30 +116,42 @@ export class MetadataService {
         }
 
         // Log detailed error information
-        getLogger().error({
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : String(error),
-          ids,
-          errorType: error instanceof Error ? error.constructor.name : typeof error
-        }, 'Error in DB query in getMetadataByIds');
+        getLogger().error(
+          {
+            error:
+              error instanceof Error
+                ? {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack,
+                  }
+                : String(error),
+            ids,
+            errorType: error instanceof Error ? error.constructor.name : typeof error,
+          },
+          'Error in DB query in getMetadataByIds',
+        );
 
         throw error;
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get_many' });
 
-      getLogger().error({
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : String(error),
-        ids,
-        errorType: error instanceof Error ? error.constructor.name : typeof error
-      }, 'Error getting content metadata for multiple IDs');
+      getLogger().error(
+        {
+          error:
+            error instanceof Error
+              ? {
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
+              : String(error),
+          ids,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+        },
+        'Error getting content metadata for multiple IDs',
+      );
 
       // Return empty array instead of throwing to make the function more resilient
       return [];
@@ -320,5 +338,3 @@ export class MetadataService {
 export function createMetadataService(env: Env): MetadataService {
   return new MetadataService(env);
 }
-
-

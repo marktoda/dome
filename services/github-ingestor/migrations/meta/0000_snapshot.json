@@ -46,9 +46,7 @@
       "indexes": {
         "content_blobs_r2Key_unique": {
           "name": "content_blobs_r2Key_unique",
-          "columns": [
-            "r2Key"
-          ],
+          "columns": ["r2Key"],
           "isUnique": true
         }
       },

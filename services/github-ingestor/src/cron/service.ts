@@ -1,4 +1,8 @@
-import { RepositoryService, RepositoryConfig, RepositorySyncStatus } from '../services/repository-service';
+import {
+  RepositoryService,
+  RepositoryConfig,
+  RepositorySyncStatus,
+} from '../services/repository-service';
 import { GitHubApiClient, GitHubApiError } from '../github/api-client';
 import { getInstallationToken, getServiceToken, getUserToken } from '../github/auth';
 import { logger, logError } from '../utils/logging';
@@ -27,17 +31,23 @@ export class CronService {
    * @param provider Provider filter (default: 'github')
    * @returns Array of repository configurations
    */
-  async getRepositoriesToSync(limit: number = 50, provider: string = 'github'): Promise<RepositoryConfig[]> {
+  async getRepositoriesToSync(
+    limit: number = 50,
+    provider: string = 'github',
+  ): Promise<RepositoryConfig[]> {
     const timer = metrics.startTimer('cron_service.get_repositories_to_sync');
-    
+
     try {
       const repositories = await this.repositoryService.getRepositoriesToSync(limit, provider);
-      
-      logger().info({
-        count: repositories.length,
-        provider
-      }, 'Found repositories to sync');
-      
+
+      logger().info(
+        {
+          count: repositories.length,
+          provider,
+        },
+        'Found repositories to sync',
+      );
+
       timer.stop({ count: repositories.length.toString() });
       return repositories;
     } catch (error) {
@@ -52,9 +62,11 @@ export class CronService {
    * @param repository Repository configuration
    * @returns Whether the repository needs to be synced and the latest commit SHA
    */
-  async checkRepositoryForUpdates(repository: RepositoryConfig): Promise<{ needsSync: boolean; commitSha?: string; etag?: string }> {
+  async checkRepositoryForUpdates(
+    repository: RepositoryConfig,
+  ): Promise<{ needsSync: boolean; commitSha?: string; etag?: string }> {
     const timer = metrics.startTimer('cron_service.check_repository_for_updates');
-    
+
     try {
       // Get appropriate token based on repository privacy
       let token: string;
@@ -63,23 +75,27 @@ export class CronService {
         token = await getUserToken(repository.userId, this.env);
       } else if (repository.isPrivate) {
         // For private system repositories, use GitHub App installation token
-        const installationId = await this.env.DB.prepare(`
+        const installationId = await this.env.DB.prepare(
+          `
           SELECT installationId
           FROM provider_credentials
           WHERE provider = 'github'
           AND userId = ?
-        `)
-        .bind(repository.userId || 'system')
-        .first<{ installationId: string }>();
+        `,
+        )
+          .bind(repository.userId || 'system')
+          .first<{ installationId: string }>();
 
         if (!installationId) {
-          throw new Error(`No GitHub App installation found for repository ${repository.owner}/${repository.repo}`);
+          throw new Error(
+            `No GitHub App installation found for repository ${repository.owner}/${repository.repo}`,
+          );
         }
 
         token = await getInstallationToken(
           this.env.GITHUB_APP_ID,
           this.env.GITHUB_PRIVATE_KEY,
-          installationId.installationId
+          installationId.installationId,
         );
       } else {
         // For public repositories, use service token
@@ -90,80 +106,97 @@ export class CronService {
       const client = new GitHubApiClient(token);
 
       // Get repository status from database
-      const repoStatus = await this.env.DB.prepare(`
+      const repoStatus = await this.env.DB.prepare(
+        `
         SELECT lastCommitSha, etag
         FROM provider_repositories
         WHERE id = ?
-      `)
-      .bind(repository.id)
-      .first<{ lastCommitSha?: string; etag?: string }>();
+      `,
+      )
+        .bind(repository.id)
+        .first<{ lastCommitSha?: string; etag?: string }>();
 
       // Get the latest commit for the branch
       const commitResponse = await client.getCommit(
         repository.owner,
         repository.repo,
         repository.branch || 'main',
-        repoStatus?.etag
+        repoStatus?.etag,
       );
-      
+
       // If we got a 304 Not Modified, no need to sync
       if (!commitResponse.data) {
-        logger().info({
-          owner: repository.owner,
-          repo: repository.repo,
-          branch: repository.branch
-        }, 'Repository not modified since last sync');
-        
+        logger().info(
+          {
+            owner: repository.owner,
+            repo: repository.repo,
+            branch: repository.branch,
+          },
+          'Repository not modified since last sync',
+        );
+
         timer.stop({ notModified: 'true' });
         return { needsSync: false };
       }
-      
+
       // Store the new commit SHA and etag
       const newCommitSha = commitResponse.data.sha;
       const newEtag = commitResponse.etag;
-      
+
       // If the commit hasn't changed, no need to sync
       if (repoStatus?.lastCommitSha && repoStatus.lastCommitSha === newCommitSha) {
-        logger().info({
-          owner: repository.owner,
-          repo: repository.repo,
-          branch: repository.branch,
-          commitSha: newCommitSha
-        }, 'Repository commit unchanged since last sync');
-        
+        logger().info(
+          {
+            owner: repository.owner,
+            repo: repository.repo,
+            branch: repository.branch,
+            commitSha: newCommitSha,
+          },
+          'Repository commit unchanged since last sync',
+        );
+
         timer.stop({ unchanged: 'true' });
         return { needsSync: false };
       }
-      
+
       // Repository needs to be synced
-      logger().info({
-        owner: repository.owner,
-        repo: repository.repo,
-        branch: repository.branch,
-        commitSha: newCommitSha
-      }, 'Repository has updates and needs to be synced');
-      
+      logger().info(
+        {
+          owner: repository.owner,
+          repo: repository.repo,
+          branch: repository.branch,
+          commitSha: newCommitSha,
+        },
+        'Repository has updates and needs to be synced',
+      );
+
       timer.stop({ needsSync: 'true' });
       return { needsSync: true, commitSha: newCommitSha, etag: newEtag };
     } catch (error) {
       timer.stop({ error: 'true' });
-      
+
       // Handle rate limit errors
       if (error instanceof GitHubApiError && error.isRateLimitError) {
         const rateLimitReset = (error as any).rateLimit?.reset;
-        
+
         if (rateLimitReset && repository.id) {
           await this.updateRepositoryRateLimit(repository.id, rateLimitReset);
-          
-          logger().warn({
-            owner: repository.owner,
-            repo: repository.repo,
-            rateLimitReset: new Date(rateLimitReset * 1000).toISOString()
-          }, 'Rate limit exceeded, will retry after reset');
+
+          logger().warn(
+            {
+              owner: repository.owner,
+              repo: repository.repo,
+              rateLimitReset: new Date(rateLimitReset * 1000).toISOString(),
+            },
+            'Rate limit exceeded, will retry after reset',
+          );
         }
       }
-      
-      logError(error as Error, `Failed to check updates for repository ${repository.owner}/${repository.repo}`);
+
+      logError(
+        error as Error,
+        `Failed to check updates for repository ${repository.owner}/${repository.repo}`,
+      );
       return { needsSync: false };
     }
   }
@@ -175,9 +208,13 @@ export class CronService {
    * @param etag ETag for conditional requests
    * @returns Whether the repository was successfully enqueued
    */
-  async enqueueRepository(repository: RepositoryConfig, commitSha?: string, etag?: string): Promise<boolean> {
+  async enqueueRepository(
+    repository: RepositoryConfig,
+    commitSha?: string,
+    etag?: string,
+  ): Promise<boolean> {
     const timer = metrics.startTimer('cron_service.enqueue_repository');
-    
+
     try {
       // Ensure repository has an ID
       if (!repository.id) {
@@ -195,56 +232,62 @@ export class CronService {
         branch: repository.branch || 'main',
         isPrivate: repository.isPrivate,
         includePatterns: repository.includePatterns,
-        excludePatterns: repository.excludePatterns
+        excludePatterns: repository.excludePatterns,
       };
-      
+
       // Enqueue message
       await this.env.INGEST_QUEUE.send(message);
-      
+
       // Update repository status
       if ((commitSha || etag) && repository.id) {
         const status: Partial<RepositorySyncStatus> = {
           retryCount: 0,
-          nextRetryAt: undefined
+          nextRetryAt: undefined,
         };
-        
+
         if (commitSha) {
           status.lastCommitSha = commitSha;
         }
-        
+
         if (etag) {
           status.etag = etag;
         }
-        
+
         await this.repositoryService.updateSyncStatus(repository.id, status);
       }
-      
-      logger().info({
-        owner: repository.owner,
-        repo: repository.repo,
-        branch: repository.branch
-      }, 'Enqueued repository for ingestion');
-      
+
+      logger().info(
+        {
+          owner: repository.owner,
+          repo: repository.repo,
+          branch: repository.branch,
+        },
+        'Enqueued repository for ingestion',
+      );
+
       metrics.counter('cron_service.repositories_enqueued', 1, {
         provider: repository.provider,
-        is_private: repository.isPrivate.toString()
+        is_private: repository.isPrivate.toString(),
       });
-      
+
       timer.stop();
       return true;
     } catch (error) {
       timer.stop({ error: 'true' });
-      logError(error as Error, `Failed to enqueue repository ${repository.owner}/${repository.repo}`);
-      
+      logError(
+        error as Error,
+        `Failed to enqueue repository ${repository.owner}/${repository.repo}`,
+      );
+
       // Record sync error if repository has an ID
       if (repository.id) {
         await this.repositoryService.recordSyncError(
           repository.id,
           `Failed to enqueue repository: ${(error as Error).message}`,
-          true // Transient error, will retry
+          true, // Transient error, will retry
         );
       }
-      
+
       return false;
     }
   }
@@ -257,12 +300,12 @@ export class CronService {
    */
   async updateRepositoryRateLimit(repoId: string, rateLimitReset: number): Promise<boolean> {
     const timer = metrics.startTimer('cron_service.update_repository_rate_limit');
-    
+
     try {
       const updated = await this.repositoryService.updateSyncStatus(repoId, {
-        rateLimitReset
+        rateLimitReset,
       });
-      
+
       timer.stop({ updated: updated.toString() });
       return updated;
     } catch (error) {
@@ -283,19 +326,19 @@ export class CronService {
     return [...repositories].sort((a, b) => {
       const aLastSynced = (a as any).lastSyncedAt;
       const bLastSynced = (b as any).lastSyncedAt;
-      
+
       if (aLastSynced === null && bLastSynced === null) {
         return 0;
       }
-      
+
       if (aLastSynced === null) {
         return -1;
       }
-      
+
       if (bLastSynced === null) {
         return 1;
       }
-      
+
       return aLastSynced - bLastSynced;
     });
   }

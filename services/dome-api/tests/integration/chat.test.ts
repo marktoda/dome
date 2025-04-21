@@ -20,7 +20,7 @@ vi.mock('@dome/logging', () => {
     warn: ReturnType<typeof vi.fn>;
     child: ReturnType<typeof vi.fn>;
   };
-  
+
   const mockLogger: MockLogger = {
     info: vi.fn(),
     debug: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('@dome/logging', () => {
     warn: vi.fn(),
     child: vi.fn(() => mockLogger),
   };
-  
+
   return {
     getLogger: vi.fn().mockReturnValue(mockLogger),
     metrics: {
@@ -62,7 +62,7 @@ describe('Chat API Integration Tests', () => {
 
     // Mock chatService.generateResponse
     vi.mocked(chatService.generateResponse).mockResolvedValue('This is a test response');
-    
+
     // Mock chatService.streamResponse
     const mockStream = new ReadableStream({
       start(controller) {
@@ -87,7 +87,7 @@ describe('Chat API Integration Tests', () => {
             stream: false,
             enhanceWithContext: true,
           }),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         set: vi.fn(),
@@ -121,7 +121,7 @@ describe('Chat API Integration Tests', () => {
             stream: true,
             enhanceWithContext: true,
           }),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         set: vi.fn(),
@@ -181,7 +181,7 @@ describe('Chat API Integration Tests', () => {
             // Missing required messages field
             stream: false,
           }),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         set: vi.fn(),
@@ -213,7 +213,7 @@ describe('Chat API Integration Tests', () => {
             ],
             stream: false,
           }),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         set: vi.fn(),
@@ -242,7 +242,7 @@ describe('Chat API Integration Tests', () => {
             messages: [{ role: 'user', content: 'Hello, how are you?' }],
             stream: false,
           }),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         set: vi.fn(),
@@ -251,9 +251,7 @@ describe('Chat API Integration Tests', () => {
       };
 
       // Mock service error
-      vi.mocked(chatService.generateResponse).mockRejectedValue(
-        new Error('Chat service error'),
-      );
+      vi.mocked(chatService.generateResponse).mockRejectedValue(new Error('Chat service error'));
 
       // Call the chat controller
       await chatController.chat(mockContext as any);

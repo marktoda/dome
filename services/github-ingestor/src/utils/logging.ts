@@ -7,13 +7,16 @@ import { ulid } from 'ulid';
  */
 export function initLogger(env: { LOG_LEVEL: string; ENVIRONMENT: string; VERSION: string }): void {
   // Initialize the logger with default context
-  withLogger({
-    service: 'github-ingestor',
-    version: env.VERSION || 'unknown',
-    environment: env.ENVIRONMENT || 'development',
-  }, () => {
-    getLogger().info('Logger initialized');
-  });
+  withLogger(
+    {
+      service: 'github-ingestor',
+      version: env.VERSION || 'unknown',
+      environment: env.ENVIRONMENT || 'development',
+    },
+    () => {
+      getLogger().info('Logger initialized');
+    },
+  );
 }
 
 /**
@@ -38,7 +41,11 @@ export function createRequestLogger(requestId?: string): ReturnType<typeof getLo
  * @param userId User ID (optional)
  * @returns Logger with repository context
  */
-export function createRepoLogger(owner: string, repo: string, userId?: string): ReturnType<typeof getLogger> {
+export function createRepoLogger(
+  owner: string,
+  repo: string,
+  userId?: string,
+): ReturnType<typeof getLogger> {
   const context: Record<string, any> = { owner, repo };
   if (userId) context.user_id = userId;
   return getLogger().child(context);
@@ -60,6 +67,6 @@ export function logError(error: Error, message?: string, context: Record<string,
       },
       ...context,
     },
-    message || 'An error occurred'
+    message || 'An error occurred',
   );
 }

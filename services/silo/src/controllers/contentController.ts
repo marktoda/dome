@@ -16,7 +16,7 @@ export class ContentController {
     private r2Service: R2Service,
     private metadataService: MetadataService,
     private queueService: QueueService,
-  ) { }
+  ) {}
 
   /**
    * Store small content items synchronously
@@ -26,17 +26,19 @@ export class ContentController {
 
     try {
       // Add debug logging for the input data
-      getLogger().info({
-        contentType: data.contentType,
-        userId: data.userId,
-        hasId: !!data.id,
-        contentIsString: typeof data.content === 'string',
-        contentLength: typeof data.content === 'string'
-          ? data.content.length
-          : data.content.byteLength,
-        content: data.content,
-        hasMetadata: !!data.metadata
-      }, 'simplePut input data');
+      getLogger().info(
+        {
+          contentType: data.contentType,
+          userId: data.userId,
+          hasId: !!data.id,
+          contentIsString: typeof data.content === 'string',
+          contentLength:
+            typeof data.content === 'string' ? data.content.length : data.content.byteLength,
+          content: data.content,
+          hasMetadata: !!data.metadata,
+        },
+        'simplePut input data',
+      );
 
       // Generate a unique ID if not provided
       const id = data.id || ulid();
@@ -202,13 +204,16 @@ export class ContentController {
     offset?: number;
   }) {
     try {
-      getLogger().info({
-        ids: data.ids,
-        userId: data.userId,
-        contentType: data.contentType,
-        limit: data.limit,
-        offset: data.offset
-      }, 'batchGet called');
+      getLogger().info(
+        {
+          ids: data.ids,
+          userId: data.userId,
+          contentType: data.contentType,
+          limit: data.limit,
+          offset: data.offset,
+        },
+        'batchGet called',
+      );
 
       const requestUserId = data.userId || null;
       const ids = data.ids || [];
@@ -225,7 +230,10 @@ export class ContentController {
           throw new Error('User ID is required when not providing specific content IDs');
         }
 
-        getLogger().info({ requestUserId, contentType, limit, offset }, 'Fetching all content for user');
+        getLogger().info(
+          { requestUserId, contentType, limit, offset },
+          'Fetching all content for user',
+        );
         // Get metadata for all user content with pagination and filtering
         metadataItems = await this.metadataService.getMetadataByUserId(
           requestUserId,
@@ -234,7 +242,10 @@ export class ContentController {
           offset,
         );
       } else {
-        getLogger().info({ idsCount: ids.length, requestUserId }, 'Fetching metadata for specific IDs');
+        getLogger().info(
+          { idsCount: ids.length, requestUserId },
+          'Fetching metadata for specific IDs',
+        );
         // Fetch metadata for specific IDs, filtering by userId if provided
         metadataItems = await this.metadataService.getMetadataByIds(ids);
       }
@@ -288,10 +299,13 @@ export class ContentController {
         total = await this.metadataService.getContentCountForUser(requestUserId, contentType);
       }
 
-      getLogger().info({
-        itemsCount: Object.values(results).length,
-        total
-      }, 'Returning batchGet results');
+      getLogger().info(
+        {
+          itemsCount: Object.values(results).length,
+          total,
+        },
+        'Returning batchGet results',
+      );
 
       return {
         items: Object.values(results),
@@ -299,25 +313,30 @@ export class ContentController {
         limit,
         offset,
       };
-
     } catch (error) {
-      getLogger().error({
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : String(error),
-        ids: data.ids,
-        userId: data.userId,
-        errorType: error instanceof Error ? error.constructor.name : typeof error
-      }, 'Error in batchGet');
+      getLogger().error(
+        {
+          error:
+            error instanceof Error
+              ? {
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
+              : String(error),
+          ids: data.ids,
+          userId: data.userId,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+        },
+        'Error in batchGet',
+      );
 
       // Return empty results instead of throwing
       return {
         items: [],
         total: 0,
         limit: data.limit || 50,
-        offset: data.offset || 0
+        offset: data.offset || 0,
       };
     }
   }
@@ -410,8 +429,8 @@ export class ContentController {
       const id = key.startsWith('upload/')
         ? key.substring(7)
         : key.startsWith('content/')
-          ? key.substring(8)
-          : key;
+        ? key.substring(8)
+        : key;
 
       // Store metadata in D1
       const now = Math.floor(Date.now() / 1000);

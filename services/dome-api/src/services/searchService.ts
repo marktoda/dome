@@ -122,38 +122,60 @@ export class SearchService {
       }
 
       // Get unique content IDs
-      this.logger.info({
-        resultCount: searchResults.length,
-        firstResult: searchResults.length > 0 ? {
-          contentId: searchResults[0].contentId,
-          score: searchResults[0].score
-        } : null
-      }, 'Search results from constellation');
-      
-      const contentIds = [...new Set(searchResults.map(result => {
-        const contentId = result.contentId;
-        this.logger.info({
-          contentId,
-          score: result.score
-        }, 'Extracted contentId from search result');
-        return contentId;
-      }))];
-      
-      this.logger.info({
-        contentIdsCount: contentIds.length,
-        firstFewContentIds: contentIds.slice(0, 5)
-      }, 'Unique content IDs extracted');
+      this.logger.info(
+        {
+          resultCount: searchResults.length,
+          firstResult:
+            searchResults.length > 0
+              ? {
+                  contentId: searchResults[0].contentId,
+                  score: searchResults[0].score,
+                }
+              : null,
+        },
+        'Search results from constellation',
+      );
+
+      const contentIds = [
+        ...new Set(
+          searchResults.map(result => {
+            const contentId = result.contentId;
+            this.logger.info(
+              {
+                contentId,
+                score: result.score,
+              },
+              'Extracted contentId from search result',
+            );
+            return contentId;
+          }),
+        ),
+      ];
+
+      this.logger.info(
+        {
+          contentIdsCount: contentIds.length,
+          firstFewContentIds: contentIds.slice(0, 5),
+        },
+        'Unique content IDs extracted',
+      );
 
       // Retrieve content from Silo
-      this.logger.info({
-        contentIdsCount: contentIds.length,
-        userId
-      }, 'Calling siloService.getContentsAsNotes');
+      this.logger.info(
+        {
+          contentIdsCount: contentIds.length,
+          userId,
+        },
+        'Calling siloService.getContentsAsNotes',
+      );
       const contents = await siloService.getContentsAsNotes(env, contentIds, userId);
-      this.logger.info({
-        contentsCount: contents.length,
-        firstContentId: contents.length > 0 ? contents[0].id : null
-      }, 'Results from siloService.getContentsAsNotes');
+      this.logger.info(
+        {
+          contentsCount: contents.length,
+          firstContentId: contents.length > 0 ? contents[0].id : null,
+        },
+        'Results from siloService.getContentsAsNotes',
+      );
 
       // Map content IDs to scores
       const scoreMap = new Map<string, number>();

@@ -11,8 +11,8 @@ const mockEnv = {
     bind: vi.fn().mockReturnThis(),
     first: vi.fn(),
     all: vi.fn(),
-    run: vi.fn()
-  }
+    run: vi.fn(),
+  },
 } as any;
 
 // Mock services
@@ -22,30 +22,30 @@ const mockRepositoryService = {
   updateRepository: vi.fn(),
   deleteRepository: vi.fn(),
   listRepositoriesForUser: vi.fn(),
-  resetRetryCount: vi.fn()
+  resetRetryCount: vi.fn(),
 };
 
 // Use vi.mocked to properly type the mock functions
 vi.mock('../../src/services/repository-service', () => ({
-  RepositoryService: vi.fn().mockImplementation(() => mockRepositoryService)
+  RepositoryService: vi.fn().mockImplementation(() => mockRepositoryService),
 }));
 
 const mockQueueService = {
-  enqueueRepository: vi.fn()
+  enqueueRepository: vi.fn(),
 };
 
 vi.mock('../../src/queue/service', () => ({
-  QueueService: vi.fn().mockImplementation(() => mockQueueService)
+  QueueService: vi.fn().mockImplementation(() => mockQueueService),
 }));
 
 // Create a mock ServiceFactory class
 class MockServiceFactory {
   private env: any;
-  
+
   constructor(env: any) {
     this.env = env;
   }
-  
+
   getRepositoryService = vi.fn().mockReturnValue(mockRepositoryService);
   getQueueService = vi.fn().mockReturnValue(mockQueueService);
   getContentService = vi.fn();
@@ -60,7 +60,7 @@ class MockServiceFactory {
 const mockServiceFactory = new MockServiceFactory(mockEnv) as unknown as ServiceFactory;
 
 vi.mock('../../src/services', () => ({
-  ServiceFactory: MockServiceFactory
+  ServiceFactory: MockServiceFactory,
 }));
 
 describe('RpcHandlers', () => {
@@ -81,7 +81,7 @@ describe('RpcHandlers', () => {
         owner: 'testorg',
         repo: 'testrepo',
         branch: 'main',
-        isPrivate: false
+        isPrivate: false,
       };
 
       const mockRepo = {
@@ -91,7 +91,7 @@ describe('RpcHandlers', () => {
         owner: request.owner,
         repo: request.repo,
         branch: request.branch,
-        isPrivate: request.isPrivate
+        isPrivate: request.isPrivate,
       };
 
       mockRepositoryService.createRepository.mockResolvedValue(repoId);
@@ -101,14 +101,16 @@ describe('RpcHandlers', () => {
       const result = await handlers.addRepository(request);
 
       // Verify
-      expect(mockRepositoryService.createRepository).toHaveBeenCalledWith(expect.objectContaining({
-        userId: request.userId,
-        provider: request.provider,
-        owner: request.owner,
-        repo: request.repo,
-        branch: request.branch,
-        isPrivate: request.isPrivate
-      }));
+      expect(mockRepositoryService.createRepository).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: request.userId,
+          provider: request.provider,
+          owner: request.owner,
+          repo: request.repo,
+          branch: request.branch,
+          isPrivate: request.isPrivate,
+        }),
+      );
 
       expect(mockQueueService.enqueueRepository).toHaveBeenCalledWith(
         repoId,
@@ -119,18 +121,20 @@ describe('RpcHandlers', () => {
         request.branch,
         request.isPrivate,
         undefined,
-        undefined
+        undefined,
       );
 
-      expect(result).toEqual(expect.objectContaining({
-        id: repoId,
-        userId: request.userId,
-        provider: request.provider,
-        owner: request.owner,
-        repo: request.repo,
-        branch: request.branch,
-        isPrivate: request.isPrivate
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: repoId,
+          userId: request.userId,
+          provider: request.provider,
+          owner: request.owner,
+          repo: request.repo,
+          branch: request.branch,
+          isPrivate: request.isPrivate,
+        }),
+      );
     });
 
     it('should throw an error if repository creation fails', async () => {
@@ -141,7 +145,7 @@ describe('RpcHandlers', () => {
         owner: 'testorg',
         repo: 'testrepo',
         branch: 'main',
-        isPrivate: false
+        isPrivate: false,
       };
 
       const error = new Error('Repository creation failed');
@@ -159,7 +163,7 @@ describe('RpcHandlers', () => {
       const request = {
         id: repoId,
         branch: 'develop',
-        isPrivate: true
+        isPrivate: true,
       };
 
       const mockRepo = {
@@ -169,7 +173,7 @@ describe('RpcHandlers', () => {
         owner: 'testorg',
         repo: 'testrepo',
         branch: 'develop',
-        isPrivate: true
+        isPrivate: true,
       };
 
       mockRepositoryService.getRepository.mockResolvedValue(mockRepo);
@@ -183,15 +187,17 @@ describe('RpcHandlers', () => {
         repoId,
         expect.objectContaining({
           branch: request.branch,
-          isPrivate: request.isPrivate
-        })
+          isPrivate: request.isPrivate,
+        }),
       );
 
-      expect(result).toEqual(expect.objectContaining({
-        id: repoId,
-        branch: request.branch,
-        isPrivate: request.isPrivate
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: repoId,
+          branch: request.branch,
+          isPrivate: request.isPrivate,
+        }),
+      );
     });
 
     it('should throw an error if repository not found', async () => {
@@ -199,7 +205,7 @@ describe('RpcHandlers', () => {
       const repoId = 'repo-123';
       const request = {
         id: repoId,
-        branch: 'develop'
+        branch: 'develop',
       };
 
       mockRepositoryService.getRepository.mockResolvedValue(null);
@@ -252,7 +258,7 @@ describe('RpcHandlers', () => {
           owner: 'testorg',
           repo: 'repo1',
           branch: 'main',
-          isPrivate: false
+          isPrivate: false,
         },
         {
           id: 'repo-2',
@@ -261,8 +267,8 @@ describe('RpcHandlers', () => {
           owner: 'testorg',
           repo: 'repo2',
           branch: 'main',
-          isPrivate: true
-        }
+          isPrivate: true,
+        },
       ];
 
       mockRepositoryService.listRepositoriesForUser.mockResolvedValue(mockRepos);
@@ -273,20 +279,24 @@ describe('RpcHandlers', () => {
       // Verify
       expect(mockRepositoryService.listRepositoriesForUser).toHaveBeenCalledWith(userId, provider);
       expect(result).toHaveLength(2);
-      expect(result[0]).toEqual(expect.objectContaining({
-        id: 'repo-1',
-        userId,
-        provider,
-        owner: 'testorg',
-        repo: 'repo1'
-      }));
-      expect(result[1]).toEqual(expect.objectContaining({
-        id: 'repo-2',
-        userId,
-        provider,
-        owner: 'testorg',
-        repo: 'repo2'
-      }));
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          id: 'repo-1',
+          userId,
+          provider,
+          owner: 'testorg',
+          repo: 'repo1',
+        }),
+      );
+      expect(result[1]).toEqual(
+        expect.objectContaining({
+          id: 'repo-2',
+          userId,
+          provider,
+          owner: 'testorg',
+          repo: 'repo2',
+        }),
+      );
     });
   });
 
@@ -303,7 +313,7 @@ describe('RpcHandlers', () => {
         owner: 'testorg',
         repo: 'testrepo',
         branch: 'main',
-        isPrivate: false
+        isPrivate: false,
       };
 
       mockRepositoryService.getRepository.mockResolvedValue(mockRepo);
@@ -322,7 +332,7 @@ describe('RpcHandlers', () => {
         mockRepo.branch,
         mockRepo.isPrivate,
         undefined,
-        undefined
+        undefined,
       );
       expect(result).toEqual({ success: true });
     });
@@ -339,7 +349,7 @@ describe('RpcHandlers', () => {
         owner: 'testorg',
         repo: 'testrepo',
         branch: 'main',
-        isPrivate: false
+        isPrivate: false,
       };
 
       mockRepositoryService.getRepository.mockResolvedValue(mockRepo);

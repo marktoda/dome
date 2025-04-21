@@ -4,7 +4,7 @@ import { z } from 'zod';
  * Common schema for repository identification
  */
 export const repositoryIdentifierSchema = z.object({
-  id: z.string().min(1, 'Repository ID is required')
+  id: z.string().min(1, 'Repository ID is required'),
 });
 
 /**
@@ -18,7 +18,7 @@ export const createRepositorySchema = z.object({
   branch: z.string().optional().default('main'),
   isPrivate: z.boolean().optional().default(false),
   includePatterns: z.array(z.string()).optional(),
-  excludePatterns: z.array(z.string()).optional()
+  excludePatterns: z.array(z.string()).optional(),
 });
 
 /**
@@ -29,7 +29,7 @@ export const updateRepositorySchema = z.object({
   branch: z.string().optional(),
   isPrivate: z.boolean().optional(),
   includePatterns: z.array(z.string()).optional(),
-  excludePatterns: z.array(z.string()).optional()
+  excludePatterns: z.array(z.string()).optional(),
 });
 
 /**
@@ -37,7 +37,7 @@ export const updateRepositorySchema = z.object({
  */
 export const listRepositoriesSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
-  provider: z.string().optional()
+  provider: z.string().optional(),
 });
 
 /**
@@ -45,14 +45,14 @@ export const listRepositoriesSchema = z.object({
  */
 export const syncRepositorySchema = z.object({
   id: z.string().min(1, 'Repository ID is required'),
-  force: z.boolean().optional().default(false)
+  force: z.boolean().optional().default(false),
 });
 
 /**
  * Schema for getting repository sync status
  */
 export const getRepositoryStatusSchema = z.object({
-  id: z.string().min(1, 'Repository ID is required')
+  id: z.string().min(1, 'Repository ID is required'),
 });
 
 /**
@@ -60,14 +60,14 @@ export const getRepositoryStatusSchema = z.object({
  */
 export const installationSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
-  installationId: z.string().min(1, 'Installation ID is required')
+  installationId: z.string().min(1, 'Installation ID is required'),
 });
 
 /**
  * Schema for listing GitHub App installations
  */
 export const listInstallationsSchema = z.object({
-  userId: z.string().min(1, 'User ID is required')
+  userId: z.string().min(1, 'User ID is required'),
 });
 
 /**
@@ -76,7 +76,7 @@ export const listInstallationsSchema = z.object({
 export const getStatisticsSchema = z.object({
   userId: z.string().optional(),
   provider: z.string().optional(),
-  timeRange: z.enum(['day', 'week', 'month']).optional().default('day')
+  timeRange: z.enum(['day', 'week', 'month']).optional().default('day'),
 });
 
 /**
@@ -96,7 +96,7 @@ export const repositoryResponseSchema = z.object({
   lastSyncedAt: z.number().optional(),
   lastCommitSha: z.string().optional(),
   createdAt: z.number(),
-  updatedAt: z.number()
+  updatedAt: z.number(),
 });
 
 export const repositoryStatusResponseSchema = z.object({
@@ -107,7 +107,7 @@ export const repositoryStatusResponseSchema = z.object({
   nextRetryAt: z.number().optional(),
   rateLimitReset: z.number().optional(),
   status: z.enum(['idle', 'syncing', 'failed', 'rate_limited']),
-  error: z.string().optional()
+  error: z.string().optional(),
 });
 
 export const installationResponseSchema = z.object({
@@ -117,7 +117,7 @@ export const installationResponseSchema = z.object({
   installationId: z.string(),
   account: z.string(),
   createdAt: z.number(),
-  updatedAt: z.number()
+  updatedAt: z.number(),
 });
 
 export const statisticsResponseSchema = z.object({
@@ -126,7 +126,7 @@ export const statisticsResponseSchema = z.object({
   totalSizeBytes: z.number(),
   syncedRepositories: z.number(),
   failedRepositories: z.number(),
-  lastSyncTime: z.number().optional()
+  lastSyncTime: z.number().optional(),
 });
 
 /**

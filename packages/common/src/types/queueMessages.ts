@@ -10,16 +10,13 @@ export const NewContentMessageSchema = z.object({
   // Required fields
   id: z.string().min(1, 'Content ID is required'),
   userId: z.string().nullable(),
-  
+
   // Optional fields for content creation/update
   contentType: z.string().optional(),
   size: z.number().int().positive().optional(),
   createdAt: z.number().int().optional(),
-  metadata: z.union([
-    z.record(z.string(), z.any()),
-    z.null()
-  ]).optional(),
-  
+  metadata: z.union([z.record(z.string(), z.any()), z.null()]).optional(),
+
   // Optional field for deletion
   deleted: z.boolean().optional(),
 });

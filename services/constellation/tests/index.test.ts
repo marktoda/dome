@@ -217,7 +217,7 @@ describe('Constellation', () => {
       // Assert
       // Check if results is an array (not an error object)
       expect(Array.isArray(results)).toBe(true);
-      
+
       // Type guard to ensure TypeScript knows we're working with an array
       if (Array.isArray(results)) {
         expect(results).toHaveLength(1);

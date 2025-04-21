@@ -68,30 +68,36 @@ To add a new content source (e.g., Notion, Linear), follow these steps:
 ### Example: Implementing a Notion Ingestor
 
 ```typescript
-import { BaseIngestor, ContentItem, ContentMetadata, IngestionOptions, IngestionResult } from '../base';
+import {
+  BaseIngestor,
+  ContentItem,
+  ContentMetadata,
+  IngestionOptions,
+  IngestionResult,
+} from '../base';
 
 export class NotionIngestor extends BaseIngestor {
   // Implement required methods from BaseIngestor
   getProviderName(): string {
     return 'notion';
   }
-  
+
   getProviderType(): string {
     return 'document';
   }
-  
+
   async testConnection(): Promise<boolean> {
     // Implement Notion-specific connection test
   }
-  
+
   async ingest(options: IngestionOptions): Promise<IngestionResult> {
     // Implement Notion-specific ingestion logic
   }
-  
+
   async ingestItem(itemId: string, options?: IngestionOptions): Promise<ContentItem | null> {
     // Implement Notion-specific item ingestion
   }
-  
+
   async listItems(options?: IngestionOptions): Promise<ContentMetadata[]> {
     // Implement Notion-specific item listing
   }
@@ -118,7 +124,7 @@ async function processItem(item: ContentItem): Promise<void> {
     try {
       // Process the item
       getLogger().info({ item }, 'Processing item');
-      
+
       // Return the result
       return result;
     } catch (error) {

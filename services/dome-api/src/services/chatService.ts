@@ -1,5 +1,5 @@
 import { Bindings } from '../types';
-import { searchService } from './searchService';
+import { searchService, SearchResult } from './searchService';
 import { ServiceError } from '@dome/common';
 import { getLogger } from '@dome/logging';
 
@@ -20,13 +20,49 @@ export interface ChatOptions {
   enhanceWithContext?: boolean;
   maxContextItems?: number;
   includeSourceInfo?: boolean;
-  suggestAddCommand?: boolean;
 }
 
 /**
  * Service for chat operations
  */
 export class ChatService {
+  async getSystemPrompt(env: Bindings, options: ChatOptions): Promise<ChatMessage> {
+    const {
+      messages,
+      userId,
+      enhanceWithContext = true,
+      maxContextItems = 5,
+      includeSourceInfo = true,
+    } = options;
+
+    // Get the last user message
+    const lastUserMessage = [...messages].reverse().find(msg => msg.role === 'user');
+
+    if (!lastUserMessage) {
+      throw new ServiceError('At least one user message is required');
+    }
+
+    // Retrieve relevant context if enhanceWithContext is true
+    let formattedContext = '';
+    if (enhanceWithContext) {
+      const context = await this.retrieveContext(
+        env,
+        userId,
+        lastUserMessage.content,
+        maxContextItems,
+      );
+
+      // Format context for inclusion in the prompt
+      formattedContext = this.formatContextForPrompt(context, includeSourceInfo);
+    }
+
+    // Create a system message with context if available
+    return {
+      role: 'system',
+      content: this.createSystemPrompt(formattedContext),
+    };
+  }
+
   /**
    * Generate a chat response
    * @param env Environment bindings
@@ -35,39 +71,9 @@ export class ChatService {
    */
   async generateResponse(env: Bindings, options: ChatOptions): Promise<string> {
     try {
-      const {
-        messages,
-        userId,
-        enhanceWithContext = true,
-        maxContextItems = 5,
-        includeSourceInfo = true,
-        suggestAddCommand = true,
-      } = options;
+      const { messages } = options;
 
-      // Get the last user message
-      const lastUserMessage = [...messages].reverse().find(msg => msg.role === 'user');
-
-      if (!lastUserMessage) {
-        throw new ServiceError('At least one user message is required');
-      }
-
-      // Retrieve relevant context if enhanceWithContext is true
-      let context = [];
-      if (enhanceWithContext) {
-        context = await this.retrieveContext(env, userId, lastUserMessage.content, maxContextItems);
-      }
-
-      // Format context for inclusion in the prompt
-      const formattedContext = this.formatContextForPrompt(context, includeSourceInfo);
-
-      // Check if user is asking to remember something
-      const isRememberRequest = this.isAskingToRemember(lastUserMessage.content);
-
-      // Create a system message with context if available
-      const systemMessage: ChatMessage = {
-        role: 'system',
-        content: this.createSystemPrompt(formattedContext, isRememberRequest, suggestAddCommand),
-      };
+      const systemMessage = await this.getSystemPrompt(env, options);
 
       // Combine system message with user messages
       const promptMessages = [systemMessage, ...messages];
@@ -103,39 +109,8 @@ export class ChatService {
    */
   async streamResponse(env: Bindings, options: ChatOptions): Promise<ReadableStream> {
     try {
-      const {
-        messages,
-        userId,
-        enhanceWithContext = true,
-        maxContextItems = 5,
-        includeSourceInfo = true,
-        suggestAddCommand = true,
-      } = options;
-
-      // Get the last user message
-      const lastUserMessage = [...messages].reverse().find(msg => msg.role === 'user');
-
-      if (!lastUserMessage) {
-        throw new ServiceError('At least one user message is required');
-      }
-
-      // Retrieve relevant context if enhanceWithContext is true
-      let context = [];
-      if (enhanceWithContext) {
-        context = await this.retrieveContext(env, userId, lastUserMessage.content, maxContextItems);
-      }
-
-      // Format context for inclusion in the prompt
-      const formattedContext = this.formatContextForPrompt(context, includeSourceInfo);
-
-      // Check if user is asking to remember something
-      const isRememberRequest = this.isAskingToRemember(lastUserMessage.content);
-
-      // Create a system message with context if available
-      const systemMessage: ChatMessage = {
-        role: 'system',
-        content: this.createSystemPrompt(formattedContext, isRememberRequest, suggestAddCommand),
-      };
+      const { messages } = options;
+      const systemMessage = await this.getSystemPrompt(env, options);
 
       // Combine system message with user messages
       const promptMessages = [systemMessage, ...messages];
@@ -228,7 +203,7 @@ export class ChatService {
     userId: string,
     query: string,
     maxItems: number,
-  ): Promise<any[]> {
+  ): Promise<SearchResult[]> {
     try {
       // Search for relevant notes
       const searchResults = await searchService.search(env, {
@@ -271,38 +246,11 @@ export class ChatService {
   }
 
   /**
-   * Check if the user is asking to remember something
-   * @param message User message
-   * @returns Boolean indicating if the user is asking to remember something
-   */
-  private isAskingToRemember(message: string): boolean {
-    const rememberPatterns = [
-      /remember\s+that/i,
-      /make\s+a\s+note\s+of/i,
-      /save\s+this/i,
-      /keep\s+track\s+of/i,
-      /add\s+to\s+my\s+notes/i,
-      /write\s+down\s+that/i,
-      /don't\s+forget\s+that/i,
-      /remind\s+me\s+that/i,
-      /store\s+this\s+information/i,
-    ];
-
-    return rememberPatterns.some(pattern => pattern.test(message));
-  }
-
-  /**
    * Create a system prompt with context and instructions
    * @param formattedContext Formatted context string
-   * @param isRememberRequest Whether the user is asking to remember something
-   * @param suggestAddCommand Whether to suggest the /add command
    * @returns System prompt string
    */
-  private createSystemPrompt(
-    formattedContext: string,
-    isRememberRequest: boolean,
-    suggestAddCommand: boolean,
-  ): string {
+  private createSystemPrompt(formattedContext: string): string {
     let prompt = "You are an AI assistant with access to the user's personal knowledge base. ";
 
     if (formattedContext) {
@@ -313,11 +261,6 @@ export class ChatService {
 
     prompt +=
       'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
-
-    if (isRememberRequest && suggestAddCommand) {
-      prompt +=
-        '\n\nThe user seems to be asking you to remember something. At the end of your response, suggest they use the "/add" command to save this information to their knowledge base. For example: "To save this information, you can use the /add command followed by what you want to remember."';
-    }
 
     return prompt;
   }

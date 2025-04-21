@@ -77,7 +77,7 @@ export class ServiceFactory {
     branch: string = 'main',
     isPrivate: boolean = false,
     includePatterns?: string[],
-    excludePatterns?: string[]
+    excludePatterns?: string[],
   ): Promise<Ingestor> {
     switch (provider) {
       case 'github':
@@ -90,7 +90,7 @@ export class ServiceFactory {
           isPrivate,
           includePatterns,
           excludePatterns,
-          this.env
+          this.env,
         );
       default:
         throw new Error(`Unsupported provider: ${provider}`);
@@ -105,11 +105,11 @@ export class ServiceFactory {
   async createIngestorFromRepository(repoId: string): Promise<Ingestor> {
     const repoService = this.getRepositoryService();
     const repo = await repoService.getRepository(repoId);
-    
+
     if (!repo) {
       throw new Error(`Repository not found: ${repoId}`);
     }
-    
+
     return this.createIngestor(
       repoId,
       repo.userId,
@@ -119,7 +119,7 @@ export class ServiceFactory {
       repo.branch,
       repo.isPrivate,
       repo.includePatterns,
-      repo.excludePatterns
+      repo.excludePatterns,
     );
   }
 }

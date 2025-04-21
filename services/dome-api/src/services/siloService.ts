@@ -59,26 +59,35 @@ export class SiloService {
    */
   async batchGet(env: Bindings, data: SiloBatchGetInput): Promise<SiloBatchGetResponse> {
     try {
-      console.log('DOME-DEBUG: batchGet called with', JSON.stringify({
-        ids: data.ids,
-        userId: data.userId
-      }));
-      
+      console.log(
+        'DOME-DEBUG: batchGet called with',
+        JSON.stringify({
+          ids: data.ids,
+          userId: data.userId,
+        }),
+      );
+
       const response = await env.SILO.batchGet(data);
-      
-      console.log('DOME-DEBUG: batchGet response', JSON.stringify({
-        hasItems: !!response.items,
-        itemsCount: response.items?.length || 0,
-        firstItemId: response.items?.[0]?.id || null,
-        total: response.total || 0
-      }));
-      
+
+      console.log(
+        'DOME-DEBUG: batchGet response',
+        JSON.stringify({
+          hasItems: !!response.items,
+          itemsCount: response.items?.length || 0,
+          firstItemId: response.items?.[0]?.id || null,
+          total: response.total || 0,
+        }),
+      );
+
       return response;
     } catch (error) {
-      console.log('DOME-DEBUG: batchGet error', JSON.stringify({
-        error: error instanceof Error ? error.message : String(error),
-        errorType: error instanceof Error ? error.constructor.name : typeof error
-      }));
+      console.log(
+        'DOME-DEBUG: batchGet error',
+        JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+        }),
+      );
       throw error;
     }
   }
@@ -151,48 +160,63 @@ export class SiloService {
   async getContentsAsNotes(env: Bindings, ids: string[], userId?: string) {
     try {
       // Use getLogger().info for debugging
-      this.logger.info({
-        idsCount: ids.length,
-        firstFewIds: ids.slice(0, 5),
-        userId
-      }, 'getContentsAsNotes called');
-      
+      this.logger.info(
+        {
+          idsCount: ids.length,
+          firstFewIds: ids.slice(0, 5),
+          userId,
+        },
+        'getContentsAsNotes called',
+      );
+
       if (ids.length === 0) {
         this.logger.info('No IDs provided to getContentsAsNotes, returning empty array');
         return [];
       }
 
-      this.logger.info({
-        idsCount: ids.length,
-        userId
-      }, 'Calling batchGet');
-      
+      this.logger.info(
+        {
+          idsCount: ids.length,
+          userId,
+        },
+        'Calling batchGet',
+      );
+
       const response = await this.batchGet(env, {
         ids,
         userId,
       });
 
       if (!response.items || response.items.length === 0) {
-        this.logger.info({
-          responseHasItems: !!response.items,
-          itemsLength: response.items?.length || 0
-        }, 'No items returned from batchGet');
+        this.logger.info(
+          {
+            responseHasItems: !!response.items,
+            itemsLength: response.items?.length || 0,
+          },
+          'No items returned from batchGet',
+        );
         return [];
       }
 
-      this.logger.info({
-        itemsCount: response.items.length,
-        firstItemId: response.items[0]?.id,
-        firstItemUserId: response.items[0]?.userId
-      }, 'Items returned from batchGet');
-      
+      this.logger.info(
+        {
+          itemsCount: response.items.length,
+          firstItemId: response.items[0]?.id,
+          firstItemUserId: response.items[0]?.userId,
+        },
+        'Items returned from batchGet',
+      );
+
       return response.items.map(item => {
         const content = this.mapBatchGetItemToContent(item);
-        this.logger.info({
-          itemId: item.id,
-          contentId: content.id,
-          contentTitle: content.title?.substring(0, 20)
-        }, 'Mapped item to content');
+        this.logger.info(
+          {
+            itemId: item.id,
+            contentId: content.id,
+            contentTitle: content.title?.substring(0, 20),
+          },
+          'Mapped item to content',
+        );
         return content;
       });
     } catch (error) {

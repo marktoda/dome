@@ -15,12 +15,12 @@ const mockHandlers = {
   addInstallation: vi.fn(),
   listInstallations: vi.fn(),
   removeInstallation: vi.fn(),
-  getStatistics: vi.fn()
+  getStatistics: vi.fn(),
 };
 
 // Mock RpcHandlers class
 vi.mock('../../src/rpc/handlers', () => ({
-  RpcHandlers: vi.fn().mockImplementation(() => mockHandlers)
+  RpcHandlers: vi.fn().mockImplementation(() => mockHandlers),
 }));
 
 // Mock environment
@@ -30,8 +30,8 @@ const mockEnv = {
     bind: vi.fn().mockReturnThis(),
     first: vi.fn(),
     all: vi.fn(),
-    run: vi.fn()
-  }
+    run: vi.fn(),
+  },
 } as any;
 
 // Mock service factory
@@ -54,7 +54,7 @@ describe('RpcService', () => {
         owner: 'testorg',
         repo: 'testrepo',
         branch: 'main',
-        isPrivate: false
+        isPrivate: false,
       };
 
       const mockResponse = {
@@ -66,7 +66,7 @@ describe('RpcService', () => {
         branch: 'main',
         isPrivate: false,
         createdAt: 1234567890,
-        updatedAt: 1234567890
+        updatedAt: 1234567890,
       };
 
       mockHandlers.addRepository.mockResolvedValue(mockResponse);
@@ -75,9 +75,9 @@ describe('RpcService', () => {
       const request = new Request('http://localhost/repositories', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
       });
 
       const response = await rpcService.fetch(request);
@@ -88,7 +88,7 @@ describe('RpcService', () => {
       expect(mockHandlers.addRepository).toHaveBeenCalledWith(requestBody);
       expect(responseBody).toEqual({
         success: true,
-        data: mockResponse
+        data: mockResponse,
       });
     });
 
@@ -98,7 +98,7 @@ describe('RpcService', () => {
         userId: 'user-123',
         provider: 'github',
         owner: 'testorg',
-        repo: 'testrepo'
+        repo: 'testrepo',
       };
 
       const error = new Error('Repository creation failed');
@@ -108,13 +108,13 @@ describe('RpcService', () => {
       const request = new Request('http://localhost/repositories', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
       });
 
       const response = await rpcService.fetch(request);
-      
+
       // Check if the response is valid JSON before parsing
       const text = await response.text();
       let responseBody;
@@ -131,7 +131,7 @@ describe('RpcService', () => {
       expect(responseBody.error).toBe('Repository creation failed');
       expect(responseBody).toEqual({
         success: false,
-        error: 'Repository creation failed'
+        error: 'Repository creation failed',
       });
     });
   });
@@ -143,7 +143,7 @@ describe('RpcService', () => {
       const requestBody = {
         id: repoId,
         branch: 'develop',
-        isPrivate: true
+        isPrivate: true,
       };
 
       const mockResponse = {
@@ -155,7 +155,7 @@ describe('RpcService', () => {
         branch: 'develop',
         isPrivate: true,
         createdAt: 1234567890,
-        updatedAt: 1234567890
+        updatedAt: 1234567890,
       };
 
       mockHandlers.updateRepository.mockResolvedValue(mockResponse);
@@ -164,9 +164,9 @@ describe('RpcService', () => {
       const request = new Request(`http://localhost/repositories/${repoId}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
       });
 
       const response = await rpcService.fetch(request);
@@ -177,7 +177,7 @@ describe('RpcService', () => {
       expect(mockHandlers.updateRepository).toHaveBeenCalledWith(requestBody);
       expect(responseBody).toEqual({
         success: true,
-        data: mockResponse
+        data: mockResponse,
       });
     });
   });
@@ -190,7 +190,7 @@ describe('RpcService', () => {
 
       // Execute
       const request = new Request(`http://localhost/repositories/${repoId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
 
       const response = await rpcService.fetch(request);
@@ -200,7 +200,7 @@ describe('RpcService', () => {
       expect(response.status).toBe(200);
       expect(mockHandlers.removeRepository).toHaveBeenCalledWith(repoId);
       expect(responseBody).toEqual({
-        success: true
+        success: true,
       });
     });
   });
@@ -218,14 +218,14 @@ describe('RpcService', () => {
         branch: 'main',
         isPrivate: false,
         createdAt: 1234567890,
-        updatedAt: 1234567890
+        updatedAt: 1234567890,
       };
 
       mockHandlers.getRepository.mockResolvedValue(mockResponse);
 
       // Execute
       const request = new Request(`http://localhost/repositories/${repoId}`, {
-        method: 'GET'
+        method: 'GET',
       });
 
       const response = await rpcService.fetch(request);
@@ -236,7 +236,7 @@ describe('RpcService', () => {
       expect(mockHandlers.getRepository).toHaveBeenCalledWith(repoId);
       expect(responseBody).toEqual({
         success: true,
-        data: mockResponse
+        data: mockResponse,
       });
     });
   });
@@ -256,7 +256,7 @@ describe('RpcService', () => {
           branch: 'main',
           isPrivate: false,
           createdAt: 1234567890,
-          updatedAt: 1234567890
+          updatedAt: 1234567890,
         },
         {
           id: 'repo-2',
@@ -267,29 +267,34 @@ describe('RpcService', () => {
           branch: 'main',
           isPrivate: true,
           createdAt: 1234567890,
-          updatedAt: 1234567890
-        }
+          updatedAt: 1234567890,
+        },
       ];
 
       mockHandlers.listRepositories.mockResolvedValue(mockResponse);
 
       // Execute
-      const request = new Request(`http://localhost/repositories?userId=${userId}&provider=${provider}`, {
-        method: 'GET'
-      });
+      const request = new Request(
+        `http://localhost/repositories?userId=${userId}&provider=${provider}`,
+        {
+          method: 'GET',
+        },
+      );
 
       const response = await rpcService.fetch(request);
       const responseBody = await response.json();
 
       // Verify
       expect(response.status).toBe(200);
-      expect(mockHandlers.listRepositories).toHaveBeenCalledWith(expect.objectContaining({
-        userId,
-        provider
-      }));
+      expect(mockHandlers.listRepositories).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          provider,
+        }),
+      );
       expect(responseBody).toEqual({
         success: true,
-        data: mockResponse
+        data: mockResponse,
       });
     });
   });
@@ -300,7 +305,7 @@ describe('RpcService', () => {
       const repoId = 'repo-123';
       const requestBody = {
         id: repoId,
-        force: true
+        force: true,
       };
 
       mockHandlers.syncRepository.mockResolvedValue({ success: true });
@@ -309,9 +314,9 @@ describe('RpcService', () => {
       const request = new Request(`http://localhost/repositories/${repoId}/sync`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
       });
 
       const response = await rpcService.fetch(request);
@@ -321,7 +326,7 @@ describe('RpcService', () => {
       expect(response.status).toBe(200);
       expect(mockHandlers.syncRepository).toHaveBeenCalledWith(requestBody);
       expect(responseBody).toEqual({
-        success: true
+        success: true,
       });
     });
   });
@@ -335,14 +340,14 @@ describe('RpcService', () => {
         lastSyncedAt: 1234567890,
         lastCommitSha: 'abc123',
         retryCount: 0,
-        status: 'idle'
+        status: 'idle',
       };
 
       mockHandlers.getRepositoryStatus.mockResolvedValue(mockResponse);
 
       // Execute
       const request = new Request(`http://localhost/repositories/${repoId}/status`, {
-        method: 'GET'
+        method: 'GET',
       });
 
       const response = await rpcService.fetch(request);
@@ -353,7 +358,7 @@ describe('RpcService', () => {
       expect(mockHandlers.getRepositoryStatus).toHaveBeenCalledWith({ id: repoId });
       expect(responseBody).toEqual({
         success: true,
-        data: mockResponse
+        data: mockResponse,
       });
     });
   });
@@ -363,7 +368,7 @@ describe('RpcService', () => {
       // Setup
       const requestBody = {
         userId: 'user-123',
-        installationId: 'install-123'
+        installationId: 'install-123',
       };
 
       const mockResponse = {
@@ -373,7 +378,7 @@ describe('RpcService', () => {
         installationId: 'install-123',
         account: 'testorg',
         createdAt: 1234567890,
-        updatedAt: 1234567890
+        updatedAt: 1234567890,
       };
 
       mockHandlers.addInstallation.mockResolvedValue(mockResponse);
@@ -382,9 +387,9 @@ describe('RpcService', () => {
       const request = new Request('http://localhost/installations', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
       });
 
       const response = await rpcService.fetch(request);
@@ -395,7 +400,7 @@ describe('RpcService', () => {
       expect(mockHandlers.addInstallation).toHaveBeenCalledWith(requestBody);
       expect(responseBody).toEqual({
         success: true,
-        data: mockResponse
+        data: mockResponse,
       });
     });
   });
@@ -412,15 +417,15 @@ describe('RpcService', () => {
           installationId: 'install-123',
           account: 'testorg',
           createdAt: 1234567890,
-          updatedAt: 1234567890
-        }
+          updatedAt: 1234567890,
+        },
       ];
 
       mockHandlers.listInstallations.mockResolvedValue(mockResponse);
 
       // Execute
       const request = new Request(`http://localhost/installations?userId=${userId}`, {
-        method: 'GET'
+        method: 'GET',
       });
 
       const response = await rpcService.fetch(request);
@@ -428,12 +433,14 @@ describe('RpcService', () => {
 
       // Verify
       expect(response.status).toBe(200);
-      expect(mockHandlers.listInstallations).toHaveBeenCalledWith(expect.objectContaining({
-        userId
-      }));
+      expect(mockHandlers.listInstallations).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+        }),
+      );
       expect(responseBody).toEqual({
         success: true,
-        data: mockResponse
+        data: mockResponse,
       });
     });
   });
@@ -446,7 +453,7 @@ describe('RpcService', () => {
 
       // Execute
       const request = new Request(`http://localhost/installations/${installId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
 
       const response = await rpcService.fetch(request);
@@ -456,7 +463,7 @@ describe('RpcService', () => {
       expect(response.status).toBe(200);
       expect(mockHandlers.removeInstallation).toHaveBeenCalledWith(installId);
       expect(responseBody).toEqual({
-        success: true
+        success: true,
       });
     });
   });
@@ -472,28 +479,33 @@ describe('RpcService', () => {
         totalSizeBytes: 5000000,
         syncedRepositories: 4,
         failedRepositories: 1,
-        lastSyncTime: 1234567890
+        lastSyncTime: 1234567890,
       };
 
       mockHandlers.getStatistics.mockResolvedValue(mockResponse);
 
       // Execute
-      const request = new Request(`http://localhost/statistics?userId=${userId}&timeRange=${timeRange}`, {
-        method: 'GET'
-      });
+      const request = new Request(
+        `http://localhost/statistics?userId=${userId}&timeRange=${timeRange}`,
+        {
+          method: 'GET',
+        },
+      );
 
       const response = await rpcService.fetch(request);
       const responseBody = await response.json();
 
       // Verify
       expect(response.status).toBe(200);
-      expect(mockHandlers.getStatistics).toHaveBeenCalledWith(expect.objectContaining({
-        userId,
-        timeRange
-      }));
+      expect(mockHandlers.getStatistics).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          timeRange,
+        }),
+      );
       expect(responseBody).toEqual({
         success: true,
-        data: mockResponse
+        data: mockResponse,
       });
     });
   });

@@ -9,7 +9,7 @@ if (!('crypto' in globalThis)) {
     value: crypto,
     writable: false,
     configurable: false,
-    enumerable: false
+    enumerable: false,
   });
 }
 
@@ -19,7 +19,7 @@ if (!('TextEncoder' in globalThis)) {
     value: TextEncoder,
     writable: false,
     configurable: false,
-    enumerable: false
+    enumerable: false,
   });
 }
 
@@ -29,7 +29,7 @@ if (!('console' in globalThis)) {
     value: console,
     writable: false,
     configurable: false,
-    enumerable: false
+    enumerable: false,
   });
 }
 

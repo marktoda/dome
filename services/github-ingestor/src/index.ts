@@ -56,7 +56,7 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
     metrics.init(this.env);
 
     // GitHub webhook endpoint
-    app.post('/webhook', async (c) => {
+    app.post('/webhook', async c => {
       try {
         return await handleWebhook(c.req.raw, this.env);
       } catch (error) {
@@ -66,16 +66,16 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
     });
 
     // Health check endpoint
-    app.get('/health', async (c) => {
+    app.get('/health', async c => {
       const startTime = performance.now();
       const requestId = c.req.header('x-request-id') || ulid();
       const requestLogger = createRequestLogger(requestId);
-      
+
       try {
         // Check database connection
         let dbStatus = 'ok';
         let dbError = null;
-        
+
         try {
           // Simple query to check DB connection
           await this.env.DB.prepare('SELECT 1').first();
@@ -84,19 +84,19 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
           dbError = (error as Error).message;
           requestLogger.error({ error }, 'Database health check failed');
         }
-        
+
         // Check queue status
         const queueStatus = 'ok'; // Queue binding doesn't provide a way to check health
-        
+
         // Determine overall status (ok only if all components are ok)
         const overallStatus = dbStatus === 'ok' && queueStatus === 'ok' ? 'ok' : 'error';
-        
+
         // Record metrics
         const duration = Math.round(performance.now() - startTime);
         metrics.trackHealthCheck(overallStatus as any, duration);
         metrics.trackHealthCheck(dbStatus as any, duration, 'database');
         metrics.trackHealthCheck(queueStatus as any, duration, 'queue');
-        
+
         // Return health status
         return c.json({
           status: overallStatus,
@@ -117,53 +117,60 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
       } catch (error) {
         requestLogger.error({ error }, 'Health check failed');
         metrics.trackHealthCheck('error', Math.round(performance.now() - startTime));
-        
-        return c.json({
-          status: 'error',
-          version: this.env.VERSION,
-          environment: this.env.ENVIRONMENT,
-          request_id: requestId,
-          error: (error as Error).message,
-        }, 500);
+
+        return c.json(
+          {
+            status: 'error',
+            version: this.env.VERSION,
+            environment: this.env.ENVIRONMENT,
+            request_id: requestId,
+            error: (error as Error).message,
+          },
+          500,
+        );
       }
     });
-    
+
     // Detailed status endpoint
-    app.get('/status', async (c) => {
+    app.get('/status', async c => {
       const startTime = performance.now();
       const requestId = c.req.header('x-request-id') || ulid();
       const requestLogger = createRequestLogger(requestId);
-      
+
       try {
         // Get repository counts
-        const repoStats = await this.env.DB.prepare(`
+        const repoStats = await this.env.DB.prepare(
+          `
           SELECT
             COUNT(*) as total_repos,
             SUM(CASE WHEN lastSyncedAt IS NOT NULL THEN 1 ELSE 0 END) as synced_repos,
             SUM(CASE WHEN isPrivate = 1 THEN 1 ELSE 0 END) as private_repos
           FROM provider_repositories
           WHERE provider = 'github'
-        `).first();
-        
+        `,
+        ).first();
+
         // Get recent errors
-        const recentErrors = await this.env.DB.prepare(`
+        const recentErrors = await this.env.DB.prepare(
+          `
           SELECT id, userId, owner, repo, retryCount, nextRetryAt
           FROM provider_repositories
           WHERE provider = 'github' AND retryCount > 0
           ORDER BY nextRetryAt DESC
           LIMIT 5
-        `).all();
-        
+        `,
+        ).all();
+
         // Get queue metrics from memory (since we can't query the queue directly)
         const queueMetrics = {
           processed_last_hour: metrics.getCounter('queue.messages_processed') || 0,
           errors_last_hour: metrics.getCounter('queue.messages_failed') || 0,
         };
-        
+
         // Record metrics
         const duration = Math.round(performance.now() - startTime);
         metrics.timing('status.duration_ms', duration);
-        
+
         // Return detailed status
         return c.json({
           status: 'ok',
@@ -187,22 +194,25 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
       } catch (error) {
         requestLogger.error({ error }, 'Status check failed');
         metrics.counter('status.error', 1);
-        
-        return c.json({
-          status: 'error',
-          version: this.env.VERSION,
-          environment: this.env.ENVIRONMENT,
-          request_id: requestId,
-          error: (error as Error).message,
-        }, 500);
+
+        return c.json(
+          {
+            status: 'error',
+            version: this.env.VERSION,
+            environment: this.env.ENVIRONMENT,
+            request_id: requestId,
+            error: (error as Error).message,
+          },
+          500,
+        );
       }
     });
 
     // RPC endpoints
-    app.use('/rpc/*', (c) => this.rpcService.fetch(c.req.raw));
+    app.use('/rpc/*', c => this.rpcService.fetch(c.req.raw));
 
     // Catch-all for other routes
-    app.all('*', (c) => {
+    app.all('*', c => {
       return c.json({ error: 'Not found' }, 404);
     });
 
@@ -215,14 +225,17 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
    * @returns HTTP response
    */
   async fetch(request: Request): Promise<Response> {
-    return wrap({ operation: 'fetch', method: request.method, path: new URL(request.url).pathname }, async () => {
-      metrics.counter('http.request', 1, {
-        method: request.method,
-        path: new URL(request.url).pathname
-      });
+    return wrap(
+      { operation: 'fetch', method: request.method, path: new URL(request.url).pathname },
+      async () => {
+        metrics.counter('http.request', 1, {
+          method: request.method,
+          path: new URL(request.url).pathname,
+        });
 
-      return this.app.fetch(request, this.env, this.ctx);
-    }).catch(error => {
+        return this.app.fetch(request, this.env, this.ctx);
+      },
+    ).catch(error => {
       getLogger().error({ error, url: request.url }, 'Unhandled error in fetch handler');
       metrics.counter('http.error', 1);
 
@@ -257,7 +270,7 @@ export default class GitHubIngestor extends WorkerEntrypoint<Env> {
     await wrap({ operation: 'queue', messageCount: batch.messages.length }, async () => {
       getLogger().info({ messageCount: batch.messages.length }, 'Processing queue batch');
       metrics.counter('queue.batch_received', 1, {
-        message_count: batch.messages.length.toString()
+        message_count: batch.messages.length.toString(),
       });
 
       await processQueueBatch(batch, this.env);

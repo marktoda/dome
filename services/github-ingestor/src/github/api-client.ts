@@ -16,17 +16,17 @@ export interface GitHubClientConfig {
    * Base URL for GitHub API (defaults to https://api.github.com)
    */
   baseUrl?: string;
-  
+
   /**
    * User agent to use for requests
    */
   userAgent?: string;
-  
+
   /**
    * Maximum number of retries for failed requests
    */
   maxRetries?: number;
-  
+
   /**
    * Whether to enable request logging
    */
@@ -43,7 +43,7 @@ export class GitHubApiError extends Error {
     public readonly code?: string,
     public readonly resource?: string,
     public readonly isRateLimitError: boolean = false,
-    public readonly isTransient: boolean = false
+    public readonly isTransient: boolean = false,
   ) {
     super(message);
     this.name = 'GitHubApiError';
@@ -84,7 +84,7 @@ export class GitHubApiClient {
    */
   constructor(private token: string, config: GitHubClientConfig = {}) {
     this.config = { ...this.defaultConfig, ...config };
-    
+
     this.octokit = new Octokit({
       auth: token,
       baseUrl: this.config.baseUrl,
@@ -118,7 +118,7 @@ export class GitHubApiClient {
     appId: string,
     privateKey: string,
     installationId: string,
-    config: GitHubClientConfig = {}
+    config: GitHubClientConfig = {},
   ): Promise<GitHubApiClient> {
     const app = new App({
       appId,
@@ -127,15 +127,15 @@ export class GitHubApiClient {
 
     try {
       const installationOctokit = await app.getInstallationOctokit(Number(installationId));
-      
+
       interface AuthToken {
         token: string;
         type: string;
       }
-      
-      const token = await installationOctokit.auth({
+
+      const token = (await installationOctokit.auth({
         type: 'installation',
-      }) as AuthToken;
+      })) as AuthToken;
 
       return new GitHubApiClient(token.token, config);
     } catch (error) {
@@ -146,7 +146,7 @@ export class GitHubApiClient {
         'installation_auth_failed',
         undefined,
         false,
-        true
+        true,
       );
     }
   }
@@ -161,11 +161,11 @@ export class GitHubApiClient {
   async getRepository(
     owner: string,
     repo: string,
-    etag?: string
+    etag?: string,
   ): Promise<RateLimitedResponse<any>> {
     const timer = metrics.startTimer('github_api.get_repository');
     const headers: Record<string, string> = {};
-    
+
     if (etag) {
       headers['If-None-Match'] = etag;
     }
@@ -188,7 +188,7 @@ export class GitHubApiClient {
     } catch (error) {
       metrics.trackOperation('github_api.get_repository', false, { owner, repo });
       timer.stop({ owner, repo });
-      
+
       // If it's a 304 Not Modified, return the cached data
       if ((error as any).status === 304) {
         return {
@@ -197,7 +197,7 @@ export class GitHubApiClient {
           etag,
         };
       }
-      
+
       throw this.normalizeError(error, 'repos.get', { owner, repo });
     }
   }
@@ -214,11 +214,11 @@ export class GitHubApiClient {
     owner: string,
     repo: string,
     ref: string,
-    etag?: string
+    etag?: string,
   ): Promise<RateLimitedResponse<GitHubCommit>> {
     const timer = metrics.startTimer('github_api.get_commit');
     const headers: Record<string, string> = {};
-    
+
     if (etag) {
       headers['If-None-Match'] = etag;
     }
@@ -242,7 +242,7 @@ export class GitHubApiClient {
     } catch (error) {
       metrics.trackOperation('github_api.get_commit', false, { owner, repo });
       timer.stop({ owner, repo });
-      
+
       // If it's a 304 Not Modified, return the cached data
       if ((error as any).status === 304) {
         return {
@@ -251,7 +251,7 @@ export class GitHubApiClient {
           etag,
         };
       }
-      
+
       throw this.normalizeError(error, 'repos.getCommit', { owner, repo, ref });
     }
   }
@@ -270,11 +270,11 @@ export class GitHubApiClient {
     repo: string,
     sha: string,
     recursive: boolean = true,
-    etag?: string
+    etag?: string,
   ): Promise<RateLimitedResponse<GitHubTree>> {
     const timer = metrics.startTimer('github_api.get_tree');
     const headers: Record<string, string> = {};
-    
+
     if (etag) {
       headers['If-None-Match'] = etag;
     }
@@ -299,7 +299,7 @@ export class GitHubApiClient {
     } catch (error) {
       metrics.trackOperation('github_api.get_tree', false, { owner, repo });
       timer.stop({ owner, repo });
-      
+
       // If it's a 304 Not Modified, return the cached data
       if ((error as any).status === 304) {
         return {
@@ -308,7 +308,7 @@ export class GitHubApiClient {
           etag,
         };
       }
-      
+
       throw this.normalizeError(error, 'git.getTree', { owner, repo, sha });
     }
   }
@@ -327,11 +327,11 @@ export class GitHubApiClient {
     repo: string,
     path: string,
     ref?: string,
-    etag?: string
+    etag?: string,
   ): Promise<RateLimitedResponse<GitHubContent>> {
     const timer = metrics.startTimer('github_api.get_content');
     const headers: Record<string, string> = {};
-    
+
     if (etag) {
       headers['If-None-Match'] = etag;
     }
@@ -356,7 +356,7 @@ export class GitHubApiClient {
     } catch (error) {
       metrics.trackOperation('github_api.get_content', false, { owner, repo });
       timer.stop({ owner, repo, path });
-      
+
       // If it's a 304 Not Modified, return the cached data
       if ((error as any).status === 304) {
         return {
@@ -365,7 +365,7 @@ export class GitHubApiClient {
           etag,
         };
       }
-      
+
       throw this.normalizeError(error, 'repos.getContent', { owner, repo, path });
     }
   }
@@ -380,7 +380,7 @@ export class GitHubApiClient {
   async getBlob(
     owner: string,
     repo: string,
-    sha: string
+    sha: string,
   ): Promise<RateLimitedResponse<{ content: string; encoding: string }>> {
     const timer = metrics.startTimer('github_api.get_blob');
 
@@ -404,7 +404,7 @@ export class GitHubApiClient {
     } catch (error) {
       metrics.trackOperation('github_api.get_blob', false, { owner, repo });
       timer.stop({ owner, repo });
-      
+
       throw this.normalizeError(error, 'git.getBlob', { owner, repo, sha });
     }
   }
@@ -421,7 +421,7 @@ export class GitHubApiClient {
     owner: string,
     repo: string,
     base: string,
-    head: string
+    head: string,
   ): Promise<RateLimitedResponse<any>> {
     const timer = metrics.startTimer('github_api.compare_commits');
 
@@ -443,7 +443,7 @@ export class GitHubApiClient {
     } catch (error) {
       metrics.trackOperation('github_api.compare_commits', false, { owner, repo });
       timer.stop({ owner, repo });
-      
+
       throw this.normalizeError(error, 'repos.compareCommits', { owner, repo, base, head });
     }
   }
@@ -458,7 +458,7 @@ export class GitHubApiClient {
   async getFileStream(
     owner: string,
     repo: string,
-    sha: string
+    sha: string,
   ): Promise<globalThis.ReadableStream> {
     const timer = metrics.startTimer('github_api.get_file_stream');
 
@@ -489,7 +489,7 @@ export class GitHubApiClient {
     } catch (error) {
       metrics.trackOperation('github_api.get_file_stream', false, { owner, repo });
       timer.stop({ owner, repo });
-      
+
       throw this.normalizeError(error, 'getFileStream', { owner, repo, sha });
     }
   }
@@ -499,17 +499,22 @@ export class GitHubApiClient {
    * @param response API response
    * @returns Rate limit information
    */
-  private extractRateLimit(response: any): { limit: number; remaining: number; reset: number; used: number } {
+  private extractRateLimit(response: any): {
+    limit: number;
+    remaining: number;
+    reset: number;
+    used: number;
+  } {
     const headers = response.headers || {};
-    
+
     const limit = parseInt(headers['x-ratelimit-limit'] || '0', 10);
     const remaining = parseInt(headers['x-ratelimit-remaining'] || '0', 10);
     const reset = parseInt(headers['x-ratelimit-reset'] || '0', 10);
     const used = parseInt(headers['x-ratelimit-used'] || '0', 10);
-    
+
     // Track rate limit metrics
     metrics.trackRateLimit(remaining, limit, reset);
-    
+
     return { limit, remaining, reset, used };
   }
 
@@ -519,13 +524,16 @@ export class GitHubApiClient {
    */
   private trackRateLimit(response: any): void {
     const rateLimit = this.extractRateLimit(response);
-    
+
     // Log rate limit if it's getting low
     if (rateLimit.remaining < rateLimit.limit * 0.1) {
-      logger().warn({
-        rateLimit,
-        resetIn: rateLimit.reset - Math.floor(Date.now() / 1000),
-      }, 'GitHub API rate limit is getting low');
+      logger().warn(
+        {
+          rateLimit,
+          resetIn: rateLimit.reset - Math.floor(Date.now() / 1000),
+        },
+        'GitHub API rate limit is getting low',
+      );
     }
   }
 
@@ -537,16 +545,19 @@ export class GitHubApiClient {
    */
   private handleRequestError(error: any, options: any): Error {
     const normalizedError = this.normalizeError(error, options.method, options.url);
-    
+
     // If it's a rate limit error, log it
     if (normalizedError instanceof GitHubApiError && normalizedError.isRateLimitError) {
-      logger().warn({
-        error: normalizedError,
-        method: options.method,
-        url: options.url,
-      }, 'GitHub API rate limit exceeded');
+      logger().warn(
+        {
+          error: normalizedError,
+          method: options.method,
+          url: options.url,
+        },
+        'GitHub API rate limit exceeded',
+      );
     }
-    
+
     return normalizedError;
   }
 
@@ -562,30 +573,24 @@ export class GitHubApiClient {
     if (error instanceof GitHubApiError) {
       return error;
     }
-    
+
     const status = error.status || 500;
     const message = error.message || 'Unknown GitHub API error';
     const resource = context.url || `${context.owner}/${context.repo}`;
-    
+
     // Check if it's a rate limit error
-    const isRateLimitError = status === 403 && 
-      (message.includes('rate limit') || message.includes('API rate limit'));
-    
+    const isRateLimitError =
+      status === 403 && (message.includes('rate limit') || message.includes('API rate limit'));
+
     // Check if it's a transient error
     const isTransient = status >= 500 || status === 429 || isRateLimitError;
-    
+
     // Get error code if available
-    const code = error.response?.data?.error || 
-                error.response?.data?.message || 
-                `github_${method.replace(/\./g, '_')}_error`;
-    
-    return new GitHubApiError(
-      message,
-      status,
-      code,
-      resource,
-      isRateLimitError,
-      isTransient
-    );
+    const code =
+      error.response?.data?.error ||
+      error.response?.data?.message ||
+      `github_${method.replace(/\./g, '_')}_error`;
+
+    return new GitHubApiError(message, status, code, resource, isRateLimitError, isTransient);
   }
 }

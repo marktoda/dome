@@ -15,7 +15,7 @@ import {
   installationSchema,
   listInstallationsSchema,
   getStatisticsSchema,
-  repositoryIdentifierSchema
+  repositoryIdentifierSchema,
 } from './schemas';
 
 /**
@@ -58,32 +58,38 @@ export class RpcService {
         logError(error as Error, 'Error in RPC request', { method, path });
         metrics.counter('rpc.error', 1, { method, path });
 
-        return c.json({
-          success: false,
-          error: (error as Error).message
-        }, 500);
+        return c.json(
+          {
+            success: false,
+            error: (error as Error).message,
+          },
+          500,
+        );
       }
 
       metrics.timing('rpc.response_time_ms', Date.now() - startTime, { method, path });
     });
 
     // Repository management endpoints
-    app.post('/repositories', zValidator('json', createRepositorySchema), async (c) => {
+    app.post('/repositories', zValidator('json', createRepositorySchema), async c => {
       const data = await c.req.json();
       const repository = await this.handlers.addRepository(data);
       return c.json({ success: true, data: repository });
     });
 
-    app.put('/repositories/:id', zValidator('json', updateRepositorySchema), async (c) => {
+    app.put('/repositories/:id', zValidator('json', updateRepositorySchema), async c => {
       const id = c.req.param('id');
       const data = await c.req.json();
 
       // Ensure the ID in the path matches the ID in the body
       if (data.id && data.id !== id) {
-        return c.json({
-          success: false,
-          error: 'ID in path does not match ID in body'
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            error: 'ID in path does not match ID in body',
+          },
+          400,
+        );
       }
 
       // Set the ID from the path if not provided in the body
@@ -93,35 +99,38 @@ export class RpcService {
       return c.json({ success: true, data: repository });
     });
 
-    app.delete('/repositories/:id', async (c) => {
+    app.delete('/repositories/:id', async c => {
       const id = c.req.param('id');
       const result = await this.handlers.removeRepository(id);
       return c.json({ success: result.success });
     });
 
-    app.get('/repositories/:id', async (c) => {
+    app.get('/repositories/:id', async c => {
       const id = c.req.param('id');
       const repository = await this.handlers.getRepository(id);
       return c.json({ success: true, data: repository });
     });
 
-    app.get('/repositories', zValidator('query', listRepositoriesSchema), async (c) => {
+    app.get('/repositories', zValidator('query', listRepositoriesSchema), async c => {
       const query = c.req.valid('query');
       const repositories = await this.handlers.listRepositories(query);
       return c.json({ success: true, data: repositories });
     });
 
     // Repository sync endpoints
-    app.post('/repositories/:id/sync', zValidator('json', syncRepositorySchema), async (c) => {
+    app.post('/repositories/:id/sync', zValidator('json', syncRepositorySchema), async c => {
       const id = c.req.param('id');
       const data = await c.req.json();
 
       // Ensure the ID in the path matches the ID in the body
       if (data.id && data.id !== id) {
-        return c.json({
-          success: false,
-          error: 'ID in path does not match ID in body'
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            error: 'ID in path does not match ID in body',
+          },
+          400,
+        );
       }
 
       // Set the ID from the path if not provided in the body
@@ -131,40 +140,40 @@ export class RpcService {
       return c.json({ success: result.success });
     });
 
-    app.get('/repositories/:id/status', async (c) => {
+    app.get('/repositories/:id/status', async c => {
       const id = c.req.param('id');
       const status = await this.handlers.getRepositoryStatus({ id });
       return c.json({ success: true, data: status });
     });
 
     // GitHub App installation endpoints
-    app.post('/installations', zValidator('json', installationSchema), async (c) => {
+    app.post('/installations', zValidator('json', installationSchema), async c => {
       const data = await c.req.json();
       const installation = await this.handlers.addInstallation(data);
       return c.json({ success: true, data: installation });
     });
 
-    app.get('/installations', zValidator('query', listInstallationsSchema), async (c) => {
+    app.get('/installations', zValidator('query', listInstallationsSchema), async c => {
       const query = c.req.valid('query');
       const installations = await this.handlers.listInstallations(query);
       return c.json({ success: true, data: installations });
     });
 
-    app.delete('/installations/:id', async (c) => {
+    app.delete('/installations/:id', async c => {
       const id = c.req.param('id');
       const result = await this.handlers.removeInstallation(id);
       return c.json({ success: result.success });
     });
 
     // Statistics endpoints
-    app.get('/statistics', zValidator('query', getStatisticsSchema), async (c) => {
+    app.get('/statistics', zValidator('query', getStatisticsSchema), async c => {
       const query = c.req.valid('query');
       const statistics = await this.handlers.getStatistics(query);
       return c.json({ success: true, data: statistics });
     });
 
     // Catch-all for other routes
-    app.all('*', (c) => {
+    app.all('*', c => {
       return c.json({ success: false, error: 'Not found' }, 404);
     });
 

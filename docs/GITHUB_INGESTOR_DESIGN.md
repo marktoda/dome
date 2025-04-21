@@ -133,16 +133,16 @@ export interface IngestorConfig {
 export interface Ingestor {
   // Get configuration for this ingestor
   getConfig(): IngestorConfig;
-  
+
   // List all items that need to be ingested
   listItems(): Promise<ItemMetadata[]>;
-  
+
   // Get content for a specific item
   fetchContent(metadata: ItemMetadata): Promise<ContentItem>;
-  
+
   // Check if an item has changed since last sync
   hasChanged(metadata: ItemMetadata): Promise<boolean>;
-  
+
   // Update sync status after successful ingestion
   updateSyncStatus(metadata: ItemMetadata): Promise<void>;
 }
@@ -159,6 +159,7 @@ The revised design prioritizes webhooks for real-time updates:
 5. **Fallback Cron**: Use scheduled cron as a fallback for missed webhooks
 
 Benefits:
+
 - Near real-time updates
 - Significant API quota savings
 - Processes only changed files instead of scanning entire repositories
@@ -182,12 +183,13 @@ To handle large repositories and stay within Worker limits:
 4. **Concurrency Control**: Limit parallel operations to avoid memory issues
 
 Example:
+
 ```typescript
 // Process repositories in chunks with yielding
 for (let i = 0; i < repositories.length; i += BATCH_SIZE) {
   const batch = repositories.slice(i, i + BATCH_SIZE);
   await Promise.all(batch.map(repo => processRepository(repo)));
-  
+
   // Yield to avoid CPU time limit
   await scheduler.wait(1);
 }
@@ -264,27 +266,33 @@ head_sampling_rate = 1
 ## 10. Implementation Plan
 
 1. **Stage 1: GitHub App & Webhook Setup**
+
    - Register GitHub App with webhook capabilities
    - Implement webhook worker to receive events
    - Set up authentication flow for private repositories
 
 2. **Stage 2: Schema & Database Setup**
+
    - Create D1 database with improved schema
    - Implement repository and credential management
 
 3. **Stage 3: Common Ingestion Contract**
+
    - Define and implement the common ingestion interface
    - Create the GitHub ingestor implementation
 
 4. **Stage 4: Content Deduplication**
+
    - Implement content blob storage and reference tracking
    - Modify Silo integration to use content deduplication
 
 5. **Stage 5: Streaming & Error Handling**
+
    - Implement streaming for large files
    - Add proper error handling, retries, and dead-letter queue
 
 6. **Stage 6: Integration & Testing**
+
    - Integrate with Dome API for repository management
    - Comprehensive testing with real repositories
    - Performance and load testing

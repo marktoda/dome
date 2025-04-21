@@ -46,45 +46,51 @@ export class VectorizeService {
         {
           sampleMetadata: vecs[0].metadata,
           sampleId: vecs[0].id,
-          vectorLength: vecs[0].values.length
+          vectorLength: vecs[0].values.length,
         },
-        'Sample vector metadata for upsert'
+        'Sample vector metadata for upsert',
       );
     }
 
     const batches =
       vecs.length > this.cfg.maxBatchSize
         ? Array.from({ length: Math.ceil(vecs.length / this.cfg.maxBatchSize) }, (_, i) =>
-          vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
-        )
+            vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
+          )
         : [vecs];
 
     for (const batch of batches) await this.upsertBatch(batch);
-    
+
     // Log index stats after upsert
     try {
       const stats = await this.idx.describe();
       // Handle both beta and post-beta versions of the API
       const statsAny = stats as any;
-      const vectorCount = 'vectorsCount' in statsAny
-        ? statsAny.vectorsCount
-        : ('vectorCount' in statsAny ? statsAny.vectorCount : 0);
-      
-      const dimensions = 'dimensions' in statsAny
-        ? statsAny.dimensions
-        : ('config' in statsAny && statsAny.config && 'dimensions' in statsAny.config ? statsAny.config.dimensions : 0);
-      
+      const vectorCount =
+        'vectorsCount' in statsAny
+          ? statsAny.vectorsCount
+          : 'vectorCount' in statsAny
+          ? statsAny.vectorCount
+          : 0;
+
+      const dimensions =
+        'dimensions' in statsAny
+          ? statsAny.dimensions
+          : 'config' in statsAny && statsAny.config && 'dimensions' in statsAny.config
+          ? statsAny.config.dimensions
+          : 0;
+
       getLogger().info(
         {
           vectorCount,
-          dimensions
+          dimensions,
         },
-        'Vectorize index stats after upsert'
+        'Vectorize index stats after upsert',
       );
     } catch (err) {
       getLogger().warn({ err }, 'Failed to get index stats after upsert');
     }
-    
+
     t.stop();
   }
 
@@ -134,7 +140,7 @@ export class VectorizeService {
 
       // Create a new filter object for Vectorize that can include the $in operator
       const vectorizeFilter: Record<string, any> = { ...cleanFilter };
-      
+
       // Special handling for userId to include both user-specific and public vectors
       // This requires a metadata index on userId:
       // npx wrangler vectorize create-metadata-index <INDEX> --property-name=userId --type=string
@@ -142,17 +148,23 @@ export class VectorizeService {
         const userId = cleanFilter.userId;
         // Replace the userId in the vectorizeFilter with an $in operator
         vectorizeFilter.userId = { $in: [userId, 'public'] };
-        getLogger().debug({ userId, filter: vectorizeFilter.userId }, 'Using $in operator for userId filter');
+        getLogger().debug(
+          { userId, filter: vectorizeFilter.userId },
+          'Using $in operator for userId filter',
+        );
         // Remove userId from cleanFilter since we're handling it specially
         delete cleanFilter.userId;
       }
 
       // Log the filters for debugging
-      getLogger().debug({
-        originalFilter: filter,
-        cleanFilter,
-        vectorizeFilter
-      }, 'Filters for Vectorize query');
+      getLogger().debug(
+        {
+          originalFilter: filter,
+          cleanFilter,
+          vectorizeFilter,
+        },
+        'Filters for Vectorize query',
+      );
 
       // Log query vector stats to check for zero/small vectors
       getLogger().debug(
@@ -161,7 +173,7 @@ export class VectorizeService {
           firstValues: vector.slice(0, 3),
           magnitude: Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0)),
         },
-        'Query vector stats'
+        'Query vector stats',
       );
 
       // Get index stats before query
@@ -169,20 +181,26 @@ export class VectorizeService {
         const stats = await this.idx.describe();
         // Handle both beta and post-beta versions of the API
         const statsAny = stats as any;
-        const vectorCount = 'vectorsCount' in statsAny
-          ? statsAny.vectorsCount
-          : ('vectorCount' in statsAny ? statsAny.vectorCount : 0);
-        
-        const dimensions = 'dimensions' in statsAny
-          ? statsAny.dimensions
-          : ('config' in statsAny && statsAny.config && 'dimensions' in statsAny.config ? statsAny.config.dimensions : 0);
-        
+        const vectorCount =
+          'vectorsCount' in statsAny
+            ? statsAny.vectorsCount
+            : 'vectorCount' in statsAny
+            ? statsAny.vectorCount
+            : 0;
+
+        const dimensions =
+          'dimensions' in statsAny
+            ? statsAny.dimensions
+            : 'config' in statsAny && statsAny.config && 'dimensions' in statsAny.config
+            ? statsAny.config.dimensions
+            : 0;
+
         getLogger().debug(
           {
             vectorCount,
-            dimensions
+            dimensions,
           },
-          'Vectorize index stats before query'
+          'Vectorize index stats before query',
         );
       } catch (err) {
         getLogger().warn({ err }, 'Failed to get index stats before query');
@@ -191,7 +209,7 @@ export class VectorizeService {
       const res = await this.idx.query(vector, {
         topK,
         filter: vectorizeFilter,
-        returnMetadata: true
+        returnMetadata: true,
       });
       getLogger().info({ queryResults: res }, 'Vectorize query results');
       metrics.increment('vectorize.query.success');
@@ -217,16 +235,22 @@ export class VectorizeService {
   public async getStats(): Promise<VectorIndexStats> {
     const info = await this.idx.describe();
     const infoAny = info as any;
-    
+
     // Handle both beta and post-beta versions of the API
-    const vectors = 'vectorsCount' in infoAny
-      ? infoAny.vectorsCount
-      : ('vectorCount' in infoAny ? infoAny.vectorCount : 0);
-    
-    const dimension = 'dimensions' in infoAny
-      ? infoAny.dimensions
-      : ('config' in infoAny && infoAny.config && 'dimensions' in infoAny.config ? infoAny.config.dimensions : 0);
-    
+    const vectors =
+      'vectorsCount' in infoAny
+        ? infoAny.vectorsCount
+        : 'vectorCount' in infoAny
+        ? infoAny.vectorCount
+        : 0;
+
+    const dimension =
+      'dimensions' in infoAny
+        ? infoAny.dimensions
+        : 'config' in infoAny && infoAny.config && 'dimensions' in infoAny.config
+        ? infoAny.config.dimensions
+        : 0;
+
     return { vectors, dimension };
   }
 }

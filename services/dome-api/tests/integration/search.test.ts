@@ -26,7 +26,7 @@ vi.mock('@dome/logging', () => {
     warn: ReturnType<typeof vi.fn>;
     child: ReturnType<typeof vi.fn>;
   };
-  
+
   const mockLogger: MockLogger = {
     info: vi.fn(),
     debug: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock('@dome/logging', () => {
     warn: vi.fn(),
     child: vi.fn(() => mockLogger),
   };
-  
+
   return {
     getLogger: vi.fn().mockReturnValue(mockLogger),
     metrics: {
@@ -107,8 +107,8 @@ describe('Search API Integration Tests', () => {
       // Create a mock context
       const mockContext = {
         req: {
-          query: vi.fn((name) => name === 'q' ? 'test query' : null),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          query: vi.fn(name => (name === 'q' ? 'test query' : null)),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         json: vi.fn(),
@@ -137,8 +137,8 @@ describe('Search API Integration Tests', () => {
       // Create a mock context
       const mockContext = {
         req: {
-          query: vi.fn((name) => name === 'q' ? 'ab' : null),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          query: vi.fn(name => (name === 'q' ? 'ab' : null)),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         json: vi.fn(),
@@ -163,7 +163,7 @@ describe('Search API Integration Tests', () => {
       const mockContext = {
         req: {
           query: vi.fn(() => null), // No query
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         json: vi.fn(),
@@ -187,7 +187,7 @@ describe('Search API Integration Tests', () => {
       // Create a mock context
       const mockContext = {
         req: {
-          query: vi.fn((name) => name === 'q' ? 'test query' : null),
+          query: vi.fn(name => (name === 'q' ? 'test query' : null)),
           header: vi.fn(() => null), // No user ID
         },
         env: mockEnv,
@@ -212,8 +212,8 @@ describe('Search API Integration Tests', () => {
       // Create a mock context
       const mockContext = {
         req: {
-          query: vi.fn((name) => name === 'q' ? 'test query' : null),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          query: vi.fn(name => (name === 'q' ? 'test query' : null)),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         json: vi.fn(),
@@ -221,9 +221,7 @@ describe('Search API Integration Tests', () => {
       };
 
       // Mock service error
-      vi.mocked(searchService.search).mockRejectedValue(
-        new Error('Search service error'),
-      );
+      vi.mocked(searchService.search).mockRejectedValue(new Error('Search service error'));
 
       // Call the search controller
       await searchController.search(mockContext as any);
@@ -244,8 +242,8 @@ describe('Search API Integration Tests', () => {
       // Create a mock context
       const mockContext = {
         req: {
-          query: vi.fn((name) => name === 'q' ? 'test query' : null),
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          query: vi.fn(name => (name === 'q' ? 'test query' : null)),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         set: vi.fn(),
@@ -271,7 +269,7 @@ describe('Search API Integration Tests', () => {
       const mockContext = {
         req: {
           query: vi.fn(() => null), // No query
-          header: vi.fn((name) => name === 'x-user-id' ? mockUserId : null),
+          header: vi.fn(name => (name === 'x-user-id' ? mockUserId : null)),
         },
         env: mockEnv,
         json: vi.fn(),
