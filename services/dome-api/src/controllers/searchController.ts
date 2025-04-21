@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { Bindings } from '../types';
 import { searchService } from '../services/searchService';
+import { trackTiming, trackOperation, incrementCounter, getMetrics } from '../utils/metrics';
 
 // Import the PaginatedSearchResults interface from the service file
 export interface PaginatedSearchResults {
@@ -10,7 +11,8 @@ export interface PaginatedSearchResults {
     id: string;
     title: string;
     body: string;
-    contentType: string;
+    category: string;
+    mimeType: string;
     createdAt: number;
     updatedAt: number;
     score: number;
@@ -35,7 +37,8 @@ const SearchQuerySchema = z.object({
   q: z.string().min(1, 'Search query is required'),
   limit: z.coerce.number().int().positive().optional().default(10),
   offset: z.coerce.number().int().min(0).optional().default(0),
-  contentType: z.string().optional(),
+  category: z.string().optional(),
+  mimeType: z.string().optional(),
   startDate: z.coerce.number().int().optional(),
   endDate: z.coerce.number().int().optional(),
   useCache: z.coerce.boolean().optional().default(true),
@@ -118,19 +121,45 @@ export class SearchController {
       const parsed = SearchQuerySchema.parse(c.req.query());
       const userId = c.get('userId');
 
+      // Track search query metrics
+      incrementCounter('search.query', 1, {
+        query_length: parsed.q.length.toString(),
+        has_filters: (parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate) ? 'true' : 'false'
+      });
+
       if (tooShort(parsed.q)) {
         this.logger.warn({ userId, q: parsed.q }, 'query too short');
+        incrementCounter('search.query_too_short', 1);
         return c.json(emptyResults(parsed.q));
       }
 
       this.logger.info({ userId, q: parsed.q, params: parsed }, 'search');
-      const results = await searchService.search(c.env, buildParams(userId, parsed));
+      
+      // Track search operation with timing
+      const results = await trackTiming('search.execution', {
+        query_length: parsed.q.length.toString(),
+        has_filters: (parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate) ? 'true' : 'false'
+      })(async () => {
+        return await searchService.search(c.env, buildParams(userId, parsed));
+      });
+      
+      // Track result count
+      incrementCounter('search.results', results.results.length, {
+        has_results: results.results.length > 0 ? 'true' : 'false'
+      });
+      
       this.logger.info({ userId, q: parsed.q, results }, 'search results');
       return c.json(formatSearchResponse(results));
     } catch (error) {
       this.logger.error({ err: error }, 'search error');
 
+      // Track search error with metrics
+      incrementCounter('search.error', 1, {
+        error_type: error instanceof Error ? error.name : 'unknown'
+      });
+
       if (error instanceof z.ZodError) {
+        incrementCounter('search.validation_error', 1);
         return c.json(
           {
             success: false,
@@ -146,6 +175,10 @@ export class SearchController {
 
       if (error instanceof ServiceError) {
         const statusCode = error.status || 500;
+        incrementCounter('search.service_error', 1, {
+          code: error.code || 'UNKNOWN',
+          status: statusCode.toString()
+        });
         return c.json(
           {
             success: false,
@@ -158,6 +191,7 @@ export class SearchController {
         );
       }
 
+      incrementCounter('search.unexpected_error', 1);
       return c.json(
         {
           success: false,
@@ -183,8 +217,15 @@ export class SearchController {
       const parsed = SearchQuerySchema.parse(c.req.query());
       const userId = c.get('userId');
 
+      // Track streaming search query metrics
+      incrementCounter('search.stream_query', 1, {
+        query_length: parsed.q.length.toString(),
+        has_filters: (parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate) ? 'true' : 'false'
+      });
+
       if (tooShort(parsed.q)) {
         this.logger.warn({ userId, q: parsed.q }, 'query too short');
+        incrementCounter('search.stream_query_too_short', 1);
         return c.json(emptyResults(parsed.q));
       }
 
@@ -192,8 +233,19 @@ export class SearchController {
       const writer = writable.getWriter();
 
       (async () => {
+        // Start a timer for the streaming search
+        const timer = getMetrics().startTimer('search.stream_execution', {
+          query_length: parsed.q.length.toString(),
+          has_filters: (parsed.category || parsed.mimeType || parsed.startDate || parsed.endDate) ? 'true' : 'false'
+        });
+        
         try {
           const searchResults = await searchService.search(c.env, buildParams(userId, parsed));
+          
+          // Track result count
+          incrementCounter('search.stream_results', searchResults.results.length, {
+            has_results: searchResults.results.length > 0 ? 'true' : 'false'
+          });
 
           // Write metadata first
           await writer.write(
@@ -219,6 +271,12 @@ export class SearchController {
           }
         } catch (err) {
           this.logger.error({ err }, 'stream search error');
+          
+          // Track search error
+          incrementCounter('search.stream_error', 1, {
+            error_type: err instanceof Error ? err.name : 'unknown'
+          });
+          
           await writer.write(
             new TextEncoder().encode(
               JSON.stringify({
@@ -231,6 +289,11 @@ export class SearchController {
             ),
           );
         } finally {
+          // Stop the timer in finally block to ensure it's always recorded
+          timer.stop({
+            success: 'false',
+            error: 'true'
+          });
           writer.close();
         }
       })();
@@ -241,7 +304,13 @@ export class SearchController {
     } catch (error) {
       this.logger.error({ err: error }, 'stream search setup error');
 
+      // Track stream search setup error with metrics
+      incrementCounter('search.stream_setup_error', 1, {
+        error_type: error instanceof Error ? error.name : 'unknown'
+      });
+
       if (error instanceof z.ZodError) {
+        incrementCounter('search.stream_validation_error', 1);
         return c.json(
           {
             success: false,
@@ -255,6 +324,7 @@ export class SearchController {
         );
       }
 
+      incrementCounter('search.stream_unexpected_error', 1);
       return c.json(
         {
           success: false,

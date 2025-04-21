@@ -60,7 +60,8 @@ describe('ChatService', () => {
         score: 0.95,
         createdAt: 1650000000000,
         updatedAt: 1650000000000,
-        contentType: 'text/plain',
+        category: 'note',
+        mimeType: 'text/plain',
       },
       {
         id: 'note2',
@@ -69,7 +70,8 @@ describe('ChatService', () => {
         score: 0.85,
         createdAt: 1650000100000,
         updatedAt: 1650000100000,
-        contentType: 'text/plain',
+        category: 'note',
+        mimeType: 'text/plain',
       },
     ],
     pagination: {

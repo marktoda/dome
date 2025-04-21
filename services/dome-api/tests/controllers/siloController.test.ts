@@ -42,7 +42,8 @@ describe('SiloController', () => {
     id: 'note-123',
     title: 'Test Note',
     body: 'This is a test note',
-    contentType: 'note' as const, // Use const assertion to make TypeScript recognize this as a literal type
+    category: 'note' as const, // Use const assertion to make TypeScript recognize this as a literal type
+    mimeType: 'text/markdown' as const,
     createdAt: 1617235678000,
     updatedAt: 1617235678000,
     userId: mockUserId,
@@ -93,7 +94,8 @@ describe('SiloController', () => {
       // Arrange
       const mockBody = {
         body: 'This is a test note',
-        contentType: 'text/plain',
+        category: 'note',
+        mimeType: 'text/plain',
       };
 
       const mockContext = createMockContext({
@@ -105,7 +107,8 @@ describe('SiloController', () => {
 
       vi.mocked(siloService.simplePut).mockResolvedValue({
         id: 'note-123',
-        contentType: 'note' as const,
+        category: 'note' as const,
+        mimeType: 'text/markdown' as const,
         size: 100,
         createdAt: Date.now(),
       });
@@ -131,7 +134,8 @@ describe('SiloController', () => {
         userId: mockUserId,
         body: {
           // Missing required body field
-          contentType: 'text/plain',
+          category: 'note',
+          mimeType: 'text/plain',
         },
         path: '/api/notes',
         method: 'POST',
@@ -268,7 +272,8 @@ describe('SiloController', () => {
           ...mockNote,
           id: 'note-456',
           title: 'Another Note',
-          contentType: 'note' as const,
+          category: 'note' as const,
+          mimeType: 'text/markdown' as const,
         },
       ];
       vi.mocked(siloService.getContentsAsNotes).mockResolvedValue(mockNotes);
@@ -318,7 +323,8 @@ describe('SiloController', () => {
       // Arrange
       const mockBody = {
         content: 'This is a test note content',
-        contentType: 'text/plain',
+        category: 'note',
+        mimeType: 'text/plain',
         title: 'Test Note Title',
       };
 
@@ -331,7 +337,8 @@ describe('SiloController', () => {
 
       vi.mocked(siloService.simplePut).mockResolvedValue({
         id: 'note-123',
-        contentType: 'text/plain',
+        category: 'note' as const,
+        mimeType: 'text/plain' as const,
         size: 100,
         createdAt: Date.now(),
       });
@@ -345,7 +352,8 @@ describe('SiloController', () => {
         mockEnv,
         expect.objectContaining({
           body: mockBody.content,
-          contentType: mockBody.contentType,
+          category: mockBody.category,
+          mimeType: mockBody.mimeType,
           userId: mockUserId,
         }),
       );
@@ -367,7 +375,8 @@ describe('SiloController', () => {
         userId: mockUserId,
         body: {
           // Missing required content field
-          contentType: 'text/plain',
+          category: 'note',
+          mimeType: 'text/plain',
         },
         path: '/api/notes/ingest',
         method: 'POST',
@@ -429,12 +438,14 @@ describe('SiloController', () => {
         .mockResolvedValueOnce({
           ...mockNote,
           ...mockBody,
-          contentType: 'note' as const,
+          category: 'note' as const,
+          mimeType: 'text/markdown' as const,
         }); // Second call for updated note
 
       vi.mocked(siloService.simplePut).mockResolvedValue({
         id: 'note-123',
-        contentType: 'text/plain',
+        category: 'note' as const,
+        mimeType: 'text/plain' as const,
         size: 100,
         createdAt: Date.now(),
       });

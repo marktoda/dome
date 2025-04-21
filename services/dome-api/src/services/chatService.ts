@@ -20,6 +20,7 @@ export interface ChatOptions {
   enhanceWithContext?: boolean;
   maxContextItems?: number;
   includeSourceInfo?: boolean;
+  suggestAddCommand?: boolean;
 }
 
 /**
@@ -88,7 +89,7 @@ export class ChatService {
       }
 
       // Call Workers AI
-      const response = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
+      const response = await env.AI.run('@cf/meta/llama-3-8b-instruct-fast', {
         messages: promptMessages,
       });
 

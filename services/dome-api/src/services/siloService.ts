@@ -2,7 +2,8 @@ import { Bindings } from '../types';
 import { ServiceError } from '@dome/common';
 import { getLogger } from '@dome/logging';
 import {
-  ContentType,
+  ContentCategory,
+  MimeType,
   SiloSimplePutInput,
   SiloCreateUploadInput,
   SiloBatchGetInput,
@@ -237,13 +238,13 @@ export class SiloService {
    * List notes for a user with optional filtering
    *
    * @param env - Cloudflare Workers environment bindings
-   * @param options - List options including contentType, limit, and offset
+   * @param options - List options including category, limit, and offset
    * @param userId - User ID for access control
    * @returns Promise resolving to an array of notes with count and total
    */
   async listNotes(
     env: Bindings,
-    options: { contentType?: string; limit?: number; offset?: number },
+    options: { category?: string; limit?: number; offset?: number },
     userId?: string,
   ) {
     try {
@@ -251,13 +252,13 @@ export class SiloService {
         throw new Error('User ID is required for listing notes');
       }
 
-      const { contentType, limit = 50, offset = 0 } = options;
+      const { category, limit = 50, offset = 0 } = options;
 
       // Use the batchGet method with empty IDs array to list all notes for the user
       const response = await this.batchGet(env, {
         ids: [], // Empty array triggers listing all notes for the user
         userId,
-        contentType,
+        category,
         limit,
         offset,
       });
@@ -325,7 +326,8 @@ export class SiloService {
       userId: item.userId || null,
       title: title,
       body: item.body || '',
-      contentType: item.contentType as ContentType,
+      category: item.category,
+      mimeType: item.mimeType,
       size: item.size,
       createdAt: item.createdAt * 1000, // Convert seconds to milliseconds
       updatedAt: item.createdAt * 1000, // Use same timestamp for updatedAt initially

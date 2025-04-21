@@ -49,9 +49,15 @@ export class ListCommand implements CommandHandler {
     try {
       this.setStatus(` {bold}Status:{/bold} Loading ${type}...`);
 
+      // Show a loading message
+      this.addMessage(`{gray-fg}Fetching ${type} from the server...{/gray-fg}`);
+      
       const response = type === 'notes' ? await listNotes() : await listTasks();
+      
+      // Update status to show we're processing the data
+      this.setStatus(` {bold}Status:{/bold} Processing ${type}...`);
 
-      // The response should already be an array from our updated API functions
+      // Ensure we have an array of items, even if the API response format changes
       const items = Array.isArray(response) ? response : [];
 
       if (items.length === 0) {
@@ -114,12 +120,26 @@ export class ListCommand implements CommandHandler {
           }
         });
       }
+      
+      // Update status to show completion
+      this.setStatus(` {bold}Status:{/bold} ${items.length} ${type} listed successfully`);
     } catch (err) {
-      this.addMessage(
-        `{red-fg}Error listing ${type}: ${
-          err instanceof Error ? err.message : String(err)
-        }{/red-fg}`,
-      );
+      // Provide more detailed error information for debugging
+      this.addMessage(`{red-fg}Error listing ${type}:{/red-fg}`);
+      
+      if (err instanceof Error) {
+        this.addMessage(`{red-fg}Message: ${err.message}{/red-fg}`);
+        if (err.stack) {
+          this.addMessage(`{gray-fg}Stack: ${err.stack.split('\n')[0]}{/gray-fg}`);
+        }
+      } else {
+        this.addMessage(`{red-fg}${String(err)}{/red-fg}`);
+      }
+      
+      this.addMessage('{yellow-fg}Try again later or contact support if the issue persists.{/yellow-fg}');
+      
+      // Update status to show error
+      this.setStatus(` {bold}Status:{/bold} {red-fg}Error listing ${type}{/red-fg}`);
     }
   }
 }

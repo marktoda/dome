@@ -160,8 +160,17 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
   const endpoint = type === 'notes' ? '/notes' : '/tasks';
   const response = await api.get(endpoint, { params });
 
-  // Return the full response object
-  return response;
+  // Extract the items array from the response
+  // The API might return items in different properties based on the type
+  if (type === 'notes') {
+    return Array.isArray(response.notes) ? response.notes :
+           Array.isArray(response.items) ? response.items :
+           Array.isArray(response) ? response : [];
+  } else {
+    return Array.isArray(response.tasks) ? response.tasks :
+           Array.isArray(response.items) ? response.items :
+           Array.isArray(response) ? response : [];
+  }
 }
 
 /**

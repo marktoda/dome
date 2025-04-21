@@ -12,7 +12,8 @@ export interface SearchOptions {
   query: string;
   limit?: number;
   offset?: number;
-  contentType?: string;
+  category?: string;
+  mimeType?: string;
   startDate?: number;
   endDate?: number;
 }
@@ -24,7 +25,8 @@ export interface SearchResult {
   id: string;
   title: string;
   body: string;
-  contentType: string;
+  category: string;
+  mimeType: string;
   createdAt: number;
   updatedAt: number;
   score: number;
@@ -71,14 +73,15 @@ export class SearchService {
    */
   async searchNotes(env: Bindings, options: SearchOptions): Promise<PaginatedSearchResults> {
     try {
-      const { userId, query, limit = 10, offset = 0, contentType, startDate, endDate } = options;
+      const { userId, query, limit = 10, offset = 0, category, mimeType, startDate, endDate } = options;
 
       this.logger.debug('Searching notes', {
         userId,
         query,
         limit,
         offset,
-        contentType,
+        category,
+        mimeType,
         startDate,
         endDate,
       });
@@ -188,12 +191,17 @@ export class SearchService {
       let filteredResults = contents
         .filter(note => {
           // Skip notes with missing required fields
-          if (!note.id || !note.contentType) {
+          if (!note.id || !note.category) {
             return false;
           }
 
-          // Apply content type filter if specified
-          if (contentType && note.contentType !== contentType) {
+          // Apply category filter if specified
+          if (category && note.category !== category) {
+            return false;
+          }
+          
+          // Apply MIME type filter if specified
+          if (mimeType && note.mimeType !== mimeType) {
             return false;
           }
 
@@ -211,7 +219,7 @@ export class SearchService {
         })
         .map(note => {
           // Ensure all required fields are present
-          if (!note.id || !note.contentType) {
+          if (!note.id || !note.category) {
             throw new Error('Note is missing required fields');
           }
 
@@ -222,7 +230,8 @@ export class SearchService {
             id: note.id,
             title: note.title || '',
             body: note.body || '',
-            contentType: note.contentType,
+            category: note.category,
+            mimeType: note.mimeType || 'text/plain',
             createdAt: createdAt,
             updatedAt: updatedAt,
             score: scoreMap.get(note.id) || 0,
@@ -287,8 +296,8 @@ export class SearchService {
    * @returns Cache key string
    */
   private generateCacheKey(options: SearchOptions): string {
-    const { userId, query, limit = 10, offset = 0, contentType, startDate, endDate } = options;
-    return `${userId}:${query}:${limit}:${offset}:${contentType || ''}:${startDate || ''}:${
+    const { userId, query, limit = 10, offset = 0, category, mimeType, startDate, endDate } = options;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''}:${
       endDate || ''
     }`;
   }

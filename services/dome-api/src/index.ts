@@ -10,6 +10,7 @@ import {
 } from '@dome/common';
 import { userIdMiddleware } from './middleware/userIdMiddleware';
 import { initLogging, getLogger } from '@dome/logging';
+import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
 import { searchController } from './controllers/searchController';
 import { chatController } from './controllers/chatController';
@@ -26,7 +27,10 @@ const serviceInfo: ServiceInfo = {
 const app = new Hono<{ Bindings: Bindings }>();
 
 // Register middleware
-// Request timing middleware
+// Metrics middleware (should be first to accurately measure request timing)
+app.use('*', metricsMiddleware());
+
+// Request logging middleware
 app.use('*', async (c, next) => {
   const startTime = Date.now();
   getLogger().info(
@@ -60,6 +64,12 @@ initLogging(app, {
   extraBindings: { ...serviceInfo },
 }); // Initialize logging with service info
 
+// Initialize metrics with service info
+initMetrics({
+  VERSION: serviceInfo.version,
+  ENVIRONMENT: serviceInfo.environment,
+});
+
 // Log application startup
 getLogger().info('Application starting');
 app.use('*', cors());
@@ -80,11 +90,27 @@ app.get('/', c => {
 // Health check endpoint
 app.get('/health', c => {
   getLogger().info({ path: '/health' }, 'Health check endpoint accessed');
+  
+  // Start a timer for the health check
+  const timer = metrics.startTimer('health.check');
+  
+  // Track health check with metrics
+  metrics.trackHealthCheck('ok', 0, 'api');
+  
+  // Stop the timer and get the duration
+  const duration = timer.stop();
+  
   return c.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     service: serviceInfo.name,
     version: serviceInfo.version,
+    metrics: {
+      counters: {
+        requests: metrics.getCounter('api.request'),
+        errors: metrics.getCounter('api.error')
+      }
+    }
   });
 });
 
@@ -136,6 +162,12 @@ app.notFound(c => {
     'Route not found',
   );
 
+  // Track 404 with metrics
+  metrics.counter('error.not_found', 1, {
+    path: c.req.path,
+    method: c.req.method,
+  });
+
   return c.json(
     {
       success: false,
@@ -161,6 +193,13 @@ app.onError((err, c) => {
     },
     'Unhandled error',
   );
+
+  // Track error with metrics
+  metrics.counter('error.unhandled', 1, {
+    path: c.req.path,
+    method: c.req.method,
+    error_type: err.name || 'Unknown',
+  });
 
   return c.json(
     {

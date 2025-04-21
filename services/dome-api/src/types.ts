@@ -64,4 +64,6 @@ export type Bindings = {
   AI?: WorkersAI; // Optional to support testing environments
   CONSTELLATION?: ConstellationService; // Optional to support testing environments
   SILO: SiloService; // Silo service binding
+  VERSION?: string; // Version of the service
+  ENVIRONMENT?: string; // Environment (development, staging, production)
 };

@@ -41,7 +41,8 @@ describe('ConstellationService', () => {
       score: 0.95,
       metadata: {
         userId: mockUserId,
-        contentType: 'note',
+        category: 'note',
+        mimeType: 'text/markdown',
         contentId: 'note-123',
         createdAt: Math.floor(Date.now() / 1000),
         version: 1,
@@ -52,7 +53,8 @@ describe('ConstellationService', () => {
       score: 0.85,
       metadata: {
         userId: mockUserId,
-        contentType: 'note',
+        category: 'note',
+        mimeType: 'text/markdown',
         contentId: 'note-456',
         createdAt: Math.floor(Date.now() / 1000),
         version: 1,

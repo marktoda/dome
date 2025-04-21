@@ -70,7 +70,8 @@ describe('Search API Integration Tests', () => {
         score: 0.95,
         createdAt: 1617235678000,
         updatedAt: 1617235678000,
-        contentType: 'text/plain',
+        category: 'note',
+        mimeType: 'text/plain',
       },
       {
         id: 'note-456',
@@ -79,7 +80,8 @@ describe('Search API Integration Tests', () => {
         score: 0.85,
         createdAt: 1617235679000,
         updatedAt: 1617235679000,
-        contentType: 'text/plain',
+        category: 'note',
+        mimeType: 'text/plain',
       },
     ],
     pagination: {

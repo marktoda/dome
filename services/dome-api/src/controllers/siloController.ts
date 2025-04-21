@@ -5,14 +5,15 @@ import { zValidator } from '@hono/zod-validator';
 import { siloService } from '../services/siloService';
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { getLogger } from '@dome/logging';
-import { ServiceError, siloSimplePutSchema, siloCreateUploadSchema } from '@dome/common';
+import { ServiceError, siloSimplePutSchema, siloCreateUploadSchema, ContentCategory } from '@dome/common';
 
 /**
  * Validation schemas for Silo endpoints
  */
 const ingestSchema = z.object({
   content: z.string().min(1, 'Content is required'),
-  contentType: z.string().default('text/plain'),
+  category: z.string().default('note'),
+  mimeType: z.string().default('text/markdown'),
   title: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
   tags: z.array(z.string()).optional(),
@@ -21,12 +22,13 @@ const ingestSchema = z.object({
 const updateNoteSchema = z.object({
   title: z.string().optional(),
   body: z.string().optional(),
-  contentType: z.string().optional(),
+  category: z.string().optional(),
+  mimeType: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
 });
 
 const listNotesSchema = z.object({
-  contentType: z.string().optional(),
+  category: z.string().optional(),
   limit: z.coerce.number().int().positive().optional().default(50),
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
@@ -305,7 +307,8 @@ export class SiloController {
       // Note: We can't directly pass metadata to simplePut, so we'll need to retrieve and update the note after creation
       const result = await siloService.simplePut(c.env, {
         content: validatedData.content,
-        contentType: validatedData.contentType as any,
+        category: (validatedData.category || 'note') as ContentCategory,
+        mimeType: validatedData.mimeType || 'text/markdown',
         userId,
       });
 
@@ -396,7 +399,8 @@ export class SiloController {
       await siloService.simplePut(c.env, {
         id: noteId,
         content: updatedNote.body || '',
-        contentType: (updatedNote.contentType || 'text/plain') as any,
+        category: (updatedNote.category || 'note') as ContentCategory,
+        mimeType: updatedNote.mimeType || 'text/markdown',
         userId,
       });
 
