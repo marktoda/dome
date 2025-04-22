@@ -113,14 +113,10 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async c =>
       logger.info({ syncPlanId, userId }, 'User attached to sync‑plan');
     }
 
-    // Initialise the resource (no‑op if already initialised)
     const created = await syncPlan.initializeResource(
       { resourceId, providerType: ProviderType.GITHUB, userId },
       /* cadenceSecs = */ 3_600,
     );
-
-    // Sync regardless
-    await syncPlan.syncResource(resourceId, ProviderType.GITHUB, userId);
 
     logger.info(
       { syncPlanId, resourceId, created },

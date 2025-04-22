@@ -14,7 +14,15 @@
 // Configuration
 const TSUNAMI_API_URL = 'https://tsunami.chatter-9999.workers.dev'; // Deployed tsunami service URL
 const REPOSITORIES = [
+  { owner: 'uniswap', repo: 'v2-core' },
+  { owner: 'uniswap', repo: 'v2-periphery' },
+  { owner: 'uniswap', repo: 'v3-core' },
+  { owner: 'uniswap', repo: 'v3-periphery' },
+  { owner: 'uniswap', repo: 'v4-core' },
+  { owner: 'uniswap', repo: 'v4-periphery' },
+  { owner: 'uniswap', repo: 'universal-router' },
   { owner: 'uniswap', repo: 'permit2' },
+  { owner: 'uniswap', repo: 'uniswapx' },
 ];
 
 /**
@@ -84,7 +92,6 @@ async function registerRepository(owner: string, repo: string): Promise<void> {
         );
       }
     }
-
     console.log(`✅ Successfully registered ${owner}/${repo}`);
     console.log(`   ID: ${data.id}`);
     console.log(`   Resource ID: ${data.resourceId}`);

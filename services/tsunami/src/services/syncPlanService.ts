@@ -54,13 +54,10 @@ export class SyncPlanService {
       const obj = this.getDurableObject(resourceId);
 
       // If `info()` succeeds we assume the object already exists.
-      try {
-        const { resourceId: configResourceId } = obj.info();
-        getLogger().info({ resourceId }, 'resource already exists');
-        if (resourceId === configResourceId) return false;
-      } catch {
-        /* falls through to create */
-      }
+      const { resourceId: configResourceId } = obj.info();
+      getLogger().info({ resourceId, configResourceId }, 'Initialize: Resource id');
+      if (resourceId === configResourceId) throw new Error(`Resource already exists: ${resourceId}`);
+
       console.log(`Initializing new resource object ${resourceId}`);
       await obj.initialize({
         userIds: userId ? [userId] : [],

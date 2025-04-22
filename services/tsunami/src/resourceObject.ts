@@ -55,7 +55,7 @@ export class ResourceObject extends DurableObject<Bindings> {
   async initialize(init: Partial<Config>) {
     this.cfg = Object.assign({}, DEFAULT_CFG, init);
     await this.updateCfg(init);
-    await this.schedule();
+    await this.scheduleNow();
     this.log.info(this.cfg, 'resource initialised');
   }
 
@@ -147,6 +147,10 @@ export class ResourceObject extends DurableObject<Bindings> {
   private async getSyncPlanId() {
     const rec = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, this.cfg.resourceId);
     return rec?.id ?? ulid();
+  }
+
+  private async scheduleNow() {
+    await this.ctx.storage.setAlarm(Date.now());
   }
 
   private async schedule() {
