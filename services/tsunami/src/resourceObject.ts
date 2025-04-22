@@ -8,14 +8,13 @@
  */
 
 import { DurableObject } from 'cloudflare:workers';
-import { SiloService, createSiloService } from './services/siloService'
-import { getLogger, metrics } from '@dome/logging';
+import { SiloService, createSiloService } from './services/siloService';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { ProviderType, GithubProvider, Provider } from './providers';
 
 const CADENCE_SEC = 'cadenceSec';
 const DEFAULT_CADENCE_SEC = 3600;
 const RESOURCE_CONFIG_KEY = 'resourceConfig';
-
 
 /**
  * Configuration for a ResourceObject
@@ -33,7 +32,7 @@ type ResourceObjectConfig = {
   cursor: string;
   /** Resource identifier (e.g., owner/repo for GitHub) */
   resourceId: string;
-}
+};
 
 /**
  * Default configuration for a new ResourceObject
@@ -44,7 +43,7 @@ const DEFAULT_RESOURCE_CONFIG: ResourceObjectConfig = {
   providerType: ProviderType.GITHUB,
   cursor: '',
   resourceId: '',
-}
+};
 
 /**
  * ResourceObject Durable Object
@@ -68,7 +67,10 @@ export class ResourceObject extends DurableObject<Env> {
       // Try to load existing config or initialize a new one
       try {
         this.config = await this.getConfig();
-        getLogger().info({ resourceId: this.config.resourceId }, 'Loaded existing ResourceObject config');
+        getLogger().info(
+          { resourceId: this.config.resourceId },
+          'Loaded existing ResourceObject config',
+        );
       } catch (error) {
         // Config doesn't exist yet, we'll initialize it when needed
         getLogger().info('No existing ResourceObject config found');
@@ -101,7 +103,7 @@ export class ResourceObject extends DurableObject<Env> {
     await this.ctx.storage.put(RESOURCE_CONFIG_KEY, this.config);
 
     // Set up the first alarm
-    await this.ctx.storage.setAlarm(Date.now() + (this.config.cadenceSecs * 1000));
+    await this.ctx.storage.setAlarm(Date.now() + this.config.cadenceSecs * 1000);
 
     getLogger().info({ config: this.config }, 'ResourceObject initialized');
   }
@@ -117,7 +119,10 @@ export class ResourceObject extends DurableObject<Env> {
    */
   async sync(): Promise<void> {
     const logger = getLogger();
-    logger.info({ resourceId: this.config.resourceId, cursor: this.config.cursor }, 'Starting sync');
+    logger.info(
+      { resourceId: this.config.resourceId, cursor: this.config.cursor },
+      'Starting sync',
+    );
     const { userId, providerType, resourceId, cursor } = this.config;
 
     let provider: Provider;
@@ -135,7 +140,7 @@ export class ResourceObject extends DurableObject<Env> {
 
     try {
       // Pull content from the provider
-      const contents = await provider.pull({
+      const { contents, newCursor } = await provider.pull({
         userId,
         resourceId,
         cursor,
@@ -143,38 +148,25 @@ export class ResourceObject extends DurableObject<Env> {
 
       logger.info({ resourceId, contentCount: contents.length }, 'Fetched content from provider');
 
+      if (newCursor) {
+        // Update the cursor in the config
+        await this.updateConfig({ cursor: newCursor });
+
+        logger.info({ resourceId, oldCursor: cursor, newCursor }, 'Updated cursor');
+      }
+
       if (contents.length > 0) {
         // Upload content to Silo
         const contentIds = await this.silo.upload(contents);
         logger.info({ resourceId, contentIds }, 'Content uploaded to Silo');
-
-        // Get the latest commit SHA from the first content item's metadata
-        // This assumes the provider returns contents sorted by newest first
-        if (contents[0]?.metadata?.commitSha) {
-          const newCursor = contents[0].metadata.commitSha as string;
-
-          // Update the cursor in the config
-          await this.updateConfig({ cursor: newCursor });
-
-          logger.info({ resourceId, oldCursor: cursor, newCursor }, 'Updated cursor');
-        }
       } else {
         logger.info({ resourceId }, 'No new content to sync');
       }
 
       metrics.increment('tsunami.sync.success', 1);
-
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error({ error, resourceId, errorMessage }, 'Error during sync');
+      logError(error, 'Error during sync', { resourceId });
       metrics.increment('tsunami.sync.error', 1);
-
-      // Handle rate limiting errors specially
-      if (errorMessage.includes('rate limit exceeded')) {
-        logger.warn({ resourceId, errorMessage }, 'GitHub API rate limit exceeded, will retry at next scheduled sync');
-        // Don't rethrow - this allows the alarm to be set for the next attempt
-        return;
-      }
 
       // For other errors, rethrow to propagate to the caller
       throw error;
@@ -192,7 +184,7 @@ export class ResourceObject extends DurableObject<Env> {
   async alarm(alarmInfo: AlarmInvocationInfo): Promise<void> {
     getLogger().info(alarmInfo, 'Durable object alarm info');
     this.sync();
-    await this.ctx.storage.setAlarm(Date.now() + (this.config.cadenceSecs * 1000));
+    await this.ctx.storage.setAlarm(Date.now() + this.config.cadenceSecs * 1000);
   }
 
   /**

@@ -8,7 +8,12 @@
  * @module types
  */
 
-import { SiloCreateUploadInput, SiloCreateUploadResponse, SiloBatchGetInput, SiloBatchGetResponse } from '@dome/common';
+import {
+  SiloSimplePutInput,
+  SiloSimplePutResponse,
+  SiloBatchGetInput,
+  SiloBatchGetResponse,
+} from '@dome/common';
 
 /**
  * Silo Service Interface
@@ -25,14 +30,8 @@ export interface SiloService {
    * @returns Batch get response with content items
    */
   batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
-  
-  /**
-   * Create an upload URL for R2 storage
-   *
-   * @param data - Upload creation parameters
-   * @returns Upload response with pre-signed URL and form data
-   */
-  createUpload(data: SiloCreateUploadInput): Promise<SiloCreateUploadResponse>;
+
+  simplePut(data: SiloSimplePutInput): Promise<SiloSimplePutResponse>;
 }
 
 /**

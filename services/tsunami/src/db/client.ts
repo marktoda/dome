@@ -32,17 +32,21 @@ export const syncPlanOperations = {
    * @param data - The sync plan data
    * @returns The created sync plan
    */
-  async create(db: D1Database, data: {
-    id: string;
-    userId: string;
-    provider: string;
-    resourceId: string;
-  }) {
+  async create(
+    db: D1Database,
+    data: {
+      id: string;
+      userId: string;
+      provider: string;
+      resourceId: string;
+    },
+  ) {
     const logger = getLogger();
     const client = createDbClient(db);
 
     try {
-      const result = await client.insert(syncPlans)
+      const result = await client
+        .insert(syncPlans)
         .values({
           id: data.id,
           userId: data.userId,
@@ -54,6 +58,7 @@ export const syncPlanOperations = {
       logger.info({ id: data.id }, 'Sync plan created');
       return result[0];
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ error, data }, 'Error creating sync plan');
       throw error;
     }

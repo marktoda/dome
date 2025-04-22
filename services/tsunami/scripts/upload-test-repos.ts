@@ -1,10 +1,10 @@
 /**
  * Upload Test Repositories Script
- * 
+ *
  * This script adds initial public GitHub repositories to the Tsunami service
  * for testing and development purposes. It uses the Tsunami API to register
  * repositories for syncing.
- * 
+ *
  * Usage:
  *   npx tsx scripts/upload-test-repos.ts
  */
@@ -57,10 +57,10 @@ function sleep(ms: number): Promise<void> {
  */
 async function registerRepository(owner: string, repo: string): Promise<void> {
   console.log(`Registering repository: ${owner}/${repo}...`);
-  
+
   let retries = 0;
   let lastError: Error | null = null;
-  
+
   while (retries < MAX_RETRIES) {
     try {
       const response = await fetch(`${TSUNAMI_API_URL}/resource/github`, {
@@ -74,22 +74,28 @@ async function registerRepository(owner: string, repo: string): Promise<void> {
           // Using default cadence (1 hour)
         }),
       });
-      
-      const data = await response.json() as RepositoryResponse;
-      
+
+      const data = (await response.json()) as RepositoryResponse;
+
       if (!response.ok) {
         // Handle specific error cases
         if (response.status === 429) {
-          throw new Error(`GitHub API rate limit exceeded. Please try again later or add a GitHub token.`);
+          throw new Error(
+            `GitHub API rate limit exceeded. Please try again later or add a GitHub token.`,
+          );
         } else if (response.status === 403) {
-          throw new Error(`Access to GitHub repository is forbidden. Please check repository permissions or add a GitHub token.`);
+          throw new Error(
+            `Access to GitHub repository is forbidden. Please check repository permissions or add a GitHub token.`,
+          );
         } else if (response.status === 404) {
           throw new Error(`GitHub repository not found. Please check the owner and repo name.`);
         } else {
-          throw new Error(`Failed to register repository: ${data.message || data.error || response.statusText}`);
+          throw new Error(
+            `Failed to register repository: ${data.message || data.error || response.statusText}`,
+          );
         }
       }
-      
+
       console.log(`✅ Successfully registered ${owner}/${repo}`);
       console.log(`   ID: ${data.id}`);
       console.log(`   Resource ID: ${data.resourceId}`);
@@ -97,14 +103,18 @@ async function registerRepository(owner: string, repo: string): Promise<void> {
     } catch (error) {
       lastError = error as Error;
       retries++;
-      
+
       if (retries < MAX_RETRIES) {
-        console.warn(`⚠️ Attempt ${retries} failed for ${owner}/${repo}. Retrying in ${RETRY_DELAY/1000} seconds...`);
+        console.warn(
+          `⚠️ Attempt ${retries} failed for ${owner}/${repo}. Retrying in ${
+            RETRY_DELAY / 1000
+          } seconds...`,
+        );
         await sleep(RETRY_DELAY);
       }
     }
   }
-  
+
   console.error(`❌ Error registering ${owner}/${repo} after ${MAX_RETRIES} attempts:`, lastError);
   throw lastError;
 }
@@ -116,25 +126,27 @@ async function main() {
   console.log('Starting repository upload to Tsunami...');
   console.log(`Using Tsunami API at: ${TSUNAMI_API_URL}`);
   console.log('-------------------------------------------');
-  
+
   // Register each repository sequentially
   for (const repo of REPOSITORIES) {
     try {
       await registerRepository(repo.owner, repo.repo);
     } catch (error) {
       // Log error but continue with other repositories
-      console.error(`Failed to register ${repo.owner}/${repo.repo}. Continuing with next repository.`);
+      console.error(
+        `Failed to register ${repo.owner}/${repo.repo}. Continuing with next repository.`,
+      );
     }
-    
+
     // Longer delay between repositories to avoid rate limiting
     await sleep(3000);
   }
-  
+
   console.log('-------------------------------------------');
   console.log('Repository upload complete!');
-  
+
   // Always show helpful message about rate limiting
-  console.log('\nIf you\'re seeing rate limit errors, consider:');
+  console.log("\nIf you're seeing rate limit errors, consider:");
   console.log('1. Adding a GitHub token to .dev.vars (GITHUB_TOKEN=your_token)');
   console.log('2. Reducing the number of repositories in the REPOSITORIES array');
   console.log('3. Increasing the delay between requests');

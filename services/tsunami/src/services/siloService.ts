@@ -6,22 +6,8 @@
  *
  * @module services/siloService
  */
-
-import { getLogger, metrics } from '@dome/logging';
-import { z } from 'zod';
-import {
-  SiloSimplePutInput,
-  SiloCreateUploadResponse,
-  SiloEmbedJob,
-  ContentCategory,
-  MimeType,
-  NewContentMessageSchema,
-  NewContentMessage,
-} from '@dome/common';
+import { SiloSimplePutInput, SiloSimplePutResponse } from '@dome/common';
 import { SiloService as SiloBinding } from '../types';
-
-/** Expiration time for upload URLs in seconds (10 minutes) */
-const UPLOAD_EXPIRATION_SECONDS = 600;
 
 /**
  * Silo Service Client
@@ -34,7 +20,7 @@ const UPLOAD_EXPIRATION_SECONDS = 600;
 export class SiloService {
   /** Silo service binding */
   private silo: SiloBinding;
-  
+
   /**
    * Create a new SiloService
    *
@@ -51,14 +37,8 @@ export class SiloService {
    * @returns Array of content IDs
    */
   async upload(contents: SiloSimplePutInput[]): Promise<string[]> {
-    const contentIds: string[] = [];
-    
-    for (const content of contents) {
-      const id = await this.uploadSingle(content);
-      contentIds.push(id);
-    }
-    
-    return contentIds;
+    const results = await Promise.all(contents.map(c => this.uploadSingle(c)));
+    return results.map(r => r.id);
   }
 
   /**
@@ -70,57 +50,8 @@ export class SiloService {
    * @returns Content ID
    * @throws Error if the upload fails
    */
-  async uploadSingle(content: SiloSimplePutInput) {
-    const size = typeof content.content === 'string' ? content.content.length : content.content.byteLength;
-
-    const { id, uploadUrl, formData, expiresIn } = await this.silo.createUpload({
-      category: content.category,
-      mimeType: content.mimeType,
-      size,
-      metadata: content.metadata,
-      expirationSeconds: UPLOAD_EXPIRATION_SECONDS,
-      userId: content.userId,
-    });
-
-    getLogger().info({ id, uploadUrl }, 'Upload single data!');
-
-    try {
-      // Create a FormData object for the upload
-      const form = new FormData();
-      
-      // Add all the form fields from the formData object
-      for (const [key, value] of Object.entries(formData)) {
-        form.append(key, value);
-      }
-      
-      // Add the content as the file data
-      // The key 'file' is typically used for the file field in R2 pre-signed POST policies
-      const blob = typeof content.content === 'string'
-        ? new Blob([content.content], { type: content.mimeType })
-        : new Blob([content.content], { type: content.mimeType });
-      
-      form.append('file', blob);
-      
-      // Send the POST request to the uploadUrl
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        body: form,
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload failed with status ${response.status}: ${errorText}`);
-      }
-      
-      metrics.increment('tsunami.silo.upload.success', 1);
-      getLogger().info({ id, size }, 'Content uploaded successfully to R2');
-      
-      return id;
-    } catch (error) {
-      metrics.increment('tsunami.silo.upload.error', 1);
-      getLogger().error({ error, id }, 'Error uploading content to R2');
-      throw error;
-    }
+  async uploadSingle(content: SiloSimplePutInput): Promise<SiloSimplePutResponse> {
+    return await this.silo.simplePut(content);
   }
 }
 

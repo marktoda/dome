@@ -139,14 +139,14 @@ Tsunami uses a minimal database schema to track repositories for syncing. The de
 
 ### sync_plan Table
 
-| Column        | Type    | Description                                |
-|---------------|---------|--------------------------------------------|
-| id            | TEXT    | Primary key (ULID)                         |
-| user_id       | TEXT    | User ID who owns this sync plan            |
-| provider      | TEXT    | Provider type (e.g., 'github')             |
-| resource_id   | TEXT    | Resource identifier (e.g., 'owner/repo')   |
-| next_run      | INTEGER | Next scheduled run time (epoch ms)         |
-| created_at    | INTEGER | Creation timestamp                         |
+| Column      | Type    | Description                              |
+| ----------- | ------- | ---------------------------------------- |
+| id          | TEXT    | Primary key (ULID)                       |
+| user_id     | TEXT    | User ID who owns this sync plan          |
+| provider    | TEXT    | Provider type (e.g., 'github')           |
+| resource_id | TEXT    | Resource identifier (e.g., 'owner/repo') |
+| next_run    | INTEGER | Next scheduled run time (epoch ms)       |
+| created_at  | INTEGER | Creation timestamp                       |
 
 ## Drizzle ORM Integration
 
@@ -186,6 +186,7 @@ POST /resource/github
 ```
 
 Request body:
+
 ```json
 {
   "userId": "user-id",
@@ -202,6 +203,7 @@ GET /resource/github/:owner/:repo/history
 ```
 
 Query parameters:
+
 - `limit`: Maximum number of history entries to return (default: 10)
 
 ### Direct Durable Object Initialization
@@ -213,6 +215,7 @@ POST /do/:resourceId/initialize
 ```
 
 Request body:
+
 ```json
 {
   "userId": "anonymous",
@@ -224,6 +227,7 @@ Request body:
 ```
 
 Example:
+
 ```bash
 curl -X POST https://tsunami.chatter-9999.workers.dev/do/uniswap/v4-core/initialize \
   -H "Content-Type: application/json" \
@@ -265,3 +269,7 @@ POST /do/:resourceId/initialize
 ```
 
 Or use the `upload-test-repos.ts` script with the `USE_DIRECT_DO_INITIALIZATION` flag set to `true`.
+
+# TODO
+
+- use an ingest queue between tsunami and silo

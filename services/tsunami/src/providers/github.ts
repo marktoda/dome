@@ -9,7 +9,7 @@
  */
 
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
-import { Provider, PullOpts } from '.';
+import { Provider, PullOpts, PullResult } from '.';
 import { getLogger, metrics } from '@dome/logging';
 
 /**
@@ -17,9 +17,9 @@ import { getLogger, metrics } from '@dome/logging';
  */
 const GITHUB_API_URL = 'https://api.github.com';
 const DEFAULT_HEADERS: Record<string, string> = {
-  'Accept': 'application/vnd.github.v3+json',
+  Accept: 'application/vnd.github.v3+json',
   'X-GitHub-Api-Version': '2022-11-28',
-  'User-Agent': 'Tsunami-Service/1.0.0 (+https://github.com/dome/tsunami)'
+  'User-Agent': 'Tsunami-Service/1.0.0 (+https://github.com/dome/tsunami)',
 };
 /** Maximum file size to process (1MB) */
 const MAX_FILE_SIZE = 1 * 1024 * 1024;
@@ -167,12 +167,15 @@ export class GithubProvider implements Provider {
     const rateLimitReset = response.headers.get('x-ratelimit-reset');
 
     if (rateLimitRemaining) {
-      this.logger.info({
-        url,
-        rateLimitRemaining,
-        rateLimitReset,
-        authenticated: !!this.token
-      }, 'GitHub API rate limit info');
+      this.logger.info(
+        {
+          url,
+          rateLimitRemaining,
+          rateLimitReset,
+          authenticated: !!this.token,
+        },
+        'GitHub API rate limit info',
+      );
     }
 
     // Clone the response before reading it to avoid "Body has already been used" errors
@@ -185,10 +188,14 @@ export class GithubProvider implements Provider {
 
       // Handle specific error cases
       if (response.status === 403) {
-        const resetTime = rateLimitReset ? new Date(parseInt(rateLimitReset) * 1000).toISOString() : 'unknown';
+        const resetTime = rateLimitReset
+          ? new Date(parseInt(rateLimitReset) * 1000).toISOString()
+          : 'unknown';
 
         if (rateLimitRemaining === '0') {
-          throw new Error(`GitHub API rate limit exceeded. Resets at ${resetTime}. Consider adding a GitHub token.`);
+          throw new Error(
+            `GitHub API rate limit exceeded. Resets at ${resetTime}. Consider adding a GitHub token.`,
+          );
         } else {
           // Could be other 403 reasons
           throw new Error(`GitHub API access forbidden (403): ${responseBody}`);
@@ -199,10 +206,14 @@ export class GithubProvider implements Provider {
     }
 
     try {
-      return await response.json() as T;
+      return (await response.json()) as T;
     } catch (error) {
       this.logger.error({ url, error }, 'Failed to parse JSON response from GitHub API');
-      throw new Error(`Failed to parse GitHub API response: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to parse GitHub API response: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -217,7 +228,7 @@ export class GithubProvider implements Provider {
    * @returns Array of SiloSimplePutInput objects
    * @throws Error if the pull operation fails
    */
-  async pull(opts: PullOpts): Promise<SiloSimplePutInput[]> {
+  async pull(opts: PullOpts): Promise<PullResult> {
     const { userId, resourceId, cursor } = opts;
     const startTime = Date.now();
 
@@ -232,16 +243,22 @@ export class GithubProvider implements Provider {
 
       // Log whether we're using authentication or not
       if (!this.token) {
-        this.logger.warn({ resourceId }, 'No GitHub token found, making unauthenticated requests (subject to lower rate limits: 60 req/hr vs 5000 req/hr)');
+        this.logger.warn(
+          { resourceId },
+          'No GitHub token found, making unauthenticated requests (subject to lower rate limits: 60 req/hr vs 5000 req/hr)',
+        );
       } else {
-        this.logger.info({ resourceId }, 'Using GitHub token for authentication (5000 req/hr rate limit)');
+        this.logger.info(
+          { resourceId },
+          'Using GitHub token for authentication (5000 req/hr rate limit)',
+        );
       }
 
       // Fetch commits since cursor
       const commits = await this.fetchCommitsSinceCursor(owner, repo, cursor);
       if (commits.length === 0) {
         this.logger.info({ resourceId }, 'No new commits found');
-        return [];
+        return { contents: [], newCursor: null };
       }
 
       this.logger.info({ resourceId, commitCount: commits.length }, 'Found new commits');
@@ -283,7 +300,7 @@ export class GithubProvider implements Provider {
               authorEmail: commit.commit.author.email,
               commitDate: commit.commit.author.date,
               htmlUrl: `https://github.com/${owner}/${repo}/blob/${commit.sha}/${file.filename}`,
-            }
+            },
           });
         }
       }
@@ -298,7 +315,7 @@ export class GithubProvider implements Provider {
       const newCursor = commits[0].sha;
       this.logger.info({ resourceId, newCursor }, 'New cursor for next pull');
 
-      return results;
+      return { contents: results, newCursor };
     } catch (error) {
       metrics.increment('github.pull.errors', 1);
       this.logger.error({ error, userId, resourceId }, 'Error pulling from GitHub');
@@ -319,7 +336,7 @@ export class GithubProvider implements Provider {
   private async fetchCommitsSinceCursor(
     owner: string,
     repo: string,
-    cursor: string | null
+    cursor: string | null,
   ): Promise<GitHubCommit[]> {
     // If no cursor is provided, fetch only the latest commit
     if (!cursor) {
@@ -345,7 +362,7 @@ export class GithubProvider implements Provider {
   private async fetchFilesFromCommit(
     owner: string,
     repo: string,
-    commitSha: string
+    commitSha: string,
   ): Promise<GitHubFile[]> {
     const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits/${commitSha}`;
     const commitData = await this.fetchFromGitHub<{ files?: GitHubFile[] }>(url);
@@ -366,7 +383,7 @@ export class GithubProvider implements Provider {
     owner: string,
     repo: string,
     path: string,
-    commitSha: string
+    commitSha: string,
   ): Promise<string | null> {
     const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/contents/${path}?ref=${commitSha}`;
 
@@ -387,13 +404,16 @@ export class GithubProvider implements Provider {
     } catch (error) {
       // Don't treat file content fetch failures as fatal
       // Just log and continue with other files
-      this.logger.warn({
-        owner,
-        repo,
-        path,
-        commitSha,
-        error: error instanceof Error ? error.message : String(error)
-      }, 'Failed to fetch file content');
+      this.logger.warn(
+        {
+          owner,
+          repo,
+          path,
+          commitSha,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to fetch file content',
+      );
       return null;
     }
   }

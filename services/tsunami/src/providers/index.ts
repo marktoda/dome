@@ -35,6 +35,11 @@ export type PullOpts = {
   cursor: string | null;
 };
 
+export type PullResult = {
+  contents: SiloSimplePutInput[];
+  newCursor: string | null;
+};
+
 /**
  * Provider Interface
  *
@@ -53,7 +58,7 @@ export interface Provider {
    * @param opts - Pull options including userId, resourceId, and cursor
    * @returns Array of SiloSimplePutInput objects
    */
-  pull(opts: PullOpts): Promise<SiloSimplePutInput[]>;
+  pull(opts: PullOpts): Promise<PullResult>;
 }
 
 // Export provider implementations

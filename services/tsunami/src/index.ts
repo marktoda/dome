@@ -12,18 +12,17 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { zValidator } from '@hono/zod-validator';
-import { ServiceInfo } from '@dome/common';
+import { ServiceInfo, createErrorMiddleware, formatZodError } from '@dome/common';
 import { z } from 'zod';
 import { ulid } from 'ulid';
 
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { createSiloService } from './services/siloService';
 import { syncPlanOperations } from './db/client';
 import { Bindings } from './types';
 import { ProviderType } from './providers';
 
 export { ResourceObject } from './resourceObject';
-
 
 /**
  * Build service clients for the Tsunami worker
@@ -43,6 +42,7 @@ const serviceInfo: ServiceInfo = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 app.use(cors());
+app.use('*', createErrorMiddleware(formatZodError));
 
 // Initialize logging with service info
 const logger = getLogger();
@@ -51,14 +51,16 @@ logger.info({ ...serviceInfo }, 'Initializing Tsunami service');
 // Add error handling middleware
 app.onError((err, c) => {
   logger.error({ error: err }, 'Request error');
-  return c.json({
-    success: false,
-    error: err.message || 'Unknown error'
-  }, 500);
+  return c.json(
+    {
+      success: false,
+      error: err.message || 'Unknown error',
+    },
+    500,
+  );
 });
 
-
-app.get('/', c => c.text('Hello from Tsunami!'))
+app.get('/', c => c.text('Hello from Tsunami!'));
 
 /**
  * Schema for GitHub repository registration
@@ -70,11 +72,11 @@ const githubRepoSchema = z.object({
   /** User ID who owns this sync plan */
   userId: z.string().optional(),
   /** Repository owner (organization or user) */
-  owner: z.string().min(1, "Repository owner is required"),
+  owner: z.string().min(1, 'Repository owner is required'),
   /** Repository name */
-  repo: z.string().min(1, "Repository name is required"),
+  repo: z.string().min(1, 'Repository name is required'),
   /** Sync frequency in ISO 8601 duration format, default 1 hour */
-  cadence: z.string().default("PT1H"),
+  cadence: z.string().default('PT1H'),
 });
 
 /**
@@ -87,7 +89,7 @@ const githubRepoSchema = z.object({
  * @param {Object} body - The request body containing repository details
  * @returns {Object} Response with success status and repository details
  */
-app.post('/resource/github', zValidator('json', githubRepoSchema), async (c) => {
+app.post('/resource/github', zValidator('json', githubRepoSchema), async c => {
   const logger = getLogger();
   const data = c.req.valid('json');
   const { userId, owner, repo, cadence } = data;
@@ -122,52 +124,15 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async (c) => 
       success: true,
       id,
       resourceId,
-      message: `GitHub repository ${resourceId} registered for syncing`
+      message: `GitHub repository ${resourceId} registered for syncing`,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error({ error, resourceId, errorMessage }, 'Error registering GitHub repository');
+    logError(error, 'Error registering GitHub repository');
     metrics.increment('tsunami.register.errors', 1);
-    
-    // Determine appropriate response message based on error type
-    let responseMessage = 'Failed to register GitHub repository';
-    
-    if (errorMessage.includes('rate limit exceeded')) {
-      responseMessage = 'GitHub API rate limit exceeded. Please try again later or add a GitHub token.';
-      return c.json({
-        success: false,
-        error: responseMessage,
-        message: errorMessage,
-        resourceId
-      }, 429); // Too Many Requests
-    } else if (errorMessage.includes('forbidden') || errorMessage.includes('403')) {
-      responseMessage = 'Access to GitHub repository is forbidden. Please check repository permissions or add a GitHub token.';
-      return c.json({
-        success: false,
-        error: responseMessage,
-        message: errorMessage,
-        resourceId
-      }, 403); // Forbidden
-    } else if (errorMessage.includes('not found') || errorMessage.includes('404')) {
-      responseMessage = 'GitHub repository not found. Please check the owner and repo name.';
-      return c.json({
-        success: false,
-        error: responseMessage,
-        message: errorMessage,
-        resourceId
-      }, 404); // Not Found
-    }
-    
-    // Default error response
-    return c.json({
-      success: false,
-      error: responseMessage,
-      message: errorMessage,
-      resourceId
-    }, 500);
-  }
-})
 
+    throw error;
+  }
+});
 
 /* -------------------------------------------------------------------------- */
 /* worker                                                                     */
@@ -193,4 +158,3 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async (c) => 
 // }
 //
 export default app;
-
