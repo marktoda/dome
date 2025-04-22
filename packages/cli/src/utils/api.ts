@@ -220,9 +220,10 @@ export async function showItem(id: string): Promise<any> {
 }
 
 /**
- * Search across stored content
+ * Search across all stored content types
  * @param query The search query
- * @returns The response data
+ * @param limit Maximum number of results to return
+ * @returns The response data with results from all content types
  */
 export async function search(query: string, limit: number = 10): Promise<any> {
   const params = {

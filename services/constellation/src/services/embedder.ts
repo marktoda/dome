@@ -21,7 +21,7 @@ export interface EmbedderConfig {
  */
 export const DEFAULT_EMBEDDER_CONFIG: EmbedderConfig = {
   model: '@cf/baai/bge-small-en-v1.5',
-  maxBatchSize: 20, // Workers AI limit
+  maxBatchSize: 10, // Reduced from 20 to prevent memory issues
   retryAttempts: 3,
   retryDelay: 1000, // ms
 };
@@ -155,11 +155,30 @@ export class Embedder {
    */
   private async processBatches(batches: string[][]): Promise<number[][]> {
     const results: number[][] = [];
-    for (const batch of batches) {
-      getLogger().debug({ batchSize: batch.length }, 'Processing embedding batch');
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      getLogger().debug(
+        {
+          batchIndex: i + 1,
+          totalBatches: batches.length,
+          batchSize: batch.length,
+        },
+        'Processing embedding batch',
+      );
+
       const batchResults = await this.embedBatch(batch);
       results.push(...batchResults);
+
+      // Clear references to help garbage collection
+      batches[i] = [];
+
+      // Add a small delay between batches to allow for garbage collection
+      if (i < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
     }
+
     return results;
   }
 

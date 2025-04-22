@@ -6,10 +6,10 @@ compatibility_flags = ["nodejs_als"]
 # Queue consumer configuration
 [[queues.consumers]]
 queue = "new-content-constellation"
-max_batch_size = 10
+max_batch_size = 5  # Reduced from 10 to prevent memory issues
 max_batch_timeout = 5
 max_retries = 3
-max_concurrency = 5
+max_concurrency = 3  # Reduced to lower concurrent processing
 dead_letter_queue = "embed-dead-letter"
 
 # Dead letter queue producer

@@ -20,6 +20,14 @@ queue = "new-content-constellation"
 binding = "NEW_CONTENT_AI"
 queue = "new-content-ai"
 
+[[queues.producers]]
+binding = "INGEST_DLQ"
+queue = "ingest-dlq"
+
+[[queues.producers]]
+binding = "INGEST_QUEUE"
+queue = "ingest-queue"
+
 [[queues.consumers]]
 queue = "content-events"
 
@@ -31,6 +39,12 @@ queue = "ingest-queue"
 max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 3
+dead_letter_queue = "ingest-dead-letter"
+
+[[queues.consumers]]
+queue = "ingest-dead-letter"
+max_batch_size = 5
+max_batch_timeout = 10
 
 [vars]
 LOG_LEVEL = "info"

@@ -5,12 +5,13 @@ import { isAuthenticated } from '../utils/config';
 
 /**
  * Register the search command
+ * This command searches across all content types, not just notes
  * @param program The commander program
  */
 export function searchCommand(program: Command): void {
   program
     .command('search')
-    .description('Search across stored content')
+    .description('Search across all stored content types')
     .argument('<query>', 'Search query')
     .option('-l, --limit <limit>', 'Maximum number of results to return', '10')
     .action(async (query: string, options: { limit: string }) => {

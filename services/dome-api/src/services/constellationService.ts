@@ -144,7 +144,16 @@ export class ConstellationService {
    * @param topK - Number of results to return
    * @returns Promise resolving to search results with note IDs and scores
    */
-  async searchNotes(
+  /**
+   * Search for content using semantic search
+   *
+   * @param env - Cloudflare Workers environment bindings
+   * @param query - Search query text
+   * @param userId - User ID to filter results by
+   * @param topK - Number of results to return
+   * @returns Promise resolving to search results with content IDs and scores
+   */
+  async searchContent(
     env: Bindings,
     query: string,
     userId: string,
@@ -157,7 +166,7 @@ export class ConstellationService {
           userId,
           topK,
         },
-        'searchNotes called',
+        'searchContent called',
       );
 
       const filter: Partial<VectorMeta> = { userId };
@@ -233,18 +242,37 @@ export class ConstellationService {
 
       return mappedResults;
     } catch (error) {
-      this.logger.error('Failed to search notes', {
+      this.logger.error('Failed to search content', {
         query,
         userId,
         topK,
         error: error instanceof Error ? error.message : String(error),
       });
 
-      throw new ServiceError('Failed to search notes', {
+      throw new ServiceError('Failed to search content', {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: { query, userId, topK },
       });
     }
+  }
+
+  /**
+   * Search for notes using semantic search (alias for searchContent for backward compatibility)
+   *
+   * @param env - Cloudflare Workers environment bindings
+   * @param query - Search query text
+   * @param userId - User ID to filter results by
+   * @param topK - Number of results to return
+   * @returns Promise resolving to search results with note IDs and scores
+   * @deprecated Use searchContent instead
+   */
+  async searchNotes(
+    env: Bindings,
+    query: string,
+    userId: string,
+    topK: number = DEFAULT_TOP_K,
+  ): Promise<Array<{ contentId: string; score: number }>> {
+    return this.searchContent(env, query, userId, topK);
   }
 
   /**

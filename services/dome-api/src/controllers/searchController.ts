@@ -91,7 +91,7 @@ export class SearchController {
   private logger = getLogger();
 
   /**
-   * JSON search endpoint
+   * JSON search endpoint for all content types
    * @param c Hono context
    * @returns Response with search results
    */
@@ -191,7 +191,7 @@ export class SearchController {
   }
 
   /**
-   * NDJSON streaming search endpoint
+   * NDJSON streaming search endpoint for all content types
    * @param c Hono context
    * @returns Streaming response with search results
    */

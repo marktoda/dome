@@ -105,7 +105,10 @@ export class VectorizeService {
           })),
         );
         metrics.increment('vectorize.upsert.success');
-        getLogger().debug({ batchSize: batch.length }, 'Successfully upserted batch to Vectorize');
+        getLogger().info(
+          { batchSize: batch.length, first: batch[0] },
+          'Successfully upserted batch to Vectorize',
+        );
         return;
       } catch (err) {
         metrics.increment('vectorize.upsert.errors');

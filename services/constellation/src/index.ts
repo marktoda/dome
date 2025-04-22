@@ -67,41 +67,129 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   private async embedBatch(jobs: SiloEmbedJob[], deadQueue?: DeadQueue): Promise<number> {
     let processed = 0;
+    const MAX_CHUNKS_PER_BATCH = 50; // Limit chunks processed at once
+    const MAX_TEXT_LENGTH = 100000; // Limit text size to prevent memory issues
 
+    // Process jobs one at a time to avoid memory issues
     for (const job of jobs) {
       const span = metrics.startTimer('process_job');
       try {
         const { preprocessor, embedder, vectorize } = this.services;
 
-        const chunks = preprocessor.process(job.text);
+        // Truncate extremely large texts to prevent memory issues
+        const truncatedText =
+          job.text.length > MAX_TEXT_LENGTH ? job.text.substring(0, MAX_TEXT_LENGTH) : job.text;
+
+        if (truncatedText.length < job.text.length) {
+          getLogger().warn(
+            {
+              originalLength: job.text.length,
+              truncatedLength: truncatedText.length,
+              contentId: job.contentId,
+            },
+            'Text truncated to prevent memory issues',
+          );
+        }
+
+        // Process the text into chunks
+        const chunks = preprocessor.process(truncatedText);
         if (chunks.length === 0) {
           getLogger().warn({ job }, 'no text');
           continue;
         }
 
-        getLogger().info({ chunks: chunks.length }, 'preprocesed chunks');
-        const vecs = (await embedder.embed(chunks)).map((v, i) => ({
-          id: `content:${job.contentId}:${i}`,
-          values: v,
-          metadata: <VectorMeta>{
-            userId: job.userId,
+        getLogger().info(
+          {
+            chunks: chunks.length,
+            textLength: truncatedText.length,
             contentId: job.contentId,
-            category: job.category,
-            mimeType: job.mimeType,
-            createdAt: Math.floor(job.created / 1000),
-            version: job.version,
           },
-        }));
+          'preprocessed chunks',
+        );
 
-        await vectorize.upsert(vecs);
-        getLogger().info({ vectorCount: vecs.length, vectors: vecs }, 'upserted vectors');
+        // Process chunks in smaller batches to avoid memory issues
+        let allVectors: { id: string; values: number[]; metadata: VectorMeta }[] = [];
+
+        for (let i = 0; i < chunks.length; i += MAX_CHUNKS_PER_BATCH) {
+          const batchChunks = chunks.slice(i, i + MAX_CHUNKS_PER_BATCH);
+
+          getLogger().debug(
+            {
+              batchIndex: Math.floor(i / MAX_CHUNKS_PER_BATCH) + 1,
+              totalBatches: Math.ceil(chunks.length / MAX_CHUNKS_PER_BATCH),
+              batchSize: batchChunks.length,
+              contentId: job.contentId,
+            },
+            'Processing chunk batch',
+          );
+
+          // Generate embeddings for this batch of chunks
+          const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
+            id: `content:${job.contentId}:${i + idx}`,
+            values: v,
+            metadata: <VectorMeta>{
+              userId: job.userId,
+              contentId: job.contentId,
+              category: job.category,
+              mimeType: job.mimeType,
+              createdAt: Math.floor(job.created / 1000),
+              version: job.version,
+            },
+          }));
+
+          allVectors = allVectors.concat(batchVectors);
+
+          // Force garbage collection between batches by breaking reference
+          batchChunks.length = 0;
+
+          // Add a small delay between batches to allow for garbage collection
+          if (i + MAX_CHUNKS_PER_BATCH < chunks.length) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
+        }
+
+        // Upsert vectors in smaller batches
+        const UPSERT_BATCH_SIZE = 100;
+        for (let i = 0; i < allVectors.length; i += UPSERT_BATCH_SIZE) {
+          const upsertBatch = allVectors.slice(i, i + UPSERT_BATCH_SIZE);
+          await vectorize.upsert(upsertBatch);
+
+          getLogger().debug(
+            {
+              upsertBatchIndex: Math.floor(i / UPSERT_BATCH_SIZE) + 1,
+              totalUpsertBatches: Math.ceil(allVectors.length / UPSERT_BATCH_SIZE),
+              batchSize: upsertBatch.length,
+              contentId: job.contentId,
+            },
+            'Upserting vector batch',
+          );
+        }
+
+        getLogger().info(
+          {
+            vectorCount: allVectors.length,
+            contentId: job.contentId,
+            textLength: truncatedText.length,
+          },
+          'upserted vectors',
+        );
+
         processed += 1;
+
+        // Clear references to large objects to help garbage collection
+        chunks.length = 0;
+        allVectors.length = 0;
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        getLogger().error({ err, job }, 'embed failed');
+        getLogger().error({ err, contentId: job.contentId }, 'embed failed');
         await sendToDeadLetter(deadQueue, { err: String(err), job });
       } finally {
         span.stop();
+      }
+
+      // Add a delay between jobs to allow for garbage collection
+      if (jobs.indexOf(job) < jobs.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
 

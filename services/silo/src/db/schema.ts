@@ -14,6 +14,22 @@ export const contents = sqliteTable('contents', {
   summary: text('summary'),
 });
 
+export const dlqMetadata = sqliteTable('dlq_metadata', {
+  id: text('id').primaryKey(),
+  originalMessageId: text('original_message_id').notNull(),
+  queueName: text('queue_name').notNull(),
+  errorMessage: text('error_message').notNull(),
+  errorName: text('error_name').notNull(),
+  failedAt: integer('failed_at').notNull(),
+  retryCount: integer('retry_count').notNull(),
+  reprocessed: integer('reprocessed', { mode: 'boolean' }).default(false),
+  reprocessedAt: integer('reprocessed_at'),
+  recoveryResult: text('recovery_result'),
+  originalMessageType: text('original_message_type').notNull(),
+  originalMessageJson: text('original_message_json').notNull(),
+});
+
 export const schema = {
   contents,
+  dlqMetadata,
 };

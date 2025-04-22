@@ -19,8 +19,8 @@ export interface PreprocessorConfig {
  * Default configuration values
  */
 export const DEFAULT_PREPROCESSOR_CONFIG: PreprocessorConfig = {
-  maxChunkSize: 8000, // Maximum characters per chunk (Workers AI limit)
-  overlapSize: 200, // Character overlap between chunks
+  maxChunkSize: 4000, // Reduced from 8000 to prevent memory issues
+  overlapSize: 100, // Reduced from 200 to save memory
   minChunkSize: 100, // Minimum chunk size to process
 };
 

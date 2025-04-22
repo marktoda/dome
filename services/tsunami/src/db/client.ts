@@ -8,9 +8,10 @@
  */
 
 import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { getLogger, logError } from '@dome/logging';
-import { syncPlans } from './schema';
+import { syncPlans, syncHistory } from './schema';
+import { ulid } from 'ulid';
 
 /**
  * Create a Drizzle ORM client for the D1 database
@@ -140,6 +141,166 @@ export const syncPlanOperations = {
       return result[0];
     } catch (error) {
       logError(logger, error, 'Error adding user to sync plan', { id, userId });
+      throw error;
+    }
+  },
+};
+
+/**
+ * Database operations for sync history
+ */
+export const syncHistoryOperations = {
+  /**
+   * Create a new sync history entry
+   *
+   * @param db - The D1 database binding
+   * @param data - The sync history data
+   * @returns The created sync history entry
+   */
+  async create(
+    db: D1Database,
+    data: {
+      syncPlanId: string;
+      resourceId: string;
+      provider: string;
+      userId?: string;
+      startedAt: number;
+      completedAt: number;
+      previousCursor?: string;
+      newCursor?: string;
+      filesProcessed: number;
+      updatedFiles: string[];
+      status: 'success' | 'error';
+      errorMessage?: string;
+    },
+  ) {
+    const logger = getLogger();
+    const client = createDbClient(db);
+    const id = ulid();
+
+    try {
+      const result = await client
+        .insert(syncHistory)
+        .values({
+          id,
+          syncPlanId: data.syncPlanId,
+          resourceId: data.resourceId,
+          provider: data.provider,
+          userId: data.userId,
+          startedAt: data.startedAt,
+          completedAt: data.completedAt,
+          previousCursor: data.previousCursor,
+          newCursor: data.newCursor,
+          filesProcessed: data.filesProcessed,
+          updatedFiles: JSON.stringify(data.updatedFiles),
+          status: data.status,
+          errorMessage: data.errorMessage,
+        })
+        .returning();
+
+      logger.info({ id, resourceId: data.resourceId }, 'Sync history entry created');
+      return result[0];
+    } catch (error) {
+      logError(logger, error, 'Error creating sync history entry', { data });
+      throw error;
+    }
+  },
+
+  /**
+   * Get sync history for a resource
+   *
+   * @param db - The D1 database binding
+   * @param resourceId - The resource identifier
+   * @param limit - Maximum number of entries to return (default: 10)
+   * @returns Array of sync history entries
+   */
+  async getByResourceId(db: D1Database, resourceId: string, limit: number = 10) {
+    const logger = getLogger();
+    const client = createDbClient(db);
+
+    try {
+      const result = await client
+        .select()
+        .from(syncHistory)
+        .where(eq(syncHistory.resourceId, resourceId))
+        .orderBy(desc(syncHistory.startedAt))
+        .limit(limit);
+
+      logger.info({ resourceId, count: result.length }, 'Retrieved sync history for resource');
+
+      // Parse the updatedFiles JSON array for each entry
+      return result.map(entry => ({
+        ...entry,
+        updatedFiles: JSON.parse(entry.updatedFiles),
+      }));
+    } catch (error) {
+      logError(logger, error, 'Error getting sync history by resourceId', { resourceId });
+      throw error;
+    }
+  },
+
+  /**
+   * Get sync history for a user
+   *
+   * @param db - The D1 database binding
+   * @param userId - The user ID
+   * @param limit - Maximum number of entries to return (default: 10)
+   * @returns Array of sync history entries
+   */
+  async getByUserId(db: D1Database, userId: string, limit: number = 10) {
+    const logger = getLogger();
+    const client = createDbClient(db);
+
+    try {
+      const result = await client
+        .select()
+        .from(syncHistory)
+        .where(eq(syncHistory.userId, userId))
+        .orderBy(desc(syncHistory.startedAt))
+        .limit(limit);
+
+      logger.info({ userId, count: result.length }, 'Retrieved sync history for user');
+
+      // Parse the updatedFiles JSON array for each entry
+      return result.map(entry => ({
+        ...entry,
+        updatedFiles: JSON.parse(entry.updatedFiles),
+      }));
+    } catch (error) {
+      logError(logger, error, 'Error getting sync history by userId', { userId });
+      throw error;
+    }
+  },
+
+  /**
+   * Get sync history for a specific sync plan
+   *
+   * @param db - The D1 database binding
+   * @param syncPlanId - The sync plan ID
+   * @param limit - Maximum number of entries to return (default: 10)
+   * @returns Array of sync history entries
+   */
+  async getBySyncPlanId(db: D1Database, syncPlanId: string, limit: number = 10) {
+    const logger = getLogger();
+    const client = createDbClient(db);
+
+    try {
+      const result = await client
+        .select()
+        .from(syncHistory)
+        .where(eq(syncHistory.syncPlanId, syncPlanId))
+        .orderBy(desc(syncHistory.startedAt))
+        .limit(limit);
+
+      logger.info({ syncPlanId, count: result.length }, 'Retrieved sync history for sync plan');
+
+      // Parse the updatedFiles JSON array for each entry
+      return result.map(entry => ({
+        ...entry,
+        updatedFiles: JSON.parse(entry.updatedFiles),
+      }));
+    } catch (error) {
+      logError(logger, error, 'Error getting sync history by syncPlanId', { syncPlanId });
       throw error;
     }
   },

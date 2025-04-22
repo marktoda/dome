@@ -17,6 +17,7 @@ const REPOSITORIES = [
   { owner: 'uniswap', repo: 'v4-core' },
   { owner: 'uniswap', repo: 'v3-core' },
   { owner: 'uniswap', repo: 'v2-core' },
+  { owner: 'uniswap', repo: 'v4-periphery' },
   { owner: 'uniswap', repo: 'universal-router' },
   { owner: 'paradigmxyz', repo: 'reth' },
 ];

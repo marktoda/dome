@@ -1,163 +1,192 @@
 /**
- * Tsunami Service
- *
- * This service is responsible for ingesting content from external sources
- * (like GitHub repositories) and storing it in the Silo service for further
- * processing, embedding, and retrieval.
- *
- * @module tsunami
+ * Tsunami Service – simplified
  */
-
-import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { zValidator } from '@hono/zod-validator';
 import { ServiceInfo, createErrorMiddleware, formatZodError } from '@dome/common';
 import { z } from 'zod';
-import { ulid } from 'ulid';
 import { getLogger, logError, metrics } from '@dome/logging';
 import { createSiloService } from './services/siloService';
 import { createSyncPlanService } from './services/syncPlanService';
-import { syncPlanOperations } from './db/client';
+import { syncHistoryOperations } from './db/client';
 import { Bindings } from './types';
 import { ProviderType } from './providers';
 
-export { ResourceObject } from './resourceObject';
+/* ─────────── shared utils ─────────── */
 
-/**
- * Build service clients for the Tsunami worker
- *
- * @param env - The environment bindings
- * @returns An object containing service clients
- */
+const logger = getLogger(); // one logger, reused everywhere
+
+const handle = (
+  c: { json: (data: any, status?: number) => Response },
+  fn: () => Promise<Response>,
+): Promise<Response> =>
+  fn().catch(err => {
+    logError(logger, err, 'Unhandled request error');
+    return c.json({ success: false, error: err.message ?? 'Internal error' }, 500);
+  });
+
 const buildServices = (env: Bindings) => ({
   silo: createSiloService(env),
   syncPlan: createSyncPlanService(env),
 });
 
-const serviceInfo: ServiceInfo = {
-  name: 'tsunami',
-  version: '0.1.0',
-  environment: 'development',
-};
+/* ─────────── app bootstrap ─────────── */
+
+const serviceInfo: ServiceInfo = { name: 'tsunami', version: '0.1.0', environment: 'development' };
+logger.info(serviceInfo, 'Starting Tsunami service');
 
 const app = new Hono<{ Bindings: Bindings }>();
 app.use(cors());
 app.use('*', createErrorMiddleware(formatZodError));
-
-// Initialize logging with service info
-const logger = getLogger();
-logger.info({ ...serviceInfo }, 'Initializing Tsunami service');
-
-// Add error handling middleware
-app.onError((err, c) => {
-  logger.error({ error: err }, 'Request error');
-  return c.json(
-    {
-      success: false,
-      error: err.message || 'Unknown error',
-    },
-    500,
-  );
-});
-
 app.get('/', c => c.text('Hello from Tsunami!'));
 
-/**
- * Schema for GitHub repository registration
- *
- * Validates the input for registering a GitHub repository for syncing.
- * Requires owner and repo, with optional userId and cadence.
- */
+/* ─────────── schemas ─────────── */
+
 const githubRepoSchema = z.object({
-  /** User ID who owns this sync plan */
   userId: z.string().optional(),
-  /** Repository owner (organization or user) */
-  owner: z.string().min(1, 'Repository owner is required'),
-  /** Repository name */
-  repo: z.string().min(1, 'Repository name is required'),
-  /** Sync frequency in ISO 8601 duration format, default 1 hour */
+  owner: z.string().min(1),
+  repo: z.string().min(1),
   cadence: z.string().default('PT1H'),
 });
 
-/**
- * Register a GitHub repository for syncing
- *
- * This endpoint creates a new sync plan for a GitHub repository and initializes
- * a ResourceObject to manage the sync state.
- *
- * @route POST /resource/github
- * @param {Object} body - The request body containing repository details
- * @returns {Object} Response with success status and repository details
- */
-app.post('/resource/github', zValidator('json', githubRepoSchema), async c => {
-  const logger = getLogger();
-  const data = c.req.valid('json');
-  const { userId, owner, repo, cadence } = data;
-  const resourceId = `${owner}/${repo}`;
-  const services = buildServices(c.env);
-
-  try {
-    // Use the SyncPlanService to find or create a sync plan
-    const { id, isNew } = await services.syncPlan.findOrCreateSyncPlan(
-      'github',
-      resourceId,
-      userId,
-    );
-
-    // Parse cadence string to seconds (default to 1 hour)
-    // For simplicity, we're just using a fixed value here
-    const cadenceSecs = 3600;
-
-    // Initialize or sync the resource
-    const wasInitialized = await services.syncPlan.initializeOrSyncResource(
-      resourceId,
-      ProviderType.GITHUB,
-      userId,
-      cadenceSecs,
-    );
-
-    // Return appropriate response based on whether it was new or existing
-    const message = isNew
-      ? `GitHub repository ${resourceId} registered for syncing`
-      : `GitHub repository ${resourceId} already registered, added user to existing sync plan`;
-
-    logger.info({ id, resourceId, isNew, wasInitialized }, 'GitHub repository sync plan status');
-    return c.json({
-      success: true,
-      id,
-      resourceId,
-      message,
-    });
-  } catch (error) {
-    logError(logger, error, 'Error registering GitHub repository', { resourceId });
-    metrics.increment('tsunami.register.errors', 1);
-
-    throw error;
-  }
+const syncHistoryQuerySchema = z.object({
+  limit: z.coerce.number().min(1).max(100).default(10),
 });
 
-/* -------------------------------------------------------------------------- */
-/* worker                                                                     */
-/* -------------------------------------------------------------------------- */
+/* ─────────── helpers ─────────── */
 
-// /**
-//  * Tsunami Worker
-//  *
-//  * Main worker class for the Tsunami service. Handles scheduled triggers for
-//  * syncing external content sources and provides API endpoints for managing
-//  * sync plans.
-//  *
-//  * @class
-//  */
-// export default class Tsunami extends WorkerEntrypoint<Env> {
-//   /** Lazily created bundle of service clients (re‑used for every call) */
-//   private _services?: ReturnType<typeof buildServices>;
-//   private get services() {
-//     return (this._services ??= buildServices(this.env));
-//   }
-//
-//   fetch = app.fetch;
-// }
-//
+type HistoryFetcher = (env: D1Database, id: string, limit: number) => Promise<unknown[]>;
+
+/** Creates a GET route with identical body/limit/error handling logic */
+function historyRoute(path: string, idParamKey: string, fetcher: HistoryFetcher) {
+  app.get(path, zValidator('query', syncHistoryQuerySchema), async c =>
+    handle(c, async () => {
+      const params = c.req.param();
+      // Use type assertion to avoid TypeScript error
+      const id = params[idParamKey as keyof typeof params] as string;
+      const { limit } = c.req.valid('query');
+
+      const history = await fetcher(c.env.SYNC_PLAN, id, limit);
+      logger.info({ id, path, count: history.length }, 'History fetched');
+
+      return c.json({ success: true, [idParamKey]: id, history });
+    }),
+  );
+}
+
+/* ─────────── routes ─────────── */
+
+// Register GitHub repo
+app.post('/resource/github', zValidator('json', githubRepoSchema), async c =>
+  handle(c, async () => {
+    const { owner, repo, userId } = c.req.valid('json');
+
+    // Validate owner and repo
+    if (!owner || !repo) {
+      return c.json(
+        {
+          success: false,
+          error: 'Invalid owner or repo. Both must be non-empty strings.',
+        },
+        400,
+      );
+    }
+
+    const resourceId = `${owner}/${repo}`;
+    const { syncPlan } = buildServices(c.env);
+
+    logger.info({ owner, repo, resourceId, userId }, 'Registering GitHub repository');
+
+    try {
+      const { id, isNew } = await syncPlan.findOrCreateSyncPlan('github', resourceId, userId);
+
+      const wasInitialized = await syncPlan.initializeOrSyncResource(
+        resourceId,
+        ProviderType.GITHUB,
+        userId,
+        3600,
+      );
+
+      logger.info(
+        { id, resourceId, isNew, wasInitialized },
+        'GitHub repository registered successfully',
+      );
+
+      return c.json({
+        success: true,
+        id,
+        resourceId,
+        isNew,
+        wasInitialized,
+      });
+    } catch (error) {
+      logger.error(
+        {
+          owner,
+          repo,
+          resourceId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to register GitHub repository',
+      );
+
+      return c.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to register GitHub repository',
+        },
+        500,
+      );
+    }
+  }),
+);
+
+// Modified implementation for GitHub repository history
+app.get(
+  '/resource/github/:owner/:repo/history',
+  zValidator('query', syncHistoryQuerySchema),
+  async c =>
+    handle(c, async () => {
+      const params = c.req.param();
+      const owner = params.owner as string;
+      const repo = params.repo as string;
+      const { limit } = c.req.valid('query');
+
+      if (!owner || !repo) {
+        logger.error({ params }, 'Missing owner or repo parameter');
+        return c.json(
+          {
+            success: false,
+            error: 'Invalid URL format. Expected /resource/github/:owner/:repo/history',
+          },
+          400,
+        );
+      }
+
+      const resourceId = `${owner}/${repo}`;
+      logger.info({ owner, repo, resourceId }, 'Fetching history for GitHub repository');
+
+      const history = await syncHistoryOperations.getByResourceId(
+        c.env.SYNC_PLAN,
+        resourceId,
+        limit,
+      );
+
+      logger.info({ resourceId, count: history.length }, 'History fetched');
+
+      return c.json({
+        success: true,
+        owner,
+        repo,
+        resourceId,
+        history,
+      });
+    }),
+);
+
+historyRoute('/user/:userId/history', 'userId', syncHistoryOperations.getByUserId);
+
+historyRoute('/sync-plan/:syncPlanId/history', 'syncPlanId', syncHistoryOperations.getBySyncPlanId);
+
 export default app;

@@ -48,7 +48,7 @@ export interface PaginatedSearchResults {
 }
 
 /**
- * Service for searching notes using semantic search
+ * Service for searching content using semantic search
  * This service handles:
  * - Semantic search via Constellation
  * - Content retrieval via Silo
@@ -66,13 +66,13 @@ export class SearchService {
   }
 
   /**
-   * Search for notes using semantic search
+   * Search for content using semantic search
    *
    * @param env - Cloudflare Workers environment bindings
    * @param options - Search options
    * @returns Promise resolving to paginated search results
    */
-  async searchNotes(env: Bindings, options: SearchOptions): Promise<PaginatedSearchResults> {
+  async searchContent(env: Bindings, options: SearchOptions): Promise<PaginatedSearchResults> {
     try {
       const {
         userId,
@@ -85,7 +85,7 @@ export class SearchService {
         endDate,
       } = options;
 
-      this.logger.debug('Searching notes', {
+      this.logger.debug('Searching content', {
         userId,
         query,
         limit,
@@ -111,7 +111,7 @@ export class SearchService {
       }
 
       // Perform semantic search using Constellation
-      const searchResults = await constellationService.searchNotes(
+      const searchResults = await constellationService.searchContent(
         env,
         query,
         userId,
@@ -179,7 +179,7 @@ export class SearchService {
           contentIdsCount: contentIds.length,
           userId,
         },
-        'Calling siloService.getContentsAsNotes',
+        'Calling siloService.batchGet',
       );
       const contents = await siloService.batchGet(env, { ids: contentIds, userId });
       this.logger.info(
@@ -187,7 +187,7 @@ export class SearchService {
           contentsCount: contents.items.length,
           firstContentId: contents.items.length > 0 ? contents.items[0].id : null,
         },
-        'Results from siloService.getContentsAsNotes',
+        'Results from siloService.batchGet',
       );
 
       // Map content IDs to scores
@@ -280,7 +280,7 @@ export class SearchService {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      throw new ServiceError('Failed to search notes', {
+      throw new ServiceError('Failed to search content', {
         cause: error instanceof Error ? error : new Error(String(error)),
         context: { options },
       });
@@ -288,14 +288,26 @@ export class SearchService {
   }
 
   /**
-   * Search for notes (alias for searchNotes)
+   * Search for content
    *
    * @param env - Cloudflare Workers environment bindings
    * @param options - Search options
    * @returns Promise resolving to paginated search results
    */
   async search(env: Bindings, options: SearchOptions): Promise<PaginatedSearchResults> {
-    return this.searchNotes(env, options);
+    return this.searchContent(env, options);
+  }
+
+  /**
+   * Search for notes (alias for searchContent for backward compatibility)
+   *
+   * @param env - Cloudflare Workers environment bindings
+   * @param options - Search options
+   * @returns Promise resolving to paginated search results
+   * @deprecated Use searchContent instead
+   */
+  async searchNotes(env: Bindings, options: SearchOptions): Promise<PaginatedSearchResults> {
+    return this.searchContent(env, options);
   }
 
   /**

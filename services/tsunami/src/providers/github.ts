@@ -354,7 +354,7 @@ export class GithubProvider implements Provider {
       const commits = await this.fetchFromGitHub<GitHubCommit[]>(url);
       this.logger.info(
         { owner, repo, commitCount: commits.length },
-        'Fetched initial commits for repository indexing'
+        'Fetched initial commits for repository indexing',
       );
       return commits;
     }
@@ -365,25 +365,31 @@ export class GithubProvider implements Provider {
       const cursorCommitUrl = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits/${cursor}`;
       const cursorCommit = await this.fetchFromGitHub<GitHubCommit>(cursorCommitUrl);
       const cursorDate = new Date(cursorCommit.commit.author.date);
-      
+
       // Now fetch commits since that date
       const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?sha=HEAD&since=${cursorDate.toISOString()}`;
       const commits = await this.fetchFromGitHub<GitHubCommit[]>(url);
-      
+
       // Filter out the cursor commit itself (we only want newer commits)
       const filteredCommits = commits.filter(commit => commit.sha !== cursor);
-      
+
       this.logger.info(
-        { owner, repo, commitCount: filteredCommits.length, cursor, cursorDate: cursorDate.toISOString() },
-        'Fetched incremental commits since cursor'
+        {
+          owner,
+          repo,
+          commitCount: filteredCommits.length,
+          cursor,
+          cursorDate: cursorDate.toISOString(),
+        },
+        'Fetched incremental commits since cursor',
       );
       return filteredCommits;
     } catch (error) {
       this.logger.warn(
         { owner, repo, cursor, error: error instanceof Error ? error.message : String(error) },
-        'Failed to fetch cursor commit, falling back to recent commits'
+        'Failed to fetch cursor commit, falling back to recent commits',
       );
-      
+
       // If we can't get the cursor commit (it might have been force-pushed away),
       // fall back to fetching recent commits
       const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?per_page=10`;
@@ -412,7 +418,7 @@ export class GithubProvider implements Provider {
     const files = commitData.files || [];
     this.logger.info(
       { owner, repo, commitSha, fileCount: files.length },
-      'Fetched files from commit'
+      'Fetched files from commit',
     );
     return files;
   }
