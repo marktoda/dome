@@ -7,7 +7,7 @@ wrangler queues create embed-dead-letter
 wrangler queues create enriched-content
 
 wrangler d1 create silo
-wrangler d1 create github-ingestor
+wrangler d1 create sync-plan
 
 wrangler r2 bucket notification create silo-content  --event-type object-create  --queue content-events
 
