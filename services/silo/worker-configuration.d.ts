@@ -11,7 +11,7 @@ declare namespace Cloudflare {
     NEW_CONTENT_CONSTELLATION: Queue;
     NEW_CONTENT_AI: Queue;
     INGEST_DLQ: Queue;
-    INGEST_QUEUE: Queue;
+    SILO_INGEST_QUEUE: Queue;
   }
 }
 interface Env extends Cloudflare.Env {}

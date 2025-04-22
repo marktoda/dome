@@ -10,7 +10,7 @@ bucket_name = "silo-content"
 [[d1_databases]]
 binding = "DB"
 database_name = "silo"
-database_id = "9d6e9f55-05c6-4181-aa4d-0d7a3477396d"
+database_id = "7c27dffe-a198-4c42-b678-3eaf981c435f"
 
 [[queues.producers]]
 binding = "NEW_CONTENT_CONSTELLATION"
@@ -25,17 +25,17 @@ binding = "INGEST_DLQ"
 queue = "ingest-dlq"
 
 [[queues.producers]]
-binding = "INGEST_QUEUE"
-queue = "ingest-queue"
+binding = "SILO_INGEST_QUEUE"
+queue = "silo-ingest-queue"
 
 [[queues.consumers]]
-queue = "content-events"
+queue = "silo-content-uploaded"
 
 [[queues.consumers]]
 queue = "enriched-content"
 
 [[queues.consumers]]
-queue = "ingest-queue"
+queue = "silo-ingest-queue"
 max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 3

@@ -53,7 +53,7 @@ describe('DLQService', () => {
           run: vi.fn().mockResolvedValue({}),
         }),
       },
-      INGEST_QUEUE: mockIngestQueue,
+      SILO_INGEST_QUEUE: mockIngestQueue,
       INGEST_DLQ: mockIngestDLQ,
     };
 
@@ -80,7 +80,7 @@ describe('DLQService', () => {
         processingMetadata: {
           failedAt: Date.now(),
           retryCount: 3,
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           messageId: 'original-message-id',
         },
         recovery: {
@@ -96,7 +96,7 @@ describe('DLQService', () => {
       expect(mockDb.values).toHaveBeenCalledWith({
         id: 'test-uuid-123456',
         originalMessageId: 'original-message-id',
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         errorMessage: 'Test error message',
         errorName: 'TestError',
         failedAt: testMessage.processingMetadata.failedAt,
@@ -124,7 +124,7 @@ describe('DLQService', () => {
         processingMetadata: {
           failedAt: Date.now(),
           retryCount: 3,
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           messageId: 'original-message-id',
         },
         recovery: {
@@ -144,7 +144,7 @@ describe('DLQService', () => {
         {
           id: 'dlq-1',
           originalMessageId: 'original-1',
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           errorMessage: 'Error 1',
           errorName: 'ValidationError',
           failedAt: 1650000000000,
@@ -158,7 +158,7 @@ describe('DLQService', () => {
         {
           id: 'dlq-2',
           originalMessageId: 'original-2',
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           errorMessage: 'Error 2',
           errorName: 'ProcessingError',
           failedAt: 1650000001000,
@@ -203,7 +203,7 @@ describe('DLQService', () => {
 
       // Call the method with filter options
       const filterOptions = {
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         errorType: 'ValidationError',
         reprocessed: false,
         startDate: 1650000000000,
@@ -245,7 +245,7 @@ describe('DLQService', () => {
         // First call is for queue counts
         if (mockDb.all.mock.calls.length === 1) {
           return Promise.resolve([
-            { queueName: 'ingest-queue', count: 7 },
+            { queueName: 'silo-ingest-queue', count: 7 },
             { queueName: 'enriched-content', count: 3 },
           ]);
         }
@@ -269,7 +269,7 @@ describe('DLQService', () => {
       expect(result.reprocessedMessages).toBe(3);
       expect(result.pendingMessages).toBe(7);
       expect(result.byQueueName).toEqual({
-        'ingest-queue': 7,
+        'silo-ingest-queue': 7,
         'enriched-content': 3,
       });
       expect(result.byErrorType).toEqual({
@@ -319,7 +319,7 @@ describe('DLQService', () => {
       const mockMessage = {
         id: 'dlq-1',
         originalMessageId: 'original-1',
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         errorMessage: 'Error 1',
         errorName: 'ValidationError',
         failedAt: 1650000000000,
@@ -349,11 +349,11 @@ describe('DLQService', () => {
       expect(mockDb.set).toHaveBeenCalledWith({
         reprocessed: true,
         reprocessedAt: expect.any(Number),
-        recoveryResult: 'Successfully requeued to ingest-queue',
+        recoveryResult: 'Successfully requeued to silo-ingest-queue',
       });
 
       // Verify the result
-      expect(result).toBe('Successfully requeued to ingest-queue');
+      expect(result).toBe('Successfully requeued to silo-ingest-queue');
     });
 
     it('should handle message not found', async () => {
@@ -371,7 +371,7 @@ describe('DLQService', () => {
       const mockMessage = {
         id: 'dlq-1',
         originalMessageId: 'original-1',
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         errorMessage: 'Error 1',
         errorName: 'ValidationError',
         failedAt: 1650000000000,
@@ -437,7 +437,7 @@ describe('DLQService', () => {
       const mockMessage = {
         id: 'dlq-1',
         originalMessageId: 'original-1',
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         errorMessage: 'Error 1',
         errorName: 'ValidationError',
         failedAt: 1650000000000,
@@ -470,7 +470,7 @@ describe('DLQService', () => {
       // Mock reprocessMessage to return success for first message and error for second
       vi.spyOn(dlqService, 'reprocessMessage').mockImplementation(id => {
         if (id === 'dlq-1') {
-          return Promise.resolve('Successfully requeued to ingest-queue');
+          return Promise.resolve('Successfully requeued to silo-ingest-queue');
         } else {
           return Promise.reject(new Error('Reprocessing error'));
         }
@@ -485,7 +485,7 @@ describe('DLQService', () => {
 
       // Verify the result contains success and error messages
       expect(result).toEqual({
-        'dlq-1': 'Successfully requeued to ingest-queue',
+        'dlq-1': 'Successfully requeued to silo-ingest-queue',
         'dlq-2': 'Error: Reprocessing error',
       });
     });
@@ -513,7 +513,7 @@ describe('DLQService', () => {
 
       // Call the method with filter options
       const filterOptions = {
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         errorType: 'ValidationError',
         reprocessed: true,
       };
@@ -547,7 +547,7 @@ describe('DLQService', () => {
       const error = new Error('Test error');
       error.name = 'TestError';
       const metadata = {
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         messageId: 'original-message-id',
         retryCount: 3,
         producerService: 'test-service',
@@ -567,7 +567,7 @@ describe('DLQService', () => {
         processingMetadata: {
           failedAt: expect.any(Number),
           retryCount: 3,
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           messageId: 'original-message-id',
           producerService: 'test-service',
         },
@@ -597,7 +597,7 @@ describe('DLQService', () => {
       const originalMessage = { content: 'test content' };
       const error = new Error('Test error');
       const metadata = {
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         messageId: 'original-message-id',
         retryCount: 3,
       };
@@ -620,7 +620,7 @@ describe('DLQService', () => {
       const originalMessage = { content: 'test content' };
       const error = new Error('Test error');
       const metadata = {
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         messageId: 'original-message-id',
         retryCount: 3,
       };

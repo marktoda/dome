@@ -49,7 +49,7 @@ describe('DLQ Monitoring Job', () => {
       pendingMessages: 40,
       byQueueName: {
         'ingest-queue': 30,
-        'content-events': 20,
+        'silo-content-uploaded': 20,
       },
       byErrorType: {
         ConnectionError: 25,
@@ -81,7 +81,7 @@ describe('DLQ Monitoring Job', () => {
       queue: 'ingest-queue',
     });
     expect(metrics.gauge).toHaveBeenCalledWith('dome_cron.dlq.queue_messages', 20, {
-      queue: 'content-events',
+      queue: 'silo-content-uploaded',
     });
 
     // Verify error-specific metrics
@@ -107,7 +107,7 @@ describe('DLQ Monitoring Job', () => {
       pendingMessages: 130,
       byQueueName: {
         'ingest-queue': 100,
-        'content-events': 50,
+        'silo-content-uploaded': 50,
       },
       byErrorType: {
         ConnectionError: 60, // Exceeds DLQ_ERROR_TYPE_THRESHOLD of 50

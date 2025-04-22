@@ -87,7 +87,7 @@ describe('Silo Service', () => {
       BUCKET: {},
       DB: {},
       NEW_CONTENT: {},
-      CONTENT_EVENTS: {},
+      SILO_CONTENT_UPLOADED: {},
       LOG_LEVEL: 'info',
       VERSION: '1.0.0',
       ENVIRONMENT: 'test',

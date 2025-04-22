@@ -1,15 +1,27 @@
-wrangler queues create ingest-queue
-wrangler queues create ingest-dlq
-wrangler queues create content-events
+// anybody -> silo
+wrangler queues create silo-ingest-queue
+
+// r2 -> silo
+wrangler queues create silo-content-uploaded
+
+// silo -> constellation
 wrangler queues create new-content-constellation
+// silo -> ai
 wrangler queues create new-content-ai
+
+// constellation <> constellation
 wrangler queues create embed-dead-letter
+// silo <> silo
+wrangler queues create ingest-dlq
+
+// ai -> silo
 wrangler queues create enriched-content
 
 wrangler d1 create silo
 wrangler d1 create sync-plan
 
-wrangler r2 bucket notification create silo-content  --event-type object-create  --queue content-events
+wrangler r2 bucket create silo-content
+wrangler r2 bucket notification create silo-content  --event-type object-create  --queue silo-content-uploaded
 
 wrangler vectorize create dome-notes --dimensions=768 --metric=cosine
 wrangler vectorize create-metadata-index dome-notes --property-name userId  --type string

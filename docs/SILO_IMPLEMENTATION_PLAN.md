@@ -25,7 +25,7 @@ graph TD
 
   subgraph Silo
     SiloHTTP -- write D1 · sign form --> D1[(SQLite)] & R2
-    R2 -- object-create --> OCQ[CONTENT_EVENTS queue]
+    R2 -- object-create --> OCQ[SILO_CONTENT_UPLOADED queue]
     OCQ -- worker.consume --> OCW(ObjectCreated handler)
     OCW -->|INSERT| D1
     OCW -->|send| FanOutQ[NEW_CONTENT queue]
@@ -53,7 +53,7 @@ Set up the project structure, configure Cloudflare resources, and establish the 
    ├── src/
    │   ├── index.ts        # Main entry point with RPC handlers
    │   ├── queue/
-   │   │   └── content-events.ts
+   │   │   └── silo-content-uploaded.ts
    │   ├── db/
    │   │   ├── schema.ts
    │   │   └── migrations/
@@ -89,8 +89,8 @@ Set up the project structure, configure Cloudflare resources, and establish the 
    queue = "new-content"
 
    [[queues.consumers]]
-   binding = "CONTENT_EVENTS"
-   queue = "content-events"
+   binding = "SILO_CONTENT_UPLOADED"
+   queue = "silo-content-uploaded"
 
    [vars]
    LOG_LEVEL = "info"
@@ -367,7 +367,7 @@ Implement the queue consumer to process object-created events from R2 and update
    };
    ```
 
-2. Implement the event processing function in `src/queue/content-events.ts`:
+2. Implement the event processing function in `src/queue/silo-content-uploaded.ts`:
 
    ```typescript
    export async function processObjectCreatedEvent(event: R2Event, env: Env) {
@@ -825,7 +825,7 @@ graph TD
 3. **Production Rollout**:
 
    - Create production R2 bucket and D1 database
-   - Configure R2 notification rule to content-events queue
+   - Configure R2 notification rule to silo-content-uploaded queue
    - Deploy Silo worker with feature flag
    - Update Dome-API to route upload endpoints to Silo RPC (behind feature flag)
    - Gradually increase traffic to Silo service

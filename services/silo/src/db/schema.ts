@@ -2,7 +2,7 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 export const contents = sqliteTable('contents', {
   id: text('id').primaryKey(),
-  userId: text('user_id'),
+  userId: text('user_id').notNull(),
   category: text('category').notNull(),
   mimeType: text('mime_type').notNull(),
   size: integer('size').notNull(),

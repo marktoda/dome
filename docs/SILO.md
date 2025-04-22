@@ -35,7 +35,7 @@ graph TD
 
  subgraph Silo
   SiloHTTP -- write D1 · sign form --> D1[(SQLite)] & R2
-  R2 -- object-create --> OCQ[CONTENT_EVENTS queue]
+  R2 -- object-create --> OCQ[SILO_CONTENT_UPLOADED queue]
   OCQ -- worker.consume --> OCW(ObjectCreated handler)
   OCW -->|INSERT| D1
   OCW -->|send| FanOutQ[NEW_CONTENT queue]
@@ -85,7 +85,7 @@ CREATE INDEX idx_contents_createdAt     ON contents(createdAt);
 [[r2_buckets]]      binding="BUCKET" bucket_name="silo-content"
 [[d1_databases]]    binding="DB"     database_name="silo"
 [[queues.producers]] binding="NEW_CONTENT" queue="new-content"
-[[queues.consumers]] binding="CONTENT_EVENTS" queue="content-events"
+[[queues.consumers]] binding="SILO_CONTENT_UPLOADED" queue="silo-content-uploaded"
 vars = { LOG_LEVEL="info", VERSION="1.0.0", ENVIRONMENT="prod" }
 ```
 
@@ -96,7 +96,7 @@ vars = { LOG_LEVEL="info", VERSION="1.0.0", ENVIRONMENT="prod" }
 | Path                    | Who calls       | Flow                                                                                                                                                                                                                                                                                         |
 | ----------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`simplePut` RPC**     | Dome‑API → Silo | 1. Auth<br>2. `DB INSERT` (optimistic)<br>3. `R2.put(key, body)` (≤ 1 MiB)<br>4. Success 200                                                                                                                                                                                                 |
-| **Signed form (large)** | Browser         | 1. Client `POST /createUpload` → Dome‑API → Silo HTTP<br>2. Silo returns S3 policy + headers containing:<br>&nbsp;&nbsp;`x-user-id`, `x-content-type`, `x-sha256`, `key=upload/{contentId}`<br>3. Browser uploads directly to R2.<br>4. R2 emits **object-create** → `CONTENT_EVENTS` queue. |
+| **Signed form (large)** | Browser         | 1. Client `POST /createUpload` → Dome‑API → Silo HTTP<br>2. Silo returns S3 policy + headers containing:<br>&nbsp;&nbsp;`x-user-id`, `x-content-type`, `x-sha256`, `key=upload/{contentId}`<br>3. Browser uploads directly to R2.<br>4. R2 emits **object-create** → `SILO_CONTENT_UPLOADED` queue. |
 | **Bulk ingest**         | INGEST_WORKER   | Publishes `IngestTask` to `INGEST_QUEUE` (existing pattern)<br>Silo provides helper RPC `bulkPutMeta` to pre‑register rows (optional speed‑up).                                                                                                                                              |
 
 ---
@@ -177,7 +177,7 @@ _All RPCs use **hono‑rpc** over service‑bindings; Dome‑API merely forwards
 ## 10. Roll‑out Plan
 
 1. **Create** `silo-content` bucket and `silo` D1.
-2. **Add** R2 notification rule → `content-events` queue.
+2. **Add** R2 notification rule → `silo-content-uploaded` queue.
 3. **Deploy** Silo worker (feature‑flag).
 4. Update **Dome‑API** to route upload endpoints to Silo RPC.
 5. Migrate existing `note` upload path; verify Constellation still receives `NEW_CONTENT`.

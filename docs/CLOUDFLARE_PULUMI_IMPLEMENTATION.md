@@ -282,8 +282,8 @@ export function createQueues(): Record<string, cloudflare.WorkersQueue> {
   });
 
   // Content Events Queue
-  queues.contentEvents = new cloudflare.WorkersQueue('content-events', {
-    name: resourceName('content-events'),
+  queues.contentEvents = new cloudflare.WorkersQueue('silo-content-uploaded', {
+    name: resourceName('silo-content-uploaded'),
   });
 
   // Enriched Content Queue
@@ -470,7 +470,7 @@ export function createWorkers(
         { type: 'd1Database', name: 'DB', databaseId: 'silo' },
         { type: 'queue', name: 'NEW_CONTENT_CONSTELLATION', queueName: 'newContentConstellation' },
         { type: 'queue', name: 'NEW_CONTENT_AI', queueName: 'newContentAi' },
-        { type: 'queue', name: 'CONTENT_EVENTS', queueName: 'contentEvents' },
+        { type: 'queue', name: 'SILO_CONTENT_UPLOADED', queueName: 'contentEvents' },
         { type: 'queue', name: 'ENRICHED_CONTENT', queueName: 'enrichedContent' },
       ],
       vars: {
@@ -926,3 +926,4 @@ jobs:
 ```
 
 This implementation plan provides a detailed starting point for implementing the Pulumi infrastructure code for your Cloudflare resources. The code examples and file structures can be adapted as needed based on your specific requirements.
+

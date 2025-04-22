@@ -16,8 +16,8 @@ graph TD
 
     Silo -->|Store Objects| R2[(R2 Storage)]
     Silo -->|Enqueue Jobs| NEW_CONTENT[NEW_CONTENT Queue]
-    R2 -->|Object Events| CONTENT_EVENTS[CONTENT_EVENTS Queue]
-    Silo -->|Process Events| CONTENT_EVENTS
+    R2 -->|Object Events| SILO_CONTENT_UPLOADED[SILO_CONTENT_UPLOADED Queue]
+    Silo -->|Process Events| SILO_CONTENT_UPLOADED
 
     Constellation -->|Process Jobs| EMBED_QUEUE[Embed Queue]
     Constellation -->|Generate Embeddings| WorkersAI[Workers AI]

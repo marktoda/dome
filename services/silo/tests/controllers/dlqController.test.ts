@@ -12,7 +12,7 @@ describe('DLQController', () => {
     // Create mock environment
     mockEnv = {
       DB: {},
-      INGEST_QUEUE: {},
+      SILO_INGEST_QUEUE: {},
       INGEST_DLQ: {},
     };
 
@@ -48,7 +48,7 @@ describe('DLQController', () => {
         reprocessedMessages: 3,
         pendingMessages: 7,
         byQueueName: {
-          'ingest-queue': 7,
+          'silo-ingest-queue': 7,
           'enriched-content': 3,
         },
         byErrorType: {
@@ -91,7 +91,7 @@ describe('DLQController', () => {
           processingMetadata: {
             failedAt: 1650000000000,
             retryCount: 3,
-            queueName: 'ingest-queue',
+            queueName: 'silo-ingest-queue',
             messageId: 'original-1',
           },
           recovery: {
@@ -107,7 +107,7 @@ describe('DLQController', () => {
           processingMetadata: {
             failedAt: 1650000001000,
             retryCount: 2,
-            queueName: 'ingest-queue',
+            queueName: 'silo-ingest-queue',
             messageId: 'original-2',
           },
           recovery: {
@@ -136,7 +136,7 @@ describe('DLQController', () => {
 
       // Call the method with filter options
       const filterOptions = {
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         errorType: 'ValidationError',
         reprocessed: false,
         limit: 50,
@@ -163,7 +163,7 @@ describe('DLQController', () => {
       // Mock DLQ service response
       mockDLQService.reprocessMessage = vi
         .fn()
-        .mockResolvedValue('Successfully requeued to ingest-queue');
+        .mockResolvedValue('Successfully requeued to silo-ingest-queue');
 
       // Call the method
       const result = await dlqController.reprocessMessage('dlq-1');
@@ -172,7 +172,7 @@ describe('DLQController', () => {
       expect(mockDLQService.reprocessMessage).toHaveBeenCalledWith('dlq-1');
 
       // Verify the result
-      expect(result).toBe('Successfully requeued to ingest-queue');
+      expect(result).toBe('Successfully requeued to silo-ingest-queue');
     });
 
     it('should handle errors when reprocessing a DLQ message', async () => {
@@ -188,7 +188,7 @@ describe('DLQController', () => {
     it('should reprocess multiple DLQ messages', async () => {
       // Mock DLQ service response
       const mockResults = {
-        'dlq-1': 'Successfully requeued to ingest-queue',
+        'dlq-1': 'Successfully requeued to silo-ingest-queue',
         'dlq-2': 'Error: Reprocessing error',
       };
 
@@ -238,7 +238,7 @@ describe('DLQController', () => {
 
       // Call the method with filter options
       const filterOptions = {
-        queueName: 'ingest-queue',
+        queueName: 'silo-ingest-queue',
         errorType: 'ValidationError',
         reprocessed: true,
       };

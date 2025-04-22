@@ -53,7 +53,7 @@ vi.mock('../../src/services/siloService', () => ({
     convertToEmbedJob: vi.fn(),
   }),
   SiloService: {
-    PUBLIC_CONTENT_USER_ID: 'public',
+    PUBLIC_USER_ID: 'public',
   },
 }));
 
@@ -381,18 +381,18 @@ describe('Dead Letter Queue Consumer', () => {
       expect(vi.mocked(require('@dome/logging').getLogger)().error).toHaveBeenCalledWith(
         expect.objectContaining({
           body: expect.objectContaining({ unknownField: 'some value' }),
-          keys: ['unknownField']
+          keys: ['unknownField'],
         }),
-        'Malformed message in dead letter queue'
+        'Malformed message in dead letter queue',
       );
-      
+
       // Verify malformed count metric was incremented
       expect(vi.mocked(require('@dome/logging').metrics.increment)).toHaveBeenCalledWith(
         'deadletter.messages_malformed',
-        expect.any(Number)
+        expect.any(Number),
       );
     });
-    
+
     it('should handle malformed job objects in embedding error messages', async () => {
       // Create a batch with a malformed embedding error message (missing required fields)
       mockBatch = {
@@ -427,24 +427,24 @@ describe('Dead Letter Queue Consumer', () => {
 
       // Verify the message was retried with exponential backoff
       expect(mockBatch.messages[0].retry).toHaveBeenCalledWith({ delaySeconds: 60 }); // 2^1 * 30
-      
+
       // Verify the handleEmbeddingError was called with default values for missing fields
       expect(vi.mocked(require('@dome/logging').getLogger)().info).toHaveBeenCalledWith(
         expect.objectContaining({
           contentId: 'unknown',
           userId: 'unknown',
-          jobFields: ['text', 'created']
+          jobFields: ['text', 'created'],
         }),
-        'Processing embedding error from dead letter queue'
+        'Processing embedding error from dead letter queue',
       );
     });
-    
+
     it('should handle non-object message bodies', async () => {
       // Create a batch with a non-object message body
       mockBatch = {
         messages: [
           {
-            body: "This is a string, not an object",
+            body: 'This is a string, not an object',
             ack: vi.fn(),
             retry: vi.fn(),
             attempts: 1,
@@ -467,15 +467,15 @@ describe('Dead Letter Queue Consumer', () => {
       expect(vi.mocked(require('@dome/logging').getLogger)().error).toHaveBeenCalledWith(
         expect.objectContaining({
           bodyType: 'string',
-          body: "This is a string, not an object"
+          body: 'This is a string, not an object',
         }),
-        'Invalid message type in dead letter queue'
+        'Invalid message type in dead letter queue',
       );
-      
+
       // Verify malformed count metric was incremented
       expect(vi.mocked(require('@dome/logging').metrics.increment)).toHaveBeenCalledWith(
         'deadletter.messages_malformed',
-        expect.any(Number)
+        expect.any(Number),
       );
     });
 
@@ -861,7 +861,7 @@ describe('Dead Letter Queue Consumer', () => {
       expect((constellation as any).isRetryableError('500 Internal Server Error')).toBe(true);
       expect((constellation as any).isRetryableError('503 Service Unavailable')).toBe(true);
     });
-    
+
     it('should return true for additional retryable patterns', () => {
       expect((constellation as any).isRetryableError('Service temporarily unavailable')).toBe(true);
       expect((constellation as any).isRetryableError('System overloaded')).toBe(true);

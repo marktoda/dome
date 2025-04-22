@@ -86,7 +86,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
     await wrap({ op: 'queue', queue: batch.queue, size: batch.messages.length }, async () => {
       try {
         // Determine which queue we're processing
-        if (batch.queue === 'content-events') {
+        if (batch.queue === 'silo-content-uploaded') {
           // Process R2 events
           const promises = batch.messages.map(async message => {
             const event = message.body as R2Event;
@@ -149,7 +149,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
           });
 
           await Promise.all(promises);
-        } else if (batch.queue === 'ingest-queue') {
+        } else if (batch.queue === 'silo-ingest-queue') {
           // Process ingest queue messages
           const promises = batch.messages.map(async message => {
             try {
@@ -170,7 +170,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
               // For validation errors, send to DLQ immediately
               if (error instanceof z.ZodError) {
                 await this.services.dlq.sendToDLQ(message.body, error, {
-                  queueName: 'ingest-queue',
+                  queueName: 'silo-ingest-queue',
                   messageId: message.id,
                   retryCount: message.attempts,
                 });
@@ -179,7 +179,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
                 // attempts starts at 1, so 3 means 2 retries
                 // If this is the final retry attempt, send to DLQ
                 await this.services.dlq.sendToDLQ(message.body, error as Error, {
-                  queueName: 'ingest-queue',
+                  queueName: 'silo-ingest-queue',
                   messageId: message.id,
                   retryCount: message.attempts,
                 });

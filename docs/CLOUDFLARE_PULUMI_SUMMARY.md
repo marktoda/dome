@@ -38,7 +38,7 @@ The following Cloudflare resources will be managed by Pulumi:
 | D1 Databases        | 2        | dome-meta, silo                                                                                             |
 | R2 Buckets          | 2        | dome-raw, silo-content                                                                                      |
 | Vectorize Indexes   | 1        | dome-notes                                                                                                  |
-| Queues              | 6        | new-content-constellation, new-content-ai, content-events, enriched-content, dome-events, embed-dead-letter |
+| Queues              | 6        | new-content-constellation, new-content-ai, silo-content-uploaded, enriched-content, dome-events, embed-dead-letter |
 | Service Bindings    | Multiple | dome-api → constellation, dome-api → silo, etc.                                                             |
 | Workers AI Bindings | Multiple | Used by dome-api, constellation, ai-processor                                                               |
 | Cron Triggers       | 1        | Used by dome-cron                                                                                           |

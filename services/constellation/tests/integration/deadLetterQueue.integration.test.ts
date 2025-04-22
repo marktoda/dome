@@ -74,7 +74,7 @@ vi.mock('../../src/services/vectorize', () => ({
 vi.mock('../../src/services/siloService', () => ({
   createSiloService: vi.fn().mockReturnValue(mockSiloService),
   SiloService: {
-    PUBLIC_CONTENT_USER_ID: 'public',
+    PUBLIC_USER_ID: 'public',
   },
 }));
 
@@ -371,7 +371,7 @@ describe('Dead Letter Queue Integration Tests', () => {
       // Verify the third message (non-retryable embedding error) was acknowledged
       expect(mockBatch.messages[2].ack).toHaveBeenCalled();
       expect(mockBatch.messages[2].retry).not.toHaveBeenCalled();
-      
+
       // Verify the fourth message (malformed) was acknowledged
       expect(mockBatch.messages[3].ack).toHaveBeenCalled();
       expect(mockBatch.messages[3].retry).not.toHaveBeenCalled();
@@ -394,7 +394,7 @@ describe('Dead Letter Queue Integration Tests', () => {
         1, // 1 malformed message
       );
     });
-    
+
     it('should handle malformed job objects with missing fields', async () => {
       // Create a batch with a malformed embedding error message
       const mockBatch = {
@@ -424,7 +424,7 @@ describe('Dead Letter Queue Integration Tests', () => {
 
       // Verify the message was retried (since connection timeout is retryable)
       expect(mockBatch.messages[0].retry).toHaveBeenCalled();
-      
+
       // Verify logging with default values for missing fields
       expect(vi.mocked(require('@dome/logging').getLogger)().info).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -432,7 +432,7 @@ describe('Dead Letter Queue Integration Tests', () => {
           userId: 'unknown',
           jobFields: expect.arrayContaining(['text', 'created']),
         }),
-        'Processing embedding error from dead letter queue'
+        'Processing embedding error from dead letter queue',
       );
     });
   });

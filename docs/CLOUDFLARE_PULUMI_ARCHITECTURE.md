@@ -66,7 +66,7 @@ Based on analysis of our current infrastructure, we need to manage the following
 | ------------------------- | ------------------------------------- | ------------- | ---------------------- |
 | new-content-constellation | New content for embedding             | silo          | constellation          |
 | new-content-ai            | New content for AI processing         | silo          | ai-processor           |
-| content-events            | R2 object creation events             | R2            | silo                   |
+| silo-content-uploaded     | R2 object creation events             | R2            | silo                   |
 | enriched-content          | Processed content with AI enrichments | ai-processor  | silo                   |
 | dome-events               | System events                         | Multiple      | dome-notify, dome-cron |
 | embed-dead-letter         | Failed embedding jobs                 | constellation | -                      |

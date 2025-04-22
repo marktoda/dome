@@ -60,7 +60,7 @@ describe('Service Integration Tests', () => {
       BUCKET: mockR2Bucket,
       DB: mockD1Database,
       NEW_CONTENT: mockQueue,
-      CONTENT_EVENTS: mockQueue,
+      SILO_CONTENT_UPLOADED: mockQueue,
       LOG_LEVEL: 'info',
       VERSION: '1.0.0',
       ENVIRONMENT: 'test',

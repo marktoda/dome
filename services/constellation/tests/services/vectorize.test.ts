@@ -9,8 +9,7 @@ import {
   createVectorizeService,
 } from '../../src/services/vectorize';
 import { VectorWithMetadata } from '../../src/types';
-import { VectorMeta, VectorSearchResult } from '@dome/common';
-import { SiloService } from '../../src/services/siloService';
+import { VectorMeta, VectorSearchResult, PUBLIC_USER_ID } from '@dome/common';
 
 // Mock the logger and metrics
 vi.mock('@dome/logging', () => ({
@@ -236,7 +235,7 @@ describe('VectorizeService', () => {
         topK,
         filter: {
           category: 'note',
-          userId: { $in: ['user1', SiloService.PUBLIC_CONTENT_USER_ID] },
+          userId: { $in: ['user1', PUBLIC_USER_ID] },
         },
         returnMetadata: true,
       });
@@ -362,7 +361,7 @@ describe('VectorizeService', () => {
             id: 'note:public-note',
             score: 0.9,
             metadata: {
-              userId: SiloService.PUBLIC_CONTENT_USER_ID,
+              userId: PUBLIC_USER_ID, // Use the new constant
               contentId: 'public-note',
               category: 'note',
               mimeType: 'text/markdown',
@@ -382,7 +381,7 @@ describe('VectorizeService', () => {
       // Should return both user-specific and public vectors
       expect(results.length).toBe(2);
       expect(results[0].metadata.userId).toBe('user1');
-      expect(results[1].metadata.userId).toBe(SiloService.PUBLIC_CONTENT_USER_ID);
+      expect(results[1].metadata.userId).toBe(PUBLIC_USER_ID);
     });
 
     it('should handle query with only public content results', async () => {
@@ -395,7 +394,7 @@ describe('VectorizeService', () => {
             id: 'note:public-note1',
             score: 0.95,
             metadata: {
-              userId: SiloService.PUBLIC_CONTENT_USER_ID,
+              userId: PUBLIC_USER_ID,
               contentId: 'public-note1',
               category: 'note',
               mimeType: 'text/markdown',
@@ -407,7 +406,7 @@ describe('VectorizeService', () => {
             id: 'note:public-note2',
             score: 0.9,
             metadata: {
-              userId: SiloService.PUBLIC_CONTENT_USER_ID,
+              userId: PUBLIC_USER_ID,
               contentId: 'public-note2',
               category: 'note',
               mimeType: 'text/markdown',
@@ -426,9 +425,7 @@ describe('VectorizeService', () => {
 
       // Should return only public vectors
       expect(results.length).toBe(2);
-      expect(results.every(r => r.metadata.userId === SiloService.PUBLIC_CONTENT_USER_ID)).toBe(
-        true,
-      );
+      expect(results.every(r => r.metadata.userId === PUBLIC_USER_ID)).toBe(true);
     });
 
     it('should handle query with only user-specific content results', async () => {

@@ -91,10 +91,15 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                 // This is a parsing error
                 await this.handleParsingError({
                   error: String(body.error),
-                  originalMessage: body.originalMessage
+                  originalMessage: body.originalMessage,
                 });
                 processedCount++;
-              } else if ('err' in body && 'job' in body && typeof body.job === 'object' && body.job !== null) {
+              } else if (
+                'err' in body &&
+                'job' in body &&
+                typeof body.job === 'object' &&
+                body.job !== null
+              ) {
                 // This is an embedding error - validate the job object has minimum required fields
                 const job = body.job as Record<string, unknown>;
 
@@ -105,14 +110,17 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                   text: typeof job.text === 'string' ? job.text : '',
                   created: typeof job.created === 'number' ? job.created : Date.now(),
                   version: typeof job.version === 'number' ? job.version : 1,
-                  category: typeof job.category === 'string' ? job.category as any : 'unknown',
-                  mimeType: typeof job.mimeType === 'string' ? job.mimeType as any : 'text/plain',
+                  category: typeof job.category === 'string' ? (job.category as any) : 'unknown',
+                  mimeType: typeof job.mimeType === 'string' ? (job.mimeType as any) : 'text/plain',
                 };
 
-                const shouldRetry = await this.handleEmbeddingError({
-                  err: String(body.err),
-                  job: validJob
-                }, msg.attempts);
+                const shouldRetry = await this.handleEmbeddingError(
+                  {
+                    err: String(body.err),
+                    job: validJob,
+                  },
+                  msg.attempts,
+                );
 
                 if (shouldRetry && msg.attempts < 3) {
                   // Retry with exponential backoff
@@ -127,14 +135,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                 // Unknown or malformed message format
                 getLogger().error(
                   { body: body, keys: Object.keys(body) },
-                  'Malformed message in dead letter queue'
+                  'Malformed message in dead letter queue',
                 );
                 malformedCount++;
               }
             } else {
               getLogger().error(
                 { bodyType: typeof body, body },
-                'Invalid message type in dead letter queue'
+                'Invalid message type in dead letter queue',
               );
               malformedCount++;
             }
@@ -156,7 +164,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             processed: processedCount,
             retried: retryCount,
             malformed: malformedCount,
-            total: batch.messages.length
+            total: batch.messages.length,
           },
           'Processed dead letter queue batch',
         );
@@ -173,10 +181,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
    * These errors occur when a message from the new-content queue fails validation
    */
   private async handleParsingError(payload: { error: string; originalMessage: unknown }) {
-    getLogger().info(
-      { error: payload.error },
-      'Processing parsing error from dead letter queue',
-    );
+    getLogger().info({ error: payload.error }, 'Processing parsing error from dead letter queue');
 
     // Log detailed information about the parsing error
     const { error, originalMessage } = payload;
@@ -188,7 +193,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
     if (originalMessage && typeof originalMessage === 'object') {
       // Safely extract all available fields for debugging
-      messageDetails = { ...originalMessage as Record<string, unknown> };
+      messageDetails = { ...(originalMessage as Record<string, unknown>) };
 
       if ('id' in messageDetails && typeof messageDetails.id === 'string') {
         contentId = messageDetails.id;
@@ -203,7 +208,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
     getLogger().info(
       { contentId, userId, error, messageFields: Object.keys(messageDetails) },
-      'Parsing error details from dead letter queue'
+      'Parsing error details from dead letter queue',
     );
 
     // Currently we just log the error - in the future we could implement
@@ -232,7 +237,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         contentId,
         userId,
         attempts,
-        jobFields: Object.keys(job)
+        jobFields: Object.keys(job),
       },
       'Processing embedding error from dead letter queue',
     );
@@ -241,10 +246,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     const isRetryable = this.isRetryableError(err);
 
     if (isRetryable && attempts < 3) {
-      getLogger().info(
-        { contentId, error: err, attempts },
-        'Will retry embedding job',
-      );
+      getLogger().info({ contentId, error: err, attempts }, 'Will retry embedding job');
       return true;
     }
 
@@ -276,7 +278,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
       /temporarily unavailable/i,
       /overloaded/i,
       /try again/i,
-      /resource exhausted/i
+      /resource exhausted/i,
     ];
 
     return retryablePatterns.some(pattern => pattern.test(errorMessage));

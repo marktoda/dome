@@ -33,7 +33,7 @@ graph TD
         subgraph "Messaging"
             Q1[Queue: new-content-constellation]
             Q2[Queue: new-content-ai]
-            Q3[Queue: content-events]
+            Q3[Queue: silo-content-uploaded]
             Q4[Queue: enriched-content]
             Q5[Queue: dome-events]
             Q6[Queue: embed-dead-letter]
@@ -96,7 +96,7 @@ graph TD
     Silo -->|Uses| R2B2[R2: silo-content]
     Silo -->|Produces| Q1[Queue: new-content-constellation]
     Silo -->|Produces| Q2[Queue: new-content-ai]
-    Silo -->|Consumes| Q3[Queue: content-events]
+    Silo -->|Consumes| Q3[Queue: silo-content-uploaded]
     Silo -->|Consumes| Q4[Queue: enriched-content]
 
     AIProcessor[ai-processor] -->|Service Binding| Silo

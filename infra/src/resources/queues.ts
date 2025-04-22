@@ -38,13 +38,13 @@ export function createQueues(): Record<string, cloudflare.WorkersQueue> {
     });
 
     // Content Events Queue
-    queues.contentEvents = new cloudflare.WorkersQueue('content-events', {
-      name: resourceName('content-events'),
+    queues.contentEvents = new cloudflare.WorkersQueue('silo-content-uploaded', {
+      name: resourceName('silo-content-uploaded'),
       // Add tags when Cloudflare provider supports them
     });
 
     // Apply tags
-    tagResource(queues.contentEvents, 'queue', 'content-events', {
+    tagResource(queues.contentEvents, 'queue', 'silo-content-uploaded', {
       Purpose: 'r2-object-events',
       Producer: 'r2',
       Consumer: 'silo',
@@ -120,3 +120,4 @@ export function getQueueNames(
 
   return queueNames;
 }
+

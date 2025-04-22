@@ -35,7 +35,7 @@ describe('DLQ Handling', () => {
     // Create mock environment
     mockEnv = {
       DB: {},
-      INGEST_QUEUE: {
+      SILO_INGEST_QUEUE: {
         send: vi.fn().mockResolvedValue({}),
       },
       INGEST_DLQ: {
@@ -76,7 +76,7 @@ describe('DLQ Handling', () => {
   describe('sendToDLQ', () => {
     it('should send a message to the DLQ and acknowledge it', async () => {
       // Call the private method using type assertion
-      await (silo as any).sendToDLQ(mockMessage, new Error('Test error'), 'ingest-queue', 2);
+      await (silo as any).sendToDLQ(mockMessage, new Error('Test error'), 'silo-ingest-queue', 2);
 
       // Verify DLQ service method was called with correct parameters
       expect(mockDLQService.sendToDLQ).toHaveBeenCalledWith(
@@ -86,7 +86,7 @@ describe('DLQ Handling', () => {
           name: 'Error',
         }),
         {
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           messageId: 'test-message-id',
           retryCount: 2,
         },
@@ -101,7 +101,7 @@ describe('DLQ Handling', () => {
       mockDLQService.sendToDLQ.mockRejectedValue(new Error('DLQ error'));
 
       // Call the private method using type assertion
-      await (silo as any).sendToDLQ(mockMessage, new Error('Original error'), 'ingest-queue', 2);
+      await (silo as any).sendToDLQ(mockMessage, new Error('Original error'), 'silo-ingest-queue', 2);
 
       // Verify the message was still acknowledged to prevent infinite retries
       expect(mockMessage.ack).toHaveBeenCalled();
@@ -109,10 +109,10 @@ describe('DLQ Handling', () => {
   });
 
   describe('Queue Processing - Validation Errors', () => {
-    it('should send validation errors to DLQ immediately for ingest-queue', async () => {
+    it('should send validation errors to DLQ immediately for silo-ingest-queue', async () => {
       // Create a batch with a message
       const batch = {
-        queue: 'ingest-queue',
+        queue: 'silo-ingest-queue',
         messages: [mockMessage],
       };
 
@@ -127,7 +127,7 @@ describe('DLQ Handling', () => {
       await silo.queue(batch);
 
       // Verify sendToDLQ was called with the validation error
-      expect(sendToDLQSpy).toHaveBeenCalledWith(mockMessage, validationError, 'ingest-queue', 0);
+      expect(sendToDLQSpy).toHaveBeenCalledWith(mockMessage, validationError, 'silo-ingest-queue', 0);
     });
 
     it('should send validation errors to DLQ immediately for enriched-content', async () => {
@@ -158,7 +158,7 @@ describe('DLQ Handling', () => {
   });
 
   describe('Queue Processing - Max Retries', () => {
-    it('should send messages to DLQ after max retries for ingest-queue', async () => {
+    it('should send messages to DLQ after max retries for silo-ingest-queue', async () => {
       // Create a batch with a message that has reached max retries
       const maxRetryMessage = {
         ...mockMessage,
@@ -166,7 +166,7 @@ describe('DLQ Handling', () => {
       };
 
       const batch = {
-        queue: 'ingest-queue',
+        queue: 'silo-ingest-queue',
         messages: [maxRetryMessage],
       };
 
@@ -184,7 +184,7 @@ describe('DLQ Handling', () => {
       expect(sendToDLQSpy).toHaveBeenCalledWith(
         maxRetryMessage,
         processingError,
-        'ingest-queue',
+        'silo-ingest-queue',
         2,
       );
     });
@@ -197,7 +197,7 @@ describe('DLQ Handling', () => {
       };
 
       const batch = {
-        queue: 'ingest-queue',
+        queue: 'silo-ingest-queue',
         messages: [retryMessage],
       };
 
@@ -228,7 +228,7 @@ describe('DLQ Handling', () => {
           originalMessage: { content: 'original content' },
           error: { message: 'Original error', name: 'Error' },
           processingMetadata: {
-            queueName: 'ingest-queue',
+            queueName: 'silo-ingest-queue',
             messageId: 'original-id',
             retryCount: 3,
           },

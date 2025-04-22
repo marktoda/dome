@@ -13,7 +13,7 @@ interface Env {
   // Queue bindings
   NEW_CONTENT_CONSTELLATION: Queue<NewContentMessage>;
   NEW_CONTENT_AI: Queue<NewContentMessage>;
-  INGEST_QUEUE: Queue<SiloSimplePutInput>;
+  SILO_INGEST_QUEUE: Queue<SiloSimplePutInput>;
 
   // Environment variables
   LOG_LEVEL: string;

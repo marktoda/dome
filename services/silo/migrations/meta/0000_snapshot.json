@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d923f88e-10e1-4a4a-bf6e-c2168d7be95e",
+  "id": "8477a695-39fb-4153-b7ec-2004dd683b0f",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "contents": {
@@ -18,7 +18,7 @@
           "name": "user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "category": {
@@ -89,7 +89,9 @@
       "indexes": {
         "contents_r2_key_unique": {
           "name": "contents_r2_key_unique",
-          "columns": ["r2_key"],
+          "columns": [
+            "r2_key"
+          ],
           "isUnique": true
         }
       },

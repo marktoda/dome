@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7fdfc332-bb7a-4bbf-8fc3-d16d6c16bdbb",
+  "id": "69443c2b-b9e0-453e-b20e-a906e55aefbe",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "sync_history": {
@@ -106,8 +106,12 @@
           "name": "sync_history_sync_plan_id_sync_plan_id_fk",
           "tableFrom": "sync_history",
           "tableTo": "sync_plan",
-          "columnsFrom": ["sync_plan_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "sync_plan_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -151,7 +155,9 @@
       "indexes": {
         "sync_plan_resource_id_unique": {
           "name": "sync_plan_resource_id_unique",
-          "columns": ["resource_id"],
+          "columns": [
+            "resource_id"
+          ],
           "isUnique": true
         }
       },

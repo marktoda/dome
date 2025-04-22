@@ -42,7 +42,7 @@ graph TD
 
   subgraph Silo
     SiloHTTP -- write D1 · sign form --> D1[(SQLite)] & R2
-    R2 -- object-create --> OCQ[CONTENT_EVENTS queue]
+    R2 -- object-create --> OCQ[SILO_CONTENT_UPLOADED queue]
     OCQ -- worker.consume --> OCW(ObjectCreated handler)
     OCW -->|INSERT| D1
     OCW -->|send| FanOutQ[NEW_CONTENT queue]
@@ -465,8 +465,8 @@ binding = "NEW_CONTENT"
 queue = "new-content"
 
 [[queues.consumers]]
-binding = "CONTENT_EVENTS"
-queue = "content-events"
+binding = "SILO_CONTENT_UPLOADED"
+queue = "silo-content-uploaded"
 
 [vars]
 LOG_LEVEL = "info"
@@ -510,7 +510,7 @@ The Silo service does not require any secrets for its operation. Authentication 
 ### Rollout Strategy
 
 1. **Create Resources**: Set up the required R2 bucket, D1 database, and queues.
-2. **Add R2 Notification Rule**: Configure R2 to send object-created events to the content-events queue.
+2. **Add R2 Notification Rule**: Configure R2 to send object-created events to the silo-content-uploaded queue.
 3. **Deploy Silo Worker**: Deploy the Silo worker with feature flags if needed.
 4. **Update Dome API**: Update the Dome API service to route content operations to Silo.
 5. **Migrate Existing Content**: If needed, migrate existing content to the new storage system.

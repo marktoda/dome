@@ -2,7 +2,8 @@ import { getLogger, logError, metrics } from '@dome/logging';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, desc, count, sum, or, isNull, inArray } from 'drizzle-orm';
 import { contents } from '../db/schema';
-import { SiloContentMetadata, SiloStatsResponse } from '@dome/common';
+import { SiloContentMetadata, SiloStatsResponse, PUBLIC_USER_ID } from '@dome/common';
+import { SiloService } from './siloService';
 
 /**
  * MetadataService - A wrapper around D1 for content metadata operations
@@ -23,12 +24,16 @@ export class MetadataService {
     const startTime = Date.now();
 
     try {
+      // Normalize userId to ensure it's never null
+      const normalizedData = {
+        ...data,
+        userId: SiloService.normalizeUserId(data.userId),
+        version: 1,
+      };
+
       const result = await this.db
         .insert(contents)
-        .values({
-          ...data,
-          version: 1,
-        })
+        .values(normalizedData)
         .onConflictDoNothing();
 
       metrics.timing('silo.d1.insert.latency_ms', Date.now() - startTime);
@@ -119,10 +124,10 @@ export class MetadataService {
             error:
               error instanceof Error
                 ? {
-                    name: error.name,
-                    message: error.message,
-                    stack: error.stack,
-                  }
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
                 : String(error),
             ids,
             errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -140,10 +145,10 @@ export class MetadataService {
           error:
             error instanceof Error
               ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
               : String(error),
           ids,
           errorType: error instanceof Error ? error.constructor.name : typeof error,

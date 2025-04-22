@@ -10,7 +10,7 @@ Currently, content ingestion works as follows:
 
    - Already has queue processing capabilities in its `queue` method
    - Currently processes two queues:
-     - `content-events`: For R2 object-created events
+     - `silo-content-uploaded`: For R2 object-created events
      - `enriched-content`: For enriched content from AI processor
    - Exposes RPC methods like `simplePut` for direct content ingestion
 
@@ -79,7 +79,7 @@ async queue(batch: MessageBatch<R2Event | EnrichedContentMessage | SiloSimplePut
     async () => {
       try {
         // Determine which queue we're processing
-        if (batch.queue === 'content-events') {
+        if (batch.queue === 'silo-content-uploaded') {
           // Existing code for processing R2 events
           // ...
         } else if (batch.queue === 'enriched-content') {
@@ -159,7 +159,7 @@ async processIngestMessage(message: SiloSimplePutInput): Promise<void> {
     // Update metrics
     metrics.increment('silo.ingest_queue.processed');
 
-    // The R2 event will trigger metadata creation via the content-events queue
+    // The R2 event will trigger metadata creation via the silo-content-uploaded queue
     logger.info({ id, userId, category, mimeType }, 'Content ingested successfully');
   } catch (error) {
     metrics.increment('silo.ingest_queue.errors');

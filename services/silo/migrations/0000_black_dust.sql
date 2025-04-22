@@ -1,6 +1,6 @@
 CREATE TABLE `contents` (
 	`id` text PRIMARY KEY NOT NULL,
-	`user_id` text,
+	`user_id` text NOT NULL,
 	`category` text NOT NULL,
 	`mime_type` text NOT NULL,
 	`size` integer NOT NULL,

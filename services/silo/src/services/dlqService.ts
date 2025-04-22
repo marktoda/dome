@@ -267,16 +267,16 @@ export class DLQServiceImpl implements DLQService {
       // Determine the queue to send to based on the original queue
       let result = '';
 
-      if (message.queueName === 'ingest-queue') {
+      if (message.queueName === 'silo-ingest-queue') {
         // Validate the message
         const validatedMessage = siloSimplePutSchema.parse(originalMessage);
 
         // Send to the original queue
-        if (this.env.INGEST_QUEUE) {
-          await this.env.INGEST_QUEUE.send(validatedMessage);
-          result = 'Successfully requeued to ingest-queue';
+        if (this.env.SILO_INGEST_QUEUE) {
+          await this.env.SILO_INGEST_QUEUE.send(validatedMessage);
+          result = 'Successfully requeued to silo-ingest-queue';
         } else {
-          result = 'INGEST_QUEUE binding not available';
+          result = 'SILO_INGEST_QUEUE binding not available';
         }
       } else {
         result = `Unsupported queue: ${message.queueName}`;

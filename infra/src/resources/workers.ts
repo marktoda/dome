@@ -190,7 +190,7 @@ export function createWorkers(
             queueName: 'newContentConstellation',
           },
           { type: 'queue', name: 'NEW_CONTENT_AI', queueName: 'newContentAi' },
-          { type: 'queue', name: 'CONTENT_EVENTS', queueName: 'contentEvents' },
+          { type: 'queue', name: 'SILO_CONTENT_UPLOADED', queueName: 'contentEvents' },
           { type: 'queue', name: 'ENRICHED_CONTENT', queueName: 'enrichedContent' },
         ],
         vars: {

@@ -3,6 +3,7 @@ import { ulid } from 'ulid';
 import { R2Service } from '../services/r2Service';
 import { MetadataService } from '../services/metadataService';
 import { QueueService } from '../services/queueService';
+import { SiloService } from '../services/siloService';
 import { R2Event } from '../types';
 import {
   SiloContentMetadata,
@@ -37,7 +38,8 @@ export class ContentController {
     private readonly r2Service: R2Service,
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
-  ) { }
+    private readonly siloService: SiloService,
+  ) {}
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -51,7 +53,7 @@ export class ContentController {
       this.logInput('simplePut input data', input);
 
       const id = input.id ?? ulid();
-      const userId = input.userId ?? null;
+      const userId = SiloService.normalizeUserId(input.userId ?? null);
       const size = this.contentSize(input.content);
 
       if (size > SIMPLE_PUT_MAX_SIZE) {
@@ -104,7 +106,8 @@ export class ContentController {
 
       await Promise.all(
         metadataItems.map(async item => {
-          if (item.userId !== null && item.userId !== "" && item.userId !== userId) return; // ACL check
+          // ACL check: Allow access if the item belongs to the user or is public content
+          if (item.userId !== userId && item.userId !== SiloService.PUBLIC_USER_ID) return;
 
           results[item.id] = item;
 
@@ -139,14 +142,22 @@ export class ContentController {
 
     const meta = await this.metadataService.getMetadataById(id);
     if (!meta) throw new Error('Content not found');
-    if (meta.userId !== userId) throw new Error('Unauthorized');
+
+    // ACL check: Allow deletion if the item belongs to the user
+    // Public content can only be deleted by admins (not implemented yet)
+    if (meta.userId !== userId && meta.userId !== SiloService.PUBLIC_USER_ID) {
+      throw new Error('Unauthorized');
+    }
 
     await this.r2Service.deleteObject(meta.r2Key);
     await this.metadataService.deleteMetadata(id);
-    await this.queueService.sendNewContentMessage({ id, userId, deleted: true });
+
+    // Use the normalized userId when sending the delete message
+    const normalizedUserId = SiloService.normalizeUserId(userId);
+    await this.queueService.sendNewContentMessage({ id, userId: normalizedUserId, deleted: true });
 
     metrics.increment('silo.rpc.delete.success');
-    logger.info({ id, userId }, 'Content deleted successfully');
+    logger.info({ id, userId: normalizedUserId }, 'Content deleted successfully');
 
     return { success: true };
   }
@@ -186,7 +197,7 @@ export class ContentController {
     try {
       const { content, metadata } = message;
       const id = message.id ?? ulid();
-      const userId = message.userId || null;
+      const userId = SiloService.normalizeUserId(message.userId || null);
       const category = message.category || 'note';
       const mimeType = message.mimeType || 'text/markdown';
 
@@ -212,7 +223,7 @@ export class ContentController {
       // Update metrics
       metrics.increment('silo.ingest_queue.processed');
 
-      // The R2 event will trigger metadata creation via the content-events queue
+      // The R2 event will trigger metadata creation via the silo-content-uploaded queue
       logger.info({ id, userId, category, mimeType }, 'Content ingested successfully');
     } catch (error) {
       metrics.increment('silo.ingest_queue.errors');
@@ -257,9 +268,12 @@ export class ContentController {
         createdAt,
       });
 
+      // Normalize the userId before sending the message
+      const normalizedUserId = SiloService.normalizeUserId(userId);
+
       await this.queueService.sendNewContentMessage({
         id,
-        userId,
+        userId: normalizedUserId,
         category,
         mimeType,
         size: obj.size,
@@ -342,9 +356,10 @@ export class ContentController {
     const pick = (a: string, b: string) => meta[a] ?? meta[b];
 
     const rawMetadata = pick('x-metadata', 'metadata');
+    const rawUserId = pick('x-user-id', 'user-id') ?? null;
 
     return {
-      userId: pick('x-user-id', 'user-id') ?? null,
+      userId: SiloService.normalizeUserId(rawUserId),
       category: pick('x-category', 'category') ?? 'note',
       mimeType: pick('x-mime-type', 'mime-type') ?? 'text/plain',
       sha256: pick('x-sha256', 'sha256') ?? null,
@@ -399,7 +414,9 @@ export class ContentController {
     }
 
     logger.info({ userId, contentType }, 'fetching all metadata for user');
-    return this.metadataService.getMetadataByUserId(userId, contentType, limit, offset);
+
+    // Use the SiloService to fetch both user-specific and public content
+    return this.siloService.fetchContentForUser(userId, contentType, limit, offset);
   }
 }
 
@@ -413,5 +430,6 @@ export function createContentController(
   metadataService: MetadataService,
   queueService: QueueService,
 ): ContentController {
-  return new ContentController(env, r2Service, metadataService, queueService);
+  const siloService = new SiloService(metadataService);
+  return new ContentController(env, r2Service, metadataService, queueService, siloService);
 }

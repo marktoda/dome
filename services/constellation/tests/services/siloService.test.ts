@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SiloService } from '../../src/services/siloService';
-import { NewContentMessage } from '@dome/common';
+import { NewContentMessage, PUBLIC_USER_ID } from '@dome/common';
 
 // Mock the logger and metrics
 vi.mock('@dome/logging', () => ({
@@ -124,7 +124,7 @@ describe('SiloService', () => {
       });
     });
 
-    it('should tag public content (null userId) with PUBLIC_CONTENT_USER_ID', async () => {
+    it('should tag public content (null userId) with PUBLIC_USER_ID', async () => {
       const message: NewContentMessage = {
         id: 'public-content-id',
         userId: null, // Public content has null userId
@@ -136,9 +136,9 @@ describe('SiloService', () => {
 
       const result = await siloService.convertToEmbedJob(message);
 
-      expect(result.userId).toBe(SiloService.PUBLIC_CONTENT_USER_ID);
+      expect(result.userId).toBe(PUBLIC_USER_ID);
       expect(result).toEqual({
-        userId: SiloService.PUBLIC_CONTENT_USER_ID,
+        userId: PUBLIC_USER_ID,
         contentId: 'public-content-id',
         text: 'Test content body',
         created: 1650000000 * 1000, // Converted to milliseconds
