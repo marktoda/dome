@@ -57,6 +57,7 @@ export class LlmService {
         modelUsed: this.MODEL_NAME,
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       getLogger().error(
         { error, contentType, contentLength: content.length },
         'Error processing content with LLM',
@@ -221,7 +222,7 @@ export class LlmService {
       const jsonString = jsonMatch ? jsonMatch[0] : response;
 
       const parsed = JSON.parse(jsonString);
-      
+
       // Normalize priority values to lowercase
       if (parsed.todos && Array.isArray(parsed.todos)) {
         parsed.todos = parsed.todos.map((todo: { priority?: string; [key: string]: any }) => {
@@ -234,6 +235,7 @@ export class LlmService {
 
       return parsed;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       getLogger().error(
         { error, response: response.substring(0, 200) + '...' },
         'Failed to parse LLM response',

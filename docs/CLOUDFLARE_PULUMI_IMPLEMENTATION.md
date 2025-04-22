@@ -103,6 +103,7 @@ description: Dome Cloudflare infrastructure
 Create stack configuration files for each environment:
 
 **Pulumi.dev.yaml**:
+
 ```yaml
 config:
   cloudflare:accountId: your-account-id
@@ -111,6 +112,7 @@ config:
 ```
 
 **Pulumi.staging.yaml**:
+
 ```yaml
 config:
   cloudflare:accountId: your-account-id
@@ -119,6 +121,7 @@ config:
 ```
 
 **Pulumi.prod.yaml**:
+
 ```yaml
 config:
   cloudflare:accountId: your-account-id
@@ -332,7 +335,7 @@ export function createWorker(
   d1Databases: Record<string, cloudflare.D1Database>,
   r2Buckets: Record<string, cloudflare.R2Bucket>,
   vectorizeIndexes: Record<string, cloudflare.VectorizeIndex>,
-  queues: Record<string, cloudflare.WorkersQueue>
+  queues: Record<string, cloudflare.WorkersQueue>,
 ): cloudflare.WorkerScript {
   // Base configuration
   const workerConfig: cloudflare.WorkerScriptArgs = {
@@ -350,19 +353,27 @@ export function createWorker(
   // Add bindings
   if (config.bindings) {
     const processedBindings: Record<string, any> = {};
-    
+
     for (const binding of config.bindings) {
       if (binding.type === 'd1Database' && binding.databaseId && d1Databases[binding.databaseId]) {
         processedBindings[binding.name] = {
           type: 'd1Database',
           databaseId: d1Databases[binding.databaseId].id,
         };
-      } else if (binding.type === 'r2Bucket' && binding.bucketName && r2Buckets[binding.bucketName]) {
+      } else if (
+        binding.type === 'r2Bucket' &&
+        binding.bucketName &&
+        r2Buckets[binding.bucketName]
+      ) {
         processedBindings[binding.name] = {
           type: 'r2Bucket',
           bucketName: r2Buckets[binding.bucketName].name,
         };
-      } else if (binding.type === 'vectorizeIndex' && binding.indexName && vectorizeIndexes[binding.indexName]) {
+      } else if (
+        binding.type === 'vectorizeIndex' &&
+        binding.indexName &&
+        vectorizeIndexes[binding.indexName]
+      ) {
         processedBindings[binding.name] = {
           type: 'vectorizeIndex',
           indexName: vectorizeIndexes[binding.indexName].name,
@@ -384,7 +395,7 @@ export function createWorker(
         };
       }
     }
-    
+
     workerConfig.bindings = processedBindings;
   }
 
@@ -415,7 +426,7 @@ export function createWorkers(
   d1Databases: Record<string, cloudflare.D1Database>,
   r2Buckets: Record<string, cloudflare.R2Bucket>,
   vectorizeIndexes: Record<string, cloudflare.VectorizeIndex>,
-  queues: Record<string, cloudflare.WorkersQueue>
+  queues: Record<string, cloudflare.WorkersQueue>,
 ): Record<string, cloudflare.WorkerScript> {
   const workers: Record<string, cloudflare.WorkerScript> = {};
 
@@ -428,7 +439,12 @@ export function createWorkers(
       compatibilityFlags: ['nodejs_als'],
       bindings: [
         { type: 'ai', name: 'AI' },
-        { type: 'service', name: 'CONSTELLATION', service: 'constellation', environment: 'production' },
+        {
+          type: 'service',
+          name: 'CONSTELLATION',
+          service: 'constellation',
+          environment: 'production',
+        },
         { type: 'service', name: 'SILO', service: 'silo', environment: 'production' },
       ],
       vars: {
@@ -439,7 +455,7 @@ export function createWorkers(
     d1Databases,
     r2Buckets,
     vectorizeIndexes,
-    queues
+    queues,
   );
 
   // Silo Worker
@@ -466,7 +482,7 @@ export function createWorkers(
     d1Databases,
     r2Buckets,
     vectorizeIndexes,
-    queues
+    queues,
   );
 
   // Constellation Worker
@@ -491,7 +507,7 @@ export function createWorkers(
     d1Databases,
     r2Buckets,
     vectorizeIndexes,
-    queues
+    queues,
   );
 
   // AI Processor Worker
@@ -516,7 +532,7 @@ export function createWorkers(
     d1Databases,
     r2Buckets,
     vectorizeIndexes,
-    queues
+    queues,
   );
 
   // Dome Cron Worker
@@ -541,7 +557,7 @@ export function createWorkers(
     d1Databases,
     r2Buckets,
     vectorizeIndexes,
-    queues
+    queues,
   );
 
   // Dome Notify Worker
@@ -562,7 +578,7 @@ export function createWorkers(
     d1Databases,
     r2Buckets,
     vectorizeIndexes,
-    queues
+    queues,
   );
 
   return workers;
@@ -582,7 +598,7 @@ import { environment } from '../config';
 
 // Create service bindings between workers
 export function createServiceBindings(
-  workers: Record<string, cloudflare.WorkerScript>
+  workers: Record<string, cloudflare.WorkerScript>,
 ): cloudflare.ServiceBinding[] {
   const bindings: cloudflare.ServiceBinding[] = [];
 
@@ -593,7 +609,7 @@ export function createServiceBindings(
       environment: environment,
       name: 'CONSTELLATION',
       scriptName: workers.domeApi.name,
-    })
+    }),
   );
 
   // Dome API to Silo
@@ -603,7 +619,7 @@ export function createServiceBindings(
       environment: environment,
       name: 'SILO',
       scriptName: workers.domeApi.name,
-    })
+    }),
   );
 
   // Constellation to Silo
@@ -613,7 +629,7 @@ export function createServiceBindings(
       environment: environment,
       name: 'SILO',
       scriptName: workers.constellation.name,
-    })
+    }),
   );
 
   // AI Processor to Silo
@@ -623,7 +639,7 @@ export function createServiceBindings(
       environment: environment,
       name: 'SILO',
       scriptName: workers.aiProcessor.name,
-    })
+    }),
   );
 
   return bindings;
@@ -637,6 +653,7 @@ export function createServiceBindings(
 Create files for each environment:
 
 **src/stacks/dev.ts**:
+
 ```typescript
 import * as pulumi from '@pulumi/pulumi';
 import { createD1Databases } from '../resources/databases';
@@ -731,24 +748,22 @@ try {
 // Import D1 Databases
 async function importD1Databases() {
   console.log('Importing D1 Databases...');
-  
+
   // Example: Import dome-meta database
   try {
-    execSync(
-      'pulumi import cloudflare:index/d1Database:D1Database dome-meta dome-meta',
-      { stdio: 'inherit' }
-    );
+    execSync('pulumi import cloudflare:index/d1Database:D1Database dome-meta dome-meta', {
+      stdio: 'inherit',
+    });
     console.log('Imported dome-meta database');
   } catch (error) {
     console.error('Failed to import dome-meta database');
   }
-  
+
   // Example: Import silo database
   try {
-    execSync(
-      'pulumi import cloudflare:index/d1Database:D1Database silo silo',
-      { stdio: 'inherit' }
-    );
+    execSync('pulumi import cloudflare:index/d1Database:D1Database silo silo', {
+      stdio: 'inherit',
+    });
     console.log('Imported silo database');
   } catch (error) {
     console.error('Failed to import silo database');
@@ -758,24 +773,22 @@ async function importD1Databases() {
 // Import R2 Buckets
 async function importR2Buckets() {
   console.log('Importing R2 Buckets...');
-  
+
   // Example: Import dome-raw bucket
   try {
-    execSync(
-      'pulumi import cloudflare:index/r2Bucket:R2Bucket dome-raw dome-raw',
-      { stdio: 'inherit' }
-    );
+    execSync('pulumi import cloudflare:index/r2Bucket:R2Bucket dome-raw dome-raw', {
+      stdio: 'inherit',
+    });
     console.log('Imported dome-raw bucket');
   } catch (error) {
     console.error('Failed to import dome-raw bucket');
   }
-  
+
   // Example: Import silo-content bucket
   try {
-    execSync(
-      'pulumi import cloudflare:index/r2Bucket:R2Bucket silo-content silo-content',
-      { stdio: 'inherit' }
-    );
+    execSync('pulumi import cloudflare:index/r2Bucket:R2Bucket silo-content silo-content', {
+      stdio: 'inherit',
+    });
     console.log('Imported silo-content bucket');
   } catch (error) {
     console.error('Failed to import silo-content bucket');
@@ -785,18 +798,17 @@ async function importR2Buckets() {
 // Import Workers
 async function importWorkers() {
   console.log('Importing Workers...');
-  
+
   // Example: Import dome-api worker
   try {
-    execSync(
-      'pulumi import cloudflare:index/workerScript:WorkerScript dome-api dome-api',
-      { stdio: 'inherit' }
-    );
+    execSync('pulumi import cloudflare:index/workerScript:WorkerScript dome-api dome-api', {
+      stdio: 'inherit',
+    });
     console.log('Imported dome-api worker');
   } catch (error) {
     console.error('Failed to import dome-api worker');
   }
-  
+
   // Import other workers similarly
 }
 
@@ -806,7 +818,7 @@ async function runImport() {
   await importR2Buckets();
   await importWorkers();
   // Add other import functions as needed
-  
+
   console.log('Import process completed');
 }
 

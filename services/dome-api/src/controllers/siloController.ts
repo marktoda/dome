@@ -8,7 +8,6 @@ import { getLogger } from '@dome/logging';
 import {
   ServiceError,
   siloSimplePutSchema,
-  siloCreateUploadSchema,
   ContentCategory,
   SiloBatchGetResponse,
 } from '@dome/common';
@@ -68,50 +67,6 @@ export class SiloController {
           method: c.req.method,
         },
         'Error in simplePut controller',
-      );
-
-      if (error instanceof z.ZodError) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request data',
-              details: error.errors,
-            },
-          },
-          400,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  /**
-   * POST /upload
-   * Proxy to Silo.createUpload
-   */
-  async createUpload(
-    c: Context<{ Bindings: Bindings; Variables: UserIdContext }>,
-  ): Promise<Response> {
-    try {
-      const userId = c.get('userId');
-      const body = await c.req.json();
-      const data = siloCreateUploadSchema.parse(body);
-      const result = await siloService.createUpload(c.env, {
-        ...data,
-        userId,
-      });
-      return c.json({ success: true, ...result });
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          path: c.req.path,
-          method: c.req.method,
-        },
-        'Error in createUpload controller',
       );
 
       if (error instanceof z.ZodError) {

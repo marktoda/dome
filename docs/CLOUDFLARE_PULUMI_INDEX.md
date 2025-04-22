@@ -9,6 +9,7 @@ This documentation set provides a comprehensive plan for implementing infrastruc
 This documentation set consists of the following documents:
 
 1. **[CLOUDFLARE_PULUMI_SUMMARY.md](./CLOUDFLARE_PULUMI_SUMMARY.md)**
+
    - Executive summary
    - Key benefits
    - Resource inventory
@@ -16,6 +17,7 @@ This documentation set consists of the following documents:
    - Getting started guide
 
 2. **[CLOUDFLARE_PULUMI_ARCHITECTURE.md](./CLOUDFLARE_PULUMI_ARCHITECTURE.md)**
+
    - Detailed architecture overview
    - Cloudflare resource inventory
    - Pulumi project structure
@@ -26,6 +28,7 @@ This documentation set consists of the following documents:
    - Security considerations
 
 3. **[CLOUDFLARE_PULUMI_IMPLEMENTATION.md](./CLOUDFLARE_PULUMI_IMPLEMENTATION.md)**
+
    - Detailed implementation guidance
    - Code examples for each component
    - Project setup instructions

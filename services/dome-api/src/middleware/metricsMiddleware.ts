@@ -1,6 +1,6 @@
 import { Next } from 'hono';
 import { Context } from 'hono';
-import { getLogger } from '@dome/logging';
+import { getLogger, logError } from '@dome/logging';
 
 // Simple metrics implementation
 export const metrics = {
@@ -86,7 +86,11 @@ export function metricsMiddleware() {
       metrics.trackApiRequest(path, method, 500, duration);
 
       // Log the error
-      getLogger().error({ error, path, method, duration }, 'Request error in metrics middleware');
+      logError(getLogger(), error, 'Request error in metrics middleware', {
+        path,
+        method,
+        duration,
+      });
 
       // Re-throw the error to be handled by error middleware
       throw error;

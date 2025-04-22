@@ -53,17 +53,23 @@ export class ListCommand implements CommandHandler {
       this.addMessage(`{gray-fg}Fetching ${type} from the server...{/gray-fg}`);
 
       const response = type === 'notes' ? await listNotes() : await listTasks();
-      
+
       // Debug logging to help diagnose response structure issues
-      this.addMessage(`{gray-fg}Response received: ${JSON.stringify(response, null, 2).substring(0, 100)}...{/gray-fg}`);
+      this.addMessage(
+        `{gray-fg}Response received: ${JSON.stringify(response, null, 2).substring(
+          0,
+          100,
+        )}...{/gray-fg}`,
+      );
 
       // Update status to show we're processing the data
       this.setStatus(` {bold}Status:{/bold} Processing ${type}...`);
 
       // Extract items from the response based on type
-      const items = type === 'notes'
-        ? (response.notes || response.items || [])
-        : (response.tasks || response.items || []);
+      const items =
+        type === 'notes'
+          ? response.notes || response.items || []
+          : response.tasks || response.items || [];
 
       if (items.length === 0) {
         this.addMessage(`No ${type} found.`);
@@ -145,7 +151,7 @@ export class ListCommand implements CommandHandler {
       this.addMessage(`{yellow-fg}Debug info:{/yellow-fg}`);
       this.addMessage(`{gray-fg}Type: ${type}{/gray-fg}`);
       this.addMessage(`{gray-fg}API endpoint: ${type === 'notes' ? '/notes' : '/tasks'}{/gray-fg}`);
-      
+
       this.addMessage(
         '{yellow-fg}Try again later or contact support if the issue persists.{/yellow-fg}',
       );

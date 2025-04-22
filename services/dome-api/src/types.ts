@@ -5,12 +5,10 @@ import type {
   VectorSearchResult,
   VectorIndexStats,
   SiloSimplePutInput,
-  SiloCreateUploadInput,
   SiloBatchGetInput,
   SiloDeleteInput,
   SiloStatsInput,
   SiloSimplePutResponse,
-  SiloCreateUploadResponse,
   SiloBatchGetResponse,
   SiloDeleteResponse,
   SiloStatsResponse,
@@ -45,7 +43,6 @@ export interface ConstellationService {
 
 export interface SiloService {
   simplePut(data: SiloSimplePutInput): Promise<SiloSimplePutResponse>;
-  createUpload(data: SiloCreateUploadInput): Promise<SiloCreateUploadResponse>;
   batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
   delete(data: SiloDeleteInput): Promise<SiloDeleteResponse>;
 

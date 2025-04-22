@@ -68,11 +68,13 @@ The architecture follows these design principles:
 Before working with the Pulumi infrastructure, ensure you have the following prerequisites installed and configured:
 
 1. **Pulumi CLI**: Version 3.0.0 or higher
+
    ```bash
    curl -fsSL https://get.pulumi.com | sh
    ```
 
 2. **Node.js**: Version 18.x or higher
+
    ```bash
    # Using nvm (recommended)
    nvm install 18
@@ -80,6 +82,7 @@ Before working with the Pulumi infrastructure, ensure you have the following pre
    ```
 
 3. **pnpm**: For package management
+
    ```bash
    npm install -g pnpm
    ```
@@ -98,28 +101,32 @@ Before working with the Pulumi infrastructure, ensure you have the following pre
 To set up the Pulumi project for the first time:
 
 1. Clone the repository and navigate to the project directory:
+
    ```bash
    cd /home/toda/dev/dome
    ```
 
 2. Install dependencies:
+
    ```bash
    pnpm install
    ```
 
 3. Navigate to the infrastructure directory:
+
    ```bash
    cd infra
    ```
 
 4. Initialize the Pulumi stacks (if not already initialized):
+
    ```bash
    # Initialize the dev stack
    just pulumi-stack-init dev
-   
+
    # Initialize the staging stack
    just pulumi-stack-init staging
-   
+
    # Initialize the production stack
    just pulumi-stack-init prod
    ```
@@ -129,11 +136,13 @@ To set up the Pulumi project for the first time:
 To authenticate with Pulumi and Cloudflare:
 
 1. Log in to Pulumi:
+
    ```bash
    pulumi login
    ```
 
 2. Set up Cloudflare credentials as environment variables:
+
    ```bash
    export CLOUDFLARE_API_TOKEN=your-api-token
    export CLOUDFLARE_ACCOUNT_ID=your-account-id
@@ -179,8 +188,8 @@ Key files and their purposes:
 
 - **index.ts**: The main entry point that selects the appropriate stack based on the environment.
 - **config.ts**: Defines configuration variables and environment-specific settings.
-- **resources/*.ts**: Define the various Cloudflare resources.
-- **stacks/*.ts**: Implement environment-specific configurations and resource creation.
+- **resources/\*.ts**: Define the various Cloudflare resources.
+- **stacks/\*.ts**: Implement environment-specific configurations and resource creation.
 - **scripts/deploy.ts**: Handles the deployment process with validation and safety checks.
 
 ## Resource Management
@@ -195,17 +204,17 @@ Example of creating a D1 database:
 // In src/resources/databases.ts
 export function createD1Databases(): Record<string, cloudflare.D1Database> {
   const databases: Record<string, cloudflare.D1Database> = {};
-  
+
   // Create the dome-meta database
-  databases.domeMeta = new cloudflare.D1Database("dome-meta", {
-    name: resourceName("dome-meta"),
+  databases.domeMeta = new cloudflare.D1Database('dome-meta', {
+    name: resourceName('dome-meta'),
   });
-  
+
   // Create the silo database
-  databases.silo = new cloudflare.D1Database("silo", {
-    name: resourceName("silo"),
+  databases.silo = new cloudflare.D1Database('silo', {
+    name: resourceName('silo'),
   });
-  
+
   return databases;
 }
 ```
@@ -220,17 +229,17 @@ Example of creating an R2 bucket:
 // In src/resources/storage.ts
 export function createR2Buckets(): Record<string, cloudflare.R2Bucket> {
   const buckets: Record<string, cloudflare.R2Bucket> = {};
-  
+
   // Create the dome-raw bucket
-  buckets.domeRaw = new cloudflare.R2Bucket("dome-raw", {
-    name: resourceName("dome-raw"),
+  buckets.domeRaw = new cloudflare.R2Bucket('dome-raw', {
+    name: resourceName('dome-raw'),
   });
-  
+
   // Create the silo-content bucket
-  buckets.siloContent = new cloudflare.R2Bucket("silo-content", {
-    name: resourceName("silo-content"),
+  buckets.siloContent = new cloudflare.R2Bucket('silo-content', {
+    name: resourceName('silo-content'),
   });
-  
+
   return buckets;
 }
 ```
@@ -245,14 +254,14 @@ Example of creating a Vectorize index:
 // In src/resources/vectorize.ts
 export function createVectorizeIndexes(): Record<string, cloudflare.VectorizeIndex> {
   const indexes: Record<string, cloudflare.VectorizeIndex> = {};
-  
+
   // Create the dome-notes index
-  indexes.domeNotes = new cloudflare.VectorizeIndex("dome-notes", {
-    name: resourceName("dome-notes"),
+  indexes.domeNotes = new cloudflare.VectorizeIndex('dome-notes', {
+    name: resourceName('dome-notes'),
     dimensions: 1536,
-    metric: "cosine",
+    metric: 'cosine',
   });
-  
+
   return indexes;
 }
 ```
@@ -267,17 +276,17 @@ Example of creating a queue:
 // In src/resources/queues.ts
 export function createQueues(): Record<string, cloudflare.WorkersQueue> {
   const queues: Record<string, cloudflare.WorkersQueue> = {};
-  
+
   // Create the new-content-constellation queue
-  queues.newContentConstellation = new cloudflare.WorkersQueue("new-content-constellation", {
-    name: resourceName("new-content-constellation"),
+  queues.newContentConstellation = new cloudflare.WorkersQueue('new-content-constellation', {
+    name: resourceName('new-content-constellation'),
   });
-  
+
   // Create the new-content-ai queue
-  queues.newContentAi = new cloudflare.WorkersQueue("new-content-ai", {
-    name: resourceName("new-content-ai"),
+  queues.newContentAi = new cloudflare.WorkersQueue('new-content-ai', {
+    name: resourceName('new-content-ai'),
   });
-  
+
   return queues;
 }
 ```
@@ -295,7 +304,7 @@ export function createWorker(
   d1Databases: Record<string, cloudflare.D1Database>,
   r2Buckets: Record<string, cloudflare.R2Bucket>,
   vectorizeIndexes: Record<string, cloudflare.VectorizeIndex>,
-  queues: Record<string, cloudflare.WorkersQueue>
+  queues: Record<string, cloudflare.WorkersQueue>,
 ): cloudflare.WorkerScript {
   // Worker configuration
   const workerConfig: cloudflare.WorkerScriptArgs = {
@@ -309,13 +318,13 @@ export function createWorker(
       ENVIRONMENT: environment,
     },
   };
-  
+
   // Add bindings
   // ...
-  
+
   // Create the worker script
   const worker = new cloudflare.WorkerScript(config.name, workerConfig);
-  
+
   return worker;
 }
 ```
@@ -329,26 +338,30 @@ Example of creating service bindings:
 ```typescript
 // In src/resources/bindings.ts
 export function createServiceBindings(
-  workers: Record<string, cloudflare.WorkerScript>
+  workers: Record<string, cloudflare.WorkerScript>,
 ): cloudflare.ServiceBinding[] {
   const bindings: cloudflare.ServiceBinding[] = [];
-  
+
   // Create service binding from dome-api to constellation
-  bindings.push(new cloudflare.ServiceBinding("dome-api-to-constellation", {
-    service: workers.constellation.name,
-    environment: environment,
-    binding: "CONSTELLATION",
-    script: workers.domeApi.name,
-  }));
-  
+  bindings.push(
+    new cloudflare.ServiceBinding('dome-api-to-constellation', {
+      service: workers.constellation.name,
+      environment: environment,
+      binding: 'CONSTELLATION',
+      script: workers.domeApi.name,
+    }),
+  );
+
   // Create service binding from dome-api to silo
-  bindings.push(new cloudflare.ServiceBinding("dome-api-to-silo", {
-    service: workers.silo.name,
-    environment: environment,
-    binding: "SILO",
-    script: workers.domeApi.name,
-  }));
-  
+  bindings.push(
+    new cloudflare.ServiceBinding('dome-api-to-silo', {
+      service: workers.silo.name,
+      environment: environment,
+      binding: 'SILO',
+      script: workers.domeApi.name,
+    }),
+  );
+
   return bindings;
 }
 ```
@@ -364,11 +377,13 @@ The development environment is used for active development and testing. It has t
 To deploy to the development environment:
 
 1. Preview changes:
+
    ```bash
    just pulumi-preview dev
    ```
 
 2. Apply changes:
+
    ```bash
    just pulumi-up dev
    ```
@@ -379,6 +394,7 @@ To deploy to the development environment:
    ```
 
 The development environment uses the following configuration:
+
 - Worker suffix: `-dev`
 - Log level: `debug`
 - Observability: Enabled with full sampling
@@ -390,6 +406,7 @@ The staging environment is used for pre-production testing. It has moderate safe
 To deploy to the staging environment:
 
 1. Preview changes:
+
    ```bash
    just pulumi-preview staging
    ```
@@ -400,6 +417,7 @@ To deploy to the staging environment:
    ```
 
 The staging environment uses the following configuration:
+
 - Worker suffix: `-staging`
 - Log level: `info`
 - Observability: Enabled with full sampling
@@ -411,6 +429,7 @@ The production environment is used for live services. It has the strictest safeg
 To deploy to the production environment:
 
 1. Preview changes:
+
    ```bash
    just pulumi-preview prod
    ```
@@ -421,11 +440,13 @@ To deploy to the production environment:
    ```
 
 The production environment uses the following configuration:
+
 - Worker suffix: None (clean names)
 - Log level: `info`
 - Observability: Enabled with full sampling
 
 **Important**: The production environment has additional safeguards:
+
 - Destroying production resources is blocked by default
 - Additional validation is performed before deployment
 - Changes require explicit confirmation
@@ -462,14 +483,14 @@ Example of adding a new D1 database:
 // In src/resources/databases.ts
 export function createD1Databases(): Record<string, cloudflare.D1Database> {
   const databases: Record<string, cloudflare.D1Database> = {};
-  
+
   // Existing databases...
-  
+
   // Add a new database
-  databases.newDatabase = new cloudflare.D1Database("new-database", {
-    name: resourceName("new-database"),
+  databases.newDatabase = new cloudflare.D1Database('new-database', {
+    name: resourceName('new-database'),
   });
-  
+
   return databases;
 }
 ```
@@ -507,7 +528,7 @@ workers.domeApi = createWorker(
   d1Databases,
   r2Buckets,
   vectorizeIndexes,
-  queues
+  queues,
 );
 ```
 
@@ -526,14 +547,14 @@ Example of removing a queue:
 // In src/resources/queues.ts
 export function createQueues(): Record<string, cloudflare.WorkersQueue> {
   const queues: Record<string, cloudflare.WorkersQueue> = {};
-  
+
   // Create the new-content-constellation queue
-  queues.newContentConstellation = new cloudflare.WorkersQueue("new-content-constellation", {
-    name: resourceName("new-content-constellation"),
+  queues.newContentConstellation = new cloudflare.WorkersQueue('new-content-constellation', {
+    name: resourceName('new-content-constellation'),
   });
-  
+
   // Removed the new-content-ai queue
-  
+
   return queues;
 }
 ```
@@ -556,16 +577,19 @@ This will display all the outputs defined in the stack, such as resource IDs, UR
 #### Issue: Resource Creation Failure
 
 **Symptoms**:
+
 - Pulumi reports a resource creation failure
 - Error message indicates a problem with the resource configuration
 
 **Possible Causes**:
+
 - Invalid resource configuration
 - API token permissions
 - Resource name conflicts
 - Resource limits reached
 
 **Resolution**:
+
 1. Check the error message for specific details
 2. Verify the resource configuration
 3. Check API token permissions
@@ -583,15 +607,18 @@ Resolution: Ensure the API token has the `Account.Workers D1:Edit` permission.
 #### Issue: Dependency Resolution Failure
 
 **Symptoms**:
+
 - Pulumi reports a dependency resolution failure
 - Error message indicates a problem with resource dependencies
 
 **Possible Causes**:
+
 - Circular dependencies
 - Missing dependencies
 - Incorrect dependency order
 
 **Resolution**:
+
 1. Check the dependency graph
 2. Verify all dependencies exist
 3. Correct the dependency order
@@ -607,15 +634,18 @@ Resolution: Ensure the constellation worker is created before creating the servi
 #### Issue: Configuration Error
 
 **Symptoms**:
+
 - Pulumi reports a configuration error
 - Error message indicates a problem with the stack configuration
 
 **Possible Causes**:
+
 - Missing required configuration
 - Invalid configuration values
 - Environment variable issues
 
 **Resolution**:
+
 1. Check the stack configuration
 2. Verify environment variables
 3. Update the configuration as needed
@@ -633,15 +663,18 @@ Resolution: Set the `CLOUDFLARE_ACCOUNT_ID` environment variable or add it to th
 #### Issue: State File Corruption
 
 **Symptoms**:
+
 - Pulumi reports state file corruption or inconsistency
 - Error message indicates a problem with the state file
 
 **Possible Causes**:
+
 - Manual changes to resources
 - Interrupted deployment
 - Concurrent deployments
 
 **Resolution**:
+
 1. Run `pulumi refresh` to update the state
 2. Manually fix any inconsistencies
 3. Consider importing resources if necessary
@@ -656,15 +689,18 @@ pulumi refresh --stack dev
 #### Issue: Resource Drift
 
 **Symptoms**:
+
 - Pulumi reports differences between the expected and actual state
 - Resources have been modified outside of Pulumi
 
 **Possible Causes**:
+
 - Manual changes to resources
 - Changes made through the Cloudflare dashboard
 - Changes made by other tools
 
 **Resolution**:
+
 1. Run `pulumi refresh` to update the state
 2. Review the differences
 3. Decide whether to accept the changes or revert to the expected state
@@ -681,16 +717,19 @@ pulumi refresh --stack dev
 #### Issue: Worker Deployment Failure
 
 **Symptoms**:
+
 - Worker deployment fails
 - Error message indicates a problem with the worker code or configuration
 
 **Possible Causes**:
+
 - Invalid worker code
 - Missing dependencies
 - Incorrect bindings
 - Compatibility issues
 
 **Resolution**:
+
 1. Check the worker code
 2. Verify dependencies
 3. Check bindings
@@ -707,15 +746,18 @@ Resolution: Ensure the worker module path is correct and the file exists.
 #### Issue: D1 Database Issues
 
 **Symptoms**:
+
 - D1 database operations fail
 - Error message indicates a problem with the database
 
 **Possible Causes**:
+
 - Database name conflicts
 - Permission issues
 - Resource limits
 
 **Resolution**:
+
 1. Check the database name
 2. Verify permissions
 3. Check resource limits
@@ -733,14 +775,17 @@ Resolution: Use a different name for the database or import the existing databas
 #### Issue: Circular Dependencies
 
 **Symptoms**:
+
 - Deployment fails with a circular dependency error
 - Error message indicates a circular reference between resources
 
 **Possible Causes**:
+
 - Resources depend on each other
 - Incorrect resource references
 
 **Resolution**:
+
 1. Identify the circular dependency
 2. Restructure the dependencies
 3. Use intermediate resources if necessary
@@ -756,15 +801,18 @@ Resolution: Restructure the dependencies to break the cycle, possibly by introdu
 #### Issue: Missing Dependencies
 
 **Symptoms**:
+
 - Deployment fails with a missing dependency error
 - Error message indicates a reference to a non-existent resource
 
 **Possible Causes**:
+
 - Resource not created
 - Incorrect resource reference
 - Typo in resource name
 
 **Resolution**:
+
 1. Verify the referenced resource exists
 2. Check the resource name
 3. Create the missing resource if necessary
@@ -780,15 +828,19 @@ Resolution: Ensure the constellation worker is created before creating the servi
 ## Best Practices
 
 1. **Always Preview Before Applying**:
+
    ```bash
    just pulumi-preview <stack>
    ```
+
    This shows what changes will be made without actually applying them.
 
 2. **Use Descriptive Commit Messages**:
+
    ```
    infra: Add new D1 database for user preferences
    ```
+
    This helps track infrastructure changes over time.
 
 3. **Keep Environment Configurations Separate**:
@@ -821,41 +873,41 @@ Resolution: Ensure the constellation worker is created before creating the servi
 
 The following justfile commands are available for managing the Pulumi infrastructure:
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `pulumi-preview` | Preview infrastructure changes | `just pulumi-preview dev` |
-| `pulumi-up` | Deploy infrastructure changes | `just pulumi-up dev` |
-| `pulumi-destroy` | Destroy infrastructure | `just pulumi-destroy dev` |
-| `pulumi-stack-init` | Initialize a new stack | `just pulumi-stack-init dev` |
-| `deploy-dev` | Deploy development environment | `just deploy-dev` |
-| `deploy-staging` | Deploy staging environment | `just deploy-staging` |
-| `deploy-prod` | Deploy production environment | `just deploy-prod` |
-| `deploy-all` | Deploy all environments | `just deploy-all` |
-| `preview-all` | Preview changes for all environments | `just preview-all` |
-| `destroy-dev` | Destroy development environment | `just destroy-dev` |
+| Command             | Description                          | Example                      |
+| ------------------- | ------------------------------------ | ---------------------------- |
+| `pulumi-preview`    | Preview infrastructure changes       | `just pulumi-preview dev`    |
+| `pulumi-up`         | Deploy infrastructure changes        | `just pulumi-up dev`         |
+| `pulumi-destroy`    | Destroy infrastructure               | `just pulumi-destroy dev`    |
+| `pulumi-stack-init` | Initialize a new stack               | `just pulumi-stack-init dev` |
+| `deploy-dev`        | Deploy development environment       | `just deploy-dev`            |
+| `deploy-staging`    | Deploy staging environment           | `just deploy-staging`        |
+| `deploy-prod`       | Deploy production environment        | `just deploy-prod`           |
+| `deploy-all`        | Deploy all environments              | `just deploy-all`            |
+| `preview-all`       | Preview changes for all environments | `just preview-all`           |
+| `destroy-dev`       | Destroy development environment      | `just destroy-dev`           |
 
 ### Environment Variables
 
 The following environment variables are used by the Pulumi infrastructure:
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | Yes |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID | Yes |
+| Variable                | Description           | Required |
+| ----------------------- | --------------------- | -------- |
+| `CLOUDFLARE_API_TOKEN`  | Cloudflare API token  | Yes      |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID | Yes      |
 
 ### Pulumi CLI Commands
 
 The following Pulumi CLI commands are useful for managing the infrastructure:
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `pulumi stack ls` | List available stacks | `pulumi stack ls` |
-| `pulumi stack select` | Select a stack | `pulumi stack select dev` |
-| `pulumi config` | Manage stack configuration | `pulumi config set cloudflare:accountId <id>` |
-| `pulumi preview` | Preview changes | `pulumi preview` |
-| `pulumi up` | Apply changes | `pulumi up` |
-| `pulumi destroy` | Destroy resources | `pulumi destroy` |
-| `pulumi refresh` | Update state to match reality | `pulumi refresh` |
-| `pulumi stack output` | View stack outputs | `pulumi stack output` |
-| `pulumi history` | View deployment history | `pulumi history` |
-| `pulumi cancel` | Cancel an update | `pulumi cancel` |
+| Command               | Description                   | Example                                       |
+| --------------------- | ----------------------------- | --------------------------------------------- |
+| `pulumi stack ls`     | List available stacks         | `pulumi stack ls`                             |
+| `pulumi stack select` | Select a stack                | `pulumi stack select dev`                     |
+| `pulumi config`       | Manage stack configuration    | `pulumi config set cloudflare:accountId <id>` |
+| `pulumi preview`      | Preview changes               | `pulumi preview`                              |
+| `pulumi up`           | Apply changes                 | `pulumi up`                                   |
+| `pulumi destroy`      | Destroy resources             | `pulumi destroy`                              |
+| `pulumi refresh`      | Update state to match reality | `pulumi refresh`                              |
+| `pulumi stack output` | View stack outputs            | `pulumi stack output`                         |
+| `pulumi history`      | View deployment history       | `pulumi history`                              |
+| `pulumi cancel`       | Cancel an update              | `pulumi cancel`                               |

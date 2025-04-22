@@ -1,5 +1,5 @@
 import { QueueService, Event, createReminderDueEvent } from '@dome/common';
-import { withLogger, getLogger } from '@dome/logging';
+import { withLogger, getLogger, logError } from '@dome/logging';
 
 // Define the execution context interface with the run method
 interface CFExecutionContext {
@@ -140,8 +140,7 @@ export default {
 
           getLogger().info({ processedCount }, 'Scheduled job completed');
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          getLogger().error({ error, errorMessage }, 'Error in scheduled job');
+          logError(getLogger(), error, 'Error in scheduled job');
           // Ensure the error is reported to the Cloudflare dashboard
           ctx.waitUntil(Promise.reject(error));
           // Re-throw the error to propagate it to the caller

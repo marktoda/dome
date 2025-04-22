@@ -6,7 +6,7 @@
  */
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { R2Event } from './types';
 import { wrap } from './utils/wrap';
 import { createServices, Services } from './services';
@@ -15,17 +15,14 @@ import { zValidator } from '@hono/zod-validator';
 import { EnrichedContentMessage, EnrichedContentMessageSchema } from '@dome/common';
 import {
   siloSimplePutSchema,
-  siloCreateUploadSchema,
   siloBatchGetSchema,
   siloDeleteSchema,
   siloStatsSchema,
   SiloSimplePutInput,
-  SiloCreateUploadInput,
   SiloBatchGetInput,
   SiloDeleteInput,
   SiloStatsInput,
   SiloSimplePutResponse,
-  SiloCreateUploadResponse,
   SiloBatchGetResponse,
   SiloDeleteResponse,
   SiloStatsResponse,
@@ -105,7 +102,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
           }
         } catch (error) {
           metrics.increment('silo.queue.errors', 1);
-          getLogger().error({ error, queue: batch.queue }, 'Queue processing error');
+          logError(getLogger(), error, 'Queue processing error', { queue: batch.queue });
           throw error; // Allow retry
         }
       },
@@ -131,38 +128,8 @@ export default class Silo extends WorkerEntrypoint<Env> {
               .join(', ')}`,
           );
         }
-
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        getLogger().error({ error, errorMessage }, 'Error in simplePut');
+        logError(getLogger(), error, 'Error in simplePut');
         metrics.increment('silo.rpc.errors', 1, { method: 'simplePut' });
-        throw error;
-      }
-    });
-  }
-
-  /**
-   * Generate pre-signed forms for direct browser-to-R2 uploads
-   */
-  async createUpload(data: SiloCreateUploadInput): Promise<SiloCreateUploadResponse> {
-    return wrap({ operation: 'createUpload' }, async () => {
-      try {
-        // Validate input
-        const validatedData = siloCreateUploadSchema.parse(data);
-        return await this.services.content.createUpload(validatedData);
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          getLogger().error({ error: error.errors }, 'Validation error in createUpload');
-          metrics.increment('silo.validation.errors', 1, { method: 'createUpload' });
-          throw new Error(
-            `Validation error: ${error.errors
-              .map(e => `${e.path.join('.')}: ${e.message}`)
-              .join(', ')}`,
-          );
-        }
-
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        getLogger().error({ error, errorMessage }, 'Error in createUpload');
-        metrics.increment('silo.rpc.errors', 1, { method: 'createUpload' });
         throw error;
       }
     });
@@ -187,9 +154,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
               .join(', ')}`,
           );
         }
-
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        getLogger().error({ error, errorMessage }, 'Error in batchGet');
+        logError(getLogger(), error, 'Error in batchGet');
         metrics.increment('silo.rpc.errors', 1, { method: 'batchGet' });
         throw error;
       }
@@ -215,9 +180,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
               .join(', ')}`,
           );
         }
-
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        getLogger().error({ error, errorMessage }, 'Error in delete');
+        logError(getLogger(), error, 'Error in delete');
         metrics.increment('silo.rpc.errors', 1, { method: 'delete' });
         throw error;
       }
@@ -243,9 +206,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
               .join(', ')}`,
           );
         }
-
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        getLogger().error({ error, errorMessage }, 'Error in stats');
+        logError(getLogger(), error, 'Error in stats');
         metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
         throw error;
       }

@@ -1,4 +1,4 @@
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { ulid } from 'ulid';
 import { R2Service } from '../services/r2Service';
 import { MetadataService } from '../services/metadataService';
@@ -37,7 +37,7 @@ export class ContentController {
     private readonly r2Service: R2Service,
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
-  ) { }
+  ) {}
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -82,60 +82,6 @@ export class ContentController {
     }
   }
 
-  /** Generate a pre‑signed POST form for browser‑to‑R2 uploads (≤100 MiB). */
-  async createUpload(data: {
-    category: string;
-    mimeType: string;
-    size: number;
-    metadata?: Record<string, unknown>;
-    expirationSeconds?: number;
-    sha256?: string;
-    userId?: string;
-  }) {
-    const start = performance.now();
-
-    try {
-      if (data.size > UPLOAD_MAX_SIZE) {
-        throw new Error(`Content size exceeds ${UPLOAD_MAX_SIZE / MB} MiB.`);
-      }
-
-      const id = ulid();
-      const r2Key = this.buildR2Key('upload', id);
-      const expiresIn = data.expirationSeconds ?? PRESIGNED_POST_TTL_SECONDS;
-
-      const presignedPost = await this.r2Service.createPresignedPost({
-        key: r2Key,
-        metadata: this.buildMetadata({
-          userId: data.userId ?? null,
-          category: data.category,
-          mimeType: data.mimeType,
-          sha256: data.sha256,
-          custom: data.metadata,
-          prefix: 'x-', // required for R2 POST policies
-        }),
-        conditions: [['content-length-range', 0, UPLOAD_MAX_SIZE]],
-        expiration: expiresIn,
-      });
-
-      logger.info(
-        { id, category: data.category, mimeType: data.mimeType, size: data.size, expiresIn },
-        'Pre‑signed POST policy created successfully',
-      );
-
-      return {
-        id,
-        uploadUrl: presignedPost.url,
-        formData: presignedPost.formData,
-        expiresIn,
-      };
-    } catch (error) {
-      this.handleError('createUpload', error);
-      throw error;
-    } finally {
-      metrics.timing('silo.rpc.createUpload.latency_ms', performance.now() - start);
-    }
-  }
-
   /** Retrieve multiple items by id or list a user’s content with pagination. */
   async batchGet(params: {
     ids?: string[];
@@ -166,9 +112,8 @@ export class ContentController {
           if (obj && item.size <= SIMPLE_PUT_MAX_SIZE) {
             results[item.id].body = await obj.text();
           } else {
-            results[item.id].url = await this.r2Service.createPresignedUrl(item.r2Key, {
-              expiresIn: PRESIGNED_URL_TTL_SECONDS,
-            });
+            // TODO: fix
+            throw new Error('Object too large for simple retrieval');
           }
         }),
       );
@@ -231,8 +176,7 @@ export class ContentController {
       logger.info({ id, userId }, 'Content enriched successfully');
     } catch (error) {
       metrics.increment('silo.enriched_content.errors');
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error({ error, errorMessage, messageId: message.id }, 'Error processing enriched content');
+      logError(logger, error, 'Error processing enriched content', { messageId: message.id });
       throw error;
     }
   }
@@ -292,8 +236,7 @@ export class ContentController {
       return { id, category, mimeType, size: obj.size, createdAt };
     } catch (error) {
       metrics.increment('silo.r2.events.errors');
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error({ error, errorMessage, event }, 'Error processing R2 event');
+      logError(logger, error, 'Error processing R2 event', { event });
       throw error;
     }
   }
@@ -400,8 +343,7 @@ export class ContentController {
   }
 
   private handleError(method: string, error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error({ error, errorMessage }, `Error in ${method}`);
+    logError(logger, error, `Error in ${method}`);
     metrics.increment('silo.rpc.errors', 1, { method });
   }
 

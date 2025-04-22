@@ -4,7 +4,7 @@
  * Interfaces with Workers AI to generate embeddings.
  */
 
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 
 /**
  * Configuration for the embedding service
@@ -188,8 +188,7 @@ export class Embedder {
    */
   private handleEmbeddingError(error: unknown) {
     metrics.increment('embedding.errors');
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    getLogger().error({ error, errorMessage }, 'Error generating embeddings');
+    logError(getLogger(), error, 'Error generating embeddings');
   }
 
   /**

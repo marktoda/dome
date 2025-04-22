@@ -108,20 +108,6 @@ export const siloSimplePutSchema = z.object({
 });
 
 /**
- * Schema for createUpload RPC method
- * Used to validate input for generating pre-signed forms for direct browser-to-R2 uploads
- */
-export const siloCreateUploadSchema = z.object({
-  category: ContentCategoryEnum.default('note'),
-  mimeType: MimeTypeSchema.default('text/markdown'),
-  size: z.number().positive('Size must be a positive number'),
-  metadata: z.record(z.string(), z.any()).optional(),
-  expirationSeconds: z.number().min(60).max(3600).optional(), // Default 15 minutes, max 1 hour
-  sha256: z.string().optional(),
-  userId: z.string().optional(),
-});
-
-/**
  * Schema for batchGet RPC method
  * Used to validate input for retrieving multiple content items
  */
@@ -155,7 +141,6 @@ export const siloStatsSchema = z.object({}).optional();
 export type SiloBatchGetInput = z.input<typeof siloBatchGetSchema>;
 export type SiloDeleteInput = z.input<typeof siloDeleteSchema>;
 export type SiloStatsInput = z.input<typeof siloStatsSchema>;
-export type SiloCreateUploadInput = z.input<typeof siloCreateUploadSchema>;
 export type SiloSimplePutInput = z.input<typeof siloSimplePutSchema>;
 
 /**
@@ -173,21 +158,6 @@ export interface SiloSimplePutResponse {
   size: number;
   /** Unix timestamp (seconds) when the content was created */
   createdAt: number;
-}
-
-/**
- * CreateUpload RPC method return type
- * Returned when a pre-signed form for direct browser-to-R2 upload is generated
- */
-export interface SiloCreateUploadResponse {
-  /** Unique identifier for the content */
-  id: string;
-  /** URL to which the form should be submitted */
-  uploadUrl: string;
-  /** Form fields to include in the upload */
-  formData: Record<string, string>;
-  /** Number of seconds until the pre-signed URL expires */
-  expiresIn: number;
 }
 
 /**

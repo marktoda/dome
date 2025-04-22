@@ -16,7 +16,7 @@ export function createD1Databases(): Record<string, cloudflare.D1Database> {
       name: resourceName('dome-meta'),
       // Add tags when Cloudflare provider supports them
     });
-    
+
     // Apply tags (for future use when Cloudflare supports tagging)
     tagResource(databases.domeMeta, 'database', 'dome-meta', {
       Purpose: 'metadata-storage',
@@ -28,13 +28,13 @@ export function createD1Databases(): Record<string, cloudflare.D1Database> {
       name: resourceName('silo'),
       // Add tags when Cloudflare provider supports them
     });
-    
+
     // Apply tags (for future use when Cloudflare supports tagging)
     tagResource(databases.silo, 'database', 'silo', {
       Purpose: 'content-metadata-storage',
       Service: 'silo',
     });
-    
+
     // Add validation to ensure database names are valid
     for (const [key, database] of Object.entries(databases)) {
       if (!database.name) {
@@ -55,12 +55,14 @@ export function createD1Databases(): Record<string, cloudflare.D1Database> {
  * @param databases The database resources
  * @returns Record of database IDs
  */
-export function getDatabaseIds(databases: Record<string, cloudflare.D1Database>): Record<string, pulumi.Output<string>> {
+export function getDatabaseIds(
+  databases: Record<string, cloudflare.D1Database>,
+): Record<string, pulumi.Output<string>> {
   const databaseIds: Record<string, pulumi.Output<string>> = {};
-  
+
   for (const [key, database] of Object.entries(databases)) {
     databaseIds[key] = database.id;
   }
-  
+
   return databaseIds;
 }

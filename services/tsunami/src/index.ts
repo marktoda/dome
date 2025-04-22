@@ -127,7 +127,7 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async c => {
       message: `GitHub repository ${resourceId} registered for syncing`,
     });
   } catch (error) {
-    logError(error, 'Error registering GitHub repository');
+    logError(logger, error, 'Error registering GitHub repository', { resourceId });
     metrics.increment('tsunami.register.errors', 1);
 
     throw error;

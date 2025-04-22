@@ -31,6 +31,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     try {
       return await fn();
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       getLogger().error({ err }, 'Unhandled error');
       throw err;
     }
@@ -46,6 +47,7 @@ const sendToDeadLetter = async (queue: DeadQueue | undefined, payload: DeadLette
   try {
     await queue.send(payload);
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
     getLogger().error({ err, payload }, 'Failed to write to dead‑letter queue');
   }
 };
@@ -95,6 +97,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         getLogger().info({ vectorCount: vecs.length, vectors: vecs }, 'upserted vectors');
         processed += 1;
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
         getLogger().error({ err, job }, 'embed failed');
         await sendToDeadLetter(deadQueue, { err: String(err), job });
       } finally {

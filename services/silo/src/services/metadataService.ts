@@ -1,4 +1,4 @@
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, desc, count, sum, or, isNull, inArray } from 'drizzle-orm';
 import { contents } from '../db/schema';
@@ -37,7 +37,7 @@ export class MetadataService {
       return result;
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'insert' });
-      getLogger().error({ error, id: data.id }, 'Error inserting content metadata');
+      logError(getLogger(), error, 'Error inserting content metadata', { id: data.id });
       throw error;
     }
   }
@@ -65,7 +65,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get' });
-      getLogger().error({ error, id }, 'Error getting content metadata');
+      logError(getLogger(), error, 'Error getting content metadata', { id });
       throw error;
     }
   }
@@ -119,10 +119,10 @@ export class MetadataService {
             error:
               error instanceof Error
                 ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack,
+                  }
                 : String(error),
             ids,
             errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -140,10 +140,10 @@ export class MetadataService {
           error:
             error instanceof Error
               ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-              }
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
               : String(error),
           ids,
           errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -180,7 +180,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'delete' });
-      getLogger().error({ error, id }, 'Error deleting content metadata');
+      logError(getLogger(), error, 'Error deleting content metadata', { id });
       throw error;
     }
   }
@@ -229,7 +229,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get_by_user' });
-      getLogger().error({ error, userId }, 'Error getting content metadata for user');
+      logError(getLogger(), error, 'Error getting content metadata for user', { userId });
       throw error;
     }
   }
@@ -267,7 +267,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'count' });
-      getLogger().error({ error, userId }, 'Error getting content count for user');
+      logError(getLogger(), error, 'Error getting content count for user', { userId });
       throw error;
     }
   }
@@ -327,8 +327,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'stats' });
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      getLogger().error({ error, errorMessage }, 'Error getting storage statistics');
+      logError(getLogger(), error, 'Error getting storage statistics');
       throw error;
     }
   }
@@ -379,7 +378,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'update_enriched' });
-      getLogger().error({ error, id }, 'Error updating enriched content metadata');
+      logError(getLogger(), error, 'Error updating enriched content metadata', { id });
       throw error;
     }
   }

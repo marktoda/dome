@@ -1,4 +1,4 @@
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { z } from 'zod';
 import {
   SiloEmbedJob,
@@ -53,7 +53,7 @@ export class SiloService {
       return item.body;
     } catch (error) {
       metrics.increment('constellation.silo.fetch.errors', 1);
-      getLogger().error({ error, contentId, userId }, 'Error fetching content from Silo');
+      logError(getLogger(), error, 'Error fetching content from Silo', { contentId, userId });
       throw error;
     }
   }

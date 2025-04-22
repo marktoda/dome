@@ -122,7 +122,6 @@ notesRouter.use('*', userIdMiddleware);
 
 // Ingest endpoint - for adding new notes, files, etc.
 notesRouter.post('/', siloController.ingest.bind(siloController));
-notesRouter.post('/upload', siloController.createUpload.bind(siloController));
 
 // CRUD operations for notes
 notesRouter.get('/:id', siloController.get.bind(siloController));

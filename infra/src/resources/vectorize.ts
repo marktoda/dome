@@ -18,20 +18,20 @@ export function createVectorizeIndexes(): Record<string, cloudflare.VectorizeInd
       metric: 'cosine', // Cosine similarity
       // Add tags when Cloudflare provider supports them
     });
-    
+
     // Apply tags (for future use when Cloudflare supports tagging)
     tagResource(indexes.domeNotes, 'vectorize', 'dome-notes', {
       Purpose: 'vector-storage-notes',
       Service: 'constellation',
       ModelType: 'openai-compatible',
     });
-    
+
     // Add validation to ensure index configuration is valid
     for (const [key, index] of Object.entries(indexes)) {
       if (!index.name) {
         throw new Error(`Vectorize index ${key} has an invalid name`);
       }
-      
+
       if (!index.dimensions || index.dimensions <= 0) {
         throw new Error(`Vectorize index ${key} has invalid dimensions: ${index.dimensions}`);
       }
@@ -50,12 +50,14 @@ export function createVectorizeIndexes(): Record<string, cloudflare.VectorizeInd
  * @param indexes The vectorize index resources
  * @returns Record of index names
  */
-export function getIndexNames(indexes: Record<string, cloudflare.VectorizeIndex>): Record<string, pulumi.Output<string>> {
+export function getIndexNames(
+  indexes: Record<string, cloudflare.VectorizeIndex>,
+): Record<string, pulumi.Output<string>> {
   const indexNames: Record<string, pulumi.Output<string>> = {};
-  
+
   for (const [key, index] of Object.entries(indexes)) {
     indexNames[key] = index.name;
   }
-  
+
   return indexNames;
 }

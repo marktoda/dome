@@ -1,4 +1,4 @@
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { SiloStatsResponse } from '@dome/common';
 import { MetadataService } from '../services/metadataService';
 
@@ -24,8 +24,7 @@ export class StatsController {
       return stats;
     } catch (error) {
       metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      getLogger().error({ error, errorMessage }, 'Error in getStats');
+      logError(getLogger(), error, 'Error in getStats');
       throw error;
     }
   }

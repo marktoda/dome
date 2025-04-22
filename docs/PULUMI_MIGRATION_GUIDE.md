@@ -58,50 +58,50 @@ Create a spreadsheet or document with the following information for each resourc
 
 #### Workers
 
-| Worker Name | Script Path | Compatibility Date | Compatibility Flags | Bindings | Environment Variables | Cron Triggers |
-|-------------|-------------|-------------------|---------------------|----------|----------------------|---------------|
-| dome-api | services/dome-api/src/index.ts | 2025-04-15 | nodejs_als | CONSTELLATION, SILO, AI | VERSION=0.1.0, LOG_LEVEL=debug | - |
-| silo | services/silo/src/index.ts | 2025-04-15 | nodejs_als | BUCKET, DB, Queues | LOG_LEVEL=info, VERSION=1.0.0 | - |
-| ... | ... | ... | ... | ... | ... | ... |
+| Worker Name | Script Path                    | Compatibility Date | Compatibility Flags | Bindings                | Environment Variables          | Cron Triggers |
+| ----------- | ------------------------------ | ------------------ | ------------------- | ----------------------- | ------------------------------ | ------------- |
+| dome-api    | services/dome-api/src/index.ts | 2025-04-15         | nodejs_als          | CONSTELLATION, SILO, AI | VERSION=0.1.0, LOG_LEVEL=debug | -             |
+| silo        | services/silo/src/index.ts     | 2025-04-15         | nodejs_als          | BUCKET, DB, Queues      | LOG_LEVEL=info, VERSION=1.0.0  | -             |
+| ...         | ...                            | ...                | ...                 | ...                     | ...                            | ...           |
 
 #### D1 Databases
 
-| Database Name | Database ID | Used By |
-|---------------|-------------|---------|
-| dome-meta | ac198406-1036-495e-b0f1-b61f7c9ecbdf | dome-api, dome-cron |
-| silo | baf652ea-e575-4019-b95c-c9d44d02c1aa | silo |
-| ... | ... | ... |
+| Database Name | Database ID                          | Used By             |
+| ------------- | ------------------------------------ | ------------------- |
+| dome-meta     | ac198406-1036-495e-b0f1-b61f7c9ecbdf | dome-api, dome-cron |
+| silo          | baf652ea-e575-4019-b95c-c9d44d02c1aa | silo                |
+| ...           | ...                                  | ...                 |
 
 #### R2 Buckets
 
-| Bucket Name | Used By |
-|-------------|---------|
-| dome-raw | Multiple services |
-| silo-content | silo |
-| ... | ... |
+| Bucket Name  | Used By           |
+| ------------ | ----------------- |
+| dome-raw     | Multiple services |
+| silo-content | silo              |
+| ...          | ...               |
 
 #### Vectorize Indexes
 
-| Index Name | Dimensions | Metric | Used By |
-|------------|------------|--------|---------|
-| dome-notes | 1536 | cosine | constellation |
-| ... | ... | ... | ... |
+| Index Name | Dimensions | Metric | Used By       |
+| ---------- | ---------- | ------ | ------------- |
+| dome-notes | 1536       | cosine | constellation |
+| ...        | ...        | ...    | ...           |
 
 #### Queues
 
-| Queue Name | Producers | Consumers |
-|------------|-----------|-----------|
-| new-content-constellation | silo | constellation |
-| new-content-ai | silo | ai-processor |
-| ... | ... | ... |
+| Queue Name                | Producers | Consumers     |
+| ------------------------- | --------- | ------------- |
+| new-content-constellation | silo      | constellation |
+| new-content-ai            | silo      | ai-processor  |
+| ...                       | ...       | ...           |
 
 #### Service Bindings
 
-| Service | Binds To | Environment |
-|---------|----------|-------------|
+| Service  | Binds To      | Environment         |
+| -------- | ------------- | ------------------- |
 | dome-api | constellation | production, staging |
-| dome-api | silo | production, staging |
-| ... | ... | ... |
+| dome-api | silo          | production, staging |
+| ...      | ...           | ...                 |
 
 ### Step 2: Document Resource Relationships
 
@@ -154,6 +154,7 @@ pulumi new typescript
 ```
 
 When prompted, provide the following information:
+
 - Project name: `dome-infrastructure`
 - Description: `Dome Cloudflare infrastructure`
 - Stack name: `dev`
@@ -302,17 +303,25 @@ import { resourceName } from '../config';
 
 export function createD1Databases(): Record<string, cloudflare.D1Database> {
   const databases: Record<string, cloudflare.D1Database> = {};
-  
+
   // Define databases without creating them yet
   // These will be imported in the next step
-  databases.domeMeta = new cloudflare.D1Database("dome-meta", {
-    name: resourceName("dome-meta"),
-  }, { import: "ac198406-1036-495e-b0f1-b61f7c9ecbdf" });
-  
-  databases.silo = new cloudflare.D1Database("silo", {
-    name: resourceName("silo"),
-  }, { import: "baf652ea-e575-4019-b95c-c9d44d02c1aa" });
-  
+  databases.domeMeta = new cloudflare.D1Database(
+    'dome-meta',
+    {
+      name: resourceName('dome-meta'),
+    },
+    { import: 'ac198406-1036-495e-b0f1-b61f7c9ecbdf' },
+  );
+
+  databases.silo = new cloudflare.D1Database(
+    'silo',
+    {
+      name: resourceName('silo'),
+    },
+    { import: 'baf652ea-e575-4019-b95c-c9d44d02c1aa' },
+  );
+
   return databases;
 }
 ```
@@ -342,9 +351,9 @@ if (!validStacks.includes(stack)) {
 
 // Select the stack
 console.log(`Selecting stack: ${stack}`);
-execSync(`pulumi stack select ${stack}`, { 
+execSync(`pulumi stack select ${stack}`, {
   cwd: path.join(__dirname, '..'),
-  stdio: 'inherit'
+  stdio: 'inherit',
 });
 
 // Import resources
@@ -352,24 +361,30 @@ console.log('Importing resources...');
 
 // Import D1 databases
 console.log('Importing D1 databases...');
-execSync(`pulumi import cloudflare:index/d1Database:D1Database dome-meta ac198406-1036-495e-b0f1-b61f7c9ecbdf`, {
-  cwd: path.join(__dirname, '..'),
-  stdio: 'inherit'
-});
-execSync(`pulumi import cloudflare:index/d1Database:D1Database silo baf652ea-e575-4019-b95c-c9d44d02c1aa`, {
-  cwd: path.join(__dirname, '..'),
-  stdio: 'inherit'
-});
+execSync(
+  `pulumi import cloudflare:index/d1Database:D1Database dome-meta ac198406-1036-495e-b0f1-b61f7c9ecbdf`,
+  {
+    cwd: path.join(__dirname, '..'),
+    stdio: 'inherit',
+  },
+);
+execSync(
+  `pulumi import cloudflare:index/d1Database:D1Database silo baf652ea-e575-4019-b95c-c9d44d02c1aa`,
+  {
+    cwd: path.join(__dirname, '..'),
+    stdio: 'inherit',
+  },
+);
 
 // Import R2 buckets
 console.log('Importing R2 buckets...');
 execSync(`pulumi import cloudflare:index/r2Bucket:R2Bucket dome-raw dome-raw`, {
   cwd: path.join(__dirname, '..'),
-  stdio: 'inherit'
+  stdio: 'inherit',
 });
 execSync(`pulumi import cloudflare:index/r2Bucket:R2Bucket silo-content silo-content`, {
   cwd: path.join(__dirname, '..'),
-  stdio: 'inherit'
+  stdio: 'inherit',
 });
 
 // Continue with other resource types...
@@ -407,6 +422,7 @@ The fourth phase involves gradually transitioning resource management to Pulumi.
 ### Step 1: Prioritize Resources
 
 Prioritize resources for migration based on:
+
 - Criticality
 - Complexity
 - Frequency of changes
@@ -425,6 +441,7 @@ Migrate one resource group at a time, following this process:
 5. Update documentation
 
 Example migration order:
+
 1. D1 Databases
 2. R2 Buckets
 3. Vectorize Indexes
@@ -562,6 +579,7 @@ In case of migration issues, follow these rollback procedures:
 To roll back individual resources:
 
 1. Use Pulumi's rollback functionality:
+
    ```bash
    pulumi stack select <stack>
    pulumi update --target-version <version>
@@ -587,11 +605,13 @@ To roll back the entire migration:
 **Issue**: Pulumi fails to import existing resources.
 
 **Possible Causes**:
+
 - Resource ID mismatch
 - Resource doesn't exist
 - Permission issues
 
 **Resolution**:
+
 1. Verify resource IDs
 2. Check resource existence
 3. Verify API token permissions
@@ -602,11 +622,13 @@ To roll back the entire migration:
 **Issue**: Pulumi-defined configurations don't match existing settings.
 
 **Possible Causes**:
+
 - Manual changes to resources
 - Incomplete documentation
 - Default values applied by Pulumi
 
 **Resolution**:
+
 1. Update Pulumi definitions to match reality
 2. Run `pulumi refresh` to update state
 3. Document discrepancies
@@ -616,11 +638,13 @@ To roll back the entire migration:
 **Issue**: Resource dependencies cause deployment failures.
 
 **Possible Causes**:
+
 - Incorrect dependency order
 - Missing dependencies
 - Circular dependencies
 
 **Resolution**:
+
 1. Review dependency graph
 2. Update resource definitions
 3. Split deployments if necessary
@@ -630,11 +654,13 @@ To roll back the entire migration:
 **Issue**: Pulumi state doesn't match reality.
 
 **Possible Causes**:
+
 - Manual changes to resources
 - Failed deployments
 - Concurrent deployments
 
 **Resolution**:
+
 1. Run `pulumi refresh` to update state
 2. Manually fix discrepancies
 3. Consider reimporting resources

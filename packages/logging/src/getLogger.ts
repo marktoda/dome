@@ -29,7 +29,7 @@ export function logError(
   logger: Logger,
   error: unknown,
   message: string,
-  additionalContext: Record<string, unknown> = {}
+  additionalContext: Record<string, unknown> = {},
 ): void {
   const { errorMessage } = extractErrorInfo(error);
   logger.error({ error, errorMessage, ...additionalContext }, message);

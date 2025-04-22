@@ -141,9 +141,9 @@ export class SearchService {
           firstResult:
             searchResults.length > 0
               ? {
-                contentId: searchResults[0].contentId,
-                score: searchResults[0].score,
-              }
+                  contentId: searchResults[0].contentId,
+                  score: searchResults[0].score,
+                }
               : null,
         },
         'Search results from constellation',
@@ -315,8 +315,9 @@ export class SearchService {
       startDate,
       endDate,
     } = options;
-    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''
-      }:${endDate || ''}`;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${
+      startDate || ''
+    }:${endDate || ''}`;
   }
 
   /**

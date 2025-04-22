@@ -165,7 +165,7 @@ export class ResourceObject extends DurableObject<Env> {
 
       metrics.increment('tsunami.sync.success', 1);
     } catch (error) {
-      logError(error, 'Error during sync', { resourceId });
+      logError(logger, error, 'Error during sync', { resourceId });
       metrics.increment('tsunami.sync.error', 1);
 
       // For other errors, rethrow to propagate to the caller

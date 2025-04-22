@@ -109,6 +109,8 @@ export class VectorizeService {
         return;
       } catch (err) {
         metrics.increment('vectorize.upsert.errors');
+
+        const errorMessage = err instanceof Error ? err.message : String(err);
         getLogger().error(
           { err, attempt, max: this.cfg.retryAttempts, size: batch.length },
           'vectorize.upsert failed',
@@ -223,6 +225,8 @@ export class VectorizeService {
       }));
     } catch (err) {
       metrics.increment('vectorize.query.errors');
+
+      const errorMessage = err instanceof Error ? err.message : String(err);
       getLogger().error({ err, filter, topK }, 'vectorize.query failed');
       throw err;
     } finally {

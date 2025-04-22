@@ -17,10 +17,10 @@ export function createDevStack(): Record<string, any> {
   const r2Buckets = createR2Buckets();
   const vectorizeIndexes = createVectorizeIndexes();
   const queues = createQueues();
-  
+
   // Create workers with dev-specific configurations
   const workers = createWorkers(d1Databases, r2Buckets, vectorizeIndexes, queues);
-  
+
   // Create service bindings
   const serviceBindings = createServiceBindings(workers);
 
@@ -28,14 +28,14 @@ export function createDevStack(): Record<string, any> {
   // D1 Databases and R2 Buckets are created first
   // Workers depend on D1, R2, Vectorize, and Queues
   // Service Bindings depend on Workers
-  
+
   // Apply dev-specific tags to resources
   const devTags = {
     Environment: 'dev',
     CostCenter: 'development',
     AutoShutdown: 'true',
   };
-  
+
   // Export outputs with additional metadata
   return {
     d1Databases,
@@ -54,7 +54,7 @@ export function createDevStack(): Record<string, any> {
         queues: Object.keys(queues).length,
         workers: Object.keys(workers).length,
         serviceBindings: serviceBindings.length,
-      }
-    }
+      },
+    },
   };
 }

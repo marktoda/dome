@@ -18,10 +18,10 @@ export function createProdStack(): Record<string, any> {
   const r2Buckets = createR2Buckets();
   const vectorizeIndexes = createVectorizeIndexes();
   const queues = createQueues();
-  
+
   // Create workers with production-specific configurations
   const workers = createWorkers(d1Databases, r2Buckets, vectorizeIndexes, queues);
-  
+
   // Create service bindings
   const serviceBindings = createServiceBindings(workers);
 
@@ -29,7 +29,7 @@ export function createProdStack(): Record<string, any> {
   // D1 Databases and R2 Buckets are created first
   // Workers depend on D1, R2, Vectorize, and Queues
   // Service Bindings depend on Workers
-  
+
   // Apply production-specific tags to resources
   const prodTags = {
     Environment: 'production',
@@ -38,10 +38,10 @@ export function createProdStack(): Record<string, any> {
     BackupPolicy: 'daily',
     SecurityReview: 'completed',
   };
-  
+
   // Set up additional production safeguards
   // These would be implemented in a real deployment
-  
+
   // Export outputs with additional metadata
   return {
     d1Databases,
@@ -60,7 +60,7 @@ export function createProdStack(): Record<string, any> {
         queues: Object.keys(queues).length,
         workers: Object.keys(workers).length,
         serviceBindings: serviceBindings.length,
-      }
-    }
+      },
+    },
   };
 }

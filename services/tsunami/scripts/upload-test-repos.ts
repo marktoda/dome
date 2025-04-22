@@ -16,9 +16,9 @@ const TSUNAMI_API_URL = 'https://tsunami.chatter-9999.workers.dev'; // Deployed 
 const REPOSITORIES = [
   { owner: 'uniswap', repo: 'v4-core' },
   { owner: 'uniswap', repo: 'v3-core' },
-  // Add more public repositories here as needed
-  { owner: 'facebook', repo: 'react' },
-  { owner: 'microsoft', repo: 'TypeScript' },
+  { owner: 'uniswap', repo: 'v2-core' },
+  { owner: 'uniswap', repo: 'universal-router' },
+  { owner: 'paradigmxyz', repo: 'reth' },
 ];
 
 // Maximum number of retries for API requests

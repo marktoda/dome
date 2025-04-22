@@ -57,6 +57,7 @@ Before executing the testing plan, ensure the following prerequisites are met:
 Focus on thorough testing of the development environment to establish baseline functionality.
 
 #### Objectives:
+
 - Verify all resources can be created successfully
 - Validate resource configurations match expectations
 - Test update scenarios for each resource type
@@ -65,6 +66,7 @@ Focus on thorough testing of the development environment to establish baseline f
 - Test destroy procedures
 
 #### Success Criteria:
+
 - All resources are created with correct configurations
 - Updates are applied correctly
 - Rollbacks restore the previous state accurately
@@ -75,6 +77,7 @@ Focus on thorough testing of the development environment to establish baseline f
 Focus on testing the staging environment with configurations closer to production.
 
 #### Objectives:
+
 - Verify all resources can be created in the staging environment
 - Validate staging-specific configurations
 - Test the promotion process from dev to staging
@@ -82,6 +85,7 @@ Focus on testing the staging environment with configurations closer to productio
 - Test partial updates and their impact
 
 #### Success Criteria:
+
 - All resources are created with correct staging configurations
 - Promotion from dev to staging works as expected
 - Service bindings function correctly
@@ -92,6 +96,7 @@ Focus on testing the staging environment with configurations closer to productio
 Focus on testing the production environment with strict validation and safety measures.
 
 #### Objectives:
+
 - Verify production deployment safeguards
 - Validate production-specific configurations
 - Test the promotion process from staging to production
@@ -99,6 +104,7 @@ Focus on testing the production environment with strict validation and safety me
 - Test rollback procedures with production safeguards
 
 #### Success Criteria:
+
 - Production safeguards prevent unauthorized or dangerous operations
 - All resources are created with correct production configurations
 - Promotion from staging to production works as expected
@@ -109,12 +115,14 @@ Focus on testing the production environment with strict validation and safety me
 Focus on testing interactions and transitions between environments.
 
 #### Objectives:
+
 - Test the complete promotion flow from dev to staging to production
 - Verify environment isolation
 - Test resource naming consistency across environments
 - Validate environment-specific configurations are applied correctly
 
 #### Success Criteria:
+
 - Complete promotion flow works as expected
 - Environments remain isolated
 - Resource naming is consistent across environments
@@ -125,6 +133,7 @@ Focus on testing interactions and transitions between environments.
 ### Deployment Tests
 
 #### Test Case D1: Initial Deployment
+
 - **Objective**: Verify initial deployment creates all resources correctly
 - **Steps**:
   1. Run `just pulumi-up dev` to deploy the dev environment
@@ -133,6 +142,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: All resources are created with correct configurations
 
 #### Test Case D2: Incremental Deployment
+
 - **Objective**: Verify changes to existing resources are applied correctly
 - **Steps**:
   1. Modify a resource configuration
@@ -141,6 +151,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: Changes are applied correctly without affecting other resources
 
 #### Test Case D3: Environment-Specific Deployment
+
 - **Objective**: Verify environment-specific configurations are applied correctly
 - **Steps**:
   1. Deploy to each environment (dev, staging, prod)
@@ -148,6 +159,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: Each environment has the correct configurations
 
 #### Test Case D4: Dependency Management
+
 - **Objective**: Verify resource dependencies are managed correctly
 - **Steps**:
   1. Create a new resource that depends on an existing resource
@@ -158,6 +170,7 @@ Focus on testing interactions and transitions between environments.
 ### Resource Validation Tests
 
 #### Test Case R1: D1 Database Validation
+
 - **Objective**: Verify D1 databases are created correctly
 - **Steps**:
   1. Deploy the infrastructure
@@ -166,6 +179,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: D1 databases exist with correct configurations
 
 #### Test Case R2: R2 Bucket Validation
+
 - **Objective**: Verify R2 buckets are created correctly
 - **Steps**:
   1. Deploy the infrastructure
@@ -174,6 +188,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: R2 buckets exist with correct configurations
 
 #### Test Case R3: Worker Validation
+
 - **Objective**: Verify workers are created correctly
 - **Steps**:
   1. Deploy the infrastructure
@@ -182,6 +197,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: Workers exist with correct configurations
 
 #### Test Case R4: Queue Validation
+
 - **Objective**: Verify queues are created correctly
 - **Steps**:
   1. Deploy the infrastructure
@@ -190,6 +206,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: Queues exist with correct configurations
 
 #### Test Case R5: Service Binding Validation
+
 - **Objective**: Verify service bindings are created correctly
 - **Steps**:
   1. Deploy the infrastructure
@@ -200,6 +217,7 @@ Focus on testing interactions and transitions between environments.
 ### Rollback Tests
 
 #### Test Case RB1: Simple Rollback
+
 - **Objective**: Verify rollback to a previous state works correctly
 - **Steps**:
   1. Deploy the infrastructure
@@ -209,6 +227,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: State is restored to the previous version
 
 #### Test Case RB2: Dependency-Aware Rollback
+
 - **Objective**: Verify rollback handles dependencies correctly
 - **Steps**:
   1. Deploy the infrastructure with interdependent resources
@@ -218,6 +237,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: All resources and dependencies are restored correctly
 
 #### Test Case RB3: Failed Deployment Rollback
+
 - **Objective**: Verify automatic rollback on failed deployment
 - **Steps**:
   1. Introduce an error in the infrastructure code
@@ -228,6 +248,7 @@ Focus on testing interactions and transitions between environments.
 ### Destroy Tests
 
 #### Test Case DS1: Dev Environment Destroy
+
 - **Objective**: Verify destroy process for dev environment
 - **Steps**:
   1. Deploy the dev environment
@@ -236,6 +257,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: All resources are removed correctly
 
 #### Test Case DS2: Partial Destroy
+
 - **Objective**: Verify partial destroy process
 - **Steps**:
   1. Deploy the infrastructure
@@ -244,6 +266,7 @@ Focus on testing interactions and transitions between environments.
 - **Expected Result**: Specified resource is removed correctly
 
 #### Test Case DS3: Production Safeguards
+
 - **Objective**: Verify production destroy safeguards
 - **Steps**:
   1. Attempt to run `just pulumi-destroy prod`
@@ -299,6 +322,7 @@ For each test case, record the following information:
 ### Deployment Failures
 
 #### Issue: Resource Creation Failure
+
 - **Symptoms**: Pulumi reports resource creation failure
 - **Possible Causes**:
   - Invalid resource configuration
@@ -313,6 +337,7 @@ For each test case, record the following information:
   5. Check resource limits
 
 #### Issue: Dependency Resolution Failure
+
 - **Symptoms**: Pulumi reports dependency resolution failure
 - **Possible Causes**:
   - Circular dependencies
@@ -324,6 +349,7 @@ For each test case, record the following information:
   3. Correct the dependency order
 
 #### Issue: State File Corruption
+
 - **Symptoms**: Pulumi reports state file corruption or inconsistency
 - **Possible Causes**:
   - Manual changes to resources
@@ -337,6 +363,7 @@ For each test case, record the following information:
 ### Environment-Specific Issues
 
 #### Issue: Environment Configuration Mismatch
+
 - **Symptoms**: Resources are created with incorrect configurations
 - **Possible Causes**:
   - Incorrect stack selection
@@ -348,6 +375,7 @@ For each test case, record the following information:
   3. Verify configuration precedence
 
 #### Issue: Cross-Environment Resource Conflicts
+
 - **Symptoms**: Resource creation fails due to conflicts
 - **Possible Causes**:
   - Resource name conflicts across environments
@@ -360,6 +388,7 @@ For each test case, record the following information:
 ### Rollback Issues
 
 #### Issue: Failed Rollback
+
 - **Symptoms**: Rollback operation fails
 - **Possible Causes**:
   - Dependent resources cannot be rolled back
@@ -371,6 +400,7 @@ For each test case, record the following information:
   3. Consider a fresh deployment if rollback is not possible
 
 #### Issue: Incomplete Rollback
+
 - **Symptoms**: Rollback completes but some resources remain in the new state
 - **Possible Causes**:
   - Resources not managed by Pulumi
@@ -384,6 +414,7 @@ For each test case, record the following information:
 ### Destroy Issues
 
 #### Issue: Failed Destroy
+
 - **Symptoms**: Destroy operation fails
 - **Possible Causes**:
   - Resource dependencies
@@ -396,6 +427,7 @@ For each test case, record the following information:
   4. Consider manual resource removal if necessary
 
 #### Issue: Orphaned Resources
+
 - **Symptoms**: Resources remain after destroy operation
 - **Possible Causes**:
   - Resources not managed by Pulumi

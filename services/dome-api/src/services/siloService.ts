@@ -2,11 +2,9 @@ import { Bindings } from '../types';
 import {
   SiloSimplePutInput,
   SiloBatchGetItem,
-  SiloCreateUploadInput,
   SiloBatchGetInput,
   SiloDeleteInput,
   SiloSimplePutResponse,
-  SiloCreateUploadResponse,
   SiloBatchGetResponse,
   SiloDeleteResponse,
   SiloStatsResponse,
@@ -35,20 +33,6 @@ export class SiloService {
    */
   async simplePut(env: Bindings, data: SiloSimplePutInput): Promise<SiloSimplePutResponse> {
     return env.SILO.simplePut(data);
-  }
-
-  /**
-   * Create an upload URL for client-side uploads
-   *
-   * @param env - Cloudflare Workers environment bindings
-   * @param data - Create upload request data (legacy format)
-   * @returns Promise resolving to the create upload response
-   */
-  async createUpload(
-    env: Bindings,
-    data: SiloCreateUploadInput,
-  ): Promise<SiloCreateUploadResponse> {
-    return env.SILO.createUpload(data);
   }
 
   /**

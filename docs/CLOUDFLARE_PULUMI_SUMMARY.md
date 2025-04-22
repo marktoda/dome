@@ -32,16 +32,16 @@ Implementing infrastructure as code with Pulumi will provide several key benefit
 
 The following Cloudflare resources will be managed by Pulumi:
 
-| Resource Type | Count | Examples |
-|---------------|-------|----------|
-| Workers | 6 | dome-api, silo, constellation, ai-processor, dome-cron, dome-notify |
-| D1 Databases | 2 | dome-meta, silo |
-| R2 Buckets | 2 | dome-raw, silo-content |
-| Vectorize Indexes | 1 | dome-notes |
-| Queues | 6 | new-content-constellation, new-content-ai, content-events, enriched-content, dome-events, embed-dead-letter |
-| Service Bindings | Multiple | dome-api → constellation, dome-api → silo, etc. |
-| Workers AI Bindings | Multiple | Used by dome-api, constellation, ai-processor |
-| Cron Triggers | 1 | Used by dome-cron |
+| Resource Type       | Count    | Examples                                                                                                    |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
+| Workers             | 6        | dome-api, silo, constellation, ai-processor, dome-cron, dome-notify                                         |
+| D1 Databases        | 2        | dome-meta, silo                                                                                             |
+| R2 Buckets          | 2        | dome-raw, silo-content                                                                                      |
+| Vectorize Indexes   | 1        | dome-notes                                                                                                  |
+| Queues              | 6        | new-content-constellation, new-content-ai, content-events, enriched-content, dome-events, embed-dead-letter |
+| Service Bindings    | Multiple | dome-api → constellation, dome-api → silo, etc.                                                             |
+| Workers AI Bindings | Multiple | Used by dome-api, constellation, ai-processor                                                               |
+| Cron Triggers       | 1        | Used by dome-cron                                                                                           |
 
 ## Implementation Roadmap
 
@@ -50,6 +50,7 @@ The implementation will follow this roadmap:
 ### Phase 1: Setup and Foundation (Week 1)
 
 1. **Project Setup**
+
    - Create the Pulumi project structure in `./infra/`
    - Configure TypeScript and dependencies
    - Set up Pulumi stacks for dev, staging, and production
@@ -62,6 +63,7 @@ The implementation will follow this roadmap:
 ### Phase 2: Worker and Queue Implementation (Weeks 2-3)
 
 1. **Queue Resources**
+
    - Implement queue definitions
    - Configure queue producers and consumers
 
@@ -73,6 +75,7 @@ The implementation will follow this roadmap:
 ### Phase 3: Environment Configuration and Testing (Week 4)
 
 1. **Environment-Specific Configuration**
+
    - Configure dev environment
    - Configure staging environment
    - Configure production environment
@@ -85,6 +88,7 @@ The implementation will follow this roadmap:
 ### Phase 4: Migration and Integration (Weeks 5-6)
 
 1. **Resource Import**
+
    - Import existing resources into Pulumi state
    - Validate imported resources match actual configuration
    - Resolve any discrepancies
@@ -97,6 +101,7 @@ The implementation will follow this roadmap:
 ### Phase 5: Documentation and Training (Week 7)
 
 1. **Documentation**
+
    - Update documentation with final implementation details
    - Create runbooks for common operations
    - Document troubleshooting procedures
@@ -111,15 +116,18 @@ The implementation will follow this roadmap:
 To begin implementing the Pulumi infrastructure, follow these steps:
 
 1. **Install Prerequisites**
+
    - Install Pulumi CLI: `curl -fsSL https://get.pulumi.com | sh`
    - Install Node.js and pnpm
    - Set up Cloudflare API token with appropriate permissions
 
 2. **Create Project Structure**
+
    - Create the directory structure as outlined in the implementation document
    - Set up the initial configuration files
 
 3. **Implement Core Resources**
+
    - Start with D1 databases and R2 buckets
    - Validate resource creation with `pulumi preview`
 

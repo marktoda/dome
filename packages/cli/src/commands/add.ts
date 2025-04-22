@@ -37,9 +37,7 @@ export function addCommand(program: Command): void {
           spinner.succeed(`Added file: ${fileName}`);
         } else {
           // Add text content
-          const contentPreview = content.length > 40
-            ? `${content.substring(0, 40)}...`
-            : content;
+          const contentPreview = content.length > 40 ? `${content.substring(0, 40)}...` : content;
           const spinner = createSpinner(`Adding: "${contentPreview}"`);
           spinner.start();
 

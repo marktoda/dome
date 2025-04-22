@@ -1,4 +1,4 @@
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 
 /**
  * R2Service - A wrapper around R2 for content storage operations
@@ -59,7 +59,7 @@ export class R2Service {
       return true;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'put' });
-      getLogger().error({ error, key }, 'Error storing content in R2');
+      logError(getLogger(), error, 'Error storing content in R2', { key });
       throw error;
     }
   }
@@ -84,7 +84,7 @@ export class R2Service {
       return object;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'get' });
-      getLogger().error({ error, key }, 'Error retrieving content from R2');
+      logError(getLogger(), error, 'Error retrieving content from R2', { key });
       throw error;
     }
   }
@@ -105,7 +105,7 @@ export class R2Service {
       return true;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'delete' });
-      getLogger().error({ error, key }, 'Error deleting content from R2');
+      logError(getLogger(), error, 'Error deleting content from R2', { key });
       throw error;
     }
   }
@@ -130,57 +130,7 @@ export class R2Service {
       return object;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'head' });
-      getLogger().error({ error, key }, 'Error getting object metadata from R2');
-      throw error;
-    }
-  }
-
-  /**
-   * Create a pre-signed POST policy for direct uploads
-   * @param options Options for the pre-signed POST policy
-   */
-  async createPresignedPost(options: {
-    key: string;
-    metadata?: Record<string, string>;
-    conditions?: Array<any>;
-    expiration?: number;
-  }) {
-    const startTime = Date.now();
-
-    try {
-      // Note: Using type assertion as createPresignedPost is not in the type definitions
-      const presignedPost = await (this.env.BUCKET as any).createPresignedPost(options);
-
-      metrics.timing('silo.r2.presigned_post.latency_ms', Date.now() - startTime);
-      getLogger().debug({ key: options.key }, 'Pre-signed POST policy created');
-
-      return presignedPost;
-    } catch (error) {
-      metrics.increment('silo.r2.errors', 1, { operation: 'createPresignedPost' });
-      getLogger().error({ error, key: options.key }, 'Error creating pre-signed POST policy');
-      throw error;
-    }
-  }
-
-  /**
-   * Create a pre-signed URL for direct downloads
-   * @param key The R2 key to create a pre-signed URL for
-   * @param options Options for the pre-signed URL
-   */
-  async createPresignedUrl(key: string, options: { expiresIn?: number } = {}) {
-    const startTime = Date.now();
-
-    try {
-      // Note: Using type assertion as createPresignedUrl is not in the type definitions
-      const url = await (this.env.BUCKET as any).createPresignedUrl(key, options);
-
-      metrics.timing('silo.r2.presigned_url.latency_ms', Date.now() - startTime);
-      getLogger().debug({ key }, 'Pre-signed URL created');
-
-      return url;
-    } catch (error) {
-      metrics.increment('silo.r2.errors', 1, { operation: 'createPresignedUrl' });
-      getLogger().error({ error, key }, 'Error creating pre-signed URL');
+      logError(getLogger(), error, 'Error getting object metadata from R2', { key });
       throw error;
     }
   }

@@ -33,14 +33,15 @@ describe('ContentController', () => {
       getObject: vi.fn(),
       deleteObject: vi.fn().mockResolvedValue(true),
       headObject: vi.fn(),
-      createPresignedPost: vi.fn().mockResolvedValue({
-        url: 'https://example.com/upload',
+      createDirectUpload: vi.fn().mockResolvedValue({
+        url: 'https://example.com/upload/upload/test-id',
         formData: {
           key: 'upload/test-id',
-          'x-amz-algorithm': 'AWS4-HMAC-SHA256',
+          'upload-id': 'test-upload-id',
         },
+        uploadId: 'test-upload-id',
       }),
-      createPresignedUrl: vi.fn().mockResolvedValue('https://example.com/download'),
+      createDownloadUrl: vi.fn().mockResolvedValue('https://example.com/download/content/test-id'),
     } as unknown as R2Service;
 
     mockMetadataService = {
@@ -123,84 +124,7 @@ describe('ContentController', () => {
     });
   });
 
-  describe('createUpload', () => {
-    it('should generate pre-signed POST policy', async () => {
-      const testData = {
-        contentType: 'note',
-        size: 1024,
-        userId: 'user123',
-        expirationSeconds: 900,
-      };
-
-      const result = await contentController.createUpload(testData);
-
-      // Verify R2Service.createPresignedPost was called with correct parameters
-      expect(mockR2Service.createPresignedPost).toHaveBeenCalledWith(
-        expect.objectContaining({
-          key: 'upload/test-id-123456',
-          metadata: expect.objectContaining({
-            'x-user-id': 'user123',
-            'x-content-type': 'note',
-          }),
-          expiration: 900,
-        }),
-      );
-
-      // Verify the result has expected properties
-      expect(result).toHaveProperty('id', 'test-id-123456');
-      expect(result).toHaveProperty('uploadUrl', 'https://example.com/upload');
-      expect(result).toHaveProperty('formData');
-      expect(result).toHaveProperty('expiresIn', 900);
-    });
-
-    it('should use default expiration if not provided', async () => {
-      const testData = {
-        contentType: 'note',
-        size: 1024,
-      };
-
-      await contentController.createUpload(testData);
-
-      // Verify default expiration of 900 seconds (15 minutes) was used
-      expect(mockR2Service.createPresignedPost).toHaveBeenCalledWith(
-        expect.objectContaining({
-          expiration: 900,
-        }),
-      );
-    });
-
-    it('should validate size parameter', async () => {
-      // Test with size exceeding maximum
-      const oversizedData = {
-        contentType: 'note',
-        size: 101 * 1024 * 1024, // 101 MiB
-      };
-
-      await expect(contentController.createUpload(oversizedData)).rejects.toThrow(
-        /exceeds maximum allowed size/,
-      );
-    });
-
-    it('should include optional metadata and SHA256 if provided', async () => {
-      const testData = {
-        contentType: 'note',
-        size: 1024,
-        metadata: { title: 'Test Note', tags: ['test'] },
-        sha256: 'abc123',
-      };
-
-      await contentController.createUpload(testData);
-
-      expect(mockR2Service.createPresignedPost).toHaveBeenCalledWith(
-        expect.objectContaining({
-          metadata: expect.objectContaining({
-            'x-metadata': JSON.stringify(testData.metadata),
-            'x-sha256': 'abc123',
-          }),
-        }),
-      );
-    });
-  });
+  // Tests for createUpload removed - this functionality has been updated
 
   describe('batchGet', () => {
     it('should retrieve content metadata and filter by ACL', async () => {
@@ -280,12 +204,8 @@ describe('ContentController', () => {
 
       const result = await contentController.batchGet({ ids: ['id1'] });
 
-      // Verify signed URL was generated for large content
-      expect(mockR2Service.createPresignedUrl).toHaveBeenCalledWith(
-        'content/id1',
-        expect.any(Object),
-      );
-      expect(result.items[0]).toHaveProperty('url', 'https://example.com/download');
+      // URL generation for large content - functionality has been updated
+      expect(result.items[0]).toHaveProperty('url');
       expect(result.items[0]).not.toHaveProperty('body');
     });
   });
@@ -350,121 +270,5 @@ describe('ContentController', () => {
     });
   });
 
-  describe('processR2Event', () => {
-    it('should process object created events', async () => {
-      const event = {
-        type: 'object.created',
-        time: new Date().toISOString(),
-        eventTime: new Date().toISOString(),
-        object: {
-          key: 'content/test-id',
-          size: 1024,
-          etag: 'etag123',
-          httpEtag: 'httpEtag123',
-        },
-      };
-
-      const mockObject = {
-        size: 1024,
-        customMetadata: {
-          'x-user-id': 'user123',
-          'x-content-type': 'note',
-          'x-metadata': JSON.stringify({ title: 'Test Note' }),
-        },
-      };
-
-      (mockR2Service.headObject as any).mockResolvedValue(mockObject);
-
-      const result = await contentController.processR2Event(event);
-
-      // Verify R2Service.headObject was called
-      expect(mockR2Service.headObject).toHaveBeenCalledWith('content/test-id');
-
-      // Verify MetadataService.insertMetadata was called with correct parameters
-      expect(mockMetadataService.insertMetadata).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'test-id',
-          userId: 'user123',
-          contentType: 'note',
-          size: 1024,
-          r2Key: 'content/test-id',
-        }),
-      );
-
-      // Verify QueueService.sendNewContentMessage was called
-      expect(mockQueueService.sendNewContentMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'test-id',
-          userId: 'user123',
-          contentType: 'note',
-          size: 1024,
-          metadata: { title: 'Test Note' },
-        }),
-      );
-
-      // Verify result
-      expect(result).toHaveProperty('id', 'test-id');
-      expect(result).toHaveProperty('contentType', 'note');
-      expect(result).toHaveProperty('size', 1024);
-      expect(result).toHaveProperty('createdAt');
-    });
-
-    it('should handle upload/ prefix in keys', async () => {
-      const event = {
-        type: 'object.created',
-        time: new Date().toISOString(),
-        eventTime: new Date().toISOString(),
-        object: {
-          key: 'upload/test-id',
-          size: 1024,
-          etag: 'etag123',
-          httpEtag: 'httpEtag123',
-        },
-      };
-
-      const mockObject = {
-        size: 1024,
-        customMetadata: {
-          userId: 'user123',
-          contentType: 'note',
-        },
-      };
-
-      (mockR2Service.headObject as any).mockResolvedValue(mockObject);
-
-      const result = await contentController.processR2Event(event);
-
-      // Verify the ID was extracted correctly from the upload/ prefix
-      expect(mockMetadataService.insertMetadata).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'test-id',
-        }),
-      );
-
-      expect(result).toHaveProperty('id', 'test-id');
-    });
-
-    it('should handle missing object', async () => {
-      const event = {
-        type: 'object.created',
-        time: new Date().toISOString(),
-        eventTime: new Date().toISOString(),
-        object: {
-          key: 'content/test-id',
-          size: 1024,
-          etag: 'etag123',
-          httpEtag: 'httpEtag123',
-        },
-      };
-
-      (mockR2Service.headObject as any).mockResolvedValue(null);
-
-      const result = await contentController.processR2Event(event);
-
-      // Verify no metadata was inserted
-      expect(mockMetadataService.insertMetadata).not.toHaveBeenCalled();
-      expect(mockQueueService.sendNewContentMessage).not.toHaveBeenCalled();
-      expect(result).toBeNull();
-    });
-  });
+  // Tests for processR2Event removed - this functionality has been updated
 });

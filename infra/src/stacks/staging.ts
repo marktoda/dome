@@ -17,10 +17,10 @@ export function createStagingStack(): Record<string, any> {
   const r2Buckets = createR2Buckets();
   const vectorizeIndexes = createVectorizeIndexes();
   const queues = createQueues();
-  
+
   // Create workers with staging-specific configurations
   const workers = createWorkers(d1Databases, r2Buckets, vectorizeIndexes, queues);
-  
+
   // Create service bindings
   const serviceBindings = createServiceBindings(workers);
 
@@ -28,14 +28,14 @@ export function createStagingStack(): Record<string, any> {
   // D1 Databases and R2 Buckets are created first
   // Workers depend on D1, R2, Vectorize, and Queues
   // Service Bindings depend on Workers
-  
+
   // Apply staging-specific tags to resources
   const stagingTags = {
     Environment: 'staging',
     CostCenter: 'pre-production',
     DataClassification: 'internal',
   };
-  
+
   // Export outputs with additional metadata
   return {
     d1Databases,
@@ -54,7 +54,7 @@ export function createStagingStack(): Record<string, any> {
         queues: Object.keys(queues).length,
         workers: Object.keys(workers).length,
         serviceBindings: serviceBindings.length,
-      }
-    }
+      },
+    },
   };
 }

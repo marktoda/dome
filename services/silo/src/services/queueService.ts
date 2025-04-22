@@ -1,4 +1,4 @@
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { NewContentMessage } from 'packages/common';
 
 /**
@@ -25,7 +25,7 @@ export class QueueService {
       return true;
     } catch (error) {
       metrics.increment('silo.queue.errors', 1, { operation: 'send' });
-      getLogger().error({ error, message }, 'Error sending message to NEW_CONTENT queue');
+      logError(getLogger(), error, 'Error sending message to NEW_CONTENT queue', { message });
       throw error;
     }
   }

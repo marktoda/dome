@@ -144,7 +144,7 @@ export async function addNote(context: string, content: string): Promise<any> {
  */
 export async function listItems(type: 'notes' | 'tasks', filter?: string): Promise<any> {
   const params: Record<string, any> = {
-    fields: 'title,summary,body,tags,contentType,createdAt'
+    fields: 'title,summary,body,tags,contentType,createdAt',
   };
 
   if (filter) {
@@ -164,30 +164,30 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
   // Extract the items array from the response
   // The API might return items in different properties based on the type
   let items = [];
-  
+
   if (type === 'notes') {
     items = Array.isArray(response.notes)
       ? response.notes
       : Array.isArray(response.items)
-        ? response.items
-        : Array.isArray(response)
-          ? response
-          : [];
+      ? response.items
+      : Array.isArray(response)
+      ? response
+      : [];
   } else {
     items = Array.isArray(response.tasks)
       ? response.tasks
       : Array.isArray(response.items)
-        ? response.items
-        : Array.isArray(response)
-          ? response
-          : [];
+      ? response.items
+      : Array.isArray(response)
+      ? response
+      : [];
   }
-  
+
   // Return an object with the appropriate property containing the items array
   return {
     [type]: items,
     items: items,
-    total: response.total || items.length
+    total: response.total || items.length,
   };
 }
 

@@ -30,7 +30,7 @@ export function createWorker(
   d1Databases: Record<string, cloudflare.D1Database>,
   r2Buckets: Record<string, cloudflare.R2Bucket>,
   vectorizeIndexes: Record<string, cloudflare.VectorizeIndex>,
-  queues: Record<string, cloudflare.WorkersQueue>
+  queues: Record<string, cloudflare.WorkersQueue>,
 ): cloudflare.WorkerScript {
   try {
     // Base configuration
@@ -49,19 +49,31 @@ export function createWorker(
     // Add bindings
     if (config.bindings) {
       const processedBindings: Record<string, any> = {};
-      
+
       for (const binding of config.bindings) {
-        if (binding.type === 'd1Database' && binding.databaseId && d1Databases[binding.databaseId]) {
+        if (
+          binding.type === 'd1Database' &&
+          binding.databaseId &&
+          d1Databases[binding.databaseId]
+        ) {
           processedBindings[binding.name] = {
             type: 'd1Database',
             databaseId: d1Databases[binding.databaseId].id,
           };
-        } else if (binding.type === 'r2Bucket' && binding.bucketName && r2Buckets[binding.bucketName]) {
+        } else if (
+          binding.type === 'r2Bucket' &&
+          binding.bucketName &&
+          r2Buckets[binding.bucketName]
+        ) {
           processedBindings[binding.name] = {
             type: 'r2Bucket',
             bucketName: r2Buckets[binding.bucketName].name,
           };
-        } else if (binding.type === 'vectorizeIndex' && binding.indexName && vectorizeIndexes[binding.indexName]) {
+        } else if (
+          binding.type === 'vectorizeIndex' &&
+          binding.indexName &&
+          vectorizeIndexes[binding.indexName]
+        ) {
           processedBindings[binding.name] = {
             type: 'vectorizeIndex',
             indexName: vectorizeIndexes[binding.indexName].name,
@@ -83,7 +95,7 @@ export function createWorker(
           };
         }
       }
-      
+
       workerConfig.bindings = processedBindings;
     }
 
@@ -107,13 +119,13 @@ export function createWorker(
 
     // Create the worker script
     const worker = new cloudflare.WorkerScript(config.name, workerConfig);
-    
+
     // Apply tags (for future use when Cloudflare supports tagging)
     tagResource(worker, 'worker', config.name, {
       Service: config.name,
       Module: config.mainModule,
     });
-    
+
     return worker;
   } catch (error) {
     // Handle errors during worker creation
@@ -134,7 +146,7 @@ export function createWorkers(
   d1Databases: Record<string, cloudflare.D1Database>,
   r2Buckets: Record<string, cloudflare.R2Bucket>,
   vectorizeIndexes: Record<string, cloudflare.VectorizeIndex>,
-  queues: Record<string, cloudflare.WorkersQueue>
+  queues: Record<string, cloudflare.WorkersQueue>,
 ): Record<string, cloudflare.WorkerScript> {
   const workers: Record<string, cloudflare.WorkerScript> = {};
 
@@ -159,7 +171,7 @@ export function createWorkers(
       d1Databases,
       r2Buckets,
       vectorizeIndexes,
-      queues
+      queues,
     );
 
     // Silo Worker
@@ -172,7 +184,11 @@ export function createWorkers(
         bindings: [
           { type: 'r2Bucket', name: 'BUCKET', bucketName: 'siloContent' },
           { type: 'd1Database', name: 'DB', databaseId: 'silo' },
-          { type: 'queue', name: 'NEW_CONTENT_CONSTELLATION', queueName: 'newContentConstellation' },
+          {
+            type: 'queue',
+            name: 'NEW_CONTENT_CONSTELLATION',
+            queueName: 'newContentConstellation',
+          },
           { type: 'queue', name: 'NEW_CONTENT_AI', queueName: 'newContentAi' },
           { type: 'queue', name: 'CONTENT_EVENTS', queueName: 'contentEvents' },
           { type: 'queue', name: 'ENRICHED_CONTENT', queueName: 'enrichedContent' },
@@ -185,7 +201,7 @@ export function createWorkers(
       d1Databases,
       r2Buckets,
       vectorizeIndexes,
-      queues
+      queues,
     );
 
     // Constellation Worker
@@ -196,7 +212,11 @@ export function createWorkers(
         compatibilityDate: '2025-04-15',
         compatibilityFlags: ['nodejs_als'],
         bindings: [
-          { type: 'queue', name: 'NEW_CONTENT_CONSTELLATION', queueName: 'newContentConstellation' },
+          {
+            type: 'queue',
+            name: 'NEW_CONTENT_CONSTELLATION',
+            queueName: 'newContentConstellation',
+          },
           { type: 'queue', name: 'EMBED_DEAD', queueName: 'embedDeadLetter' },
           { type: 'vectorizeIndex', name: 'VECTORIZE', indexName: 'domeNotes' },
           { type: 'ai', name: 'AI' },
@@ -210,7 +230,7 @@ export function createWorkers(
       d1Databases,
       r2Buckets,
       vectorizeIndexes,
-      queues
+      queues,
     );
 
     // AI Processor Worker
@@ -234,7 +254,7 @@ export function createWorkers(
       d1Databases,
       r2Buckets,
       vectorizeIndexes,
-      queues
+      queues,
     );
 
     // Dome Cron Worker
@@ -258,7 +278,7 @@ export function createWorkers(
       d1Databases,
       r2Buckets,
       vectorizeIndexes,
-      queues
+      queues,
     );
 
     // Dome Notify Worker
@@ -268,9 +288,7 @@ export function createWorkers(
         mainModule: 'services/dome-notify/src/index.ts',
         compatibilityDate: '2025-04-15',
         compatibilityFlags: ['nodejs_als'],
-        bindings: [
-          { type: 'queue', name: 'EVENTS', queueName: 'domeEvents' },
-        ],
+        bindings: [{ type: 'queue', name: 'EVENTS', queueName: 'domeEvents' }],
         vars: {
           VERSION: '0.1.0',
           MAIL_FROM: 'notifications@dome.example.com',
@@ -280,7 +298,7 @@ export function createWorkers(
       d1Databases,
       r2Buckets,
       vectorizeIndexes,
-      queues
+      queues,
     );
 
     // Ingestion Manager Worker
@@ -303,7 +321,7 @@ export function createWorkers(
       d1Databases,
       r2Buckets,
       vectorizeIndexes,
-      queues
+      queues,
     );
 
     // Validate worker configurations

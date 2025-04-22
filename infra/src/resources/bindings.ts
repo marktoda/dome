@@ -8,10 +8,10 @@ import { environment } from '../config';
  * @returns Array of service binding resources
  */
 export function createServiceBindings(
-  workers: Record<string, cloudflare.WorkerScript>
+  workers: Record<string, cloudflare.WorkerScript>,
 ): cloudflare.ServiceBinding[] {
   const bindings: cloudflare.ServiceBinding[] = [];
-  
+
   // Dome API to Constellation
   if (workers.domeApi && workers.constellation) {
     bindings.push(
@@ -20,7 +20,7 @@ export function createServiceBindings(
         environment: environment,
         name: 'CONSTELLATION',
         scriptName: workers.domeApi.name,
-      })
+      }),
     );
   }
 
@@ -32,7 +32,7 @@ export function createServiceBindings(
         environment: environment,
         name: 'SILO',
         scriptName: workers.domeApi.name,
-      })
+      }),
     );
   }
 
@@ -44,7 +44,7 @@ export function createServiceBindings(
         environment: environment,
         name: 'SILO',
         scriptName: workers.constellation.name,
-      })
+      }),
     );
   }
 
@@ -56,10 +56,10 @@ export function createServiceBindings(
         environment: environment,
         name: 'SILO',
         scriptName: workers.aiProcessor.name,
-      })
+      }),
     );
   }
-  
+
   // Ingestion Manager to Silo
   if (workers.ingestionManager && workers.silo) {
     bindings.push(
@@ -68,7 +68,7 @@ export function createServiceBindings(
         environment: environment,
         name: 'SILO',
         scriptName: workers.ingestionManager.name,
-      })
+      }),
     );
   }
 

@@ -15,6 +15,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     try {
       return await fn();
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       getLogger().error({ err }, 'Unhandled error');
       throw err;
     }

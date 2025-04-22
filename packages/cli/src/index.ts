@@ -35,7 +35,11 @@ program
   });
 
 // Display banner only when no arguments or when help is requested
-if (!process.argv.slice(2).length || process.argv.includes('--help') || process.argv.includes('-h')) {
+if (
+  !process.argv.slice(2).length ||
+  process.argv.includes('--help') ||
+  process.argv.includes('-h')
+) {
   console.log(chalk.cyan(figlet.textSync('dome', { font: 'Standard' })));
   console.log(chalk.gray('AI-powered personal memory assistant\n'));
 }

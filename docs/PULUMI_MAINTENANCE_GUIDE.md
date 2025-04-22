@@ -52,12 +52,14 @@ The maintenance of infrastructure as code requires a disciplined approach to ens
 Regularly updating dependencies is important for security and to access new features. Follow these steps to update dependencies:
 
 1. Check for outdated dependencies:
+
    ```bash
    cd infra
    pnpm outdated
    ```
 
 2. Update dependencies:
+
    ```bash
    # Update all dependencies
    pnpm update
@@ -67,11 +69,13 @@ Regularly updating dependencies is important for security and to access new feat
    ```
 
 3. Review the changes:
+
    ```bash
    git diff package.json
    ```
 
 4. Test the updates:
+
    ```bash
    pnpm install
    pnpm build
@@ -123,7 +127,7 @@ workers.domeApi = createWorker(
   d1Databases,
   r2Buckets,
   vectorizeIndexes,
-  queues
+  queues,
 );
 ```
 
@@ -132,20 +136,23 @@ workers.domeApi = createWorker(
 To update environment-specific configurations:
 
 1. Edit the appropriate stack configuration file:
+
    - `Pulumi.dev.yaml` for development
    - `Pulumi.staging.yaml` for staging
    - `Pulumi.prod.yaml` for production
 
 2. Update the configuration values:
+
    ```yaml
    # Example: Pulumi.dev.yaml
    config:
      cloudflare:accountId: ${CLOUDFLARE_ACCOUNT_ID}
      dome-infrastructure:environment: dev
-     dome-infrastructure:logLevel: trace  # Changed from debug to trace
+     dome-infrastructure:logLevel: trace # Changed from debug to trace
    ```
 
 3. Preview the changes:
+
    ```bash
    just pulumi-preview dev
    ```
@@ -166,6 +173,7 @@ pulumi config set dome-infrastructure:logLevel trace --stack dev
 When applying updates to the infrastructure, follow these steps:
 
 1. Create a feature branch:
+
    ```bash
    git checkout -b feature/update-infrastructure
    ```
@@ -173,17 +181,20 @@ When applying updates to the infrastructure, follow these steps:
 2. Make the necessary changes to the infrastructure code
 
 3. Preview the changes for all environments:
+
    ```bash
    just preview-all
    ```
 
 4. Review the changes carefully, paying attention to:
+
    - Resources being created
    - Resources being updated
    - Resources being deleted
    - Any replacement operations (which may cause downtime)
 
 5. Apply the changes to the development environment:
+
    ```bash
    just pulumi-up dev
    ```
@@ -191,6 +202,7 @@ When applying updates to the infrastructure, follow these steps:
 6. Test the changes in the development environment
 
 7. Apply the changes to the staging environment:
+
    ```bash
    just pulumi-up staging
    ```
@@ -198,6 +210,7 @@ When applying updates to the infrastructure, follow these steps:
 8. Test the changes in the staging environment
 
 9. Apply the changes to the production environment:
+
    ```bash
    just pulumi-up prod
    ```
@@ -205,6 +218,7 @@ When applying updates to the infrastructure, follow these steps:
 10. Verify the changes in the production environment
 
 11. Commit and push the changes:
+
     ```bash
     git add .
     git commit -m "feat: update infrastructure"
@@ -223,8 +237,8 @@ To add a new D1 database:
 2. Add the new database definition:
    ```typescript
    // Add a new database
-   databases.newDatabase = new cloudflare.D1Database("new-database", {
-     name: resourceName("new-database"),
+   databases.newDatabase = new cloudflare.D1Database('new-database', {
+     name: resourceName('new-database'),
    });
    ```
 3. Preview and apply the changes:
@@ -250,8 +264,8 @@ To add a new R2 bucket:
 2. Add the new bucket definition:
    ```typescript
    // Add a new bucket
-   buckets.newBucket = new cloudflare.R2Bucket("new-bucket", {
-     name: resourceName("new-bucket"),
+   buckets.newBucket = new cloudflare.R2Bucket('new-bucket', {
+     name: resourceName('new-bucket'),
    });
    ```
 3. Preview and apply the changes:
@@ -277,10 +291,10 @@ To add a new Vectorize index:
 2. Add the new index definition:
    ```typescript
    // Add a new index
-   indexes.newIndex = new cloudflare.VectorizeIndex("new-index", {
-     name: resourceName("new-index"),
+   indexes.newIndex = new cloudflare.VectorizeIndex('new-index', {
+     name: resourceName('new-index'),
      dimensions: 1536,
-     metric: "cosine",
+     metric: 'cosine',
    });
    ```
 3. Preview and apply the changes:
@@ -306,8 +320,8 @@ To add a new queue:
 2. Add the new queue definition:
    ```typescript
    // Add a new queue
-   queues.newQueue = new cloudflare.WorkersQueue("new-queue", {
-     name: resourceName("new-queue"),
+   queues.newQueue = new cloudflare.WorkersQueue('new-queue', {
+     name: resourceName('new-queue'),
    });
    ```
 3. Preview and apply the changes:
@@ -351,7 +365,7 @@ To add a new worker:
      d1Databases,
      r2Buckets,
      vectorizeIndexes,
-     queues
+     queues,
    );
    ```
 3. Preview and apply the changes:
@@ -368,12 +382,14 @@ To add a new service binding:
 2. Add the new binding definition:
    ```typescript
    // Add a new service binding
-   bindings.push(new cloudflare.ServiceBinding("new-worker-to-silo", {
-     service: workers.silo.name,
-     environment: environment,
-     binding: "SILO",
-     script: workers.newWorker.name,
-   }));
+   bindings.push(
+     new cloudflare.ServiceBinding('new-worker-to-silo', {
+       service: workers.silo.name,
+       environment: environment,
+       binding: 'SILO',
+       script: workers.newWorker.name,
+     }),
+   );
    ```
 3. Preview and apply the changes:
    ```bash
@@ -386,12 +402,14 @@ To add a new service binding:
 ### Understanding Pulumi State
 
 Pulumi state is a snapshot of the resources managed by Pulumi. It includes:
+
 - Resource definitions
 - Resource properties
 - Resource dependencies
 - Metadata about the deployment
 
 The state is stored in the Pulumi Service by default, which provides:
+
 - Secure storage
 - Versioning
 - Collaboration features
@@ -432,14 +450,16 @@ This will update the Pulumi state to match the actual infrastructure without mak
 To import existing resources into Pulumi state:
 
 1. Define the resource in your Pulumi code:
+
    ```typescript
    // Define the resource without creating it
-   const database = new cloudflare.D1Database("existing-database", {
-     name: "existing-database",
+   const database = new cloudflare.D1Database('existing-database', {
+     name: 'existing-database',
    });
    ```
 
 2. Import the resource:
+
    ```bash
    cd infra
    pulumi stack select dev
@@ -449,8 +469,8 @@ To import existing resources into Pulumi state:
 3. Update your Pulumi code to match the imported resource:
    ```typescript
    // Update the resource definition with the correct properties
-   const database = new cloudflare.D1Database("existing-database", {
-     name: "existing-database",
+   const database = new cloudflare.D1Database('existing-database', {
+     name: 'existing-database',
      // Add any other properties from the imported resource
    });
    ```
@@ -466,6 +486,7 @@ pulumi stack export > dev-state.json
 ```
 
 This is useful for:
+
 - Backup purposes
 - Debugging
 - Migrating to a different Pulumi backend
@@ -475,26 +496,29 @@ This is useful for:
 If you encounter state issues, you can try the following approaches:
 
 1. **Refresh the state**:
+
    ```bash
    pulumi refresh
    ```
 
 2. **Fix specific resources**:
+
    ```bash
    pulumi import <resource-type> <resource-name> <resource-id>
    ```
 
 3. **Reset the state** (use with caution):
+
    ```bash
    # Export the current state as a backup
    pulumi stack export > backup.json
-   
+
    # Remove the stack
    pulumi stack rm dev --force
-   
+
    # Recreate the stack
    pulumi stack init dev
-   
+
    # Import resources
    # Run import commands for each resource
    ```
@@ -511,19 +535,21 @@ If you encounter state issues, you can try the following approaches:
 Pulumi provides built-in secret management. To use it:
 
 1. Store a secret:
+
    ```bash
    pulumi config set --secret apiKey "your-secret-api-key"
    ```
 
 2. Access the secret in your code:
+
    ```typescript
    const config = new pulumi.Config();
-   const apiKey = config.requireSecret("apiKey");
+   const apiKey = config.requireSecret('apiKey');
    ```
 
 3. Use the secret in a resource:
    ```typescript
-   const worker = new cloudflare.WorkerScript("api-worker", {
+   const worker = new cloudflare.WorkerScript('api-worker', {
      // ...
      secretTextBindings: {
        API_KEY: apiKey,
@@ -536,12 +562,14 @@ Pulumi provides built-in secret management. To use it:
 For sensitive information that should not be stored in the Pulumi state, use environment variables:
 
 1. Set environment variables:
+
    ```bash
    export CLOUDFLARE_API_TOKEN=your-api-token
    export CLOUDFLARE_ACCOUNT_ID=your-account-id
    ```
 
 2. Reference environment variables in your code:
+
    ```typescript
    // These are automatically used by the Cloudflare provider
    // No need to explicitly reference them in your code
@@ -573,7 +601,7 @@ To access secrets in your code:
 ```typescript
 // For Pulumi secrets
 const config = new pulumi.Config();
-const apiKey = config.requireSecret("apiKey");
+const apiKey = config.requireSecret('apiKey');
 
 // For environment variables
 const envSecret = process.env.SECRET_VALUE;
@@ -586,6 +614,7 @@ const envSecret = process.env.SECRET_VALUE;
 Drift occurs when the actual infrastructure differs from the Pulumi state. To detect drift:
 
 1. Run a refresh operation:
+
    ```bash
    pulumi refresh
    ```
@@ -593,6 +622,7 @@ Drift occurs when the actual infrastructure differs from the Pulumi state. To de
 2. If changes are detected, Pulumi will show the differences
 
 3. Decide whether to:
+
    - Update the Pulumi state to match reality
    - Update the infrastructure to match the Pulumi state
 
@@ -610,11 +640,13 @@ Drift occurs when the actual infrastructure differs from the Pulumi state. To de
 To monitor deployments:
 
 1. Use Pulumi's built-in history:
+
    ```bash
    pulumi stack history
    ```
 
 2. Set up notifications for deployments:
+
    ```bash
    # In your CI/CD pipeline
    pulumi up --yes && curl -X POST "https://api.example.com/notify?message=Deployment%20successful"
@@ -640,6 +672,7 @@ To monitor Cloudflare resources:
 Regularly back up your Pulumi state:
 
 1. Set up automated backups:
+
    ```bash
    # Create a backup script
    #!/bin/bash
@@ -658,6 +691,7 @@ Regularly back up your Pulumi state:
 To recover from a disaster:
 
 1. Restore the Pulumi state:
+
    ```bash
    cd /path/to/infra
    pulumi stack select dev
@@ -665,11 +699,13 @@ To recover from a disaster:
    ```
 
 2. Verify the state:
+
    ```bash
    pulumi preview
    ```
 
 3. Reconcile any differences:
+
    ```bash
    pulumi refresh
    ```
@@ -686,16 +722,19 @@ To recover from a disaster:
 #### Issue: Resource Creation Failure
 
 **Symptoms**:
+
 - Pulumi reports a resource creation failure
 - Error message indicates a problem with the resource configuration
 
 **Possible Causes**:
+
 - Invalid resource configuration
 - API token permissions
 - Resource name conflicts
 - Resource limits reached
 
 **Resolution**:
+
 1. Check the error message for specific details
 2. Verify the resource configuration
 3. Check API token permissions
@@ -705,15 +744,18 @@ To recover from a disaster:
 #### Issue: State Inconsistency
 
 **Symptoms**:
+
 - Pulumi reports differences between the expected and actual state
 - Resources have been modified outside of Pulumi
 
 **Possible Causes**:
+
 - Manual changes to resources
 - Changes made through the Cloudflare dashboard
 - Changes made by other tools
 
 **Resolution**:
+
 1. Run `pulumi refresh` to update the state
 2. Review the differences
 3. Decide whether to accept the changes or revert to the expected state
@@ -721,15 +763,18 @@ To recover from a disaster:
 #### Issue: Dependency Resolution Failure
 
 **Symptoms**:
+
 - Pulumi reports a dependency resolution failure
 - Error message indicates a problem with resource dependencies
 
 **Possible Causes**:
+
 - Circular dependencies
 - Missing dependencies
 - Incorrect dependency order
 
 **Resolution**:
+
 1. Check the dependency graph
 2. Verify all dependencies exist
 3. Correct the dependency order
@@ -737,11 +782,13 @@ To recover from a disaster:
 ### Debugging Techniques
 
 1. **Enable verbose logging**:
+
    ```bash
    pulumi up --verbose
    ```
 
 2. **Examine the Pulumi logs**:
+
    ```bash
    pulumi logs
    ```
@@ -760,13 +807,16 @@ To recover from a disaster:
 If you encounter issues that you cannot resolve:
 
 1. **Check the Pulumi documentation**:
+
    - [Pulumi Docs](https://www.pulumi.com/docs/)
    - [Cloudflare Provider Docs](https://www.pulumi.com/registry/packages/cloudflare/)
 
 2. **Search the Pulumi Community Forum**:
+
    - [Pulumi Community](https://www.pulumi.com/community/)
 
 3. **Open an issue in the project repository**:
+
    - Provide detailed information about the issue
    - Include error messages and logs
    - Describe the steps to reproduce the issue

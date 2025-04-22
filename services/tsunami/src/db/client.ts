@@ -8,7 +8,7 @@
  */
 
 import { drizzle } from 'drizzle-orm/d1';
-import { getLogger } from '@dome/logging';
+import { getLogger, logError } from '@dome/logging';
 import { syncPlans } from './schema';
 
 /**
@@ -58,8 +58,7 @@ export const syncPlanOperations = {
       logger.info({ id: data.id }, 'Sync plan created');
       return result[0];
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error({ error, data }, 'Error creating sync plan');
+      logError(logger, error, 'Error creating sync plan', { data });
       throw error;
     }
   },

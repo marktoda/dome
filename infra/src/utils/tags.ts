@@ -11,7 +11,7 @@ export function getStandardTags(): Record<string, string> {
     Project: 'dome',
     CreatedAt: new Date().toISOString(),
   };
-  
+
   // Add environment-specific standard tags
   switch (environment) {
     case 'dev':
@@ -28,7 +28,7 @@ export function getStandardTags(): Record<string, string> {
       standardTags.BackupPolicy = 'daily';
       break;
   }
-  
+
   return standardTags;
 }
 
@@ -42,7 +42,7 @@ export function getStandardTags(): Record<string, string> {
 export function getResourceTags(
   resourceType: string,
   name: string,
-  additionalTags: Record<string, string> = {}
+  additionalTags: Record<string, string> = {},
 ): Record<string, string> {
   // Start with standard tags
   const tags = {
@@ -50,10 +50,10 @@ export function getResourceTags(
     ResourceType: resourceType,
     Name: name,
   };
-  
+
   // Add resource type-specific tags
   const typeTags: Record<string, string> = {};
-  
+
   switch (resourceType) {
     case 'worker':
       typeTags.ServiceType = 'compute';
@@ -75,10 +75,10 @@ export function getResourceTags(
       typeTags.StorageType = 'vector';
       break;
   }
-  
+
   // Merge type-specific tags with base tags
   Object.assign(tags, typeTags);
-  
+
   // Add any additional custom tags
   return {
     ...tags,
@@ -98,17 +98,17 @@ export function tagResource<T>(
   resource: T,
   resourceType: string,
   name: string,
-  additionalTags: Record<string, string> = {}
+  additionalTags: Record<string, string> = {},
 ): T {
   // Get the tags for this resource
   const tags = getResourceTags(resourceType, name, additionalTags);
-  
+
   // Apply tags if the resource has a tags property
   // Note: Currently, Cloudflare resources in Pulumi don't support tags
   // This is a placeholder for when they do
   if (resource && typeof resource === 'object' && 'tags' in resource) {
     (resource as any).tags = tags;
   }
-  
+
   return resource;
 }

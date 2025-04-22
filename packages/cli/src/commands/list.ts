@@ -59,7 +59,7 @@ export function listCommand(program: Command): void {
             const content = note.body || '';
             const truncatedContent =
               content.length > 50 ? content.substring(0, 47) + '...' : content;
-              
+
             // Truncate summary if it's too long
             const summary = note.summary || '';
             const truncatedSummary =

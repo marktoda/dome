@@ -17,7 +17,7 @@ export function createR2Buckets(): Record<string, cloudflare.R2Bucket> {
       location: 'wnam', // West North America
       // Add tags when Cloudflare provider supports them
     });
-    
+
     // Apply tags (for future use when Cloudflare supports tagging)
     tagResource(buckets.domeRaw, 'bucket', 'dome-raw', {
       Purpose: 'raw-file-storage',
@@ -30,13 +30,13 @@ export function createR2Buckets(): Record<string, cloudflare.R2Bucket> {
       location: 'wnam', // West North America
       // Add tags when Cloudflare provider supports them
     });
-    
+
     // Apply tags (for future use when Cloudflare supports tagging)
     tagResource(buckets.siloContent, 'bucket', 'silo-content', {
       Purpose: 'content-storage',
       Service: 'silo',
     });
-    
+
     // Add validation to ensure bucket names are valid
     for (const [key, bucket] of Object.entries(buckets)) {
       if (!bucket.name) {
@@ -57,12 +57,14 @@ export function createR2Buckets(): Record<string, cloudflare.R2Bucket> {
  * @param buckets The bucket resources
  * @returns Record of bucket names
  */
-export function getBucketNames(buckets: Record<string, cloudflare.R2Bucket>): Record<string, pulumi.Output<string>> {
+export function getBucketNames(
+  buckets: Record<string, cloudflare.R2Bucket>,
+): Record<string, pulumi.Output<string>> {
   const bucketNames: Record<string, pulumi.Output<string>> = {};
-  
+
   for (const [key, bucket] of Object.entries(buckets)) {
     bucketNames[key] = bucket.name;
   }
-  
+
   return bucketNames;
 }

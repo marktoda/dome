@@ -47,7 +47,7 @@ export function searchCommand(program: Command): void {
           if (match.title) {
             console.log(formatKeyValue('Title', match.title));
           }
-          
+
           if (match.summary) {
             console.log(formatKeyValue('Summary', match.summary));
           }
