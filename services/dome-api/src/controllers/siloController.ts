@@ -278,7 +278,7 @@ export class SiloController {
       };
 
       // Send the message to the ingest queue
-      await c.env.INGEST_QUEUE.send(message);
+      await c.env.SILO_INGEST_QUEUE.send(message);
 
       this.logger.info({ userId, category: message.category }, 'Content sent to ingest queue');
 

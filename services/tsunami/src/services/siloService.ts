@@ -28,7 +28,7 @@ export class SiloService {
    *
    * @param env - The environment bindings
    */
-  constructor(private env: Bindings) {}
+  constructor(private env: Bindings) { }
 
   /**
    * Upload multiple content items to Silo
@@ -94,7 +94,7 @@ export class SiloService {
     } else {
       try {
         // Send the message to the ingest queue
-        await this.env.INGEST_QUEUE.send(message);
+        await this.env.SILO_INGEST_QUEUE.send(message);
       } catch (e) {
         logError(getLogger(), e, 'Queue send error');
         logger.warn(

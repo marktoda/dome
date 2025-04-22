@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_als"]
 [[d1_databases]]
 binding        = "SYNC_PLAN"
 database_name  = "sync-plan"
-database_id = "3e8b1973-13cf-40e9-95cd-3ac446d792e9"
+database_id = "55659ee4-6f9d-486a-abfa-303872a2a4b6"
 migrations_dir = "migrations"
 
 [[services]]
@@ -26,8 +26,8 @@ new_sqlite_classes = ["ResourceObject"] # Array of new classes
 
 # Queue producers
 [[queues.producers]]
-queue = "ingest-queue"
-binding = "INGEST_QUEUE"
+queue = "silo-ingest-queue"
+binding = "SILO_INGEST_QUEUE"
 
 #################################################################
 # Secrets / runtime constants

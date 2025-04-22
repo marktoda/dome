@@ -48,7 +48,7 @@ describe('DLQ Monitoring Job', () => {
       reprocessedMessages: 10,
       pendingMessages: 40,
       byQueueName: {
-        'ingest-queue': 30,
+        'silo-ingest-queue': 30,
         'silo-content-uploaded': 20,
       },
       byErrorType: {
@@ -78,7 +78,7 @@ describe('DLQ Monitoring Job', () => {
 
     // Verify queue-specific metrics
     expect(metrics.gauge).toHaveBeenCalledWith('dome_cron.dlq.queue_messages', 30, {
-      queue: 'ingest-queue',
+      queue: 'silo-ingest-queue',
     });
     expect(metrics.gauge).toHaveBeenCalledWith('dome_cron.dlq.queue_messages', 20, {
       queue: 'silo-content-uploaded',
@@ -106,7 +106,7 @@ describe('DLQ Monitoring Job', () => {
       reprocessedMessages: 20,
       pendingMessages: 130,
       byQueueName: {
-        'ingest-queue': 100,
+        'silo-ingest-queue': 100,
         'silo-content-uploaded': 50,
       },
       byErrorType: {
@@ -167,7 +167,7 @@ describe('DLQ Monitoring Job', () => {
       totalMessages: 50,
       reprocessedMessages: 10,
       pendingMessages: 40,
-      byQueueName: { 'ingest-queue': 50 },
+      byQueueName: { 'silo-ingest-queue': 50 },
       byErrorType: { ConnectionError: 30, TimeoutError: 20 },
     };
 
@@ -176,7 +176,7 @@ describe('DLQ Monitoring Job', () => {
       {
         processingMetadata: {
           messageId: 'msg-001',
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           failedAt: Date.now(),
           retryCount: 3,
         },
@@ -191,7 +191,7 @@ describe('DLQ Monitoring Job', () => {
       {
         processingMetadata: {
           messageId: 'msg-002',
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           failedAt: Date.now(),
           retryCount: 2,
         },
@@ -209,7 +209,7 @@ describe('DLQ Monitoring Job', () => {
       {
         processingMetadata: {
           messageId: 'msg-003',
-          queueName: 'ingest-queue',
+          queueName: 'silo-ingest-queue',
           failedAt: Date.now(),
           retryCount: 1,
         },
@@ -346,7 +346,7 @@ describe('DLQ Monitoring Job', () => {
       totalMessages: 50,
       reprocessedMessages: 10,
       pendingMessages: 40,
-      byQueueName: { 'ingest-queue': 50 },
+      byQueueName: { 'silo-ingest-queue': 50 },
       byErrorType: { ConnectionError: 30, TimeoutError: 20 },
     };
 

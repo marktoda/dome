@@ -9,7 +9,7 @@ declare namespace Cloudflare {
     RESOURCE_OBJECT: DurableObjectNamespace<import('./src/index').ResourceObject>;
     SYNC_PLAN: D1Database;
     SILO: Fetcher;
-    INGEST_QUEUE: Queue;
+    SILO_INGEST_QUEUE: Queue;
   }
 }
 interface Env extends Cloudflare.Env {}

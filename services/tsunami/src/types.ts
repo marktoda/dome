@@ -45,7 +45,7 @@ export type Bindings = {
   /** Silo service binding for content storage */
   SILO: SiloService;
   /** Ingest queue for content ingestion */
-  INGEST_QUEUE: Queue<SiloSimplePutInput>;
+  SILO_INGEST_QUEUE: Queue<SiloSimplePutInput>;
   /** Resource Object Durable Object */
   RESOURCE_OBJECT: DurableObjectNamespace;
 };

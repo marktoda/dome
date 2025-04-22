@@ -1,6 +1,6 @@
 # Queue-Based Content Ingestion System Design
 
-This document outlines the plan for implementing a queue-based ingestion system where the silo service consumes from an `ingest-queue` and both tsunami and dome-api act as producers.
+This document outlines the plan for implementing a queue-based ingestion system where the silo service consumes from an `silo-ingest-queue` and both tsunami and dome-api act as producers.
 
 ## Current Architecture
 
@@ -29,7 +29,7 @@ We'll implement a queue-based ingestion system with the following components:
 
 ```mermaid
 graph TD
-    A[Tsunami Service] -->|Produces to| B[ingest-queue]
+    A[Tsunami Service] -->|Produces to| B[silo-ingest-queue]
     C[Dome API Service] -->|Produces to| B
     B -->|Consumed by| D[Silo Service]
     D -->|Stores in| E[R2 Storage]
@@ -85,7 +85,7 @@ async queue(batch: MessageBatch<R2Event | EnrichedContentMessage | SiloSimplePut
         } else if (batch.queue === 'enriched-content') {
           // Existing code for processing enriched content
           // ...
-        } else if (batch.queue === 'ingest-queue') {
+        } else if (batch.queue === 'silo-ingest-queue') {
           // Process ingest queue messages
           const promises = batch.messages.map(async message => {
             try {
@@ -198,7 +198,7 @@ export class SiloService {
     };
 
     // Send the message to the ingest queue
-    await this.env.INGEST_QUEUE.send(message);
+    await this.env.SILO_INGEST_QUEUE.send(message);
 
     // Return a response with the ID
     return {
@@ -250,7 +250,7 @@ async ingest(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Prom
     };
 
     // Send the message to the ingest queue
-    await c.env.INGEST_QUEUE.send(message);
+    await c.env.SILO_INGEST_QUEUE.send(message);
 
     // Return success response
     return c.json(
@@ -272,20 +272,20 @@ Update the wrangler.toml files to include the new queue binding:
 ```toml
 # In services/silo/wrangler.toml
 [[queues.consumers]]
-queue = "ingest-queue"
+queue = "silo-ingest-queue"
 max_batch_size = 10
 max_batch_timeout = 5
 max_retries = 3
 
 # In services/tsunami/wrangler.toml
 [[queues.producers]]
-queue = "ingest-queue"
-binding = "INGEST_QUEUE"
+queue = "silo-ingest-queue"
+binding = "SILO_INGEST_QUEUE"
 
 # In services/dome-api/wrangler.toml
 [[queues.producers]]
-queue = "ingest-queue"
-binding = "INGEST_QUEUE"
+queue = "silo-ingest-queue"
+binding = "SILO_INGEST_QUEUE"
 ```
 
 ### 7. Update Environment Types
@@ -296,19 +296,19 @@ Update the environment types in each service to include the new queue bindings:
 // In services/silo/src/types.ts
 interface Env {
   // Existing bindings...
-  INGEST_QUEUE: Queue<SiloSimplePutInput>;
+  SILO_INGEST_QUEUE: Queue<SiloSimplePutInput>;
 }
 
 // In services/tsunami/src/types.ts
 interface Env {
   // Existing bindings...
-  INGEST_QUEUE: Queue<SiloSimplePutInput>;
+  SILO_INGEST_QUEUE: Queue<SiloSimplePutInput>;
 }
 
 // In services/dome-api/src/types.ts
 interface Bindings {
   // Existing bindings...
-  INGEST_QUEUE: Queue<SiloSimplePutInput>;
+  SILO_INGEST_QUEUE: Queue<SiloSimplePutInput>;
 }
 ```
 

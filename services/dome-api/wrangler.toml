@@ -24,8 +24,8 @@ port = 8787
 
 # Queue producers
 [[queues.producers]]
-queue = "ingest-queue"
-binding = "INGEST_QUEUE"
+queue = "silo-ingest-queue"
+binding = "SILO_INGEST_QUEUE"
 
 [vars]
 VERSION = "0.1.0"

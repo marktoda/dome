@@ -46,7 +46,7 @@ export class SiloService {
     };
 
     // Send the message to the ingest queue
-    await env.INGEST_QUEUE.send(message);
+    await env.SILO_INGEST_QUEUE.send(message);
 
     // Return a simulated response with the content ID
     return {

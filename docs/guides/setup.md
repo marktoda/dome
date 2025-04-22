@@ -93,7 +93,7 @@ wrangler queues create dome_events
 wrangler queues create embed-queue
 wrangler queues create silo-content-uploaded
 wrangler queues create new-content
-wrangler queues create ingest-queue
+wrangler queues create silo-ingest-queue
 wrangler queues create ingest-dead-letter
 ```
 

@@ -8,7 +8,7 @@ declare namespace Cloudflare {
     ENVIRONMENT: string;
     CONSTELLATION: Fetcher;
     SILO: Fetcher;
-    INGEST_QUEUE: Queue;
+    SILO_INGEST_QUEUE: Queue;
     AI: Ai;
   }
 }
