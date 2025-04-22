@@ -18,7 +18,7 @@ export class SiloService {
    * Constant for public content userId
    * Used to identify vectors that should be accessible to all users
    */
-  public static readonly PUBLIC_CONTENT_USER_ID = "PUBLIC_CONTENT";
+  public static readonly PUBLIC_CONTENT_USER_ID = 'PUBLIC_CONTENT';
 
   private silo: SiloBinding;
   /**
@@ -90,7 +90,10 @@ export class SiloService {
       // Create a SiloEmbedJob
       return {
         // Set userId to PUBLIC_CONTENT_USER_ID for public content (when userId is null)
-        userId: validatedMessage.userId === null ? SiloService.PUBLIC_CONTENT_USER_ID : validatedMessage.userId,
+        userId:
+          validatedMessage.userId === null || validatedMessage.userId === ''
+            ? SiloService.PUBLIC_CONTENT_USER_ID
+            : validatedMessage.userId,
         contentId: validatedMessage.id,
         text,
         created: (validatedMessage.createdAt || Math.floor(Date.now() / 1000)) * 1000, // Convert seconds to milliseconds

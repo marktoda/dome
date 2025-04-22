@@ -37,7 +37,7 @@ export class ContentController {
     private readonly r2Service: R2Service,
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
-  ) {}
+  ) { }
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -104,7 +104,7 @@ export class ContentController {
 
       await Promise.all(
         metadataItems.map(async item => {
-          if (item.userId !== null && item.userId !== userId) return; // ACL check
+          if (item.userId !== null && item.userId !== "" && item.userId !== userId) return; // ACL check
 
           results[item.id] = item;
 

@@ -15,6 +15,7 @@ This document outlines steps to manually test the public vectors implementation 
 Test that content with `null` userId is correctly tagged as public content:
 
 1. Create a new content item in Silo with `userId: null`
+
    ```bash
    # Example using curl or similar tool
    curl -X POST https://your-dev-silo-service.com/content \
@@ -29,6 +30,7 @@ Test that content with `null` userId is correctly tagged as public content:
    ```
 
 2. Verify in logs that the content is processed by the Constellation service
+
    ```bash
    # Check logs for the Constellation service
    wrangler tail constellation
@@ -46,6 +48,7 @@ Test that content with `null` userId is correctly tagged as public content:
 Test that a user-specific query returns both the user's vectors and public vectors:
 
 1. Create some user-specific content for "user1"
+
    ```bash
    curl -X POST https://your-dev-silo-service.com/content \
      -H "Content-Type: application/json" \
@@ -59,6 +62,7 @@ Test that a user-specific query returns both the user's vectors and public vecto
    ```
 
 2. Make a vector query for "user1"
+
    ```bash
    curl -X POST https://your-dev-constellation-service.com/query \
      -H "Content-Type: application/json" \
@@ -86,7 +90,7 @@ Test that a user-specific query returns both the user's vectors and public vecto
        },
        {
          "id": "test-public-content",
-         "score": 0.90,
+         "score": 0.9,
          "metadata": {
            "userId": "PUBLIC_CONTENT",
            "contentId": "test-public-content",
@@ -102,6 +106,7 @@ Test that a user-specific query returns both the user's vectors and public vecto
 Test querying for only public content:
 
 1. Make a vector query with a filter that would only match public content
+
    ```bash
    curl -X POST https://your-dev-constellation-service.com/query \
      -H "Content-Type: application/json" \
@@ -120,7 +125,7 @@ Test querying for only public content:
      "results": [
        {
          "id": "test-public-content",
-         "score": 0.90,
+         "score": 0.9,
          "metadata": {
            "userId": "PUBLIC_CONTENT",
            "contentId": "test-public-content",
@@ -136,6 +141,7 @@ Test querying for only public content:
 Test that each user gets their own content plus public content, but not other users' content:
 
 1. Create content for "user2"
+
    ```bash
    curl -X POST https://your-dev-silo-service.com/content \
      -H "Content-Type: application/json" \
@@ -149,6 +155,7 @@ Test that each user gets their own content plus public content, but not other us
    ```
 
 2. Query for "user1" and verify they get their content and public content, but not user2's content
+
    ```bash
    curl -X POST https://your-dev-constellation-service.com/query \
      -H "Content-Type: application/json" \
@@ -177,21 +184,25 @@ Test that each user gets their own content plus public content, but not other us
 ## Debugging Tips
 
 1. Check the Cloudflare Workers logs for detailed information:
+
    ```bash
    wrangler tail constellation
    ```
 
 2. Look for log entries related to filter modification:
+
    ```
    Using $in operator for userId filter: { userId: { $in: ['user1', 'PUBLIC_CONTENT'] } }
    ```
 
 3. Verify the Vectorize index has the correct metadata index for userId:
+
    ```bash
    npx wrangler vectorize list-metadata-indexes <INDEX_NAME>
    ```
-   
+
    If the userId metadata index is missing, create it:
+
    ```bash
    npx wrangler vectorize create-metadata-index <INDEX_NAME> --property-name=userId --type=string
    ```

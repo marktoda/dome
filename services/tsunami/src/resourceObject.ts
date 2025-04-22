@@ -174,5 +174,4 @@ export class ResourceObject extends DurableObject<Bindings> {
       }
     });
   }
-
 }

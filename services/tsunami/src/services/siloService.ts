@@ -28,7 +28,7 @@ export class SiloService {
    *
    * @param env - The environment bindings
    */
-  constructor(private env: Bindings) { }
+  constructor(private env: Bindings) {}
 
   /**
    * Upload multiple content items to Silo
@@ -64,35 +64,22 @@ export class SiloService {
     };
 
     // Calculate the size of the content
-    const contentSize = typeof content.content === 'string'
-      ? new TextEncoder().encode(content.content).length
-      : content.content.byteLength;
+    const contentSize =
+      typeof content.content === 'string'
+        ? new TextEncoder().encode(content.content).length
+        : content.content.byteLength;
 
     // Extract file path information from metadata if available
     const filePath = content.metadata?.filePath || content.metadata?.path || 'unknown';
-    const fileName = content.metadata?.fileName || content.metadata?.name ||
+    const fileName =
+      content.metadata?.fileName ||
+      content.metadata?.name ||
       (typeof filePath === 'string' ? filePath.split('/').pop() : 'unknown');
 
     // Check if the message exceeds the maximum size
     if (contentSize > MAX_QUEUE_MESSAGE_SIZE) {
-      logger.warn({
-        event: 'queue_message_skipped',
-        contentId: id,
-        contentSize,
-        maxSize: MAX_QUEUE_MESSAGE_SIZE,
-        category: content.category || 'note',
-        mimeType: content.mimeType || 'text/markdown',
-        filePath,
-        fileName
-      }, `Queue message skipped: content exceeds maximum size limit (file: ${filePath})`);
-    } else {
-      try {
-        // Send the message to the ingest queue
-        await this.env.INGEST_QUEUE.send(message);
-      } catch (e) {
-        logError(getLogger(), e, 'Queue send error');
-        logger.warn({
-          error: e,
+      logger.warn(
+        {
           event: 'queue_message_skipped',
           contentId: id,
           contentSize,
@@ -100,19 +87,44 @@ export class SiloService {
           category: content.category || 'note',
           mimeType: content.mimeType || 'text/markdown',
           filePath,
-          fileName
-        }, `Queue message skipped: Queue send failed`);
+          fileName,
+        },
+        `Queue message skipped: content exceeds maximum size limit (file: ${filePath})`,
+      );
+    } else {
+      try {
+        // Send the message to the ingest queue
+        await this.env.INGEST_QUEUE.send(message);
+      } catch (e) {
+        logError(getLogger(), e, 'Queue send error');
+        logger.warn(
+          {
+            error: e,
+            event: 'queue_message_skipped',
+            contentId: id,
+            contentSize,
+            maxSize: MAX_QUEUE_MESSAGE_SIZE,
+            category: content.category || 'note',
+            mimeType: content.mimeType || 'text/markdown',
+            filePath,
+            fileName,
+          },
+          `Queue message skipped: Queue send failed`,
+        );
       }
 
-      logger.info({
-        event: 'queue_message_sent',
-        contentId: id,
-        contentSize,
-        category: content.category || 'note',
-        mimeType: content.mimeType || 'text/markdown',
-        filePath,
-        fileName
-      }, `Successfully published message to ingest queue (file: ${filePath})`);
+      logger.info(
+        {
+          event: 'queue_message_sent',
+          contentId: id,
+          contentSize,
+          category: content.category || 'note',
+          mimeType: content.mimeType || 'text/markdown',
+          filePath,
+          fileName,
+        },
+        `Successfully published message to ingest queue (file: ${filePath})`,
+      );
     }
 
     // Return a response with the ID

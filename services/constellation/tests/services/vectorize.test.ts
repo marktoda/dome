@@ -236,7 +236,7 @@ describe('VectorizeService', () => {
         topK,
         filter: {
           category: 'note',
-          userId: { $in: ['user1', SiloService.PUBLIC_CONTENT_USER_ID] }
+          userId: { $in: ['user1', SiloService.PUBLIC_CONTENT_USER_ID] },
         },
         returnMetadata: true,
       });
@@ -360,7 +360,7 @@ describe('VectorizeService', () => {
           },
           {
             id: 'note:public-note',
-            score: 0.90,
+            score: 0.9,
             metadata: {
               userId: SiloService.PUBLIC_CONTENT_USER_ID,
               contentId: 'public-note',
@@ -376,9 +376,9 @@ describe('VectorizeService', () => {
 
       const queryVector = [0.1, 0.2, 0.3];
       const filter: Partial<VectorMeta> = { userId: 'user1' };
-      
+
       const results = await vectorizeService.query(queryVector, filter);
-      
+
       // Should return both user-specific and public vectors
       expect(results.length).toBe(2);
       expect(results[0].metadata.userId).toBe('user1');
@@ -405,7 +405,7 @@ describe('VectorizeService', () => {
           },
           {
             id: 'note:public-note2',
-            score: 0.90,
+            score: 0.9,
             metadata: {
               userId: SiloService.PUBLIC_CONTENT_USER_ID,
               contentId: 'public-note2',
@@ -421,12 +421,14 @@ describe('VectorizeService', () => {
 
       const queryVector = [0.1, 0.2, 0.3];
       const filter: Partial<VectorMeta> = { userId: 'user1' };
-      
+
       const results = await vectorizeService.query(queryVector, filter);
-      
+
       // Should return only public vectors
       expect(results.length).toBe(2);
-      expect(results.every(r => r.metadata.userId === SiloService.PUBLIC_CONTENT_USER_ID)).toBe(true);
+      expect(results.every(r => r.metadata.userId === SiloService.PUBLIC_CONTENT_USER_ID)).toBe(
+        true,
+      );
     });
 
     it('should handle query with only user-specific content results', async () => {
@@ -449,7 +451,7 @@ describe('VectorizeService', () => {
           },
           {
             id: 'note:user1-note2',
-            score: 0.90,
+            score: 0.9,
             metadata: {
               userId: 'user1',
               contentId: 'user1-note2',
@@ -465,9 +467,9 @@ describe('VectorizeService', () => {
 
       const queryVector = [0.1, 0.2, 0.3];
       const filter: Partial<VectorMeta> = { userId: 'user1' };
-      
+
       const results = await vectorizeService.query(queryVector, filter);
-      
+
       // Should return only user-specific vectors
       expect(results.length).toBe(2);
       expect(results.every(r => r.metadata.userId === 'user1')).toBe(true);

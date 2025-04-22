@@ -114,9 +114,12 @@ export class VectorizeService {
       } catch (err) {
         metrics.increment('vectorize.upsert.errors');
 
-        logError(getLogger(), err, 'vectorize.upsert failed',
-          { err, attempt, max: this.cfg.retryAttempts, size: batch.length },
-        );
+        logError(getLogger(), err, 'vectorize.upsert failed', {
+          err,
+          attempt,
+          max: this.cfg.retryAttempts,
+          size: batch.length,
+        });
         if (attempt < this.cfg.retryAttempts)
           await new Promise(r => setTimeout(r, this.cfg.retryDelay));
         else throw err;
@@ -161,7 +164,7 @@ export class VectorizeService {
       }
 
       // Log the filters for debugging
-      getLogger().debug(
+      getLogger().info(
         {
           originalFilter: filter,
           cleanFilter,
@@ -171,7 +174,7 @@ export class VectorizeService {
       );
 
       // Log query vector stats to check for zero/small vectors
-      getLogger().debug(
+      getLogger().info(
         {
           vectorLength: vector.length,
           firstValues: vector.slice(0, 3),
@@ -179,36 +182,6 @@ export class VectorizeService {
         },
         'Query vector stats',
       );
-
-      // Get index stats before query
-      try {
-        const stats = await this.idx.describe();
-        // Handle both beta and post-beta versions of the API
-        const statsAny = stats as any;
-        const vectorCount =
-          'vectorsCount' in statsAny
-            ? statsAny.vectorsCount
-            : 'vectorCount' in statsAny
-              ? statsAny.vectorCount
-              : 0;
-
-        const dimensions =
-          'dimensions' in statsAny
-            ? statsAny.dimensions
-            : 'config' in statsAny && statsAny.config && 'dimensions' in statsAny.config
-              ? statsAny.config.dimensions
-              : 0;
-
-        getLogger().debug(
-          {
-            vectorCount,
-            dimensions,
-          },
-          'Vectorize index stats before query',
-        );
-      } catch (err) {
-        logError(getLogger(), err, 'Failed to get index stats before query');
-      }
 
       const res = await this.idx.query(vector, {
         topK,

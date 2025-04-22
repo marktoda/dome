@@ -12,6 +12,15 @@ max_retries = 3
 max_concurrency = 3  # Reduced to lower concurrent processing
 dead_letter_queue = "embed-dead-letter"
 
+# Dead letter queue consumer
+[[queues.consumers]]
+queue = "embed-dead-letter"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 0  # No automatic retries, we handle retries in the consumer
+max_concurrency = 2
+# No dead letter queue for the dead letter queue
+
 # Dead letter queue producer
 [[queues.producers]]
 binding = "EMBED_DEAD"

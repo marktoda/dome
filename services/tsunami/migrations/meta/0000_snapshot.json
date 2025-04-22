@@ -106,12 +106,8 @@
           "name": "sync_history_sync_plan_id_sync_plan_id_fk",
           "tableFrom": "sync_history",
           "tableTo": "sync_plan",
-          "columnsFrom": [
-            "sync_plan_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sync_plan_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -155,9 +151,7 @@
       "indexes": {
         "sync_plan_resource_id_unique": {
           "name": "sync_plan_resource_id_unique",
-          "columns": [
-            "resource_id"
-          ],
+          "columns": ["resource_id"],
           "isUnique": true
         }
       },

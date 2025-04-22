@@ -77,7 +77,7 @@ describe('SiloService', () => {
       mockSiloBinding.batchGet.mockResolvedValueOnce({ items: [] });
 
       await expect(siloService.fetchContent(contentId, userId)).rejects.toThrow(
-        `Content not found: ${contentId}`
+        `Content not found: ${contentId}`,
       );
     });
 
@@ -95,7 +95,7 @@ describe('SiloService', () => {
       });
 
       await expect(siloService.fetchContent(contentId, userId)).rejects.toThrow(
-        `Content body not available for: ${contentId}`
+        `Content body not available for: ${contentId}`,
       );
     });
   });
@@ -159,7 +159,7 @@ describe('SiloService', () => {
       };
 
       await expect(siloService.convertToEmbedJob(message)).rejects.toThrow(
-        'Content is marked as deleted, skipping embedding'
+        'Content is marked as deleted, skipping embedding',
       );
     });
 

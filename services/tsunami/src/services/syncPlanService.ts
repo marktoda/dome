@@ -6,8 +6,8 @@ import { ProviderType } from '../providers';
 import { Bindings } from '../types';
 
 /* ─────────── custom errors ─────────── */
-export class NotFoundError extends Error { }
-export class AlreadyExistsError extends Error { }
+export class NotFoundError extends Error {}
+export class AlreadyExistsError extends Error {}
 
 export interface InitParams {
   resourceId: string;
@@ -17,7 +17,7 @@ export interface InitParams {
 
 export class SyncPlanService {
   private logger = getLogger();
-  constructor(private env: Bindings) { }
+  constructor(private env: Bindings) {}
 
   /* ─────────── Sync‑plan CRUD ─────────── */
 
@@ -56,7 +56,8 @@ export class SyncPlanService {
       // If `info()` succeeds we assume the object already exists.
       const { resourceId: configResourceId } = obj.info();
       getLogger().info({ resourceId, configResourceId }, 'Initialize: Resource id');
-      if (resourceId === configResourceId) throw new Error(`Resource already exists: ${resourceId}`);
+      if (resourceId === configResourceId)
+        throw new Error(`Resource already exists: ${resourceId}`);
 
       console.log(`Initializing new resource object ${resourceId}`);
       await obj.initialize({
