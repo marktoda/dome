@@ -31,7 +31,8 @@ new_sqlite_classes = ["ResourceObject"] # Array of new classes
 LOG_LEVEL = "info"
 VERSION = "1.0.0"
 ENVIRONMENT = "prod"
-# GITHUB_TOKEN = "" # Uncomment and set this in production or use wrangler secrets
+# GITHUB_TOKEN = "" # Optional for public repos, but recommended to avoid rate limits
+# To set: wrangler secret put GITHUB_TOKEN
 
 
 [observability]

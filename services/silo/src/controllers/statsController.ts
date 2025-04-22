@@ -24,7 +24,8 @@ export class StatsController {
       return stats;
     } catch (error) {
       metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
-      getLogger().error({ error }, 'Error in getStats');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      getLogger().error({ error, errorMessage }, 'Error in getStats');
       throw error;
     }
   }

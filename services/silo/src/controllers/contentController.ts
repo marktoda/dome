@@ -231,7 +231,8 @@ export class ContentController {
       logger.info({ id, userId }, 'Content enriched successfully');
     } catch (error) {
       metrics.increment('silo.enriched_content.errors');
-      logger.error({ error, messageId: message.id }, 'Error processing enriched content');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({ error, errorMessage, messageId: message.id }, 'Error processing enriched content');
       throw error;
     }
   }
@@ -291,7 +292,8 @@ export class ContentController {
       return { id, category, mimeType, size: obj.size, createdAt };
     } catch (error) {
       metrics.increment('silo.r2.events.errors');
-      logger.error({ error, event }, 'Error processing R2 event');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({ error, errorMessage, event }, 'Error processing R2 event');
       throw error;
     }
   }
@@ -398,7 +400,8 @@ export class ContentController {
   }
 
   private handleError(method: string, error: unknown) {
-    logger.error({ error }, `Error in ${method}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ error, errorMessage }, `Error in ${method}`);
     metrics.increment('silo.rpc.errors', 1, { method });
   }
 

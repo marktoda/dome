@@ -104,21 +104,17 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async (c) => 
       provider: 'github',
       resourceId,
     });
-    console.log('sync plan');
 
     // Create and initialize the Durable Object
     const doId = (c.env as any).RESOURCE_OBJECT.idFromName(resourceId);
     const repo = (c.env as any).RESOURCE_OBJECT.get(doId);
-    console.log('made resource object');
     await repo.initialize({
       userId,
       providerType: ProviderType.GITHUB,
       resourceId,
       cadenceSecs: 3600, // Default to 1 hour
     });
-    console.log('initialized');
     await repo.sync();
-    console.log('sync');
 
     // Return success response
     logger.info({ id, resourceId }, 'GitHub repository registered for syncing');
@@ -129,13 +125,45 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async (c) => 
       message: `GitHub repository ${resourceId} registered for syncing`
     });
   } catch (error) {
-    console.log(error);
-    logger.error({ error, resourceId }, 'Error registering GitHub repository');
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ error, resourceId, errorMessage }, 'Error registering GitHub repository');
     metrics.increment('tsunami.register.errors', 1);
+    
+    // Determine appropriate response message based on error type
+    let responseMessage = 'Failed to register GitHub repository';
+    
+    if (errorMessage.includes('rate limit exceeded')) {
+      responseMessage = 'GitHub API rate limit exceeded. Please try again later or add a GitHub token.';
+      return c.json({
+        success: false,
+        error: responseMessage,
+        message: errorMessage,
+        resourceId
+      }, 429); // Too Many Requests
+    } else if (errorMessage.includes('forbidden') || errorMessage.includes('403')) {
+      responseMessage = 'Access to GitHub repository is forbidden. Please check repository permissions or add a GitHub token.';
+      return c.json({
+        success: false,
+        error: responseMessage,
+        message: errorMessage,
+        resourceId
+      }, 403); // Forbidden
+    } else if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+      responseMessage = 'GitHub repository not found. Please check the owner and repo name.';
+      return c.json({
+        success: false,
+        error: responseMessage,
+        message: errorMessage,
+        resourceId
+      }, 404); // Not Found
+    }
+    
+    // Default error response
     return c.json({
       success: false,
-      error: 'Failed to register GitHub repository',
-      message: error instanceof Error ? error.message : String(error)
+      error: responseMessage,
+      message: errorMessage,
+      resourceId
     }, 500);
   }
 })

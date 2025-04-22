@@ -16,9 +16,10 @@ import { getLogger, metrics } from '@dome/logging';
  * GitHub API constants
  */
 const GITHUB_API_URL = 'https://api.github.com';
-const DEFAULT_HEADERS = {
+const DEFAULT_HEADERS: Record<string, string> = {
   'Accept': 'application/vnd.github.v3+json',
-  'X-GitHub-Api-Version': '2022-11-28'
+  'X-GitHub-Api-Version': '2022-11-28',
+  'User-Agent': 'Tsunami-Service/1.0.0 (+https://github.com/dome/tsunami)'
 };
 /** Maximum file size to process (1MB) */
 const MAX_FILE_SIZE = 1 * 1024 * 1024;
@@ -136,8 +137,74 @@ interface GitHubContent {
  */
 export class GithubProvider implements Provider {
   private logger = getLogger();
+  private token: string;
 
-  constructor(private env: Env) { }
+  constructor(private env: Env) {
+    // Get GitHub token from environment
+    this.token = (this.env as any).GITHUB_TOKEN || '';
+  }
+
+  /**
+   * Helper method to fetch data from GitHub API with proper headers and rate limit handling
+   *
+   * @param url - GitHub API URL to fetch from
+   * @returns Promise with the response data
+   * @throws Error if the API request fails
+   * @private
+   */
+  private async fetchFromGitHub<T>(url: string): Promise<T> {
+    // Create headers with or without authentication
+    const headers: Record<string, string> = { ...DEFAULT_HEADERS };
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    this.logger.info({ url }, 'Fetching from GitHub API');
+    const response = await fetch(url, { headers });
+
+    // Check for rate limiting
+    const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+    const rateLimitReset = response.headers.get('x-ratelimit-reset');
+
+    if (rateLimitRemaining) {
+      this.logger.info({
+        url,
+        rateLimitRemaining,
+        rateLimitReset,
+        authenticated: !!this.token
+      }, 'GitHub API rate limit info');
+    }
+
+    // Clone the response before reading it to avoid "Body has already been used" errors
+    const responseClone = response.clone();
+
+    if (!response.ok) {
+      // Get the response body for error logging
+      const responseBody = await responseClone.text();
+      getLogger().error({ status: response.status, responseBody }, 'GitHub API request failed');
+
+      // Handle specific error cases
+      if (response.status === 403) {
+        const resetTime = rateLimitReset ? new Date(parseInt(rateLimitReset) * 1000).toISOString() : 'unknown';
+
+        if (rateLimitRemaining === '0') {
+          throw new Error(`GitHub API rate limit exceeded. Resets at ${resetTime}. Consider adding a GitHub token.`);
+        } else {
+          // Could be other 403 reasons
+          throw new Error(`GitHub API access forbidden (403): ${responseBody}`);
+        }
+      }
+
+      throw new Error(`GitHub API request failed: ${response.status} ${response.statusText}`);
+    }
+
+    try {
+      return await response.json() as T;
+    } catch (error) {
+      this.logger.error({ url, error }, 'Failed to parse JSON response from GitHub API');
+      throw new Error(`Failed to parse GitHub API response: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   /**
    * Pull incremental changes to the repository since `cursor`
@@ -153,57 +220,54 @@ export class GithubProvider implements Provider {
   async pull(opts: PullOpts): Promise<SiloSimplePutInput[]> {
     const { userId, resourceId, cursor } = opts;
     const startTime = Date.now();
-    
+
     try {
       this.logger.info({ userId, resourceId, cursor }, 'Starting GitHub pull');
-      
+
       // Parse resourceId (expected format: owner/repo)
       const [owner, repo] = resourceId.split('/');
       if (!owner || !repo) {
         throw new Error(`Invalid resourceId format: ${resourceId}. Expected format: owner/repo`);
       }
-      
-      // Get GitHub token from environment
-      // In a real implementation, this would come from environment variables or a secrets store
-      // For now, we'll use a placeholder token for development
-      const token = (this.env as any).GITHUB_TOKEN || 'placeholder_token';
-      
-      // In production, we should validate the token exists
-      if (token === 'placeholder_token') {
-        this.logger.warn({ resourceId }, 'Using placeholder GitHub token - this will not work with the real GitHub API');
+
+      // Log whether we're using authentication or not
+      if (!this.token) {
+        this.logger.warn({ resourceId }, 'No GitHub token found, making unauthenticated requests (subject to lower rate limits: 60 req/hr vs 5000 req/hr)');
+      } else {
+        this.logger.info({ resourceId }, 'Using GitHub token for authentication (5000 req/hr rate limit)');
       }
-      
+
       // Fetch commits since cursor
-      const commits = await this.fetchCommitsSinceCursor(owner, repo, cursor, token);
+      const commits = await this.fetchCommitsSinceCursor(owner, repo, cursor);
       if (commits.length === 0) {
         this.logger.info({ resourceId }, 'No new commits found');
         return [];
       }
-      
+
       this.logger.info({ resourceId, commitCount: commits.length }, 'Found new commits');
-      
+
       // Get changed files from each commit
       const results: SiloSimplePutInput[] = [];
-      
+
       for (const commit of commits) {
-        const files = await this.fetchFilesFromCommit(owner, repo, commit.sha, token);
-        
+        const files = await this.fetchFilesFromCommit(owner, repo, commit.sha);
+
         for (const file of files) {
           // Skip files that are too large or deleted
           if (file.status === 'removed' || file.changes > MAX_FILE_SIZE) {
             continue;
           }
-          
+
           // Fetch file content
-          const content = await this.fetchFileContent(owner, repo, file.filename, commit.sha, token);
+          const content = await this.fetchFileContent(owner, repo, file.filename, commit.sha);
           if (!content) {
             continue;
           }
-          
+
           // Determine MIME type based on file extension
           const fileExt = file.filename.substring(file.filename.lastIndexOf('.'));
           const mimeType = MIME_TYPE_MAP[fileExt] || DEFAULT_MIME_TYPE;
-          
+
           // Create SiloSimplePutInput
           results.push({
             content: content,
@@ -223,17 +287,17 @@ export class GithubProvider implements Provider {
           });
         }
       }
-      
+
       // Track metrics
       metrics.timing('github.pull.latency_ms', Date.now() - startTime);
       metrics.increment('github.pull.files_processed', results.length);
-      
+
       this.logger.info({ resourceId, fileCount: results.length }, 'GitHub pull completed');
-      
+
       // Return the latest commit SHA as the new cursor
       const newCursor = commits[0].sha;
       this.logger.info({ resourceId, newCursor }, 'New cursor for next pull');
-      
+
       return results;
     } catch (error) {
       metrics.increment('github.pull.errors', 1);
@@ -241,14 +305,13 @@ export class GithubProvider implements Provider {
       throw error;
     }
   }
-  
+
   /**
    * Fetch commits from a repository since a specific cursor (commit SHA)
    *
    * @param owner - Repository owner
    * @param repo - Repository name
    * @param cursor - Commit SHA to fetch commits since (null for latest commit only)
-   * @param token - GitHub API token
    * @returns Array of GitHub commits
    * @throws Error if the API request fails
    * @private
@@ -256,49 +319,25 @@ export class GithubProvider implements Provider {
   private async fetchCommitsSinceCursor(
     owner: string,
     repo: string,
-    cursor: string | null,
-    token: string
+    cursor: string | null
   ): Promise<GitHubCommit[]> {
     // If no cursor is provided, fetch only the latest commit
     if (!cursor) {
       const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?per_page=1`;
-      const response = await fetch(url, {
-        headers: {
-          ...DEFAULT_HEADERS,
-          'Authorization': `token ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch commits: ${response.status} ${response.statusText}`);
-      }
-      
-      return await response.json();
+      return this.fetchFromGitHub<GitHubCommit[]>(url);
     }
-    
+
     // Fetch all commits since the cursor
     const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?sha=HEAD&since=${cursor}`;
-    const response = await fetch(url, {
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Authorization': `token ${token}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch commits: ${response.status} ${response.statusText}`);
-    }
-    
-    return await response.json();
+    return this.fetchFromGitHub<GitHubCommit[]>(url);
   }
-  
+
   /**
    * Fetch files changed in a specific commit
    *
    * @param owner - Repository owner
    * @param repo - Repository name
    * @param commitSha - Commit SHA
-   * @param token - GitHub API token
    * @returns Array of GitHub files
    * @throws Error if the API request fails
    * @private
@@ -306,25 +345,13 @@ export class GithubProvider implements Provider {
   private async fetchFilesFromCommit(
     owner: string,
     repo: string,
-    commitSha: string,
-    token: string
+    commitSha: string
   ): Promise<GitHubFile[]> {
     const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits/${commitSha}`;
-    const response = await fetch(url, {
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Authorization': `token ${token}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch commit details: ${response.status} ${response.statusText}`);
-    }
-    
-    const commitData = await response.json() as { files?: GitHubFile[] };
+    const commitData = await this.fetchFromGitHub<{ files?: GitHubFile[] }>(url);
     return commitData.files || [];
   }
-  
+
   /**
    * Fetch content of a specific file at a specific commit
    *
@@ -332,7 +359,6 @@ export class GithubProvider implements Provider {
    * @param repo - Repository name
    * @param path - File path
    * @param commitSha - Commit SHA
-   * @param token - GitHub API token
    * @returns File content as string, or null if the file cannot be fetched
    * @private
    */
@@ -340,34 +366,35 @@ export class GithubProvider implements Provider {
     owner: string,
     repo: string,
     path: string,
-    commitSha: string,
-    token: string
+    commitSha: string
   ): Promise<string | null> {
     const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/contents/${path}?ref=${commitSha}`;
-    const response = await fetch(url, {
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Authorization': `token ${token}`
+
+    try {
+      const data = await this.fetchFromGitHub<GitHubContent>(url);
+
+      // Skip binary files or files without content
+      if (!data.content || data.size > MAX_FILE_SIZE) {
+        return null;
       }
-    });
-    
-    if (!response.ok) {
-      this.logger.warn({ owner, repo, path, commitSha, status: response.status }, 'Failed to fetch file content');
+
+      // GitHub API returns content as base64 encoded
+      if (data.encoding === 'base64') {
+        return atob(data.content.replace(/\n/g, ''));
+      }
+
+      return data.content;
+    } catch (error) {
+      // Don't treat file content fetch failures as fatal
+      // Just log and continue with other files
+      this.logger.warn({
+        owner,
+        repo,
+        path,
+        commitSha,
+        error: error instanceof Error ? error.message : String(error)
+      }, 'Failed to fetch file content');
       return null;
     }
-    
-    const data: GitHubContent = await response.json();
-    
-    // Skip binary files or files without content
-    if (!data.content || data.size > MAX_FILE_SIZE) {
-      return null;
-    }
-    
-    // GitHub API returns content as base64 encoded
-    if (data.encoding === 'base64') {
-      return atob(data.content.replace(/\n/g, ''));
-    }
-    
-    return data.content;
   }
 }

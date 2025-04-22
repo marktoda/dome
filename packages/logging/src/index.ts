@@ -1,5 +1,5 @@
 import { Context, Next } from 'hono';
-import { getLogger } from './getLogger';
+import { getLogger, extractErrorInfo, logError } from './getLogger';
 import { withLogger } from './withLogger';
 import { metrics } from './metrics';
 import { baseLogger } from './runtime';
@@ -41,7 +41,8 @@ export function loggerMiddleware() {
       try {
         await next();
       } catch (error) {
-        logger.error({ event: 'request_error', error });
+        const { errorMessage } = extractErrorInfo(error);
+        logger.error({ event: 'request_error', error, errorMessage });
         throw error;
       } finally {
         logger.info({

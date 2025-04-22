@@ -165,9 +165,18 @@ export class ResourceObject extends DurableObject<Env> {
       metrics.increment('tsunami.sync.success', 1);
 
     } catch (error) {
-      logger.error({ error, resourceId }, 'Error during sync');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({ error, resourceId, errorMessage }, 'Error during sync');
       metrics.increment('tsunami.sync.error', 1);
 
+      // Handle rate limiting errors specially
+      if (errorMessage.includes('rate limit exceeded')) {
+        logger.warn({ resourceId, errorMessage }, 'GitHub API rate limit exceeded, will retry at next scheduled sync');
+        // Don't rethrow - this allows the alarm to be set for the next attempt
+        return;
+      }
+
+      // For other errors, rethrow to propagate to the caller
       throw error;
     }
   }

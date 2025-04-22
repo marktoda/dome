@@ -188,7 +188,8 @@ export class Embedder {
    */
   private handleEmbeddingError(error: unknown) {
     metrics.increment('embedding.errors');
-    getLogger().error({ error }, 'Error generating embeddings');
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    getLogger().error({ error, errorMessage }, 'Error generating embeddings');
   }
 
   /**

@@ -140,7 +140,8 @@ export default {
 
           getLogger().info({ processedCount }, 'Scheduled job completed');
         } catch (error) {
-          getLogger().error({ error }, 'Error in scheduled job');
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          getLogger().error({ error, errorMessage }, 'Error in scheduled job');
           // Ensure the error is reported to the Cloudflare dashboard
           ctx.waitUntil(Promise.reject(error));
           // Re-throw the error to propagate it to the caller

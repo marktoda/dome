@@ -327,7 +327,8 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'stats' });
-      getLogger().error({ error }, 'Error getting storage statistics');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      getLogger().error({ error, errorMessage }, 'Error getting storage statistics');
       throw error;
     }
   }

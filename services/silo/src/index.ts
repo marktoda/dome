@@ -132,7 +132,8 @@ export default class Silo extends WorkerEntrypoint<Env> {
           );
         }
 
-        getLogger().error({ error }, 'Error in simplePut');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        getLogger().error({ error, errorMessage }, 'Error in simplePut');
         metrics.increment('silo.rpc.errors', 1, { method: 'simplePut' });
         throw error;
       }
@@ -159,7 +160,8 @@ export default class Silo extends WorkerEntrypoint<Env> {
           );
         }
 
-        getLogger().error({ error }, 'Error in createUpload');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        getLogger().error({ error, errorMessage }, 'Error in createUpload');
         metrics.increment('silo.rpc.errors', 1, { method: 'createUpload' });
         throw error;
       }
@@ -186,7 +188,8 @@ export default class Silo extends WorkerEntrypoint<Env> {
           );
         }
 
-        getLogger().error({ error }, 'Error in batchGet');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        getLogger().error({ error, errorMessage }, 'Error in batchGet');
         metrics.increment('silo.rpc.errors', 1, { method: 'batchGet' });
         throw error;
       }
@@ -213,7 +216,8 @@ export default class Silo extends WorkerEntrypoint<Env> {
           );
         }
 
-        getLogger().error({ error }, 'Error in delete');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        getLogger().error({ error, errorMessage }, 'Error in delete');
         metrics.increment('silo.rpc.errors', 1, { method: 'delete' });
         throw error;
       }
@@ -240,7 +244,8 @@ export default class Silo extends WorkerEntrypoint<Env> {
           );
         }
 
-        getLogger().error({ error }, 'Error in stats');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        getLogger().error({ error, errorMessage }, 'Error in stats');
         metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
         throw error;
       }
