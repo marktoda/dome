@@ -8,7 +8,7 @@
  * @module tsunami
  */
 
-import { WorkerEntrypoint, DurableObject } from 'cloudflare:workers';
+import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { zValidator } from '@hono/zod-validator';
@@ -104,16 +104,21 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async (c) => 
       provider: 'github',
       resourceId,
     });
+    console.log('sync plan');
 
     // Create and initialize the Durable Object
-    const doId = (c.env as any).RESOURCE_OBJECT.idFromString(resourceId);
+    const doId = (c.env as any).RESOURCE_OBJECT.idFromName(resourceId);
     const repo = (c.env as any).RESOURCE_OBJECT.get(doId);
+    console.log('made resource object');
     await repo.initialize({
       userId,
       providerType: ProviderType.GITHUB,
       resourceId,
+      cadenceSecs: 3600, // Default to 1 hour
     });
+    console.log('initialized');
     await repo.sync();
+    console.log('sync');
 
     // Return success response
     logger.info({ id, resourceId }, 'GitHub repository registered for syncing');
@@ -124,6 +129,7 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async (c) => 
       message: `GitHub repository ${resourceId} registered for syncing`
     });
   } catch (error) {
+    console.log(error);
     logger.error({ error, resourceId }, 'Error registering GitHub repository');
     metrics.increment('tsunami.register.errors', 1);
     return c.json({
@@ -139,22 +145,24 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async (c) => 
 /* worker                                                                     */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Tsunami Worker
- *
- * Main worker class for the Tsunami service. Handles scheduled triggers for
- * syncing external content sources and provides API endpoints for managing
- * sync plans.
- *
- * @class
- */
-export default class Tsunami extends WorkerEntrypoint<Env> {
-  /** Lazily created bundle of service clients (re‑used for every call) */
-  private _services?: ReturnType<typeof buildServices>;
-  private get services() {
-    return (this._services ??= buildServices(this.env));
-  }
-
-  fetch = app.fetch;
-}
+// /**
+//  * Tsunami Worker
+//  *
+//  * Main worker class for the Tsunami service. Handles scheduled triggers for
+//  * syncing external content sources and provides API endpoints for managing
+//  * sync plans.
+//  *
+//  * @class
+//  */
+// export default class Tsunami extends WorkerEntrypoint<Env> {
+//   /** Lazily created bundle of service clients (re‑used for every call) */
+//   private _services?: ReturnType<typeof buildServices>;
+//   private get services() {
+//     return (this._services ??= buildServices(this.env));
+//   }
+//
+//   fetch = app.fetch;
+// }
+//
+export default app;
 

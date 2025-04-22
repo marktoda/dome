@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_als"]
 [[d1_databases]]
 binding        = "SYNC_PLAN"
 database_name  = "sync-plan"
-database_id = "3130eb73-702f-4f87-ac5f-97e970dd8342"
+database_id = "b4963e6f-f2f0-4c66-b4b0-1113d3367374"
 
 [[services]]
 binding = "SILO"
@@ -24,14 +24,6 @@ tag = "v1" # Should be unique for each entry
 new_sqlite_classes = ["ResourceObject"] # Array of new classes
 
 #################################################################
-# Triggers
-#################################################################
-
-[triggers]
-# Poll external sources every 15 minutes
-crons = ["*/15 * * * *"]
-
-#################################################################
 # Secrets / runtime constants
 #################################################################
 
@@ -40,3 +32,8 @@ LOG_LEVEL = "info"
 VERSION = "1.0.0"
 ENVIRONMENT = "prod"
 # GITHUB_TOKEN = "" # Uncomment and set this in production or use wrangler secrets
+
+
+[observability]
+enabled = true
+head_sampling_rate = 1 # optional. default = 1.

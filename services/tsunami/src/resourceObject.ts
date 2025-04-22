@@ -10,10 +10,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { SiloService, createSiloService } from './services/siloService'
 import { getLogger, metrics } from '@dome/logging';
-import { SiloSimplePutInput } from '@dome/common';
 import { ProviderType, GithubProvider, Provider } from './providers';
-import { Bindings } from './types';
-import { syncPlanOperations, syncHistoryOperations } from './db/client';
 
 const CADENCE_SEC = 'cadenceSec';
 const DEFAULT_CADENCE_SEC = 3600;
@@ -122,19 +119,6 @@ export class ResourceObject extends DurableObject<Env> {
     const logger = getLogger();
     logger.info({ resourceId: this.config.resourceId, cursor: this.config.cursor }, 'Starting sync');
     const { userId, providerType, resourceId, cursor } = this.config;
-    
-    // Create a sync history entry to track this sync operation
-    let syncHistoryId;
-    try {
-      const syncHistoryEntry = await syncHistoryOperations.create(this.env.SYNC_PLAN, {
-        syncPlanId: this.config.resourceId,
-        status: 'started',
-      });
-      syncHistoryId = syncHistoryEntry.id;
-    } catch (error) {
-      logger.error({ error, resourceId }, 'Failed to create sync history entry');
-      // Continue with the sync even if we couldn't create the history entry
-    }
 
     let provider: Provider;
     switch (providerType) {
@@ -171,15 +155,7 @@ export class ResourceObject extends DurableObject<Env> {
 
           // Update the cursor in the config
           await this.updateConfig({ cursor: newCursor });
-          
-          // Update the sync plan in the database
-          try {
-            await syncPlanOperations.updateSyncStatus(this.env.SYNC_PLAN, resourceId, newCursor);
-          } catch (error) {
-            logger.error({ error, resourceId }, 'Failed to update sync status in database');
-            // Continue even if the database update fails
-          }
-          
+
           logger.info({ resourceId, oldCursor: cursor, newCursor }, 'Updated cursor');
         }
       } else {
@@ -187,34 +163,11 @@ export class ResourceObject extends DurableObject<Env> {
       }
 
       metrics.increment('tsunami.sync.success', 1);
-      
-      // Update the sync history entry if we created one
-      if (syncHistoryId) {
-        try {
-          await syncHistoryOperations.update(this.env.SYNC_PLAN, syncHistoryId, {
-            status: 'success',
-            itemCount: contents.length,
-          });
-        } catch (error) {
-          logger.error({ error, syncHistoryId }, 'Failed to update sync history entry');
-        }
-      }
+
     } catch (error) {
       logger.error({ error, resourceId }, 'Error during sync');
       metrics.increment('tsunami.sync.error', 1);
-      
-      // Update the sync history entry if we created one
-      if (syncHistoryId) {
-        try {
-          await syncHistoryOperations.update(this.env.SYNC_PLAN, syncHistoryId, {
-            status: 'error',
-            errorMessage: error instanceof Error ? error.message : String(error),
-          });
-        } catch (updateError) {
-          logger.error({ error: updateError, syncHistoryId }, 'Failed to update sync history entry');
-        }
-      }
-      
+
       throw error;
     }
   }
@@ -268,85 +221,5 @@ export class ResourceObject extends DurableObject<Env> {
     await this.ctx.storage.put(RESOURCE_CONFIG_KEY, this.config);
 
     getLogger().info({ config: this.config }, 'ResourceObject config updated');
-  }
-
-  /**
-   * Handle HTTP requests to the Durable Object
-   *
-   * This method handles API requests to the Durable Object, including:
-   * - /sync: Trigger a sync operation
-   * - /initialize: Initialize the ResourceObject with configuration
-   * - /config: Get or update the ResourceObject configuration
-   *
-   * @param request - The HTTP request
-   * @returns HTTP response
-   */
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    if (path === '/sync') {
-      await this.sync();
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    if (path === '/initialize' && request.method === 'POST') {
-      try {
-        const data = await request.json() as Partial<ResourceObjectConfig>;
-        await this.initialize(data);
-        return new Response(JSON.stringify({
-          success: true,
-          message: 'ResourceObject initialized successfully',
-          config: this.config
-        }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      } catch (error) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : String(error)
-        }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-    }
-
-    if (path === '/config') {
-      if (request.method === 'GET') {
-        return new Response(JSON.stringify({
-          success: true,
-          config: this.config
-        }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-
-      if (request.method === 'PATCH') {
-        try {
-          const updates = await request.json() as Partial<ResourceObjectConfig>;
-          await this.updateConfig(updates);
-          return new Response(JSON.stringify({
-            success: true,
-            message: 'ResourceObject config updated successfully',
-            config: this.config
-          }), {
-            headers: { 'Content-Type': 'application/json' }
-          });
-        } catch (error) {
-          return new Response(JSON.stringify({
-            success: false,
-            error: error instanceof Error ? error.message : String(error)
-          }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      }
-    }
-
-    return new Response('Not found', { status: 404 });
   }
 }
