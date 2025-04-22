@@ -4,7 +4,6 @@ import { eq, and, sql, desc, count } from 'drizzle-orm';
 import { dlqMetadata } from '../db/schema';
 import { DLQFilterOptions, DLQMessage, DLQStats } from '../types';
 import { siloSimplePutSchema } from '@dome/common';
-import { randomUUID } from 'crypto';
 
 /**
  * DLQ Service interface
@@ -72,7 +71,7 @@ export class DLQServiceImpl implements DLQService {
 
   async storeDLQMessage<T>(message: DLQMessage<T>): Promise<string> {
     try {
-      const id = randomUUID();
+      const id = crypto.randomUUID();
       const now = Date.now();
 
       await this.db

@@ -10,6 +10,7 @@ import {
 } from '../../src/services/vectorize';
 import { VectorWithMetadata } from '../../src/types';
 import { VectorMeta, VectorSearchResult } from '@dome/common';
+import { SiloService } from '../../src/services/siloService';
 
 // Mock the logger and metrics
 vi.mock('@dome/logging', () => ({
@@ -204,11 +205,11 @@ describe('VectorizeService', () => {
   });
 
   describe('query', () => {
-    it('should call Vectorize with the correct parameters', async () => {
+    it('should call Vectorize with the correct parameters for non-userId filters', async () => {
       const vectorizeService = new VectorizeService(mockVectorize);
 
       const queryVector = [0.1, 0.2, 0.3];
-      const filter: Partial<VectorMeta> = { userId: 'user1' };
+      const filter: Partial<VectorMeta> = { category: 'note' };
       const topK = 5;
 
       await vectorizeService.query(queryVector, filter, topK);
@@ -217,6 +218,26 @@ describe('VectorizeService', () => {
       expect(mockVectorize.query).toHaveBeenCalledWith(queryVector, {
         topK,
         filter,
+        returnMetadata: true,
+      });
+    });
+
+    it('should modify the filter to include public content when userId is specified', async () => {
+      const vectorizeService = new VectorizeService(mockVectorize);
+
+      const queryVector = [0.1, 0.2, 0.3];
+      const filter: Partial<VectorMeta> = { userId: 'user1', category: 'note' };
+      const topK = 5;
+
+      await vectorizeService.query(queryVector, filter, topK);
+
+      // Verify the query was called with the modified filter that includes public content
+      expect(mockVectorize.query).toHaveBeenCalledWith(queryVector, {
+        topK,
+        filter: {
+          category: 'note',
+          userId: { $in: ['user1', SiloService.PUBLIC_CONTENT_USER_ID] }
+        },
         returnMetadata: true,
       });
     });
@@ -315,6 +336,141 @@ describe('VectorizeService', () => {
     it('should create a vectorize service with default config when no config is provided', () => {
       const vectorizeService = createVectorizeService(mockVectorize);
       expect(vectorizeService).toBeInstanceOf(VectorizeService);
+    });
+  });
+
+  describe('public content handling', () => {
+    it('should handle public content vectors in query results', async () => {
+      const vectorizeService = new VectorizeService(mockVectorize);
+
+      // Mock query to return both user-specific and public vectors
+      (mockVectorize.query as any).mockResolvedValue({
+        matches: [
+          {
+            id: 'note:user1-note',
+            score: 0.95,
+            metadata: {
+              userId: 'user1',
+              contentId: 'user1-note',
+              category: 'note',
+              mimeType: 'text/markdown',
+              createdAt: 1650000000,
+              version: 1,
+            },
+          },
+          {
+            id: 'note:public-note',
+            score: 0.90,
+            metadata: {
+              userId: SiloService.PUBLIC_CONTENT_USER_ID,
+              contentId: 'public-note',
+              category: 'note',
+              mimeType: 'text/markdown',
+              createdAt: 1650000000,
+              version: 1,
+            },
+          },
+        ],
+        count: 2,
+      });
+
+      const queryVector = [0.1, 0.2, 0.3];
+      const filter: Partial<VectorMeta> = { userId: 'user1' };
+      
+      const results = await vectorizeService.query(queryVector, filter);
+      
+      // Should return both user-specific and public vectors
+      expect(results.length).toBe(2);
+      expect(results[0].metadata.userId).toBe('user1');
+      expect(results[1].metadata.userId).toBe(SiloService.PUBLIC_CONTENT_USER_ID);
+    });
+
+    it('should handle query with only public content results', async () => {
+      const vectorizeService = new VectorizeService(mockVectorize);
+
+      // Mock query to return only public vectors
+      (mockVectorize.query as any).mockResolvedValue({
+        matches: [
+          {
+            id: 'note:public-note1',
+            score: 0.95,
+            metadata: {
+              userId: SiloService.PUBLIC_CONTENT_USER_ID,
+              contentId: 'public-note1',
+              category: 'note',
+              mimeType: 'text/markdown',
+              createdAt: 1650000000,
+              version: 1,
+            },
+          },
+          {
+            id: 'note:public-note2',
+            score: 0.90,
+            metadata: {
+              userId: SiloService.PUBLIC_CONTENT_USER_ID,
+              contentId: 'public-note2',
+              category: 'note',
+              mimeType: 'text/markdown',
+              createdAt: 1650000000,
+              version: 1,
+            },
+          },
+        ],
+        count: 2,
+      });
+
+      const queryVector = [0.1, 0.2, 0.3];
+      const filter: Partial<VectorMeta> = { userId: 'user1' };
+      
+      const results = await vectorizeService.query(queryVector, filter);
+      
+      // Should return only public vectors
+      expect(results.length).toBe(2);
+      expect(results.every(r => r.metadata.userId === SiloService.PUBLIC_CONTENT_USER_ID)).toBe(true);
+    });
+
+    it('should handle query with only user-specific content results', async () => {
+      const vectorizeService = new VectorizeService(mockVectorize);
+
+      // Mock query to return only user-specific vectors
+      (mockVectorize.query as any).mockResolvedValue({
+        matches: [
+          {
+            id: 'note:user1-note1',
+            score: 0.95,
+            metadata: {
+              userId: 'user1',
+              contentId: 'user1-note1',
+              category: 'note',
+              mimeType: 'text/markdown',
+              createdAt: 1650000000,
+              version: 1,
+            },
+          },
+          {
+            id: 'note:user1-note2',
+            score: 0.90,
+            metadata: {
+              userId: 'user1',
+              contentId: 'user1-note2',
+              category: 'note',
+              mimeType: 'text/markdown',
+              createdAt: 1650000000,
+              version: 1,
+            },
+          },
+        ],
+        count: 2,
+      });
+
+      const queryVector = [0.1, 0.2, 0.3];
+      const filter: Partial<VectorMeta> = { userId: 'user1' };
+      
+      const results = await vectorizeService.query(queryVector, filter);
+      
+      // Should return only user-specific vectors
+      expect(results.length).toBe(2);
+      expect(results.every(r => r.metadata.userId === 'user1')).toBe(true);
     });
   });
 });

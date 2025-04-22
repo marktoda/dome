@@ -1,6 +1,7 @@
 import { VectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
 import { getLogger, metrics } from '@dome/logging';
 import { VectorWithMetadata } from '../types';
+import { SiloService } from './siloService';
 
 /* ------------------------------------------------------------------------ */
 /*  config                                                                  */
@@ -152,7 +153,7 @@ export class VectorizeService {
       if ('userId' in cleanFilter && cleanFilter.userId) {
         const userId = cleanFilter.userId;
         // Replace the userId in the vectorizeFilter with an $in operator
-        vectorizeFilter.userId = { $in: [userId, 'public'] };
+        vectorizeFilter.userId = { $in: [userId, SiloService.PUBLIC_CONTENT_USER_ID] };
         getLogger().debug(
           { userId, filter: vectorizeFilter.userId },
           'Using $in operator for userId filter',
