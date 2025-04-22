@@ -42,7 +42,7 @@ export default class Silo extends WorkerEntrypoint<Env> {
   /**
    * Queue consumer for processing R2 object-created events
    */
-  async queue(batch: MessageBatch<R2Event | EnrichedContentMessage>) {
+  async queue(batch: MessageBatch<R2Event | EnrichedContentMessage | SiloSimplePutInput>) {
     await wrap(
       { op: 'queue', queue: batch.queue, size: batch.messages.length, ...this.env },
       async () => {
@@ -97,6 +97,34 @@ export default class Silo extends WorkerEntrypoint<Env> {
             });
 
             await Promise.all(promises);
+          } else if (batch.queue === 'ingest-queue') {
+            // Process ingest queue messages
+            const promises = batch.messages.map(async message => {
+              try {
+                // Validate the message
+                const ingestMessage = siloSimplePutSchema.parse(message.body);
+
+                // Process the ingest message
+                await this.services.content.processIngestMessage(ingestMessage);
+
+                // Acknowledge the message
+                message.ack();
+              } catch (error) {
+                getLogger().error(
+                  { error, messageId: message.id },
+                  'Error processing ingest queue message',
+                );
+
+                // Acknowledge the message to avoid retries for validation errors
+                if (error instanceof z.ZodError) {
+                  message.ack();
+                } else {
+                  throw error; // Allow retry for other errors
+                }
+              }
+            });
+
+            await Promise.all(promises);
           } else {
             getLogger().warn({ queue: batch.queue }, 'Unknown queue');
           }
@@ -107,32 +135,6 @@ export default class Silo extends WorkerEntrypoint<Env> {
         }
       },
     );
-  }
-
-  /**
-   * Synchronously store small content items
-   */
-  async simplePut(data: SiloSimplePutInput): Promise<SiloSimplePutResponse> {
-    return wrap({ operation: 'simplePut' }, async () => {
-      try {
-        // Validate input
-        const validatedData = siloSimplePutSchema.parse(data);
-        return await this.services.content.simplePut(validatedData);
-      } catch (error) {
-        if (error instanceof z.ZodError) {
-          getLogger().error({ error: error.errors }, 'Validation error in simplePut');
-          metrics.increment('silo.validation.errors', 1, { method: 'simplePut' });
-          throw new Error(
-            `Validation error: ${error.errors
-              .map(e => `${e.path.join('.')}: ${e.message}`)
-              .join(', ')}`,
-          );
-        }
-        logError(getLogger(), error, 'Error in simplePut');
-        metrics.increment('silo.rpc.errors', 1, { method: 'simplePut' });
-        throw error;
-      }
-    });
   }
 
   /**

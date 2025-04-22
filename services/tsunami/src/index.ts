@@ -15,9 +15,9 @@ import { zValidator } from '@hono/zod-validator';
 import { ServiceInfo, createErrorMiddleware, formatZodError } from '@dome/common';
 import { z } from 'zod';
 import { ulid } from 'ulid';
-
 import { getLogger, logError, metrics } from '@dome/logging';
 import { createSiloService } from './services/siloService';
+import { createSyncPlanService } from './services/syncPlanService';
 import { syncPlanOperations } from './db/client';
 import { Bindings } from './types';
 import { ProviderType } from './providers';
@@ -30,8 +30,9 @@ export { ResourceObject } from './resourceObject';
  * @param env - The environment bindings
  * @returns An object containing service clients
  */
-const buildServices = (env: Env) => ({
+const buildServices = (env: Bindings) => ({
   silo: createSiloService(env),
+  syncPlan: createSyncPlanService(env),
 });
 
 const serviceInfo: ServiceInfo = {
@@ -94,37 +95,39 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async c => {
   const data = c.req.valid('json');
   const { userId, owner, repo, cadence } = data;
   const resourceId = `${owner}/${repo}`;
+  const services = buildServices(c.env);
 
   try {
-    // Generate a unique ID for this sync plan
-    const id = ulid();
-
-    // Insert into sync_plan table using Drizzle
-    await syncPlanOperations.create(c.env.SYNC_PLAN, {
-      id,
-      userId: userId || 'anonymous',
-      provider: 'github',
+    // Use the SyncPlanService to find or create a sync plan
+    const { id, isNew } = await services.syncPlan.findOrCreateSyncPlan(
+      'github',
       resourceId,
-    });
-
-    // Create and initialize the Durable Object
-    const doId = (c.env as any).RESOURCE_OBJECT.idFromName(resourceId);
-    const repo = (c.env as any).RESOURCE_OBJECT.get(doId);
-    await repo.initialize({
       userId,
-      providerType: ProviderType.GITHUB,
-      resourceId,
-      cadenceSecs: 3600, // Default to 1 hour
-    });
-    await repo.sync();
+    );
 
-    // Return success response
-    logger.info({ id, resourceId }, 'GitHub repository registered for syncing');
+    // Parse cadence string to seconds (default to 1 hour)
+    // For simplicity, we're just using a fixed value here
+    const cadenceSecs = 3600;
+
+    // Initialize or sync the resource
+    const wasInitialized = await services.syncPlan.initializeOrSyncResource(
+      resourceId,
+      ProviderType.GITHUB,
+      userId,
+      cadenceSecs,
+    );
+
+    // Return appropriate response based on whether it was new or existing
+    const message = isNew
+      ? `GitHub repository ${resourceId} registered for syncing`
+      : `GitHub repository ${resourceId} already registered, added user to existing sync plan`;
+
+    logger.info({ id, resourceId, isNew, wasInitialized }, 'GitHub repository sync plan status');
     return c.json({
       success: true,
       id,
       resourceId,
-      message: `GitHub repository ${resourceId} registered for syncing`,
+      message,
     });
   } catch (error) {
     logError(logger, error, 'Error registering GitHub repository', { resourceId });

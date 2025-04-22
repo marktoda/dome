@@ -11,6 +11,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { SiloService, createSiloService } from './services/siloService';
 import { getLogger, logError, metrics } from '@dome/logging';
 import { ProviderType, GithubProvider, Provider } from './providers';
+import { Bindings } from './types';
 
 const CADENCE_SEC = 'cadenceSec';
 const DEFAULT_CADENCE_SEC = 3600;
@@ -22,8 +23,8 @@ const RESOURCE_CONFIG_KEY = 'resourceConfig';
  * @interface ResourceObjectConfig
  */
 type ResourceObjectConfig = {
-  /** User ID who owns this resource */
-  userId?: string;
+  /** User IDs who have access to this resource */
+  userIds: string[];
   /** Sync frequency in seconds */
   cadenceSecs: number;
   /** Type of content provider */
@@ -38,7 +39,7 @@ type ResourceObjectConfig = {
  * Default configuration for a new ResourceObject
  */
 const DEFAULT_RESOURCE_CONFIG: ResourceObjectConfig = {
-  userId: undefined,
+  userIds: [],
   cadenceSecs: DEFAULT_CADENCE_SEC,
   providerType: ProviderType.GITHUB,
   cursor: '',
@@ -54,11 +55,11 @@ const DEFAULT_RESOURCE_CONFIG: ResourceObjectConfig = {
  *
  * @class
  */
-export class ResourceObject extends DurableObject<Env> {
+export class ResourceObject extends DurableObject<Bindings> {
   private silo: SiloService;
   private config: ResourceObjectConfig = DEFAULT_RESOURCE_CONFIG;
 
-  constructor(ctx: DurableObjectState, env: Env) {
+  constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     this.silo = createSiloService(this.env);
     // `blockConcurrencyWhile()` ensures no requests are delivered until
@@ -109,6 +110,42 @@ export class ResourceObject extends DurableObject<Env> {
   }
 
   /**
+   * Add a user to the ResourceObject
+   *
+   * This method adds a user ID to the list of users who have access to this resource.
+   * If the user already exists, it does nothing.
+   *
+   * @param userId - The user ID to add
+   * @returns Promise that resolves when the user is added
+   */
+  async addUser(userId: string): Promise<void> {
+    if (!userId) {
+      return; // No userId provided
+    }
+
+    // Get current config
+    const config = await this.getConfig();
+
+    // Check if userIds exists, if not create it
+    const userIds = config.userIds || [];
+
+    // Check if user already exists
+    if (userIds.includes(userId)) {
+      return; // User already exists
+    }
+
+    // Add the user to the config
+    await this.updateConfig({
+      userIds: [...userIds, userId],
+    });
+
+    getLogger().info(
+      { resourceId: this.config.resourceId, userId },
+      'User added to ResourceObject',
+    );
+  }
+
+  /**
    * Synchronize content from the external source
    *
    * This method fetches new content from the external source since the last sync,
@@ -123,7 +160,10 @@ export class ResourceObject extends DurableObject<Env> {
       { resourceId: this.config.resourceId, cursor: this.config.cursor },
       'Starting sync',
     );
-    const { userId, providerType, resourceId, cursor } = this.config;
+    const { userIds, providerType, resourceId, cursor } = this.config;
+
+    // Use the first user ID for authentication if available
+    const syncUserId = userIds[0];
 
     let provider: Provider;
     switch (providerType) {
@@ -141,7 +181,7 @@ export class ResourceObject extends DurableObject<Env> {
     try {
       // Pull content from the provider
       const { contents, newCursor } = await provider.pull({
-        userId,
+        userId: syncUserId,
         resourceId,
         cursor,
       });

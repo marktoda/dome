@@ -1,275 +1,97 @@
 # Tsunami Service
 
-Tsunami is a service that ingests content from external sources (like GitHub repositories) and stores it in the Silo service for further processing, embedding, and retrieval.
+This service is responsible for ingesting content from external sources (like GitHub repositories) and storing it in the Silo service for further processing, embedding, and retrieval.
 
-## Features
+## Recent Changes: Multi-User Sync Plans
 
-- GitHub repository ingestion
-- Scheduled syncing of repositories
-- Incremental updates (only fetches changes since last sync)
-- Durable Object-based sync state tracking
-- D1 database for sync plan management
-- Type-safe database operations with Drizzle ORM
-- Sync history tracking
+We've updated the Tsunami service to avoid duplicate durable objects and sync plans per resource. This means that if multiple users register the same GitHub repository, they will share the same sync plan and durable object, which prevents duplicate indexing of the same data.
 
-## Architecture
+### Key Changes
 
-Tsunami uses Cloudflare Workers with Durable Objects to manage the state of each repository sync. The service consists of:
+1. **Database Schema**: Updated the sync_plans table to store multiple user IDs per resource
 
-1. **Main Worker**: Handles scheduled triggers and routes requests to the appropriate Durable Objects
-2. **ResourceObject**: A Durable Object that manages the sync state for a specific repository
-3. **Providers**: Implementations for different content sources (currently GitHub)
-4. **SiloService**: Client for storing content in the Silo service
-5. **Database Client**: Type-safe Drizzle ORM client for database operations
+   - Changed from a single `userId` field to a `userIds` array stored as JSON
+   - Added a unique constraint on the `resourceId` field
 
-## GitHub Provider
+2. **ResourceObject**: Updated to support multiple users
 
-The GitHub provider fetches content from GitHub repositories and converts it to a format suitable for storage in Silo. It supports:
+   - Added a `userIds` array to the ResourceObject configuration
+   - Added an `addUser` method to add a user to the ResourceObject
+   - Added a fetch handler to handle HTTP requests to the Durable Object
 
-- Fetching commits since a specific cursor (commit SHA)
-- Retrieving file changes from each commit
-- Converting file content to Silo-compatible format
-- Tracking the sync state to enable incremental updates
+3. **SyncPlanService**: Created a generic service for sync plan management
+   - Provides methods to find or create sync plans
+   - Adds users to existing sync plans
+   - Gets durable objects for resources
+   - Initializes or syncs resources
 
-### Configuration
+### Migration
 
-To use the GitHub provider, you need to:
-
-1. Set up a GitHub token with appropriate permissions
-2. Add the token to your environment variables:
-   - For production: Use Wrangler secrets
-   - For development: Add to `.dev.vars` file
+If you have existing sync plans in the database, you'll need to run the migration script to convert them to the new schema:
 
 ```bash
-# Add GitHub token to Wrangler secrets
-wrangler secret put GITHUB_TOKEN
+# Run the migration script
+wrangler dev services/tsunami/scripts/run-migration.ts
 ```
 
-3. Register repositories using the API:
+The migration script will:
 
-```bash
-curl -X POST https://tsunami.chatter-9999.workers.dev/resource/github \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "user-id",
-    "owner": "owner",
-    "repo": "repo",
-    "cadence": "PT1H"
-  }'
-```
+1. Find all existing sync plans
+2. Convert the `userId` field to a `userIds` array
+3. Update the sync plans in the database
 
-Or use the provided script:
+### API Endpoints
 
-```bash
-npx tsx scripts/upload-test-repos.ts
-```
+#### Register a GitHub Repository
 
-### ResourceObject Initialization and Sync Process
-
-#### Initialization
-
-When a new GitHub repository is registered:
-
-1. A new entry is created in the `sync_plan` table with repository details
-2. A ResourceObject Durable Object is created with the repository ID as its key
-3. The ResourceObject is initialized with configuration:
-   - User ID who owns the repository
-   - Repository ID (owner/repo)
-   - Provider type (GitHub)
-   - Sync frequency (cadence)
-   - Initial cursor (null to start with all content)
-4. The ResourceObject stores this configuration in its durable storage
-5. The ResourceObject sets an alarm for the first sync
-
-#### Sync Process
-
-1. When a ResourceObject is initialized, it sets an alarm for the first sync
-2. When the alarm fires, the ResourceObject:
-   - Loads its configuration
-   - Creates the appropriate provider (GitHub)
-   - Calls the provider's pull method to get new content
-   - Uploads the content to Silo
-   - Updates its internal state with the new cursor (commit SHA)
-   - Sets an alarm for the next sync based on cadenceSecs
-3. This process repeats automatically based on the configured cadence
-
-## Development
-
-### Prerequisites
-
-- Node.js and pnpm
-- Wrangler CLI
-
-### Setup
-
-1. Install dependencies:
-
-```bash
-pnpm install
-```
-
-2. Set up local environment variables:
-
-```bash
-# Edit .dev.vars file
-GITHUB_TOKEN=your_github_token_here
-```
-
-3. Run migrations:
-
-```bash
-wrangler d1 execute sync-plan --local --file=./migrations/0000_create_sync_plan.sql
-```
-
-### Running Locally
-
-```bash
-wrangler dev
-```
-
-### Deployment
-
-```bash
-wrangler deploy
-```
-
-## Database Schema
-
-Tsunami uses a minimal database schema to track repositories for syncing. The detailed sync state is stored in Durable Objects.
-
-### sync_plan Table
-
-| Column      | Type    | Description                              |
-| ----------- | ------- | ---------------------------------------- |
-| id          | TEXT    | Primary key (ULID)                       |
-| user_id     | TEXT    | User ID who owns this sync plan          |
-| provider    | TEXT    | Provider type (e.g., 'github')           |
-| resource_id | TEXT    | Resource identifier (e.g., 'owner/repo') |
-| next_run    | INTEGER | Next scheduled run time (epoch ms)       |
-| created_at  | INTEGER | Creation timestamp                       |
-
-## Drizzle ORM Integration
-
-Tsunami uses Drizzle ORM for type-safe database operations. The integration includes:
-
-1. **Schema Definition**: Type-safe schema definition in `src/db/schema.ts`
-2. **Database Client**: Reusable database client in `src/db/client.ts`
-3. **Type-Safe Queries**: All database operations use Drizzle's query builder
-4. **Repository Pattern**: Database operations are organized by entity
-
-### Example: Creating a Sync Plan
-
-```typescript
-// Using the syncPlanOperations from db/client.ts
-await syncPlanOperations.create(db, {
-  id: ulid(),
-  userId: 'user-id',
-  provider: 'github',
-  resourceId: 'owner/repo',
-  cadenceSecs: 3600,
-});
-```
-
-### Example: Retrieving Sync History
-
-```typescript
-// Using the syncHistoryOperations from db/client.ts
-const history = await syncHistoryOperations.getLatestBySyncPlanId(db, syncPlanId, 10);
-```
-
-## API Endpoints
-
-### Register GitHub Repository
-
-```
+```http
 POST /resource/github
-```
+Content-Type: application/json
 
-Request body:
-
-```json
 {
-  "userId": "user-id",
-  "owner": "owner",
-  "repo": "repo",
+  "userId": "user123",
+  "owner": "dome",
+  "repo": "tsunami",
   "cadence": "PT1H"
 }
 ```
 
-### Get Sync History
+This endpoint will:
 
-```
-GET /resource/github/:owner/:repo/history
-```
+1. Check if a sync plan already exists for the repository
+2. If it exists, add the user to the existing sync plan
+3. If it doesn't exist, create a new sync plan
+4. Initialize or sync the resource
 
-Query parameters:
-
-- `limit`: Maximum number of history entries to return (default: 10)
-
-### Direct Durable Object Initialization
-
-This endpoint allows direct initialization of a ResourceObject Durable Object without going through the database. This is useful for testing and development, or as a workaround when the database is not properly configured.
-
-```
-POST /do/:resourceId/initialize
-```
-
-Request body:
+The response will indicate whether the repository was newly registered or already existed:
 
 ```json
 {
-  "userId": "anonymous",
-  "resourceId": "owner/repo",
-  "providerType": "GITHUB",
-  "cadenceSecs": 3600,
-  "cursor": null
+  "success": true,
+  "id": "01H1G2J3K4L5M6N7P8Q9R0S1T2",
+  "resourceId": "dome/tsunami",
+  "message": "GitHub repository dome/tsunami registered for syncing"
 }
 ```
 
-Example:
+or
 
-```bash
-curl -X POST https://tsunami.chatter-9999.workers.dev/do/uniswap/v4-core/initialize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "anonymous",
-    "resourceId": "uniswap/v4-core",
-    "providerType": "GITHUB",
-    "cadenceSecs": 3600,
-    "cursor": null
-  }'
+```json
+{
+  "success": true,
+  "id": "01H1G2J3K4L5M6N7P8Q9R0S1T2",
+  "resourceId": "dome/tsunami",
+  "message": "GitHub repository dome/tsunami already registered, added user to existing sync plan"
+}
 ```
 
-## Scripts
+## Architecture
 
-### Upload Test Repositories
+The Tsunami service uses Durable Objects to manage the state and synchronization of external content sources. Each Durable Object corresponds to a single external resource (e.g., a GitHub repository) and maintains its sync state.
 
-The `scripts/upload-test-repos.ts` script allows you to register test GitHub repositories with the Tsunami service. It supports both the regular API endpoint and direct Durable Object initialization.
+### Components
 
-```bash
-# Install dependencies
-npm install -g tsx
-
-# Run the script
-tsx scripts/upload-test-repos.ts
-```
-
-You can also use the shell wrapper:
-
-```bash
-./scripts/upload-repos.sh
-```
-
-## Troubleshooting
-
-If you encounter the error "Cannot read properties of undefined (reading 'SYNC_PLAN')" when using the API, it means the D1 database binding is not properly configured. You can use the direct Durable Object initialization route as a workaround:
-
-```
-POST /do/:resourceId/initialize
-```
-
-Or use the `upload-test-repos.ts` script with the `USE_DIRECT_DO_INITIALIZATION` flag set to `true`.
-
-# TODO
-
-- use an ingest queue between tsunami and silo
+- **ResourceObject**: A Durable Object that manages the state and synchronization of an external content source
+- **SyncPlanService**: A service that manages sync plans and resource objects
+- **Providers**: Implementations of the Provider interface for different content sources (GitHub, Notion, etc.)
+- **Database**: A D1 database that stores sync plans and their state

@@ -30,8 +30,6 @@ export interface SiloService {
    * @returns Batch get response with content items
    */
   batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
-
-  simplePut(data: SiloSimplePutInput): Promise<SiloSimplePutResponse>;
 }
 
 /**
@@ -46,4 +44,8 @@ export type Bindings = {
   SYNC_PLAN: D1Database;
   /** Silo service binding for content storage */
   SILO: SiloService;
+  /** Ingest queue for content ingestion */
+  INGEST_QUEUE: Queue<SiloSimplePutInput>;
+  /** Resource Object Durable Object */
+  RESOURCE_OBJECT: DurableObjectNamespace;
 };

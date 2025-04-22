@@ -181,6 +181,46 @@ export class ContentController {
     }
   }
 
+  /** Process messages from the ingest queue */
+  async processIngestMessage(message: SiloSimplePutInput): Promise<void> {
+    try {
+      const { content, metadata } = message;
+      const id = message.id ?? ulid();
+      const userId = message.userId || null;
+      const category = message.category || 'note';
+      const mimeType = message.mimeType || 'text/markdown';
+
+      logger.info(
+        {
+          id,
+          userId,
+          category,
+          mimeType,
+          contentSize: this.contentSize(content),
+        },
+        'Processing ingest queue message',
+      );
+
+      // Store the content in R2
+      const r2Key = this.buildR2Key('content', id);
+      await this.r2Service.putObject(
+        r2Key,
+        content,
+        this.buildMetadata({ userId, category, mimeType, custom: metadata }),
+      );
+
+      // Update metrics
+      metrics.increment('silo.ingest_queue.processed');
+
+      // The R2 event will trigger metadata creation via the content-events queue
+      logger.info({ id, userId, category, mimeType }, 'Content ingested successfully');
+    } catch (error) {
+      metrics.increment('silo.ingest_queue.errors');
+      logError(logger, error, 'Error processing ingest queue message', { messageId: message.id });
+      throw error;
+    }
+  }
+
   /** Handle R2 PutObject events emitted via queue. */
   async processR2Event(event: R2Event) {
     if (event.action !== 'PutObject') {

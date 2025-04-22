@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "607d5963-264f-4105-8e3b-0f0d9a138d56",
+  "id": "13c5dff3-fa02-4021-a6ae-f2eb8e9e56c7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "sync_plan": {
@@ -14,8 +14,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "user_id": {
-          "name": "user_id",
+        "user_ids": {
+          "name": "user_ids",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -36,7 +36,13 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "sync_plan_resource_id_unique": {
+          "name": "sync_plan_resource_id_unique",
+          "columns": ["resource_id"],
+          "isUnique": true
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

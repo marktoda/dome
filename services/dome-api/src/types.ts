@@ -42,7 +42,6 @@ export interface ConstellationService {
 }
 
 export interface SiloService {
-  simplePut(data: SiloSimplePutInput): Promise<SiloSimplePutResponse>;
   batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
   delete(data: SiloDeleteInput): Promise<SiloDeleteResponse>;
 
@@ -58,6 +57,7 @@ export type Bindings = {
   RAW: R2Bucket;
   EVENTS: Queue<MessageData>;
   EMBED_QUEUE: Queue<SiloEmbedJob>;
+  INGEST_QUEUE: Queue<SiloSimplePutInput>; // Queue for content ingestion
   AI?: WorkersAI; // Optional to support testing environments
   CONSTELLATION?: ConstellationService; // Optional to support testing environments
   SILO: SiloService; // Silo service binding

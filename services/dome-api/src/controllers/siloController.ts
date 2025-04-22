@@ -10,6 +10,7 @@ import {
   siloSimplePutSchema,
   ContentCategory,
   SiloBatchGetResponse,
+  SiloSimplePutInput,
 } from '@dome/common';
 
 /**
@@ -264,13 +265,22 @@ export class SiloController {
       const title = validatedData.title || validatedData.content.split('\n')[0].substring(0, 50);
       this.logger.debug({ generatedTitle: title }, 'Generated title for note');
 
-      // Create the note via siloService
-      await siloService.simplePut(c.env, {
+      // Create a message for the ingest queue
+      const message: SiloSimplePutInput = {
+        userId,
         content: validatedData.content,
         category: (validatedData.category || 'note') as ContentCategory,
         mimeType: validatedData.mimeType || 'text/markdown',
-        userId,
-      });
+        metadata: {
+          title,
+          ...validatedData.metadata,
+        },
+      };
+
+      // Send the message to the ingest queue
+      await c.env.INGEST_QUEUE.send(message);
+
+      this.logger.info({ userId, category: message.category }, 'Content sent to ingest queue');
 
       // Return the created note
       return c.json(

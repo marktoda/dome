@@ -26,6 +26,12 @@ queue = "content-events"
 [[queues.consumers]]
 queue = "enriched-content"
 
+[[queues.consumers]]
+queue = "ingest-queue"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+
 [vars]
 LOG_LEVEL = "info"
 VERSION = "1.0.0"

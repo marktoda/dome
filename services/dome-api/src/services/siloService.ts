@@ -25,14 +25,40 @@ export type SiloGetResponse = SiloBatchGetItem;
  */
 export class SiloService {
   /**
-   * Store content directly using the simple put API
+   * Store content using the ingest queue
    *
    * @param env - Cloudflare Workers environment bindings
-   * @param data - Simple put request data (legacy format)
-   * @returns Promise resolving to the simple put response
+   * @param data - Content data to store
+   * @returns Promise resolving to a simulated response with the content ID
    */
   async simplePut(env: Bindings, data: SiloSimplePutInput): Promise<SiloSimplePutResponse> {
-    return env.SILO.simplePut(data);
+    const id = data.id || crypto.randomUUID();
+    const createdAt = Math.floor(Date.now() / 1000);
+
+    // Create a message for the ingest queue
+    const message: SiloSimplePutInput = {
+      id,
+      userId: data.userId,
+      content: data.content,
+      category: data.category || 'note',
+      mimeType: data.mimeType || 'text/markdown',
+      metadata: data.metadata,
+    };
+
+    // Send the message to the ingest queue
+    await env.INGEST_QUEUE.send(message);
+
+    // Return a simulated response with the content ID
+    return {
+      id,
+      category: data.category || 'note',
+      mimeType: data.mimeType || 'text/markdown',
+      size:
+        typeof data.content === 'string'
+          ? new TextEncoder().encode(data.content).length
+          : data.content.byteLength,
+      createdAt,
+    };
   }
 
   /**

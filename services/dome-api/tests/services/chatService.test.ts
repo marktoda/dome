@@ -46,6 +46,7 @@ describe('ChatService', () => {
     RAW: {} as R2Bucket,
     EVENTS: {} as Queue<any>,
     EMBED_QUEUE: {} as Queue<any>,
+    INGEST_QUEUE: {} as Queue<any>,
     CONSTELLATION: {} as any,
     SILO: {} as any,
   };
@@ -234,6 +235,7 @@ describe('ChatService', () => {
         RAW: {} as R2Bucket,
         EVENTS: {} as Queue<any>,
         EMBED_QUEUE: {} as Queue<any>,
+        INGEST_QUEUE: {} as Queue<any>,
         CONSTELLATION: {} as any,
         SILO: {} as any,
       };

@@ -22,6 +22,11 @@ environment = "production"
 [dev]
 port = 8787
 
+# Queue producers
+[[queues.producers]]
+queue = "ingest-queue"
+binding = "INGEST_QUEUE"
+
 [vars]
 VERSION = "0.1.0"
 LOG_LEVEL = "debug"

@@ -20,14 +20,16 @@ export const syncPlans = sqliteTable('sync_plan', {
   /** Unique identifier for the sync plan (ULID) */
   id: text('id').primaryKey(),
 
-  /** User ID who owns this sync plan */
-  userId: text('user_id').notNull(),
+  /** User IDs who have access to this sync plan (stored as JSON array) */
+  userIds: text('user_ids')
+    .notNull()
+    .$defaultFn(() => JSON.stringify([])),
 
   /** Provider type (github, notion, etc.) */
   provider: text('provider').notNull(),
 
   /** Resource identifier (repo name, page id, etc.) */
-  resourceId: text('resource_id').notNull(),
+  resourceId: text('resource_id').notNull().unique(),
 });
 
 /**

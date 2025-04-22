@@ -11,6 +11,7 @@
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
 import { getLogger, metrics } from '@dome/logging';
+import { Bindings } from '../types';
 
 /**
  * GitHub API constants
@@ -139,7 +140,7 @@ export class GithubProvider implements Provider {
   private logger = getLogger();
   private token: string;
 
-  constructor(private env: Env) {
+  constructor(private env: Bindings) {
     // Get GitHub token from environment
     this.token = (this.env as any).GITHUB_TOKEN || '';
   }
