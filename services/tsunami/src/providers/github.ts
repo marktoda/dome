@@ -266,6 +266,8 @@ export class GithubProvider implements Provider {
 
       // Get changed files from each commit
       const results: SiloSimplePutInput[] = [];
+      // Track processed files to avoid duplicates (same file changed in multiple commits)
+      const processedFiles = new Set<string>();
 
       for (const commit of commits) {
         const files = await this.fetchFilesFromCommit(owner, repo, commit.sha);
@@ -275,6 +277,12 @@ export class GithubProvider implements Provider {
           if (file.status === 'removed' || file.changes > MAX_FILE_SIZE) {
             continue;
           }
+
+          // Skip already processed files (from newer commits)
+          if (processedFiles.has(file.filename)) {
+            continue;
+          }
+          processedFiles.add(file.filename);
 
           // Fetch file content
           const content = await this.fetchFileContent(owner, repo, file.filename, commit.sha);
@@ -339,15 +347,49 @@ export class GithubProvider implements Provider {
     repo: string,
     cursor: string | null,
   ): Promise<GitHubCommit[]> {
-    // If no cursor is provided, fetch only the latest commit
+    // If no cursor is provided, fetch a reasonable number of recent commits
+    // to index a substantial portion of the repository on first run
     if (!cursor) {
-      const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?per_page=1`;
-      return this.fetchFromGitHub<GitHubCommit[]>(url);
+      const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?per_page=50`;
+      const commits = await this.fetchFromGitHub<GitHubCommit[]>(url);
+      this.logger.info(
+        { owner, repo, commitCount: commits.length },
+        'Fetched initial commits for repository indexing'
+      );
+      return commits;
     }
 
-    // Fetch all commits since the cursor
-    const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?sha=HEAD&since=${cursor}`;
-    return this.fetchFromGitHub<GitHubCommit[]>(url);
+    // For subsequent runs, we need to get all commits and filter those newer than the cursor
+    // First, get the cursor commit to find its date
+    try {
+      const cursorCommitUrl = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits/${cursor}`;
+      const cursorCommit = await this.fetchFromGitHub<GitHubCommit>(cursorCommitUrl);
+      const cursorDate = new Date(cursorCommit.commit.author.date);
+      
+      // Now fetch commits since that date
+      const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?sha=HEAD&since=${cursorDate.toISOString()}`;
+      const commits = await this.fetchFromGitHub<GitHubCommit[]>(url);
+      
+      // Filter out the cursor commit itself (we only want newer commits)
+      const filteredCommits = commits.filter(commit => commit.sha !== cursor);
+      
+      this.logger.info(
+        { owner, repo, commitCount: filteredCommits.length, cursor, cursorDate: cursorDate.toISOString() },
+        'Fetched incremental commits since cursor'
+      );
+      return filteredCommits;
+    } catch (error) {
+      this.logger.warn(
+        { owner, repo, cursor, error: error instanceof Error ? error.message : String(error) },
+        'Failed to fetch cursor commit, falling back to recent commits'
+      );
+      
+      // If we can't get the cursor commit (it might have been force-pushed away),
+      // fall back to fetching recent commits
+      const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits?per_page=10`;
+      const commits = await this.fetchFromGitHub<GitHubCommit[]>(url);
+      return commits;
+    }
   }
 
   /**
@@ -367,7 +409,12 @@ export class GithubProvider implements Provider {
   ): Promise<GitHubFile[]> {
     const url = `${GITHUB_API_URL}/repos/${owner}/${repo}/commits/${commitSha}`;
     const commitData = await this.fetchFromGitHub<{ files?: GitHubFile[] }>(url);
-    return commitData.files || [];
+    const files = commitData.files || [];
+    this.logger.info(
+      { owner, repo, commitSha, fileCount: files.length },
+      'Fetched files from commit'
+    );
+    return files;
   }
 
   /**
