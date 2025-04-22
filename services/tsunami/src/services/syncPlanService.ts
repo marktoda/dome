@@ -1,6 +1,3 @@
-/**
- * SyncPlanService – simplified
- */
 import { ulid } from 'ulid';
 import { getLogger, logError, metrics } from '@dome/logging';
 import { syncPlanOperations } from '../db/client';
@@ -8,129 +5,108 @@ import { ResourceObject } from '../resourceObject';
 import { ProviderType } from '../providers';
 import { Bindings } from '../types';
 
+/* ─────────── custom errors ─────────── */
+export class NotFoundError extends Error { }
+export class AlreadyExistsError extends Error { }
+
+export interface InitParams {
+  resourceId: string;
+  providerType: ProviderType;
+  userId?: string;
+}
+
 export class SyncPlanService {
   private logger = getLogger();
-  constructor(private env: Bindings) {}
+  constructor(private env: Bindings) { }
 
-  /* ---------- public API ---------- */
+  /* ─────────── Sync‑plan CRUD ─────────── */
 
-  async findOrCreateSyncPlan(provider: string, resourceId: string, userId?: string) {
-    return this.wrap('findOrCreateSyncPlan', async () => {
-      const existing = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
-
-      if (existing) {
-        if (userId) await this.addUserToSyncPlan(existing.id, userId);
-        return { id: existing.id, isNew: false };
-      }
-
-      const id = ulid();
-      await syncPlanOperations.create(this.env.SYNC_PLAN, {
-        id,
-        provider,
-        resourceId,
-        userId,
-      });
-
-      return { id, isNew: true };
-    });
+  async getSyncPlan(resourceId: string) {
+    const plan = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
+    if (!plan) throw new NotFoundError(`Sync‑plan for "${resourceId}" not found`);
+    return plan;
   }
 
-  async addUserToSyncPlan(id: string, userId: string) {
-    return this.wrap('addUserToSyncPlan', () =>
-      syncPlanOperations.addUserToSyncPlan(this.env.SYNC_PLAN, id, userId),
-    );
+  async createSyncPlan(provider: string, resourceId: string, userId?: string) {
+    const exists = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
+    if (exists) throw new AlreadyExistsError(`Sync‑plan for "${resourceId}" already exists`);
+
+    const id = ulid();
+    await syncPlanOperations.create(this.env.SYNC_PLAN, { id, provider, resourceId, userId });
+    return id;
   }
 
-  async initializeOrSyncResource(
-    resourceId: string,
-    providerType: ProviderType,
-    userId?: string,
-    cadenceSecs = 3600,
+  async attachUser(syncPlanId: string, userId: string) {
+    await syncPlanOperations.addUserToSyncPlan(this.env.SYNC_PLAN, syncPlanId, userId);
+  }
+
+  /* ─────────── Resource lifecycle ─────────── */
+
+  /** Ensure the Durable Object exists & is configured.
+      @returns `true` if it was created on this call. */
+  async initializeResource(
+    { resourceId, providerType, userId }: InitParams,
+    cadenceSecs = 3_600,
   ): Promise<boolean> {
-    return this.wrap('initializeOrSyncResource', async () => {
-      // Validate resourceId before proceeding
-      if (!resourceId) {
-        throw new Error('Empty resourceId. Cannot initialize or sync resource.');
-      }
+    this.validateResourceId(providerType, resourceId);
 
-      // For GitHub provider, validate the resourceId format (owner/repo)
-      if (providerType === ProviderType.GITHUB) {
-        const [owner, repo] = resourceId.split('/');
-        if (!owner || !repo) {
-          throw new Error(
-            `Invalid resourceId format for GitHub: ${resourceId}. Expected format: owner/repo`,
-          );
-        }
-      }
-
+    return this.wrap('initializeResource', async () => {
       const obj = this.getDurableObject(resourceId);
 
-      // Try fast‑path (resource already exists)
+      // If `info()` succeeds we assume the object already exists.
       try {
-        if (userId) await obj.addUser(userId);
-        await obj.sync();
-        this.logger.info(
-          { resourceId, providerType },
-          'Resource synced successfully (existing resource)',
-        );
-        return false;
-      } catch (error) {
-        this.logger.info(
-          {
-            resourceId,
-            providerType,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          'Resource does not exist or sync failed, attempting initialization',
-        );
-        /* fallthrough – object does not exist or sync failed */
+        const { resourceId: configResourceId } = obj.info();
+        getLogger().info({ resourceId }, 'resource already exists');
+        if (resourceId === configResourceId) return false;
+      } catch {
+        /* falls through to create */
       }
-
-      try {
-        await obj.initialize({
-          userIds: userId ? [userId] : [],
-          providerType,
-          resourceId,
-          cadenceSecs,
-        });
-        await obj.sync();
-        this.logger.info(
-          { resourceId, providerType },
-          'Resource initialized and synced successfully',
-        );
-        return true;
-      } catch (error) {
-        this.logger.error(
-          {
-            resourceId,
-            providerType,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          'Failed to initialize or sync resource',
-        );
-        throw error;
-      }
+      console.log(`Initializing new resource object ${resourceId}`);
+      await obj.initialize({
+        userIds: userId ? [userId] : [],
+        providerType,
+        resourceId,
+        cadenceSecs,
+      });
+      return true;
     });
   }
 
-  /* ---------- private helpers ---------- */
+  /** Sync a resource that is already initialised. */
+  async syncResource(resourceId: string, providerType: ProviderType, userId?: string) {
+    this.validateResourceId(providerType, resourceId);
+
+    return this.wrap('syncResource', async () => {
+      const obj = this.getDurableObject(resourceId);
+      if (userId) await obj.addUser(userId); // optional
+      await obj.sync();
+    });
+  }
+
+  /* ─────────── internals ─────────── */
 
   private getDurableObject(resourceId: string): ResourceObject {
     const id = (this.env as any).RESOURCE_OBJECT.idFromName(resourceId);
     return (this.env as any).RESOURCE_OBJECT.get(id);
   }
 
-  /** standardised try/catch + metrics wrapper */
+  private validateResourceId(pt: ProviderType, id: string) {
+    if (!id) throw new Error('Empty resourceId');
+    if (pt === ProviderType.GITHUB && !/^[^/]+\/[^/]+$/.test(id)) {
+      throw new Error(`Invalid GitHub resourceId "${id}" (owner/repo required)`);
+    }
+  }
+
   private async wrap<T>(op: string, fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (err) {
       logError(this.logger, err, `SyncPlanService.${op}`);
-      metrics.increment(`tsunami.syncplan.${op}.errors`, 1);
+      metrics.increment(`tsunami.syncplan.${op}.errors`);
       throw err;
     }
   }
 }
 
-/** factory used by existing code */
+/* factory so the rest of the codebase changes ⟶ one line */
 export const createSyncPlanService = (env: Bindings) => new SyncPlanService(env);

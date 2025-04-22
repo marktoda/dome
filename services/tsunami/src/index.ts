@@ -1,26 +1,32 @@
 /**
- * Tsunami Service – simplified
+ * Tsunami Service – simplified (uses new SyncPlanService API)
  */
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { zValidator } from '@hono/zod-validator';
-import { ServiceInfo, createErrorMiddleware, formatZodError } from '@dome/common';
 import { z } from 'zod';
-import { getLogger, logError, metrics } from '@dome/logging';
+import { ServiceInfo, createErrorMiddleware, formatZodError } from '@dome/common';
+import { getLogger, logError } from '@dome/logging';
+import {
+  createSyncPlanService,
+  AlreadyExistsError,
+  NotFoundError,
+} from './services/syncPlanService';
 import { createSiloService } from './services/siloService';
-import { createSyncPlanService } from './services/syncPlanService';
 import { syncHistoryOperations } from './db/client';
-import { Bindings } from './types';
 import { ProviderType } from './providers';
+import { Bindings } from './types';
+
+export { ResourceObject } from './resourceObject';
 
 /* ─────────── shared utils ─────────── */
 
-const logger = getLogger(); // one logger, reused everywhere
+const logger = getLogger();
 
 const handle = (
-  c: { json: (data: any, status?: number) => Response },
+  c: { json: (d: unknown, status?: number) => Response },
   fn: () => Promise<Response>,
-): Promise<Response> =>
+) =>
   fn().catch(err => {
     logError(logger, err, 'Unhandled request error');
     return c.json({ success: false, error: err.message ?? 'Internal error' }, 500);
@@ -58,12 +64,10 @@ const syncHistoryQuerySchema = z.object({
 
 type HistoryFetcher = (env: D1Database, id: string, limit: number) => Promise<unknown[]>;
 
-/** Creates a GET route with identical body/limit/error handling logic */
 function historyRoute(path: string, idParamKey: string, fetcher: HistoryFetcher) {
   app.get(path, zValidator('query', syncHistoryQuerySchema), async c =>
     handle(c, async () => {
       const params = c.req.param();
-      // Use type assertion to avoid TypeScript error
       const id = params[idParamKey as keyof typeof params] as string;
       const { limit } = c.req.valid('query');
 
@@ -77,116 +81,82 @@ function historyRoute(path: string, idParamKey: string, fetcher: HistoryFetcher)
 
 /* ─────────── routes ─────────── */
 
-// Register GitHub repo
+// Register / initialise / sync a GitHub repository
 app.post('/resource/github', zValidator('json', githubRepoSchema), async c =>
   handle(c, async () => {
     const { owner, repo, userId } = c.req.valid('json');
-
-    // Validate owner and repo
-    if (!owner || !repo) {
-      return c.json(
-        {
-          success: false,
-          error: 'Invalid owner or repo. Both must be non-empty strings.',
-        },
-        400,
-      );
-    }
-
     const resourceId = `${owner}/${repo}`;
     const { syncPlan } = buildServices(c.env);
 
     logger.info({ owner, repo, resourceId, userId }, 'Registering GitHub repository');
 
+    // create sync plan (or skip if it exists)
+    let syncPlanId: string;
     try {
-      const { id, isNew } = await syncPlan.findOrCreateSyncPlan('github', resourceId, userId);
-
-      const wasInitialized = await syncPlan.initializeOrSyncResource(
-        resourceId,
-        ProviderType.GITHUB,
-        userId,
-        3600,
-      );
-
-      logger.info(
-        { id, resourceId, isNew, wasInitialized },
-        'GitHub repository registered successfully',
-      );
-
-      return c.json({
-        success: true,
-        id,
-        resourceId,
-        isNew,
-        wasInitialized,
-      });
-    } catch (error) {
-      logger.error(
-        {
-          owner,
-          repo,
-          resourceId,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Failed to register GitHub repository',
-      );
-
-      return c.json(
-        {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to register GitHub repository',
-        },
-        500,
-      );
+      // Try to create a brand‑new sync‑plan
+      syncPlanId = await syncPlan.createSyncPlan('github', resourceId, userId);
+      logger.info({ syncPlanId, resourceId }, 'Sync‑plan created');
+    } catch (err) {
+      if (err instanceof AlreadyExistsError) {
+        // Plan exists – fetch its id
+        const plan = await syncPlan.getSyncPlan(resourceId);
+        syncPlanId = plan.id;
+        logger.info({ syncPlanId, resourceId }, 'Sync‑plan already exists');
+      } else {
+        throw err;
+      }
     }
+
+    // Always attach the user if supplied (idempotent if already attached)
+    if (userId) {
+      await syncPlan.attachUser(syncPlanId, userId);
+      logger.info({ syncPlanId, userId }, 'User attached to sync‑plan');
+    }
+
+    // Initialise the resource (no‑op if already initialised)
+    const created = await syncPlan.initializeResource(
+      { resourceId, providerType: ProviderType.GITHUB, userId },
+      /* cadenceSecs = */ 3_600,
+    );
+
+    // Sync regardless
+    await syncPlan.syncResource(resourceId, ProviderType.GITHUB, userId);
+
+    logger.info(
+      { syncPlanId, resourceId, created },
+      'GitHub repository initialised & synced successfully',
+    );
+
+    return c.json({
+      success: true,
+      id: syncPlanId,
+      resourceId,
+      wasInitialised: created,
+    });
   }),
 );
 
-// Modified implementation for GitHub repository history
+// History endpoints
 app.get(
   '/resource/github/:owner/:repo/history',
   zValidator('query', syncHistoryQuerySchema),
   async c =>
     handle(c, async () => {
-      const params = c.req.param();
-      const owner = params.owner as string;
-      const repo = params.repo as string;
+      const { owner, repo } = c.req.param();
       const { limit } = c.req.valid('query');
 
-      if (!owner || !repo) {
-        logger.error({ params }, 'Missing owner or repo parameter');
-        return c.json(
-          {
-            success: false,
-            error: 'Invalid URL format. Expected /resource/github/:owner/:repo/history',
-          },
-          400,
-        );
-      }
-
       const resourceId = `${owner}/${repo}`;
-      logger.info({ owner, repo, resourceId }, 'Fetching history for GitHub repository');
-
       const history = await syncHistoryOperations.getByResourceId(
         c.env.SYNC_PLAN,
         resourceId,
         limit,
       );
 
-      logger.info({ resourceId, count: history.length }, 'History fetched');
-
-      return c.json({
-        success: true,
-        owner,
-        repo,
-        resourceId,
-        history,
-      });
+      return c.json({ success: true, owner, repo, resourceId, history });
     }),
 );
 
 historyRoute('/user/:userId/history', 'userId', syncHistoryOperations.getByUserId);
-
 historyRoute('/sync-plan/:syncPlanId/history', 'syncPlanId', syncHistoryOperations.getBySyncPlanId);
 
 export default app;

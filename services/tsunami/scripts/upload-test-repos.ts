@@ -14,18 +14,8 @@
 // Configuration
 const TSUNAMI_API_URL = 'https://tsunami.chatter-9999.workers.dev'; // Deployed tsunami service URL
 const REPOSITORIES = [
-  { owner: 'uniswap', repo: 'v4-core' },
-  { owner: 'uniswap', repo: 'v3-core' },
-  { owner: 'uniswap', repo: 'v2-core' },
-  { owner: 'uniswap', repo: 'v4-periphery' },
-  { owner: 'uniswap', repo: 'universal-router' },
-  { owner: 'paradigmxyz', repo: 'reth' },
+  { owner: 'uniswap', repo: 'permit2' },
 ];
-
-// Maximum number of retries for API requests
-const MAX_RETRIES = 3;
-// Delay between retries in milliseconds
-const RETRY_DELAY = 2000;
 
 /**
  * Response type for repository registration
@@ -59,64 +49,53 @@ function sleep(ms: number): Promise<void> {
 async function registerRepository(owner: string, repo: string): Promise<void> {
   console.log(`Registering repository: ${owner}/${repo}...`);
 
-  let retries = 0;
   let lastError: Error | null = null;
 
-  while (retries < MAX_RETRIES) {
-    try {
-      const response = await fetch(`${TSUNAMI_API_URL}/resource/github`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          owner,
-          repo,
-          // Using default cadence (1 hour)
-        }),
-      });
+  try {
+    const response = await fetch(`${TSUNAMI_API_URL}/resource/github`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        owner,
+        repo,
+        // Using default cadence (1 hour)
+      }),
+    });
 
-      const data = (await response.json()) as RepositoryResponse;
+    const data = (await response.json()) as RepositoryResponse;
 
-      if (!response.ok) {
-        // Handle specific error cases
-        if (response.status === 429) {
-          throw new Error(
-            `GitHub API rate limit exceeded. Please try again later or add a GitHub token.`,
-          );
-        } else if (response.status === 403) {
-          throw new Error(
-            `Access to GitHub repository is forbidden. Please check repository permissions or add a GitHub token.`,
-          );
-        } else if (response.status === 404) {
-          throw new Error(`GitHub repository not found. Please check the owner and repo name.`);
-        } else {
-          throw new Error(
-            `Failed to register repository: ${data.message || data.error || response.statusText}`,
-          );
-        }
-      }
-
-      console.log(`✅ Successfully registered ${owner}/${repo}`);
-      console.log(`   ID: ${data.id}`);
-      console.log(`   Resource ID: ${data.resourceId}`);
-      return;
-    } catch (error) {
-      lastError = error as Error;
-      retries++;
-
-      if (retries < MAX_RETRIES) {
-        console.warn(
-          `⚠️ Attempt ${retries} failed for ${owner}/${repo}. Retrying in ${
-            RETRY_DELAY / 1000
-          } seconds...`,
+    if (!response.ok) {
+      // Handle specific error cases
+      if (response.status === 429) {
+        throw new Error(
+          `GitHub API rate limit exceeded. Please try again later or add a GitHub token.`,
         );
-        await sleep(RETRY_DELAY);
+      } else if (response.status === 403) {
+        throw new Error(
+          `Access to GitHub repository is forbidden. Please check repository permissions or add a GitHub token.`,
+        );
+      } else if (response.status === 404) {
+        throw new Error(`GitHub repository not found. Please check the owner and repo name.`);
+      } else {
+        throw new Error(
+          `Failed to register repository: ${data.message || data.error || response.statusText}`,
+        );
       }
     }
+
+    console.log(`✅ Successfully registered ${owner}/${repo}`);
+    console.log(`   ID: ${data.id}`);
+    console.log(`   Resource ID: ${data.resourceId}`);
+    return;
+  } catch (error) {
+    lastError = error as Error;
+
+    console.log(error);
   }
 
-  console.error(`❌ Error registering ${owner}/${repo} after ${MAX_RETRIES} attempts:`, lastError);
+  console.error(`❌ Error registering ${owner}/${repo}`, lastError);
   throw lastError;
 }
 
