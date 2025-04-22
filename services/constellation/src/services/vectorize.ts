@@ -1,5 +1,5 @@
 import { VectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
-import { getLogger, metrics } from '@dome/logging';
+import { logError, getLogger, metrics } from '@dome/logging';
 import { VectorWithMetadata } from '../types';
 import { SiloService } from './siloService';
 
@@ -56,8 +56,8 @@ export class VectorizeService {
     const batches =
       vecs.length > this.cfg.maxBatchSize
         ? Array.from({ length: Math.ceil(vecs.length / this.cfg.maxBatchSize) }, (_, i) =>
-            vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
-          )
+          vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
+        )
         : [vecs];
 
     for (const batch of batches) await this.upsertBatch(batch);
@@ -71,15 +71,15 @@ export class VectorizeService {
         'vectorsCount' in statsAny
           ? statsAny.vectorsCount
           : 'vectorCount' in statsAny
-          ? statsAny.vectorCount
-          : 0;
+            ? statsAny.vectorCount
+            : 0;
 
       const dimensions =
         'dimensions' in statsAny
           ? statsAny.dimensions
           : 'config' in statsAny && statsAny.config && 'dimensions' in statsAny.config
-          ? statsAny.config.dimensions
-          : 0;
+            ? statsAny.config.dimensions
+            : 0;
 
       getLogger().info(
         {
@@ -89,7 +89,7 @@ export class VectorizeService {
         'Vectorize index stats after upsert',
       );
     } catch (err) {
-      getLogger().warn({ err }, 'Failed to get index stats after upsert');
+      logError(getLogger(), err, 'Failed to get index stats after upsert');
     }
 
     t.stop();
@@ -114,10 +114,8 @@ export class VectorizeService {
       } catch (err) {
         metrics.increment('vectorize.upsert.errors');
 
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        getLogger().error(
+        logError(getLogger(), err, 'vectorize.upsert failed',
           { err, attempt, max: this.cfg.retryAttempts, size: batch.length },
-          'vectorize.upsert failed',
         );
         if (attempt < this.cfg.retryAttempts)
           await new Promise(r => setTimeout(r, this.cfg.retryDelay));
@@ -191,15 +189,15 @@ export class VectorizeService {
           'vectorsCount' in statsAny
             ? statsAny.vectorsCount
             : 'vectorCount' in statsAny
-            ? statsAny.vectorCount
-            : 0;
+              ? statsAny.vectorCount
+              : 0;
 
         const dimensions =
           'dimensions' in statsAny
             ? statsAny.dimensions
             : 'config' in statsAny && statsAny.config && 'dimensions' in statsAny.config
-            ? statsAny.config.dimensions
-            : 0;
+              ? statsAny.config.dimensions
+              : 0;
 
         getLogger().debug(
           {
@@ -209,7 +207,7 @@ export class VectorizeService {
           'Vectorize index stats before query',
         );
       } catch (err) {
-        getLogger().warn({ err }, 'Failed to get index stats before query');
+        logError(getLogger(), err, 'Failed to get index stats before query');
       }
 
       const res = await this.idx.query(vector, {
@@ -230,8 +228,7 @@ export class VectorizeService {
     } catch (err) {
       metrics.increment('vectorize.query.errors');
 
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      getLogger().error({ err, filter, topK }, 'vectorize.query failed');
+      logError(getLogger(), err, 'vectorize.query failed');
       throw err;
     } finally {
       t.stop();
@@ -249,15 +246,15 @@ export class VectorizeService {
       'vectorsCount' in infoAny
         ? infoAny.vectorsCount
         : 'vectorCount' in infoAny
-        ? infoAny.vectorCount
-        : 0;
+          ? infoAny.vectorCount
+          : 0;
 
     const dimension =
       'dimensions' in infoAny
         ? infoAny.dimensions
         : 'config' in infoAny && infoAny.config && 'dimensions' in infoAny.config
-        ? infoAny.config.dimensions
-        : 0;
+          ? infoAny.config.dimensions
+          : 0;
 
     return { vectors, dimension };
   }
