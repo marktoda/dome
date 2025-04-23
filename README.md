@@ -195,3 +195,7 @@ const uploadUrl = await env.SILO.createUpload({
 ## Getting Started
 
 See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for detailed setup instructions.
+
+# TODO
+
+- include file metadata when ingesting (i.e. filename etc)
