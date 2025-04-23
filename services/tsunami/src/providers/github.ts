@@ -1,10 +1,14 @@
 /**
  * GitHub Provider
+ *
+ * This provider is responsible for pulling content from GitHub repositories
+ * and injecting metadata headers before sending to Silo.
  */
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
 import { getLogger, metrics } from '@dome/logging';
 import { Bindings } from '../types';
+import { createGitHubMetadata, getLanguageFromPath, injectMetadataHeader } from '../services/metadataHeaderService';
 
 /* ─── constants ────────────────────────────────────────────────────────── */
 
@@ -84,8 +88,20 @@ export class GithubProvider implements Provider {
         const content = await this.getFile(owner, repo, f.filename, c.sha);
         if (!content) continue;
 
+        // Create metadata for the file
+        const metadata = createGitHubMetadata(
+          resourceId,
+          f.filename,
+          c.commit.author.date,
+          getLanguageFromPath(f.filename),
+          content.length
+        );
+
+        // Inject metadata header into content
+        const contentWithMetadata = injectMetadataHeader(content, metadata);
+
         puts.push({
-          content,
+          content: contentWithMetadata,
           category: 'code' as ContentCategory,
           mimeType: mimeFor(f.filename),
           userId,

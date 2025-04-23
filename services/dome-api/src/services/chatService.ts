@@ -28,15 +28,16 @@ export interface ChatOptions {
  */
 export class ChatService {
   // Model to use for chat
-  private readonly MODEL_NAME = '@cf/google/gemma-3-12b-it';
+  private readonly MODEL_NAME = 'llama-3.3-70b-instruct-fp8-fast';
+
   // Maximum context window size for the model (in tokens)
-  private readonly MAX_CONTEXT_WINDOW = 80000;
+  private readonly MAX_CONTEXT_WINDOW = 24000;
   // Approximate tokens per character (used for estimation)
   private readonly TOKENS_PER_CHAR = 0.25;
   // Reserve tokens for the model's response
   private readonly RESPONSE_TOKEN_RESERVE = 2000;
   // Maximum system prompt size in tokens
-  private readonly MAX_SYSTEM_PROMPT_TOKENS = 10000;
+  private readonly MAX_SYSTEM_PROMPT_TOKENS = this.MAX_CONTEXT_WINDOW - this.RESPONSE_TOKEN_RESERVE;
 
   /**
    * Estimate the number of tokens in a text
