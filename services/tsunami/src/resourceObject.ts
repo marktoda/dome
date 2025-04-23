@@ -10,12 +10,12 @@ import { ulid } from 'ulid';
 /*  config                                                            */
 /* ------------------------------------------------------------------ */
 
-interface Config {
+export interface Config {
   userIds: string[];
   cadenceSecs: number;
   providerType: ProviderType;
   cursor: string;
-  resourceId: string;
+  resourceId: string; // "owner/repo" for GitHub
 }
 
 const STORAGE_KEY = 'cfg';
@@ -32,62 +32,54 @@ const DEFAULT_CFG: Config = {
 /* ------------------------------------------------------------------ */
 
 export class ResourceObject extends DurableObject<Bindings> {
-  private cfg: Config = DEFAULT_CFG;
-  private silo: SiloService;
-  private log = getLogger();
+  protected cfg: Config = DEFAULT_CFG;
+  protected readonly silo: SiloService;
+  protected readonly log = getLogger();
 
-  constructor(ctx: DurableObjectState, env: Bindings) {
+  constructor(ctx: any, env: Bindings) {
     super(ctx, env);
     this.silo = createSiloService(env);
 
+    // Load stored configuration (do **not** throw – an empty cfg just means un‑initialised).
     ctx.blockConcurrencyWhile(async () => {
-      try {
-        this.cfg = await this.loadCfg();
-        this.log.info({ resourceId: this.cfg.resourceId }, 'resource loaded');
-      } catch {
-        /* first run – keep defaults */
-      }
+      const stored = await ctx.storage.get(STORAGE_KEY);
+      this.cfg = stored ?? DEFAULT_CFG;
+      this.log.info({ resourceId: this.cfg.resourceId || '∅' }, 'resource loaded');
     });
   }
 
   /* ------------------------- public API -------------------------- */
 
-  async initialize(init: Partial<Config>) {
-    this.cfg = Object.assign({}, DEFAULT_CFG, init);
-    await this.updateCfg(init);
+  /** Initialise the resource (idempotent). */
+  async initialize(patch: Partial<Config>): Promise<Config> {
+    this.cfg = await this.updateCfg(patch);
     await this.scheduleNow();
     this.log.info(this.cfg, 'resource initialised');
+    return this.cfg;
   }
 
   async addUser(userId: string) {
+    this.ensureInitialised();
     if (!userId || this.cfg.userIds.includes(userId)) return;
-    const userIds = this.cfg.userIds;
-    userIds.push(userId);
-    await this.updateCfg({ userIds: userIds });
+    const next = [...this.cfg.userIds, userId];
+    this.cfg = await this.updateCfg({ userIds: next });
     this.log.info({ userId, resourceId: this.cfg.resourceId }, 'user attached');
   }
 
   async sync() {
-    const { resourceId, providerType, cursor } = this.cfg;
+    this.ensureInitialised();
 
+    const { resourceId, providerType, cursor } = this.cfg;
     const start = Date.now();
     const userId = this.cfg.userIds[0];
     const provider = this.makeProvider(providerType);
 
     try {
       const { contents, newCursor } = await provider.pull({ userId, resourceId, cursor });
-
-      if (newCursor) {
-        await this.updateCfg({ cursor: newCursor });
-      }
+      if (newCursor) this.cfg = await this.updateCfg({ cursor: newCursor });
 
       const ids = contents.length ? await this.silo.upload(contents) : [];
-      await this.recordHistory(
-        'success',
-        ids.length,
-        contents.map(c => c.metadata?.path ?? 'unknown'),
-        start,
-      );
+      await this.recordHistory('success', ids.length, contents.map(c => c.metadata?.path ?? 'unknown'), start);
 
       metrics.increment('tsunami.sync.success');
       this.log.info({ resourceId, files: ids.length }, 'sync ok');
@@ -99,16 +91,35 @@ export class ResourceObject extends DurableObject<Bindings> {
     }
   }
 
-  info() {
+  info(): Config {
     return this.cfg;
   }
 
   async alarm() {
+    await this.loadCfg(); // refresh cfg on cold start
+    if (!this.cfg.resourceId) {
+      getLogger().info('alarm: resource not initialised, skipping...');
+      return; // not initialised yet
+    }
     await this.sync();
     await this.schedule();
   }
 
   /* ------------------------- helpers ---------------------------- */
+
+  private ensureInitialised(): void {
+    if (!this.cfg.resourceId) {
+      throw new Error('ResourceObject not initialised – call initialize() first');
+    }
+  }
+
+  private validate(cfg: Config) {
+    if (cfg.providerType === ProviderType.GITHUB) {
+      if (!cfg.resourceId) throw new Error('GitHub provider requires resourceId');
+      const [owner, repo] = cfg.resourceId.split('/');
+      if (!owner || !repo) throw new Error(`Invalid resourceId "${cfg.resourceId}" – use "owner/repo"`);
+    }
+  }
 
   private makeProvider(pt: ProviderType): Provider {
     switch (pt) {
@@ -126,28 +137,43 @@ export class ResourceObject extends DurableObject<Bindings> {
     startMs: number,
     err: Error | null = null,
   ) {
-    const syncPlanId = await this.getSyncPlanId();
-
-    await syncHistoryOperations.create(this.env.SYNC_PLAN, {
-      syncPlanId,
-      resourceId: this.cfg.resourceId,
-      provider: this.cfg.providerType,
-      userId: this.cfg.userIds[0],
-      startedAt: Math.round(startMs / 1000),
-      completedAt: Math.round(Date.now() / 1000),
-      previousCursor: this.cfg.cursor,
-      newCursor: this.cfg.cursor,
-      filesProcessed,
-      updatedFiles,
-      status,
-      errorMessage: err?.message,
-    });
+    try {
+      const syncPlanId = await this.getSyncPlanId();
+      await syncHistoryOperations.create(this.env.SYNC_PLAN, {
+        syncPlanId,
+        resourceId: this.cfg.resourceId,
+        provider: this.cfg.providerType,
+        userId: this.cfg.userIds[0],
+        startedAt: Math.floor(startMs / 1000),
+        completedAt: Math.floor(Date.now() / 1000),
+        previousCursor: this.cfg.cursor,
+        newCursor: this.cfg.cursor,
+        filesProcessed,
+        updatedFiles,
+        status,
+        errorMessage: err?.message,
+      });
+    } catch (error) {
+      this.log.error(error, 'error creating sync history');
+      throw error;
+    }
   }
 
   private async getSyncPlanId() {
     const rec = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, this.cfg.resourceId);
-    return rec?.id ?? ulid();
+    if (rec) return rec.id;
+
+    const id = ulid();
+    await syncPlanOperations.create(this.env.SYNC_PLAN, {
+      id,
+      userId: this.cfg.userIds[0],
+      provider: this.cfg.providerType,
+      resourceId: this.cfg.resourceId,
+    });
+    return id;
   }
+
+  /* ---------- scheduling --------------------------------------- */
 
   private async scheduleNow() {
     await this.ctx.storage.setAlarm(Date.now());
@@ -157,21 +183,29 @@ export class ResourceObject extends DurableObject<Bindings> {
     await this.ctx.storage.setAlarm(Date.now() + this.cfg.cadenceSecs * 1000);
   }
 
+  /* ---------- storage helpers ---------------------------------- */
+
   private async loadCfg(): Promise<Config> {
-    const c = await this.ctx.storage.get<Config>(STORAGE_KEY);
-    if (!c) throw new Error('no cfg');
-    return c;
+    const stored = await this.ctx.storage.get<Config>(STORAGE_KEY);
+    this.cfg = stored ?? DEFAULT_CFG;
+    return this.cfg;
   }
 
-  private async updateCfg(newCfg: Partial<Config>): Promise<void> {
-    this.ctx.blockConcurrencyWhile(async () => {
-      try {
-        const existingConfig = await this.loadCfg();
-        this.cfg = Object.assign({}, existingConfig, newCfg);
-        await this.ctx.storage.put(STORAGE_KEY, this.cfg);
-      } catch {
-        /* first run – keep defaults */
-      }
+  /**
+   * Atomically merge & persist the configuration.
+   *
+   * As of the 2025‑04 Workers runtime release, any group of writes issued
+   * synchronously after the final read (with no intervening awaits) is already
+   * committed atomically, so we can simply perform the get/put sequence inside
+   * a `blockConcurrencyWhile` to prevent overlapping merges.
+   */
+  private async updateCfg(patch: Partial<Config>): Promise<Config> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const current = (await this.ctx.storage.get<Config>(STORAGE_KEY)) ?? DEFAULT_CFG;
+      const merged = { ...current, ...patch } as Config;
+      this.validate(merged);
+      await this.ctx.storage.put(STORAGE_KEY, merged);
+      return merged;
     });
   }
 }
