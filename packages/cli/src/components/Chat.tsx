@@ -40,14 +40,72 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
         setMessages((prev) => [...prev, { role: 'user', content }]);
       }
       
-      // Send message to API
-      const response = await chat(content);
+      // Create a placeholder for the assistant's response
+      const assistantMessageIndex = messages.length + ((!initialMessage || messages.length > 0) ? 1 : 0);
+      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
       
-      // Add assistant response to the list
-      setMessages((prev) => [...prev, { role: 'assistant', content: response.message }]);
+      // Create a function to handle streaming chunks
+      const handleChunk = (chunk: string) => {
+        // Use a callback to ensure we're working with the latest state
+        setMessages((prev) => {
+          // Find the index of the last assistant message
+          const lastAssistantIndex = prev.length - 1;
+          
+          // Create a new array with all previous messages
+          const newMessages = [...prev];
+          
+          // Make sure we're updating the correct message
+          if (lastAssistantIndex >= 0 && newMessages[lastAssistantIndex].role === 'assistant') {
+            // Update the content by appending the new chunk
+            newMessages[lastAssistantIndex] = {
+              ...newMessages[lastAssistantIndex],
+              content: newMessages[lastAssistantIndex].content + chunk
+            };
+          }
+          
+          return newMessages;
+        });
+      };
       
-      setIsLoading(false);
+      // Send message to API with streaming enabled
+      try {
+        const response = await chat(content, handleChunk);
+        
+        // If the streaming didn't work for some reason, ensure we have the complete response
+        if (response && typeof response === 'object' && response.response) {
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            if (newMessages[assistantMessageIndex]) {
+              // Replace with the complete response if needed
+              if (newMessages[assistantMessageIndex].content === '') {
+                newMessages[assistantMessageIndex] = {
+                  ...newMessages[assistantMessageIndex],
+                  content: response.response
+                };
+              }
+            }
+            return newMessages;
+          });
+        }
+        
+        setIsLoading(false);
+      } catch (chatError) {
+        // Handle chat-specific errors
+        const errorMessage = chatError instanceof Error ? chatError.message : String(chatError);
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          if (newMessages[assistantMessageIndex]) {
+            newMessages[assistantMessageIndex] = {
+              ...newMessages[assistantMessageIndex],
+              content: `Error: ${errorMessage}`
+            };
+          }
+          return newMessages;
+        });
+        setIsLoading(false);
+      }
     } catch (err) {
+      // Handle general errors
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : String(err)}` },

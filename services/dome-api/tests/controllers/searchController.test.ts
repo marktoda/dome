@@ -1,16 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { searchController } from '../../src/controllers/searchController';
-import { searchService, PaginatedSearchResults } from '../../src/services/searchService';
+import { SearchController } from '../../src/controllers/searchController';
+import { SearchService, PaginatedSearchResults } from '../../src/services/searchService';
 import { ServiceError } from '@dome/common';
 import { z } from 'zod';
 
 // Mock dependencies
-vi.mock('../../src/services/searchService', () => ({
-  searchService: {
-    search: vi.fn(),
-  },
-  PaginatedSearchResults: vi.fn(),
-}));
+vi.mock('../../src/services/searchService', () => {
+  return {
+    SearchService: vi.fn().mockImplementation(() => {
+      return {
+        search: vi.fn(),
+      };
+    }),
+    PaginatedSearchResults: vi.fn(),
+  };
+});
 
 // Mock logger
 vi.mock('@dome/logging', () => ({
@@ -83,8 +87,14 @@ describe('SearchController', () => {
     };
   };
 
+  // Create mock instances
+  let mockSearchService: SearchService;
+  let controller: SearchController;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSearchService = new SearchService(null as any, null as any);
+    controller = new SearchController(mockSearchService);
   });
 
   afterEach(() => {
@@ -100,13 +110,13 @@ describe('SearchController', () => {
         offset: '0',
       });
 
-      vi.mocked(searchService.search).mockResolvedValue(mockSearchResults);
+      vi.mocked(mockSearchService.search).mockResolvedValue(mockSearchResults);
 
       // Act
-      const response = await searchController.search(mockContext as any);
+      const response = await controller.search(mockContext as any);
 
       // Assert
-      expect(searchService.search).toHaveBeenCalledWith(
+      expect(mockSearchService.search).toHaveBeenCalledWith(
         mockEnv,
         expect.objectContaining({
           userId: mockUserId,
@@ -131,10 +141,10 @@ describe('SearchController', () => {
       });
 
       // Act
-      const response = await searchController.search(mockContext as any);
+      const response = await controller.search(mockContext as any);
 
       // Assert
-      expect(searchService.search).not.toHaveBeenCalled();
+      expect(mockSearchService.search).not.toHaveBeenCalled();
       expect(mockContext.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
@@ -168,7 +178,7 @@ describe('SearchController', () => {
       });
 
       // Act
-      const response = await searchController.search(mockContext as any);
+      const response = await controller.search(mockContext as any);
 
       // Assert
       expect(mockContext.json).toHaveBeenCalledWith(
@@ -194,10 +204,10 @@ describe('SearchController', () => {
         code: 'SEARCH_ERROR',
         status: 503,
       });
-      vi.mocked(searchService.search).mockRejectedValue(serviceError);
+      vi.mocked(mockSearchService.search).mockRejectedValue(serviceError);
 
       // Act
-      const response = await searchController.search(mockContext as any);
+      const response = await controller.search(mockContext as any);
 
       // Assert
       expect(mockContext.json).toHaveBeenCalledWith(
@@ -219,10 +229,10 @@ describe('SearchController', () => {
       });
 
       const error = new Error('Unexpected error');
-      vi.mocked(searchService.search).mockRejectedValue(error);
+      vi.mocked(mockSearchService.search).mockRejectedValue(error);
 
       // Act
-      const response = await searchController.search(mockContext as any);
+      const response = await controller.search(mockContext as any);
 
       // Assert
       expect(mockContext.json).toHaveBeenCalledWith(
@@ -247,7 +257,7 @@ describe('SearchController', () => {
         offset: '0',
       });
 
-      vi.mocked(searchService.search).mockResolvedValue(mockSearchResults);
+      vi.mocked(mockSearchService.search).mockResolvedValue(mockSearchResults);
 
       // Mock TransformStream
       const mockWriter = {
@@ -269,10 +279,10 @@ describe('SearchController', () => {
       }));
 
       // Act
-      const response = await searchController.streamSearch(mockContext as any);
+      const response = await controller.streamSearch(mockContext as any);
 
       // Assert
-      expect(searchService.search).toHaveBeenCalledWith(
+      expect(mockSearchService.search).toHaveBeenCalledWith(
         mockEnv,
         expect.objectContaining({
           userId: mockUserId,
@@ -316,7 +326,7 @@ describe('SearchController', () => {
       });
 
       // Act
-      const response = await searchController.streamSearch(mockContext as any);
+      const response = await controller.streamSearch(mockContext as any);
 
       // Assert
       expect(mockContext.json).toHaveBeenCalledWith(
@@ -339,7 +349,7 @@ describe('SearchController', () => {
       });
 
       const error = new Error('Search error during streaming');
-      vi.mocked(searchService.search).mockRejectedValue(error);
+      vi.mocked(mockSearchService.search).mockRejectedValue(error);
 
       // Mock TransformStream
       const mockWriter = {
@@ -361,7 +371,7 @@ describe('SearchController', () => {
       }));
 
       // Act
-      const response = await searchController.streamSearch(mockContext as any);
+      const response = await controller.streamSearch(mockContext as any);
 
       // Assert
       expect(response.headers.get('Content-Type')).toBe('application/x-ndjson');

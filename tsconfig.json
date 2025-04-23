@@ -14,6 +14,8 @@
     "paths": {
       "@dome/common": ["packages/common/src"],
       "@dome/common/*": ["packages/common/src/*"],
+      "@dome/silo": ["services/silo/src"],
+      "@dome/silo/*": ["services/silo/src/*"],
       "@dome/logging": ["packages/logging/src"],
       "@dome/logging/*": ["packages/logging/src/*"],
       "@dome/cli": ["packages/cli/src"],

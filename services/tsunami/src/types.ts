@@ -8,29 +8,7 @@
  * @module types
  */
 
-import {
-  SiloSimplePutInput,
-  SiloSimplePutResponse,
-  SiloBatchGetInput,
-  SiloBatchGetResponse,
-} from '@dome/common';
-
-/**
- * Silo Service Interface
- *
- * Defines the methods available on the Silo service binding.
- *
- * @interface SiloService
- */
-export interface SiloService {
-  /**
-   * Batch get content from Silo
-   *
-   * @param data - Batch get input parameters
-   * @returns Batch get response with content items
-   */
-  batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
-}
+import { SiloSimplePutInput } from '@dome/common';
 
 /**
  * Environment Bindings
@@ -43,7 +21,7 @@ export type Bindings = {
   /** D1 database for sync plan storage */
   SYNC_PLAN: D1Database;
   /** Silo service binding for content storage */
-  SILO: SiloService;
+  SILO: Fetcher;
   /** Ingest queue for content ingestion */
   SILO_INGEST_QUEUE: Queue<SiloSimplePutInput>;
   /** Resource Object Durable Object */

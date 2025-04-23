@@ -7,7 +7,7 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getLogger, logError, metrics } from '@dome/logging';
-import { DLQMessage, R2Event, DLQFilterOptions, DLQStats } from './types';
+import { SiloBinding, DLQMessage, R2Event, DLQFilterOptions, DLQStats } from './types';
 import { wrap } from './utils/wrap';
 import { createServices, Services } from './services';
 import { z } from 'zod';
@@ -18,20 +18,19 @@ import {
   siloBatchGetSchema,
   siloDeleteSchema,
   siloStatsSchema,
-  SiloSimplePutInput,
   SiloBatchGetInput,
   SiloDeleteInput,
   SiloStatsInput,
-  SiloSimplePutResponse,
   SiloBatchGetResponse,
   SiloDeleteResponse,
   SiloStatsResponse,
 } from '@dome/common';
+export * from './client';
 
 /**
  * Silo service main class
  */
-export default class Silo extends WorkerEntrypoint<Env> {
+export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
   private services: Services;
 
   constructor(ctx: ExecutionContext, env: Env) {

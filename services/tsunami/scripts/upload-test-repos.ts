@@ -14,7 +14,7 @@
 // Configuration
 const TSUNAMI_API_URL = 'https://tsunami.chatter-9999.workers.dev'; // Deployed tsunami service URL
 const REPOSITORIES = [
-  { owner: 'marktoda', repo: 'uniswapx-artemis' },
+  { owner: 'uniswap', repo: 'smart-order-router' },
   // { owner: 'uniswap', repo: 'the-compact' },
   // { owner: 'uniswap', repo: 'v2-core' },
   // { owner: 'uniswap', repo: 'v2-periphery' },

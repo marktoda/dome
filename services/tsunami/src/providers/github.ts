@@ -8,7 +8,11 @@ import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
 import { getLogger, metrics } from '@dome/logging';
 import { Bindings } from '../types';
-import { createGitHubMetadata, getLanguageFromPath, injectMetadataHeader } from '../services/metadataHeaderService';
+import {
+  createGitHubMetadata,
+  getLanguageFromPath,
+  injectMetadataHeader,
+} from '../services/metadataHeaderService';
 
 /* ─── constants ────────────────────────────────────────────────────────── */
 
@@ -94,7 +98,7 @@ export class GithubProvider implements Provider {
           f.filename,
           c.commit.author.date,
           getLanguageFromPath(f.filename),
-          content.length
+          content.length,
         );
 
         // Inject metadata header into content

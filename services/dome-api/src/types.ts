@@ -5,13 +5,6 @@ import type {
   VectorSearchResult,
   VectorIndexStats,
   SiloSimplePutInput,
-  SiloBatchGetInput,
-  SiloDeleteInput,
-  SiloStatsInput,
-  SiloSimplePutResponse,
-  SiloBatchGetResponse,
-  SiloDeleteResponse,
-  SiloStatsResponse,
 } from '@dome/common';
 
 /**
@@ -41,16 +34,6 @@ export interface ConstellationService {
   stats(): Promise<VectorIndexStats>;
 }
 
-export interface SiloService {
-  batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
-  delete(data: SiloDeleteInput): Promise<SiloDeleteResponse>;
-
-  /**
-   * Get statistics about the vector index
-   */
-  stats(data: SiloStatsInput): Promise<SiloStatsResponse>;
-}
-
 export type Bindings = {
   D1_DATABASE: D1Database;
   VECTORIZE: VectorizeIndex;
@@ -60,7 +43,7 @@ export type Bindings = {
   SILO_INGEST_QUEUE: Queue<SiloSimplePutInput>; // Queue for content ingestion
   AI?: WorkersAI; // Optional to support testing environments
   CONSTELLATION?: ConstellationService; // Optional to support testing environments
-  SILO: SiloService; // Silo service binding
+  SILO: Fetcher; // Silo service binding
   VERSION?: string; // Version of the service
   ENVIRONMENT?: string; // Environment (development, staging, production)
 };

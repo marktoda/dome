@@ -89,9 +89,7 @@
       "indexes": {
         "contents_r2_key_unique": {
           "name": "contents_r2_key_unique",
-          "columns": [
-            "r2_key"
-          ],
+          "columns": ["r2_key"],
           "isUnique": true
         }
       },

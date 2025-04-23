@@ -31,10 +31,7 @@ export class MetadataService {
         version: 1,
       };
 
-      const result = await this.db
-        .insert(contents)
-        .values(normalizedData)
-        .onConflictDoNothing();
+      const result = await this.db.insert(contents).values(normalizedData).onConflictDoNothing();
 
       metrics.timing('silo.d1.insert.latency_ms', Date.now() - startTime);
       getLogger().debug({ id: data.id }, 'Content metadata inserted');
@@ -124,10 +121,10 @@ export class MetadataService {
             error:
               error instanceof Error
                 ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack,
+                  }
                 : String(error),
             ids,
             errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -145,10 +142,10 @@ export class MetadataService {
           error:
             error instanceof Error
               ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-              }
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
               : String(error),
           ids,
           errorType: error instanceof Error ? error.constructor.name : typeof error,

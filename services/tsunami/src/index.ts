@@ -12,7 +12,7 @@ import {
   AlreadyExistsError,
   NotFoundError,
 } from './services/syncPlanService';
-import { createSiloService } from './services/siloService';
+import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { syncHistoryOperations } from './db/client';
 import { ProviderType } from './providers';
 import { Bindings } from './types';
@@ -33,7 +33,7 @@ const handle = (
   });
 
 const buildServices = (env: Bindings) => ({
-  silo: createSiloService(env),
+  silo: new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE),
   syncPlan: createSyncPlanService(env),
 });
 

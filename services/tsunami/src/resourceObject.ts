@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
-import { createSiloService, SiloService } from './services/siloService';
 import { getLogger, logError, metrics } from '@dome/logging';
+import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { ProviderType, GithubProvider, Provider } from './providers';
 import { Bindings } from './types';
 import { syncHistoryOperations, syncPlanOperations } from './db/client';
@@ -33,19 +33,18 @@ const DEFAULT_CFG: Config = {
 
 export class ResourceObject extends DurableObject<Bindings> {
   protected cfg: Config = DEFAULT_CFG;
-  protected readonly silo: SiloService;
+  protected readonly silo: SiloClient;
   protected readonly log = getLogger();
 
   constructor(ctx: any, env: Bindings) {
     super(ctx, env);
-    this.silo = createSiloService(env);
-
-    // Load stored configuration (do **not** throw – an empty cfg just means un‑initialised).
-    ctx.blockConcurrencyWhile(async () => {
-      const stored = await ctx.storage.get(STORAGE_KEY);
-      this.cfg = stored ?? DEFAULT_CFG;
-      this.log.info({ resourceId: this.cfg.resourceId || '∅' }, 'resource loaded');
-    });
+    (this.silo = new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE)),
+      // Load stored configuration (do **not** throw – an empty cfg just means un‑initialised).
+      ctx.blockConcurrencyWhile(async () => {
+        const stored = await ctx.storage.get(STORAGE_KEY);
+        this.cfg = stored ?? DEFAULT_CFG;
+        this.log.info({ resourceId: this.cfg.resourceId || '∅' }, 'resource loaded');
+      });
   }
 
   /* ------------------------- public API -------------------------- */
@@ -79,7 +78,12 @@ export class ResourceObject extends DurableObject<Bindings> {
       if (newCursor) this.cfg = await this.updateCfg({ cursor: newCursor });
 
       const ids = contents.length ? await this.silo.upload(contents) : [];
-      await this.recordHistory('success', ids.length, contents.map(c => c.metadata?.path ?? 'unknown'), start);
+      await this.recordHistory(
+        'success',
+        ids.length,
+        contents.map(c => c.metadata?.path ?? 'unknown'),
+        start,
+      );
 
       metrics.increment('tsunami.sync.success');
       this.log.info({ resourceId, files: ids.length }, 'sync ok');
@@ -117,7 +121,8 @@ export class ResourceObject extends DurableObject<Bindings> {
     if (cfg.providerType === ProviderType.GITHUB) {
       if (!cfg.resourceId) throw new Error('GitHub provider requires resourceId');
       const [owner, repo] = cfg.resourceId.split('/');
-      if (!owner || !repo) throw new Error(`Invalid resourceId "${cfg.resourceId}" – use "owner/repo"`);
+      if (!owner || !repo)
+        throw new Error(`Invalid resourceId "${cfg.resourceId}" – use "owner/repo"`);
     }
   }
 

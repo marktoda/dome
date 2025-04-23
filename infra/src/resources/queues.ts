@@ -120,4 +120,3 @@ export function getQueueNames(
 
   return queueNames;
 }
-

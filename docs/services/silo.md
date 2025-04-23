@@ -17,13 +17,13 @@ Silo is a unified content storage worker designed to ingest, catalog, and serve 
 
 ### Goals and Non-Goals
 
-|                          | ✅ In Scope                                                                                         | ❌ Out of Scope                                       |
-| ------------------------ | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| **Content Storage**      | Persist content bodies (≤ 100 MiB) in R2 and metadata in D1                                         |                                                       |
-| **Content Types**        | Multiple content kinds (`note`, `code`, `article`, etc.)                                            | Fine-grained ACL (handled by Dome-Auth)               |
+|                          | ✅ In Scope                                                                                              | ❌ Out of Scope                                       |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| **Content Storage**      | Persist content bodies (≤ 100 MiB) in R2 and metadata in D1                                              |                                                       |
+| **Content Types**        | Multiple content kinds (`note`, `code`, `article`, etc.)                                                 | Fine-grained ACL (handled by Dome-Auth)               |
 | **Upload Paths**         | Small sync API (`simplePut`)<br>Signed direct-to-R2 POST (browser)<br>Async bulk via `SILO_INGEST_QUEUE` | Client-side resumable multipart UI                    |
-| **Event-driven Updates** | Notifications to Constellation (embeddings)                                                         | Legacy `EMBED_QUEUE`                                  |
-| **Content Retrieval**    | Fast batch reads for RAG (`/batchGet`)                                                              | Complex full-text search (delegated to Constellation) |
+| **Event-driven Updates** | Notifications to Constellation (embeddings)                                                              | Legacy `EMBED_QUEUE`                                  |
+| **Content Retrieval**    | Fast batch reads for RAG (`/batchGet`)                                                                   | Complex full-text search (delegated to Constellation) |
 
 ## 2. Architecture
 

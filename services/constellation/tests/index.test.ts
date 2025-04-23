@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Constellation from '../src/index';
-import { SiloEmbedJob, VectorMeta } from '@dome/common';
+import { SiloBatchGetItem, VectorMeta } from '@dome/common';
 import { getLogger } from '@dome/logging';
 
 // Define types needed for testing
@@ -132,14 +132,14 @@ describe('Constellation', () => {
   let mockEnv: Env;
 
   // Test data
-  const testJob: SiloEmbedJob = {
+  const testJob: SiloBatchGetItem = {
     userId: 'user-123',
     category: 'note',
     mimeType: 'text/markdown',
-    contentId: 'note-456',
-    text: 'This is a test note for embedding',
-    created: Date.now(),
-    version: 1,
+    id: 'note-456',
+    body: 'This is a test note for embedding',
+    createdAt: Date.now(),
+    size: 5,
   };
 
   const testFilter: Partial<VectorMeta> = {
@@ -193,7 +193,7 @@ describe('Constellation', () => {
       expect(getLogger().info).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: testJob.userId,
-          contentId: testJob.contentId,
+          contentId: testJob.id,
         }),
         expect.any(String),
       );

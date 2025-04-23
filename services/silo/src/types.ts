@@ -1,6 +1,13 @@
 /**
  * Type definitions for the Silo service
  */
+import {
+  SiloBatchGetInput,
+  SiloBatchGetResponse,
+  SiloDeleteInput,
+  SiloDeleteResponse,
+  SiloStatsResponse,
+} from '@dome/common';
 
 /**
  * R2 Event structure for object-created events
@@ -70,4 +77,14 @@ export interface DLQStats {
   pendingMessages: number;
   byQueueName: Record<string, number>;
   byErrorType: Record<string, number>;
+}
+
+/**
+ * SiloBinding interface
+ * Defines the contract for the Cloudflare Worker binding to the Silo service
+ */
+export interface SiloBinding {
+  batchGet(params: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
+  delete(params: SiloDeleteInput): Promise<SiloDeleteResponse>;
+  stats(params: {}): Promise<SiloStatsResponse>;
 }

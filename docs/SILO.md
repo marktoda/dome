@@ -10,13 +10,13 @@ Notes
 
 ## 1. Goals & Non‑Goals
 
-|                                                                                                                                  | ✅ In Scope | ❌ Out of Scope                                       |
-| -------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------------------------------------------------- |
-| **Persist content** bodies (≤ 100 MiB) in **R2** and metadata in **D1**                                                          | ✔           |                                                       |
-| **Multiple content kinds** &nbsp;(`note`, `code`, `article`, …)                                                                  | ✔           | Fine‑grained ACL (handled by Dome‑Auth)               |
+|                                                                                                                                       | ✅ In Scope | ❌ Out of Scope                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------------------------------------------------- |
+| **Persist content** bodies (≤ 100 MiB) in **R2** and metadata in **D1**                                                               | ✔           |                                                       |
+| **Multiple content kinds** &nbsp;(`note`, `code`, `article`, …)                                                                       | ✔           | Fine‑grained ACL (handled by Dome‑Auth)               |
 | **Upload paths** <br>• small sync API (`simplePut`) <br>• signed direct‑to‑R2 POST (browser) <br>• async bulk via `SILO_INGEST_QUEUE` | ✔           | Client‑side resumable multipart UI                    |
-| **Event‑driven updates** → Constellation (embeddings)                                                                            | ✔           | Legacy `EMBED_QUEUE`                                  |
-| **Fast batch reads** for RAG (`/batchGet`)                                                                                       | ✔           | Complex full‑text search (delegated to Constellation) |
+| **Event‑driven updates** → Constellation (embeddings)                                                                                 | ✔           | Legacy `EMBED_QUEUE`                                  |
+| **Fast batch reads** for RAG (`/batchGet`)                                                                                            | ✔           | Complex full‑text search (delegated to Constellation) |
 
 ---
 
@@ -93,11 +93,11 @@ vars = { LOG_LEVEL="info", VERSION="1.0.0", ENVIRONMENT="prod" }
 
 ## 5. Upload Paths
 
-| Path                    | Who calls       | Flow                                                                                                                                                                                                                                                                                         |
-| ----------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`simplePut` RPC**     | Dome‑API → Silo | 1. Auth<br>2. `DB INSERT` (optimistic)<br>3. `R2.put(key, body)` (≤ 1 MiB)<br>4. Success 200                                                                                                                                                                                                 |
+| Path                    | Who calls       | Flow                                                                                                                                                                                                                                                                                                |
+| ----------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`simplePut` RPC**     | Dome‑API → Silo | 1. Auth<br>2. `DB INSERT` (optimistic)<br>3. `R2.put(key, body)` (≤ 1 MiB)<br>4. Success 200                                                                                                                                                                                                        |
 | **Signed form (large)** | Browser         | 1. Client `POST /createUpload` → Dome‑API → Silo HTTP<br>2. Silo returns S3 policy + headers containing:<br>&nbsp;&nbsp;`x-user-id`, `x-content-type`, `x-sha256`, `key=upload/{contentId}`<br>3. Browser uploads directly to R2.<br>4. R2 emits **object-create** → `SILO_CONTENT_UPLOADED` queue. |
-| **Bulk ingest**         | INGEST_WORKER   | Publishes `IngestTask` to `SILO_INGEST_QUEUE` (existing pattern)<br>Silo provides helper RPC `bulkPutMeta` to pre‑register rows (optional speed‑up).                                                                                                                                              |
+| **Bulk ingest**         | INGEST_WORKER   | Publishes `IngestTask` to `SILO_INGEST_QUEUE` (existing pattern)<br>Silo provides helper RPC `bulkPutMeta` to pre‑register rows (optional speed‑up).                                                                                                                                                |
 
 ---
 

@@ -23,7 +23,14 @@ const DEFAULT_TOP_K = 10;
  * - Text preprocessing
  */
 export class ConstellationService {
-  private logger = getLogger();
+  private logger;
+  private env: Bindings;
+
+  constructor(env: Bindings) {
+    this.logger = getLogger();
+    this.env = env;
+    this.validateConstellationBinding(this.env.CONSTELLATION);
+  }
 
   /**
    * Query for similar embeddings using the Constellation service
@@ -35,14 +42,11 @@ export class ConstellationService {
    * @returns Promise resolving to search results
    */
   async query(
-    env: Bindings,
     text: string,
     filter?: Partial<VectorMeta>,
     topK: number = DEFAULT_TOP_K,
   ): Promise<VectorSearchResult[]> {
     try {
-      this.validateConstellationBinding(env.CONSTELLATION);
-
       this.logger.info(
         {
           text,
@@ -75,7 +79,7 @@ export class ConstellationService {
         },
         'Calling env.CONSTELLATION.query',
       );
-      const results = await env.CONSTELLATION!.query(processedText, filter, topK);
+      const results = await this.env.CONSTELLATION!.query(processedText, filter, topK);
 
       this.logger.info(
         {
@@ -111,13 +115,11 @@ export class ConstellationService {
    * @param env - Cloudflare Workers environment bindings
    * @returns Promise resolving to vector index statistics
    */
-  async getStats(env: Bindings): Promise<VectorIndexStats> {
+  async getStats(): Promise<VectorIndexStats> {
     try {
-      this.validateConstellationBinding(env.CONSTELLATION);
-
       this.logger.debug('Getting vector index statistics');
 
-      const stats = await env.CONSTELLATION!.stats();
+      const stats = await this.env.CONSTELLATION!.stats();
 
       this.logger.debug('Successfully got vector index statistics', {
         vectors: stats.vectors,
@@ -154,7 +156,6 @@ export class ConstellationService {
    * @returns Promise resolving to search results with content IDs and scores
    */
   async searchContent(
-    env: Bindings,
     query: string,
     userId: string,
     topK: number = DEFAULT_TOP_K,
@@ -172,7 +173,7 @@ export class ConstellationService {
       const filter: Partial<VectorMeta> = { userId };
       this.logger.info(filter, 'Using filter for vector search');
 
-      const results = await this.query(env, query, filter, topK);
+      const results = await this.query(query, filter, topK);
       this.logger.info(
         {
           resultCount: results.length,
@@ -267,12 +268,11 @@ export class ConstellationService {
    * @deprecated Use searchContent instead
    */
   async searchNotes(
-    env: Bindings,
     query: string,
     userId: string,
     topK: number = DEFAULT_TOP_K,
   ): Promise<Array<{ contentId: string; score: number }>> {
-    return this.searchContent(env, query, userId, topK);
+    return this.searchContent(query, userId, topK);
   }
 
   /**
@@ -313,7 +313,5 @@ export class ConstellationService {
   }
 }
 
-/**
- * Singleton instance of the constellation service
- */
-export const constellationService = new ConstellationService();
+// No longer exporting a singleton instance
+// The service factory will create and manage instances

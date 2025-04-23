@@ -2,7 +2,7 @@ import { Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { Bindings } from '../types';
-import { searchService, PaginatedSearchResults } from '../services/searchService';
+import { SearchService, PaginatedSearchResults } from '../services/searchService';
 import { trackTiming, trackOperation, incrementCounter, getMetrics } from '../utils/metrics';
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { getLogger } from '@dome/logging';
@@ -88,7 +88,13 @@ function formatSearchResponse(results: PaginatedSearchResults) {
 /* -------------------------------------------------------------------------- */
 
 export class SearchController {
-  private logger = getLogger();
+  private logger;
+  private searchService: SearchService;
+
+  constructor(searchService: SearchService) {
+    this.logger = getLogger();
+    this.searchService = searchService;
+  }
 
   /**
    * JSON search endpoint for all content types
@@ -125,7 +131,7 @@ export class SearchController {
             ? 'true'
             : 'false',
       })(async () => {
-        return await searchService.search(c.env, buildParams(userId, parsed));
+        return await this.searchService.search(c.env, buildParams(userId, parsed));
       });
 
       // Track result count
@@ -231,7 +237,7 @@ export class SearchController {
         });
 
         try {
-          const searchResults = await searchService.search(c.env, buildParams(userId, parsed));
+          const searchResults = await this.searchService.search(c.env, buildParams(userId, parsed));
 
           // Track result count
           incrementCounter('search.stream_results', searchResults.results.length, {
@@ -331,5 +337,5 @@ export class SearchController {
   }
 }
 
-// Export singleton instance
-export const searchController = new SearchController();
+// No longer exporting a singleton instance
+// The controller factory will create and manage instances

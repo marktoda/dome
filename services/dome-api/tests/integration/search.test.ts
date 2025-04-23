@@ -1,20 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { searchController } from '../../src/controllers/searchController';
-import { searchService } from '../../src/services/searchService';
-import { constellationService } from '../../src/services/constellationService';
+import { SearchController } from '../../src/controllers/searchController';
+import { SearchService } from '../../src/services/searchService';
+import { ConstellationService } from '../../src/services/constellationService';
 
 // Mock dependencies
-vi.mock('../../src/services/searchService', () => ({
-  searchService: {
-    search: vi.fn(),
-  },
-}));
+vi.mock('../../src/services/searchService', () => {
+  return {
+    SearchService: vi.fn().mockImplementation(() => {
+      return {
+        search: vi.fn(),
+      };
+    }),
+  };
+});
 
-vi.mock('../../src/services/constellationService', () => ({
-  constellationService: {
-    searchNotes: vi.fn(),
-  },
-}));
+vi.mock('../../src/services/constellationService', () => {
+  return {
+    ConstellationService: vi.fn().mockImplementation(() => {
+      return {
+        searchNotes: vi.fn(),
+      };
+    }),
+  };
+});
 
 // Mock logger
 vi.mock('@dome/logging', () => {
@@ -95,11 +103,21 @@ describe('Search API Integration Tests', () => {
     query: 'test query',
   };
 
+  // Create mock instances
+  let mockSearchService: SearchService;
+  let mockConstellationService: ConstellationService;
+  let controller: SearchController;
+
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // Create mock instances
+    mockConstellationService = new ConstellationService(null as any);
+    mockSearchService = new SearchService(mockConstellationService, null as any);
+    controller = new SearchController(mockSearchService);
+
     // Mock searchService.search
-    vi.mocked(searchService.search).mockResolvedValue(mockSearchResults);
+    vi.mocked(mockSearchService.search).mockResolvedValue(mockSearchResults);
   });
 
   afterEach(() => {
@@ -119,10 +137,10 @@ describe('Search API Integration Tests', () => {
       };
 
       // Call the search controller
-      await searchController.search(mockContext as any);
+      await controller.search(mockContext as any);
 
       // Verify the response
-      expect(searchService.search).toHaveBeenCalledWith(
+      expect(mockSearchService.search).toHaveBeenCalledWith(
         mockEnv,
         expect.objectContaining({
           userId: mockUserId,
@@ -149,7 +167,7 @@ describe('Search API Integration Tests', () => {
       };
 
       // Call the search controller
-      await searchController.search(mockContext as any);
+      await controller.search(mockContext as any);
 
       // Verify the response
       expect(mockContext.json).toHaveBeenCalledWith(
@@ -159,7 +177,7 @@ describe('Search API Integration Tests', () => {
           message: expect.stringContaining('Use at least 3 characters'),
         }),
       );
-      expect(searchService.search).not.toHaveBeenCalled();
+      expect(mockSearchService.search).not.toHaveBeenCalled();
     });
 
     it('should return 400 when query is missing', async () => {
@@ -175,7 +193,7 @@ describe('Search API Integration Tests', () => {
       };
 
       // Call the search controller
-      await searchController.search(mockContext as any);
+      await controller.search(mockContext as any);
 
       // Verify the response
       expect(mockContext.status).toHaveBeenCalledWith(400);
@@ -200,7 +218,7 @@ describe('Search API Integration Tests', () => {
       };
 
       // Call the search controller
-      await searchController.search(mockContext as any);
+      await controller.search(mockContext as any);
 
       // Verify the response
       expect(mockContext.status).toHaveBeenCalledWith(401);
@@ -225,10 +243,10 @@ describe('Search API Integration Tests', () => {
       };
 
       // Mock service error
-      vi.mocked(searchService.search).mockRejectedValue(new Error('Search service error'));
+      vi.mocked(mockSearchService.search).mockRejectedValue(new Error('Search service error'));
 
       // Call the search controller
-      await searchController.search(mockContext as any);
+      await controller.search(mockContext as any);
 
       // Verify the response
       expect(mockContext.status).toHaveBeenCalledWith(500);
@@ -255,10 +273,10 @@ describe('Search API Integration Tests', () => {
       };
 
       // Call the stream search controller
-      await searchController.streamSearch(mockContext as any);
+      await controller.streamSearch(mockContext as any);
 
       // Verify the response
-      expect(searchService.search).toHaveBeenCalledWith(
+      expect(mockSearchService.search).toHaveBeenCalledWith(
         mockEnv,
         expect.objectContaining({
           userId: mockUserId,
@@ -281,7 +299,7 @@ describe('Search API Integration Tests', () => {
       };
 
       // Call the stream search controller
-      await searchController.streamSearch(mockContext as any);
+      await controller.streamSearch(mockContext as any);
 
       // Verify the response
       expect(mockContext.status).toHaveBeenCalledWith(400);

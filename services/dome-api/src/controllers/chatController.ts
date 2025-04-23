@@ -2,7 +2,7 @@ import { Context } from 'hono';
 import { z } from 'zod';
 import { Bindings } from '../types';
 import { ServiceError, UnauthorizedError, ValidationError } from '@dome/common';
-import { chatService, ChatMessage } from '../services/chatService';
+import { ChatService, ChatMessage } from '../services/chatService';
 import { getLogger } from '@dome/logging';
 
 /**
@@ -29,6 +29,13 @@ const chatRequestSchema = z.object({
  * Controller for chat operations
  */
 export class ChatController {
+  private logger;
+  private chatService: ChatService;
+
+  constructor(chatService: ChatService) {
+    this.logger = getLogger();
+    this.chatService = chatService;
+  }
   /**
    * Process a chat request with RAG enhancement
    * @param c Hono context
@@ -95,23 +102,77 @@ export class ChatController {
 
       // If streaming is requested, use streaming response
       if (validatedData.stream) {
-        getLogger().info({ userId }, 'Starting streaming chat response');
-        const stream = await chatService.streamResponse(c.env, chatOptions);
-
-        getLogger().info({ userId }, 'Streaming response initialized');
-        return new Response(stream, {
-          headers: {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Transfer-Encoding': 'chunked',
+        getLogger().info(
+          {
+            userId,
+            messageCount: validatedData.messages.length,
+            enhanceWithContext: validatedData.enhanceWithContext,
+            maxContextItems: validatedData.maxContextItems,
+            includeSourceInfo: validatedData.includeSourceInfo,
+            suggestAddCommand: validatedData.suggestAddCommand,
+            userAgent: c.req.header('user-agent'),
+            contentType: c.req.header('content-type'),
+            acceptHeader: c.req.header('accept'),
           },
-        });
+          'Starting streaming chat response',
+        );
+
+        try {
+          const stream = await this.chatService.streamResponse(c.env, chatOptions);
+
+          getLogger().info(
+            {
+              userId,
+              streamType: typeof stream,
+              isReadableStream: stream instanceof ReadableStream,
+              hasReadableProperty: stream && typeof stream === 'object' && 'readable' in stream,
+            },
+            'Streaming response initialized',
+          );
+
+          return new Response(stream, {
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Transfer-Encoding': 'chunked',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+            },
+          });
+        } catch (streamError) {
+          getLogger().error(
+            {
+              err: streamError,
+              errorType: typeof streamError,
+              errorName: streamError instanceof Error ? streamError.name : 'Unknown',
+              errorMessage:
+                streamError instanceof Error ? streamError.message : String(streamError),
+              errorStack: streamError instanceof Error ? streamError.stack : 'No stack trace',
+              userId,
+            },
+            'Error setting up streaming response in controller',
+          );
+
+          // Return a graceful error response
+          return c.json(
+            {
+              success: false,
+              error: {
+                code: 'STREAMING_ERROR',
+                message: 'Failed to set up streaming response',
+              },
+              response:
+                "I apologize, but I'm experiencing technical difficulties with streaming. Please try again with streaming disabled.",
+            },
+            200,
+          );
+        }
       }
 
       // Otherwise, use regular response
       getLogger().info({ userId }, 'Generating chat response');
 
       try {
-        const response = await chatService.generateResponse(c.env, chatOptions);
+        const response = await this.chatService.generateResponse(c.env, chatOptions);
 
         // Ensure we have a valid response
         if (response === undefined) {
@@ -172,5 +233,5 @@ export class ChatController {
   }
 }
 
-// Export singleton instance
-export const chatController = new ChatController();
+// No longer exporting a singleton instance
+// The controller factory will create and manage instances

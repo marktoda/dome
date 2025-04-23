@@ -32,16 +32,16 @@ Implementing infrastructure as code with Pulumi will provide several key benefit
 
 The following Cloudflare resources will be managed by Pulumi:
 
-| Resource Type       | Count    | Examples                                                                                                    |
-| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
-| Workers             | 6        | dome-api, silo, constellation, ai-processor, dome-cron, dome-notify                                         |
-| D1 Databases        | 2        | dome-meta, silo                                                                                             |
-| R2 Buckets          | 2        | dome-raw, silo-content                                                                                      |
-| Vectorize Indexes   | 1        | dome-notes                                                                                                  |
+| Resource Type       | Count    | Examples                                                                                                           |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
+| Workers             | 6        | dome-api, silo, constellation, ai-processor, dome-cron, dome-notify                                                |
+| D1 Databases        | 2        | dome-meta, silo                                                                                                    |
+| R2 Buckets          | 2        | dome-raw, silo-content                                                                                             |
+| Vectorize Indexes   | 1        | dome-notes                                                                                                         |
 | Queues              | 6        | new-content-constellation, new-content-ai, silo-content-uploaded, enriched-content, dome-events, embed-dead-letter |
-| Service Bindings    | Multiple | dome-api → constellation, dome-api → silo, etc.                                                             |
-| Workers AI Bindings | Multiple | Used by dome-api, constellation, ai-processor                                                               |
-| Cron Triggers       | 1        | Used by dome-cron                                                                                           |
+| Service Bindings    | Multiple | dome-api → constellation, dome-api → silo, etc.                                                                    |
+| Workers AI Bindings | Multiple | Used by dome-api, constellation, ai-processor                                                                      |
+| Cron Triggers       | 1        | Used by dome-cron                                                                                                  |
 
 ## Implementation Roadmap
 

@@ -101,7 +101,12 @@ describe('DLQ Handling', () => {
       mockDLQService.sendToDLQ.mockRejectedValue(new Error('DLQ error'));
 
       // Call the private method using type assertion
-      await (silo as any).sendToDLQ(mockMessage, new Error('Original error'), 'silo-ingest-queue', 2);
+      await (silo as any).sendToDLQ(
+        mockMessage,
+        new Error('Original error'),
+        'silo-ingest-queue',
+        2,
+      );
 
       // Verify the message was still acknowledged to prevent infinite retries
       expect(mockMessage.ack).toHaveBeenCalled();
@@ -127,7 +132,12 @@ describe('DLQ Handling', () => {
       await silo.queue(batch);
 
       // Verify sendToDLQ was called with the validation error
-      expect(sendToDLQSpy).toHaveBeenCalledWith(mockMessage, validationError, 'silo-ingest-queue', 0);
+      expect(sendToDLQSpy).toHaveBeenCalledWith(
+        mockMessage,
+        validationError,
+        'silo-ingest-queue',
+        0,
+      );
     });
 
     it('should send validation errors to DLQ immediately for enriched-content', async () => {

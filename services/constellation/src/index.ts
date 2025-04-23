@@ -4,14 +4,15 @@ import {
   VectorMeta,
   VectorSearchResult,
   NewContentMessageSchema,
+  SiloBatchGetItem,
 } from '@dome/common';
 import { z } from 'zod';
 
-import { withLogger, getLogger, metrics } from '@dome/logging';
+import { logError, withLogger, getLogger, metrics } from '@dome/logging';
 import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
 import { createVectorizeService } from './services/vectorize';
-import { createSiloService } from './services/siloService';
+import { SiloClient, SiloBinding } from '@dome/silo/client';
 
 /* -------------------------------------------------------------------------- */
 /* helpers                                                                    */
@@ -23,7 +24,7 @@ const buildServices = (env: Env) => ({
   preprocessor: createPreprocessor(),
   embedder: createEmbedder(env.AI),
   vectorize: createVectorizeService(env.VECTORIZE),
-  silo: createSiloService(env),
+  silo: new SiloClient(env.SILO as unknown as SiloBinding),
 });
 
 const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
@@ -31,8 +32,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     try {
       return await fn();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      getLogger().error({ err }, 'Unhandled error');
+      logError(getLogger(), err, 'Unhandled error');
       throw err;
     }
   });
@@ -40,15 +40,14 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
 // Define a type for dead letter queue payloads
 type DeadLetterPayload =
   | { error: string; originalMessage: unknown }
-  | { err: string; job: SiloEmbedJob };
+  | { err: string; job: SiloBatchGetItem };
 
 const sendToDeadLetter = async (queue: DeadQueue | undefined, payload: DeadLetterPayload) => {
   if (!queue) return;
   try {
     await queue.send(payload);
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    getLogger().error({ err, payload }, 'Failed to write to dead‑letter queue');
+    logError(getLogger(), err, 'Failed to send to dead letter queue', { payload });
   }
 };
 
@@ -286,27 +285,32 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /* ----------------------- embed a batch of notes ----------------------- */
 
-  private async embedBatch(jobs: SiloEmbedJob[], deadQueue?: DeadQueue): Promise<number> {
+  private async embedBatch(jobs: SiloBatchGetItem[], deadQueue?: DeadQueue): Promise<number> {
     let processed = 0;
     const MAX_CHUNKS_PER_BATCH = 50; // Limit chunks processed at once
     const MAX_TEXT_LENGTH = 100000; // Limit text size to prevent memory issues
 
     // Process jobs one at a time to avoid memory issues
     for (const job of jobs) {
+      if (job.body === undefined) {
+        getLogger().error({ job }, 'Empty job body, implement URL downloading');
+        continue;
+      }
+
       const span = metrics.startTimer('process_job');
       try {
         const { preprocessor, embedder, vectorize } = this.services;
 
         // Truncate extremely large texts to prevent memory issues
         const truncatedText =
-          job.text.length > MAX_TEXT_LENGTH ? job.text.substring(0, MAX_TEXT_LENGTH) : job.text;
+          job.body.length > MAX_TEXT_LENGTH ? job.body.substring(0, MAX_TEXT_LENGTH) : job.body;
 
-        if (truncatedText.length < job.text.length) {
+        if (truncatedText.length < job.body.length) {
           getLogger().warn(
             {
-              originalLength: job.text.length,
+              originalLength: job.body.length,
               truncatedLength: truncatedText.length,
-              contentId: job.contentId,
+              contentId: job.id,
             },
             'Text truncated to prevent memory issues',
           );
@@ -323,7 +327,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           {
             chunks: chunks.length,
             textLength: truncatedText.length,
-            contentId: job.contentId,
+            contentId: job.id,
           },
           'preprocessed chunks',
         );
@@ -339,22 +343,22 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               batchIndex: Math.floor(i / MAX_CHUNKS_PER_BATCH) + 1,
               totalBatches: Math.ceil(chunks.length / MAX_CHUNKS_PER_BATCH),
               batchSize: batchChunks.length,
-              contentId: job.contentId,
+              contentId: job.id,
             },
             'Processing chunk batch',
           );
 
           // Generate embeddings for this batch of chunks
           const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
-            id: `content:${job.contentId}:${i + idx}`,
+            id: `content:${job.id}:${i + idx}`,
             values: v,
             metadata: <VectorMeta>{
               userId: job.userId,
-              contentId: job.contentId,
+              contentId: job.id,
               category: job.category,
               mimeType: job.mimeType,
-              createdAt: Math.floor(job.created / 1000),
-              version: job.version,
+              createdAt: Math.floor(job.createdAt / 1000),
+              version: 1,
             },
           }));
 
@@ -380,7 +384,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               upsertBatchIndex: Math.floor(i / UPSERT_BATCH_SIZE) + 1,
               totalUpsertBatches: Math.ceil(allVectors.length / UPSERT_BATCH_SIZE),
               batchSize: upsertBatch.length,
-              contentId: job.contentId,
+              contentId: job.id,
             },
             'Upserting vector batch',
           );
@@ -389,7 +393,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         getLogger().info(
           {
             vectorCount: allVectors.length,
-            contentId: job.contentId,
+            contentId: job.id,
             textLength: truncatedText.length,
           },
           'upserted vectors',
@@ -402,7 +406,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         allVectors.length = 0;
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        getLogger().error({ err, contentId: job.contentId }, 'embed failed');
+        getLogger().error({ err, contentId: job.id }, 'embed failed');
         await sendToDeadLetter(deadQueue, { err: String(err), job });
       } finally {
         span.stop();
@@ -425,24 +429,24 @@ export default class Constellation extends WorkerEntrypoint<Env> {
       async () => {
         metrics.gauge('queue.batch_size', batch.messages.length);
 
-        const embedJobs: SiloEmbedJob[] = [];
+        const embedItems: SiloBatchGetItem[] = [];
 
         for (const msg of batch.messages) {
-          const jobOrErr = await this.parseMessage(msg);
-          if (jobOrErr instanceof Error) {
+          try {
+            const item = await this.parseMessage(msg);
+            embedItems.push(item);
+          } catch (err) {
             await sendToDeadLetter(this.env.EMBED_DEAD, {
-              error: jobOrErr.message,
+              error: (err as Error).message,
               originalMessage: msg.body,
             });
-          } else {
-            embedJobs.push(jobOrErr);
           }
           msg.ack(); // always ack exactly once
         }
 
-        if (embedJobs.length) {
-          getLogger().info({ count: embedJobs.length }, 'Processing embed jobs');
-          const ok = await this.embedBatch(embedJobs, this.env.EMBED_DEAD);
+        if (embedItems.length) {
+          getLogger().info({ count: embedItems.length }, 'Processing embed jobs');
+          const ok = await this.embedBatch(embedItems, this.env.EMBED_DEAD);
           metrics.increment('queue.jobs_processed', ok);
         }
       },
@@ -450,8 +454,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   }
 
   /** Validate + convert a single queue message */
-  private async parseMessage(msg: Message<Record<string, unknown>>): Promise<SiloEmbedJob | Error> {
-    if (!msg.body) return new Error('Message body is empty');
+  private async parseMessage(msg: Message<Record<string, unknown>>): Promise<SiloBatchGetItem> {
+    if (!msg.body) throw new Error('Message body is empty');
 
     const validation = NewContentMessageSchema.safeParse(msg.body);
     if (!validation.success) {
@@ -459,25 +463,26 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         .map(i => `${i.path.join('.')}: ${i.message}`)
         .join(', ');
       getLogger().error({ issues }, 'Invalid message body');
-      return new Error(`Validation error: ${issues}`);
+      throw new Error(`Validation error: ${issues}`);
     }
 
     try {
       // At this point, we know the message body conforms to NewContentMessage schema
-      return await this.services.silo.convertToEmbedJob(validation.data);
+      return await this.services.silo.get(validation.data.id, validation.data.userId);
     } catch (err) {
-      return err instanceof Error ? err : new Error(String(err));
+      logError(getLogger(), err, 'Error fetching content from Silo');
+      throw err;
     }
   }
 
   /* ---------------------------- rpc: embed ------------------------------ */
 
-  public async embed(job: SiloEmbedJob) {
+  public async embed(job: SiloBatchGetItem) {
     await runWithLog(
       {
         service: 'constellation',
         op: 'embed',
-        content: job.contentId,
+        content: job.id,
         user: job.userId,
         ...this.env,
       },

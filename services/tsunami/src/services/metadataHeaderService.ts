@@ -24,7 +24,7 @@ const METADATA_VERSION = '1.0';
  */
 export function injectMetadataHeader(content: string, metadata: DomeMetadata): string {
   const metadataJson = JSON.stringify(metadata, null, 2);
-  
+
   return `${METADATA_START}
 ${metadataJson}
 ${METADATA_END}
@@ -47,7 +47,7 @@ export function createGitHubMetadata(
   path: string,
   updatedAt: string,
   language: string,
-  sizeBytes: number
+  sizeBytes: number,
 ): DomeMetadata {
   return {
     source: {
@@ -76,7 +76,7 @@ export function createGitHubMetadata(
  */
 export function getLanguageFromPath(path: string): string {
   const extension = path.slice(path.lastIndexOf('.')).toLowerCase();
-  
+
   const languageMap: Record<string, string> = {
     '.js': 'javascript',
     '.ts': 'typescript',
@@ -99,6 +99,6 @@ export function getLanguageFromPath(path: string): string {
     '.rs': 'rust',
     '.sh': 'shell',
   };
-  
+
   return languageMap[extension] || 'plaintext';
 }

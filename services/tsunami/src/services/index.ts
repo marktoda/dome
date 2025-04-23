@@ -7,6 +7,5 @@
  */
 
 // Export services
-export * from './siloService';
 export * from './syncPlanService';
 export * from './metadataHeaderService';

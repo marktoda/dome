@@ -14,6 +14,7 @@
     "@dome/common": "workspace:*",
     "@dome/logging": "workspace:*",
     "@dome/metrics": "workspace:*",
+    "@dome/silo": "workspace:*",
     "@graphql-tools/schema": "^10.0.2",
     "@hono/zod-validator": "^0.1.8",
     "@types/uuid": "^10.0.0",

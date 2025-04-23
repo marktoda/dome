@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, Context } from 'hono';
 import { cors } from 'hono/cors';
 import type { ServiceInfo } from '@dome/common';
 import {
@@ -8,13 +8,12 @@ import {
   createSimpleAuthMiddleware,
   formatZodError,
 } from '@dome/common';
-import { userIdMiddleware } from './middleware/userIdMiddleware';
+import { userIdMiddleware, UserIdContext } from './middleware/userIdMiddleware';
 import { initLogging, getLogger } from '@dome/logging';
 import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
-import { searchController } from './controllers/searchController';
-import { chatController } from './controllers/chatController';
-import { siloController } from './controllers/siloController';
+import { createServiceFactory } from './services/serviceFactory';
+import { createControllerFactory } from './controllers/controllerFactory';
 
 // Service information
 const serviceInfo: ServiceInfo = {
@@ -25,6 +24,10 @@ const serviceInfo: ServiceInfo = {
 
 // Create Hono app
 const app = new Hono<{ Bindings: Bindings }>();
+
+// Create service and controller factories
+const serviceFactory = createServiceFactory();
+const controllerFactory = createControllerFactory(serviceFactory);
 
 // Register middleware
 // Metrics middleware (should be first to accurately measure request timing)
@@ -121,13 +124,28 @@ const notesRouter = new Hono();
 notesRouter.use('*', userIdMiddleware);
 
 // Ingest endpoint - for adding new notes, files, etc.
-notesRouter.post('/', siloController.ingest.bind(siloController));
+notesRouter.post('/', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const siloController = controllerFactory.getSiloController(c.env);
+  return await siloController.ingest(c);
+});
 
 // CRUD operations for notes
-notesRouter.get('/:id', siloController.get.bind(siloController));
-notesRouter.put('/:id', siloController.updateNote.bind(siloController));
-notesRouter.delete('/:id', siloController.delete.bind(siloController));
-notesRouter.get('/', siloController.listNotes.bind(siloController));
+notesRouter.get('/:id', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const siloController = controllerFactory.getSiloController(c.env);
+  return await siloController.get(c);
+});
+notesRouter.put('/:id', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const siloController = controllerFactory.getSiloController(c.env);
+  return await siloController.updateNote(c);
+});
+notesRouter.delete('/:id', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const siloController = controllerFactory.getSiloController(c.env);
+  return await siloController.delete(c);
+});
+notesRouter.get('/', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const siloController = controllerFactory.getSiloController(c.env);
+  return await siloController.listNotes(c);
+});
 
 // Create a dedicated search router
 const searchRouter = new Hono();
@@ -136,11 +154,23 @@ const searchRouter = new Hono();
 searchRouter.use('*', userIdMiddleware);
 
 // Search endpoints - for semantic search over notes
-searchRouter.get('/', searchController.search.bind(searchController));
-searchRouter.get('/stream', searchController.streamSearch.bind(searchController));
+searchRouter.get('/', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const searchController = controllerFactory.getSearchController(c.env);
+  return await searchController.search(c);
+});
+searchRouter.get(
+  '/stream',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const searchController = controllerFactory.getSearchController(c.env);
+    return await searchController.streamSearch(c);
+  },
+);
 
 // Chat API route
-app.post('/chat', chatController.chat.bind(chatController));
+app.post('/chat', async (c: Context<{ Bindings: Bindings }>) => {
+  const chatController = controllerFactory.getChatController(c.env);
+  return await chatController.chat(c);
+});
 
 // Mount routers
 app.route('/notes', notesRouter);

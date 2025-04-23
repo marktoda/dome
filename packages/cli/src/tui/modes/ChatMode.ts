@@ -295,82 +295,68 @@ export class ChatMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Dome is thinking...');
       this.screen.render();
 
-      // Send message to API
-      try {
-        const apiResponse = await chat(input);
+      // Add the Dome label before we start receiving chunks
+      this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
 
-        // Display response - handle the new API response format
-        let message = '';
+      // Create a line for the streaming response
+      let currentResponseLine = '';
+      let isFirstChunk = true;
 
-        if (apiResponse === undefined) {
-          message = "Sorry, I couldn't generate a response at this time.";
-        } else if (typeof apiResponse === 'string') {
-          // If the response is already a string, use it directly
-          // Apply length limit to prevent overflow
-          message =
-            apiResponse.length > 10000
-              ? apiResponse.substring(0, 10000) + '... [response truncated due to length]'
-              : apiResponse;
-        } else if (apiResponse && apiResponse.success === false && apiResponse.error) {
-          // Handle error responses that include an error message
-          const errorMsg = apiResponse.error.message || 'Unknown error';
-          // Truncate error messages to prevent overflow
-          const truncatedError =
-            errorMsg.length > 500 ? errorMsg.substring(0, 500) + '... [error truncated]' : errorMsg;
+      // Create an AbortController for potential cancellation
+      const abortController = new AbortController();
 
-          message = apiResponse.response || `Error: ${truncatedError}`;
+      // Function to handle each chunk as it arrives
+      const handleChunk = (chunk: string) => {
+        // Append the chunk to the current response line
+        currentResponseLine += chunk;
 
-          // Add error styling
-          this.container.pushLine(`{bold}{red-fg}Error:{/red-fg}{/bold}`);
-          this.wrapText(message, containerWidth);
+        // Get the container width for wrapping
+        const containerWidth = (this.container as any).width - 4;
 
-          // Reset status and render
-          this.statusBar.setContent(
-            ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-          );
-          this.screen.render();
-          return;
-        } else if (apiResponse && apiResponse.answer) {
-          // Apply length limit to prevent overflow
-          message =
-            apiResponse.answer.length > 10000
-              ? apiResponse.answer.substring(0, 10000) + '... [response truncated due to length]'
-              : apiResponse.answer;
-        } else if (apiResponse && typeof apiResponse === 'object') {
-          try {
-            // Format and truncate JSON responses
-            const jsonString = JSON.stringify(apiResponse, null, 2);
-            message =
-              jsonString.length > 2000
-                ? jsonString.substring(0, 2000) + '... [JSON response truncated]'
-                : jsonString;
-          } catch (e) {
-            // Fallback to any available message property with truncation
-            message =
-              apiResponse.message ||
-              apiResponse.content ||
-              apiResponse.response ||
-              String(apiResponse);
-
-            if (message.length > 5000) {
-              message = message.substring(0, 5000) + '... [response truncated due to length]';
-            }
-          }
+        // Simpler approach: If this is the first chunk, we've already added the "Dome:" label
+        // For subsequent chunks, we'll clear the container and rebuild it
+        if (isFirstChunk) {
+          // For the first chunk, just add the content after the "Dome:" label
+          this.wrapText(currentResponseLine, containerWidth);
+          isFirstChunk = false;
         } else {
-          const stringResponse = String(apiResponse);
-          message =
-            stringResponse.length > 5000
-              ? stringResponse.substring(0, 5000) + '... [response truncated due to length]'
-              : stringResponse;
+          // For subsequent chunks, we need to rebuild the content
+
+          // Get all content up to the "Dome:" label
+          const content = this.container.getContent();
+          const domeIndex = content.lastIndexOf('{bold}{blue-fg}Dome:{/blue-fg}{/bold}');
+
+          if (domeIndex !== -1) {
+            // Keep everything up to and including the "Dome:" label
+            const contentBeforeDome = content.substring(
+              0,
+              domeIndex + '{bold}{blue-fg}Dome:{/blue-fg}{/bold}'.length,
+            );
+
+            // Set the content to include everything before the response
+            this.container.setContent(contentBeforeDome);
+
+            // Now add the updated response
+            this.wrapText(currentResponseLine, containerWidth);
+          } else {
+            // Fallback if we can't find the Dome label
+            this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
+            this.wrapText(currentResponseLine, containerWidth);
+          }
         }
 
-        // Add the Dome label
-        this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
+        // Ensure we scroll to the bottom and render
+        this.container.setScrollPerc(100);
+        this.screen.render();
+      };
 
-        // Use the helper function to wrap the text
-        this.wrapText(message, containerWidth);
+      try {
+        // Send message to API with streaming enabled
+        const apiResponse = await chat(input, handleChunk, {
+          abortSignal: abortController.signal,
+        });
 
-        // Display sources if available
+        // After streaming is complete, handle any sources if available
         try {
           if (
             apiResponse &&
@@ -379,10 +365,14 @@ export class ChatMode extends BaseMode {
             apiResponse.sources.length > 0
           ) {
             this.displaySources(apiResponse.sources, containerWidth);
+            this.container.setScrollPerc(100);
+            this.screen.render();
           }
         } catch (sourceError) {
           // Ignore errors when processing sources
           this.container.pushLine('{italic}(Error displaying sources){/italic}');
+          this.container.setScrollPerc(100);
+          this.screen.render();
         }
       } catch (chatError) {
         // Handle any exceptions during the chat API call
@@ -397,9 +387,10 @@ export class ChatMode extends BaseMode {
           `I encountered an error while processing your request: ${truncatedError}`,
           containerWidth,
         );
-      }
 
-      this.container.setScrollPerc(100);
+        this.container.setScrollPerc(100);
+        this.screen.render();
+      }
 
       // Reset status
       this.statusBar.setContent(

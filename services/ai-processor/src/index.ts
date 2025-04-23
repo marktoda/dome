@@ -1,13 +1,12 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { withLogger, getLogger, metrics } from '@dome/logging';
+import { withLogger, logError, getLogger, metrics } from '@dome/logging';
 import { createLlmService } from './services/llmService';
-import { createSiloService } from './services/siloService';
-import { SiloBinding } from './types';
 import { EnrichedContentMessage, NewContentMessage } from '@dome/common';
+import { SiloClient, SiloBinding } from '@dome/silo/client';
 
 const buildServices = (env: Env) => ({
   llm: createLlmService(env),
-  silo: createSiloService(env),
+  silo: new SiloClient(env.SILO as unknown as SiloBinding),
 });
 
 const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
@@ -15,8 +14,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     try {
       return await fn();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      getLogger().error({ err }, 'Unhandled error');
+      logError(getLogger(), err, 'Unhandled error');
       throw err;
     }
   });
@@ -126,16 +124,16 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
       getLogger().info({ id, userId, contentType }, 'Processing content');
 
       // Fetch content from Silo
-      const content = await this.services.silo.fetchContent(id, userId);
+      const { body } = await this.services.silo.get(id, userId);
 
       // Skip empty content
-      if (!content || content.trim().length === 0) {
+      if (!body || body.trim().length === 0) {
         getLogger().info({ id, userId }, 'Skipping empty content');
         return;
       }
 
       // Process with LLM
-      const metadata = await this.services.llm.processContent(content, contentType);
+      const metadata = await this.services.llm.processContent(body, contentType);
 
       // Publish to ENRICHED_CONTENT queue
       const enrichedMessage: EnrichedContentMessage = {

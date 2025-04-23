@@ -2,7 +2,7 @@ import { Context } from 'hono';
 import type { Bindings } from '../types';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { siloService } from '../services/siloService';
+import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { getLogger } from '@dome/logging';
 import {
@@ -44,48 +44,12 @@ const listNotesSchema = z.object({
  * Handles all note operations using the siloService
  */
 export class SiloController {
-  private logger = getLogger();
+  private logger;
+  private silo: SiloClient;
 
-  /**
-   * POST /notes
-   * Proxy to Silo.simplePut
-   */
-  async simplePut(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
-    try {
-      const userId = c.get('userId');
-      const body = await c.req.json();
-      const data = siloSimplePutSchema.parse(body);
-      const result = await siloService.simplePut(c.env, {
-        ...data,
-        userId,
-      });
-      return c.json({ success: true, id: result.id }, 201);
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          path: c.req.path,
-          method: c.req.method,
-        },
-        'Error in simplePut controller',
-      );
-
-      if (error instanceof z.ZodError) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request data',
-              details: error.errors,
-            },
-          },
-          400,
-        );
-      }
-
-      throw error;
-    }
+  constructor(env: Bindings) {
+    this.logger = getLogger();
+    this.silo = new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE);
   }
 
   /**
@@ -106,7 +70,7 @@ export class SiloController {
         'Get note request received',
       );
 
-      const note = await siloService.batchGet(c.env, { ids: [id], userId });
+      const note = this.silo.get(id, userId);
 
       if (!note) {
         return c.json(
@@ -168,7 +132,7 @@ export class SiloController {
       const validatedParams = listNotesSchema.parse(c.req.query());
 
       // Call the siloService to list notes
-      const result = await siloService.batchGet(c.env, Object.assign({ userId }, validatedParams));
+      const result = await this.silo.batchGet(Object.assign({ userId }, validatedParams));
 
       return c.json({
         success: true,
@@ -225,7 +189,7 @@ export class SiloController {
         );
       }
 
-      const notes = await siloService.batchGet(c.env, { ids, userId });
+      const notes = await this.silo.batchGet({ ids, userId });
 
       return c.json({
         success: true,
@@ -278,7 +242,7 @@ export class SiloController {
       };
 
       // Send the message to the ingest queue
-      await c.env.SILO_INGEST_QUEUE.send(message);
+      await this.silo.uploadSingle(message);
 
       this.logger.info({ userId, category: message.category }, 'Content sent to ingest queue');
 
@@ -338,7 +302,7 @@ export class SiloController {
       );
 
       // Get the existing note
-      const existingNote = await siloService.get(c.env, { id: noteId, userId });
+      const existingNote = await this.silo.get(noteId, userId);
 
       // Validate request body
       const body = await c.req.json();
@@ -352,7 +316,8 @@ export class SiloController {
       };
 
       // Update the note via siloService
-      await siloService.simplePut(c.env, {
+      // Send directly to the ingest queue
+      await this.silo.uploadSingle({
         id: noteId,
         content: updatedNote.body || '',
         category: (updatedNote.category || 'note') as ContentCategory,
@@ -361,9 +326,8 @@ export class SiloController {
       });
 
       // Get the updated note
-      const note = await siloService.get(c.env, { id: noteId, userId });
+      const note = await this.silo.get(noteId, userId);
 
-      // Return the updated note
       return c.json({
         success: true,
         note,
@@ -414,7 +378,7 @@ export class SiloController {
         'Delete note request received',
       );
 
-      await siloService.delete(c.env, { id, userId });
+      this.silo.delete({ id, userId });
       return c.json({ success: true });
     } catch (error) {
       this.logger.error(
@@ -444,5 +408,3 @@ export class SiloController {
     }
   }
 }
-
-export const siloController = new SiloController();

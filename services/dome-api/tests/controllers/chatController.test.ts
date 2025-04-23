@@ -1,16 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chatController } from '../../src/controllers/chatController';
-import { chatService } from '../../src/services/chatService';
+import { ChatController } from '../../src/controllers/chatController';
+import { ChatService } from '../../src/services/chatService';
 import { ServiceError, UnauthorizedError, ValidationError } from '@dome/common';
 import { z } from 'zod';
 
 // Mock dependencies
-vi.mock('../../src/services/chatService', () => ({
-  chatService: {
-    generateResponse: vi.fn(),
-    streamResponse: vi.fn(),
-  },
-}));
+vi.mock('../../src/services/chatService', () => {
+  return {
+    ChatService: vi.fn().mockImplementation(() => {
+      return {
+        generateResponse: vi.fn(),
+        streamResponse: vi.fn(),
+      };
+    }),
+  };
+});
 
 // Mock logger
 vi.mock('@dome/logging', () => ({
@@ -72,8 +76,14 @@ describe('ChatController', () => {
     };
   };
 
+  // Create mock instances
+  let mockChatService: ChatService;
+  let controller: ChatController;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockChatService = new ChatService(null as any);
+    controller = new ChatController(mockChatService);
   });
 
   afterEach(() => {
@@ -96,13 +106,13 @@ describe('ChatController', () => {
       });
 
       const mockResponse = 'I am doing well, thank you for asking!';
-      vi.mocked(chatService.generateResponse).mockResolvedValue(mockResponse);
+      vi.mocked(mockChatService.generateResponse).mockResolvedValue(mockResponse);
 
       // Act
-      const response = await chatController.chat(mockContext as any);
+      const response = await controller.chat(mockContext as any);
 
       // Assert
-      expect(chatService.generateResponse).toHaveBeenCalledWith(
+      expect(mockChatService.generateResponse).toHaveBeenCalledWith(
         mockEnv,
         expect.objectContaining({
           userId: mockUserId,
@@ -132,13 +142,13 @@ describe('ChatController', () => {
       });
 
       const mockStream = new ReadableStream();
-      vi.mocked(chatService.streamResponse).mockResolvedValue(mockStream);
+      vi.mocked(mockChatService.streamResponse).mockResolvedValue(mockStream);
 
       // Act
-      const response = await chatController.chat(mockContext as any);
+      const response = await controller.chat(mockContext as any);
 
       // Assert
-      expect(chatService.streamResponse).toHaveBeenCalledWith(
+      expect(mockChatService.streamResponse).toHaveBeenCalledWith(
         mockEnv,
         expect.objectContaining({
           userId: mockUserId,
@@ -167,7 +177,7 @@ describe('ChatController', () => {
       });
 
       // Act & Assert
-      await expect(chatController.chat(mockContext as any)).rejects.toThrow(UnauthorizedError);
+      await expect(controller.chat(mockContext as any)).rejects.toThrow(UnauthorizedError);
     });
 
     it('should handle validation errors', async () => {
@@ -199,7 +209,7 @@ describe('ChatController', () => {
 
       // Act
       try {
-        await chatController.chat(mockContext as any);
+        await controller.chat(mockContext as any);
         // If we get here, the test should fail
         expect(true).toBe(false);
       } catch (error) {
@@ -225,11 +235,11 @@ describe('ChatController', () => {
         code: 'CHAT_ERROR',
         status: 503,
       });
-      vi.mocked(chatService.generateResponse).mockRejectedValue(serviceError);
+      vi.mocked(mockChatService.generateResponse).mockRejectedValue(serviceError);
 
       // Act
       try {
-        await chatController.chat(mockContext as any);
+        await controller.chat(mockContext as any);
         // If we get here, the test should fail
         expect(true).toBe(false);
       } catch (error) {
@@ -257,7 +267,7 @@ describe('ChatController', () => {
 
       // Act
       try {
-        await chatController.chat(mockContext as any);
+        await controller.chat(mockContext as any);
         // If we get here, the test should fail
         expect(true).toBe(false);
       } catch (error) {

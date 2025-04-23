@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chatController } from '../../src/controllers/chatController';
-import { chatService } from '../../src/services/chatService';
+import { ChatController } from '../../src/controllers/chatController';
+import { ChatService } from '../../src/services/chatService';
 
 // Mock dependencies
-vi.mock('../../src/services/chatService', () => ({
-  chatService: {
-    generateResponse: vi.fn(),
-    streamResponse: vi.fn(),
-  },
-}));
+vi.mock('../../src/services/chatService', () => {
+  return {
+    ChatService: vi.fn().mockImplementation(() => {
+      return {
+        generateResponse: vi.fn(),
+        streamResponse: vi.fn(),
+      };
+    }),
+  };
+});
 
 // Mock logger
 vi.mock('@dome/logging', () => {
@@ -57,11 +61,19 @@ describe('Chat API Integration Tests', () => {
   // Mock user ID
   const mockUserId = 'user-123';
 
+  // Create mock instances
+  let mockChatService: ChatService;
+  let controller: ChatController;
+
   beforeEach(() => {
     vi.clearAllMocks();
 
+    // Create mock instances
+    mockChatService = new ChatService(null as any);
+    controller = new ChatController(mockChatService);
+
     // Mock chatService.generateResponse
-    vi.mocked(chatService.generateResponse).mockResolvedValue('This is a test response');
+    vi.mocked(mockChatService.generateResponse).mockResolvedValue('This is a test response');
 
     // Mock chatService.streamResponse
     const mockStream = new ReadableStream({
@@ -70,7 +82,7 @@ describe('Chat API Integration Tests', () => {
         controller.close();
       },
     });
-    vi.mocked(chatService.streamResponse).mockResolvedValue(mockStream);
+    vi.mocked(mockChatService.streamResponse).mockResolvedValue(mockStream);
   });
 
   afterEach(() => {
@@ -95,10 +107,10 @@ describe('Chat API Integration Tests', () => {
       };
 
       // Call the chat controller
-      await chatController.chat(mockContext as any);
+      await controller.chat(mockContext as any);
 
       // Verify the response
-      expect(chatService.generateResponse).toHaveBeenCalledWith(
+      expect(mockChatService.generateResponse).toHaveBeenCalledWith(
         mockEnv,
         expect.objectContaining({
           userId: mockUserId,
@@ -129,10 +141,10 @@ describe('Chat API Integration Tests', () => {
       };
 
       // Call the chat controller
-      await chatController.chat(mockContext as any);
+      await controller.chat(mockContext as any);
 
       // Verify the response
-      expect(chatService.streamResponse).toHaveBeenCalledWith(
+      expect(mockChatService.streamResponse).toHaveBeenCalledWith(
         mockEnv,
         expect.objectContaining({
           userId: mockUserId,
@@ -161,7 +173,7 @@ describe('Chat API Integration Tests', () => {
       };
 
       // Call the chat controller
-      await chatController.chat(mockContext as any);
+      await controller.chat(mockContext as any);
 
       // Verify the response
       expect(mockContext.status).toHaveBeenCalledWith(401);
@@ -190,7 +202,7 @@ describe('Chat API Integration Tests', () => {
       };
 
       // Call the chat controller
-      await chatController.chat(mockContext as any);
+      await controller.chat(mockContext as any);
 
       // Verify the response
       expect(mockContext.status).toHaveBeenCalledWith(400);
@@ -222,7 +234,7 @@ describe('Chat API Integration Tests', () => {
       };
 
       // Call the chat controller
-      await chatController.chat(mockContext as any);
+      await controller.chat(mockContext as any);
 
       // Verify the response
       expect(mockContext.status).toHaveBeenCalledWith(400);
@@ -251,10 +263,12 @@ describe('Chat API Integration Tests', () => {
       };
 
       // Mock service error
-      vi.mocked(chatService.generateResponse).mockRejectedValue(new Error('Chat service error'));
+      vi.mocked(mockChatService.generateResponse).mockRejectedValue(
+        new Error('Chat service error'),
+      );
 
       // Call the chat controller
-      await chatController.chat(mockContext as any);
+      await controller.chat(mockContext as any);
 
       // Verify the response
       expect(mockContext.status).toHaveBeenCalledWith(500);

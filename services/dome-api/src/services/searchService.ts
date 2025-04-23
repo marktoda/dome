@@ -1,11 +1,11 @@
 import { Bindings } from '../types';
 import { ServiceError } from '@dome/common';
 import { getLogger } from '@dome/logging';
-import { constellationService } from './constellationService';
-import { siloService } from './siloService';
+import { ConstellationService } from './constellationService';
+import { SiloClient } from '@dome/silo/client';
 
 /**
- * Search options interface
+ * Search options interf siloServiceace
  */
 export interface SearchOptions {
   userId: string;
@@ -55,14 +55,19 @@ export interface PaginatedSearchResults {
  * - Result transformation and pagination
  */
 export class SearchService {
-  private logger = getLogger();
+  private logger;
   private cache: Map<string, PaginatedSearchResults>;
   private cacheTTL: number = 5 * 60 * 1000; // 5 minutes
   private cacheTimestamps: Map<string, number>;
+  private constellationService: ConstellationService;
+  private silo: SiloClient;
 
-  constructor() {
+  constructor(constellationService: ConstellationService, siloClient: SiloClient) {
+    this.logger = getLogger();
     this.cache = new Map();
     this.cacheTimestamps = new Map();
+    this.constellationService = constellationService;
+    this.silo = siloClient;
   }
 
   /**
@@ -111,8 +116,7 @@ export class SearchService {
       }
 
       // Perform semantic search using Constellation
-      const searchResults = await constellationService.searchContent(
-        env,
+      const searchResults = await this.constellationService.searchContent(
         query,
         userId,
         limit * 2, // Fetch more results to account for filtering
@@ -181,7 +185,8 @@ export class SearchService {
         },
         'Calling siloService.batchGet',
       );
-      const contents = await siloService.batchGet(env, { ids: contentIds, userId });
+
+      const contents = await this.silo.batchGet({ ids: contentIds, userId });
       this.logger.info(
         {
           contentsCount: contents.items.length,
@@ -199,7 +204,7 @@ export class SearchService {
 
       // Filter and transform results
       let filteredResults = contents.items
-        .filter(note => {
+        .filter((note: any) => {
           // Skip notes with missing required fields
           if (!note.id || !note.category) {
             return false;
@@ -227,7 +232,7 @@ export class SearchService {
 
           return true;
         })
-        .map(note => {
+        .map((note: any) => {
           // Ensure all required fields are present
           if (!note.id || !note.category) {
             throw new Error('Note is missing required fields');
@@ -246,7 +251,7 @@ export class SearchService {
             score: scoreMap.get(note.id) || 0,
           } as SearchResult;
         })
-        .sort((a, b) => b.score - a.score);
+        .sort((a: SearchResult, b: SearchResult) => b.score - a.score);
 
       // Apply pagination
       const total = filteredResults.length;
@@ -388,7 +393,5 @@ export class SearchService {
   }
 }
 
-/**
- * Singleton instance of the search service
- */
-export const searchService = new SearchService();
+// No longer exporting a singleton instance
+// The service factory will create and manage instances

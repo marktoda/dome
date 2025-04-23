@@ -1,5 +1,5 @@
 import { Bindings } from '../types';
-import { searchService, SearchResult } from './searchService';
+import { SearchService, SearchResult } from './searchService';
 import { ServiceError } from '@dome/common';
 import { getLogger } from '@dome/logging';
 
@@ -38,6 +38,14 @@ export class ChatService {
   private readonly RESPONSE_TOKEN_RESERVE = 2000;
   // Maximum system prompt size in tokens
   private readonly MAX_SYSTEM_PROMPT_TOKENS = this.MAX_CONTEXT_WINDOW - this.RESPONSE_TOKEN_RESERVE;
+
+  private logger;
+  private searchService: SearchService;
+
+  constructor(searchService: SearchService) {
+    this.logger = getLogger();
+    this.searchService = searchService;
+  }
 
   /**
    * Estimate the number of tokens in a text
@@ -228,100 +236,47 @@ export class ChatService {
       const writer = writable.getWriter();
 
       // Start generating the response in the background
-      (async () => {
-        try {
-          // Check if AI binding is available
-          if (!env.AI) {
-            // In test environment, create a mock stream
-            if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
-              const mockResponses = [
-                'This ',
-                'is ',
-                'a ',
-                'mock ',
-                'streaming ',
-                'response ',
-                'for ',
-                'testing ',
-                'purposes.',
-              ];
-              for (const text of mockResponses) {
-                await writer.write(new TextEncoder().encode(text));
-                // Add a small delay to simulate streaming
-                await new Promise(resolve => setTimeout(resolve, 10));
-              }
-              await writer.close();
-              return;
-            }
-
-            // Provide a fallback response instead of throwing
-            getLogger().warn('Workers AI binding is not available, using fallback response');
-            const fallbackResponse =
-              "I'm sorry, but I'm unable to process your request at the moment due to a technical issue. The AI service is currently unavailable. Please try again later.";
-            await writer.write(new TextEncoder().encode(fallbackResponse));
-            await writer.close();
-            return;
-          }
-
-          // Set up a timeout for the AI request
-          const timeoutId = setTimeout(async () => {
-            getLogger().warn('AI streaming request timed out');
-            await writer.write(
-              new TextEncoder().encode(
-                "I'm sorry, but the request is taking too long to process. Please try again later.",
-              ),
-            );
-            await writer.close();
-          }, 15000); // 15 second timeout
-
-          try {
-            // Call Workers AI with streaming
-            getLogger().info({ model: this.MODEL_NAME }, 'Calling Workers AI with streaming');
-            const response = await env.AI.run(this.MODEL_NAME, {
-              messages: promptMessages,
-              stream: true,
-            });
-
-            // Clear the timeout since we got a response
-            clearTimeout(timeoutId);
-
-            // Stream each chunk as it becomes available
-            for await (const chunk of response) {
-              const text = chunk.response;
-              if (text) {
-                await writer.write(new TextEncoder().encode(text));
-              }
-            }
-
-            // Close the stream
-            await writer.close();
-          } catch (aiError) {
-            // Clear the timeout
-            clearTimeout(timeoutId);
-
-            // Handle AI-specific errors
-            getLogger().error({ err: aiError }, 'Error from AI streaming service');
-            await writer.write(
-              new TextEncoder().encode(
-                "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.",
-              ),
-            );
-            await writer.close();
-          }
-        } catch (error) {
-          getLogger().error({ err: error }, 'Error in stream chat');
-
-          // Provide a user-friendly error message
-          const errorMessage =
-            "I apologize, but I'm experiencing technical difficulties. Please try again later.";
-          await writer.write(new TextEncoder().encode(errorMessage));
-          await writer.close();
-        }
-      })();
+      this.generateStreamingResponse(env, promptMessages, writer);
 
       return readable;
-    } catch (error) {
-      getLogger().error({ err: error }, 'Error setting up streaming chat response');
+    } catch (error: unknown) {
+      // Enhanced error logging with more context
+      getLogger().error(
+        {
+          err: error,
+          errorType: typeof error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : 'No stack trace',
+          errorName: error instanceof Error ? error.name : 'Unknown',
+          // Include context about the request
+          userId: options.userId,
+          messageCount: options.messages.length,
+          enhanceWithContext: options.enhanceWithContext,
+          // Try to capture all error properties
+          errorJSON: (() => {
+            try {
+              return JSON.stringify(
+                error,
+                Object.getOwnPropertyNames(error instanceof Error ? error : {}),
+              );
+            } catch (e) {
+              return `Failed to stringify error: ${e instanceof Error ? e.message : String(e)}`;
+            }
+          })(),
+          // Include all enumerable properties
+          errorProps: (() => {
+            try {
+              if (typeof error === 'object' && error !== null) {
+                return Object.keys(error);
+              }
+              return [];
+            } catch (e) {
+              return [`Error getting properties: ${String(e)}`];
+            }
+          })(),
+        },
+        'Error setting up streaming chat response',
+      );
 
       // Create a stream with an error message instead of throwing
       const { readable, writable } = new TransformStream();
@@ -340,6 +295,373 @@ export class ChatService {
   }
 
   /**
+   * Generate a streaming response
+   * @param env Environment bindings
+   * @param promptMessages Array of messages to send to the AI
+   * @param writer Writer to write the response to
+   */
+  private generateStreamingResponse(
+    env: Bindings,
+    promptMessages: ChatMessage[],
+    writer: WritableStreamDefaultWriter<Uint8Array>,
+  ): void {
+    // Execute in an async IIFE to allow for proper error handling
+    (async () => {
+      try {
+        // Check if AI binding is available
+        if (!env.AI) {
+          // In test environment, create a mock stream
+          if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+            const mockResponses = [
+              'This ',
+              'is ',
+              'a ',
+              'mock ',
+              'streaming ',
+              'response ',
+              'for ',
+              'testing ',
+              'purposes.',
+            ];
+            for (const text of mockResponses) {
+              await writer.write(new TextEncoder().encode(text));
+              // Add a small delay to simulate streaming
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            await writer.close();
+            return;
+          }
+
+          // Provide a fallback response instead of throwing
+          getLogger().warn('Workers AI binding is not available, using fallback response');
+          const fallbackResponse =
+            "I'm sorry, but I'm unable to process your request at the moment due to a technical issue. The AI service is currently unavailable. Please try again later.";
+          await writer.write(new TextEncoder().encode(fallbackResponse));
+          await writer.close();
+          return;
+        }
+
+        // Set up a timeout for the AI request
+        const timeoutId = setTimeout(async () => {
+          getLogger().warn('AI streaming request timed out');
+          await writer.write(
+            new TextEncoder().encode(
+              "I'm sorry, but the request is taking too long to process. Please try again later.",
+            ),
+          );
+          await writer.close();
+        }, 15000); // 15 second timeout
+
+        try {
+          // Call Workers AI with streaming
+          getLogger().info(
+            {
+              model: this.MODEL_NAME,
+              messageCount: promptMessages.length,
+              systemPromptLength: promptMessages[0]?.content?.length || 0,
+              lastUserMessageLength:
+                promptMessages[promptMessages.length - 1]?.content?.length || 0,
+            },
+            'Calling Workers AI with streaming',
+          );
+
+          // Log the request details
+          getLogger().debug(
+            {
+              model: this.MODEL_NAME,
+              stream: true,
+              messagesPreview: promptMessages.map(m => ({
+                role: m.role,
+                contentLength: m.content.length,
+                contentPreview: m.content.substring(0, 100) + (m.content.length > 100 ? '...' : ''),
+              })),
+            },
+            'AI streaming request details',
+          );
+
+          const response = await env.AI.run(this.MODEL_NAME, {
+            messages: promptMessages,
+            stream: true,
+          });
+
+          // Clear the timeout since we got a response
+          clearTimeout(timeoutId);
+          getLogger().info('Received streaming response from AI service');
+
+          // Stream each chunk as it becomes available
+          let chunkCount = 0;
+          let totalCharsStreamed = 0;
+
+          try {
+            for await (const chunk of response) {
+              chunkCount++;
+              const text = chunk.response;
+
+              if (text) {
+                totalCharsStreamed += text.length;
+                if (chunkCount % 10 === 0 || chunkCount === 1) {
+                  getLogger().debug(
+                    {
+                      chunkNumber: chunkCount,
+                      chunkSize: text.length,
+                      totalStreamed: totalCharsStreamed,
+                      chunkPreview: text.substring(0, 20) + (text.length > 20 ? '...' : ''),
+                    },
+                    'Streaming chunk received',
+                  );
+                }
+                await writer.write(new TextEncoder().encode(text));
+              } else {
+                getLogger().warn(
+                  { chunkNumber: chunkCount },
+                  'Received empty chunk from AI service',
+                );
+              }
+            }
+
+            getLogger().info(
+              {
+                totalChunks: chunkCount,
+                totalCharsStreamed: totalCharsStreamed,
+              },
+              'Completed streaming response',
+            );
+
+            // Close the stream
+            await writer.close();
+          } catch (streamingError: unknown) {
+            getLogger().error(
+              {
+                err: streamingError,
+                errorName: streamingError instanceof Error ? streamingError.name : 'Unknown',
+                errorMessage:
+                  streamingError instanceof Error ? streamingError.message : String(streamingError),
+                errorStack:
+                  streamingError instanceof Error ? streamingError.stack : 'No stack trace',
+                chunkCount: chunkCount,
+                totalCharsStreamed: totalCharsStreamed,
+              },
+              'Error while processing streaming chunks',
+            );
+            throw streamingError; // Re-throw to be caught by the outer catch
+          }
+        } catch (aiError: unknown) {
+          // Clear the timeout
+          clearTimeout(timeoutId);
+
+          // Log detailed information about the error context
+          getLogger().error(
+            {
+              // Request context
+              model: this.MODEL_NAME,
+              messageCount: promptMessages.length,
+              systemPromptLength: promptMessages[0]?.content?.length || 0,
+              lastUserMessageLength:
+                promptMessages[promptMessages.length - 1]?.content?.length || 0,
+              requestHasStream: true,
+
+              // Basic error info
+              err: aiError,
+              errorType: typeof aiError,
+              errorName: aiError instanceof Error ? aiError.name : 'Unknown',
+              errorMessage: aiError instanceof Error ? aiError.message : String(aiError),
+              errorStack: aiError instanceof Error ? aiError.stack : 'No stack trace',
+
+              // Attempt to stringify the entire error object with all properties
+              errorJSON: (() => {
+                try {
+                  return JSON.stringify(
+                    aiError,
+                    Object.getOwnPropertyNames(aiError instanceof Error ? aiError : {}),
+                  );
+                } catch (e) {
+                  return `Failed to stringify error: ${e instanceof Error ? e.message : String(e)}`;
+                }
+              })(),
+
+              // Include all enumerable properties
+              errorProps: (() => {
+                try {
+                  if (typeof aiError === 'object' && aiError !== null) {
+                    return Object.keys(aiError);
+                  }
+                  return [];
+                } catch (e) {
+                  return [`Error getting properties: ${String(e)}`];
+                }
+              })(),
+            },
+            'Error from AI streaming service',
+          );
+
+          // Try to extract more information if it's a Response object
+          if (aiError instanceof Response) {
+            try {
+              // Log response metadata
+              getLogger().error(
+                {
+                  status: aiError.status,
+                  statusText: aiError.statusText,
+                  headers: JSON.stringify([...aiError.headers.entries()]),
+                  responseType: aiError.type,
+                  responseUrl: aiError.url,
+                  responseRedirected: aiError.redirected,
+                  responseOk: aiError.ok,
+                },
+                'AI streaming error response details',
+              );
+
+              // Try to get the response body
+              const errorBody = await aiError.text();
+              getLogger().error(
+                {
+                  errorBody,
+                  errorBodyLength: errorBody.length,
+                  errorBodyPreview:
+                    errorBody.substring(0, 500) + (errorBody.length > 500 ? '...' : ''),
+                },
+                'AI streaming error response body',
+              );
+
+              // Try to parse as JSON if it looks like JSON
+              if (errorBody.trim().startsWith('{') || errorBody.trim().startsWith('[')) {
+                try {
+                  const jsonData = JSON.parse(errorBody);
+                  getLogger().error({ jsonData }, 'AI streaming error response JSON');
+                } catch (jsonError) {
+                  getLogger().error(
+                    { err: jsonError, bodyStart: errorBody.substring(0, 100) },
+                    'Failed to parse error body as JSON',
+                  );
+                }
+              }
+            } catch (responseError) {
+              getLogger().error(
+                {
+                  err: responseError,
+                  errorType: typeof responseError,
+                  errorMessage:
+                    responseError instanceof Error ? responseError.message : String(responseError),
+                  errorStack:
+                    responseError instanceof Error ? responseError.stack : 'No stack trace',
+                },
+                'Failed to extract details from error response',
+              );
+            }
+          } else if (typeof aiError === 'object' && aiError !== null && 'status' in aiError) {
+            // Handle error objects with status property (like fetch Response)
+            const errorObj = aiError as {
+              status?: number;
+              statusText?: string;
+              headers?: any;
+              text?: () => Promise<string>;
+              body?: any;
+              type?: string;
+              url?: string;
+              ok?: boolean;
+            };
+
+            try {
+              // Log all available properties
+              getLogger().error(
+                {
+                  status: errorObj.status,
+                  statusText: errorObj.statusText,
+                  headers: errorObj.headers ? JSON.stringify(errorObj.headers) : 'No headers',
+                  hasTextMethod: typeof errorObj.text === 'function',
+                  hasBodyProperty: 'body' in errorObj,
+                  responseType: errorObj.type,
+                  responseUrl: errorObj.url,
+                  responseOk: errorObj.ok,
+                  allProperties: Object.keys(errorObj),
+                },
+                'AI streaming error object details',
+              );
+
+              // Try to get the response body if text method exists
+              if (typeof errorObj.text === 'function') {
+                const errorBody = await errorObj.text();
+                getLogger().error(
+                  {
+                    errorBody,
+                    errorBodyLength: errorBody.length,
+                    errorBodyPreview:
+                      errorBody.substring(0, 500) + (errorBody.length > 500 ? '...' : ''),
+                  },
+                  'AI streaming error object body',
+                );
+
+                // Try to parse as JSON if it looks like JSON
+                if (errorBody.trim().startsWith('{') || errorBody.trim().startsWith('[')) {
+                  try {
+                    const jsonData = JSON.parse(errorBody);
+                    getLogger().error({ jsonData }, 'AI streaming error body JSON');
+                  } catch (jsonError) {
+                    getLogger().error(
+                      { err: jsonError, bodyStart: errorBody.substring(0, 100) },
+                      'Failed to parse error body as JSON',
+                    );
+                  }
+                }
+              }
+
+              // If there's a body property, try to log it
+              if (errorObj.body) {
+                getLogger().error(
+                  {
+                    bodyType: typeof errorObj.body,
+                    bodyIsReadable:
+                      errorObj.body &&
+                      typeof errorObj.body === 'object' &&
+                      'readable' in errorObj.body,
+                    bodyProperties:
+                      typeof errorObj.body === 'object' ? Object.keys(errorObj.body) : [],
+                  },
+                  'AI streaming error body property',
+                );
+              }
+            } catch (responseError) {
+              getLogger().error(
+                {
+                  err: responseError,
+                  errorType: typeof responseError,
+                  errorMessage:
+                    responseError instanceof Error ? responseError.message : String(responseError),
+                  errorStack:
+                    responseError instanceof Error ? responseError.stack : 'No stack trace',
+                },
+                'Failed to extract details from error object',
+              );
+            }
+          }
+
+          await writer.write(
+            new TextEncoder().encode(
+              "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.",
+            ),
+          );
+          await writer.close();
+        }
+      } catch (error: unknown) {
+        getLogger().error(
+          {
+            err: error,
+            errorType: typeof error,
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          'Error in stream chat',
+        );
+
+        // Provide a user-friendly error message
+        const errorMessage =
+          "I apologize, but I'm experiencing technical difficulties. Please try again later.";
+        await writer.write(new TextEncoder().encode(errorMessage));
+        await writer.close();
+      }
+    })();
+  }
+
+  /**
    * Retrieve context for RAG enhancement
    * @param env Environment bindings
    * @param userId User ID
@@ -355,7 +677,7 @@ export class ChatService {
   ): Promise<SearchResult[]> {
     try {
       // Search for relevant notes
-      const searchResults = await searchService.search(env, {
+      const searchResults = await this.searchService.search(env, {
         userId,
         query,
         limit: maxItems,
@@ -415,5 +737,5 @@ export class ChatService {
   }
 }
 
-// Export singleton instance
-export const chatService = new ChatService();
+// No longer exporting a singleton instance
+// The service factory will create and manage instances
