@@ -20,7 +20,7 @@ export interface EmbedderConfig {
  * Default configuration values
  */
 export const DEFAULT_EMBEDDER_CONFIG: EmbedderConfig = {
-  model: '@cf/baai/bge-small-en-v1.5',
+  model: '@cf/baai/bge-large-en-v1.5',
   maxBatchSize: 10, // Reduced from 20 to prevent memory issues
   retryAttempts: 3,
   retryDelay: 1000, // ms
