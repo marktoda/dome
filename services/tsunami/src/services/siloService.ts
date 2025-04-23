@@ -12,7 +12,7 @@ import { getLogger, logError } from '@dome/logging';
 import { Bindings } from '../types';
 
 // Maximum message size for the queue in bytes
-const MAX_QUEUE_MESSAGE_SIZE = 128000;
+const MAX_QUEUE_MESSAGE_SIZE = 120000;
 
 /**
  * Silo Service Client
