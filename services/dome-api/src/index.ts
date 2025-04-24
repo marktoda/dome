@@ -30,17 +30,12 @@ const app = new Hono<{ Bindings: Bindings }>();
 const serviceFactory = createServiceFactory();
 const controllerFactory = createControllerFactory(serviceFactory);
 
-// Register middleware
-// Metrics middleware (should be first to accurately measure request timing)
-app.use('*', metricsMiddleware());
-
-// Detailed request/response logging middleware
-app.use('*', createDetailedLoggerMiddleware());
-
-app.use('*', createRequestContextMiddleware());
 initLogging(app, {
   extraBindings: { ...serviceInfo },
-}); // Initialize logging with service info
+});
+app.use('*', createRequestContextMiddleware());
+app.use('*', createDetailedLoggerMiddleware());
+app.use('*', metricsMiddleware());
 
 // Initialize metrics with service info
 initMetrics({
