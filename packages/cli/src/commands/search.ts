@@ -41,7 +41,9 @@ export function searchCommand(program: Command): void {
 
         // Display results
         results.results.slice(0, limit).forEach((match: any, index: number) => {
-          console.log(subheading(`Result ${index + 1} (Score: ${match.score.toFixed(2)})`));
+          // Ensure score is a number and has a valid value
+          const score = typeof match.score === 'number' ? match.score : 0;
+          console.log(subheading(`Result ${index + 1} (Score: ${score.toFixed(2)})`));
           console.log(formatKeyValue('ID', match.id));
           console.log(formatKeyValue('Type', match.contentType || 'text/plain'));
 

@@ -40,7 +40,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ results, query }) 
           <Box key={result.id} flexDirection="column" marginBottom={1} borderStyle="round" borderColor="gray" padding={1}>
             <Box>
               <Text bold color="blue">Result {index + 1}</Text>
-              <Text color="gray"> (Score: {result.score.toFixed(2)})</Text>
+              <Text color="gray"> (Score: {(typeof result.score === 'number' ? result.score : 0).toFixed(2)})</Text>
             </Box>
             
             <Box>

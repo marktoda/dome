@@ -234,9 +234,24 @@ export async function search(query: string, limit: number = 10): Promise<any> {
 
   // Use the dedicated search endpoint
   const response = await api.get('/search', { params });
+  
+  // Log the raw response to debug score values
+  console.log('[DEBUG] Raw search response:', JSON.stringify(response, null, 2));
+
+  // Ensure scores are properly mapped from the response
+  const results = (response.results || []).map((result: any) => {
+    // Make sure score is a number (not a string) and has a valid value
+    if (result.score === undefined || result.score === null) {
+      console.log(`[DEBUG] Missing score for result ${result.id}, using default 0`);
+      result.score = 0;
+    } else if (typeof result.score === 'string') {
+      result.score = parseFloat(result.score);
+    }
+    return result;
+  });
 
   return {
-    results: response.results || [],
+    results: results,
     pagination: response.pagination || { total: 0, limit, offset: 0, hasMore: false },
     query,
   };
@@ -306,9 +321,11 @@ export async function chat(
       const response = await axiosInstance.post('/chat', payload, {
         responseType: 'stream',
         signal: streamingOptions?.abortSignal,
+        timeout: 60000, // 60 second timeout
       });
 
       console.log('[DEBUG] Received streaming response with status:', response.status);
+      console.log('[DEBUG] Response headers:', JSON.stringify(response.headers));
 
       // Set up event handling for the stream
       const stream = response.data;
@@ -318,8 +335,31 @@ export async function chat(
       return new Promise((resolve, reject) => {
         let buffer = '';
         let chunkCount = 0;
+        let lastProcessedTime = Date.now();
+
+        // Set up a watchdog timer to detect stalled streams
+        const watchdogInterval = setInterval(() => {
+          const now = Date.now();
+          if (now - lastProcessedTime > 15000) { // 15 seconds without data
+            console.log('[DEBUG] Stream appears to be stalled, closing');
+            clearInterval(watchdogInterval);
+            
+            // If we have some content, resolve with what we have
+            if (fullResponse.length > 0) {
+              resolve({
+                response: fullResponse,
+                sources: sourceInfo,
+                success: true,
+                note: 'Stream stalled but partial response recovered',
+              });
+            } else {
+              reject(new Error('Stream stalled without producing content'));
+            }
+          }
+        }, 5000);
 
         stream.on('data', (chunk: Buffer) => {
+          lastProcessedTime = Date.now();
           chunkCount++;
           const chunkStr = chunk.toString();
           console.log(
@@ -348,6 +388,14 @@ export async function chat(
               continue;
             }
 
+            // Handle plain text streaming (non-JSON format)
+            if (!line.startsWith('data: ')) {
+              console.log('[DEBUG] Processing plain text chunk:', line);
+              fullResponse += line + '\n';
+              onChunk(line + '\n');
+              continue;
+            }
+
             // Process data lines
             if (line.startsWith('data: ')) {
               try {
@@ -356,24 +404,47 @@ export async function chat(
                   '[DEBUG] Parsing JSON:',
                   jsonStr.substring(0, 100) + (jsonStr.length > 100 ? '...' : ''),
                 );
+                
+                // Handle non-JSON data format
+                if (!jsonStr.trim().startsWith('{') && !jsonStr.trim().startsWith('[')) {
+                  console.log('[DEBUG] Non-JSON data format detected, using as plain text');
+                  fullResponse += jsonStr;
+                  onChunk(jsonStr);
+                  continue;
+                }
+                
                 const data = JSON.parse(jsonStr);
 
-                if (
-                  data.choices &&
-                  data.choices[0] &&
-                  data.choices[0].delta &&
-                  data.choices[0].delta.content
-                ) {
+                // Handle different response formats
+                if (data.choices && data.choices[0] && data.choices[0].delta && data.choices[0].delta.content) {
+                  // OpenAI-style format
                   const content = data.choices[0].delta.content;
-                  console.log('[DEBUG] Extracted content:', content);
+                  console.log('[DEBUG] Extracted content (OpenAI format):', content);
                   fullResponse += content;
                   onChunk(content);
+                } else if (data.response && typeof data.response === 'string') {
+                  // Direct response format
+                  console.log('[DEBUG] Extracted content (direct format):', data.response);
+                  fullResponse += data.response;
+                  onChunk(data.response);
+                } else if (typeof data === 'string') {
+                  // Plain string format
+                  console.log('[DEBUG] Extracted content (string format):', data);
+                  fullResponse += data;
+                  onChunk(data);
                 } else {
                   console.log(
-                    '[DEBUG] No content in delta:',
+                    '[DEBUG] No recognized content format:',
                     JSON.stringify(data).substring(0, 100) +
                       (JSON.stringify(data).length > 100 ? '...' : ''),
                   );
+                  
+                  // Try to extract any string content
+                  const extractedContent = JSON.stringify(data);
+                  if (extractedContent && extractedContent !== '{}' && extractedContent !== '[]') {
+                    fullResponse += extractedContent;
+                    onChunk(extractedContent);
+                  }
                 }
 
                 // Check for source information
@@ -387,9 +458,18 @@ export async function chat(
                   e instanceof Error ? e.message : String(e),
                 );
                 console.log('[DEBUG] Problematic line:', line);
-                // If we can't parse this line, it might be incomplete
-                // Add it back to the buffer for next time
-                buffer += line + '\n';
+                
+                // If it looks like plain text, just use it directly
+                const content = line.substring(6); // Remove 'data: ' prefix
+                if (content && content.trim()) {
+                  console.log('[DEBUG] Using as plain text after parse error:', content);
+                  fullResponse += content;
+                  onChunk(content);
+                } else {
+                  // If we can't parse this line, it might be incomplete
+                  // Add it back to the buffer for next time
+                  buffer += line + '\n';
+                }
               }
             } else {
               console.log('[DEBUG] Non-data line:', line);
@@ -401,6 +481,10 @@ export async function chat(
 
         stream.on('end', () => {
           console.log('[DEBUG] Stream ended, full response length:', fullResponse.length);
+          
+          // Clear the watchdog timer
+          clearInterval(watchdogInterval);
+          
           // Resolve with the full response and any source information
           resolve({
             response: fullResponse,
@@ -412,6 +496,10 @@ export async function chat(
         stream.on('error', (err: Error) => {
           console.log('[DEBUG] Stream error:', err.message);
           console.log('[DEBUG] Error details:', err);
+          
+          // Clear the watchdog timer
+          clearInterval(watchdogInterval);
+          
           reject(err);
         });
       });
@@ -468,10 +556,15 @@ export async function chat(
           const fallbackResponse = await api.post('/chat', nonStreamingPayload);
           console.log('[DEBUG] Non-streaming fallback response received');
 
-          // Process the response
+          // Process the response with enhanced logging
+          console.log('[DEBUG] Fallback response structure:', JSON.stringify(fallbackResponse).substring(0, 200));
+          
+          // Handle different response structures
           if (fallbackResponse && fallbackResponse.data) {
+            console.log('[DEBUG] Using fallbackResponse.data path');
             // If we have a response, send it through the chunk handler
             if (typeof fallbackResponse.data.response === 'string') {
+              console.log('[DEBUG] Found string response in fallbackResponse.data.response');
               onChunk(fallbackResponse.data.response);
               return {
                 response: fallbackResponse.data.response,
@@ -479,15 +572,41 @@ export async function chat(
                 success: true,
               };
             } else if (typeof fallbackResponse.data === 'string') {
+              console.log('[DEBUG] Found string in fallbackResponse.data');
               onChunk(fallbackResponse.data);
               return {
                 response: fallbackResponse.data,
                 success: true,
               };
             }
-
+            
+            console.log('[DEBUG] Returning fallbackResponse.data directly');
             return fallbackResponse.data;
+          } else if (fallbackResponse && fallbackResponse.response && typeof fallbackResponse.response === 'string') {
+            console.log('[DEBUG] Found string in fallbackResponse.response');
+            onChunk(fallbackResponse.response);
+            return {
+              response: fallbackResponse.response,
+              success: true,
+            };
+          } else if (fallbackResponse && typeof fallbackResponse === 'string') {
+            console.log('[DEBUG] fallbackResponse is a string');
+            onChunk(fallbackResponse);
+            return {
+              response: fallbackResponse,
+              success: true,
+            };
           }
+          
+          // Last resort - try to extract any usable text
+          console.log('[DEBUG] No recognized response format, attempting to extract text');
+          const responseStr = JSON.stringify(fallbackResponse);
+          onChunk(responseStr);
+          return {
+            response: responseStr,
+            success: true,
+            note: 'Response format was not recognized'
+          };
         } catch (fallbackError) {
           console.log(
             '[DEBUG] Fallback also failed:',
@@ -512,7 +631,23 @@ export async function chat(
     console.log('[DEBUG] Using non-streaming mode');
     try {
       const response = await api.post('/chat', payload);
-      console.log('[DEBUG] Non-streaming response received:', response.status);
+      console.log('[DEBUG] Non-streaming response received:', response);
+
+      // Enhanced logging for debugging
+      if (response) {
+        console.log('[DEBUG] Response type:', typeof response);
+        console.log('[DEBUG] Response has success property:', 'success' in response);
+        console.log('[DEBUG] Response has response property:', 'response' in response);
+        if ('response' in response) {
+          console.log('[DEBUG] Response.response type:', typeof response.response);
+          console.log('[DEBUG] Response.response length:',
+            typeof response.response === 'string' ? response.response.length : 'not a string');
+          if (typeof response.response === 'string') {
+            console.log('[DEBUG] Response.response preview:',
+              response.response.substring(0, 100) + (response.response.length > 100 ? '...' : ''));
+          }
+        }
+      }
 
       // Handle the response structure properly
       if (response && response.success === true && typeof response.response === 'string') {
@@ -521,11 +656,18 @@ export async function chat(
       } else if (response && typeof response === 'string') {
         // If the response itself is a string, return it directly
         return response;
+      } else if (response && typeof response === 'object' && 'response' in response) {
+        // If response.response exists but isn't a string, convert it
+        return String(response.response);
+      } else if (response && typeof response === 'object' && 'body' in response &&
+                response.body && typeof response.body === 'object' && 'response' in response.body) {
+        // Handle nested response structure
+        return String(response.body.response);
       }
 
       // Fallback to the entire response object if the expected structure isn't found
       console.log('[DEBUG] Using fallback response format');
-      return response;
+      return typeof response === 'object' ? JSON.stringify(response) : String(response);
     } catch (error) {
       console.log(
         '[DEBUG] Error in non-streaming mode:',
