@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Constellation from '../src/index';
-import { SiloBatchGetItem, VectorMeta } from '@dome/common';
+import { SiloContentItem, VectorMeta } from '@dome/common';
 import { getLogger } from '@dome/logging';
 
 // Define types needed for testing
@@ -132,7 +132,7 @@ describe('Constellation', () => {
   let mockEnv: Env;
 
   // Test data
-  const testJob: SiloBatchGetItem = {
+  const testJob: SiloContentItem = {
     userId: 'user-123',
     category: 'note',
     mimeType: 'text/markdown',

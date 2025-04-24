@@ -6,10 +6,10 @@
  * of the service's core functionality.
  */
 
-import { VectorMeta, SiloBatchGetInput, SiloBatchGetResponse } from '@dome/common';
+import { VectorMeta, SiloBatchGetInput, SiloContentBatch } from '@dome/common';
 
 export interface SiloService {
-  batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
+  batchGet(data: SiloBatchGetInput): Promise<SiloContentBatch>;
 }
 
 /**

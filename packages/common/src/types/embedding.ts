@@ -6,10 +6,7 @@
  * These types are shared between the service and its clients.
  */
 
-import { SiloEmbedJob, ContentCategory, MimeType } from './siloContent';
-
-// Re-export the types from siloContent
-export { SiloEmbedJob };
+import { ContentCategory, MimeType } from './siloContent';
 
 /**
  * Vector metadata structure

@@ -2,11 +2,11 @@ import {
   SiloSimplePutInput,
   SiloSimplePutResponse,
   SiloBatchGetInput,
-  SiloBatchGetResponse,
+  SiloContentBatch,
   SiloDeleteInput,
   SiloDeleteResponse,
   SiloStatsResponse,
-  SiloBatchGetItem,
+  SiloContentItem,
 } from '@dome/common';
 import { getLogger, logError, metrics } from '@dome/logging';
 import { SiloBinding } from '../types';
@@ -150,7 +150,7 @@ export class SiloClient {
    * @param params Query parameters
    * @returns Promise resolving to the batch get response
    */
-  async get(contentId: string, userId?: string | null): Promise<SiloBatchGetItem> {
+  async get(contentId: string, userId?: string | null): Promise<SiloContentItem> {
     const result = await this.batchGet({ ids: [contentId], userId });
 
     if (!result.items || result.items.length === 0) {
@@ -166,7 +166,7 @@ export class SiloClient {
    * @param params Query parameters
    * @returns Promise resolving to the batch get response
    */
-  async batchGet(params: SiloBatchGetInput): Promise<SiloBatchGetResponse> {
+  async batchGet(params: SiloBatchGetInput): Promise<SiloContentBatch> {
     const startTime = performance.now();
     try {
       getLogger().info(

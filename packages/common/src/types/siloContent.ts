@@ -70,20 +70,6 @@ export interface SiloContent {
 }
 
 /**
- * Embedding job structure
- * Represents a job to embed content into a vector
- */
-export interface SiloEmbedJob {
-  userId: string;
-  contentId: string;
-  text: string;
-  created: number;
-  version: number;
-  category: ContentCategory;
-  mimeType: MimeType;
-}
-
-/**
  * Schema for simplePut RPC method
  * Used to validate input for storing small content items synchronously
  */
@@ -164,9 +150,9 @@ export interface SiloSimplePutResponse {
  * BatchGet RPC method return type
  * Returned when retrieving multiple content items
  */
-export interface SiloBatchGetResponse {
+export interface SiloContentBatch {
   /** Array of content items */
-  items: SiloBatchGetItem[];
+  items: SiloContentItem[];
   /** Total number of items matching the query (for pagination) */
   total?: number;
   /** Limit used for the query */
@@ -178,7 +164,7 @@ export interface SiloBatchGetResponse {
 /**
  * Individual item in a BatchGet response
  */
-export interface SiloBatchGetItem {
+export interface SiloContentItem {
   /** Unique identifier for the content */
   id: string;
   /** User ID who owns the content, or null for public content */

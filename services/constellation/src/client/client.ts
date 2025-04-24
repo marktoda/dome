@@ -5,7 +5,7 @@
  * It provides methods for all Constellation operations and handles error logging, metrics, and validation.
  */
 
-import { SiloBatchGetItem, VectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
+import { SiloContentItem, VectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
 import { getLogger, logError, metrics } from '@dome/logging';
 
 /**
@@ -13,7 +13,7 @@ import { getLogger, logError, metrics } from '@dome/logging';
  * Defines the contract for the Cloudflare Worker binding to the Constellation service
  */
 export interface ConstellationBinding {
-  embed(job: SiloBatchGetItem): Promise<void>;
+  embed(job: SiloContentItem): Promise<void>;
   query(text: string, filter?: Partial<VectorMeta>, topK?: number): Promise<VectorSearchResult[]>;
   stats(): Promise<VectorIndexStats>;
 }
@@ -42,7 +42,7 @@ export class ConstellationClient {
    * @param job The job to embed
    * @returns Promise resolving to void
    */
-  async embed(job: SiloBatchGetItem): Promise<void> {
+  async embed(job: SiloContentItem): Promise<void> {
     const startTime = performance.now();
     try {
       getLogger().info(

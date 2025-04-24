@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_als"]
 [[d1_databases]]
 binding        = "SYNC_PLAN"
 database_name  = "sync-plan"
-database_id = "8452b8e8-4ee3-4502-8b74-14f39d8390c0"
+database_id = "0457a394-01dc-4072-919f-6cf15d71b4d4"
 migrations_dir = "migrations"
 
 [[services]]

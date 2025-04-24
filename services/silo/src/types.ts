@@ -3,7 +3,7 @@
  */
 import {
   SiloBatchGetInput,
-  SiloBatchGetResponse,
+  SiloContentBatch,
   SiloDeleteInput,
   SiloDeleteResponse,
   SiloStatsResponse,
@@ -84,7 +84,7 @@ export interface DLQStats {
  * Defines the contract for the Cloudflare Worker binding to the Silo service
  */
 export interface SiloBinding {
-  batchGet(params: SiloBatchGetInput): Promise<SiloBatchGetResponse>;
+  batchGet(params: SiloBatchGetInput): Promise<SiloContentBatch>;
   delete(params: SiloDeleteInput): Promise<SiloDeleteResponse>;
   stats(params: {}): Promise<SiloStatsResponse>;
 }

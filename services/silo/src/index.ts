@@ -21,7 +21,7 @@ import {
   SiloBatchGetInput,
   SiloDeleteInput,
   SiloStatsInput,
-  SiloBatchGetResponse,
+  SiloContentBatch,
   SiloDeleteResponse,
   SiloStatsResponse,
 } from '@dome/common';
@@ -225,7 +225,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
   /**
    * Efficiently retrieve multiple content items
    */
-  async batchGet(data: SiloBatchGetInput): Promise<SiloBatchGetResponse> {
+  async batchGet(data: SiloBatchGetInput): Promise<SiloContentBatch> {
     return wrap({ operation: 'batchGet' }, async () => {
       try {
         // Validate input

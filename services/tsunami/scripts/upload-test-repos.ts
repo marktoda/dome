@@ -14,7 +14,7 @@
 // Configuration
 const TSUNAMI_API_URL = 'https://tsunami.chatter-9999.workers.dev'; // Deployed tsunami service URL
 const REPOSITORIES = [
-  { owner: 'uniswap', repo: 'smart-order-router' },
+  // { owner: 'uniswap', repo: 'smart-order-router' },
   // { owner: 'uniswap', repo: 'the-compact' },
   // { owner: 'uniswap', repo: 'v2-core' },
   // { owner: 'uniswap', repo: 'v2-periphery' },
@@ -23,8 +23,8 @@ const REPOSITORIES = [
   // { owner: 'uniswap', repo: 'v4-core' },
   // { owner: 'uniswap', repo: 'v4-periphery' },
   // { owner: 'uniswap', repo: 'universal-router' },
-  // { owner: 'uniswap', repo: 'permit2' },
-  // { owner: 'uniswap', repo: 'uniswapx' },
+  { owner: 'uniswap', repo: 'permit2' },
+  { owner: 'uniswap', repo: 'uniswapx' },
 ];
 
 /**

@@ -1,10 +1,9 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import {
-  SiloEmbedJob,
   VectorMeta,
   VectorSearchResult,
   NewContentMessageSchema,
-  SiloBatchGetItem,
+  SiloContentItem,
 } from '@dome/common';
 import { z } from 'zod';
 
@@ -40,7 +39,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
 // Define a type for dead letter queue payloads
 type DeadLetterPayload =
   | { error: string; originalMessage: unknown }
-  | { err: string; job: SiloBatchGetItem };
+  | { err: string; job: SiloContentItem };
 
 const sendToDeadLetter = async (queue: DeadQueue | undefined, payload: DeadLetterPayload) => {
   if (!queue) return;
@@ -62,230 +61,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     return (this._services ??= buildServices(this.env));
   }
 
-  /* ----------------------- dead letter queue consumer ----------------------- */
-
-  async deadLetterQueue(batch: MessageBatch<unknown>) {
-    await runWithLog(
-      { service: 'constellation', op: 'deadLetterQueue', size: batch.messages.length, ...this.env },
-      async () => {
-        metrics.gauge('deadletter.batch_size', batch.messages.length);
-
-        let processedCount = 0;
-        let retryCount = 0;
-        let malformedCount = 0;
-
-        for (const msg of batch.messages) {
-          try {
-            if (!msg.body) {
-              getLogger().warn('Empty message body in dead letter queue');
-              msg.ack();
-              continue;
-            }
-
-            const body = msg.body as Record<string, unknown>;
-
-            // Handle the two types of dead letter messages with more robust validation
-            if (typeof body === 'object' && body !== null) {
-              if ('error' in body && 'originalMessage' in body) {
-                // This is a parsing error
-                await this.handleParsingError({
-                  error: String(body.error),
-                  originalMessage: body.originalMessage,
-                });
-                processedCount++;
-              } else if (
-                'err' in body &&
-                'job' in body &&
-                typeof body.job === 'object' &&
-                body.job !== null
-              ) {
-                // This is an embedding error - validate the job object has minimum required fields
-                const job = body.job as Record<string, unknown>;
-
-                // Ensure job has minimum required fields or provide defaults
-                const validJob: SiloEmbedJob = {
-                  userId: typeof job.userId === 'string' ? job.userId : 'unknown',
-                  contentId: typeof job.contentId === 'string' ? job.contentId : 'unknown',
-                  text: typeof job.text === 'string' ? job.text : '',
-                  created: typeof job.created === 'number' ? job.created : Date.now(),
-                  version: typeof job.version === 'number' ? job.version : 1,
-                  category: typeof job.category === 'string' ? (job.category as any) : 'unknown',
-                  mimeType: typeof job.mimeType === 'string' ? (job.mimeType as any) : 'text/plain',
-                };
-
-                const shouldRetry = await this.handleEmbeddingError(
-                  {
-                    err: String(body.err),
-                    job: validJob,
-                  },
-                  msg.attempts,
-                );
-
-                if (shouldRetry && msg.attempts < 3) {
-                  // Retry with exponential backoff
-                  const delaySeconds = Math.pow(2, msg.attempts) * 30;
-                  msg.retry({ delaySeconds });
-                  retryCount++;
-                  continue;
-                } else {
-                  processedCount++;
-                }
-              } else {
-                // Unknown or malformed message format
-                getLogger().error(
-                  { body: body, keys: Object.keys(body) },
-                  'Malformed message in dead letter queue',
-                );
-                malformedCount++;
-              }
-            } else {
-              getLogger().error(
-                { bodyType: typeof body, body },
-                'Invalid message type in dead letter queue',
-              );
-              malformedCount++;
-            }
-          } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            getLogger().error(
-              { err, body: msg.body },
-              'Error processing dead letter queue message',
-            );
-            malformedCount++;
-          } finally {
-            // Always acknowledge the message unless we've explicitly retried it
-            msg.ack();
-          }
-        }
-
-        getLogger().info(
-          {
-            processed: processedCount,
-            retried: retryCount,
-            malformed: malformedCount,
-            total: batch.messages.length,
-          },
-          'Processed dead letter queue batch',
-        );
-
-        metrics.increment('deadletter.messages_processed', processedCount);
-        metrics.increment('deadletter.messages_retried', retryCount);
-        metrics.increment('deadletter.messages_malformed', malformedCount);
-      },
-    );
-  }
-
-  /**
-   * Handle a parsing error from the dead letter queue
-   * These errors occur when a message from the new-content queue fails validation
-   */
-  private async handleParsingError(payload: { error: string; originalMessage: unknown }) {
-    getLogger().info({ error: payload.error }, 'Processing parsing error from dead letter queue');
-
-    // Log detailed information about the parsing error
-    const { error, originalMessage } = payload;
-
-    // Attempt to extract any useful information from the original message
-    let contentId = 'unknown';
-    let userId = 'unknown';
-    let messageDetails: Record<string, unknown> = {};
-
-    if (originalMessage && typeof originalMessage === 'object') {
-      // Safely extract all available fields for debugging
-      messageDetails = { ...(originalMessage as Record<string, unknown>) };
-
-      if ('id' in messageDetails && typeof messageDetails.id === 'string') {
-        contentId = messageDetails.id;
-      } else if ('contentId' in messageDetails && typeof messageDetails.contentId === 'string') {
-        contentId = messageDetails.contentId;
-      }
-
-      if ('userId' in messageDetails) {
-        userId = messageDetails.userId === null ? 'null' : String(messageDetails.userId);
-      }
-    }
-
-    getLogger().info(
-      { contentId, userId, error, messageFields: Object.keys(messageDetails) },
-      'Parsing error details from dead letter queue',
-    );
-
-    // Currently we just log the error - in the future we could implement
-    // recovery strategies based on the specific error type
-    metrics.increment('deadletter.parsing_errors_processed');
-  }
-
-  /**
-   * Handle an embedding error from the dead letter queue
-   * These errors occur during the embedding process
-   * @returns boolean indicating whether the job should be retried
-   */
-  private async handleEmbeddingError(
-    payload: { err: string; job: SiloEmbedJob },
-    attempts: number,
-  ): Promise<boolean> {
-    const { err, job } = payload;
-
-    // Validate job has required fields with fallbacks for safety
-    const contentId = job.contentId || 'unknown';
-    const userId = job.userId || 'unknown';
-
-    getLogger().info(
-      {
-        error: err,
-        contentId,
-        userId,
-        attempts,
-        jobFields: Object.keys(job),
-      },
-      'Processing embedding error from dead letter queue',
-    );
-
-    // Analyze the error to determine if it's retryable
-    const isRetryable = this.isRetryableError(err);
-
-    if (isRetryable && attempts < 3) {
-      getLogger().info({ contentId, error: err, attempts }, 'Will retry embedding job');
-      return true;
-    }
-
-    // For non-retryable errors or max attempts reached, log and move on
-    getLogger().warn(
-      { contentId, error: err, attempts },
-      'Embedding error cannot be retried or max attempts reached',
-    );
-
-    metrics.increment('deadletter.embedding_errors_processed');
-    return false;
-  }
-
-  /**
-   * Determine if an error is retryable based on the error message
-   */
-  private isRetryableError(errorMessage: string): boolean {
-    // Errors that might be temporary and worth retrying
-    const retryablePatterns = [
-      /timeout/i,
-      /connection/i,
-      /network/i,
-      /throttl/i,
-      /rate limit/i,
-      /too many requests/i,
-      /service unavailable/i,
-      /internal server error/i,
-      /5\d\d/, // 5xx status codes
-      /temporarily unavailable/i,
-      /overloaded/i,
-      /try again/i,
-      /resource exhausted/i,
-    ];
-
-    return retryablePatterns.some(pattern => pattern.test(errorMessage));
-  }
-
   /* ----------------------- embed a batch of notes ----------------------- */
 
-  private async embedBatch(jobs: SiloBatchGetItem[], deadQueue?: DeadQueue): Promise<number> {
+  private async embedBatch(jobs: SiloContentItem[], deadQueue?: DeadQueue): Promise<number> {
     let processed = 0;
     const MAX_CHUNKS_PER_BATCH = 50; // Limit chunks processed at once
     const MAX_TEXT_LENGTH = 100000; // Limit text size to prevent memory issues
@@ -429,7 +207,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
       async () => {
         metrics.gauge('queue.batch_size', batch.messages.length);
 
-        const embedItems: SiloBatchGetItem[] = [];
+        const embedItems: SiloContentItem[] = [];
 
         for (const msg of batch.messages) {
           try {
@@ -454,7 +232,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   }
 
   /** Validate + convert a single queue message */
-  private async parseMessage(msg: Message<Record<string, unknown>>): Promise<SiloBatchGetItem> {
+  private async parseMessage(msg: Message<Record<string, unknown>>): Promise<SiloContentItem> {
     if (!msg.body) throw new Error('Message body is empty');
 
     const validation = NewContentMessageSchema.safeParse(msg.body);
@@ -477,7 +255,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
   /* ---------------------------- rpc: embed ------------------------------ */
 
-  public async embed(job: SiloBatchGetItem) {
+  public async embed(job: SiloContentItem) {
     await runWithLog(
       {
         service: 'constellation',

@@ -10,8 +10,8 @@ import {
   SiloSimplePutResponse,
   SiloSimplePutInput,
   ContentCategory,
-  SiloBatchGetResponse,
-  SiloBatchGetItem,
+  SiloContentBatch,
+  SiloContentItem,
   EnrichedContentMessage,
 } from '@dome/common';
 
@@ -91,7 +91,7 @@ export class ContentController {
     contentType?: string;
     limit?: number;
     offset?: number;
-  }): Promise<SiloBatchGetResponse> {
+  }): Promise<SiloContentBatch> {
     try {
       logger.info(params, 'batchGet called');
 
@@ -102,7 +102,7 @@ export class ContentController {
           ? await this.fetchAllMetadataForUser(userId, contentType, limit, offset)
           : await this.metadataService.getMetadataByIds(ids);
 
-      const results: Record<string, SiloBatchGetItem> = {};
+      const results: Record<string, SiloContentItem> = {};
 
       await Promise.all(
         metadataItems.map(async item => {

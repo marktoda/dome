@@ -9,7 +9,7 @@ import {
   ServiceError,
   siloSimplePutSchema,
   ContentCategory,
-  SiloBatchGetResponse,
+  SiloContentBatch,
   SiloSimplePutInput,
 } from '@dome/common';
 
