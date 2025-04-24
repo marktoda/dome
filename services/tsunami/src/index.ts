@@ -33,7 +33,7 @@ const handle = (
   fn: () => Promise<Response>,
 ) =>
   fn().catch(err => {
-    logError(logger, err, 'Unhandled request error');
+    logError(err, 'Unhandled request error');
     return c.json({ success: false, error: err.message ?? 'Internal error' }, 500);
   });
 

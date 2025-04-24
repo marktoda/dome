@@ -63,7 +63,7 @@ export const syncPlanOperations = {
       logger.info({ id: data.id }, 'Sync plan created');
       return result[0];
     } catch (error) {
-      logError(logger, error, 'Error creating sync plan', { data });
+      logError(error, 'Error creating sync plan', { data });
       throw error;
     }
   },
@@ -89,7 +89,7 @@ export const syncPlanOperations = {
       logger.info({ resourceId, found: result.length > 0 }, 'Find sync plan by resourceId');
       return result[0] || null;
     } catch (error) {
-      logError(logger, error, 'Error finding sync plan by resourceId', { resourceId });
+      logError(error, 'Error finding sync plan by resourceId', { resourceId });
       throw error;
     }
   },
@@ -140,7 +140,7 @@ export const syncPlanOperations = {
       logger.info({ id, userId, userIds: userIdsArray }, 'User added to sync plan');
       return result[0];
     } catch (error) {
-      logError(logger, error, 'Error adding user to sync plan', { id, userId });
+      logError(error, 'Error adding user to sync plan', { id, userId });
       throw error;
     }
   },
@@ -201,7 +201,7 @@ export const syncHistoryOperations = {
       logger.info({ id, resourceId: data.resourceId }, 'Sync history entry created');
       return result[0];
     } catch (error) {
-      logError(logger, error, 'Error creating sync history entry', { data });
+      logError(error, 'Error creating sync history entry', { data });
       throw error;
     }
   },
@@ -234,7 +234,7 @@ export const syncHistoryOperations = {
         updatedFiles: JSON.parse(entry.updatedFiles),
       }));
     } catch (error) {
-      logError(logger, error, 'Error getting sync history by resourceId', { resourceId });
+      logError(error, 'Error getting sync history by resourceId', { resourceId });
       throw error;
     }
   },
@@ -267,7 +267,7 @@ export const syncHistoryOperations = {
         updatedFiles: JSON.parse(entry.updatedFiles),
       }));
     } catch (error) {
-      logError(logger, error, 'Error getting sync history by userId', { userId });
+      logError(error, 'Error getting sync history by userId', { userId });
       throw error;
     }
   },
@@ -300,7 +300,7 @@ export const syncHistoryOperations = {
         updatedFiles: JSON.parse(entry.updatedFiles),
       }));
     } catch (error) {
-      logError(logger, error, 'Error getting sync history by syncPlanId', { syncPlanId });
+      logError(error, 'Error getting sync history by syncPlanId', { syncPlanId });
       throw error;
     }
   },

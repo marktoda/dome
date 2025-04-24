@@ -39,7 +39,7 @@ export class ContentController {
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
     private readonly siloService: SiloService,
-  ) {}
+  ) { }
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -187,7 +187,7 @@ export class ContentController {
       logger.info({ id, userId }, 'Content enriched successfully');
     } catch (error) {
       metrics.increment('silo.enriched_content.errors');
-      logError(logger, error, 'Error processing enriched content', { messageId: message.id });
+      logError(error, 'Error processing enriched content', { messageId: message.id });
       throw error;
     }
   }
@@ -227,7 +227,7 @@ export class ContentController {
       logger.info({ id, userId, category, mimeType }, 'Content ingested successfully');
     } catch (error) {
       metrics.increment('silo.ingest_queue.errors');
-      logError(logger, error, 'Error processing ingest queue message', { messageId: message.id });
+      logError(error, 'Error processing ingest queue message', { messageId: message.id });
       throw error;
     }
   }
@@ -290,7 +290,7 @@ export class ContentController {
       return { id, category, mimeType, size: obj.size, createdAt };
     } catch (error) {
       metrics.increment('silo.r2.events.errors');
-      logError(logger, error, 'Error processing R2 event', { event });
+      logError(error, 'Error processing R2 event', { event });
       throw error;
     }
   }
@@ -398,7 +398,7 @@ export class ContentController {
   }
 
   private handleError(method: string, error: unknown) {
-    logError(logger, error, `Error in ${method}`);
+    logError(error, `Error in ${method}`);
     metrics.increment('silo.rpc.errors', 1, { method });
   }
 
