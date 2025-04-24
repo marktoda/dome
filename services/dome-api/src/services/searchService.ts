@@ -162,7 +162,7 @@ export class SearchService {
       for (const result of searchResults) {
         scoreMap.set(result.id, result.score);
       }
-      this.logger.info({ scoreMapSize: scoreMap.size }, 'Created score map');
+      this.logger.info({ scoreMapLength: scoreMap.size, scores: JSON.stringify(scoreMap) }, 'Created score map');
 
       // Filter and transform results
       let filteredResults = contents.items
@@ -294,9 +294,8 @@ export class SearchService {
       startDate,
       endDate,
     } = options;
-    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${
-      startDate || ''
-    }:${endDate || ''}`;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''
+      }:${endDate || ''}`;
   }
 
   /**
