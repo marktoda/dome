@@ -55,8 +55,8 @@ export class VectorizeService {
     const batches =
       vecs.length > this.cfg.maxBatchSize
         ? Array.from({ length: Math.ceil(vecs.length / this.cfg.maxBatchSize) }, (_, i) =>
-            vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
-          )
+          vecs.slice(i * this.cfg.maxBatchSize, (i + 1) * this.cfg.maxBatchSize),
+        )
         : [vecs];
 
     for (const batch of batches) await this.upsertBatch(batch);
@@ -70,15 +70,15 @@ export class VectorizeService {
         'vectorsCount' in statsAny
           ? statsAny.vectorsCount
           : 'vectorCount' in statsAny
-          ? statsAny.vectorCount
-          : 0;
+            ? statsAny.vectorCount
+            : 0;
 
       const dimensions =
         'dimensions' in statsAny
           ? statsAny.dimensions
           : 'config' in statsAny && statsAny.config && 'dimensions' in statsAny.config
-          ? statsAny.config.dimensions
-          : 0;
+            ? statsAny.config.dimensions
+            : 0;
 
       getLogger().info(
         {
@@ -97,7 +97,7 @@ export class VectorizeService {
   private async upsertBatch(batch: VectorWithMetadata[]) {
     for (let attempt = 1; attempt <= this.cfg.retryAttempts; attempt++) {
       try {
-        await this.idx.upsert(
+        const vectorIds = await this.idx.upsert(
           batch.map(v => ({
             id: v.id,
             values: v.values,
@@ -106,7 +106,7 @@ export class VectorizeService {
         );
         metrics.increment('vectorize.upsert.success');
         getLogger().info(
-          { batchSize: batch.length, first: batch[0] },
+          { batchSize: batch.length, first: batch[0], vectorIds },
           'Successfully upserted batch to Vectorize',
         );
         return;
@@ -219,15 +219,15 @@ export class VectorizeService {
       'vectorsCount' in infoAny
         ? infoAny.vectorsCount
         : 'vectorCount' in infoAny
-        ? infoAny.vectorCount
-        : 0;
+          ? infoAny.vectorCount
+          : 0;
 
     const dimension =
       'dimensions' in infoAny
         ? infoAny.dimensions
         : 'config' in infoAny && infoAny.config && 'dimensions' in infoAny.config
-        ? infoAny.config.dimensions
-        : 0;
+          ? infoAny.config.dimensions
+          : 0;
 
     return { vectors, dimension };
   }

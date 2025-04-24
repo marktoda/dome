@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
+import { getLogger } from '@dome/logging';
 import { getPath } from 'hono/utils/url';
-import pino from 'pino';
 
 /**
  * Creates a detailed logger middleware for Hono that logs comprehensive information
@@ -9,9 +9,7 @@ import pino from 'pino';
  */
 export function createDetailedLoggerMiddleware(): MiddlewareHandler {
   return async (c: Context, next: Next) => {
-    // Get logger from context or create a new one
-    const logger = c.get('logger') || pino({ level: 'info' });
-    const requestId = c.get('requestId') || 'unknown';
+    const logger = getLogger();
     const startTime = Date.now();
 
     // Extract request details
@@ -20,7 +18,7 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
     const url = new URL(c.req.url);
     const params = c.req.param();
     const query = c.req.query();
-    
+
     // Extract request body if it exists
     let requestBody: any = undefined;
     try {
@@ -41,7 +39,6 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
     // Log request details
     logger.info(
       {
-        requestId,
         request: {
           method,
           path,
@@ -83,7 +80,6 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
       // Log response details
       logger.info(
         {
-          requestId,
           response: {
             status,
             ok: String(c.res.ok),
@@ -97,14 +93,13 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
       // Log error details
       logger.error(
         {
-          requestId,
           error:
             error instanceof Error
               ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
               : String(error),
           request: {
             method,

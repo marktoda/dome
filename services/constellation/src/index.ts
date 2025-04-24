@@ -512,7 +512,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           getLogger().info({ norm }, 'normalized text');
 
           const [queryVec] = await embedder.embed([norm]);
-          getLogger().info({ queryVec }, 'got embedding for the query');
+          getLogger().info({ vectorLEngth: queryVec.length }, 'got embedding for the query');
           const results = await vectorize.query(queryVec, filter, topK);
           getLogger().info({ results }, 'query results');
 

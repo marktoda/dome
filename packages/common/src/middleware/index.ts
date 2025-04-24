@@ -12,9 +12,6 @@ export { createErrorMiddleware } from './errorMiddleware';
 // Response handler middleware
 export { responseHandlerMiddleware } from './responseHandlerMiddleware';
 
-// Pino logger middleware
-export { createPinoLoggerMiddleware } from './pinoLogger';
-
 // Detailed logger middleware
 export { createDetailedLoggerMiddleware } from './detailedLoggerMiddleware';
 
