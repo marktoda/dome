@@ -1,7 +1,7 @@
 import { Bindings } from '../types';
 import { SearchService, SearchResult } from './searchService';
 import { ServiceError } from '@dome/common';
-import { getLogger } from '@dome/logging';
+import { logError, getLogger } from '@dome/logging';
 
 /**
  * Chat message interface
@@ -204,13 +204,13 @@ export class ChatService {
         return response.response;
       } catch (aiError) {
         // Handle specific AI service errors
-        getLogger().error({ err: aiError }, 'Error from AI service');
+        logError(aiError, 'Error from AI service');
 
         // Provide a fallback response instead of throwing
         return "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.";
       }
     } catch (error) {
-      getLogger().error({ err: error }, 'Error generating chat response');
+      logError(error, 'Error generating chat response');
 
       // Instead of throwing, return a fallback response
       return "I apologize, but I'm experiencing technical difficulties. Please try again later or contact support if the issue persists.";

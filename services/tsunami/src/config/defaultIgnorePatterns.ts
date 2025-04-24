@@ -15,8 +15,12 @@
 export const DEFAULT_IGNORE_PATTERNS = [
   // Build artifacts and dependencies
   'node_modules/**',
-  'snapshots/',
-  '.forge-snapshots/',
+  '**/node_modules/**',  // Match node_modules in any subdirectory
+  'snapshots/**',
+  '.forge-snapshots/**',
+  '__snapshots__/**',    // Jest snapshots
+  '**/__snapshots__/**', // Jest snapshots in any subdirectory
+  '**/*.snap',           // Snapshot files
   'dist/**',
   'build/**',
   '.next/**',
@@ -24,12 +28,21 @@ export const DEFAULT_IGNORE_PATTERNS = [
   'target/**',
   'bin/**',
   'obj/**',
+  'licenses/**',
+  'out/**',
 
   // Package manager files
   'package-lock.json',
   'yarn.lock',
   'pnpm-lock.yaml',
   'Cargo.lock',
+
+  // Configuration files
+  '.eslintrc*',         // ESLint config files
+  '.prettierrc*',       // Prettier config files
+  'tsconfig*.json',     // TypeScript config files
+  '.babelrc*',          // Babel config files
+  'jest.config.*',      // Jest config files
 
   // Generated files
   '*.min.js',
@@ -63,6 +76,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
 
   // Cache and temporary files
   '.cache/**',
+  'cache/**',
   '.tmp/**',
   'tmp/**',
   'temp/**',

@@ -191,6 +191,7 @@ export class ChatController {
         getLogger().info(
           {
             userId,
+            response,
             responseLength:
               typeof response === 'string' ? response.length : JSON.stringify(response).length,
           },

@@ -59,7 +59,18 @@ export class IgnorePatternProcessor {
     // Normalize path for consistent matching
     const normalizedPath = filePath.trim().replace(/^\/+/, '');
     
-    for (const pattern of this.patterns) {
+    // First check for negated patterns (patterns starting with !)
+    // If a file matches a negated pattern, it should NOT be ignored
+    const negatedPatterns = this.patterns.filter(p => p.startsWith('!'));
+    for (const pattern of negatedPatterns) {
+      if (this.matchesPattern(normalizedPath, pattern.slice(1))) {
+        return false;
+      }
+    }
+    
+    // Then check for regular patterns
+    const regularPatterns = this.patterns.filter(p => !p.startsWith('!'));
+    for (const pattern of regularPatterns) {
       if (this.matchesPattern(normalizedPath, pattern)) {
         return true;
       }
@@ -76,11 +87,6 @@ export class IgnorePatternProcessor {
    * @returns True if the path matches the pattern, false otherwise
    */
   private matchesPattern(filePath: string, pattern: string): boolean {
-    // Handle negation patterns (patterns starting with !)
-    if (pattern.startsWith('!')) {
-      return !this.matchesPattern(filePath, pattern.slice(1));
-    }
-
     // Normalize pattern
     let normalizedPattern = pattern.trim().replace(/^\/+/, '');
     
@@ -90,21 +96,50 @@ export class IgnorePatternProcessor {
       normalizedPattern = normalizedPattern.slice(0, -1);
     }
 
-    // Convert glob pattern to regex
-    let regexPattern = this.globToRegex(normalizedPattern);
+    // Special case for node_modules/** pattern
+    // This should match files inside node_modules but not the directory itself
+    // And should not match node_modules in subdirectories
+    if (normalizedPattern === 'node_modules/**') {
+      if (filePath === 'node_modules') {
+        return false;
+      }
+      
+      // Only match if the path starts with 'node_modules/'
+      return filePath.startsWith('node_modules/');
+    }
     
-    // For directory patterns, ensure it matches directories
-    if (isDirectoryPattern) {
-      regexPattern = new RegExp(`^${regexPattern}(?:/|$)`);
+    // Special case for **/.git/** pattern
+    // This should match .git anywhere in the path
+    if (normalizedPattern === '**/.git/**' || normalizedPattern === '.git/**') {
+      return filePath.startsWith('.git/');
+    }
+    
+    // Special case for **/node_modules/** pattern
+    // This should match node_modules anywhere in the path
+    if (normalizedPattern === '**/node_modules/**') {
+      return filePath.includes('node_modules/');
     }
     
     // For patterns with no wildcards that don't end with /, match files and directories
-    if (!pattern.includes('*') && !pattern.includes('?') && !isDirectoryPattern) {
+    if (!normalizedPattern.includes('*') && !normalizedPattern.includes('?') && !isDirectoryPattern) {
       // Match exact file or any file in directory with this name
       return filePath === normalizedPattern || filePath.startsWith(`${normalizedPattern}/`);
     }
     
-    return regexPattern.test(filePath);
+    // Handle patterns with wildcards
+    if (normalizedPattern.includes('*')) {
+      // Convert glob pattern to regex
+      const regexPattern = this.globToRegex(normalizedPattern);
+      
+      // For directory patterns, ensure it matches directories
+      if (isDirectoryPattern) {
+        return regexPattern.test(filePath) || filePath.startsWith(`${normalizedPattern}/`);
+      }
+      
+      return regexPattern.test(filePath);
+    }
+    
+    return false;
   }
 
   /**
@@ -132,7 +167,13 @@ export class IgnorePatternProcessor {
         .replace(/\?/g, '[^/]');
     }
     
-    return new RegExp(`^${regexString}$`);
+    // For patterns like "*.log", we want to match files in any directory
+    if (pattern.startsWith('*.')) {
+      return new RegExp(`${regexString}$`);
+    }
+    
+    // For other patterns, use a more flexible match
+    return new RegExp(regexString);
   }
 
   /**
