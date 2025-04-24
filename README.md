@@ -25,6 +25,10 @@ graph TD
 
     NEW_CONTENT -->|Trigger Embedding| Constellation
 
+    Tsunami[Tsunami Service] -->|Pull Content| GitHub[(GitHub Repos)]
+    Tsunami -->|Service Binding| Silo
+    Tsunami -->|Filter Files| TsunamiIgnore[.tsunamiignore]
+
     DomeCron[Dome Cron] -->|Scheduled Tasks| DomeAPI
     DomeCron -->|Trigger| DomeNotify[Dome Notify]
     DomeNotify -->|Read Data| D1
@@ -111,13 +115,40 @@ sequenceDiagram
     Constellation-->>DomeAPI: Search Results
 ```
 
-#### 4. Supporting Services
+#### 4. Tsunami Service
+
+A specialized service for ingesting content from external sources, particularly code repositories.
+
+- Pulls content from GitHub repositories
+- Filters files based on `.tsunamiignore` patterns (similar to `.gitignore`)
+- Injects metadata headers into content before sending to Silo
+- Supports incremental syncing with external sources
+- Provides configurable file filtering to reduce noise and improve search quality
+
+```mermaid
+sequenceDiagram
+    participant Tsunami
+    participant GitHub as GitHub API
+    participant Silo
+    participant Queue as NEW_CONTENT Queue
+    participant Constellation
+
+    Tsunami->>GitHub: Pull Repository Changes
+    GitHub-->>Tsunami: Repository Files
+    Tsunami->>Tsunami: Filter Files (.tsunamiignore)
+    Tsunami->>Tsunami: Process & Add Metadata
+    Tsunami->>Silo: Store Content
+    Silo->>Queue: Notify NEW_CONTENT
+    Queue->>Constellation: Process for Embedding
+```
+
+#### 5. Supporting Services
 
 - **Dome Cron**: Handles scheduled tasks and periodic operations
 - **Dome Notify**: Manages notifications and alerts
 - **CLI**: Command-line interface for interacting with the platform
 
-#### 5. Infrastructure Components
+#### 6. Infrastructure Components
 
 - **D1 Database**: SQL database for structured data
 - **R2 Storage**: Object storage for content bodies
@@ -143,6 +174,7 @@ dome/
 │   ├── dome-api/           # Main API service
 │   ├── constellation/      # Embedding service
 │   ├── silo/               # Content storage service
+│   ├── tsunami/            # External content ingestion
 │   ├── dome-cron/          # Scheduled tasks
 │   └── dome-notify/        # Notifications
 ├── packages/               # Shared libraries
