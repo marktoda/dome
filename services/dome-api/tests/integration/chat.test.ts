@@ -52,13 +52,13 @@ describe('Chat API Integration Tests', () => {
         controller.close();
       },
     });
-    
+
     const mockResponse = new Response(mockStream, {
       headers: {
-        'Content-Type': 'text/plain; charset=utf-8'
-      }
+        'Content-Type': 'text/plain; charset=utf-8',
+      },
     });
-    
+
     mockChatService.streamResponse.mockResolvedValue(mockResponse);
   });
 
@@ -75,29 +75,29 @@ describe('Chat API Integration Tests', () => {
   }) => {
     const mockJson = vi.fn();
     const mockHeaders = new Headers();
-    
+
     if (options.headers) {
       Object.entries(options.headers).forEach(([key, value]) => {
         mockHeaders.set(key, value);
       });
     }
-    
+
     // Store the body for json() method
     const bodyContent = options.body;
-    
+
     const mockRequest = new Request('http://localhost/api/chat', {
       method: 'POST',
       headers: mockHeaders,
       body: bodyContent ? JSON.stringify(bodyContent) : undefined,
     });
-    
+
     // Add header and query methods to the request object
     (mockRequest as any).header = (name: string) => mockHeaders.get(name);
     (mockRequest as any).query = (name: string) => options.query?.[name] || null;
     (mockRequest as any).path = '/api/chat';
     (mockRequest as any).method = 'POST';
     (mockRequest as any).json = vi.fn().mockResolvedValue(bodyContent || {});
-    
+
     return {
       req: mockRequest,
       env: mockEnv,
@@ -239,5 +239,3 @@ describe('Chat API Integration Tests', () => {
     });
   });
 });
-
-

@@ -101,7 +101,7 @@ export class GithubProvider implements Provider {
       this.ignorePatternProcessor.addPatterns(ignorePatterns);
       this.log.info(
         { owner, repo, patternCount: ignorePatterns.length },
-        'Loaded ignore patterns for repository'
+        'Loaded ignore patterns for repository',
       );
     }
 
@@ -170,7 +170,7 @@ export class GithubProvider implements Provider {
 
     this.log.info(
       { resourceId, files: puts.length, filtered: filteredFiles, commits: commits.length },
-      'github: pull done'
+      'github: pull done',
     );
 
     return { contents: puts, newCursor: commits[0].sha };

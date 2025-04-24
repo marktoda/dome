@@ -219,7 +219,7 @@ export class LlmService {
     try {
       // Try to extract JSON from the response, handling markdown code blocks
       let jsonString = response;
-      
+
       // Check if response is wrapped in markdown code blocks
       const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (codeBlockMatch && codeBlockMatch[1]) {
@@ -247,12 +247,12 @@ export class LlmService {
       return parsed;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      
+
       // Enhanced logging with more context about the response format
       const hasCodeBlock = response.includes('```');
       const firstFewChars = response.substring(0, 50).replace(/\n/g, '\\n');
       const lastFewChars = response.substring(response.length - 50).replace(/\n/g, '\\n');
-      
+
       getLogger().error(
         {
           error,
@@ -261,7 +261,7 @@ export class LlmService {
           hasCodeBlock,
           firstFewChars,
           lastFewChars,
-          parseErrorMessage: errorMessage
+          parseErrorMessage: errorMessage,
         },
         'Failed to parse LLM response',
       );

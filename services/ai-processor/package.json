@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "AI content processing service for Dome",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "wrangler dev",

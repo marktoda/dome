@@ -16,16 +16,16 @@ describe('DEFAULT_IGNORE_PATTERNS', () => {
     expect(DEFAULT_IGNORE_PATTERNS).toContain('node_modules/**');
     expect(DEFAULT_IGNORE_PATTERNS).toContain('dist/**');
     expect(DEFAULT_IGNORE_PATTERNS).toContain('build/**');
-    
+
     // Check for package manager files
     expect(DEFAULT_IGNORE_PATTERNS.some(p => p.includes('package-lock.json'))).toBe(true);
     expect(DEFAULT_IGNORE_PATTERNS.some(p => p.includes('yarn.lock'))).toBe(true);
     expect(DEFAULT_IGNORE_PATTERNS.some(p => p.includes('pnpm-lock.yaml'))).toBe(true);
-    
+
     // Check for test snapshots
     expect(DEFAULT_IGNORE_PATTERNS.some(p => p.includes('__snapshots__'))).toBe(true);
     expect(DEFAULT_IGNORE_PATTERNS.some(p => p.includes('*.snap'))).toBe(true);
-    
+
     // Check for config files
     expect(DEFAULT_IGNORE_PATTERNS.some(p => p.includes('.eslintrc'))).toBe(true);
     expect(DEFAULT_IGNORE_PATTERNS.some(p => p.includes('.prettierrc'))).toBe(true);

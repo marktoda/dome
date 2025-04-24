@@ -146,6 +146,22 @@ app.post('/chat', async (c: Context<{ Bindings: Bindings }>) => {
 app.route('/notes', notesRouter);
 app.route('/search', searchRouter);
 
+// AI endpoints
+const aiRouter = new Hono();
+aiRouter.use('*', userIdMiddleware);
+
+// Reprocess endpoint - for reprocessing failed AI metadata
+aiRouter.post(
+  '/reprocess',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const siloController = controllerFactory.getSiloController(c.env);
+    return await siloController.reprocess(c);
+  },
+);
+
+// Mount AI router
+app.route('/ai', aiRouter);
+
 // 404 handler for unknown routes
 app.notFound(c => {
   getLogger().info(

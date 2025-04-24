@@ -11,7 +11,7 @@ export class PromptBuilder {
   // Reserve tokens for the model's response
   private static readonly RESPONSE_TOKEN_RESERVE = 2000;
   // Maximum system prompt size in tokens
-  private static readonly MAX_SYSTEM_PROMPT_TOKENS = 
+  private static readonly MAX_SYSTEM_PROMPT_TOKENS =
     PromptBuilder.MAX_CONTEXT_WINDOW - PromptBuilder.RESPONSE_TOKEN_RESERVE;
 
   private static readonly logger = getLogger();
@@ -22,7 +22,7 @@ export class PromptBuilder {
    * @returns Token count
    */
   static countTokens(text: string): number {
-    const encoder = encoding_for_model("gpt-3.5-turbo");
+    const encoder = encoding_for_model('gpt-3.5-turbo');
     const tokens = encoder.encode(text);
     const count = tokens.length;
     encoder.free();
@@ -43,19 +43,22 @@ export class PromptBuilder {
 
     // Simple truncation approach - we'll truncate by percentage and check again
     // This is more efficient than character-by-character truncation
-    const truncationRatio = maxTokens / tokenCount * 0.9; // 90% of ideal to be safe
-    const truncatedText = text.substring(0, Math.floor(text.length * truncationRatio)) + 
+    const truncationRatio = (maxTokens / tokenCount) * 0.9; // 90% of ideal to be safe
+    const truncatedText =
+      text.substring(0, Math.floor(text.length * truncationRatio)) +
       '... [truncated due to length]';
-    
+
     // Verify the truncation worked
     const newTokenCount = this.countTokens(truncatedText);
     if (newTokenCount <= maxTokens) {
       return truncatedText;
     }
-    
+
     // If still too long, use a more aggressive truncation
-    return text.substring(0, Math.floor(text.length * truncationRatio * 0.8)) + 
-      '... [truncated due to length]';
+    return (
+      text.substring(0, Math.floor(text.length * truncationRatio * 0.8)) +
+      '... [truncated due to length]'
+    );
   }
 
   /**
@@ -108,7 +111,7 @@ export class PromptBuilder {
    */
   static build(context: SearchResult[]): string {
     const formattedContext = this.formatContextForPrompt(context);
-    
+
     // Log context size information
     const contextTokens = this.countTokens(formattedContext);
     this.logger.info(
@@ -130,12 +133,9 @@ export class PromptBuilder {
         },
         'Context is too large, truncating',
       );
-      
-      finalContext = this.truncateToTokenLimit(
-        formattedContext,
-        this.MAX_SYSTEM_PROMPT_TOKENS,
-      );
-      
+
+      finalContext = this.truncateToTokenLimit(formattedContext, this.MAX_SYSTEM_PROMPT_TOKENS);
+
       this.logger.info(
         {
           newLength: finalContext.length,
@@ -147,7 +147,7 @@ export class PromptBuilder {
 
     // Create the final system prompt
     const systemPrompt = this.createSystemPrompt(finalContext);
-    
+
     this.logger.info(
       {
         systemPromptLength: systemPrompt.length,

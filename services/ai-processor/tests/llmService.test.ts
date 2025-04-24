@@ -194,7 +194,8 @@ describe('LlmService', () => {
     it('should handle JSON responses wrapped in markdown code blocks', async () => {
       // Mock AI to return JSON wrapped in markdown code blocks
       mockAi.run.mockResolvedValue({
-        response: '```json\n{"title": "Markdown Code Block", "summary": "This JSON is wrapped in markdown code blocks."}\n```',
+        response:
+          '```json\n{"title": "Markdown Code Block", "summary": "This JSON is wrapped in markdown code blocks."}\n```',
       });
 
       const content = 'This is a test note.';

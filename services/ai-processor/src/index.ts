@@ -1,8 +1,9 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withLogger, logError, getLogger, metrics } from '@dome/logging';
 import { createLlmService } from './services/llmService';
-import { EnrichedContentMessage, NewContentMessage } from '@dome/common';
+import { EnrichedContentMessage, NewContentMessage, SiloContentMetadata } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+import { z } from 'zod';
 
 const buildServices = (env: Env) => ({
   llm: createLlmService(env),
@@ -19,18 +20,146 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     }
   });
 
+// Define the schema for reprocess requests
+export const ReprocessRequestSchema = z.object({
+  id: z.string().optional(),
+});
+
+// Define the schema for reprocess responses
+export const ReprocessResponseSchema = z.object({
+  success: z.boolean(),
+  reprocessed: z.union([
+    z.object({
+      id: z.string(),
+      success: z.boolean(),
+    }),
+    z.object({
+      total: z.number(),
+      successful: z.number(),
+    }),
+  ]),
+});
+
 /**
  * AI Processor Worker
  *
  * This worker processes content from the NEW_CONTENT queue,
  * extracts metadata using LLM, and publishes results to the
  * ENRICHED_CONTENT queue.
+ *
+ * It also provides RPC functions for reprocessing content.
  */
 export default class AiProcessor extends WorkerEntrypoint<Env> {
   /** Lazily created bundle of service clients (re‑used for every call) */
   private _services?: ReturnType<typeof buildServices>;
   private get services() {
     return (this._services ??= buildServices(this.env));
+  }
+
+  /**
+   * RPC function to reprocess content
+   * @param data Request data with optional ID
+   * @returns Result of reprocessing
+   */
+  async reprocess(data: z.infer<typeof ReprocessRequestSchema>) {
+    return withLogger({ service: 'ai-processor', op: 'reprocess', id: data.id }, async () => {
+      try {
+        // Validate input
+        const validatedData = ReprocessRequestSchema.parse(data);
+        const { id } = validatedData;
+
+        if (id) {
+          // Reprocess specific content by ID
+          getLogger().info({ id }, 'Reprocessing specific content by ID');
+          const result = await this.reprocessById(id);
+          return { success: true, reprocessed: result };
+        } else {
+          // Reprocess all content with null or "Content processing failed" summary
+          getLogger().info('Reprocessing all content with null or failed summary');
+          const result = await this.reprocessFailedContent();
+          return { success: true, reprocessed: result };
+        }
+      } catch (error) {
+        logError(error, 'Error in reprocess');
+        metrics.increment('ai_processor.reprocess.errors', 1);
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Reprocess content by ID
+   * @param id Content ID to reprocess
+   * @returns Result of reprocessing
+   */
+  private async reprocessById(id: string): Promise<{ id: string; success: boolean }> {
+    try {
+      // Get content metadata from Silo
+      const metadata = await this.services.silo.getMetadataById(id);
+
+      if (!metadata) {
+        throw new Error(`Content with ID ${id} not found`);
+      }
+
+      // Create a new content message and process it
+      const message: NewContentMessage = {
+        id: metadata.id,
+        userId: metadata.userId,
+        category: metadata.category,
+        mimeType: metadata.mimeType,
+      };
+
+      await this.processMessage(message);
+
+      metrics.increment('ai_processor.reprocess.success', 1, { type: 'by_id' });
+      return { id, success: true };
+    } catch (error) {
+      logError(error, 'Error reprocessing content by ID', { id });
+      metrics.increment('ai_processor.reprocess.errors', 1, { type: 'by_id' });
+      return { id, success: false };
+    }
+  }
+
+  /**
+   * Reprocess all content with null or "Content processing failed" summary
+   * @returns Result of reprocessing
+   */
+  private async reprocessFailedContent(): Promise<{ total: number; successful: number }> {
+    try {
+      // Get all content with null or "Content processing failed" summary
+      const failedContent = await this.services.silo.findContentWithFailedSummary();
+
+      getLogger().info({ count: failedContent.length }, 'Found content with failed summaries');
+
+      let successful = 0;
+
+      // Process each failed content
+      for (const content of failedContent) {
+        try {
+          const message: NewContentMessage = {
+            id: content.id,
+            userId: content.userId,
+            category: content.category,
+            mimeType: content.mimeType,
+          };
+
+          await this.processMessage(message);
+          successful++;
+        } catch (error) {
+          logError(error, 'Error reprocessing failed content', { id: content.id });
+        }
+      }
+
+      metrics.increment('ai_processor.reprocess.success', 1, { type: 'all_failed' });
+      metrics.increment('ai_processor.reprocess.total_processed', failedContent.length);
+      metrics.increment('ai_processor.reprocess.successful', successful);
+
+      return { total: failedContent.length, successful };
+    } catch (error) {
+      logError(error, 'Error reprocessing failed content');
+      metrics.increment('ai_processor.reprocess.errors', 1, { type: 'all_failed' });
+      return { total: 0, successful: 0 };
+    }
   }
 
   /**
@@ -145,7 +274,10 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
         timestamp: Date.now(),
       };
 
-      await this.env.ENRICHED_CONTENT.send(enrichedMessage);
+      // Only send to ENRICHED_CONTENT queue if it exists (it won't exist in dome-api)
+      if ('ENRICHED_CONTENT' in this.env) {
+        await (this.env as any).ENRICHED_CONTENT.send(enrichedMessage);
+      }
 
       getLogger().info(
         {

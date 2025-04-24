@@ -1,4 +1,5 @@
 import type { MessageData, SiloSimplePutInput } from '@dome/common';
+import type { AiProcessorBinding } from '@dome/ai-processor/client';
 
 /**
  * Interface for Workers AI binding
@@ -16,7 +17,7 @@ export type Bindings = {
   AI?: WorkersAI; // Optional to support testing environments
   CONSTELLATION?: Fetcher; // Optional to support testing environments
   SILO: Fetcher; // Silo service binding
-  AI_PROCESSOR: Fetcher; // AI processor service binding
+  AI_PROCESSOR: AiProcessorBinding; // AI processor service binding
   VERSION?: string; // Version of the service
   ENVIRONMENT?: string; // Environment (development, staging, production)
 };

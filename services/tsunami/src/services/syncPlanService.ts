@@ -6,8 +6,8 @@ import { ProviderType } from '../providers';
 import { Bindings } from '../types';
 
 /* ─────────── custom errors ─────────── */
-export class NotFoundError extends Error { }
-export class AlreadyExistsError extends Error { }
+export class NotFoundError extends Error {}
+export class AlreadyExistsError extends Error {}
 
 export interface InitParams {
   resourceId: string;
@@ -17,7 +17,7 @@ export interface InitParams {
 
 export class SyncPlanService {
   private logger = getLogger();
-  constructor(private env: Bindings) { }
+  constructor(private env: Bindings) {}
 
   /* ─────────── Sync‑plan CRUD ─────────── */
 

@@ -307,10 +307,10 @@ maxFileSize: number;
 logSkippedFiles: boolean;
 }
 
-export const DEFAULT_FILTER_CONFIG: FilterConfig = {
+export const DEFAULT*FILTER_CONFIG: FilterConfig = {
 useDefaultPatterns: true,
 useIgnoreFiles: true,
-maxFileSize: 1 _ 1024 _ 1024, // 1MB
+maxFileSize: 1 * 1024 \_ 1024, // 1MB
 logSkippedFiles: false,
 }; 4. Implementation Plan
 4.1. Required Code Changes

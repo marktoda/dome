@@ -8,7 +8,7 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 // Mock the atob function
-global.atob = vi.fn((str) => Buffer.from(str, 'base64').toString('binary'));
+global.atob = vi.fn(str => Buffer.from(str, 'base64').toString('binary'));
 
 // Mock the logger
 vi.mock('@dome/logging', () => ({
@@ -16,8 +16,8 @@ vi.mock('@dome/logging', () => ({
     debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
-    error: vi.fn()
-  })
+    error: vi.fn(),
+  }),
 }));
 
 describe('IgnoreFileService', () => {
@@ -42,21 +42,21 @@ describe('IgnoreFileService', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          content: 'bm9kZV9tb2R1bGVzLwoqLmxvZwojIENvbW1lbnQKZGlzdC8='
+          content: 'bm9kZV9tb2R1bGVzLwoqLmxvZwojIENvbW1lbnQKZGlzdC8=',
         }),
-        text: async () => ''
+        text: async () => '',
       };
       mockFetch.mockResolvedValueOnce(mockResponse);
 
       const result = await service.getIgnorePatterns('owner', 'repo');
-      
+
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.github.com/repos/owner/repo/contents/.tsunamiignore',
         expect.objectContaining({
           headers: expect.objectContaining({
-            Authorization: 'token test-token'
-          })
-        })
+            Authorization: 'token test-token',
+          }),
+        }),
       );
       expect(result).toEqual(['node_modules/', '*.log', 'dist/']);
     });
@@ -66,12 +66,12 @@ describe('IgnoreFileService', () => {
         ok: false,
         status: 404,
         json: async () => ({}),
-        text: async () => ''
+        text: async () => '',
       };
       mockFetch.mockResolvedValueOnce(mockResponse);
 
       const result = await service.getIgnorePatterns('owner', 'repo');
-      
+
       expect(result).toEqual(DEFAULT_IGNORE_PATTERNS);
     });
 
@@ -80,30 +80,30 @@ describe('IgnoreFileService', () => {
         ok: false,
         status: 404,
         json: async () => ({}),
-        text: async () => ''
+        text: async () => '',
       };
       mockFetch.mockResolvedValueOnce(mockResponse);
 
       // Create service with custom config
       const customConfig: Partial<FilterConfig> = {
-        useDefaultPatternsWhenNoIgnoreFile: false
+        useDefaultPatternsWhenNoIgnoreFile: false,
       };
       const customService = new IgnoreFileService(mockGithubToken, customConfig);
 
       const result = await customService.getIgnorePatterns('owner', 'repo');
-      
+
       expect(result).toEqual([]);
     });
 
     it('should return empty array when filtering is disabled', async () => {
       // Create service with disabled filtering
       const customConfig: Partial<FilterConfig> = {
-        enabled: false
+        enabled: false,
       };
       const customService = new IgnoreFileService(mockGithubToken, customConfig);
 
       const result = await customService.getIgnorePatterns('owner', 'repo');
-      
+
       // Should not call fetch when disabled
       expect(mockFetch).not.toHaveBeenCalled();
       expect(result).toEqual([]);
@@ -113,7 +113,7 @@ describe('IgnoreFileService', () => {
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
       const result = await service.getIgnorePatterns('owner', 'repo');
-      
+
       expect(result).toEqual(DEFAULT_IGNORE_PATTERNS);
     });
 
@@ -122,12 +122,12 @@ describe('IgnoreFileService', () => {
 
       // Create service with custom config
       const customConfig: Partial<FilterConfig> = {
-        useDefaultPatternsWhenNoIgnoreFile: false
+        useDefaultPatternsWhenNoIgnoreFile: false,
       };
       const customService = new IgnoreFileService(mockGithubToken, customConfig);
 
       const result = await customService.getIgnorePatterns('owner', 'repo');
-      
+
       expect(result).toEqual([]);
     });
 
@@ -137,14 +137,14 @@ describe('IgnoreFileService', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          content: ''
+          content: '',
         }),
-        text: async () => ''
+        text: async () => '',
       };
       mockFetch.mockResolvedValueOnce(mockResponse);
 
       const result = await service.getIgnorePatterns('owner', 'repo');
-      
+
       expect(result).toEqual([]);
     });
 
@@ -154,14 +154,14 @@ describe('IgnoreFileService', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          content: 'bm9kZV9tb2R1bGVzLyoqCgojIENvbW1lbnQKCmRpc3QvKio='
+          content: 'bm9kZV9tb2R1bGVzLyoqCgojIENvbW1lbnQKCmRpc3QvKio=',
         }),
-        text: async () => ''
+        text: async () => '',
       };
       mockFetch.mockResolvedValueOnce(mockResponse);
-      
+
       const result = await service.getIgnorePatterns('owner', 'repo');
-      
+
       // We only care that the comments and empty lines were filtered out
       expect(result).toContain('node_modules/**');
       expect(result).toContain('dist/**');
@@ -171,7 +171,7 @@ describe('IgnoreFileService', () => {
     it('should use custom ignore file name from config', async () => {
       // Create service with custom ignore file name
       const customConfig: Partial<FilterConfig> = {
-        ignoreFileName: '.customignore'
+        ignoreFileName: '.customignore',
       };
       const customService = new IgnoreFileService(mockGithubToken, customConfig);
 
@@ -179,17 +179,17 @@ describe('IgnoreFileService', () => {
         ok: true,
         status: 200,
         json: async () => ({
-          content: 'bm9kZV9tb2R1bGVzLw==' // "node_modules/" base64 encoded
+          content: 'bm9kZV9tb2R1bGVzLw==', // "node_modules/" base64 encoded
         }),
-        text: async () => ''
+        text: async () => '',
       };
       mockFetch.mockResolvedValueOnce(mockResponse);
 
       await customService.getIgnorePatterns('owner', 'repo');
-      
+
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.github.com/repos/owner/repo/contents/.customignore',
-        expect.anything()
+        expect.anything(),
       );
     });
 
@@ -199,12 +199,12 @@ describe('IgnoreFileService', () => {
         status: 500,
         statusText: 'Internal Server Error',
         json: async () => ({}),
-        text: async () => 'Server Error'
+        text: async () => 'Server Error',
       };
       mockFetch.mockResolvedValueOnce(mockResponse);
 
       const result = await service.getIgnorePatterns('owner', 'repo');
-      
+
       // Should return default patterns when HTTP error occurs
       expect(result).toEqual(DEFAULT_IGNORE_PATTERNS);
     });

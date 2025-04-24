@@ -39,7 +39,7 @@ export class ContentController {
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
     private readonly siloService: SiloService,
-  ) { }
+  ) {}
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */

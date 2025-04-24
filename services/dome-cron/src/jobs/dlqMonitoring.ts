@@ -200,18 +200,19 @@ export async function monitorDLQ(env: Env): Promise<void> {
     // Send an alert for the monitoring job failure
     await sendAlert({
       title: 'DLQ Monitoring Job Failed',
-      message: `The DLQ monitoring job failed: ${error instanceof Error ? error.message : 'Unknown error'
-        }`,
+      message: `The DLQ monitoring job failed: ${
+        error instanceof Error ? error.message : 'Unknown error'
+      }`,
       severity: 'error',
       metadata: {
         timestamp: new Date().toISOString(),
         error:
           error instanceof Error
             ? {
-              name: error.name,
-              message: error.message,
-              stack: error.stack,
-            }
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
             : String(error),
       },
     });

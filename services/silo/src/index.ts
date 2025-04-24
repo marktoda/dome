@@ -19,6 +19,7 @@ import {
   siloDeleteSchema,
   siloStatsSchema,
   SiloBatchGetInput,
+  SiloContentMetadata,
   SiloDeleteInput,
   SiloStatsInput,
   SiloContentBatch,
@@ -68,12 +69,10 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
     } catch (dlqError) {
       // If we can't send to DLQ, log the error but still acknowledge the message
       // to prevent an infinite retry loop
-      logError(
-        getLogger(),
-        dlqError,
-        'Error sending message to DLQ, acknowledging original message anyway',
-        { originalError: error.message, messageId: message.id },
-      );
+      logError(dlqError, 'Error sending message to DLQ, acknowledging original message anyway', {
+        originalError: error.message,
+        messageId: message.id,
+      });
       message.ack();
     }
   }
@@ -295,6 +294,36 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
         }
         logError(error, 'Error in stats');
         metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Find content with null or "Content processing failed" summaries
+   */
+  async findContentWithFailedSummary(): Promise<SiloContentMetadata[]> {
+    return wrap({ operation: 'findContentWithFailedSummary' }, async () => {
+      try {
+        return await this.services.metadata.findContentWithFailedSummary();
+      } catch (error) {
+        logError(error, 'Error in findContentWithFailedSummary');
+        metrics.increment('silo.rpc.errors', 1, { method: 'findContentWithFailedSummary' });
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Get metadata for a specific content by ID
+   */
+  async getMetadataById(id: string): Promise<SiloContentMetadata | null> {
+    return wrap({ operation: 'getMetadataById', id }, async () => {
+      try {
+        return await this.services.metadata.getMetadataById(id);
+      } catch (error) {
+        logError(error, 'Error in getMetadataById');
+        metrics.increment('silo.rpc.errors', 1, { method: 'getMetadataById' });
         throw error;
       }
     });

@@ -49,13 +49,13 @@ vi.mock('../../src/services/llmClient', () => {
       callStream: vi.fn().mockResolvedValue(
         new Response('This is a mock streaming response', {
           headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        })
+        }),
       ),
       fallbackResponse: vi.fn().mockReturnValue('Fallback response'),
       createFallbackResponse: vi.fn().mockReturnValue(
         new Response('Fallback response', {
           headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        })
+        }),
       ),
     },
     MODEL: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
@@ -66,11 +66,21 @@ vi.mock('../../src/services/llmClient', () => {
 vi.mock('../../src/services/promptBuilder', () => {
   return {
     PromptBuilder: {
-      build: vi.fn().mockReturnValue('You are an AI assistant with access to the user\'s personal knowledge base.'),
+      build: vi
+        .fn()
+        .mockReturnValue(
+          "You are an AI assistant with access to the user's personal knowledge base.",
+        ),
       countTokens: vi.fn().mockReturnValue(100),
-      truncateToTokenLimit: vi.fn().mockImplementation((text) => text),
-      formatContextForPrompt: vi.fn().mockReturnValue('[1] Test Note 1\nThis is the content of test note 1.'),
-      createSystemPrompt: vi.fn().mockReturnValue('You are an AI assistant with access to the user\'s personal knowledge base.'),
+      truncateToTokenLimit: vi.fn().mockImplementation(text => text),
+      formatContextForPrompt: vi
+        .fn()
+        .mockReturnValue('[1] Test Note 1\nThis is the content of test note 1.'),
+      createSystemPrompt: vi
+        .fn()
+        .mockReturnValue(
+          "You are an AI assistant with access to the user's personal knowledge base.",
+        ),
     },
   };
 });
@@ -81,7 +91,7 @@ export const mockChatService = {
   streamResponse: vi.fn().mockResolvedValue(
     new Response('This is a test streaming response', {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    })
+    }),
   ),
 };
 
@@ -101,12 +111,14 @@ export const mockEnv = {
   AI: {
     run: vi.fn().mockImplementation((model, options) => {
       if (options.stream) {
-        return Promise.resolve(new ReadableStream({
-          start(controller) {
-            controller.enqueue('This is a test stream response');
-            controller.close();
-          },
-        }));
+        return Promise.resolve(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue('This is a test stream response');
+              controller.close();
+            },
+          }),
+        );
       }
       return Promise.resolve({ response: 'This is a test response' });
     }),

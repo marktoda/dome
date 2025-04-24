@@ -6,12 +6,12 @@ This document explains the refactoring of the chat service in the dome-api proje
 
 ### Streaming Issues
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| **No tokens until the very end** | Creating a custom `TransformStream` when Workers AI already returns a `ReadableStream` of chunks | Return the stream from `env.AI.run()` directly |
-| **Random "writer closed" errors** | Timeout could fire after the AI stream finished and closed the writer | Clear the timeout in every exit path and gate `writer.close()` behind `writer.locked` |
-| **Nothing arrives on the client** | Missing response headers | Wrap the stream in a Response with proper headers |
-| **Slow first token** | Excessive logging for each chunk | Reduced logging frequency and level |
+| Symptom                           | Cause                                                                                            | Fix                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| **No tokens until the very end**  | Creating a custom `TransformStream` when Workers AI already returns a `ReadableStream` of chunks | Return the stream from `env.AI.run()` directly                                        |
+| **Random "writer closed" errors** | Timeout could fire after the AI stream finished and closed the writer                            | Clear the timeout in every exit path and gate `writer.close()` behind `writer.locked` |
+| **Nothing arrives on the client** | Missing response headers                                                                         | Wrap the stream in a Response with proper headers                                     |
+| **Slow first token**              | Excessive logging for each chunk                                                                 | Reduced logging frequency and level                                                   |
 
 ### Structural Issues
 
@@ -34,18 +34,22 @@ ChatService
 ### Key Improvements
 
 1. **Direct Stream Usage**
+
    - Now returns the Workers AI stream directly instead of wrapping it in a TransformStream
    - Adds proper headers to the Response
 
 2. **Single Fallback/Timeout Wrapper**
+
    - Centralized timeout and fallback logic in the LlmClient
    - Consistent error handling across streaming and non-streaming paths
 
 3. **Proper Token Counting**
+
    - Replaced ad-hoc token math with the `@dqbd/tiktoken` tokenizer
    - More accurate token counting for context truncation
 
 4. **Reduced Logging**
+
    - Simplified logging with focused, meaningful log entries
    - Reduced per-chunk logging to debug level
 
@@ -58,6 +62,7 @@ ChatService
 ### PromptBuilder
 
 Handles token-aware prompt building and RAG context injection:
+
 - Counts tokens accurately using tiktoken
 - Formats context for inclusion in prompts
 - Truncates content to fit token limits
@@ -65,6 +70,7 @@ Handles token-aware prompt building and RAG context injection:
 ### LlmClient
 
 Handles interactions with the AI service:
+
 - Provides unified timeout handling
 - Centralizes fallback responses
 - Handles test mode consistently
@@ -73,6 +79,7 @@ Handles interactions with the AI service:
 ### ChatService
 
 Orchestrates the overall chat process:
+
 - Uses PromptBuilder for context-enhanced prompts
 - Uses LlmClient for AI interactions
 - Handles high-level error cases

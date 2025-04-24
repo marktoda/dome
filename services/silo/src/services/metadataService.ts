@@ -384,6 +384,41 @@ export class MetadataService {
       throw error;
     }
   }
+
+  /**
+   * Find content with null or "Content processing failed" summaries
+   * @returns Promise resolving to an array of content metadata
+   */
+  async findContentWithFailedSummary(): Promise<SiloContentMetadata[]> {
+    const startTime = Date.now();
+
+    try {
+      try {
+        // Query for content with null summary or "Content processing failed" summary
+        const results = await this.db
+          .select()
+          .from(contents)
+          .where(or(isNull(contents.summary), eq(contents.summary, 'Content processing failed')))
+          .all();
+
+        metrics.timing('silo.d1.find_failed_summary.latency_ms', Date.now() - startTime);
+        getLogger().info({ count: results.length }, 'Found content with failed summaries');
+
+        return results as SiloContentMetadata[];
+      } catch (error) {
+        // Check if the error is because the table doesn't exist
+        if (error instanceof Error && error.message.includes('no such table: contents')) {
+          getLogger().warn('Contents table does not exist yet, returning empty array');
+          return [];
+        }
+        throw error;
+      }
+    } catch (error) {
+      metrics.increment('silo.d1.errors', 1, { operation: 'find_failed_summary' });
+      logError(error, 'Error finding content with failed summaries');
+      throw error;
+    }
+  }
 }
 
 export function createMetadataService(env: Env): MetadataService {

@@ -46,18 +46,18 @@ describe('IgnorePatternProcessor', () => {
     it('should match directory patterns with /**', () => {
       const processor = new IgnorePatternProcessor(['node_modules/**']);
       expect(processor.shouldIgnore('node_modules/package/index.js')).toBe(true);
-      
+
       // Special case: 'node_modules/**' should not match 'node_modules' itself
       // This is to allow ignoring files inside a directory but not the directory itself
       processor.clearPatterns();
       processor.addPatterns(['node_modules/**']);
       expect(processor.shouldIgnore('node_modules')).toBe(false);
-      
+
       // Should not match node_modules in subdirectories unless pattern is **/node_modules/**
       processor.clearPatterns();
       processor.addPatterns(['node_modules/**']);
       expect(processor.shouldIgnore('src/node_modules/file.js')).toBe(false);
-      
+
       // But should match with the correct pattern
       processor.clearPatterns();
       processor.addPatterns(['**/node_modules/**']);
@@ -82,7 +82,7 @@ describe('IgnorePatternProcessor', () => {
         'node_modules/**',
         '*.log',
         '!important.log',
-        'important.log.backup'
+        'important.log.backup',
       ]);
       expect(processor.shouldIgnore('node_modules/package/index.js')).toBe(true);
       expect(processor.shouldIgnore('error.log')).toBe(true);
@@ -103,17 +103,17 @@ describe('IgnorePatternProcessor', () => {
       let processor = new IgnorePatternProcessor(['**/*.min.js']);
       expect(processor.shouldIgnore('dist/bundle.min.js')).toBe(true);
       expect(processor.shouldIgnore('src/components/Button.js')).toBe(false);
-      
+
       processor = new IgnorePatternProcessor(['**/node_modules/**']);
       expect(processor.shouldIgnore('node_modules/package/index.js')).toBe(true);
       expect(processor.shouldIgnore('subproject/node_modules/package/index.js')).toBe(true);
-      
+
       processor = new IgnorePatternProcessor(['**/.git/**']);
       expect(processor.shouldIgnore('.git/HEAD')).toBe(true);
-      
+
       processor = new IgnorePatternProcessor(['*.log']);
       expect(processor.shouldIgnore('error.log')).toBe(true);
-      
+
       // Test negation pattern
       processor = new IgnorePatternProcessor(['*.log', '!*.important.log']);
       expect(processor.shouldIgnore('error.log')).toBe(true);

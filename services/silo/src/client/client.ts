@@ -7,6 +7,7 @@ import {
   SiloDeleteResponse,
   SiloStatsResponse,
   SiloContentItem,
+  SiloContentMetadata,
 } from '@dome/common';
 import { getLogger, logError, metrics } from '@dome/logging';
 import { SiloBinding } from '../types';
@@ -218,6 +219,57 @@ export class SiloClient {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.delete.errors`);
       logError(error, 'Error deleting content from Silo');
+      throw error;
+    }
+  }
+
+  /**
+   * Find content with null or "Content processing failed" summaries
+   * @returns Promise resolving to an array of content metadata
+   */
+  async findContentWithFailedSummary(): Promise<SiloContentMetadata[]> {
+    const startTime = performance.now();
+    try {
+      getLogger().info('Finding content with failed summaries');
+
+      const result = await this.binding.findContentWithFailedSummary();
+
+      metrics.increment(`${this.metricsPrefix}.findContentWithFailedSummary.success`);
+      metrics.timing(
+        `${this.metricsPrefix}.findContentWithFailedSummary.latency_ms`,
+        performance.now() - startTime,
+      );
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.findContentWithFailedSummary.errors`);
+      logError(error, 'Error finding content with failed summaries');
+      throw error;
+    }
+  }
+
+  /**
+   * Get metadata for a specific content by ID
+   * @param id Content ID
+   * @returns Promise resolving to the content metadata
+   */
+  async getMetadataById(id: string): Promise<SiloContentMetadata | null> {
+    const startTime = performance.now();
+    try {
+      getLogger().info({ id }, 'Getting content metadata by ID');
+
+      const result = await this.binding.getMetadataById(id);
+
+      metrics.increment(`${this.metricsPrefix}.getMetadataById.success`);
+      metrics.timing(
+        `${this.metricsPrefix}.getMetadataById.latency_ms`,
+        performance.now() - startTime,
+      );
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.getMetadataById.errors`);
+      logError(error, 'Error getting content metadata by ID', { id });
       throw error;
     }
   }

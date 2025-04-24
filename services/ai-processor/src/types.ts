@@ -26,7 +26,7 @@ export enum ReminderStatus {
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
   SNOOZED = 'snoozed',
-  FAILED = 'failed'
+  FAILED = 'failed',
 }
 
 /**
@@ -36,7 +36,7 @@ export enum ReminderPriority {
   LOW = 'low',
   MEDIUM = 'medium',
   HIGH = 'high',
-  URGENT = 'urgent'
+  URGENT = 'urgent',
 }
 
 /**
@@ -45,7 +45,7 @@ export enum ReminderPriority {
 export enum NotificationChannel {
   PUSH = 'push',
   EMAIL = 'email',
-  IN_APP = 'in_app'
+  IN_APP = 'in_app',
 }
 
 /**

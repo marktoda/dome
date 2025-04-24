@@ -27,11 +27,14 @@ export class LlmClient {
    * @param timeoutMs Timeout in milliseconds
    * @returns Promise result
    */
-  private static async withTimeout<T>(promise: Promise<T>, timeoutMs = this.DEFAULT_TIMEOUT_MS): Promise<T> {
+  private static async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs = this.DEFAULT_TIMEOUT_MS,
+  ): Promise<T> {
     return Promise.race([
       promise,
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`AI call timed-out after ${timeoutMs} ms`)), timeoutMs)
+        setTimeout(() => reject(new Error(`AI call timed-out after ${timeoutMs} ms`)), timeoutMs),
       ),
     ]);
   }
@@ -50,7 +53,7 @@ export class LlmClient {
    */
   static createFallbackResponse(): Response {
     return new Response(this.fallbackResponse(), {
-      headers: { "Content-Type": "text/plain; charset=utf-8" }
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }
 
@@ -86,7 +89,7 @@ export class LlmClient {
       'testing ',
       'purposes.',
     ];
-    
+
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
@@ -96,11 +99,11 @@ export class LlmClient {
           await new Promise(resolve => setTimeout(resolve, 10));
         }
         controller.close();
-      }
+      },
     });
-    
+
     return new Response(stream, {
-      headers: { "Content-Type": "text/plain; charset=utf-8" }
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
   }
 
@@ -117,7 +120,7 @@ export class LlmClient {
       if (this.isTestEnvironment()) {
         return this.getMockResponse();
       }
-      
+
       this.logger.warn('Workers AI binding is not available, using fallback response');
       return this.fallbackResponse();
     }
@@ -125,9 +128,7 @@ export class LlmClient {
     try {
       // Call Workers AI with timeout and error handling
       this.logger.info({ model: MODEL }, 'Calling Workers AI');
-      const response = await this.withTimeout(
-        env.AI.run(MODEL, { messages })
-      );
+      const response = await this.withTimeout(env.AI.run(MODEL, { messages }));
 
       // Check if we have a valid response
       if (!response || !response.response) {
@@ -139,7 +140,7 @@ export class LlmClient {
       return response.response;
     } catch (error) {
       this.logger.error({ err: error }, 'Error from AI service');
-      
+
       // Provide a fallback response instead of throwing
       return "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.";
     }
@@ -158,7 +159,7 @@ export class LlmClient {
       if (this.isTestEnvironment()) {
         return this.createMockStreamingResponse();
       }
-      
+
       this.logger.warn('Workers AI binding is not available, using fallback response');
       return this.createFallbackResponse();
     }
@@ -201,7 +202,7 @@ export class LlmClient {
           'Content-Type': 'text/plain; charset=utf-8',
           'Transfer-Encoding': 'chunked',
           'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
+          Connection: 'keep-alive',
         },
       });
     } catch (error) {

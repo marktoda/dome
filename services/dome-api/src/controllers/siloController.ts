@@ -3,8 +3,9 @@ import type { Bindings } from '../types';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
 import { UserIdContext } from '../middleware/userIdMiddleware';
-import { getLogger } from '@dome/logging';
+import { getLogger, metrics } from '@dome/logging';
 import {
   ServiceError,
   siloSimplePutSchema,
@@ -23,6 +24,10 @@ const ingestSchema = z.object({
   title: z.string().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
   tags: z.array(z.string()).optional(),
+});
+
+const reprocessSchema = z.object({
+  id: z.string().optional(),
 });
 
 const updateNoteSchema = z.object({
@@ -46,10 +51,12 @@ const listNotesSchema = z.object({
 export class SiloController {
   private logger;
   private silo: SiloClient;
+  private aiProcessor: AiProcessorClient;
 
   constructor(env: Bindings) {
     this.logger = getLogger();
     this.silo = new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE);
+    this.aiProcessor = new AiProcessorClient(env.AI_PROCESSOR);
   }
 
   /**
@@ -405,6 +412,80 @@ export class SiloController {
       }
 
       throw error;
+    }
+  }
+
+  /**
+   * POST /notes/reprocess
+   * Reprocess AI metadata for content
+   */
+  async reprocess(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+    try {
+      const startTime = performance.now();
+      this.logger.info({ path: c.req.path, method: c.req.method }, 'Reprocess request received');
+
+      // Parse request body
+      let body = {};
+      try {
+        body = await c.req.json();
+      } catch (error) {
+        // If body parsing fails, assume empty body (no ID provided)
+        body = {};
+      }
+
+      // Validate request body
+      const validatedData = reprocessSchema.parse(body);
+      this.logger.info({ reprocessRequest: validatedData }, 'Validated reprocess request data');
+
+      // Call the AI processor service directly via RPC
+      const result = await this.aiProcessor.reprocess(validatedData);
+
+      // Track metrics
+      metrics.timing('api.reprocess.latency_ms', performance.now() - startTime);
+      metrics.increment('api.reprocess.success', 1);
+
+      return c.json({
+        success: true,
+        result,
+      });
+    } catch (error) {
+      this.logger.error(
+        {
+          err: error,
+          path: c.req.path,
+          method: c.req.method,
+        },
+        'Error in reprocess controller',
+      );
+
+      metrics.increment('api.reprocess.errors', 1);
+
+      if (error instanceof z.ZodError) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid request data',
+              details: error.errors,
+            },
+          },
+          400,
+        );
+      }
+
+      // Handle errors from the AI processor service
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'REPROCESS_ERROR',
+            message: 'Failed to reprocess content',
+            details: error instanceof Error ? error.message : String(error),
+          },
+        },
+        500,
+      );
     }
   }
 }

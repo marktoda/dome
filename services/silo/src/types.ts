@@ -7,6 +7,7 @@ import {
   SiloDeleteInput,
   SiloDeleteResponse,
   SiloStatsResponse,
+  SiloContentMetadata,
 } from '@dome/common';
 
 /**
@@ -87,4 +88,6 @@ export interface SiloBinding {
   batchGet(params: SiloBatchGetInput): Promise<SiloContentBatch>;
   delete(params: SiloDeleteInput): Promise<SiloDeleteResponse>;
   stats(params: {}): Promise<SiloStatsResponse>;
+  findContentWithFailedSummary(): Promise<SiloContentMetadata[]>;
+  getMetadataById(id: string): Promise<SiloContentMetadata | null>;
 }

@@ -167,15 +167,21 @@ export class SearchService {
           scoreMap.set(contentId, result.score);
         }
       }
-      this.logger.info({
-        scoreMapSize: scoreMap.size,
-        scores: Array.from(scoreMap.entries()).slice(0, 5),
-        firstResult: searchResults.length > 0 ? {
-          id: searchResults[0].id,
-          contentId: searchResults[0].metadata.contentId,
-          score: searchResults[0].score
-        } : null
-      }, 'Created score map');
+      this.logger.info(
+        {
+          scoreMapSize: scoreMap.size,
+          scores: Array.from(scoreMap.entries()).slice(0, 5),
+          firstResult:
+            searchResults.length > 0
+              ? {
+                  id: searchResults[0].id,
+                  contentId: searchResults[0].metadata.contentId,
+                  score: searchResults[0].score,
+                }
+              : null,
+        },
+        'Created score map',
+      );
 
       // Filter and transform results
       let filteredResults = contents.items
@@ -215,14 +221,17 @@ export class SearchService {
         .map((note: any) => {
           const createdAt = note.createdAt || Date.now();
           const noteScore = scoreMap.get(note.id) || 0;
-          
+
           // Log if score is 0 to help debug
           if (noteScore === 0) {
-            this.logger.debug({
-              noteId: note.id,
-              hasScoreInMap: scoreMap.has(note.id),
-              availableKeys: Array.from(scoreMap.keys()).slice(0, 5)
-            }, 'Note has zero score');
+            this.logger.debug(
+              {
+                noteId: note.id,
+                hasScoreInMap: scoreMap.has(note.id),
+                availableKeys: Array.from(scoreMap.keys()).slice(0, 5),
+              },
+              'Note has zero score',
+            );
           }
 
           return {
@@ -317,8 +326,9 @@ export class SearchService {
       startDate,
       endDate,
     } = options;
-    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''
-      }:${endDate || ''}`;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${
+      startDate || ''
+    }:${endDate || ''}`;
   }
 
   /**

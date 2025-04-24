@@ -1,6 +1,6 @@
 import { Bindings } from '../types';
 import { SearchService } from './searchService';
-import { getLogger } from '@dome/logging';
+import { logError, getLogger } from '@dome/logging';
 import { PromptBuilder } from './promptBuilder';
 import { LlmClient, AIMessage } from './llmClient';
 
@@ -43,12 +43,7 @@ export class ChatService {
    * @returns Promise resolving to an array of AI messages
    */
   private async buildPrompt(env: Bindings, opts: ChatOptions): Promise<AIMessage[]> {
-    const {
-      messages,
-      userId,
-      enhanceWithContext = true,
-      maxContextItems = 10,
-    } = opts;
+    const { messages, userId, enhanceWithContext = true, maxContextItems = 10 } = opts;
 
     // Get the last user message
     const lastUserMessage = [...messages].reverse().find(msg => msg.role === 'user');
@@ -60,12 +55,7 @@ export class ChatService {
     let context: any[] = [];
     if (enhanceWithContext) {
       this.logger.info({ lastMessage: lastUserMessage }, 'Retrieving context for system prompt');
-      context = await this.retrieveContext(
-        env,
-        userId,
-        lastUserMessage.content,
-        maxContextItems,
-      );
+      context = await this.retrieveContext(env, userId, lastUserMessage.content, maxContextItems);
     }
 
     // Build the system prompt with context
@@ -74,7 +64,7 @@ export class ChatService {
         role: 'system',
         content: PromptBuilder.build(context),
       },
-      ...messages as AIMessage[],
+      ...(messages as AIMessage[]),
     ];
   }
 
@@ -88,11 +78,11 @@ export class ChatService {
     try {
       const messages = await this.buildPrompt(env, options);
       this.logger.info({ systemMessage: messages[0] }, 'Got system prompt');
-      
+
       return await LlmClient.call(env, messages);
     } catch (error) {
-      this.logger.error({ err: error }, 'Error generating chat response');
-      
+      logError(error, 'Error generating chat response');
+
       // Return a fallback response instead of throwing
       return "I apologize, but I'm experiencing technical difficulties. Please try again later or contact support if the issue persists.";
     }
@@ -107,7 +97,7 @@ export class ChatService {
   async streamResponse(env: Bindings, options: ChatOptions): Promise<Response> {
     try {
       const messages = await this.buildPrompt(env, options);
-      
+
       return await LlmClient.callStream(env, messages);
     } catch (error) {
       this.logger.error(
@@ -119,11 +109,11 @@ export class ChatService {
         },
         'Error setting up streaming chat response',
       );
-      
+
       // Return a fallback response
       return new Response(
         "I apologize, but I'm experiencing technical difficulties. Please try again later or contact support if the issue persists.",
-        { headers: { "Content-Type": "text/plain; charset=utf-8" } }
+        { headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
       );
     }
   }
@@ -136,12 +126,7 @@ export class ChatService {
    * @param maxItems Maximum number of context items to retrieve
    * @returns Promise resolving to search results
    */
-  private async retrieveContext(
-    env: Bindings,
-    userId: string,
-    query: string,
-    maxItems: number,
-  ) {
+  private async retrieveContext(env: Bindings, userId: string, query: string, maxItems: number) {
     try {
       // Search for relevant content
       const searchResults = await this.searchService.search(env, {
