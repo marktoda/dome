@@ -68,7 +68,7 @@ export class LlmService {
         title: this.generateFallbackTitle(content),
         summary: 'Content processing failed',
         processingVersion: 1,
-        modelUsed: '@cf/meta/llama-3-8b-instruct',
+        modelUsed: this.MODEL_NAME,
         error: error instanceof Error ? error.message : String(error),
       };
     }
@@ -217,9 +217,20 @@ export class LlmService {
    */
   private parseResponse(response: string): any {
     try {
-      // Try to extract JSON from the response
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      const jsonString = jsonMatch ? jsonMatch[0] : response;
+      // Try to extract JSON from the response, handling markdown code blocks
+      let jsonString = response;
+      
+      // Check if response is wrapped in markdown code blocks
+      const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch && codeBlockMatch[1]) {
+        jsonString = codeBlockMatch[1];
+      } else {
+        // Fall back to the original curly brace matching if no code block is found
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonString = jsonMatch[0];
+        }
+      }
 
       const parsed = JSON.parse(jsonString);
 
@@ -236,8 +247,22 @@ export class LlmService {
       return parsed;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Enhanced logging with more context about the response format
+      const hasCodeBlock = response.includes('```');
+      const firstFewChars = response.substring(0, 50).replace(/\n/g, '\\n');
+      const lastFewChars = response.substring(response.length - 50).replace(/\n/g, '\\n');
+      
       getLogger().error(
-        { error, response: response.substring(0, 200) + '...' },
+        {
+          error,
+          responsePreview: response.substring(0, 200) + '...',
+          responseLength: response.length,
+          hasCodeBlock,
+          firstFewChars,
+          lastFewChars,
+          parseErrorMessage: errorMessage
+        },
         'Failed to parse LLM response',
       );
 

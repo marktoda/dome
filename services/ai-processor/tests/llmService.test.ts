@@ -53,7 +53,7 @@ describe('LlmService', () => {
       const result = await llmService.processContent(content, 'note');
 
       // Check that AI was called with the right model
-      expect(mockAi.run).toHaveBeenCalledWith('@cf/meta/llama-3-8b-instruct', expect.anything());
+      expect(mockAi.run).toHaveBeenCalledWith('@cf/google/gemma-7b-it-lora', expect.anything());
 
       // Check that the prompt contains note-specific instructions
       const prompt = mockAi.run.mock.calls[0][1].messages[0].content;
@@ -72,7 +72,7 @@ describe('LlmService', () => {
       expect(result).toHaveProperty('topics');
       expect(result.topics).toEqual(['test', 'example']);
       expect(result).toHaveProperty('processingVersion', 1);
-      expect(result).toHaveProperty('modelUsed', '@cf/meta/llama-3-8b-instruct');
+      expect(result).toHaveProperty('modelUsed', '@cf/google/gemma-7b-it-lora');
     });
 
     it('should process code content correctly', async () => {
@@ -93,7 +93,7 @@ describe('LlmService', () => {
       const result = await llmService.processContent(content, 'code');
 
       // Check that AI was called with the right model
-      expect(mockAi.run).toHaveBeenCalledWith('@cf/meta/llama-3-8b-instruct', expect.anything());
+      expect(mockAi.run).toHaveBeenCalledWith('@cf/google/gemma-7b-it-lora', expect.anything());
 
       // Check that the prompt contains code-specific instructions
       const prompt = mockAi.run.mock.calls[0][1].messages[0].content;
@@ -189,6 +189,20 @@ describe('LlmService', () => {
       // Check that we extracted the JSON correctly
       expect(result).toHaveProperty('title', 'Embedded JSON');
       expect(result).toHaveProperty('summary', 'This is embedded in text.');
+    });
+
+    it('should handle JSON responses wrapped in markdown code blocks', async () => {
+      // Mock AI to return JSON wrapped in markdown code blocks
+      mockAi.run.mockResolvedValue({
+        response: '```json\n{"title": "Markdown Code Block", "summary": "This JSON is wrapped in markdown code blocks."}\n```',
+      });
+
+      const content = 'This is a test note.';
+      const result = await llmService.processContent(content, 'note');
+
+      // Check that we extracted the JSON correctly from the markdown code block
+      expect(result).toHaveProperty('title', 'Markdown Code Block');
+      expect(result).toHaveProperty('summary', 'This JSON is wrapped in markdown code blocks.');
     });
 
     it('should truncate long content', async () => {

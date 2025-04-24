@@ -1,12 +1,14 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withLogger, logError, getLogger, metrics } from '@dome/logging';
 import { createLlmService } from './services/llmService';
+import { createReminderExtractionService } from './services/reminderExtractionService';
 import { EnrichedContentMessage, NewContentMessage } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 
 const buildServices = (env: Env) => ({
   llm: createLlmService(env),
   silo: new SiloClient(env.SILO as unknown as SiloBinding),
+  reminderExtraction: createReminderExtractionService(env),
 });
 
 const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
@@ -25,6 +27,9 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
  * This worker processes content from the NEW_CONTENT queue,
  * extracts metadata using LLM, and publishes results to the
  * ENRICHED_CONTENT queue.
+ * 
+ * It also extracts reminders from content and sends them to the
+ * REMINDER_QUEUE for processing by the reminder service.
  */
 export default class AiProcessor extends WorkerEntrypoint<Env> {
   /** Lazily created bundle of service clients (re‑used for every call) */
@@ -135,6 +140,41 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
       // Process with LLM
       const metadata = await this.services.llm.processContent(body, contentType);
 
+      // Extract and process reminders
+      if (this.env.REMINDER_QUEUE) {
+        try {
+          const reminderResult = await this.services.reminderExtraction.processContentForReminders(
+            { id, text: body },
+            userId
+          );
+          
+          if (reminderResult.count > 0) {
+            getLogger().info(
+              { 
+                contentId: id, 
+                userId, 
+                reminderCount: reminderResult.count,
+                errorCount: reminderResult.errors?.length || 0
+              },
+              'Extracted and queued reminders from content'
+            );
+            
+            // Add reminder count to metadata
+            metadata.reminderCount = reminderResult.count;
+          }
+        } catch (reminderError) {
+          getLogger().error(
+            {
+              error: reminderError instanceof Error ? reminderError.message : String(reminderError),
+              contentId: id,
+              userId
+            },
+            'Failed to process reminders from content'
+          );
+          // Continue processing - don't fail the entire message for reminder extraction errors
+        }
+      }
+
       // Publish to ENRICHED_CONTENT queue
       const enrichedMessage: EnrichedContentMessage = {
         id,
@@ -153,6 +193,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           enrichedMessage,
           hasSummary: !!metadata.summary,
           hasTodos: Array.isArray(metadata.todos) && metadata.todos.length > 0,
+          hasReminders: metadata.reminderCount && metadata.reminderCount > 0,
         },
         'Successfully processed and published enriched content',
       );
