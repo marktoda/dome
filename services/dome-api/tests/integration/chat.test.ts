@@ -82,7 +82,14 @@ describe('Chat API Integration Tests', () => {
         controller.close();
       },
     });
-    vi.mocked(mockChatService.streamResponse).mockResolvedValue(mockStream);
+    
+    const mockResponse = new Response(mockStream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8'
+      }
+    });
+    
+    vi.mocked(mockChatService.streamResponse).mockResolvedValue(mockResponse);
   });
 
   afterEach(() => {

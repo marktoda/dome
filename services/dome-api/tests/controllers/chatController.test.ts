@@ -141,8 +141,12 @@ describe('ChatController', () => {
         headers: { 'x-user-id': mockUserId },
       });
 
-      const mockStream = new ReadableStream();
-      vi.mocked(mockChatService.streamResponse).mockResolvedValue(mockStream);
+      const mockResponse = new Response(new ReadableStream(), {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8'
+        }
+      });
+      vi.mocked(mockChatService.streamResponse).mockResolvedValue(mockResponse);
 
       // Act
       const response = await controller.chat(mockContext as any);

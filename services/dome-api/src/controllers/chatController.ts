@@ -118,26 +118,21 @@ export class ChatController {
         );
 
         try {
-          const stream = await this.chatService.streamResponse(c.env, chatOptions);
+          const response = await this.chatService.streamResponse(c.env, chatOptions);
 
           getLogger().info(
             {
               userId,
-              streamType: typeof stream,
-              isReadableStream: stream instanceof ReadableStream,
-              hasReadableProperty: stream && typeof stream === 'object' && 'readable' in stream,
+              responseType: typeof response,
+              isResponse: response instanceof Response,
+              status: response.status,
+              headers: Object.fromEntries([...response.headers.entries()]),
             },
             'Streaming response initialized',
           );
 
-          return new Response(stream, {
-            headers: {
-              'Content-Type': 'text/plain; charset=utf-8',
-              'Transfer-Encoding': 'chunked',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-            },
-          });
+          // Return the response directly as it already contains the proper headers
+          return response;
         } catch (streamError) {
           getLogger().error(
             {

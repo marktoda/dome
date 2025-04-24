@@ -16,6 +16,7 @@
     "@dome/metrics": "workspace:*",
     "@dome/silo": "workspace:*",
     "@dome/constellation": "workspace:*",
+    "@dqbd/tiktoken": "^1.0.7",
     "@graphql-tools/schema": "^10.0.2",
     "@hono/zod-validator": "^0.1.8",
     "@types/uuid": "^10.0.0",
