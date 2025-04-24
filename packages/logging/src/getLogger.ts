@@ -26,7 +26,6 @@ export function extractErrorInfo(error: unknown): { error: unknown; errorMessage
  * @param additionalContext Additional context to include in the log
  */
 export function logError(
-  logger: Logger,
   error: unknown,
   message: string,
   additionalContext: Record<string, unknown> = {},
