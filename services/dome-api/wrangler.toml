@@ -18,6 +18,11 @@ binding = "SILO"
 service = "silo"
 environment = "production"
 
+[[services]]
+binding = "AI_PROCESSOR"
+service = "ai-processor"
+environment = "production"
+
 # For local development
 [dev]
 port = 8787
@@ -45,6 +50,11 @@ binding = "SILO"
 service = "silo"
 environment = "production"
 
+[[env.production.services]]
+binding = "AI_PROCESSOR"
+service = "ai-processor"
+environment = "production"
+
 [env.staging]
 vars = { ENVIRONMENT = "staging" }
 command = "pnpm build"
@@ -53,6 +63,11 @@ command = "pnpm build"
 [[env.staging.services]]
 binding = "CONSTELLATION"
 service = "constellation"
+environment = "staging"
+
+[[env.staging.services]]
+binding = "AI_PROCESSOR"
+service = "ai-processor"
 environment = "staging"
 
 [observability]

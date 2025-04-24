@@ -160,9 +160,22 @@ export class SearchService {
       // Map content IDs to scores
       const scoreMap = new Map<string, number>();
       for (const result of searchResults) {
-        scoreMap.set(result.id, result.score);
+        // Extract the contentId from the result.id which is in format "content:contentId:chunkId"
+        const contentId = result.metadata.contentId;
+        // Store score by contentId
+        if (!scoreMap.has(contentId) || result.score > scoreMap.get(contentId)!) {
+          scoreMap.set(contentId, result.score);
+        }
       }
-      this.logger.info({ scoreMapLength: scoreMap.size, scores: JSON.stringify(scoreMap) }, 'Created score map');
+      this.logger.info({
+        scoreMapSize: scoreMap.size,
+        scores: Array.from(scoreMap.entries()).slice(0, 5),
+        firstResult: searchResults.length > 0 ? {
+          id: searchResults[0].id,
+          contentId: searchResults[0].metadata.contentId,
+          score: searchResults[0].score
+        } : null
+      }, 'Created score map');
 
       // Filter and transform results
       let filteredResults = contents.items
@@ -201,6 +214,16 @@ export class SearchService {
         })
         .map((note: any) => {
           const createdAt = note.createdAt || Date.now();
+          const noteScore = scoreMap.get(note.id) || 0;
+          
+          // Log if score is 0 to help debug
+          if (noteScore === 0) {
+            this.logger.debug({
+              noteId: note.id,
+              hasScoreInMap: scoreMap.has(note.id),
+              availableKeys: Array.from(scoreMap.keys()).slice(0, 5)
+            }, 'Note has zero score');
+          }
 
           return {
             id: note.id,
@@ -210,7 +233,7 @@ export class SearchService {
             category: note.category,
             mimeType: note.mimeType || 'text/plain',
             createdAt: createdAt,
-            score: scoreMap.get(note.id) || 0,
+            score: noteScore,
           } as SearchResult;
         })
         .sort((a: SearchResult, b: SearchResult) => b.score - a.score);
