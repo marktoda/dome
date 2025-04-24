@@ -90,7 +90,7 @@ export class ResourceObject extends DurableObject<Bindings> {
     } catch (err) {
       await this.recordHistory('error', 0, [], start, err as Error);
       metrics.increment('tsunami.sync.error');
-      logError(this.log, err, 'sync failed', { resourceId });
+      logError(err, 'sync failed', { resourceId });
       throw err;
     }
   }

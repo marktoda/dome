@@ -13,6 +13,9 @@ import {
   getLanguageFromPath,
   injectMetadataHeader,
 } from '../services/metadataHeaderService';
+import { IgnorePatternProcessor } from '../utils/ignorePatternProcessor';
+import { IgnoreFileService } from '../services/ignoreFileService';
+import { DEFAULT_FILTER_CONFIG } from '../config/filterConfig';
 
 /* ─── constants ────────────────────────────────────────────────────────── */
 
@@ -25,6 +28,8 @@ const MIME: Record<string, MimeType> = {
   '.ts': 'application/typescript',
   '.jsx': 'application/javascript',
   '.tsx': 'application/typescript',
+  '.sol': 'application/solidity',
+  '.rs': 'application/rust',
   '.html': 'text/html',
   '.css': 'text/css',
   '.md': 'text/markdown',
@@ -57,6 +62,9 @@ type ContentResp = { content?: string; encoding?: string; size: number };
 export class GithubProvider implements Provider {
   private log = getLogger();
   private headers: Record<string, string>;
+  private ignorePatternProcessor: IgnorePatternProcessor;
+  private ignoreFileService: IgnoreFileService;
+  private filterConfig = DEFAULT_FILTER_CONFIG;
 
   constructor(env: Bindings) {
     const token = (env as any).GITHUB_TOKEN ?? '';
@@ -66,6 +74,10 @@ export class GithubProvider implements Provider {
       'User-Agent': UA,
       ...(token && { Authorization: `token ${token}` }),
     };
+
+    // Initialize file filtering components
+    this.ignorePatternProcessor = new IgnorePatternProcessor();
+    this.ignoreFileService = new IgnoreFileService(token);
   }
 
   /* ─── Provider impl. ─────────────────────────────────────────────────── */
@@ -80,12 +92,36 @@ export class GithubProvider implements Provider {
     const commits = await this.getNewCommits(owner, repo, cursor);
     if (!commits.length) return { contents: [], newCursor: null };
 
+    // Reset the ignore pattern processor for this pull operation
+    this.ignorePatternProcessor.clearPatterns();
+
+    // Fetch ignore patterns for this repository
+    const ignorePatterns = await this.ignoreFileService.getIgnorePatterns(owner, repo);
+    if (ignorePatterns.length > 0) {
+      this.ignorePatternProcessor.addPatterns(ignorePatterns);
+      this.log.info(
+        { owner, repo, patternCount: ignorePatterns.length },
+        'Loaded ignore patterns for repository'
+      );
+    }
+
     const dedup = new Set<string>();
     const puts: SiloSimplePutInput[] = [];
+    let filteredFiles = 0;
 
     for (const c of commits) {
       const files = await this.getFiles(owner, repo, c.sha);
       for (const f of files) {
+        // Check if file should be filtered based on ignore patterns
+        if (this.ignorePatternProcessor.shouldIgnore(f.filename)) {
+          if (this.filterConfig.logFilteredFiles) {
+            this.log.debug({ path: f.filename }, 'File filtered by ignore pattern');
+          }
+          filteredFiles++;
+          continue;
+        }
+
+        // Apply existing filters
         if (f.status === 'removed' || f.changes > MAX || dedup.has(f.filename)) continue;
         dedup.add(f.filename);
 
@@ -123,10 +159,19 @@ export class GithubProvider implements Provider {
       }
     }
 
+    // Record metrics
     metrics.timing('github.pull.latency_ms', Date.now() - t0);
     metrics.increment('github.pull.files_processed', puts.length);
 
-    this.log.info({ resourceId, files: puts.length, commits: commits.length }, 'github: pull done');
+    // Add metrics for filtered files if enabled
+    if (this.filterConfig.trackFilterMetrics) {
+      metrics.increment('github.pull.files_filtered', filteredFiles);
+    }
+
+    this.log.info(
+      { resourceId, files: puts.length, filtered: filteredFiles, commits: commits.length },
+      'github: pull done'
+    );
 
     return { contents: puts, newCursor: commits[0].sha };
   }

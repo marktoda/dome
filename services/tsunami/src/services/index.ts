@@ -9,3 +9,4 @@
 // Export services
 export * from './syncPlanService';
 export * from './metadataHeaderService';
+export * from './ignoreFileService';
