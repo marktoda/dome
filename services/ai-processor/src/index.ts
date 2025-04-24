@@ -315,6 +315,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
  * @returns True if the content type is processable
  */
 function isProcessableContentType(contentType: string): boolean {
-  const processableTypes = ['note', 'code', 'article', 'text/plain', 'text/markdown'];
-  return processableTypes.includes(contentType);
+  // const processableTypes = ['note', 'code', 'article', 'text/plain', 'text/markdown', 'application/javascript', 'application/typescript', 'application/rust'];
+  // return processableTypes.includes(contentType);
+  return true;
 }

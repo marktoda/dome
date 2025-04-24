@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "esModuleInterop": true,
+    "target": "ES2020",
+    "moduleResolution": "node",
+    "outDir": "../dist/scripts",
+    "baseUrl": ".",
+    "paths": {
+      "@dome/*": ["../../../packages/*/src", "../../../services/*/src"]
+    },
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts"]
+}
