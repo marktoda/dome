@@ -173,7 +173,7 @@ export async function monitorDLQ(env: Env): Promise<void> {
               // Increment reprocessing metrics
               metrics.increment('dome_cron.dlq.reprocessed', 1, { error_type: errorType });
             } catch (error) {
-              logError(logger, error, 'Error reprocessing DLQ message', {
+              logError(error, 'Error reprocessing DLQ message', {
                 messageId: message.processingMetadata.messageId,
                 errorType,
               });
@@ -192,7 +192,7 @@ export async function monitorDLQ(env: Env): Promise<void> {
 
     logger.info('DLQ monitoring job completed successfully');
   } catch (error) {
-    logError(logger, error, 'Error in DLQ monitoring job');
+    logError(error, 'Error in DLQ monitoring job');
 
     // Increment error metrics
     metrics.increment('dome_cron.dlq.monitoring_errors', 1);
@@ -200,19 +200,18 @@ export async function monitorDLQ(env: Env): Promise<void> {
     // Send an alert for the monitoring job failure
     await sendAlert({
       title: 'DLQ Monitoring Job Failed',
-      message: `The DLQ monitoring job failed: ${
-        error instanceof Error ? error.message : 'Unknown error'
-      }`,
+      message: `The DLQ monitoring job failed: ${error instanceof Error ? error.message : 'Unknown error'
+        }`,
       severity: 'error',
       metadata: {
         timestamp: new Date().toISOString(),
         error:
           error instanceof Error
             ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-              }
+              name: error.name,
+              message: error.message,
+              stack: error.stack,
+            }
             : String(error),
       },
     });
