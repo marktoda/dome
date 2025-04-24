@@ -28,7 +28,7 @@ import { createConstellationClient, ConstellationClient } from 'constellation/cl
 // Create a ConstellationClient instance
 const constellationClient: ConstellationClient = createConstellationClient(
   env.CONSTELLATION,
-  'your-service.constellation'
+  'your-service.constellation',
 );
 
 // Embed content
@@ -43,11 +43,7 @@ await constellationClient.embed({
 });
 
 // Query vectors
-const results = await constellationClient.query(
-  'Hello, world!',
-  { userId: 'user123' },
-  10
-);
+const results = await constellationClient.query('Hello, world!', { userId: 'user123' }, 10);
 
 // Get statistics
 const stats = await constellationClient.stats();
@@ -83,7 +79,11 @@ If you're currently using a custom ConstellationService implementation in your s
 export class ConstellationService {
   constructor(private readonly env: Bindings) {}
 
-  async query(text: string, filter?: Partial<VectorMeta>, topK?: number): Promise<VectorSearchResult[]> {
+  async query(
+    text: string,
+    filter?: Partial<VectorMeta>,
+    topK?: number,
+  ): Promise<VectorSearchResult[]> {
     // Custom implementation
   }
 }
@@ -102,7 +102,7 @@ import { createConstellationClient, ConstellationClient } from 'constellation/cl
 // Create a ConstellationClient instance
 const constellationClient: ConstellationClient = createConstellationClient(
   env.CONSTELLATION,
-  'your-service.constellation'
+  'your-service.constellation',
 );
 
 // Usage

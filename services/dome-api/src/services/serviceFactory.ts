@@ -1,7 +1,7 @@
 import { Bindings } from '../types';
 import { getLogger } from '@dome/logging';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
-import { ConstellationService } from './constellationService';
+import { ConstellationClient, ConstellationBinding } from '@dome/constellation/client';
 import { SearchService } from './searchService';
 import { ChatService } from './chatService';
 
@@ -10,8 +10,9 @@ import { ChatService } from './chatService';
  * This provides a consistent way to access all services
  */
 export interface ServiceFactory {
-  getConstellationService(env: Bindings): ConstellationService;
+  getConstellationService(env: Bindings): ConstellationClient;
   getSearchService(env: Bindings): SearchService;
+  getSiloService(env: Bindings): SiloClient;
   getChatService(env: Bindings): ChatService;
 }
 
@@ -21,7 +22,7 @@ export interface ServiceFactory {
  */
 export class DefaultServiceFactory implements ServiceFactory {
   // We'll use Maps to store service instances by env reference
-  private constellationServices: Map<Bindings, ConstellationService> = new Map();
+  private constellationServices: Map<Bindings, ConstellationClient> = new Map();
   private searchServices: Map<Bindings, SearchService> = new Map();
   private chatServices: Map<Bindings, ChatService> = new Map();
   private siloServices: Map<Bindings, SiloClient> = new Map();
@@ -36,11 +37,11 @@ export class DefaultServiceFactory implements ServiceFactory {
    * @param env Cloudflare Workers environment bindings
    * @returns ConstellationService instance
    */
-  getConstellationService(env: Bindings): ConstellationService {
+  getConstellationService(env: Bindings): ConstellationClient {
     let service = this.constellationServices.get(env);
     if (!service) {
       this.logger.debug('Creating new ConstellationService instance');
-      service = new ConstellationService(env);
+      service = new ConstellationClient(env.CONSTELLATION as unknown as ConstellationBinding);
       this.constellationServices.set(env, service);
     }
     return service;

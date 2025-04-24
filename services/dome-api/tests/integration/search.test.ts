@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SearchController } from '../../src/controllers/searchController';
 import { SearchService } from '../../src/services/searchService';
-import { ConstellationService } from '../../src/services/constellationService';
 
 // Mock dependencies
 vi.mock('../../src/services/searchService', () => {
@@ -105,15 +104,11 @@ describe('Search API Integration Tests', () => {
 
   // Create mock instances
   let mockSearchService: SearchService;
-  let mockConstellationService: ConstellationService;
   let controller: SearchController;
 
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Create mock instances
-    mockConstellationService = new ConstellationService(null as any);
-    mockSearchService = new SearchService(mockConstellationService, null as any);
+    mockSearchService = new SearchService(null as any, null as any);
     controller = new SearchController(mockSearchService);
 
     // Mock searchService.search

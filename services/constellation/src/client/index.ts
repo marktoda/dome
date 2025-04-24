@@ -5,14 +5,6 @@
  * It provides a type-safe client for interacting with the Constellation service.
  */
 
-import { 
-  ConstellationClient, 
-  ConstellationBinding, 
-  createConstellationClient 
-} from '../client';
+import { ConstellationClient, ConstellationBinding, createConstellationClient } from './client';
 
-export {
-  ConstellationClient,
-  ConstellationBinding,
-  createConstellationClient
-};
+export { ConstellationClient, ConstellationBinding, createConstellationClient };

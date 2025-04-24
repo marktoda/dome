@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import { getPath } from 'hono/utils/url';
-import { getLogger } from '@dome/logging';
+import pino from 'pino';
 
 /**
  * Creates a detailed logger middleware for Hono that logs comprehensive information
@@ -10,7 +10,7 @@ import { getLogger } from '@dome/logging';
 export function createDetailedLoggerMiddleware(): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     // Get logger from context or create a new one
-    const logger = getLogger();
+    const logger = c.get('logger') || pino({ level: 'info' });
     const requestId = c.get('requestId') || 'unknown';
     const startTime = Date.now();
 
@@ -20,11 +20,6 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
     const url = new URL(c.req.url);
     const params = c.req.param();
     const query = c.req.query();
-    const headers = Object.fromEntries(
-      [...c.req.raw.headers.entries()].filter(
-        ([key]) => !key.toLowerCase().includes('auth') && !key.toLowerCase().includes('cookie')
-      )
-    );
 
     // Log request details
     logger.info(
@@ -36,10 +31,9 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
           url: url.toString(),
           params: Object.keys(params).length > 0 ? params : undefined,
           query: Object.keys(query).length > 0 ? query : undefined,
-          headers,
         },
       },
-      'Incoming request'
+      'Incoming request',
     );
 
     // We'll capture response body in the response hook
@@ -67,7 +61,6 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
 
       // Extract response details
       const { status } = c.res;
-      const responseHeaders = c.res.headers;
 
       // Log response details
       logger.info(
@@ -77,29 +70,31 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
             status,
             ok: String(c.res.ok),
             time: formatTime(startTime),
-            headers: responseHeaders ? Object.fromEntries(responseHeaders.entries()) : undefined,
             body: responseBody ? sanitizeResponseBody(responseBody) : undefined,
           },
         },
-        'Request completed'
+        'Request completed',
       );
     } catch (error) {
       // Log error details
       logger.error(
         {
           requestId,
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-          } : String(error),
+          error:
+            error instanceof Error
+              ? {
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
+              : String(error),
           request: {
             method,
             path,
           },
           time: formatTime(startTime),
         },
-        'Request failed'
+        'Request failed',
       );
       throw error;
     }

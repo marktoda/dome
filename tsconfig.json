@@ -16,6 +16,8 @@
       "@dome/common/*": ["packages/common/src/*"],
       "@dome/silo": ["services/silo/src"],
       "@dome/silo/*": ["services/silo/src/*"],
+      "@dome/constellation": ["services/constellation/src"],
+      "@dome/constellation/*": ["services/constellation/src/*"],
       "@dome/logging": ["packages/logging/src"],
       "@dome/logging/*": ["packages/logging/src/*"],
       "@dome/cli": ["packages/cli/src"],

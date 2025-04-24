@@ -1,11 +1,11 @@
 import { Bindings } from '../types';
-import { ServiceError } from '@dome/common';
+import { ServiceError, VectorMeta } from '@dome/common';
 import { getLogger } from '@dome/logging';
-import { ConstellationService } from './constellationService';
+import { ConstellationClient } from '@dome/constellation/client';
 import { SiloClient } from '@dome/silo/client';
 
 /**
- * Search options interf siloServiceace
+ * Search options interface
  */
 export interface SearchOptions {
   userId: string;
@@ -47,6 +47,8 @@ export interface PaginatedSearchResults {
   query: string;
 }
 
+const DEFAULT_TOP_K = 10;
+
 /**
  * Service for searching content using semantic search
  * This service handles:
@@ -59,14 +61,14 @@ export class SearchService {
   private cache: Map<string, PaginatedSearchResults>;
   private cacheTTL: number = 5 * 60 * 1000; // 5 minutes
   private cacheTimestamps: Map<string, number>;
-  private constellationService: ConstellationService;
+  private constellation: ConstellationClient;
   private silo: SiloClient;
 
-  constructor(constellationService: ConstellationService, siloClient: SiloClient) {
+  constructor(constellationClient: ConstellationClient, siloClient: SiloClient) {
     this.logger = getLogger();
     this.cache = new Map();
     this.cacheTimestamps = new Map();
-    this.constellationService = constellationService;
+    this.constellation = constellationClient;
     this.silo = siloClient;
   }
 
@@ -116,11 +118,9 @@ export class SearchService {
       }
 
       // Perform semantic search using Constellation
-      const searchResults = await this.constellationService.searchContent(
-        query,
-        userId,
-        limit * 2, // Fetch more results to account for filtering
-      );
+      const filter: Partial<VectorMeta> = { userId };
+      this.logger.info(filter, 'Using filter for vector search');
+      const searchResults = await this.constellation.query(query, filter);
 
       if (searchResults.length === 0) {
         const emptyResults: PaginatedSearchResults = {
@@ -138,52 +138,15 @@ export class SearchService {
         return emptyResults;
       }
 
-      // Get unique content IDs
-      this.logger.info(
-        {
-          resultCount: searchResults.length,
-          firstResult:
-            searchResults.length > 0
-              ? {
-                  contentId: searchResults[0].contentId,
-                  score: searchResults[0].score,
-                }
-              : null,
-        },
-        'Search results from constellation',
-      );
-
-      const contentIds = [
-        ...new Set(
-          searchResults.map(result => {
-            const contentId = result.contentId;
-            this.logger.info(
-              {
-                contentId,
-                score: result.score,
-              },
-              'Extracted contentId from search result',
-            );
-            return contentId;
-          }),
-        ),
-      ];
+      const contentIds = [...new Set(searchResults.map(result => result.id))];
 
       this.logger.info(
         {
           contentIdsCount: contentIds.length,
           firstFewContentIds: contentIds.slice(0, 5),
-        },
-        'Unique content IDs extracted',
-      );
-
-      // Retrieve content from Silo
-      this.logger.info(
-        {
-          contentIdsCount: contentIds.length,
           userId,
         },
-        'Calling siloService.batchGet',
+        'Unique content IDs extracted',
       );
 
       const contents = await this.silo.batchGet({ ids: contentIds, userId });
@@ -198,7 +161,7 @@ export class SearchService {
       // Map content IDs to scores
       const scoreMap = new Map<string, number>();
       for (const result of searchResults) {
-        scoreMap.set(result.contentId, result.score);
+        scoreMap.set(result.id, result.score);
       }
       this.logger.info({ scoreMapSize: scoreMap.size }, 'Created score map');
 
@@ -207,37 +170,37 @@ export class SearchService {
         .filter((note: any) => {
           // Skip notes with missing required fields
           if (!note.id || !note.category) {
+            getLogger().warn({ note }, 'Skipping note with missing id / category');
             return false;
           }
 
           // Apply category filter if specified
           if (category && note.category !== category) {
+            getLogger().info({ note }, 'Skipping note with incorrect category');
             return false;
           }
 
           // Apply MIME type filter if specified
           if (mimeType && note.mimeType !== mimeType) {
+            getLogger().info({ note }, 'Skipping note with incorrect mime type');
             return false;
           }
 
           // Apply date range filter if specified
           const createdAt = note.createdAt || 0;
           if (startDate && createdAt < startDate) {
+            getLogger().info({ note }, 'Skipping note outside date range');
             return false;
           }
 
           if (endDate && createdAt > endDate) {
+            getLogger().info({ note }, 'Skipping note outside date range');
             return false;
           }
 
           return true;
         })
         .map((note: any) => {
-          // Ensure all required fields are present
-          if (!note.id || !note.category) {
-            throw new Error('Note is missing required fields');
-          }
-
           const createdAt = note.createdAt || Date.now();
 
           return {
