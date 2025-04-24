@@ -32,5 +32,5 @@ export function logError(
   additionalContext: Record<string, unknown> = {},
 ): void {
   const { errorMessage } = extractErrorInfo(error);
-  logger.error({ error, errorMessage, ...additionalContext }, message);
+  getLogger().error({ error, errorMessage, ...additionalContext }, message);
 }

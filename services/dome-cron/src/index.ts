@@ -157,7 +157,7 @@ export default {
             logger.info({ processedCount }, 'Reminder processing job completed');
           }
         } catch (error) {
-          logError(getLogger(), error, 'Error in scheduled job');
+          logError(error, 'Error in scheduled job');
           // Ensure the error is reported to the Cloudflare dashboard
           ctx.waitUntil(Promise.reject(error));
           // Re-throw the error to propagate it to the caller

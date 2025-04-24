@@ -25,7 +25,7 @@ export class QueueService {
       return true;
     } catch (error) {
       metrics.increment('silo.queue.errors', 1, { operation: 'send' });
-      logError(getLogger(), error, 'Error sending message to NEW_CONTENT queue', { message });
+      logError(error, 'Error sending message to NEW_CONTENT queue', { message });
       throw error;
     }
   }

@@ -56,7 +56,7 @@ class DLQControllerImpl implements DLQController {
     try {
       return await this.dlqService.getDLQStats();
     } catch (error) {
-      logError(getLogger(), error, 'Error getting DLQ stats');
+      logError(error, 'Error getting DLQ stats');
       throw error;
     }
   }
@@ -65,7 +65,7 @@ class DLQControllerImpl implements DLQController {
     try {
       return await this.dlqService.getDLQMessages(options);
     } catch (error) {
-      logError(getLogger(), error, 'Error getting DLQ messages');
+      logError(error, 'Error getting DLQ messages');
       throw error;
     }
   }
@@ -74,7 +74,7 @@ class DLQControllerImpl implements DLQController {
     try {
       return await this.dlqService.reprocessMessage(id);
     } catch (error) {
-      logError(getLogger(), error, 'Error reprocessing DLQ message');
+      logError(error, 'Error reprocessing DLQ message');
       throw error;
     }
   }
@@ -83,7 +83,7 @@ class DLQControllerImpl implements DLQController {
     try {
       return await this.dlqService.reprocessMessages(ids);
     } catch (error) {
-      logError(getLogger(), error, 'Error reprocessing DLQ messages');
+      logError(error, 'Error reprocessing DLQ messages');
       throw error;
     }
   }
@@ -92,7 +92,7 @@ class DLQControllerImpl implements DLQController {
     try {
       return await this.dlqService.purgeMessages(options);
     } catch (error) {
-      logError(getLogger(), error, 'Error purging DLQ messages');
+      logError(error, 'Error purging DLQ messages');
       throw error;
     }
   }
@@ -110,7 +110,7 @@ class DLQControllerImpl implements DLQController {
     try {
       return await this.dlqService.sendToDLQ(originalMessage, error, metadata);
     } catch (error) {
-      logError(getLogger(), error, 'Error sending message to DLQ');
+      logError(error, 'Error sending message to DLQ');
       throw error;
     }
   }

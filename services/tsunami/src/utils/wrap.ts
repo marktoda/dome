@@ -5,7 +5,7 @@ export const wrap = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pr
     try {
       return await fn();
     } catch (err) {
-      logError(getLogger(), err, 'Unhandled error');
+      logError(err, 'Unhandled error');
       throw err;
     }
   });

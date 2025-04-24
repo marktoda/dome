@@ -88,7 +88,7 @@ export class VectorizeService {
         'Vectorize index stats after upsert',
       );
     } catch (err) {
-      logError(getLogger(), err, 'Failed to get index stats after upsert');
+      logError(err, 'Failed to get index stats after upsert');
     }
 
     t.stop();
@@ -113,7 +113,7 @@ export class VectorizeService {
       } catch (err) {
         metrics.increment('vectorize.upsert.errors');
 
-        logError(getLogger(), err, 'vectorize.upsert failed', {
+        logError(err, 'vectorize.upsert failed', {
           err,
           attempt,
           max: this.cfg.retryAttempts,
@@ -201,7 +201,7 @@ export class VectorizeService {
     } catch (err) {
       metrics.increment('vectorize.query.errors');
 
-      logError(getLogger(), err, 'vectorize.query failed');
+      logError(err, 'vectorize.query failed');
       throw err;
     } finally {
       t.stop();

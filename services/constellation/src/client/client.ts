@@ -62,7 +62,7 @@ export class ConstellationClient {
       metrics.timing(`${this.metricsPrefix}.embed.latency_ms`, performance.now() - startTime);
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.embed.errors`);
-      logError(getLogger(), error, 'Error embedding content in Constellation', {
+      logError(error, 'Error embedding content in Constellation', {
         contentId: job.id,
         userId: job.userId,
       });
@@ -113,7 +113,7 @@ export class ConstellationClient {
       return results;
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.query.errors`);
-      logError(getLogger(), error, 'Error querying vectors in Constellation', {
+      logError(error, 'Error querying vectors in Constellation', {
         textLength: text.length,
         filter,
         topK,
@@ -139,7 +139,7 @@ export class ConstellationClient {
       return result;
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.stats.errors`);
-      logError(getLogger(), error, 'Error fetching Constellation vector index statistics');
+      logError(error, 'Error fetching Constellation vector index statistics');
       throw error;
     }
   }

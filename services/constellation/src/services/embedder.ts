@@ -207,7 +207,7 @@ export class Embedder {
    */
   private handleEmbeddingError(error: unknown) {
     metrics.increment('embedding.errors');
-    logError(getLogger(), error, 'Error generating embeddings');
+    logError(error, 'Error generating embeddings');
   }
 
   /**

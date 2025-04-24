@@ -203,7 +203,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               message.ack();
             } catch (error) {
               // Log the error but acknowledge the message to prevent infinite retries
-              logError(getLogger(), error, 'Error processing DLQ message, acknowledging anyway', {
+              logError(error, 'Error processing DLQ message, acknowledging anyway', {
                 messageId: message.id,
               });
               message.ack();
@@ -216,7 +216,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
         }
       } catch (error) {
         metrics.increment('silo.queue.errors', 1);
-        logError(getLogger(), error, 'Queue processing error', { queue: batch.queue });
+        logError(error, 'Queue processing error', { queue: batch.queue });
         throw error; // Allow retry
       }
     });
@@ -241,7 +241,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               .join(', ')}`,
           );
         }
-        logError(getLogger(), error, 'Error in batchGet');
+        logError(error, 'Error in batchGet');
         metrics.increment('silo.rpc.errors', 1, { method: 'batchGet' });
         throw error;
       }
@@ -267,7 +267,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               .join(', ')}`,
           );
         }
-        logError(getLogger(), error, 'Error in delete');
+        logError(error, 'Error in delete');
         metrics.increment('silo.rpc.errors', 1, { method: 'delete' });
         throw error;
       }
@@ -293,7 +293,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               .join(', ')}`,
           );
         }
-        logError(getLogger(), error, 'Error in stats');
+        logError(error, 'Error in stats');
         metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
         throw error;
       }
@@ -308,7 +308,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
       try {
         return await this.services.dlq.getStats();
       } catch (error) {
-        logError(getLogger(), error, 'Error in dlqStats');
+        logError(error, 'Error in dlqStats');
         metrics.increment('silo.rpc.errors', 1, { method: 'dlqStats' });
         throw error;
       }
@@ -323,7 +323,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
       try {
         return await this.services.dlq.getMessages(options);
       } catch (error) {
-        logError(getLogger(), error, 'Error in dlqMessages');
+        logError(error, 'Error in dlqMessages');
         metrics.increment('silo.rpc.errors', 1, { method: 'dlqMessages' });
         throw error;
       }
@@ -338,7 +338,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
       try {
         return await this.services.dlq.reprocessMessage(id);
       } catch (error) {
-        logError(getLogger(), error, 'Error in dlqReprocess');
+        logError(error, 'Error in dlqReprocess');
         metrics.increment('silo.rpc.errors', 1, { method: 'dlqReprocess' });
         throw error;
       }
@@ -353,7 +353,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
       try {
         return await this.services.dlq.purgeMessages(options);
       } catch (error) {
-        logError(getLogger(), error, 'Error in dlqPurge');
+        logError(error, 'Error in dlqPurge');
         metrics.increment('silo.rpc.errors', 1, { method: 'dlqPurge' });
         throw error;
       }

@@ -94,7 +94,7 @@ export class DLQServiceImpl implements DLQService {
       return id;
     } catch (error) {
       metrics.increment('silo.dlq.metadata_errors', 1);
-      logError(getLogger(), error, 'Error storing DLQ message metadata');
+      logError(error, 'Error storing DLQ message metadata');
       throw error;
     }
   }
@@ -162,7 +162,7 @@ export class DLQServiceImpl implements DLQService {
         };
       });
     } catch (error) {
-      logError(getLogger(), error, 'Error retrieving DLQ messages');
+      logError(error, 'Error retrieving DLQ messages');
       throw error;
     }
   }
@@ -222,7 +222,7 @@ export class DLQServiceImpl implements DLQService {
         byErrorType,
       };
     } catch (error) {
-      logError(getLogger(), error, 'Error retrieving DLQ stats');
+      logError(error, 'Error retrieving DLQ stats');
       throw error;
     }
   }
@@ -241,7 +241,7 @@ export class DLQServiceImpl implements DLQService {
         .where(eq(dlqMetadata.id, id))
         .run();
     } catch (error) {
-      logError(getLogger(), error, 'Error marking DLQ message as reprocessed');
+      logError(error, 'Error marking DLQ message as reprocessed');
       throw error;
     }
   }
@@ -291,7 +291,7 @@ export class DLQServiceImpl implements DLQService {
       return result;
     } catch (error) {
       metrics.increment('silo.dlq.reprocessing_errors', 1);
-      logError(getLogger(), error, 'Error reprocessing DLQ message');
+      logError(error, 'Error reprocessing DLQ message');
       throw error;
     }
   }
@@ -346,7 +346,7 @@ export class DLQServiceImpl implements DLQService {
       const changes = (result as any).changes || 0;
       return changes;
     } catch (error) {
-      logError(getLogger(), error, 'Error purging DLQ messages');
+      logError(error, 'Error purging DLQ messages');
       throw error;
     }
   }
@@ -402,7 +402,7 @@ export class DLQServiceImpl implements DLQService {
       return id;
     } catch (error) {
       metrics.increment('silo.dlq.errors', 1);
-      logError(getLogger(), error, 'Error sending message to DLQ');
+      logError(error, 'Error sending message to DLQ');
       throw error;
     }
   }

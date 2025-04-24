@@ -31,7 +31,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     try {
       return await fn();
     } catch (err) {
-      logError(getLogger(), err, 'Unhandled error');
+      logError(err, 'Unhandled error');
       throw err;
     }
   });
@@ -46,7 +46,7 @@ const sendToDeadLetter = async (queue: DeadQueue | undefined, payload: DeadLette
   try {
     await queue.send(payload);
   } catch (err) {
-    logError(getLogger(), err, 'Failed to send to dead letter queue', { payload });
+    logError(err, 'Failed to send to dead letter queue', { payload });
   }
 };
 
@@ -248,7 +248,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
       // At this point, we know the message body conforms to NewContentMessage schema
       return await this.services.silo.get(validation.data.id, validation.data.userId);
     } catch (err) {
-      logError(getLogger(), err, 'Error fetching content from Silo');
+      logError(err, 'Error fetching content from Silo');
       throw err;
     }
   }

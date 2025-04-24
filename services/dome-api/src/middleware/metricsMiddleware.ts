@@ -86,7 +86,7 @@ export function metricsMiddleware() {
       metrics.trackApiRequest(path, method, 500, duration);
 
       // Log the error
-      logError(getLogger(), error, 'Request error in metrics middleware', {
+      logError(error, 'Request error in metrics middleware', {
         path,
         method,
         duration,

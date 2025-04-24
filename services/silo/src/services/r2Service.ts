@@ -59,7 +59,7 @@ export class R2Service {
       return true;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'put' });
-      logError(getLogger(), error, 'Error storing content in R2', { key });
+      logError(error, 'Error storing content in R2', { key });
       throw error;
     }
   }
@@ -84,7 +84,7 @@ export class R2Service {
       return object;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'get' });
-      logError(getLogger(), error, 'Error retrieving content from R2', { key });
+      logError(error, 'Error retrieving content from R2', { key });
       throw error;
     }
   }
@@ -105,7 +105,7 @@ export class R2Service {
       return true;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'delete' });
-      logError(getLogger(), error, 'Error deleting content from R2', { key });
+      logError(error, 'Error deleting content from R2', { key });
       throw error;
     }
   }
@@ -130,7 +130,7 @@ export class R2Service {
       return object;
     } catch (error) {
       metrics.increment('silo.r2.errors', 1, { operation: 'head' });
-      logError(getLogger(), error, 'Error getting object metadata from R2', { key });
+      logError(error, 'Error getting object metadata from R2', { key });
       throw error;
     }
   }

@@ -104,7 +104,7 @@ export class SiloClient {
         // Send the message to the ingest queue
         await this.queue.send(message);
       } catch (e) {
-        logError(getLogger(), e, 'Queue send error');
+        logError(e, 'Queue send error');
         logger.warn(
           {
             error: e,
@@ -188,7 +188,7 @@ export class SiloClient {
       return result;
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.batchGet.errors`);
-      logError(getLogger(), error, 'Error fetching content from Silo');
+      logError(error, 'Error fetching content from Silo');
       throw error;
     }
   }
@@ -217,7 +217,7 @@ export class SiloClient {
       return result;
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.delete.errors`);
-      logError(getLogger(), error, 'Error deleting content from Silo');
+      logError(error, 'Error deleting content from Silo');
       throw error;
     }
   }
@@ -239,7 +239,7 @@ export class SiloClient {
       return result;
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.stats.errors`);
-      logError(getLogger(), error, 'Error fetching Silo storage statistics');
+      logError(error, 'Error fetching Silo storage statistics');
       throw error;
     }
   }

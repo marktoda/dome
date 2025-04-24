@@ -39,7 +39,7 @@ export class MetadataService {
       return result;
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'insert' });
-      logError(getLogger(), error, 'Error inserting content metadata', { id: data.id });
+      logError(error, 'Error inserting content metadata', { id: data.id });
       throw error;
     }
   }
@@ -67,7 +67,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get' });
-      logError(getLogger(), error, 'Error getting content metadata', { id });
+      logError(error, 'Error getting content metadata', { id });
       throw error;
     }
   }
@@ -182,7 +182,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'delete' });
-      logError(getLogger(), error, 'Error deleting content metadata', { id });
+      logError(error, 'Error deleting content metadata', { id });
       throw error;
     }
   }
@@ -231,7 +231,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'get_by_user' });
-      logError(getLogger(), error, 'Error getting content metadata for user', { userId });
+      logError(error, 'Error getting content metadata for user', { userId });
       throw error;
     }
   }
@@ -269,7 +269,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'count' });
-      logError(getLogger(), error, 'Error getting content count for user', { userId });
+      logError(error, 'Error getting content count for user', { userId });
       throw error;
     }
   }
@@ -329,7 +329,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'stats' });
-      logError(getLogger(), error, 'Error getting storage statistics');
+      logError(error, 'Error getting storage statistics');
       throw error;
     }
   }
@@ -380,7 +380,7 @@ export class MetadataService {
       }
     } catch (error) {
       metrics.increment('silo.d1.errors', 1, { operation: 'update_enriched' });
-      logError(getLogger(), error, 'Error updating enriched content metadata', { id });
+      logError(error, 'Error updating enriched content metadata', { id });
       throw error;
     }
   }

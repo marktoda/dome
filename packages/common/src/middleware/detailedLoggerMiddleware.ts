@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import { getLogger } from '@dome/logging';
+import { getLogger, logError } from '@dome/logging';
 import { getPath } from 'hono/utils/url';
 
 /**
@@ -96,10 +96,10 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
           error:
             error instanceof Error
               ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
               : String(error),
           request: {
             method,
@@ -144,6 +144,7 @@ function sanitizeBody(body: any): any {
 
       // Limit size of response for logging
       const stringified = JSON.stringify(sanitized);
+
       if (stringified.length > 1000) {
         return {
           _truncated: true,
@@ -162,6 +163,7 @@ function sanitizeBody(body: any): any {
 
     return body;
   } catch (error) {
+    logError(error, 'Sanitization error');
     return { _error: 'Failed to sanitize body', _type: typeof body };
   }
 }
