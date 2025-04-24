@@ -40,7 +40,8 @@ The package provides reusable middleware components for Hono-based services:
 - `createRequestContextMiddleware`: Adds request ID tracking
 - `createErrorMiddleware`: Standardized error handling
 - `responseHandlerMiddleware`: Standardized response formatting
-- `createPinoLoggerMiddleware`: Request logging with Pino
+- `createPinoLoggerMiddleware`: Basic request logging with Pino
+- `createDetailedLoggerMiddleware`: Comprehensive request/response logging with detailed information
 - `createRateLimitMiddleware`: Rate limiting
 
 Example usage:
@@ -50,9 +51,11 @@ import {
   createRequestContextMiddleware,
   createErrorMiddleware,
   responseHandlerMiddleware,
+  createDetailedLoggerMiddleware,
 } from '@communicator/common';
 
 // In your Hono app setup
+app.use('*', createDetailedLoggerMiddleware()); // Add detailed request/response logging
 app.use('*', createRequestContextMiddleware());
 app.use('*', createErrorMiddleware(formatZodError));
 app.use('*', responseHandlerMiddleware);

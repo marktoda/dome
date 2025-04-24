@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { ServiceInfo, createErrorMiddleware, formatZodError } from '@dome/common';
+import { ServiceInfo, createErrorMiddleware, formatZodError, createDetailedLoggerMiddleware } from '@dome/common';
 import { getLogger, logError } from '@dome/logging';
 import {
   createSyncPlanService,
@@ -44,6 +44,7 @@ logger.info(serviceInfo, 'Starting Tsunami service');
 
 const app = new Hono<{ Bindings: Bindings }>();
 app.use(cors());
+app.use('*', createDetailedLoggerMiddleware());
 app.use('*', createErrorMiddleware(formatZodError));
 app.get('/', c => c.text('Hello from Tsunami!'));
 

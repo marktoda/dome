@@ -7,6 +7,7 @@ import {
   responseHandlerMiddleware,
   createSimpleAuthMiddleware,
   formatZodError,
+  createDetailedLoggerMiddleware,
 } from '@dome/common';
 import { userIdMiddleware, UserIdContext } from './middleware/userIdMiddleware';
 import { initLogging, getLogger } from '@dome/logging';
@@ -33,34 +34,8 @@ const controllerFactory = createControllerFactory(serviceFactory);
 // Metrics middleware (should be first to accurately measure request timing)
 app.use('*', metricsMiddleware());
 
-// Request logging middleware
-app.use('*', async (c, next) => {
-  const startTime = Date.now();
-  getLogger().info(
-    {
-      path: c.req.path,
-      method: c.req.method,
-      userAgent: c.req.header('user-agent'),
-      query: c.req.query(),
-    },
-    'request:start',
-  );
-
-  await next();
-
-  const endTime = Date.now();
-  const duration = endTime - startTime;
-
-  getLogger().info(
-    {
-      path: c.req.path,
-      method: c.req.method,
-      durMs: duration,
-      status: c.res.status,
-    },
-    'request:end',
-  );
-});
+// Detailed request/response logging middleware
+app.use('*', createDetailedLoggerMiddleware());
 
 app.use('*', createRequestContextMiddleware());
 initLogging(app, {
