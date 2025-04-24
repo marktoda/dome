@@ -20,6 +20,23 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
     const url = new URL(c.req.url);
     const params = c.req.param();
     const query = c.req.query();
+    
+    // Extract request body if it exists
+    let requestBody: any = undefined;
+    try {
+      const contentType = c.req.header('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        // Clone the request to read its body without consuming it
+        const reqClone = c.req.raw.clone();
+        const text = await reqClone.text();
+        if (text) {
+          requestBody = JSON.parse(text);
+        }
+      }
+    } catch (e) {
+      // Ignore errors in request body extraction
+      logger.debug({ error: e }, 'Failed to extract request body');
+    }
 
     // Log request details
     logger.info(
@@ -31,6 +48,7 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
           url: url.toString(),
           params: Object.keys(params).length > 0 ? params : undefined,
           query: Object.keys(query).length > 0 ? query : undefined,
+          body: requestBody ? sanitizeBody(requestBody) : undefined,
         },
       },
       'Incoming request',
@@ -70,7 +88,7 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
             status,
             ok: String(c.res.ok),
             time: formatTime(startTime),
-            body: responseBody ? sanitizeResponseBody(responseBody) : undefined,
+            body: responseBody ? sanitizeBody(responseBody) : undefined,
           },
         },
         'Request completed',
@@ -102,12 +120,12 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
 }
 
 /**
- * Sanitizes response body to prevent logging sensitive information
+ * Sanitizes body data to prevent logging sensitive information
  * and limit the size of logged data
- * @param body Response body
- * @returns Sanitized response body
+ * @param body Request or response body
+ * @returns Sanitized body
  */
-function sanitizeResponseBody(body: any): any {
+function sanitizeBody(body: any): any {
   if (!body) return undefined;
 
   try {
@@ -149,7 +167,7 @@ function sanitizeResponseBody(body: any): any {
 
     return body;
   } catch (error) {
-    return { _error: 'Failed to sanitize response body', _type: typeof body };
+    return { _error: 'Failed to sanitize body', _type: typeof body };
   }
 }
 

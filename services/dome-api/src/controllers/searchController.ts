@@ -121,7 +121,7 @@ export class SearchController {
         return c.json(emptyResults(parsed.q));
       }
 
-      this.logger.info({ userId, q: parsed.q, params: parsed }, 'search');
+      this.logger.info({ userId, q: parsed.q, params: parsed }, 'search query');
 
       // Track search operation with timing
       const results = await trackTiming('search.execution', {

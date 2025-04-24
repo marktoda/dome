@@ -119,7 +119,6 @@ export class SearchService {
 
       // Perform semantic search using Constellation
       const filter: Partial<VectorMeta> = { userId };
-      this.logger.info(filter, 'Using filter for vector search');
       const searchResults = await this.constellation.query(query, filter);
 
       if (searchResults.length === 0) {
@@ -295,9 +294,8 @@ export class SearchService {
       startDate,
       endDate,
     } = options;
-    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${
-      startDate || ''
-    }:${endDate || ''}`;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''
+      }:${endDate || ''}`;
   }
 
   /**
