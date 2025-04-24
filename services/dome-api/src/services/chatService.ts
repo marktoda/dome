@@ -28,7 +28,7 @@ export interface ChatOptions {
  */
 export class ChatService {
   // Model to use for chat
-  private readonly MODEL_NAME = 'llama-3.3-70b-instruct-fp8-fast';
+  private readonly MODEL_NAME = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
   // Maximum context window size for the model (in tokens)
   private readonly MAX_CONTEXT_WINDOW = 24000;
