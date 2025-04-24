@@ -137,7 +137,7 @@ export class SearchService {
         return emptyResults;
       }
 
-      const contentIds = [...new Set(searchResults.map(result => result.id))];
+      const contentIds = [...new Set(searchResults.map(result => result.metadata.contentId))];
 
       this.logger.info(
         {
