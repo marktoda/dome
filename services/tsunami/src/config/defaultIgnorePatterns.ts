@@ -15,6 +15,8 @@
 export const DEFAULT_IGNORE_PATTERNS = [
   // Build artifacts and dependencies
   'node_modules/**',
+  'snapshots/',
+  '.forge-snapshots/',
   'dist/**',
   'build/**',
   '.next/**',
@@ -22,19 +24,19 @@ export const DEFAULT_IGNORE_PATTERNS = [
   'target/**',
   'bin/**',
   'obj/**',
-  
+
   // Package manager files
   'package-lock.json',
   'yarn.lock',
   'pnpm-lock.yaml',
   'Cargo.lock',
-  
+
   // Generated files
   '*.min.js',
   '*.min.css',
   '*.bundle.js',
   '*.generated.*',
-  
+
   // Binary and media files
   '*.jpg',
   '*.jpeg',
@@ -58,25 +60,25 @@ export const DEFAULT_IGNORE_PATTERNS = [
   '*.dll',
   '*.so',
   '*.dylib',
-  
+
   // Cache and temporary files
   '.cache/**',
   '.tmp/**',
   'tmp/**',
   'temp/**',
   '*.log',
-  
+
   // IDE and editor files
   '.idea/**',
   '.vscode/**',
   '.DS_Store',
   'Thumbs.db',
-  
+
   // Test coverage and reports
   'coverage/**',
   '.nyc_output/**',
   'junit.xml',
-  
+
   // Large data files
   '*.csv',
   '*.tsv',
