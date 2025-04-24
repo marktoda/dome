@@ -232,19 +232,28 @@ export class LlmService {
         }
       }
 
-      const parsed = JSON.parse(jsonString);
+      // Attempt to fix common JSON syntax errors before parsing
+      jsonString = this.sanitizeJsonString(jsonString);
 
-      // Normalize priority values to lowercase
-      if (parsed.todos && Array.isArray(parsed.todos)) {
-        parsed.todos = parsed.todos.map((todo: { priority?: string; [key: string]: any }) => {
-          if (todo.priority) {
-            todo.priority = todo.priority.toLowerCase();
-          }
-          return todo;
-        });
+      try {
+        const parsed = JSON.parse(jsonString);
+
+        // Normalize priority values to lowercase
+        if (parsed.todos && Array.isArray(parsed.todos)) {
+          parsed.todos = parsed.todos.map((todo: { priority?: string; [key: string]: any }) => {
+            if (todo.priority) {
+              todo.priority = todo.priority.toLowerCase();
+            }
+            return todo;
+          });
+        }
+
+        return parsed;
+      } catch (parseError) {
+        // If standard parsing fails, try a more aggressive approach with JSON5
+        // or fallback to a best-effort manual extraction
+        return this.extractStructuredData(jsonString);
       }
-
-      return parsed;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
@@ -256,12 +265,15 @@ export class LlmService {
       getLogger().error(
         {
           error,
+          source: { error, hasCodeBlock, time: new Date().toISOString(), service: 'ai-processor', op: 'reprocess' },
           responsePreview: response.substring(0, 200) + '...',
           responseLength: response.length,
           hasCodeBlock,
           firstFewChars,
           lastFewChars,
           parseErrorMessage: errorMessage,
+          msg: 'Failed to parse LLM response',
+          level: 50,
         },
         'Failed to parse LLM response',
       );
@@ -272,6 +284,98 @@ export class LlmService {
         summary: 'Failed to generate summary from content',
         error: 'Response parsing failed',
       };
+    }
+  }
+
+  /**
+   * Sanitize a JSON string to fix common syntax errors
+   * @param jsonString The JSON string to sanitize
+   * @returns A sanitized JSON string
+   */
+  private sanitizeJsonString(jsonString: string): string {
+    // Trim whitespace
+    let sanitized = jsonString.trim();
+
+    // Fix trailing commas in arrays and objects
+    sanitized = sanitized.replace(/,\s*([}\]])/g, '$1');
+
+    // Fix missing commas between array elements or object properties
+    sanitized = sanitized.replace(/}\s*{/g, '},{');
+    sanitized = sanitized.replace(/]\s*\[/g, '],[');
+    sanitized = sanitized.replace(/"\s*"/g, '","');
+
+    // Fix unquoted property names
+    sanitized = sanitized.replace(/([{,]\s*)([a-zA-Z0-9_$]+)(\s*:)/g, '$1"$2"$3');
+
+    // Fix single quotes to double quotes (careful with nested quotes)
+    sanitized = sanitized.replace(/'([^']*?)'/g, '"$1"');
+
+    return sanitized;
+  }
+
+  /**
+   * Extract structured data from a potentially malformed JSON string
+   * @param jsonString The JSON string to extract data from
+   * @returns A best-effort structured object
+   */
+  private extractStructuredData(jsonString: string): any {
+    const result: any = {
+      title: 'Untitled Content',
+      summary: 'Content extracted with best-effort parsing',
+    };
+
+    try {
+      // Extract title using regex
+      const titleMatch = jsonString.match(/"title"\s*:\s*"([^"]+)"/);
+      if (titleMatch && titleMatch[1]) {
+        result.title = titleMatch[1];
+      }
+
+      // Extract summary using regex
+      const summaryMatch = jsonString.match(/"summary"\s*:\s*"([^"]+)"/);
+      if (summaryMatch && summaryMatch[1]) {
+        result.summary = summaryMatch[1];
+      }
+
+      // Extract todos if present (simplified approach)
+      const todosMatch = jsonString.match(/"todos"\s*:\s*\[(.*?)\]/s);
+      if (todosMatch && todosMatch[1]) {
+        const todoItems = todosMatch[1].split('},');
+        result.todos = todoItems.map(item => {
+          const textMatch = item.match(/"text"\s*:\s*"([^"]+)"/);
+          const locationMatch = item.match(/"location"\s*:\s*"([^"]+)"/);
+          
+          return {
+            text: textMatch ? textMatch[1] : 'Unknown todo',
+            location: locationMatch ? locationMatch[1] : '',
+          };
+        });
+      }
+
+      // Extract topics if present
+      const topicsMatch = jsonString.match(/"topics"\s*:\s*\[(.*?)\]/s);
+      if (topicsMatch && topicsMatch[1]) {
+        result.topics = topicsMatch[1]
+          .split(',')
+          .map(topic => {
+            const cleaned = topic.trim().replace(/^"/, '').replace(/"$/, '');
+            return cleaned || 'Unknown topic';
+          })
+          .filter(Boolean);
+      }
+
+      getLogger().info(
+        { extractedFields: Object.keys(result) },
+        'Extracted structured data using fallback method',
+      );
+
+      return result;
+    } catch (error) {
+      getLogger().error(
+        { error },
+        'Error in fallback structured data extraction',
+      );
+      return result;
     }
   }
 

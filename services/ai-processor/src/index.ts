@@ -80,8 +80,23 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           return { success: true, reprocessed: result };
         }
       } catch (error) {
-        logError(error, 'Error in reprocess');
-        metrics.increment('ai_processor.reprocess.errors', 1);
+        // Enhanced error logging with more context
+        const errorDetails = {
+          error,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined,
+          service: 'ai-processor',
+          operation: 'reprocess',
+          id: data.id,
+          timestamp: new Date().toISOString(),
+        };
+        
+        logError(error, 'Error in reprocess', errorDetails);
+        metrics.increment('ai_processor.reprocess.errors', 1, {
+          errorType: error instanceof Error ? error.constructor.name : 'unknown'
+        });
+        
         throw error;
       }
     });
@@ -292,16 +307,32 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
       // Track successful processing
       metrics.increment('ai_processor.messages.processed', 1);
     } catch (error) {
+      // Enhanced error logging with more context
+      const errorDetails = {
+        error,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        id,
+        userId,
+        category,
+        mimeType,
+        contentType,
+        service: 'ai-processor',
+        operation: 'processMessage',
+        timestamp: new Date().toISOString(),
+      };
+
       getLogger().error(
-        {
-          error: error instanceof Error ? error.message : String(error),
-          id,
-          userId,
-          category,
-          mimeType,
-        },
+        errorDetails,
         'Error processing content',
       );
+
+      // Track specific error types for monitoring
+      metrics.increment('ai_processor.messages.errors', 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+        contentType
+      });
 
       // Re-throw to allow queue retry mechanism to work
       throw error;

@@ -252,5 +252,178 @@ describe('LlmService', () => {
       expect(result.title.length).toBeLessThan(longFirstLine.length);
       expect(result.title).toContain('...');
     });
+
+    it('should handle JSON with trailing commas', async () => {
+      // Mock AI to return JSON with trailing commas (invalid JSON)
+      mockAi.run.mockResolvedValue({
+        response: `{
+          "title": "JSON with Trailing Comma",
+          "summary": "This JSON has a trailing comma.",
+          "topics": ["json", "parsing",],
+        }`,
+      });
+
+      const content = 'This is a test note.';
+      const result = await llmService.processContent(content, 'note');
+
+      // Check that we extracted and fixed the JSON correctly
+      expect(result).toHaveProperty('title', 'JSON with Trailing Comma');
+      expect(result).toHaveProperty('summary', 'This JSON has a trailing comma.');
+      expect(result).toHaveProperty('topics');
+      expect(result.topics).toEqual(['json', 'parsing']);
+    });
+
+    it('should handle JSON with unquoted property names', async () => {
+      // Mock AI to return JSON with unquoted property names (invalid JSON)
+      mockAi.run.mockResolvedValue({
+        response: `{
+          title: "Unquoted Properties",
+          summary: "This JSON has unquoted property names.",
+          topics: ["json", "parsing"]
+        }`,
+      });
+
+      const content = 'This is a test note.';
+      const result = await llmService.processContent(content, 'note');
+
+      // Check that we extracted and fixed the JSON correctly
+      expect(result).toHaveProperty('title', 'Unquoted Properties');
+      expect(result).toHaveProperty('summary', 'This JSON has unquoted property names.');
+      expect(result).toHaveProperty('topics');
+      expect(result.topics).toEqual(['json', 'parsing']);
+    });
+
+    it('should handle JSON with single quotes', async () => {
+      // Mock AI to return JSON with single quotes (invalid JSON)
+      mockAi.run.mockResolvedValue({
+        response: `{
+          'title': 'Single Quotes',
+          'summary': 'This JSON uses single quotes instead of double quotes.',
+          'topics': ['json', 'parsing']
+        }`,
+      });
+
+      const content = 'This is a test note.';
+      const result = await llmService.processContent(content, 'note');
+
+      // Check that we extracted and fixed the JSON correctly
+      expect(result).toHaveProperty('title', 'Single Quotes');
+      expect(result).toHaveProperty('summary', 'This JSON uses single quotes instead of double quotes.');
+      expect(result).toHaveProperty('topics');
+      expect(result.topics).toEqual(['json', 'parsing']);
+    });
+
+    it('should handle malformed JSON with missing commas', async () => {
+      // Mock AI to return JSON with missing commas (invalid JSON)
+      mockAi.run.mockResolvedValue({
+        response: `{
+          "title": "Missing Commas"
+          "summary": "This JSON is missing commas between properties."
+          "topics": ["json" "parsing"]
+        }`,
+      });
+
+      const content = 'This is a test note.';
+      const result = await llmService.processContent(content, 'note');
+
+      // Check that we extracted and fixed the JSON correctly
+      expect(result).toHaveProperty('title', 'Missing Commas');
+      expect(result).toHaveProperty('summary', 'This JSON is missing commas between properties.');
+    });
+
+    it('should handle the specific UniswapV3Factory test case', async () => {
+      // Mock AI to return the problematic JSON from the error case
+      mockAi.run.mockResolvedValue({
+        response: `{
+"title": "UniswapV3Factory Tests",
+"summary": "This code tests the UniswapV3Factory contract.",
+"todos": [
+{"text": "Add tests for the \`setOwner\` function.", "location": "describe('#setOwner')"}
+],
+"components": ["UniswapV3FactoryTest"],
+"language": "JavaScript",
+"frameworks": ["Hardhat"],
+"topics": ["Uniswap V3", "Factory"]
+}`,
+      });
+
+      const content = 'This is a test for UniswapV3Factory.';
+      const result = await llmService.processContent(content, 'code');
+
+      // Check that we extracted and fixed the JSON correctly
+      expect(result).toHaveProperty('title', 'UniswapV3Factory Tests');
+      expect(result).toHaveProperty('summary', 'This code tests the UniswapV3Factory contract.');
+      expect(result).toHaveProperty('todos');
+      expect(result.todos).toHaveLength(1);
+      expect(result.todos[0]).toHaveProperty('text', 'Add tests for the `setOwner` function.');
+      expect(result.todos[0]).toHaveProperty('location', "describe('#setOwner')");
+      expect(result).toHaveProperty('components', ['UniswapV3FactoryTest']);
+      expect(result).toHaveProperty('language', 'JavaScript');
+      expect(result).toHaveProperty('frameworks', ['Hardhat']);
+      expect(result).toHaveProperty('topics');
+      expect(result.topics).toEqual(['Uniswap V3', 'Factory']);
+    });
+
+    it('should fall back to regex extraction for severely malformed JSON', async () => {
+      // Mock AI to return severely malformed JSON that can't be fixed with sanitization
+      mockAi.run.mockResolvedValue({
+        response: `{
+          "title": "Severely Malformed JSON",
+          "summary": "This JSON is beyond repair with simple sanitization."
+          "todos": [
+            {"text": "First todo" "location": "somewhere"}
+            {"text": "Second todo" "location": "elsewhere"}
+          ]
+          "topics": ["json", "parsing"
+        `,
+      });
+
+      const content = 'This is a test note.';
+      const result = await llmService.processContent(content, 'note');
+
+      // Check that we extracted what we could using regex
+      expect(result).toHaveProperty('title', 'Severely Malformed JSON');
+      expect(result).toHaveProperty('summary', 'This JSON is beyond repair with simple sanitization.');
+      // We should at least have extracted some data even if not complete
+      expect(result).not.toHaveProperty('error', 'Response parsing failed');
+    });
+  });
+
+  describe('sanitizeJsonString', () => {
+    it('should fix trailing commas', () => {
+      const malformed = '{"name": "test", "values": [1, 2, 3,], }';
+      const result = (llmService as any).sanitizeJsonString(malformed);
+      
+      // Should remove trailing commas
+      expect(result).not.toContain('3,]');
+      expect(result).not.toContain('], }');
+      
+      // Should be valid JSON
+      expect(() => JSON.parse(result)).not.toThrow();
+    });
+
+    it('should fix unquoted property names', () => {
+      const malformed = '{name: "test", values: [1, 2, 3]}';
+      const result = (llmService as any).sanitizeJsonString(malformed);
+      
+      // Should quote property names
+      expect(result).toContain('"name"');
+      expect(result).toContain('"values"');
+      
+      // Should be valid JSON
+      expect(() => JSON.parse(result)).not.toThrow();
+    });
+
+    it('should fix single quotes', () => {
+      const malformed = "{'name': 'test', 'values': [1, 2, 3]}";
+      const result = (llmService as any).sanitizeJsonString(malformed);
+      
+      // Should replace single quotes with double quotes
+      expect(result).toContain('"name"');
+      expect(result).toContain('"test"');
+      
+      // Should be valid JSON
+      expect(() => JSON.parse(result)).not.toThrow();
+    });
   });
 });
