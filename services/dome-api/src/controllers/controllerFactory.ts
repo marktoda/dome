@@ -64,7 +64,6 @@ export class ControllerFactory {
     }
     return this.siloController;
   }
-
 }
 
 /**

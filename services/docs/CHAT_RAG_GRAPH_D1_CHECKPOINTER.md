@@ -90,10 +90,10 @@ export class D1Checkpointer implements Checkpointer {
       }
 
       this.logger.info({ runId, step: result.step }, 'Retrieved checkpoint');
-      
+
       // Update the last accessed time
       await this.updateTimestamp(runId);
-      
+
       return {
         step: result.step as SuperStep,
         state: JSON.parse(result.state_json),
@@ -113,52 +113,56 @@ export class D1Checkpointer implements Checkpointer {
   async write(runId: string, step: SuperStep, state: unknown): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
     const stateJson = JSON.stringify(state);
-    
+
     try {
       // Check if record exists
       const exists = await this.db
         .prepare('SELECT 1 FROM checkpoints WHERE run_id = ?')
         .bind(runId)
         .first<{ 1: number }>();
-      
+
       if (exists) {
         // Update existing record
         await this.db
-          .prepare(`
+          .prepare(
+            `
             UPDATE checkpoints 
             SET step = ?, state_json = ?, updated_at = ? 
             WHERE run_id = ?
-          `)
+          `,
+          )
           .bind(step, stateJson, now, runId)
           .run();
       } else {
         // Insert new record
         await this.db
-          .prepare(`
+          .prepare(
+            `
             INSERT INTO checkpoints (run_id, step, state_json, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?)
-          `)
+          `,
+          )
           .bind(runId, step, stateJson, now, now)
           .run();
       }
-      
+
       this.logger.info(
-        { 
-          runId, 
-          step, 
+        {
+          runId,
+          step,
           stateSize: stateJson.length,
-        }, 
-        'Checkpoint saved'
+        },
+        'Checkpoint saved',
       );
     } catch (error) {
       this.logger.error(
-        { 
-          err: error, 
-          runId, 
+        {
+          err: error,
+          runId,
           step,
-          stateSize: stateJson.length 
-        }, 
-        'Error writing checkpoint'
+          stateSize: stateJson.length,
+        },
+        'Error writing checkpoint',
       );
       throw error;
     }
@@ -170,17 +174,14 @@ export class D1Checkpointer implements Checkpointer {
    */
   private async updateTimestamp(runId: string): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
-    
+
     try {
       await this.db
         .prepare('UPDATE checkpoints SET updated_at = ? WHERE run_id = ?')
         .bind(now, runId)
         .run();
     } catch (error) {
-      this.logger.warn(
-        { err: error, runId }, 
-        'Failed to update checkpoint timestamp'
-      );
+      this.logger.warn({ err: error, runId }, 'Failed to update checkpoint timestamp');
       // Non-critical error, don't throw
     }
   }
@@ -191,11 +192,8 @@ export class D1Checkpointer implements Checkpointer {
    */
   async delete(runId: string): Promise<void> {
     try {
-      await this.db
-        .prepare('DELETE FROM checkpoints WHERE run_id = ?')
-        .bind(runId)
-        .run();
-      
+      await this.db.prepare('DELETE FROM checkpoints WHERE run_id = ?').bind(runId).run();
+
       this.logger.info({ runId }, 'Checkpoint deleted');
     } catch (error) {
       this.logger.error({ err: error, runId }, 'Error deleting checkpoint');
@@ -209,25 +207,22 @@ export class D1Checkpointer implements Checkpointer {
    */
   async cleanup(maxAgeSeconds = this.ttlSeconds): Promise<number> {
     const cutoff = Math.floor(Date.now() / 1000) - maxAgeSeconds;
-    
+
     try {
       const result = await this.db
         .prepare('DELETE FROM checkpoints WHERE updated_at < ?')
         .bind(cutoff)
         .run();
-      
+
       const deletedCount = result.meta?.changes || 0;
       this.logger.info(
-        { deletedCount, olderThan: maxAgeSeconds }, 
-        'Cleaned up expired checkpoints'
+        { deletedCount, olderThan: maxAgeSeconds },
+        'Cleaned up expired checkpoints',
       );
-      
+
       return deletedCount;
     } catch (error) {
-      this.logger.error(
-        { err: error, maxAgeSeconds }, 
-        'Error cleaning up checkpoints'
-      );
+      this.logger.error({ err: error, maxAgeSeconds }, 'Error cleaning up checkpoints');
       return 0;
     }
   }
@@ -243,21 +238,23 @@ export class D1Checkpointer implements Checkpointer {
   }> {
     try {
       const stats = await this.db
-        .prepare(`
+        .prepare(
+          `
           SELECT 
             COUNT(*) as total,
             MIN(created_at) as oldest,
             MAX(updated_at) as newest,
             AVG(LENGTH(state_json)) as avg_size
           FROM checkpoints
-        `)
+        `,
+        )
         .first<{
           total: number;
           oldest: number;
           newest: number;
           avg_size: number;
         }>();
-      
+
       return {
         totalCheckpoints: stats?.total || 0,
         oldestCheckpoint: stats?.oldest || 0,
@@ -292,7 +289,9 @@ const graph = new StateGraph()
   // ... add nodes and edges
   .compile({
     checkpointer,
-    reducers: { /* ... */ },
+    reducers: {
+      /* ... */
+    },
   });
 
 // Execute with persistence
@@ -301,14 +300,14 @@ const result = await graph.invoke(initialState);
 // Resume from checkpoint
 const resumedResult = await graph.invoke(
   { newInput: 'additional data' },
-  { runId: 'previous-run-id' }
+  { runId: 'previous-run-id' },
 );
 
 // Scheduled cleanup (e.g., in a CRON trigger)
 export async function scheduledCleanup(
   event: ScheduledEvent,
   env: Bindings,
-  ctx: ExecutionContext
+  ctx: ExecutionContext,
 ) {
   const checkpointer = new D1Checkpointer(env.D1);
   const deletedCount = await checkpointer.cleanup(7 * 86400); // 7 days
@@ -319,15 +318,18 @@ export async function scheduledCleanup(
 ## 5. Performance Considerations
 
 1. **State Size Management**
+
    - Large state objects can impact performance
    - Consider implementing state pruning for long conversations
    - Monitor `averageStateSize` metric
 
 2. **Indexing Strategy**
+
    - The primary index is on `run_id` for fast lookups
    - Secondary index on `updated_at` optimizes cleanup operations
 
 3. **Error Handling**
+
    - Robust error handling prevents data corruption
    - Non-critical errors (like timestamp updates) are logged but don't throw
 
@@ -341,10 +343,12 @@ export async function scheduledCleanup(
 The D1Checkpointer includes comprehensive logging and statistics gathering:
 
 1. **Logging**
+
    - All operations are logged with appropriate context
    - Error conditions include detailed diagnostics
 
 2. **Statistics**
+
    - `getStats()` method provides insights into database usage
    - Monitor trends in checkpoint count and state size
 
@@ -355,10 +359,12 @@ The D1Checkpointer includes comprehensive logging and statistics gathering:
 ## 7. Future Enhancements
 
 1. **Compression**
+
    - Add optional compression for large state objects
    - Trade CPU for storage efficiency
 
 2. **Sharding**
+
    - Implement sharding for high-volume deployments
    - Partition by user ID or time ranges
 

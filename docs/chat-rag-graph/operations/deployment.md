@@ -82,6 +82,7 @@ Note the index IDs for each environment.
 Create environment-specific `.dev.vars` files:
 
 **Development (.dev.vars)**:
+
 ```
 DOME_API_URL=https://api-dev.dome.cloud
 DOME_API_KEY=dev-api-key
@@ -90,6 +91,7 @@ LOG_LEVEL=debug
 ```
 
 **Staging (set in Cloudflare dashboard)**:
+
 ```
 DOME_API_URL=https://api-staging.dome.cloud
 DOME_API_KEY=staging-api-key
@@ -98,6 +100,7 @@ LOG_LEVEL=info
 ```
 
 **Production (set in Cloudflare dashboard)**:
+
 ```
 DOME_API_URL=https://api.dome.cloud
 DOME_API_KEY=prod-api-key
@@ -236,33 +239,33 @@ name: Deploy
 on:
   push:
     branches:
-      - main  # Deploy to staging on push to main
-      - production  # Deploy to production on push to production
+      - main # Deploy to staging on push to main
+      - production # Deploy to production on push to production
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
           cache: 'pnpm'
-      
+
       - name: Install dependencies
         run: pnpm install
-      
+
       - name: Build
         run: pnpm build
-      
+
       - name: Deploy to staging
         if: github.ref == 'refs/heads/main'
         run: npx wrangler deploy --env staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      
+
       - name: Deploy to production
         if: github.ref == 'refs/heads/production'
         run: npx wrangler deploy --env prod

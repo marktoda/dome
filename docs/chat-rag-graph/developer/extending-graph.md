@@ -31,39 +31,36 @@ import { countTokens } from '../utils/tokenCounter';
 export const summarizeContext = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'summarizeContext' });
   const startTime = performance.now();
-  
+
   // Skip if no documents or summarization is disabled
   if (!state.docs?.length || state.options.skipSummarization) {
     logger.info('No documents to summarize or summarization disabled');
     return state;
   }
-  
+
   logger.info(
-    { 
+    {
       docsCount: state.docs.length,
       query: state.tasks?.rewrittenQuery || state.tasks?.originalQuery,
-    }, 
-    'Summarizing context'
+    },
+    'Summarizing context',
   );
-  
+
   try {
     // Prepare documents for summarization
     const docsText = state.docs
       .map(doc => `Title: ${doc.title}\nContent: ${doc.body}`)
       .join('\n\n');
-    
+
     // Count tokens in documents
     const docsTokens = countTokens(docsText);
-    
+
     // Skip summarization if documents are already concise
     if (docsTokens < 1000) {
-      logger.info(
-        { docsTokens }, 
-        'Documents already concise, skipping summarization'
-      );
+      logger.info({ docsTokens }, 'Documents already concise, skipping summarization');
       return state;
     }
-    
+
     // Create summarization prompt
     const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
     const prompt = `
@@ -77,29 +74,25 @@ export const summarizeContext = async (state: AgentState, env: Bindings): Promis
       
       Summary:
     `;
-    
+
     // Generate summary
-    const summary = await LlmService.generateSummary(
-      env,
-      prompt,
-      {
-        temperature: 0.3,
-        maxTokens: 500,
-      }
-    );
-    
+    const summary = await LlmService.generateSummary(env, prompt, {
+      temperature: 0.3,
+      maxTokens: 500,
+    });
+
     logger.info(
-      { 
+      {
         originalTokens: docsTokens,
         summaryTokens: countTokens(summary),
-      }, 
-      'Generated context summary'
+      },
+      'Generated context summary',
     );
-    
+
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     return {
       ...state,
       contextSummary: summary,
@@ -116,11 +109,8 @@ export const summarizeContext = async (state: AgentState, env: Bindings): Promis
       },
     };
   } catch (error) {
-    logger.error(
-      { err: error }, 
-      'Error summarizing context'
-    );
-    
+    logger.error({ err: error }, 'Error summarizing context');
+
     // Return original state on error
     return {
       ...state,
@@ -148,10 +138,10 @@ Update the `AgentState` interface in `src/types.ts` to include the new `contextS
 export interface AgentState {
   // User information
   userId: string;
-  
+
   // Conversation history
   messages: Message[];
-  
+
   // Configuration options
   options: {
     enhanceWithContext: boolean;
@@ -161,16 +151,16 @@ export interface AgentState {
     temperature?: number;
     skipSummarization?: boolean; // New option
   };
-  
+
   // Retrieved documents
   docs?: Document[];
-  
+
   // Context summary (new field)
   contextSummary?: string;
-  
+
   // Generated content
   generatedText?: string;
-  
+
   // Other fields...
 }
 ```
@@ -182,12 +172,12 @@ Update the `buildChatGraph` function in `src/graph.ts` to include the new node:
 ```typescript
 export const buildChatGraph = (env: Bindings) => {
   const logger = getLogger().child({ component: 'graphBuilder' });
-  
+
   logger.info('Building chat graph');
-  
+
   // Create checkpointer
   const checkpointer = new D1Checkpointer(env.D1);
-  
+
   // Initialize graph
   const graph = new StateGraph<AgentState>()
     // Add nodes
@@ -198,11 +188,11 @@ export const buildChatGraph = (env: Bindings) => {
     .addNode('run_tool', nodes.runTool)
     .addNode('summarize_context', nodes.summarizeContext) // New node
     .addNode('generate_answer', nodes.generateAnswer)
-    
+
     // Add edges
     .addEdge(START, 'split_rewrite')
     .addEdge('split_rewrite', 'retrieve')
-    
+
     // Add conditional edges
     .addConditionalEdges('retrieve', nodes.routeAfterRetrieve, {
       widen: 'dynamic_widen',
@@ -217,7 +207,7 @@ export const buildChatGraph = (env: Bindings) => {
     .addEdge('run_tool', 'summarize_context') // Changed from 'generate_answer'
     .addEdge('summarize_context', 'generate_answer') // New edge
     .addEdge('generate_answer', END);
-  
+
   // Rest of the function...
 };
 ```
@@ -230,14 +220,14 @@ Update the `generateAnswer` node to use the context summary if available:
 export const generateAnswer = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'generateAnswer' });
   const startTime = performance.now();
-  
+
   // Prepare context from retrieved documents or summary
   let formattedDocs = '';
-  
+
   if (state.contextSummary) {
     // Use the summary if available
     formattedDocs = `Context Summary:\n${state.contextSummary}\n\n`;
-    
+
     // Add source information if requested
     if (state.options.includeSourceInfo && state.docs) {
       formattedDocs += 'Sources:\n';
@@ -253,12 +243,9 @@ export const generateAnswer = async (state: AgentState, env: Bindings): Promise<
     }
   } else if (state.docs) {
     // Fall back to full document formatting
-    formattedDocs = formatDocsForPrompt(
-      state.docs, 
-      state.options.includeSourceInfo
-    );
+    formattedDocs = formatDocsForPrompt(state.docs, state.options.includeSourceInfo);
   }
-  
+
   // Rest of the function...
 };
 ```
@@ -287,41 +274,43 @@ In addition to adding new processing nodes, you can create new conditional route
  * Determine the next step after retrieval
  * @returns 'widen' | 'tool' | 'summarize' | 'answer'
  */
-export const routeAfterRetrieve = (state: AgentState): 'widen' | 'tool' | 'summarize' | 'answer' => {
+export const routeAfterRetrieve = (
+  state: AgentState,
+): 'widen' | 'tool' | 'summarize' | 'answer' => {
   const logger = getLogger().child({ node: 'routeAfterRetrieve' });
-  
+
   // Check if we need to widen search
   if (state.tasks?.needsWidening) {
     return 'widen';
   }
-  
+
   // Check if we need to use a tool
   const query = state.tasks?.originalQuery || '';
   const toolIntent = detectToolIntent(query);
-  
+
   if (toolIntent.needsTool) {
     // Update state with required tools
     state.tasks = {
       ...state.tasks,
       requiredTools: toolIntent.tools,
     };
-    
+
     return 'tool';
   }
-  
+
   // Check if we need to summarize context
   if (state.docs && state.docs.length > 0) {
     // Calculate total tokens in documents
     const totalTokens = state.docs.reduce((sum, doc) => {
       return sum + countTokens(doc.title + ' ' + doc.body);
     }, 0);
-    
+
     // If documents are lengthy, route to summarization
     if (totalTokens > 1000 && !state.options.skipSummarization) {
       return 'summarize';
     }
   }
-  
+
   // Default to generating an answer
   return 'answer';
 };
@@ -341,20 +330,24 @@ const graph = new StateGraph<AgentState>()
   .addNode('breakdown_complex_query', nodes.breakdownComplexQuery)
   .addNode('process_sub_query', nodes.processSubQuery)
   .addNode('combine_results', nodes.combineResults)
-  
+
   // Add conditional edge after split_rewrite
-  .addConditionalEdges('split_rewrite', (state) => {
-    return state.tasks?.queryAnalysis?.isComplex ? 'complex' : 'simple';
-  }, {
-    complex: 'breakdown_complex_query',
-    simple: 'retrieve',
-  })
-  
+  .addConditionalEdges(
+    'split_rewrite',
+    state => {
+      return state.tasks?.queryAnalysis?.isComplex ? 'complex' : 'simple';
+    },
+    {
+      complex: 'breakdown_complex_query',
+      simple: 'retrieve',
+    },
+  )
+
   // Complex query branch
   .addEdge('breakdown_complex_query', 'process_sub_query')
-  .addEdge('process_sub_query', 'retrieve')
-  
-  // Rest of the graph...
+  .addEdge('process_sub_query', 'retrieve');
+
+// Rest of the graph...
 ```
 
 ## Modifying Existing Nodes
@@ -365,16 +358,16 @@ You can also modify existing nodes to change their behavior. For example, to add
 function buildSystemPromptWithPersonalization(
   formattedDocs: string,
   formattedToolResults: string,
-  userPreferences?: AgentState['userPreferences']
+  userPreferences?: AgentState['userPreferences'],
 ): string {
   let prompt = "You are an AI assistant with access to the user's personal knowledge base. ";
-  
+
   // Add personalization based on user preferences
   if (userPreferences) {
     if (userPreferences.expertiseLevel) {
       prompt += `Provide explanations at a ${userPreferences.expertiseLevel} level. `;
     }
-    
+
     if (userPreferences.responseStyle) {
       switch (userPreferences.responseStyle) {
         case 'concise':
@@ -388,23 +381,24 @@ function buildSystemPromptWithPersonalization(
           break;
       }
     }
-    
+
     if (userPreferences.includeExamples) {
       prompt += 'Include examples to illustrate your points when appropriate. ';
     }
   }
-  
+
   // Add context and tool results
   if (formattedDocs) {
     prompt += `Here is relevant information from the user's notes that may help with the response:\n\n${formattedDocs}\n\n`;
   }
-  
+
   if (formattedToolResults) {
     prompt += `I've used tools to gather additional information:\n\n${formattedToolResults}\n\n`;
   }
-  
-  prompt += 'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
-  
+
+  prompt +=
+    'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
+
   return prompt;
 }
 ```
@@ -417,7 +411,7 @@ Always write tests for new nodes to ensure they work as expected:
 describe('summarizeContext Node', () => {
   // Mock environment
   const mockEnv = {} as Bindings;
-  
+
   // Mock documents
   const mockDocs: Document[] = [
     {
@@ -441,25 +435,28 @@ describe('summarizeContext Node', () => {
       },
     },
   ];
-  
+
   it('should summarize context when documents are available', async () => {
-    const result = await summarizeContext({
-      userId: 'user-123',
-      messages: [{ role: 'user', content: 'What is the topic about?' }],
-      options: {
-        enhanceWithContext: true,
-        maxContextItems: 5,
-        includeSourceInfo: true,
-        maxTokens: 1000,
+    const result = await summarizeContext(
+      {
+        userId: 'user-123',
+        messages: [{ role: 'user', content: 'What is the topic about?' }],
+        options: {
+          enhanceWithContext: true,
+          maxContextItems: 5,
+          includeSourceInfo: true,
+          maxTokens: 1000,
+        },
+        docs: mockDocs,
+        metadata: {
+          startTime: Date.now(),
+          nodeTimings: {},
+          tokenCounts: {},
+        },
       },
-      docs: mockDocs,
-      metadata: {
-        startTime: Date.now(),
-        nodeTimings: {},
-        tokenCounts: {},
-      },
-    }, mockEnv);
-    
+      mockEnv,
+    );
+
     expect(result.contextSummary).toBeDefined();
   });
 });

@@ -77,27 +77,27 @@ async chat(c: Context): Promise<Response> {
     const userId = c.req.header('x-user-id');
     if (!userId) {
       this.logger.warn('Missing user ID in request');
-      return c.json({ 
-        success: false, 
-        error: { 
+      return c.json({
+        success: false,
+        error: {
           code: 'MISSING_USER_ID',
-          message: 'User ID is required' 
-        } 
+          message: 'User ID is required'
+        }
       }, 401);
     }
 
     // Parse request body
     const body = await c.req.json();
-    
+
     // Validate messages
     if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
       this.logger.warn({ userId }, 'Missing or invalid messages in request');
-      return c.json({ 
-        success: false, 
-        error: { 
+      return c.json({
+        success: false,
+        error: {
           code: 'INVALID_REQUEST',
-          message: 'Messages are required and must be an array' 
-        } 
+          message: 'Messages are required and must be an array'
+        }
       }, 400);
     }
 
@@ -105,12 +105,12 @@ async chat(c: Context): Promise<Response> {
     const hasUserMessage = body.messages.some((msg: any) => msg.role === 'user');
     if (!hasUserMessage) {
       this.logger.warn({ userId }, 'No user message in request');
-      return c.json({ 
-        success: false, 
-        error: { 
+      return c.json({
+        success: false,
+        error: {
           code: 'INVALID_REQUEST',
-          message: 'At least one user message is required' 
-        } 
+          message: 'At least one user message is required'
+        }
       }, 400);
     }
 
@@ -126,15 +126,15 @@ async chat(c: Context): Promise<Response> {
     url.searchParams.forEach((value, key) => {
       queryParams[key] = value;
     });
-    
+
     const useNewImplementation = defaultTrafficShifter.shouldUseNewImplementation(queryParams);
-    
+
     this.logger.info(
-      { 
-        userId, 
+      {
+        userId,
         useNewImplementation,
         stream: request.stream,
-      }, 
+      },
       'Processing chat request'
     );
 
@@ -147,43 +147,43 @@ async chat(c: Context): Promise<Response> {
       } else {
         // Generate response
         const response = await this.chatService.generateResponse(c.env, request);
-        
-        return c.json({ 
-          success: true, 
+
+        return c.json({
+          success: true,
           response,
         });
       }
     } catch (error) {
       // Record error in traffic shifter
       defaultTrafficShifter.recordError(useNewImplementation);
-      
+
       this.logger.error(
-        { 
-          err: error, 
-          userId, 
+        {
+          err: error,
+          userId,
           useNewImplementation,
           stream: request.stream,
-        }, 
+        },
         'Error processing chat request'
       );
-      
-      return c.json({ 
-        success: false, 
-        error: { 
+
+      return c.json({
+        success: false,
+        error: {
           code: 'CHAT_ERROR',
           message: error instanceof Error ? error.message : 'Unknown error',
-        } 
+        }
       }, 200);
     }
   } catch (error) {
     this.logger.error({ err: error }, 'Unexpected error in chat controller');
-    
-    return c.json({ 
-      success: false, 
-      error: { 
+
+    return c.json({
+      success: false,
+      error: {
         code: 'INTERNAL_ERROR',
         message: 'An unexpected error occurred',
-      } 
+      }
     }, 500);
   }
 }
@@ -195,27 +195,27 @@ async chat(c: Context): Promise<Response> {
     const userId = c.req.header('x-user-id');
     if (!userId) {
       this.logger.warn('Missing user ID in request');
-      return c.json({ 
-        success: false, 
-        error: { 
+      return c.json({
+        success: false,
+        error: {
           code: 'MISSING_USER_ID',
-          message: 'User ID is required' 
-        } 
+          message: 'User ID is required'
+        }
       }, 401);
     }
 
     // Parse request body
     const body = await c.req.json();
-    
+
     // Validate messages
     if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
       this.logger.warn({ userId }, 'Missing or invalid messages in request');
-      return c.json({ 
-        success: false, 
-        error: { 
+      return c.json({
+        success: false,
+        error: {
           code: 'INVALID_REQUEST',
-          message: 'Messages are required and must be an array' 
-        } 
+          message: 'Messages are required and must be an array'
+        }
       }, 400);
     }
 
@@ -223,12 +223,12 @@ async chat(c: Context): Promise<Response> {
     const hasUserMessage = body.messages.some((msg: any) => msg.role === 'user');
     if (!hasUserMessage) {
       this.logger.warn({ userId }, 'No user message in request');
-      return c.json({ 
-        success: false, 
-        error: { 
+      return c.json({
+        success: false,
+        error: {
           code: 'INVALID_REQUEST',
-          message: 'At least one user message is required' 
-        } 
+          message: 'At least one user message is required'
+        }
       }, 400);
     }
 
@@ -237,12 +237,12 @@ async chat(c: Context): Promise<Response> {
       ...body,
       userId,
     };
-    
+
     this.logger.info(
-      { 
-        userId, 
+      {
+        userId,
         stream: request.stream,
-      }, 
+      },
       'Processing chat request'
     );
 
@@ -255,39 +255,39 @@ async chat(c: Context): Promise<Response> {
       } else {
         // Generate response
         const response = await this.chatService.generateResponse(c.env, request);
-        
-        return c.json({ 
-          success: true, 
+
+        return c.json({
+          success: true,
           response,
         });
       }
     } catch (error) {
       this.logger.error(
-        { 
-          err: error, 
-          userId, 
+        {
+          err: error,
+          userId,
           stream: request.stream,
-        }, 
+        },
         'Error processing chat request'
       );
-      
-      return c.json({ 
-        success: false, 
-        error: { 
+
+      return c.json({
+        success: false,
+        error: {
           code: 'CHAT_ERROR',
           message: error instanceof Error ? error.message : 'Unknown error',
-        } 
+        }
       }, 200);
     }
   } catch (error) {
     this.logger.error({ err: error }, 'Unexpected error in chat controller');
-    
-    return c.json({ 
-      success: false, 
-      error: { 
+
+    return c.json({
+      success: false,
+      error: {
         code: 'INTERNAL_ERROR',
         message: 'An unexpected error occurred',
-      } 
+      }
     }, 500);
   }
 }
@@ -359,12 +359,12 @@ In case issues are discovered after the legacy code removal, the following rollb
 
 ## 7. Timeline
 
-| Week | Phase | Key Activities |
-|------|-------|----------------|
-| 1    | Preparation | Create branch, update tests, identify dependencies |
-| 2    | Soft Removal | Comment out code, deploy to staging, verify functionality |
+| Week | Phase        | Key Activities                                                   |
+| ---- | ------------ | ---------------------------------------------------------------- |
+| 1    | Preparation  | Create branch, update tests, identify dependencies               |
+| 2    | Soft Removal | Comment out code, deploy to staging, verify functionality        |
 | 3    | Hard Removal | Delete commented code, remove dependencies, update configuration |
-| 4    | Verification | Deploy to production, verify functionality, monitor for issues |
+| 4    | Verification | Deploy to production, verify functionality, monitor for issues   |
 
 ## 8. Success Criteria
 

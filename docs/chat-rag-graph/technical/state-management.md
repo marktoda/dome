@@ -10,10 +10,10 @@ The core state structure is defined by the `AgentState` interface:
 export interface AgentState {
   // User information
   userId: string;
-  
+
   // Conversation history
   messages: Message[];
-  
+
   // Configuration options
   options: {
     enhanceWithContext: boolean;
@@ -22,7 +22,7 @@ export interface AgentState {
     maxTokens: number;
     temperature?: number;
   };
-  
+
   // Intermediate processing data
   tasks?: {
     originalQuery?: string;
@@ -34,13 +34,13 @@ export interface AgentState {
     queryAnalysis?: QueryAnalysisResult;
     toolToRun?: string;
   };
-  
+
   // Retrieved documents
   docs?: Document[];
-  
+
   // Generated content
   generatedText?: string;
-  
+
   // Metadata for tracking and debugging
   metadata?: {
     startTime: number;
@@ -57,13 +57,16 @@ export interface AgentState {
 ### Key State Components
 
 #### User Information
+
 - `userId`: Identifies the user for personalized retrieval and tracking
 
 #### Conversation History
+
 - `messages`: Array of user and assistant messages in the conversation
 - Each message includes role, content, and optional timestamp
 
 #### Configuration Options
+
 - `enhanceWithContext`: Whether to enhance responses with retrieved context
 - `maxContextItems`: Maximum number of context items to retrieve
 - `includeSourceInfo`: Whether to include source information in responses
@@ -71,6 +74,7 @@ export interface AgentState {
 - `temperature`: Controls randomness in response generation
 
 #### Intermediate Processing Data
+
 - `tasks`: Object containing intermediate data from processing steps
 - `originalQuery`: The original user query
 - `rewrittenQuery`: The rewritten query for improved retrieval
@@ -82,13 +86,16 @@ export interface AgentState {
 - `toolToRun`: Selected tool to execute
 
 #### Retrieved Documents
+
 - `docs`: Array of documents retrieved from knowledge sources
 - Each document includes ID, title, body, and metadata
 
 #### Generated Content
+
 - `generatedText`: The final generated response
 
 #### Metadata
+
 - `startTime`: Timestamp when processing started
 - `nodeTimings`: Execution time for each node
 - `tokenCounts`: Token counts for various components
@@ -107,13 +114,13 @@ Nodes use immutable update patterns to transform the state:
 
 ```typescript
 return {
-  ...state,                // Spread the existing state
+  ...state, // Spread the existing state
   tasks: {
-    ...state.tasks,        // Spread existing tasks
+    ...state.tasks, // Spread existing tasks
     rewrittenQuery: query, // Update specific fields
   },
   metadata: {
-    ...state.metadata,     // Spread existing metadata
+    ...state.metadata, // Spread existing metadata
     nodeTimings: {
       ...state.metadata?.nodeTimings,
       splitRewrite: executionTime,
@@ -123,6 +130,7 @@ return {
 ```
 
 This approach ensures that:
+
 - The original state is not modified
 - Only relevant parts of the state are updated
 - The state remains consistent throughout execution
@@ -143,22 +151,22 @@ return graph.compile({
     docs: (oldDocs = [], newDocs = []) => {
       if (!newDocs || newDocs.length === 0) return oldDocs;
       if (!oldDocs || oldDocs.length === 0) return newDocs;
-      
+
       // Merge and deduplicate by ID
       const docMap = new Map();
       [...oldDocs, ...newDocs].forEach(doc => {
         docMap.set(doc.id, doc);
       });
-      
+
       return Array.from(docMap.values());
     },
-    
+
     // Merge tasks objects
     tasks: (oldTasks = {}, newTasks = {}) => ({
       ...oldTasks,
       ...newTasks,
     }),
-    
+
     // Merge metadata
     metadata: (oldMetadata = {}, newMetadata = {}) => ({
       ...oldMetadata,
@@ -171,10 +179,7 @@ return graph.compile({
         ...(oldMetadata.tokenCounts || {}),
         ...(newMetadata.tokenCounts || {}),
       },
-      errors: [
-        ...(oldMetadata.errors || []),
-        ...(newMetadata.errors || []),
-      ],
+      errors: [...(oldMetadata.errors || []), ...(newMetadata.errors || [])],
     }),
   },
 });
@@ -193,9 +198,7 @@ The initial state is created when a user sends a query:
 ```typescript
 const initialState: AgentState = {
   userId: user.id,
-  messages: [
-    { role: 'user', content: userQuery },
-  ],
+  messages: [{ role: 'user', content: userQuery }],
   options: {
     enhanceWithContext: true,
     maxContextItems: 5,
@@ -213,6 +216,7 @@ const initialState: AgentState = {
 ```
 
 This initial state includes:
+
 - User information
 - The user's query as a message
 - Default configuration options
@@ -227,11 +231,11 @@ To ensure reliability and support long-running conversations, the system impleme
 ```typescript
 export class D1Checkpointer implements Checkpointer<AgentState> {
   private db: D1Database;
-  
+
   constructor(db: D1Database) {
     this.db = db;
   }
-  
+
   async initialize(): Promise<void> {
     // Create table if it doesn't exist
     await this.db.exec(`
@@ -244,18 +248,17 @@ export class D1Checkpointer implements Checkpointer<AgentState> {
       )
     `);
   }
-  
+
   async get(id: string): Promise<AgentState | null> {
-    const result = await this.db.prepare(
-      'SELECT state FROM state_checkpoints WHERE id = ?'
-    )
-    .bind(id)
-    .first<{ state: string }>();
-    
+    const result = await this.db
+      .prepare('SELECT state FROM state_checkpoints WHERE id = ?')
+      .bind(id)
+      .first<{ state: string }>();
+
     if (!result) {
       return null;
     }
-    
+
     try {
       return JSON.parse(result.state) as AgentState;
     } catch (error) {
@@ -263,25 +266,22 @@ export class D1Checkpointer implements Checkpointer<AgentState> {
       return null;
     }
   }
-  
+
   async put(id: string, state: AgentState): Promise<void> {
     const now = Date.now();
-    
-    await this.db.prepare(`
+
+    await this.db
+      .prepare(
+        `
       INSERT INTO state_checkpoints (id, user_id, state, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         state = excluded.state,
         updated_at = excluded.updated_at
-    `)
-    .bind(
-      id,
-      state.userId,
-      JSON.stringify(state),
-      now,
-      now
-    )
-    .run();
+    `,
+      )
+      .bind(id, state.userId, JSON.stringify(state), now, now)
+      .run();
   }
 }
 ```
@@ -302,6 +302,7 @@ const checkpointId = `chat:${userId}:${conversationId}`;
 ```
 
 This allows for:
+
 - User-specific checkpoints
 - Conversation-specific checkpoints
 - Easy retrieval of checkpoints for resumption
@@ -319,18 +320,19 @@ graph.onStateChange((oldState, newState, nodeName) => {
     currentNode: nodeName,
     isFinalState: nodeName === END,
   };
-  
+
   logger.debug(
     {
       node: nodeName,
       stateChanges: getStateDiff(oldState, newState),
     },
-    'State transition'
+    'State transition',
   );
 });
 ```
 
 This observer:
+
 - Tracks the currently executing node
 - Identifies when the final state is reached
 - Logs state transitions for debugging
@@ -341,7 +343,7 @@ The `getStateDiff` function identifies key changes between states:
 ```typescript
 function getStateDiff(oldState: AgentState, newState: AgentState): Record<string, any> {
   const changes: Record<string, any> = {};
-  
+
   // Check for new docs
   if (newState.docs?.length !== oldState.docs?.length) {
     changes.docsCount = {
@@ -349,23 +351,20 @@ function getStateDiff(oldState: AgentState, newState: AgentState): Record<string
       to: newState.docs?.length || 0,
     };
   }
-  
+
   // Check for new tool results
-  if (
-    newState.tasks?.toolResults?.length !== 
-    oldState.tasks?.toolResults?.length
-  ) {
+  if (newState.tasks?.toolResults?.length !== oldState.tasks?.toolResults?.length) {
     changes.toolResultsCount = {
       from: oldState.tasks?.toolResults?.length || 0,
       to: newState.tasks?.toolResults?.length || 0,
     };
   }
-  
+
   // Check for generated text
   if (newState.generatedText && !oldState.generatedText) {
     changes.generatedText = true;
   }
-  
+
   return changes;
 }
 ```
@@ -373,6 +372,7 @@ function getStateDiff(oldState: AgentState, newState: AgentState): Record<string
 ## State Security Considerations
 
 The state contains sensitive information, including:
+
 - User identifiers
 - Conversation history
 - Retrieved documents

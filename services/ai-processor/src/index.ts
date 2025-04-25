@@ -91,12 +91,12 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           id: data.id,
           timestamp: new Date().toISOString(),
         };
-        
+
         logError(error, 'Error in reprocess', errorDetails);
         metrics.increment('ai_processor.reprocess.errors', 1, {
-          errorType: error instanceof Error ? error.constructor.name : 'unknown'
+          errorType: error instanceof Error ? error.constructor.name : 'unknown',
         });
-        
+
         throw error;
       }
     });
@@ -323,15 +323,12 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
         timestamp: new Date().toISOString(),
       };
 
-      getLogger().error(
-        errorDetails,
-        'Error processing content',
-      );
+      getLogger().error(errorDetails, 'Error processing content');
 
       // Track specific error types for monitoring
       metrics.increment('ai_processor.messages.errors', 1, {
         errorType: error instanceof Error ? error.constructor.name : 'unknown',
-        contentType
+        contentType,
       });
 
       // Re-throw to allow queue retry mechanism to work

@@ -1,0 +1,38 @@
+{
+  "name": "@dome/chat",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate-migrations": "drizzle-kit generate",
+    "migrate": "wrangler d1 execute CHAT_DB --local --file=./migrations/0000_create_checkpoints_table.sql"
+  },
+  "dependencies": {
+    "@dome/common": "workspace:*",
+    "@dome/logging": "workspace:*",
+    "@dome/metrics": "workspace:*",
+    "@langchain/langgraph": "^0.2.67",
+    "@langchain/langgraph-checkpoint": "^0.0.17",
+    "@langchain/core": "^0.3.24",
+    "@dqbd/tiktoken": "^1.0.7",
+    "drizzle-orm": "^0.42.0",
+    "hono": "^4.0.0",
+    "langfuse": "^2.0.0",
+    "zod": "^3.21.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "@typescript-eslint/eslint-plugin": "^5.57.1",
+    "@typescript-eslint/parser": "^5.57.1",
+    "drizzle-kit": "^0.31.0",
+    "eslint": "^8.38.0",
+    "typescript": "^5.0.4",
+    "vitest": "^0.31.0",
+    "wrangler": "^4.10.0"
+  }
+}

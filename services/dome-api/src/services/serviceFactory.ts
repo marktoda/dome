@@ -4,7 +4,7 @@ import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { ConstellationClient, ConstellationBinding } from '@dome/constellation/client';
 import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
 import { SearchService } from './searchService';
-import { ChatOrchestratorClient } from '@dome/chat-orchestrator/client';
+import { ChatClient } from '@dome/chat/client';
 
 /**
  * Service factory interface
@@ -15,7 +15,7 @@ export interface ServiceFactory {
   getAiProcessorService(env: Bindings): AiProcessorClient;
   getSearchService(env: Bindings): SearchService;
   getSiloService(env: Bindings): SiloClient;
-  getChatService(env: Bindings): ChatOrchestratorClient;
+  getChatService(env: Bindings): ChatClient;
 }
 
 /**
@@ -27,7 +27,7 @@ export class DefaultServiceFactory implements ServiceFactory {
   private constellationServices: Map<Bindings, ConstellationClient> = new Map();
   private aiProcessorServices: Map<Bindings, AiProcessorClient> = new Map();
   private searchServices: Map<Bindings, SearchService> = new Map();
-  private chatServices: Map<Bindings, ChatOrchestratorClient> = new Map();
+  private chatServices: Map<Bindings, ChatClient> = new Map();
   private siloServices: Map<Bindings, SiloClient> = new Map();
   private logger = getLogger();
 
@@ -102,11 +102,11 @@ export class DefaultServiceFactory implements ServiceFactory {
    * @param env Cloudflare Workers environment bindings
    * @returns ChatService instance
    */
-  getChatService(env: Bindings): ChatOrchestratorClient {
+  getChatService(env: Bindings): ChatClient {
     let service = this.chatServices.get(env);
     if (!service) {
       this.logger.debug('Creating new ChatService instance');
-      service = new ChatOrchestratorClient(env.CHAT);
+      service = new ChatClient(env.CHAT);
       this.chatServices.set(env, service);
     }
     return service;

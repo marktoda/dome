@@ -9,6 +9,7 @@ This document outlines the Phase 3 implementation of the Chat RAG Graph solution
 The `dynamicWiden` node has been enhanced with sophisticated logic that intelligently adjusts search parameters based on query characteristics:
 
 - **Widening Strategies**: Multiple strategies are now available:
+
   - **Semantic Widening**: Expands search to include semantically related terms
   - **Temporal Widening**: Adjusts date ranges to include more historical content
   - **Relevance Widening**: Progressively reduces relevance thresholds
@@ -26,18 +27,21 @@ The `dynamicWiden` node has been enhanced with sophisticated logic that intellig
 A comprehensive tool system has been implemented:
 
 - **Tool Registry**: A central registry for managing available tools, with support for:
+
   - Tool registration and discovery
   - Parameter validation
   - Category-based organization
   - Documentation generation for LLM context
 
 - **Tool Router**: Enhanced with:
+
   - Intent-based tool selection using LLM
   - Confidence scoring for tool selection
   - Parameter extraction from natural language queries
   - Fallback mechanisms for handling ambiguous queries
 
 - **Run Tool Node**: Improved with:
+
   - Robust error handling
   - Retry logic with exponential backoff
   - Timeout handling
@@ -55,6 +59,7 @@ A comprehensive tool system has been implemented:
 Several performance optimizations have been implemented:
 
 - **Caching System**: A flexible in-memory caching system with:
+
   - TTL-based expiration
   - LRU eviction policy
   - Size limits to prevent memory issues
@@ -86,6 +91,7 @@ The implementation includes comprehensive testing and observability features:
 - **Integration Tests**: Tests for all new advanced features, ensuring they work as expected.
 
 - **Observability**: Enhanced logging and metrics collection for:
+
   - Node execution times
   - Token usage
   - Cache hit/miss rates

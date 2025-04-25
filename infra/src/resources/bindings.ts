@@ -8,7 +8,7 @@ import { resourceName } from '../utils/naming';
  * @returns Record of service binding resources
  */
 export function createServiceBindings(
-  workers: Record<string, cloudflare.WorkerScript>
+  workers: Record<string, cloudflare.WorkerScript>,
 ): Record<string, cloudflare.ServiceBinding> {
   const bindings: Record<string, cloudflare.ServiceBinding> = {};
 
@@ -48,18 +48,24 @@ export function createServiceBindings(
   });
 
   // Create service binding for dome-api to chat-orchestrator
-  bindings.domeApiToChatOrchestrator = new cloudflare.ServiceBinding('dome-api-to-chat-orchestrator', {
-    name: 'CHAT_ORCHESTRATOR',
-    service: workers.chatOrchestrator.name,
-    environment: 'production',
-  });
+  bindings.domeApiToChatOrchestrator = new cloudflare.ServiceBinding(
+    'dome-api-to-chat-orchestrator',
+    {
+      name: 'CHAT_ORCHESTRATOR',
+      service: workers.chatOrchestrator.name,
+      environment: 'production',
+    },
+  );
 
   // Create service binding for chat-orchestrator to constellation
-  bindings.chatOrchestratorToConstellation = new cloudflare.ServiceBinding('chat-orchestrator-to-constellation', {
-    name: 'CONSTELLATION',
-    service: workers.constellation.name,
-    environment: 'production',
-  });
+  bindings.chatOrchestratorToConstellation = new cloudflare.ServiceBinding(
+    'chat-orchestrator-to-constellation',
+    {
+      name: 'CONSTELLATION',
+      service: workers.constellation.name,
+      environment: 'production',
+    },
+  );
 
   return bindings;
 }

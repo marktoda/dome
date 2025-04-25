@@ -1,7 +1,7 @@
 import type { MessageData, SiloSimplePutInput } from '@dome/common';
 import type { AiProcessorBinding } from '@dome/ai-processor/client';
 import { SiloBinding } from '@dome/silo/client';
-import { ChatOrchestratorBinding } from '@dome/chat-orchestrator/client';
+import { ChatOrchestratorBinding } from '@dome/chat/client';
 
 /**
  * Interface for Workers AI binding

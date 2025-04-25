@@ -13,10 +13,10 @@ Before diving into the nodes, it's important to understand the state structure t
 export interface AgentState {
   // User information
   userId: string;
-  
+
   // Conversation history
   messages: Message[];
-  
+
   // Configuration options
   options: {
     enhanceWithContext: boolean;
@@ -25,7 +25,7 @@ export interface AgentState {
     maxTokens: number;
     temperature?: number;
   };
-  
+
   // Intermediate processing data
   tasks?: {
     originalQuery?: string;
@@ -37,13 +37,13 @@ export interface AgentState {
     queryAnalysis?: QueryAnalysisResult;
     toolToRun?: string;
   };
-  
+
   // Retrieved documents
   docs?: Document[];
-  
+
   // Generated content
   generatedText?: string;
-  
+
   // Metadata for tracking and debugging
   metadata?: {
     startTime: number;
@@ -130,12 +130,10 @@ The Split and Rewrite node analyzes the user's query and potentially rewrites it
 export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'splitRewrite' });
   const startTime = performance.now();
-  
+
   // Get the last user message
-  const lastUserMessage = [...state.messages]
-    .reverse()
-    .find(msg => msg.role === 'user');
-  
+  const lastUserMessage = [...state.messages].reverse().find(msg => msg.role === 'user');
+
   if (!lastUserMessage) {
     logger.warn('No user message found in history');
     return {
@@ -147,50 +145,39 @@ export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
       },
     };
   }
-  
+
   const originalQuery = lastUserMessage.content;
   logger.info({ originalQuery, messageCount: state.messages.length }, 'Processing user query');
-  
+
   // Analyze query complexity
-  const queryAnalysis = await LlmService.analyzeQueryComplexity(
-    env,
-    originalQuery,
-    { temperature: 0.2 }
-  );
-  
+  const queryAnalysis = await LlmService.analyzeQueryComplexity(env, originalQuery, {
+    temperature: 0.2,
+  });
+
   // Determine if query needs rewriting
   let rewrittenQuery = originalQuery;
-  let needsRewriting = queryAnalysis.isComplex || 
-    /\b(it|this|that|they|these|those)\b/i.test(originalQuery);
-  
+  let needsRewriting =
+    queryAnalysis.isComplex || /\b(it|this|that|they|these|those)\b/i.test(originalQuery);
+
   // Rewrite if needed
   if (needsRewriting) {
     try {
-      rewrittenQuery = await LlmService.rewriteQuery(
-        env,
-        originalQuery,
-        state.messages,
-        { temperature: 0.3 }
-      );
-      
-      logger.info(
-        { originalQuery, rewrittenQuery }, 
-        'Query rewritten'
-      );
+      rewrittenQuery = await LlmService.rewriteQuery(env, originalQuery, state.messages, {
+        temperature: 0.3,
+      });
+
+      logger.info({ originalQuery, rewrittenQuery }, 'Query rewritten');
     } catch (error) {
-      logger.error(
-        { err: error, originalQuery }, 
-        'Failed to rewrite query'
-      );
+      logger.error({ err: error, originalQuery }, 'Failed to rewrite query');
       // Fall back to original query
       rewrittenQuery = originalQuery;
     }
   }
-  
+
   // Update state with timing information
   const endTime = performance.now();
   const executionTime = endTime - startTime;
-  
+
   return {
     ...state,
     tasks: {
@@ -239,7 +226,7 @@ The Retrieve node fetches relevant documents based on the query.
 export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'retrieve' });
   const startTime = performance.now();
-  
+
   // Skip retrieval if not enabled
   if (!state.options.enhanceWithContext) {
     logger.info('Context enhancement disabled, skipping retrieval');
@@ -248,74 +235,71 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
       docs: [],
     };
   }
-  
+
   const { userId } = state;
   const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
   const maxItems = state.options.maxContextItems || 10;
-  
+
   // Track widening attempts
   const wideningAttempts = state.tasks?.wideningAttempts || 0;
-  
+
   // Adjust search parameters based on widening attempts
   const searchParams = {
     userId,
     query,
     limit: maxItems,
   };
-  
+
   // If we're widening, adjust search parameters
   if (wideningAttempts > 0) {
-    logger.info(
-      { wideningAttempts, query }, 
-      'Widening search parameters'
-    );
-    
+    logger.info({ wideningAttempts, query }, 'Widening search parameters');
+
     // Expand search parameters based on widening attempt count
     Object.assign(searchParams, {
-      minRelevance: Math.max(0.5 - (wideningAttempts * 0.1), 0.2),
+      minRelevance: Math.max(0.5 - wideningAttempts * 0.1, 0.2),
       expandSynonyms: true,
       includeRelated: true,
     });
   }
-  
+
   logger.info(
-    { 
-      userId, 
-      query, 
+    {
+      userId,
+      query,
       maxItems,
       wideningAttempts,
       searchParams,
-    }, 
-    'Retrieving context'
+    },
+    'Retrieving context',
   );
-  
+
   try {
     // Perform search
     const searchResults = await SearchService.search(env, searchParams);
-    
+
     // Process results
     const docs = searchResults || [];
     const docsCount = docs.length;
-    
+
     // Rank and filter documents
     const rankedDocs = SearchService.rankAndFilterDocuments(docs, query);
-    
+
     logger.info(
-      { 
-        docsCount, 
+      {
+        docsCount,
         rankedDocsCount: rankedDocs.length,
         query,
         wideningAttempts,
-      }, 
-      'Retrieved documents'
+      },
+      'Retrieved documents',
     );
-    
+
     // Calculate total tokens in retrieved docs
     let totalTokens = 0;
     const processedDocs = rankedDocs.map(doc => {
       const docTokens = countTokens(doc.title + ' ' + doc.body);
       totalTokens += docTokens;
-      
+
       return {
         ...doc,
         metadata: {
@@ -324,27 +308,23 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
         },
       };
     });
-    
+
     // Extract source metadata for client
     const sources = SearchService.extractSourceMetadata(processedDocs);
-    
+
     // Log retrieval event
-    ObservabilityService.logRetrieval(
-      env,
-      state.metadata?.traceId || '',
-      {
-        query,
-        docsCount: processedDocs.length,
-        totalTokens,
-        wideningAttempts,
-        sources,
-      }
-    );
-    
+    ObservabilityService.logRetrieval(env, state.metadata?.traceId || '', {
+      query,
+      docsCount: processedDocs.length,
+      totalTokens,
+      wideningAttempts,
+      sources,
+    });
+
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     return {
       ...state,
       docs: processedDocs,
@@ -366,11 +346,8 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
       },
     };
   } catch (error) {
-    logger.error(
-      { err: error, userId, query }, 
-      'Error retrieving context'
-    );
-    
+    logger.error({ err: error, userId, query }, 'Error retrieving context');
+
     // Return state with empty docs on error
     return {
       ...state,
@@ -414,42 +391,42 @@ The Route After Retrieve node determines the next step after retrieval.
 ```typescript
 export const routeAfterRetrieve = (state: AgentState): 'widen' | 'tool' | 'answer' => {
   const logger = getLogger().child({ node: 'routeAfterRetrieve' });
-  
+
   // Check if we need to widen search
   if (state.tasks?.needsWidening) {
     const wideningAttempts = state.tasks?.wideningAttempts || 0;
     logger.info(
-      { 
+      {
         docsCount: state.docs?.length || 0,
         wideningAttempts,
-      }, 
-      'Need to widen search'
+      },
+      'Need to widen search',
     );
     return 'widen';
   }
-  
+
   // Check if we need to use a tool
   const query = state.tasks?.originalQuery || '';
   const toolIntent = detectToolIntent(query);
-  
+
   if (toolIntent.needsTool) {
     logger.info(
-      { 
+      {
         toolIntent,
         query,
-      }, 
-      'Detected tool intent'
+      },
+      'Detected tool intent',
     );
-    
+
     // Update state with required tools
     state.tasks = {
       ...state.tasks,
       requiredTools: toolIntent.tools,
     };
-    
+
     return 'tool';
   }
-  
+
   // Default to generating an answer
   logger.info('Proceeding to answer generation');
   return 'answer';
@@ -477,23 +454,23 @@ The Dynamic Widen node adjusts search parameters to widen the retrieval scope.
 export const dynamicWiden = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'dynamicWiden' });
   const startTime = performance.now();
-  
+
   // Increment widening attempts
   const wideningAttempts = (state.tasks?.wideningAttempts || 0) + 1;
-  
+
   logger.info(
-    { 
+    {
       wideningAttempts,
       originalQuery: state.tasks?.originalQuery,
       rewrittenQuery: state.tasks?.rewrittenQuery,
-    }, 
-    'Widening search parameters'
+    },
+    'Widening search parameters',
   );
-  
+
   // Update state with timing information
   const endTime = performance.now();
   const executionTime = endTime - startTime;
-  
+
   return {
     ...state,
     tasks: {
@@ -536,9 +513,9 @@ The Tool Router node determines which tool to use.
 export const toolRouter = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'toolRouter' });
   const startTime = performance.now();
-  
+
   const requiredTools = state.tasks?.requiredTools || [];
-  
+
   if (requiredTools.length === 0) {
     logger.warn('No tools specified but reached tool router');
     return {
@@ -549,24 +526,24 @@ export const toolRouter = async (state: AgentState): Promise<AgentState> => {
       },
     };
   }
-  
+
   // For simplicity, just use the first tool
   // In a real implementation, we might use an LLM to select the most appropriate tool
   const toolToRun = requiredTools[0];
-  
+
   logger.info(
-    { 
+    {
       toolToRun,
       allTools: requiredTools,
       query: state.tasks?.originalQuery,
-    }, 
-    'Selected tool to run'
+    },
+    'Selected tool to run',
   );
-  
+
   // Update state with timing information
   const endTime = performance.now();
   const executionTime = endTime - startTime;
-  
+
   return {
     ...state,
     tasks: {
@@ -585,11 +562,11 @@ export const toolRouter = async (state: AgentState): Promise<AgentState> => {
 
 export const routeAfterTool = (state: AgentState): 'run_tool' | 'answer' => {
   const toolToRun = state.tasks?.toolToRun;
-  
+
   if (toolToRun) {
     return 'run_tool';
   }
-  
+
   return 'answer';
 };
 ```
@@ -616,70 +593,62 @@ The Run Tool node executes the selected tool.
 export const runTool = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'runTool' });
   const startTime = performance.now();
-  
+
   const toolName = state.tasks?.toolToRun;
-  
+
   if (!toolName) {
     logger.warn('No tool specified but reached run_tool node');
     return state;
   }
-  
+
   logger.info(
-    { 
+    {
       toolName,
       query: state.tasks?.originalQuery,
-    }, 
-    'Running tool'
+    },
+    'Running tool',
   );
-  
+
   try {
     // Get tool from registry
     const tool = ToolRegistry.getTool(toolName);
-    
+
     if (!tool) {
       throw new Error(`Tool ${toolName} not found in registry`);
     }
-    
+
     // Extract tool input from query
-    const toolInput = await extractToolInput(
-      env,
-      state.tasks?.originalQuery || '',
-      toolName
-    );
-    
+    const toolInput = await extractToolInput(env, state.tasks?.originalQuery || '', toolName);
+
     // Execute tool
     const toolOutput = await tool.execute(toolInput, env);
-    
+
     logger.info(
-      { 
+      {
         toolName,
         toolInput,
-        toolOutputPreview: typeof toolOutput === 'string' 
-          ? toolOutput.substring(0, 100) 
-          : 'complex output',
-      }, 
-      'Tool execution complete'
+        toolOutputPreview:
+          typeof toolOutput === 'string' ? toolOutput.substring(0, 100) : 'complex output',
+      },
+      'Tool execution complete',
     );
-    
+
     // Create tool result
     const toolResult: ToolResult = {
       toolName,
       input: toolInput,
       output: toolOutput,
     };
-    
+
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     return {
       ...state,
       tasks: {
         ...state.tasks,
-        toolResults: [
-          ...(state.tasks?.toolResults || []),
-          toolResult,
-        ],
+        toolResults: [...(state.tasks?.toolResults || []), toolResult],
       },
       metadata: {
         ...state.metadata,
@@ -691,13 +660,13 @@ export const runTool = async (state: AgentState, env: Bindings): Promise<AgentSt
     };
   } catch (error) {
     logger.error(
-      { 
+      {
         err: error,
         toolName,
-      }, 
-      'Error executing tool'
+      },
+      'Error executing tool',
     );
-    
+
     // Create error result
     const toolResult: ToolResult = {
       toolName,
@@ -705,15 +674,12 @@ export const runTool = async (state: AgentState, env: Bindings): Promise<AgentSt
       output: null,
       error: error.message,
     };
-    
+
     return {
       ...state,
       tasks: {
         ...state.tasks,
-        toolResults: [
-          ...(state.tasks?.toolResults || []),
-          toolResult,
-        ],
+        toolResults: [...(state.tasks?.toolResults || []), toolResult],
       },
       metadata: {
         ...state.metadata,
@@ -739,21 +705,17 @@ The `extractToolInput` function uses an LLM to extract structured input for the 
 ```typescript
 async function extractToolInput(env: Bindings, query: string, toolName: string): Promise<unknown> {
   const logger = getLogger().child({ function: 'extractToolInput' });
-  
+
   try {
     // Get tool schema
     const tool = ToolRegistry.getTool(toolName);
     const inputSchema = tool.getInputSchema();
-    
+
     // Use LLM to extract structured input
-    const extractedInput = await LlmService.extractToolInput(
-      env,
-      query,
-      toolName,
-      inputSchema,
-      { temperature: 0.2 }
-    );
-    
+    const extractedInput = await LlmService.extractToolInput(env, query, toolName, inputSchema, {
+      temperature: 0.2,
+    });
+
     return extractedInput;
   } catch (error) {
     logger.error({ err: error, query, toolName }, 'Error extracting tool input');
@@ -787,24 +749,18 @@ The Generate Answer node creates the final response.
 export const generateAnswer = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'generateAnswer' });
   const startTime = performance.now();
-  
+
   // Prepare context from retrieved documents
   const docs = state.docs || [];
-  const formattedDocs = formatDocsForPrompt(
-    docs, 
-    state.options.includeSourceInfo
-  );
-  
+  const formattedDocs = formatDocsForPrompt(docs, state.options.includeSourceInfo);
+
   // Prepare tool results if any
   const toolResults = state.tasks?.toolResults || [];
   const formattedToolResults = formatToolResultsForPrompt(toolResults);
-  
+
   // Build system prompt
-  const systemPrompt = buildSystemPrompt(
-    formattedDocs,
-    formattedToolResults
-  );
-  
+  const systemPrompt = buildSystemPrompt(formattedDocs, formattedToolResults);
+
   // Prepare messages for LLM
   const messages = [
     {
@@ -813,53 +769,45 @@ export const generateAnswer = async (state: AgentState, env: Bindings): Promise<
     },
     ...state.messages,
   ];
-  
+
   logger.info(
-    { 
+    {
       messageCount: messages.length,
       docsCount: docs.length,
       toolResultsCount: toolResults.length,
       systemPromptLength: systemPrompt.length,
-    }, 
-    'Generating answer'
+    },
+    'Generating answer',
   );
-  
+
   try {
     // Call LLM to generate response
-    const response = await LlmService.generateResponse(
-      env,
-      messages,
-      {
-        temperature: state.options.temperature || 0.7,
-        maxTokens: state.options.maxTokens || 1000,
-      }
-    );
-    
+    const response = await LlmService.generateResponse(env, messages, {
+      temperature: state.options.temperature || 0.7,
+      maxTokens: state.options.maxTokens || 1000,
+    });
+
     // Log LLM call
-    ObservabilityService.logLlmCall(
-      env,
-      state.metadata?.traceId || '',
-      'generate_answer',
-      {
-        model: LlmService.MODEL,
-        promptTokens: countTokens(systemPrompt) + 
-          state.messages.reduce((sum, msg) => sum + countTokens(msg.content), 0),
-        completionTokens: countTokens(response),
-        temperature: state.options.temperature || 0.7,
-      }
-    );
-    
+    ObservabilityService.logLlmCall(env, state.metadata?.traceId || '', 'generate_answer', {
+      model: LlmService.MODEL,
+      promptTokens:
+        countTokens(systemPrompt) +
+        state.messages.reduce((sum, msg) => sum + countTokens(msg.content), 0),
+      completionTokens: countTokens(response),
+      temperature: state.options.temperature || 0.7,
+    });
+
     logger.info(
-      { 
+      {
         responseLength: response.length,
-      }, 
-      'Generated answer'
+      },
+      'Generated answer',
     );
-    
+
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     return {
       ...state,
       generatedText: response,
@@ -878,12 +826,12 @@ export const generateAnswer = async (state: AgentState, env: Bindings): Promise<
     };
   } catch (error) {
     logger.error(
-      { 
+      {
         err: error,
-      }, 
-      'Error generating answer'
+      },
+      'Error generating answer',
     );
-    
+
     // Log error event
     ObservabilityService.logEvent(
       env,
@@ -893,13 +841,14 @@ export const generateAnswer = async (state: AgentState, env: Bindings): Promise<
       {
         error: error.message,
         query: state.tasks?.originalQuery,
-      }
+      },
     );
-    
+
     // Provide fallback response
     return {
       ...state,
-      generatedText: "I'm sorry, but I encountered an issue while generating a response. Please try again.",
+      generatedText:
+        "I'm sorry, but I encountered an issue while generating a response. Please try again.",
       metadata: {
         ...state.metadata,
         errors: [
@@ -921,24 +870,23 @@ export const generateAnswer = async (state: AgentState, env: Bindings): Promise<
 The system prompt is built by combining the formatted documents and tool results:
 
 ```typescript
-function buildSystemPrompt(
-  formattedDocs: string,
-  formattedToolResults: string
-): string {
+function buildSystemPrompt(formattedDocs: string, formattedToolResults: string): string {
   let prompt = "You are an AI assistant with access to the user's personal knowledge base. ";
-  
+
   if (formattedDocs) {
     prompt += `Here is relevant information from the user's notes that may help with the response:\n\n${formattedDocs}\n\n`;
-    prompt += 'When referencing information from these notes, include the note number in brackets, e.g., [1], to help the user identify the source.\n\n';
+    prompt +=
+      'When referencing information from these notes, include the note number in brackets, e.g., [1], to help the user identify the source.\n\n';
   }
-  
+
   if (formattedToolResults) {
     prompt += `I've used tools to gather additional information:\n\n${formattedToolResults}\n\n`;
     prompt += 'Incorporate this tool-generated information into your response when relevant.\n\n';
   }
-  
-  prompt += 'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
-  
+
+  prompt +=
+    'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
+
   return prompt;
 }
 ```
@@ -952,18 +900,18 @@ function formatDocsForPrompt(docs: Document[], includeSourceInfo: boolean): stri
   if (docs.length === 0) {
     return '';
   }
-  
+
   return docs
     .map((doc, index) => {
       let formattedDoc = `[${index + 1}] ${doc.title}\n${doc.body}`;
-      
+
       if (includeSourceInfo && doc.metadata) {
         formattedDoc += `\nSource: ${doc.metadata.source}`;
         if (doc.metadata.url) {
           formattedDoc += ` (${doc.metadata.url})`;
         }
       }
-      
+
       return formattedDoc;
     })
     .join('\n\n');
@@ -979,15 +927,15 @@ function formatToolResultsForPrompt(toolResults: ToolResult[]): string {
   if (toolResults.length === 0) {
     return '';
   }
-  
+
   return toolResults
     .map((result, index) => {
-      const output = result.error 
+      const output = result.error
         ? `Error: ${result.error}`
         : typeof result.output === 'string'
-          ? result.output
-          : JSON.stringify(result.output, null, 2);
-      
+        ? result.output
+        : JSON.stringify(result.output, null, 2);
+
       return `[Tool ${index + 1}] ${result.toolName}\nInput: ${result.input}\nOutput: ${output}`;
     })
     .join('\n\n');
@@ -1007,11 +955,11 @@ The stream transformation function converts the graph output to SSE events:
 ```typescript
 export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStream {
   const logger = getLogger().child({ component: 'sseTransformer' });
-  
+
   return new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      
+
       try {
         for await (const state of stream) {
           // Determine event type based on state
@@ -1022,25 +970,26 @@ export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStrea
             })}\n\n`;
             controller.enqueue(encoder.encode(stepEvent));
           }
-          
+
           // If we have generated text, send answer event
           if (state.generatedText) {
             // Extract sources from docs if available
-            const sources = state.docs?.map(doc => ({
-              id: doc.id,
-              title: doc.title,
-              source: doc.metadata.source,
-              url: doc.metadata.url,
-              relevanceScore: doc.metadata.relevanceScore,
-            })) || [];
-            
+            const sources =
+              state.docs?.map(doc => ({
+                id: doc.id,
+                title: doc.title,
+                source: doc.metadata.source,
+                url: doc.metadata.url,
+                relevanceScore: doc.metadata.relevanceScore,
+              })) || [];
+
             const answerEvent = `event: answer\ndata: ${JSON.stringify({
               delta: state.generatedText,
               sources,
             })}\n\n`;
             controller.enqueue(encoder.encode(answerEvent));
           }
-          
+
           // If this is the final state, send done event
           if (state.metadata?.isFinalState) {
             const doneEvent = `event: done\ndata: ${JSON.stringify({
@@ -1051,7 +1000,7 @@ export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStrea
         }
       } catch (error) {
         logger.error({ err: error }, 'Error in SSE stream transformation');
-        
+
         // Send error event
         const errorEvent = `event: error\ndata: ${JSON.stringify({
           message: 'An error occurred during processing',

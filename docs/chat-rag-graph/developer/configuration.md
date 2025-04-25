@@ -8,50 +8,50 @@ The Chat RAG Graph solution uses environment variables for configuration. These 
 
 ### Core Environment Variables
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `DOME_API_URL` | URL of the Dome API | None | Yes |
-| `DOME_API_KEY` | API key for the Dome API | None | Yes |
-| `JWT_SECRET` | Secret for JWT verification | None | Yes |
-| `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` | No |
-| `MAX_TOKENS` | Maximum tokens for response generation | `1000` | No |
-| `DEFAULT_TEMPERATURE` | Default temperature for LLM calls | `0.7` | No |
-| `ENABLE_STREAMING` | Enable streaming responses | `true` | No |
+| Variable              | Description                              | Default | Required |
+| --------------------- | ---------------------------------------- | ------- | -------- |
+| `DOME_API_URL`        | URL of the Dome API                      | None    | Yes      |
+| `DOME_API_KEY`        | API key for the Dome API                 | None    | Yes      |
+| `JWT_SECRET`          | Secret for JWT verification              | None    | Yes      |
+| `LOG_LEVEL`           | Logging level (debug, info, warn, error) | `info`  | No       |
+| `MAX_TOKENS`          | Maximum tokens for response generation   | `1000`  | No       |
+| `DEFAULT_TEMPERATURE` | Default temperature for LLM calls        | `0.7`   | No       |
+| `ENABLE_STREAMING`    | Enable streaming responses               | `true`  | No       |
 
 ### LLM Configuration
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `LLM_MODEL` | LLM model to use | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | No |
-| `LLM_TIMEOUT` | Timeout for LLM calls (ms) | `30000` | No |
-| `LLM_MAX_RETRIES` | Maximum retries for LLM calls | `3` | No |
-| `LLM_RETRY_DELAY` | Delay between retries (ms) | `1000` | No |
+| Variable          | Description                   | Default                                    | Required |
+| ----------------- | ----------------------------- | ------------------------------------------ | -------- |
+| `LLM_MODEL`       | LLM model to use              | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | No       |
+| `LLM_TIMEOUT`     | Timeout for LLM calls (ms)    | `30000`                                    | No       |
+| `LLM_MAX_RETRIES` | Maximum retries for LLM calls | `3`                                        | No       |
+| `LLM_RETRY_DELAY` | Delay between retries (ms)    | `1000`                                     | No       |
 
 ### Retrieval Configuration
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `MAX_CONTEXT_ITEMS` | Maximum number of context items to retrieve | `5` | No |
-| `MIN_RELEVANCE_SCORE` | Minimum relevance score for retrieved documents | `0.7` | No |
-| `ENABLE_WIDENING` | Enable search widening | `true` | No |
-| `MAX_WIDENING_ATTEMPTS` | Maximum number of widening attempts | `2` | No |
+| Variable                | Description                                     | Default | Required |
+| ----------------------- | ----------------------------------------------- | ------- | -------- |
+| `MAX_CONTEXT_ITEMS`     | Maximum number of context items to retrieve     | `5`     | No       |
+| `MIN_RELEVANCE_SCORE`   | Minimum relevance score for retrieved documents | `0.7`   | No       |
+| `ENABLE_WIDENING`       | Enable search widening                          | `true`  | No       |
+| `MAX_WIDENING_ATTEMPTS` | Maximum number of widening attempts             | `2`     | No       |
 
 ### Tool Configuration
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `ENABLE_TOOLS` | Enable tool usage | `true` | No |
-| `ALLOWED_TOOLS` | Comma-separated list of allowed tools | All | No |
-| `TOOL_TIMEOUT` | Timeout for tool execution (ms) | `5000` | No |
+| Variable        | Description                           | Default | Required |
+| --------------- | ------------------------------------- | ------- | -------- |
+| `ENABLE_TOOLS`  | Enable tool usage                     | `true`  | No       |
+| `ALLOWED_TOOLS` | Comma-separated list of allowed tools | All     | No       |
+| `TOOL_TIMEOUT`  | Timeout for tool execution (ms)       | `5000`  | No       |
 
 ### Security Configuration
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `ENABLE_RATE_LIMITING` | Enable rate limiting | `true` | No |
-| `RATE_LIMIT_REQUESTS` | Maximum requests per hour | `100` | No |
-| `ENABLE_CONTENT_FILTERING` | Enable content filtering | `true` | No |
-| `ENCRYPTION_KEY` | Key for encrypting sensitive data | None | Yes (in production) |
+| Variable                   | Description                       | Default | Required            |
+| -------------------------- | --------------------------------- | ------- | ------------------- |
+| `ENABLE_RATE_LIMITING`     | Enable rate limiting              | `true`  | No                  |
+| `RATE_LIMIT_REQUESTS`      | Maximum requests per hour         | `100`   | No                  |
+| `ENABLE_CONTENT_FILTERING` | Enable content filtering          | `true`  | No                  |
+| `ENCRYPTION_KEY`           | Key for encrypting sensitive data | None    | Yes (in production) |
 
 ## Configuration File
 
@@ -65,7 +65,7 @@ export const config = {
     domeApiUrl: process.env.DOME_API_URL || 'https://api.dome.cloud',
     domeApiKey: process.env.DOME_API_KEY || '',
   },
-  
+
   // LLM configuration
   llm: {
     model: process.env.LLM_MODEL || '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
@@ -75,7 +75,7 @@ export const config = {
     defaultTemperature: parseFloat(process.env.DEFAULT_TEMPERATURE || '0.7'),
     maxTokens: parseInt(process.env.MAX_TOKENS || '1000', 10),
   },
-  
+
   // Retrieval configuration
   retrieval: {
     maxContextItems: parseInt(process.env.MAX_CONTEXT_ITEMS || '5', 10),
@@ -83,16 +83,16 @@ export const config = {
     enableWidening: process.env.ENABLE_WIDENING !== 'false',
     maxWideningAttempts: parseInt(process.env.MAX_WIDENING_ATTEMPTS || '2', 10),
   },
-  
+
   // Tool configuration
   tools: {
     enableTools: process.env.ENABLE_TOOLS !== 'false',
-    allowedTools: process.env.ALLOWED_TOOLS ? 
-      process.env.ALLOWED_TOOLS.split(',') : 
-      ['calculator', 'weather', 'web_search', 'calendar'],
+    allowedTools: process.env.ALLOWED_TOOLS
+      ? process.env.ALLOWED_TOOLS.split(',')
+      : ['calculator', 'weather', 'web_search', 'calendar'],
     timeout: parseInt(process.env.TOOL_TIMEOUT || '5000', 10),
   },
-  
+
   // Security configuration
   security: {
     enableRateLimiting: process.env.ENABLE_RATE_LIMITING !== 'false',
@@ -100,13 +100,13 @@ export const config = {
     enableContentFiltering: process.env.ENABLE_CONTENT_FILTERING !== 'false',
     encryptionKey: process.env.ENCRYPTION_KEY || '',
   },
-  
+
   // Logging configuration
   logging: {
     level: process.env.LOG_LEVEL || 'info',
     enableStructuredLogs: true,
   },
-  
+
   // Feature flags
   features: {
     enableStreaming: process.env.ENABLE_STREAMING !== 'false',
@@ -122,9 +122,7 @@ Users can configure certain aspects of the Chat RAG Graph solution on a per-requ
 
 ```json
 {
-  "messages": [
-    {"role": "user", "content": "What is the capital of France?"}
-  ],
+  "messages": [{ "role": "user", "content": "What is the capital of France?" }],
   "options": {
     "enhanceWithContext": true,
     "maxContextItems": 5,
@@ -138,14 +136,14 @@ Users can configure certain aspects of the Chat RAG Graph solution on a per-requ
 
 ### Request Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `enhanceWithContext` | Whether to enhance responses with retrieved context | `true` |
-| `maxContextItems` | Maximum number of context items to retrieve | `5` |
-| `includeSourceInfo` | Whether to include source information in responses | `true` |
-| `maxTokens` | Maximum tokens for response generation | `1000` |
-| `temperature` | Temperature for LLM calls | `0.7` |
-| `stream` | Whether to stream the response | `false` |
+| Option               | Description                                         | Default |
+| -------------------- | --------------------------------------------------- | ------- |
+| `enhanceWithContext` | Whether to enhance responses with retrieved context | `true`  |
+| `maxContextItems`    | Maximum number of context items to retrieve         | `5`     |
+| `includeSourceInfo`  | Whether to include source information in responses  | `true`  |
+| `maxTokens`          | Maximum tokens for response generation              | `1000`  |
+| `temperature`        | Temperature for LLM calls                           | `0.7`   |
+| `stream`             | Whether to stream the response                      | `false` |
 
 ## Graph Configuration
 
@@ -158,12 +156,12 @@ The graph structure itself can be configured by modifying the `buildChatGraph` f
 ```typescript
 export const buildChatGraph = (env: Bindings) => {
   const logger = getLogger().child({ component: 'graphBuilder' });
-  
+
   logger.info('Building chat graph');
-  
+
   // Create checkpointer
   const checkpointer = new D1Checkpointer(env.D1);
-  
+
   // Initialize graph
   const graph = new StateGraph<AgentState>()
     // Add nodes
@@ -173,11 +171,11 @@ export const buildChatGraph = (env: Bindings) => {
     .addNode('tool_router', nodes.toolRouter)
     .addNode('run_tool', nodes.runTool)
     .addNode('generate_answer', nodes.generateAnswer)
-    
+
     // Add edges
     .addEdge(START, 'split_rewrite')
     .addEdge('split_rewrite', 'retrieve')
-    
+
     // Add conditional edges
     .addConditionalEdges('retrieve', nodes.routeAfterRetrieve, {
       widen: 'dynamic_widen',
@@ -191,7 +189,7 @@ export const buildChatGraph = (env: Bindings) => {
     })
     .addEdge('run_tool', 'generate_answer')
     .addEdge('generate_answer', END);
-  
+
   // Add state change listener for logging
   graph.onStateChange((oldState, newState, nodeName) => {
     // Update current node in metadata
@@ -200,16 +198,16 @@ export const buildChatGraph = (env: Bindings) => {
       currentNode: nodeName,
       isFinalState: nodeName === END,
     };
-    
+
     logger.debug(
       {
         node: nodeName,
         stateChanges: getStateDiff(oldState, newState),
       },
-      'State transition'
+      'State transition',
     );
   });
-  
+
   // Compile with checkpointer and reducers
   return graph.compile({
     checkpointer,
@@ -231,7 +229,7 @@ For example, to configure the `retrieve` node:
 export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'retrieve' });
   const startTime = performance.now();
-  
+
   // Skip retrieval if not enabled
   if (!state.options.enhanceWithContext) {
     logger.info('Context enhancement disabled, skipping retrieval');
@@ -240,14 +238,14 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
       docs: [],
     };
   }
-  
+
   const { userId } = state;
   const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
-  
+
   // Use configuration from state or fall back to global config
   const maxItems = state.options.maxContextItems || config.retrieval.maxContextItems;
   const minRelevance = config.retrieval.minRelevanceScore;
-  
+
   // Rest of the node implementation
   // ...
 };
@@ -263,13 +261,13 @@ For example, to configure the `calculator` tool:
 export class CalculatorTool implements Tool {
   name = 'calculator';
   description = 'Performs mathematical calculations';
-  
+
   // Tool configuration
   private config = {
     maxExpressionLength: 1000,
     timeout: 1000, // ms
   };
-  
+
   constructor(customConfig?: Partial<typeof this.config>) {
     // Apply custom configuration
     if (customConfig) {
@@ -279,7 +277,7 @@ export class CalculatorTool implements Tool {
       };
     }
   }
-  
+
   // Rest of the tool implementation
   // ...
 }
@@ -298,30 +296,32 @@ export function buildSystemPrompt(
   options: {
     includeSourceInfo: boolean;
     customInstructions?: string;
-  }
+  },
 ): string {
   let prompt = "You are an AI assistant with access to the user's personal knowledge base. ";
-  
+
   // Add custom instructions if provided
   if (options.customInstructions) {
-    prompt += options.customInstructions + " ";
+    prompt += options.customInstructions + ' ';
   }
-  
+
   if (formattedDocs) {
     prompt += `Here is relevant information from the user's notes that may help with the response:\n\n${formattedDocs}\n\n`;
-    
+
     if (options.includeSourceInfo) {
-      prompt += 'When referencing information from these notes, include the note number in brackets, e.g., [1], to help the user identify the source.\n\n';
+      prompt +=
+        'When referencing information from these notes, include the note number in brackets, e.g., [1], to help the user identify the source.\n\n';
     }
   }
-  
+
   if (formattedToolResults) {
     prompt += `I've used tools to gather additional information:\n\n${formattedToolResults}\n\n`;
     prompt += 'Incorporate this tool-generated information into your response when relevant.\n\n';
   }
-  
-  prompt += 'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
-  
+
+  prompt +=
+    'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
+
   return prompt;
 }
 ```
@@ -340,16 +340,16 @@ return graph.compile({
     docs: (oldDocs = [], newDocs = []) => {
       if (!newDocs || newDocs.length === 0) return oldDocs;
       if (!oldDocs || oldDocs.length === 0) return newDocs;
-      
+
       // Custom merging logic
       const docMap = new Map();
       [...oldDocs, ...newDocs].forEach(doc => {
         docMap.set(doc.id, doc);
       });
-      
+
       return Array.from(docMap.values());
     },
-    
+
     // Other reducers
     // ...
   },
@@ -376,16 +376,10 @@ You can configure the observability behavior by modifying the `ObservabilityServ
 
 ```typescript
 // Add custom metrics
-ObservabilityService.logEvent(
-  env,
-  state.metadata?.traceId || '',
-  state.userId,
-  'custom_event',
-  {
-    customMetric1: value1,
-    customMetric2: value2,
-  }
-);
+ObservabilityService.logEvent(env, state.metadata?.traceId || '', state.userId, 'custom_event', {
+  customMetric1: value1,
+  customMetric2: value2,
+});
 ```
 
 ## Environment-Specific Configuration

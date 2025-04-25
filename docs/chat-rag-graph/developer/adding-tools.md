@@ -20,13 +20,13 @@ All tools must implement the `Tool` interface:
 export interface Tool {
   // Tool name (used for identification)
   name: string;
-  
+
   // Tool description (used for documentation and LLM context)
   description: string;
-  
+
   // Get input schema (used for input validation and extraction)
   getInputSchema(): any;
-  
+
   // Execute the tool
   execute(input: unknown, env: Bindings): Promise<unknown>;
 }
@@ -47,7 +47,7 @@ import { getLogger } from '@dome/logging';
 export class TranslationTool implements Tool {
   name = 'translation';
   description = 'Translates text from one language to another';
-  
+
   getInputSchema(): any {
     return {
       type: 'object',
@@ -68,51 +68,46 @@ export class TranslationTool implements Tool {
       required: ['text', 'targetLanguage'],
     };
   }
-  
+
   async execute(input: unknown, env: Bindings): Promise<unknown> {
     const logger = getLogger().child({ tool: 'translation' });
-    
+
     try {
       // Validate input
       if (typeof input !== 'object' || input === null) {
         throw new Error('Invalid input: expected object');
       }
-      
-      const { 
-        text, 
-        sourceLanguage = 'auto', 
-        targetLanguage 
-      } = input as { 
-        text: string; 
-        sourceLanguage?: string; 
+
+      const {
+        text,
+        sourceLanguage = 'auto',
+        targetLanguage,
+      } = input as {
+        text: string;
+        sourceLanguage?: string;
         targetLanguage: string;
       };
-      
+
       if (!text) {
         throw new Error('Invalid input: missing text');
       }
-      
+
       if (!targetLanguage) {
         throw new Error('Invalid input: missing targetLanguage');
       }
-      
+
       logger.info(
-        { 
+        {
           textLength: text.length,
           sourceLanguage,
           targetLanguage,
-        }, 
-        'Translating text'
+        },
+        'Translating text',
       );
-      
+
       // Call translation service
-      const translatedText = await this.translateText(
-        env,
-        text,
-        sourceLanguage,
-        targetLanguage
-      );
-      
+      const translatedText = await this.translateText(env, text, sourceLanguage, targetLanguage);
+
       return {
         originalText: text,
         translatedText,
@@ -124,30 +119,32 @@ export class TranslationTool implements Tool {
       throw error;
     }
   }
-  
+
   private async translateText(
     env: Bindings,
     text: string,
     sourceLanguage: string,
-    targetLanguage: string
+    targetLanguage: string,
   ): Promise<string> {
     // In a real implementation, this would call a translation API
     // For this example, we'll use the LLM to perform the translation
-    
+
     const prompt = `
-      Translate the following text from ${sourceLanguage === 'auto' ? 'the detected language' : sourceLanguage} to ${targetLanguage}:
+      Translate the following text from ${
+        sourceLanguage === 'auto' ? 'the detected language' : sourceLanguage
+      } to ${targetLanguage}:
       
       "${text}"
       
       Translation:
     `;
-    
+
     const response = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
       max_tokens: 1000,
     });
-    
+
     return response.response.trim();
   }
 }
@@ -172,7 +169,7 @@ export function initializeToolRegistry(): void {
   ToolRegistry.registerTool(new WeatherTool());
   ToolRegistry.registerTool(new WebSearchTool());
   ToolRegistry.registerTool(new CalendarTool());
-  
+
   // Register new translation tool
   ToolRegistry.registerTool(new TranslationTool());
 }
@@ -186,7 +183,7 @@ Update the tool detection logic in the `routeAfterRetrieve` node to recognize tr
 function detectToolIntent(query: string): { needsTool: boolean; tools: string[] } {
   // This would be more sophisticated in a real implementation
   // Could use an LLM or a classifier
-  
+
   const toolPatterns = [
     { name: 'calculator', pattern: /calculate|compute|math|equation/i },
     { name: 'calendar', pattern: /schedule|appointment|meeting|calendar/i },
@@ -195,11 +192,9 @@ function detectToolIntent(query: string): { needsTool: boolean; tools: string[] 
     // Add pattern for translation tool
     { name: 'translation', pattern: /translate|translation|convert to \w+|in \w+/i },
   ];
-  
-  const matchedTools = toolPatterns
-    .filter(tool => tool.pattern.test(query))
-    .map(tool => tool.name);
-  
+
+  const matchedTools = toolPatterns.filter(tool => tool.pattern.test(query)).map(tool => tool.name);
+
   return {
     needsTool: matchedTools.length > 0,
     tools: matchedTools,
@@ -217,7 +212,7 @@ import { TranslationTool } from '../../src/tools/translationTool';
 
 describe('TranslationTool', () => {
   let tool: TranslationTool;
-  
+
   // Mock environment
   const mockEnv = {
     AI: {
@@ -226,43 +221,43 @@ describe('TranslationTool', () => {
       }),
     },
   } as unknown as Bindings;
-  
+
   beforeEach(() => {
     tool = new TranslationTool();
     vi.clearAllMocks();
   });
-  
+
   it('should have the correct name and description', () => {
     expect(tool.name).toBe('translation');
     expect(tool.description).toBe('Translates text from one language to another');
   });
-  
+
   it('should provide an input schema', () => {
     const schema = tool.getInputSchema();
-    
+
     expect(schema).toHaveProperty('properties.text');
     expect(schema).toHaveProperty('properties.sourceLanguage');
     expect(schema).toHaveProperty('properties.targetLanguage');
     expect(schema.required).toContain('text');
     expect(schema.required).toContain('targetLanguage');
   });
-  
+
   it('should translate text successfully', async () => {
     const input = {
       text: 'Hello, how are you?',
       sourceLanguage: 'en',
       targetLanguage: 'fr',
     };
-    
+
     const result = await tool.execute(input, mockEnv);
-    
+
     expect(result).toEqual({
       originalText: 'Hello, how are you?',
       translatedText: 'Bonjour, comment ça va?',
       sourceLanguage: 'en',
       targetLanguage: 'fr',
     });
-    
+
     expect(mockEnv.AI.run).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
@@ -271,25 +266,25 @@ describe('TranslationTool', () => {
             content: expect.stringContaining('Translate the following text'),
           }),
         ]),
-      })
+      }),
     );
   });
-  
+
   it('should use auto-detection when sourceLanguage is not provided', async () => {
     const input = {
       text: 'Hello, how are you?',
       targetLanguage: 'fr',
     };
-    
+
     const result = await tool.execute(input, mockEnv);
-    
+
     expect(result).toEqual({
       originalText: 'Hello, how are you?',
       translatedText: 'Bonjour, comment ça va?',
       sourceLanguage: 'auto',
       targetLanguage: 'fr',
     });
-    
+
     expect(mockEnv.AI.run).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
@@ -298,23 +293,23 @@ describe('TranslationTool', () => {
             content: expect.stringContaining('the detected language'),
           }),
         ]),
-      })
+      }),
     );
   });
-  
+
   it('should throw an error when text is missing', async () => {
     const input = {
       targetLanguage: 'fr',
     };
-    
+
     await expect(tool.execute(input, mockEnv)).rejects.toThrow('missing text');
   });
-  
+
   it('should throw an error when targetLanguage is missing', async () => {
     const input = {
       text: 'Hello, how are you?',
     };
-    
+
     await expect(tool.execute(input, mockEnv)).rejects.toThrow('missing targetLanguage');
   });
 });
@@ -325,23 +320,19 @@ describe('TranslationTool', () => {
 When a tool is selected for execution, the system needs to extract structured input from the user's query. This is handled by the `extractToolInput` function in the `runTool` node:
 
 ```typescript
-async function extractToolInput(
-  env: Bindings,
-  query: string,
-  toolName: string
-): Promise<unknown> {
+async function extractToolInput(env: Bindings, query: string, toolName: string): Promise<unknown> {
   const logger = getLogger().child({ function: 'extractToolInput' });
-  
+
   try {
     // Get tool schema
     const tool = ToolRegistry.getTool(toolName);
-    
+
     if (!tool) {
       throw new Error(`Tool ${toolName} not found in registry`);
     }
-    
+
     const inputSchema = tool.getInputSchema();
-    
+
     // Use LLM to extract structured input
     const prompt = `
       Extract the necessary information from the user query to use the "${toolName}" tool.
@@ -356,28 +347,28 @@ async function extractToolInput(
       
       JSON Output:
     `;
-    
+
     const response = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.2,
       max_tokens: 500,
     });
-    
+
     // Parse JSON response
     try {
       return JSON.parse(response.response.trim());
     } catch (parseError) {
       logger.error(
         { err: parseError, response: response.response },
-        'Error parsing tool input JSON'
+        'Error parsing tool input JSON',
       );
-      
+
       // Fall back to simple extraction
       return fallbackExtraction(query, toolName, inputSchema);
     }
   } catch (error) {
     logger.error({ err: error, query, toolName }, 'Error extracting tool input');
-    
+
     // Fall back to using the query as input
     return { text: query };
   }
@@ -393,16 +384,20 @@ function formatToolResultsForPrompt(toolResults: ToolResult[]): string {
   if (toolResults.length === 0) {
     return '';
   }
-  
+
   return toolResults
     .map((result, index) => {
-      const output = result.error 
+      const output = result.error
         ? `Error: ${result.error}`
         : typeof result.output === 'string'
-          ? result.output
-          : JSON.stringify(result.output, null, 2);
-      
-      return `[Tool ${index + 1}] ${result.toolName}\nInput: ${JSON.stringify(result.input, null, 2)}\nOutput: ${output}`;
+        ? result.output
+        : JSON.stringify(result.output, null, 2);
+
+      return `[Tool ${index + 1}] ${result.toolName}\nInput: ${JSON.stringify(
+        result.input,
+        null,
+        2,
+      )}\nOutput: ${output}`;
     })
     .join('\n\n');
 }
@@ -418,14 +413,14 @@ Tools can be configured with custom options:
 export class TranslationTool implements Tool {
   name = 'translation';
   description = 'Translates text from one language to another';
-  
+
   // Tool configuration
   private config = {
     maxTextLength: 5000,
     supportedLanguages: ['en', 'fr', 'es', 'de', 'it', 'ja', 'zh', 'ru'],
     defaultModel: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   };
-  
+
   constructor(customConfig?: Partial<typeof this.config>) {
     // Apply custom configuration
     if (customConfig) {
@@ -435,7 +430,7 @@ export class TranslationTool implements Tool {
       };
     }
   }
-  
+
   // Rest of the tool implementation
   // ...
 }
@@ -449,13 +444,13 @@ Tools can be chained together by having one tool call another:
 export class CompoundTool implements Tool {
   name = 'compound';
   description = 'Performs a sequence of operations using multiple tools';
-  
+
   private toolRegistry: ToolRegistry;
-  
+
   constructor(toolRegistry: ToolRegistry) {
     this.toolRegistry = toolRegistry;
   }
-  
+
   getInputSchema(): any {
     return {
       type: 'object',
@@ -481,7 +476,7 @@ export class CompoundTool implements Tool {
       required: ['operations'],
     };
   }
-  
+
   async execute(input: unknown, env: Bindings): Promise<unknown> {
     // Implementation of tool chaining
     // ...
@@ -497,20 +492,20 @@ Tools that access external APIs often require authentication:
 export class ApiTool implements Tool {
   name = 'api';
   description = 'Accesses an external API';
-  
+
   private apiKey: string;
-  
+
   constructor(apiKey: string) {
     this.apiKey = apiKey;
   }
-  
+
   async execute(input: unknown, env: Bindings): Promise<unknown> {
     // Use API key for authentication
     const headers = {
-      'Authorization': `Bearer ${this.apiKey}`,
+      Authorization: `Bearer ${this.apiKey}`,
       'Content-Type': 'application/json',
     };
-    
+
     // Make API request
     // ...
   }
@@ -525,21 +520,21 @@ Tools can implement rate limiting to prevent abuse:
 export class RateLimitedTool implements Tool {
   name = 'rate_limited';
   description = 'A tool with rate limiting';
-  
+
   private rateLimiter: RateLimiter;
-  
+
   constructor(rateLimiter: RateLimiter) {
     this.rateLimiter = rateLimiter;
   }
-  
+
   async execute(input: unknown, env: Bindings): Promise<unknown> {
     // Check rate limit
     const allowed = await this.rateLimiter.check('tool:rate_limited');
-    
+
     if (!allowed) {
       throw new Error('Rate limit exceeded');
     }
-    
+
     // Execute tool
     // ...
   }
@@ -605,21 +600,21 @@ Implement access control to restrict tool usage:
 export class RestrictedTool implements Tool {
   name = 'restricted';
   description = 'A tool with access restrictions';
-  
+
   private allowedRoles: string[];
-  
+
   constructor(allowedRoles: string[]) {
     this.allowedRoles = allowedRoles;
   }
-  
+
   async execute(input: unknown, env: Bindings, context: ExecutionContext): Promise<unknown> {
     // Check user role
     const userRole = context.user?.role;
-    
+
     if (!userRole || !this.allowedRoles.includes(userRole)) {
       throw new Error('Access denied: insufficient permissions');
     }
-    
+
     // Execute tool
     // ...
   }

@@ -14,33 +14,29 @@ export interface LlmService {
   analyzeQueryComplexity(
     env: Bindings,
     query: string,
-    options?: LlmOptions
+    options?: LlmOptions,
   ): Promise<QueryAnalysisResult>;
-  
+
   // Rewrite query for improved retrieval
   rewriteQuery(
     env: Bindings,
     query: string,
     conversationHistory: Message[],
-    options?: LlmOptions
+    options?: LlmOptions,
   ): Promise<string>;
-  
+
   // Extract structured input for tools
   extractToolInput(
     env: Bindings,
     query: string,
     toolName: string,
     inputSchema: any,
-    options?: LlmOptions
+    options?: LlmOptions,
   ): Promise<unknown>;
-  
+
   // Generate final response
-  generateResponse(
-    env: Bindings,
-    messages: Message[],
-    options?: LlmOptions
-  ): Promise<string>;
-  
+  generateResponse(env: Bindings, messages: Message[], options?: LlmOptions): Promise<string>;
+
   // Model identifier
   MODEL: string;
 }
@@ -70,10 +66,10 @@ export const LlmService = {
   async analyzeQueryComplexity(
     env: Bindings,
     query: string,
-    options: LlmOptions = {}
+    options: LlmOptions = {},
   ): Promise<QueryAnalysisResult> {
     const logger = getLogger().child({ function: 'analyzeQueryComplexity' });
-    
+
     try {
       const prompt = `
         Analyze the following user query and determine if it is complex (contains multiple questions or requires multi-step reasoning).
@@ -88,16 +84,16 @@ export const LlmService = {
           "suggestedQueries": string[] (only if shouldSplit is true)
         }
       `;
-      
+
       const response = await env.AI.run(this.MODEL, {
         messages: [{ role: 'user', content: prompt }],
         temperature: options.temperature || 0.2,
         max_tokens: options.maxTokens || 500,
       });
-      
+
       // Parse JSON response
       const result = JSON.parse(response.response);
-      
+
       return {
         isComplex: result.isComplex,
         shouldSplit: result.shouldSplit,
@@ -106,7 +102,7 @@ export const LlmService = {
       };
     } catch (error) {
       logger.error({ err: error, query }, 'Error analyzing query complexity');
-      
+
       // Return default result on error
       return {
         isComplex: false,
@@ -115,22 +111,22 @@ export const LlmService = {
       };
     }
   },
-  
+
   async rewriteQuery(
     env: Bindings,
     query: string,
     conversationHistory: Message[] = [],
-    options: LlmOptions = {}
+    options: LlmOptions = {},
   ): Promise<string> {
     const logger = getLogger().child({ function: 'rewriteQuery' });
-    
+
     try {
       // Extract recent conversation context
       const recentMessages = conversationHistory
         .slice(-5)
         .map(msg => `${msg.role}: ${msg.content}`)
         .join('\n');
-      
+
       const prompt = `
         Rewrite the following user query to make it more specific and self-contained for retrieval.
         Expand pronouns and references to previous conversation.
@@ -143,34 +139,34 @@ export const LlmService = {
         
         Rewritten query:
       `;
-      
+
       const response = await env.AI.run(this.MODEL, {
         messages: [{ role: 'user', content: prompt }],
         temperature: options.temperature || 0.3,
         max_tokens: options.maxTokens || 200,
       });
-      
+
       return response.response.trim();
     } catch (error) {
       logger.error({ err: error, query }, 'Error rewriting query');
-      
+
       // Return original query on error
       return query;
     }
   },
-  
+
   async extractToolInput(
     env: Bindings,
     query: string,
     toolName: string,
     inputSchema: any,
-    options: LlmOptions = {}
+    options: LlmOptions = {},
   ): Promise<unknown> {
     const logger = getLogger().child({ function: 'extractToolInput' });
-    
+
     try {
       const schemaString = JSON.stringify(inputSchema, null, 2);
-      
+
       const prompt = `
         Extract structured input for the "${toolName}" tool from the following user query.
         
@@ -181,37 +177,37 @@ export const LlmService = {
         
         Respond with a valid JSON object that matches the schema.
       `;
-      
+
       const response = await env.AI.run(this.MODEL, {
         messages: [{ role: 'user', content: prompt }],
         temperature: options.temperature || 0.2,
         max_tokens: options.maxTokens || 500,
       });
-      
+
       // Parse JSON response
       return JSON.parse(response.response);
     } catch (error) {
       logger.error({ err: error, query, toolName }, 'Error extracting tool input');
-      
+
       // Return query as string on error
       return query;
     }
   },
-  
+
   async generateResponse(
     env: Bindings,
     messages: Message[],
-    options: LlmOptions = {}
+    options: LlmOptions = {},
   ): Promise<string> {
     const logger = getLogger().child({ function: 'generateResponse' });
-    
+
     try {
       // Format messages for AI binding
       const formattedMessages = messages.map(msg => ({
         role: msg.role,
         content: msg.content,
       }));
-      
+
       // Call LLM
       const response = await env.AI.run(this.MODEL, {
         messages: formattedMessages,
@@ -221,14 +217,14 @@ export const LlmService = {
         frequency_penalty: options.frequencyPenalty || 0,
         presence_penalty: options.presencePenalty || 0,
       });
-      
+
       return response.response.trim();
     } catch (error) {
       logger.error({ err: error }, 'Error generating response');
       throw error;
     }
   },
-  
+
   // Model identifier
   MODEL: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
 };
@@ -260,21 +256,13 @@ The Search Service provides retrieval capabilities, interfacing with vector data
 ```typescript
 export interface SearchService {
   // Search for relevant documents
-  search(
-    env: Bindings,
-    params: SearchParams
-  ): Promise<Document[]>;
-  
+  search(env: Bindings, params: SearchParams): Promise<Document[]>;
+
   // Rank and filter documents
-  rankAndFilterDocuments(
-    docs: Document[],
-    query: string
-  ): Document[];
-  
+  rankAndFilterDocuments(docs: Document[], query: string): Document[];
+
   // Extract source metadata for client
-  extractSourceMetadata(
-    docs: Document[]
-  ): SourceMetadata[];
+  extractSourceMetadata(docs: Document[]): SourceMetadata[];
 }
 
 export interface SearchParams {
@@ -305,12 +293,9 @@ The Search Service integrates with Cloudflare Vectorize for semantic search:
 
 ```typescript
 export const SearchService = {
-  async search(
-    env: Bindings,
-    params: SearchParams
-  ): Promise<Document[]> {
+  async search(env: Bindings, params: SearchParams): Promise<Document[]> {
     const logger = getLogger().child({ function: 'search' });
-    
+
     try {
       // Prepare search parameters
       const {
@@ -321,10 +306,10 @@ export const SearchService = {
         expandSynonyms = false,
         includeRelated = false,
       } = params;
-      
+
       // Create embedding for query
       const embedding = await createEmbedding(env, query);
-      
+
       // Prepare vector search options
       const vectorSearchOptions: VectorizeSearchOptions = {
         vector: embedding,
@@ -333,7 +318,7 @@ export const SearchService = {
           userId: { $eq: userId },
         },
       };
-      
+
       // Add date range filter if provided
       if (params.dateRange) {
         vectorSearchOptions.filter = {
@@ -344,32 +329,28 @@ export const SearchService = {
           },
         };
       }
-      
+
       // Perform vector search
       const vectorResults = await env.VECTORIZE.query(vectorSearchOptions);
-      
+
       // Filter by relevance score
-      const filteredResults = vectorResults.matches.filter(
-        match => match.score >= minRelevance
-      );
-      
+      const filteredResults = vectorResults.matches.filter(match => match.score >= minRelevance);
+
       // Fetch full documents from D1
       const docIds = filteredResults.map(match => match.id);
-      
+
       const docsQuery = await env.D1.prepare(`
         SELECT d.id, d.title, d.body, d.source, d.created_at, d.url, d.mime_type
         FROM documents d
         WHERE d.id IN (${docIds.map(() => '?').join(',')})
         AND d.user_id = ?
       `);
-      
+
       const docsResult = await docsQuery.bind(...docIds, userId).all();
-      
+
       // Map to Document objects with relevance scores
-      const scoreMap = new Map(
-        filteredResults.map(match => [match.id, match.score])
-      );
-      
+      const scoreMap = new Map(filteredResults.map(match => [match.id, match.score]));
+
       const documents = docsResult.results.map(row => ({
         id: row.id,
         title: row.title,
@@ -382,63 +363,58 @@ export const SearchService = {
           mimeType: row.mime_type,
         },
       }));
-      
+
       // If expandSynonyms is enabled and we have few results, try synonym expansion
       if (expandSynonyms && documents.length < limit / 2) {
         const expandedDocs = await this.expandSynonyms(env, query, userId, limit);
-        
+
         // Merge and deduplicate
         const docMap = new Map();
         [...documents, ...expandedDocs].forEach(doc => {
           docMap.set(doc.id, doc);
         });
-        
+
         return Array.from(docMap.values());
       }
-      
+
       // If includeRelated is enabled and we have few results, include related documents
       if (includeRelated && documents.length < limit / 2) {
         const relatedDocs = await this.findRelatedDocuments(env, documents, userId, limit);
-        
+
         // Merge and deduplicate
         const docMap = new Map();
         [...documents, ...relatedDocs].forEach(doc => {
           docMap.set(doc.id, doc);
         });
-        
+
         return Array.from(docMap.values());
       }
-      
+
       return documents;
     } catch (error) {
       logger.error({ err: error, params }, 'Error searching for documents');
       throw error;
     }
   },
-  
-  rankAndFilterDocuments(
-    docs: Document[],
-    query: string
-  ): Document[] {
+
+  rankAndFilterDocuments(docs: Document[], query: string): Document[] {
     // If we have few docs, return all of them
     if (docs.length <= 5) {
       return docs;
     }
-    
+
     // Sort by relevance score
     const sortedDocs = [...docs].sort(
-      (a, b) => b.metadata.relevanceScore - a.metadata.relevanceScore
+      (a, b) => b.metadata.relevanceScore - a.metadata.relevanceScore,
     );
-    
+
     // Apply additional ranking factors
     // (In a real implementation, this would be more sophisticated)
-    
+
     return sortedDocs;
   },
-  
-  extractSourceMetadata(
-    docs: Document[]
-  ): SourceMetadata[] {
+
+  extractSourceMetadata(docs: Document[]): SourceMetadata[] {
     return docs.map(doc => ({
       id: doc.id,
       title: doc.title,
@@ -447,24 +423,24 @@ export const SearchService = {
       relevanceScore: doc.metadata.relevanceScore,
     }));
   },
-  
+
   // Helper methods for expanded search
   async expandSynonyms(
     env: Bindings,
     query: string,
     userId: string,
-    limit: number
+    limit: number,
   ): Promise<Document[]> {
     // Implementation details omitted for brevity
     // This would use the LLM to generate synonyms and alternative phrasings
     return [];
   },
-  
+
   async findRelatedDocuments(
     env: Bindings,
     docs: Document[],
     userId: string,
-    limit: number
+    limit: number,
   ): Promise<Document[]> {
     // Implementation details omitted for brevity
     // This would find documents related to the already retrieved documents
@@ -477,7 +453,7 @@ async function createEmbedding(env: Bindings, text: string): Promise<number[]> {
   const response = await env.AI.run('@cf/baai/bge-base-en-v1.5', {
     text: [text],
   });
-  
+
   return response.data[0];
 }
 ```
@@ -505,7 +481,7 @@ CREATE TABLE documents (
   created_at TEXT NOT NULL,
   url TEXT,
   mime_type TEXT,
-  
+
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -523,13 +499,13 @@ The Tool Registry manages the available tools and provides a consistent interfac
 export interface Tool {
   // Tool name
   name: string;
-  
+
   // Tool description
   description: string;
-  
+
   // Get input schema
   getInputSchema(): any;
-  
+
   // Execute the tool
   execute(input: unknown, env: Bindings): Promise<unknown>;
 }
@@ -540,22 +516,22 @@ export interface Tool {
 ```typescript
 export class ToolRegistry {
   private static tools: Map<string, Tool> = new Map();
-  
+
   // Register a tool
   static registerTool(tool: Tool): void {
     this.tools.set(tool.name, tool);
   }
-  
+
   // Get a tool by name
   static getTool(name: string): Tool | undefined {
     return this.tools.get(name);
   }
-  
+
   // Get all available tools
   static getAllTools(): Tool[] {
     return Array.from(this.tools.values());
   }
-  
+
   // Get tool names
   static getToolNames(): string[] {
     return Array.from(this.tools.keys());
@@ -569,7 +545,7 @@ export class ToolRegistry {
 export class CalculatorTool implements Tool {
   name = 'calculator';
   description = 'Performs mathematical calculations';
-  
+
   getInputSchema(): any {
     return {
       type: 'object',
@@ -582,28 +558,28 @@ export class CalculatorTool implements Tool {
       required: ['expression'],
     };
   }
-  
+
   async execute(input: unknown, env: Bindings): Promise<unknown> {
     const logger = getLogger().child({ tool: 'calculator' });
-    
+
     try {
       // Validate input
       if (typeof input !== 'object' || input === null) {
         throw new Error('Invalid input: expected object');
       }
-      
+
       const { expression } = input as { expression: string };
-      
+
       if (!expression) {
         throw new Error('Invalid input: missing expression');
       }
-      
+
       // Sanitize expression to prevent injection
       const sanitizedExpression = this.sanitizeExpression(expression);
-      
+
       // Evaluate expression
       const result = this.evaluateExpression(sanitizedExpression);
-      
+
       return {
         expression: sanitizedExpression,
         result,
@@ -613,23 +589,23 @@ export class CalculatorTool implements Tool {
       throw error;
     }
   }
-  
+
   private sanitizeExpression(expression: string): string {
     // Remove anything that's not a number, operator, or parenthesis
     return expression.replace(/[^0-9+\-*/().]/g, '');
   }
-  
+
   private evaluateExpression(expression: string): number {
     // Simple implementation using Function constructor
     // In a production environment, use a safer math expression evaluator
     try {
       // Set a timeout to prevent long-running calculations
       const result = new Function(`return ${expression}`)();
-      
+
       if (typeof result !== 'number' || !isFinite(result)) {
         throw new Error('Invalid result');
       }
-      
+
       return result;
     } catch (error) {
       throw new Error(`Failed to evaluate expression: ${error.message}`);
@@ -644,7 +620,7 @@ export class CalculatorTool implements Tool {
 export class WeatherTool implements Tool {
   name = 'weather';
   description = 'Gets weather information for a location';
-  
+
   getInputSchema(): any {
     return {
       type: 'object',
@@ -663,28 +639,28 @@ export class WeatherTool implements Tool {
       required: ['location'],
     };
   }
-  
+
   async execute(input: unknown, env: Bindings): Promise<unknown> {
     const logger = getLogger().child({ tool: 'weather' });
-    
+
     try {
       // Validate input
       if (typeof input !== 'object' || input === null) {
         throw new Error('Invalid input: expected object');
       }
-      
-      const { location, units = 'metric' } = input as { 
+
+      const { location, units = 'metric' } = input as {
         location: string;
         units?: 'metric' | 'imperial';
       };
-      
+
       if (!location) {
         throw new Error('Invalid input: missing location');
       }
-      
+
       // Get weather data from API
       const weatherData = await this.fetchWeatherData(env, location, units);
-      
+
       return {
         location: weatherData.location,
         current: {
@@ -706,15 +682,15 @@ export class WeatherTool implements Tool {
       throw error;
     }
   }
-  
+
   private async fetchWeatherData(
     env: Bindings,
     location: string,
-    units: 'metric' | 'imperial'
+    units: 'metric' | 'imperial',
   ): Promise<WeatherData> {
     // In a real implementation, this would call a weather API
     // For this example, we'll return mock data
-    
+
     return {
       location,
       current: {
@@ -785,57 +761,36 @@ The Observability Service provides logging, metrics, and tracing capabilities.
 ```typescript
 export interface ObservabilityService {
   // Initialize trace
-  initTrace(
-    env: Bindings,
-    userId: string,
-    query: string
-  ): string;
-  
+  initTrace(env: Bindings, userId: string, query: string): string;
+
   // Start span
-  startSpan(
-    env: Bindings,
-    traceId: string,
-    name: string,
-    attributes?: Record<string, any>
-  ): string;
-  
+  startSpan(env: Bindings, traceId: string, name: string, attributes?: Record<string, any>): string;
+
   // End span
-  endSpan(
-    env: Bindings,
-    spanId: string,
-    attributes?: Record<string, any>
-  ): void;
-  
+  endSpan(env: Bindings, spanId: string, attributes?: Record<string, any>): void;
+
   // Log event
   logEvent(
     env: Bindings,
     traceId: string,
     userId: string,
     eventName: string,
-    attributes?: Record<string, any>
+    attributes?: Record<string, any>,
   ): void;
-  
+
   // End trace
-  endTrace(
-    env: Bindings,
-    traceId: string,
-    attributes?: Record<string, any>
-  ): void;
-  
+  endTrace(env: Bindings, traceId: string, attributes?: Record<string, any>): void;
+
   // Log LLM call
   logLlmCall(
     env: Bindings,
     traceId: string,
     operation: string,
-    attributes: LlmCallAttributes
+    attributes: LlmCallAttributes,
   ): void;
-  
+
   // Log retrieval
-  logRetrieval(
-    env: Bindings,
-    traceId: string,
-    attributes: RetrievalAttributes
-  ): void;
+  logRetrieval(env: Bindings, traceId: string, attributes: RetrievalAttributes): void;
 }
 
 export interface LlmCallAttributes {
@@ -861,13 +816,9 @@ The Observability Service integrates with Cloudflare's logging and metrics capab
 
 ```typescript
 export const ObservabilityService = {
-  initTrace(
-    env: Bindings,
-    userId: string,
-    query: string
-  ): string {
+  initTrace(env: Bindings, userId: string, query: string): string {
     const traceId = crypto.randomUUID();
-    
+
     // Log trace start
     env.LOGS.write({
       trace_id: traceId,
@@ -876,18 +827,18 @@ export const ObservabilityService = {
       query,
       timestamp: Date.now(),
     });
-    
+
     return traceId;
   },
-  
+
   startSpan(
     env: Bindings,
     traceId: string,
     name: string,
-    attributes: Record<string, any> = {}
+    attributes: Record<string, any> = {},
   ): string {
     const spanId = crypto.randomUUID();
-    
+
     // Log span start
     env.LOGS.write({
       trace_id: traceId,
@@ -897,15 +848,11 @@ export const ObservabilityService = {
       attributes,
       timestamp: Date.now(),
     });
-    
+
     return spanId;
   },
-  
-  endSpan(
-    env: Bindings,
-    spanId: string,
-    attributes: Record<string, any> = {}
-  ): void {
+
+  endSpan(env: Bindings, spanId: string, attributes: Record<string, any> = {}): void {
     // Log span end
     env.LOGS.write({
       span_id: spanId,
@@ -914,13 +861,13 @@ export const ObservabilityService = {
       timestamp: Date.now(),
     });
   },
-  
+
   logEvent(
     env: Bindings,
     traceId: string,
     userId: string,
     eventName: string,
-    attributes: Record<string, any> = {}
+    attributes: Record<string, any> = {},
   ): void {
     // Log custom event
     env.LOGS.write({
@@ -931,12 +878,8 @@ export const ObservabilityService = {
       timestamp: Date.now(),
     });
   },
-  
-  endTrace(
-    env: Bindings,
-    traceId: string,
-    attributes: Record<string, any> = {}
-  ): void {
+
+  endTrace(env: Bindings, traceId: string, attributes: Record<string, any> = {}): void {
     // Log trace end
     env.LOGS.write({
       trace_id: traceId,
@@ -945,12 +888,12 @@ export const ObservabilityService = {
       timestamp: Date.now(),
     });
   },
-  
+
   logLlmCall(
     env: Bindings,
     traceId: string,
     operation: string,
-    attributes: LlmCallAttributes
+    attributes: LlmCallAttributes,
   ): void {
     // Log LLM call
     env.LOGS.write({
@@ -964,7 +907,7 @@ export const ObservabilityService = {
       max_tokens: attributes.maxTokens,
       timestamp: Date.now(),
     });
-    
+
     // Record metrics
     env.METRICS.record({
       'llm.tokens.prompt': attributes.promptTokens,
@@ -972,12 +915,8 @@ export const ObservabilityService = {
       'llm.tokens.total': attributes.promptTokens + attributes.completionTokens,
     });
   },
-  
-  logRetrieval(
-    env: Bindings,
-    traceId: string,
-    attributes: RetrievalAttributes
-  ): void {
+
+  logRetrieval(env: Bindings, traceId: string, attributes: RetrievalAttributes): void {
     // Log retrieval
     env.LOGS.write({
       trace_id: traceId,
@@ -989,7 +928,7 @@ export const ObservabilityService = {
       sources: attributes.sources,
       timestamp: Date.now(),
     });
-    
+
     // Record metrics
     env.METRICS.record({
       'retrieval.docs.count': attributes.docsCount,

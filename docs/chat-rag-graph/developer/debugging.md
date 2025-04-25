@@ -52,33 +52,30 @@ Each node in the graph includes detailed logging:
 ```typescript
 export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'splitRewrite' });
-  
+
   logger.info(
-    { 
+    {
       originalQuery: lastUserMessage.content,
       messageCount: state.messages.length,
-    }, 
-    'Processing user query'
+    },
+    'Processing user query',
   );
-  
+
   // ...
-  
-  logger.debug(
-    { tokenCount }, 
-    'Counted tokens in query'
-  );
-  
+
+  logger.debug({ tokenCount }, 'Counted tokens in query');
+
   // ...
-  
+
   logger.info(
-    { 
+    {
       executionTimeMs: executionTime,
       originalQuery,
       rewrittenQuery,
     },
-    'Split/rewrite complete'
+    'Split/rewrite complete',
   );
-  
+
   // ...
 };
 ```
@@ -99,10 +96,10 @@ The state object has the following structure:
 export interface AgentState {
   // User information
   userId: string;
-  
+
   // Conversation history
   messages: Message[];
-  
+
   // Configuration options
   options: {
     enhanceWithContext: boolean;
@@ -111,7 +108,7 @@ export interface AgentState {
     maxTokens: number;
     temperature?: number;
   };
-  
+
   // Intermediate processing data
   tasks?: {
     originalQuery?: string;
@@ -123,13 +120,13 @@ export interface AgentState {
     queryAnalysis?: QueryAnalysisResult;
     toolToRun?: string;
   };
-  
+
   // Retrieved documents
   docs?: Document[];
-  
+
   // Generated content
   generatedText?: string;
-  
+
   // Metadata for tracking and debugging
   metadata?: {
     startTime: number;
@@ -156,13 +153,13 @@ graph.onStateChange((oldState, newState, nodeName) => {
     currentNode: nodeName,
     isFinalState: nodeName === END,
   };
-  
+
   logger.debug(
     {
       node: nodeName,
       stateChanges: getStateDiff(oldState, newState),
     },
-    'State transition'
+    'State transition',
   );
 });
 ```
@@ -172,7 +169,7 @@ The `getStateDiff` function identifies key changes between states:
 ```typescript
 function getStateDiff(oldState: AgentState, newState: AgentState): Record<string, any> {
   const changes: Record<string, any> = {};
-  
+
   // Check for new docs
   if (newState.docs?.length !== oldState.docs?.length) {
     changes.docsCount = {
@@ -180,23 +177,20 @@ function getStateDiff(oldState: AgentState, newState: AgentState): Record<string
       to: newState.docs?.length || 0,
     };
   }
-  
+
   // Check for new tool results
-  if (
-    newState.tasks?.toolResults?.length !== 
-    oldState.tasks?.toolResults?.length
-  ) {
+  if (newState.tasks?.toolResults?.length !== oldState.tasks?.toolResults?.length) {
     changes.toolResultsCount = {
       from: oldState.tasks?.toolResults?.length || 0,
       to: newState.tasks?.toolResults?.length || 0,
     };
   }
-  
+
   // Check for generated text
   if (newState.generatedText && !oldState.generatedText) {
     changes.generatedText = true;
   }
-  
+
   return changes;
 }
 ```
@@ -226,11 +220,8 @@ Each node includes error handling:
 try {
   // Node logic...
 } catch (error) {
-  logger.error(
-    { err: error }, 
-    'Error in node'
-  );
-  
+  logger.error({ err: error }, 'Error in node');
+
   // Return state with error information
   return {
     ...state,
@@ -242,7 +233,9 @@ try {
           node: 'nodeName',
           message: error.message,
           timestamp: Date.now(),
-          details: { /* Additional error details */ },
+          details: {
+            /* Additional error details */
+          },
         },
       ],
     },
@@ -257,26 +250,20 @@ The system is designed to continue execution even when errors occur. For example
 ```typescript
 try {
   // Call LLM to generate response
-  const response = await LlmService.generateResponse(
-    env,
-    messages,
-    {
-      temperature: state.options.temperature || 0.7,
-      maxTokens: state.options.maxTokens || 1000,
-    }
-  );
-  
+  const response = await LlmService.generateResponse(env, messages, {
+    temperature: state.options.temperature || 0.7,
+    maxTokens: state.options.maxTokens || 1000,
+  });
+
   // ...
 } catch (error) {
-  logger.error(
-    { err: error },
-    'Error generating answer'
-  );
-  
+  logger.error({ err: error }, 'Error generating answer');
+
   // Provide fallback response
   return {
     ...state,
-    generatedText: "I'm sorry, but I encountered an issue while generating a response. Please try again.",
+    generatedText:
+      "I'm sorry, but I encountered an issue while generating a response. Please try again.",
     metadata: {
       ...state.metadata,
       errors: [
@@ -302,45 +289,22 @@ The system uses a tracing system to track the execution of requests:
 
 ```typescript
 // Initialize trace
-const traceId = ObservabilityService.initTrace(
-  env,
-  userId,
-  query
-);
+const traceId = ObservabilityService.initTrace(env, userId, query);
 
 // Start span
-const spanId = ObservabilityService.startSpan(
-  env,
-  traceId,
-  'splitRewrite',
-  { query }
-);
+const spanId = ObservabilityService.startSpan(env, traceId, 'splitRewrite', { query });
 
 // End span
-ObservabilityService.endSpan(
-  env,
-  spanId,
-  { executionTimeMs }
-);
+ObservabilityService.endSpan(env, spanId, { executionTimeMs });
 
 // Log event
-ObservabilityService.logEvent(
-  env,
-  traceId,
-  userId,
-  'query_rewritten',
-  {
-    originalQuery,
-    rewrittenQuery,
-  }
-);
+ObservabilityService.logEvent(env, traceId, userId, 'query_rewritten', {
+  originalQuery,
+  rewrittenQuery,
+});
 
 // End trace
-ObservabilityService.endTrace(
-  env,
-  traceId,
-  { executionTimeMs: getTotalExecutionTime(state) }
-);
+ObservabilityService.endTrace(env, traceId, { executionTimeMs: getTotalExecutionTime(state) });
 ```
 
 ### Metrics
@@ -382,15 +346,18 @@ return {
 ### 1. LLM Service Errors
 
 **Symptoms:**
+
 - Error messages from the LLM service
 - Fallback responses in the output
 
 **Possible Causes:**
+
 - LLM service is unavailable
 - Invalid input to the LLM service
 - Rate limiting or quota issues
 
 **Solutions:**
+
 - Check the LLM service status
 - Verify that the input is valid
 - Check rate limits and quotas
@@ -399,16 +366,19 @@ return {
 ### 2. Retrieval Issues
 
 **Symptoms:**
+
 - No documents retrieved
 - Irrelevant documents retrieved
 - Search widening attempts
 
 **Possible Causes:**
+
 - Vector database is unavailable
 - Query is too specific or ambiguous
 - No relevant documents in the knowledge base
 
 **Solutions:**
+
 - Check the vector database status
 - Improve query rewriting
 - Add more documents to the knowledge base
@@ -417,15 +387,18 @@ return {
 ### 3. Tool Execution Errors
 
 **Symptoms:**
+
 - Error messages from tool execution
 - Missing tool results
 
 **Possible Causes:**
+
 - Tool is unavailable
 - Invalid input to the tool
 - Tool execution timeout
 
 **Solutions:**
+
 - Check the tool status
 - Verify that the input is valid
 - Increase tool execution timeout
@@ -434,15 +407,18 @@ return {
 ### 4. Performance Issues
 
 **Symptoms:**
+
 - Slow response times
 - High resource usage
 
 **Possible Causes:**
+
 - Inefficient node implementations
 - Large state objects
 - Slow external services
 
 **Solutions:**
+
 - Optimize node implementations
 - Reduce state size
 - Implement caching
@@ -555,16 +531,13 @@ If you suspect a specific component is causing the issue, test it in isolation:
 You can create custom middleware to add debugging information to requests:
 
 ```typescript
-export const debugMiddleware = async (
-  c: Context,
-  next: Next
-): Promise<Response | void> => {
+export const debugMiddleware = async (c: Context, next: Next): Promise<Response | void> => {
   const logger = getLogger().child({ middleware: 'debug' });
-  
+
   // Add request ID for tracing
   const requestId = crypto.randomUUID();
   c.set('requestId', requestId);
-  
+
   // Log request details
   logger.debug(
     {
@@ -573,24 +546,22 @@ export const debugMiddleware = async (
       path: c.req.path,
       headers: Object.fromEntries(c.req.raw.headers.entries()),
     },
-    'Request received'
+    'Request received',
   );
-  
+
   // Process request
   const response = await next();
-  
+
   // Log response details
   logger.debug(
     {
       requestId,
       status: response instanceof Response ? response.status : 200,
-      headers: response instanceof Response 
-        ? Object.fromEntries(response.headers.entries()) 
-        : {},
+      headers: response instanceof Response ? Object.fromEntries(response.headers.entries()) : {},
     },
-    'Response sent'
+    'Response sent',
   );
-  
+
   return response;
 };
 ```
@@ -603,20 +574,17 @@ You can create snapshots of the state at key points for later analysis:
 function createStateSnapshot(state: AgentState, label: string): void {
   // Create a deep copy of the state
   const snapshot = JSON.parse(JSON.stringify(state));
-  
+
   // Add snapshot metadata
   snapshot.snapshotLabel = label;
   snapshot.snapshotTime = Date.now();
-  
+
   // Store the snapshot
   const snapshotId = `${state.userId}:${label}:${snapshot.snapshotTime}`;
   env.KV.put(`snapshot:${snapshotId}`, JSON.stringify(snapshot));
-  
+
   // Log snapshot creation
-  logger.debug(
-    { snapshotId, label },
-    'Created state snapshot'
-  );
+  logger.debug({ snapshotId, label }, 'Created state snapshot');
 }
 ```
 
@@ -628,44 +596,41 @@ You can add detailed tracing to track the execution flow:
 async function executeWithTracing<T>(
   name: string,
   fn: () => Promise<T>,
-  context: Record<string, any> = {}
+  context: Record<string, any> = {},
 ): Promise<T> {
   const logger = getLogger().child({ function: name });
   const startTime = performance.now();
-  
-  logger.debug(
-    context,
-    `Starting ${name}`
-  );
-  
+
+  logger.debug(context, `Starting ${name}`);
+
   try {
     const result = await fn();
-    
+
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     logger.debug(
       {
         ...context,
         executionTimeMs: executionTime,
       },
-      `Completed ${name}`
+      `Completed ${name}`,
     );
-    
+
     return result;
   } catch (error) {
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     logger.error(
       {
         ...context,
         err: error,
         executionTimeMs: executionTime,
       },
-      `Error in ${name}`
+      `Error in ${name}`,
     );
-    
+
     throw error;
   }
 }

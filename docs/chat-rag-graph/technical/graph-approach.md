@@ -46,11 +46,11 @@ const graph = new StateGraph<AgentState>()
   .addNode('tool_router', nodes.toolRouter)
   .addNode('run_tool', nodes.runTool)
   .addNode('generate_answer', nodes.generateAnswer)
-  
+
   // Add edges
   .addEdge(START, 'split_rewrite')
   .addEdge('split_rewrite', 'retrieve')
-  
+
   // Add conditional edges
   .addConditionalEdges('retrieve', nodes.routeAfterRetrieve, {
     widen: 'dynamic_widen',
@@ -80,12 +80,10 @@ Example node function:
 export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'splitRewrite' });
   const startTime = performance.now();
-  
+
   // Get the last user message
-  const lastUserMessage = [...state.messages]
-    .reverse()
-    .find(msg => msg.role === 'user');
-  
+  const lastUserMessage = [...state.messages].reverse().find(msg => msg.role === 'user');
+
   if (!lastUserMessage) {
     logger.warn('No user message found in history');
     return {
@@ -97,15 +95,15 @@ export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
       },
     };
   }
-  
+
   const originalQuery = lastUserMessage.content;
-  
+
   // Process the query...
-  
+
   // Update state with timing information
   const endTime = performance.now();
   const executionTime = endTime - startTime;
-  
+
   return {
     ...state,
     tasks: {
@@ -139,21 +137,21 @@ export const routeAfterRetrieve = (state: AgentState): 'widen' | 'tool' | 'answe
   if (state.tasks?.needsWidening) {
     return 'widen';
   }
-  
+
   // Check if we need to use a tool
   const query = state.tasks?.originalQuery || '';
   const toolIntent = detectToolIntent(query);
-  
+
   if (toolIntent.needsTool) {
     // Update state with required tools
     state.tasks = {
       ...state.tasks,
       requiredTools: toolIntent.tools,
     };
-    
+
     return 'tool';
   }
-  
+
   // Default to generating an answer
   return 'answer';
 };
@@ -172,22 +170,22 @@ return graph.compile({
     docs: (oldDocs = [], newDocs = []) => {
       if (!newDocs || newDocs.length === 0) return oldDocs;
       if (!oldDocs || oldDocs.length === 0) return newDocs;
-      
+
       // Merge and deduplicate by ID
       const docMap = new Map();
       [...oldDocs, ...newDocs].forEach(doc => {
         docMap.set(doc.id, doc);
       });
-      
+
       return Array.from(docMap.values());
     },
-    
+
     // Merge tasks objects
     tasks: (oldTasks = {}, newTasks = {}) => ({
       ...oldTasks,
       ...newTasks,
     }),
-    
+
     // Merge metadata
     metadata: (oldMetadata = {}, newMetadata = {}) => ({
       ...oldMetadata,
@@ -200,10 +198,7 @@ return graph.compile({
         ...(oldMetadata.tokenCounts || {}),
         ...(newMetadata.tokenCounts || {}),
       },
-      errors: [
-        ...(oldMetadata.errors || []),
-        ...(newMetadata.errors || []),
-      ],
+      errors: [...(oldMetadata.errors || []), ...(newMetadata.errors || [])],
     }),
   },
 });
@@ -217,9 +212,7 @@ The graph is executed by invoking it with an initial state:
 // Create initial state
 const initialState: AgentState = {
   userId: 'user-123',
-  messages: [
-    { role: 'user', content: 'What is the capital of France?' },
-  ],
+  messages: [{ role: 'user', content: 'What is the capital of France?' }],
   options: {
     enhanceWithContext: true,
     maxContextItems: 5,
@@ -256,7 +249,7 @@ export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStrea
   return new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      
+
       try {
         for await (const state of stream) {
           // Determine event type based on state
@@ -267,7 +260,7 @@ export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStrea
             })}\n\n`;
             controller.enqueue(encoder.encode(stepEvent));
           }
-          
+
           // If we have generated text, send answer event
           if (state.generatedText) {
             const answerEvent = `event: answer\ndata: ${JSON.stringify({
@@ -276,7 +269,7 @@ export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStrea
             })}\n\n`;
             controller.enqueue(encoder.encode(answerEvent));
           }
-          
+
           // If this is the final state, send done event
           if (state.metadata?.isFinalState) {
             const doneEvent = `event: done\ndata: ${JSON.stringify({

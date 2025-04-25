@@ -265,7 +265,13 @@ export class LlmService {
       getLogger().error(
         {
           error,
-          source: { error, hasCodeBlock, time: new Date().toISOString(), service: 'ai-processor', op: 'reprocess' },
+          source: {
+            error,
+            hasCodeBlock,
+            time: new Date().toISOString(),
+            service: 'ai-processor',
+            op: 'reprocess',
+          },
           responsePreview: response.substring(0, 200) + '...',
           responseLength: response.length,
           hasCodeBlock,
@@ -344,7 +350,7 @@ export class LlmService {
         result.todos = todoItems.map(item => {
           const textMatch = item.match(/"text"\s*:\s*"([^"]+)"/);
           const locationMatch = item.match(/"location"\s*:\s*"([^"]+)"/);
-          
+
           return {
             text: textMatch ? textMatch[1] : 'Unknown todo',
             location: locationMatch ? locationMatch[1] : '',
@@ -371,10 +377,7 @@ export class LlmService {
 
       return result;
     } catch (error) {
-      getLogger().error(
-        { error },
-        'Error in fallback structured data extraction',
-      );
+      getLogger().error({ error }, 'Error in fallback structured data extraction');
       return result;
     }
   }

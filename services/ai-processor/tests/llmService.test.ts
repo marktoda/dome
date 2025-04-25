@@ -308,7 +308,10 @@ describe('LlmService', () => {
 
       // Check that we extracted and fixed the JSON correctly
       expect(result).toHaveProperty('title', 'Single Quotes');
-      expect(result).toHaveProperty('summary', 'This JSON uses single quotes instead of double quotes.');
+      expect(result).toHaveProperty(
+        'summary',
+        'This JSON uses single quotes instead of double quotes.',
+      );
       expect(result).toHaveProperty('topics');
       expect(result.topics).toEqual(['json', 'parsing']);
     });
@@ -383,7 +386,10 @@ describe('LlmService', () => {
 
       // Check that we extracted what we could using regex
       expect(result).toHaveProperty('title', 'Severely Malformed JSON');
-      expect(result).toHaveProperty('summary', 'This JSON is beyond repair with simple sanitization.');
+      expect(result).toHaveProperty(
+        'summary',
+        'This JSON is beyond repair with simple sanitization.',
+      );
       // We should at least have extracted some data even if not complete
       expect(result).not.toHaveProperty('error', 'Response parsing failed');
     });
@@ -393,11 +399,11 @@ describe('LlmService', () => {
     it('should fix trailing commas', () => {
       const malformed = '{"name": "test", "values": [1, 2, 3,], }';
       const result = (llmService as any).sanitizeJsonString(malformed);
-      
+
       // Should remove trailing commas
       expect(result).not.toContain('3,]');
       expect(result).not.toContain('], }');
-      
+
       // Should be valid JSON
       expect(() => JSON.parse(result)).not.toThrow();
     });
@@ -405,11 +411,11 @@ describe('LlmService', () => {
     it('should fix unquoted property names', () => {
       const malformed = '{name: "test", values: [1, 2, 3]}';
       const result = (llmService as any).sanitizeJsonString(malformed);
-      
+
       // Should quote property names
       expect(result).toContain('"name"');
       expect(result).toContain('"values"');
-      
+
       // Should be valid JSON
       expect(() => JSON.parse(result)).not.toThrow();
     });
@@ -417,11 +423,11 @@ describe('LlmService', () => {
     it('should fix single quotes', () => {
       const malformed = "{'name': 'test', 'values': [1, 2, 3]}";
       const result = (llmService as any).sanitizeJsonString(malformed);
-      
+
       // Should replace single quotes with double quotes
       expect(result).toContain('"name"');
       expect(result).toContain('"test"');
-      
+
       // Should be valid JSON
       expect(() => JSON.parse(result)).not.toThrow();
     });

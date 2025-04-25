@@ -19,9 +19,7 @@ export class AiProcessorClient {
    * Create a new AiProcessorClient
    * @param binding The Cloudflare Worker binding to the AI processor service
    */
-  constructor(
-    private readonly binding: AiProcessorBinding,
-  ) {}
+  constructor(private readonly binding: AiProcessorBinding) {}
 
   /**
    * Reprocess content by ID or all content with failed summaries
@@ -30,10 +28,16 @@ export class AiProcessorClient {
    * @param options.userId User ID for the request
    * @returns Result of reprocessing
    */
-  async reprocess(options: { id?: string; userId: string }): Promise<z.infer<typeof ReprocessResponseSchema>> {
+  async reprocess(options: {
+    id?: string;
+    userId: string;
+  }): Promise<z.infer<typeof ReprocessResponseSchema>> {
     const startTime = performance.now();
     try {
-      console.log('Reprocessing content with AI processor', { id: options.id, operation: 'reprocess' });
+      console.log('Reprocessing content with AI processor', {
+        id: options.id,
+        operation: 'reprocess',
+      });
 
       // Validate input
       const validatedData = ReprocessRequestSchema.parse(options);

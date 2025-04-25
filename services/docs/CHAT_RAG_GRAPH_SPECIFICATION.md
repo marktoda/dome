@@ -1,5 +1,6 @@
 # Dome Chat Orchestrator — RAG Graph Implementation Specification
-*v 1.0 • 2025-04-24*
+
+_v 1.0 • 2025-04-24_
 
 ## 1. Executive Summary
 
@@ -16,6 +17,7 @@ The RAG graph approach is built on the following key concepts:
 1. **StateGraph**: A directed graph where nodes represent processing steps and edges represent transitions between steps. The graph maintains state that evolves as messages flow through the system.
 
 2. **Nodes**: Specialized functions that perform specific tasks such as:
+
    - `splitRewrite`: Analyzes user input and reformulates queries
    - `retrieve`: Fetches relevant documents from knowledge sources
    - `dynamicWiden`: Expands search context when needed
@@ -45,17 +47,20 @@ The implementation will be built on:
 The MVP implementation must support:
 
 1. **Conversational Interface**
+
    - Support for multi-turn conversations
    - Maintenance of conversation history and context
    - Streaming responses with step metadata
 
 2. **RAG Capabilities**
+
    - Document retrieval based on user queries
    - Context-aware responses that incorporate retrieved information
    - Dynamic widening of search context when initial results are insufficient
    - Source attribution in responses
 
 3. **Tool Integration**
+
    - Ability to detect when tool use is appropriate
    - Routing to specific tools based on user intent
    - Incorporation of tool outputs into responses
@@ -74,6 +79,7 @@ POST /chat
 ```
 
 **Request Body:**
+
 ```typescript
 {
   initialState: {
@@ -106,10 +112,12 @@ event: done
 ### 3.3 User Experience Requirements
 
 1. **Responsiveness**
+
    - Initial response time < 500ms
    - Complete response generation < 5 seconds for typical queries
 
 2. **Streaming**
+
    - Progressive rendering of responses
    - Visibility into processing steps (optional UI indicators)
 
@@ -122,11 +130,13 @@ event: done
 ### 4.1 Performance Constraints
 
 1. **Memory Usage**
+
    - Workers have limited memory (128MB)
    - Need efficient state management for long conversations
    - Checkpoint after each super-step to avoid memory issues
 
 2. **Bundle Size**
+
    - LangGraph.js and dependencies may result in large bundle
    - Use tree-shaking and external dependencies where possible
 
@@ -137,6 +147,7 @@ event: done
 ### 4.2 Scalability Considerations
 
 1. **Concurrent Requests**
+
    - Design for high concurrency with minimal state in memory
    - Use Durable Objects for long-running sessions
 
@@ -147,6 +158,7 @@ event: done
 ### 4.3 Security and Privacy
 
 1. **User Data**
+
    - Ensure user context is isolated between requests
    - Implement proper authentication checks
 
@@ -245,10 +257,12 @@ const stream = graph.astream(initialState, { callbacks, env });
 ### 7.1 Functional Success
 
 1. **Complete Feature Parity**
+
    - All existing chat functionality is preserved
    - New RAG capabilities are fully implemented
 
 2. **Reliability**
+
    - Error rates < 0.1%
    - Successful recovery from transient failures
 
@@ -259,10 +273,12 @@ const stream = graph.astream(initialState, { callbacks, env });
 ### 7.2 Performance Success
 
 1. **Latency**
+
    - P95 response time < 5 seconds
    - Initial token delivery < 500ms
 
 2. **Resource Utilization**
+
    - Memory usage < 80% of Worker limit
    - CPU utilization < 70% of available resources
 
@@ -272,6 +288,7 @@ const stream = graph.astream(initialState, { callbacks, env });
 ### 7.3 Developer Experience
 
 1. **Maintainability**
+
    - Clear separation of concerns
    - Well-documented code and architecture
    - Testable components
@@ -283,6 +300,7 @@ const stream = graph.astream(initialState, { callbacks, env });
 ### 7.4 User Experience
 
 1. **Satisfaction**
+
    - Improved response quality (measured by user feedback)
    - Reduced need for query reformulation
 
@@ -292,13 +310,13 @@ const stream = graph.astream(initialState, { callbacks, env });
 
 ## 8. Risks and Mitigations
 
-| Risk | Impact | Likelihood | Mitigation |
-|------|--------|------------|------------|
-| Large npm bundle size | High | High | Use `esbuild --external` to tree-shake; cloudflare-minify |
-| Memory in long streams | High | Medium | Checkpoint after each super-step; GC old history tokens |
-| Multiple package versions of `@langchain/core` | Medium | High | Pin via `resolutions` in `package.json` |
-| Performance degradation | High | Medium | Implement circuit breakers; fallback to simpler implementation |
-| Integration complexity | Medium | Medium | Phased approach with feature flags; shadow testing |
+| Risk                                           | Impact | Likelihood | Mitigation                                                     |
+| ---------------------------------------------- | ------ | ---------- | -------------------------------------------------------------- |
+| Large npm bundle size                          | High   | High       | Use `esbuild --external` to tree-shake; cloudflare-minify      |
+| Memory in long streams                         | High   | Medium     | Checkpoint after each super-step; GC old history tokens        |
+| Multiple package versions of `@langchain/core` | Medium | High       | Pin via `resolutions` in `package.json`                        |
+| Performance degradation                        | High   | Medium     | Implement circuit breakers; fallback to simpler implementation |
+| Integration complexity                         | Medium | Medium     | Phased approach with feature flags; shadow testing             |
 
 ## 9. Technical Pseudocode
 
@@ -326,11 +344,11 @@ export const buildChatGraph = (env: Bindings) => {
     .addNode('tool_router', nodes.toolRouter)
     .addNode('run_tool', nodes.runTool)
     .addNode('generate_answer', nodes.generateAnswer)
-    
+
     // Add edges
     .addEdge(START, 'split_rewrite')
     .addEdge('split_rewrite', 'retrieve')
-    
+
     // Add conditional edges
     .addConditionalEdges('retrieve', nodes.routeAfterRetrieve, {
       widen: 'dynamic_widen',
@@ -344,7 +362,7 @@ export const buildChatGraph = (env: Bindings) => {
     })
     .addEdge('run_tool', 'generate_answer')
     .addEdge('generate_answer', END);
-    
+
   // Compile with checkpointer and reducers
   return graph.compile({
     checkpointer: new D1Checkpointer(env.D1),
@@ -363,7 +381,7 @@ export const buildChatGraph = (env: Bindings) => {
 export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
   const lastMessage = getLastUserMessage(state.messages);
   const rewrittenQuery = await rewriteQuery(lastMessage.content);
-  
+
   return {
     ...state,
     tasks: {
@@ -377,13 +395,13 @@ export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
 export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const { query } = state.tasks;
   const { userId } = state;
-  
+
   const searchResults = await searchService.search(env, {
     userId,
     query,
     limit: state.maxContextItems || 10,
   });
-  
+
   return {
     ...state,
     docs: searchResults.results,
@@ -395,11 +413,11 @@ export const routeAfterRetrieve = (state: AgentState): 'widen' | 'tool' | 'answe
   if (!state.docs || state.docs.length === 0) {
     return 'widen';
   }
-  
+
   if (detectToolIntent(state.tasks.query)) {
     return 'tool';
   }
-  
+
   return 'answer';
 };
 
@@ -417,25 +435,25 @@ export default {
   async fetch(req: Request, env: Bindings, ctx: ExecutionContext) {
     // Parse request
     const { initialState } = await req.json();
-    
+
     // Build graph
     const graph = buildChatGraph(env);
-    
+
     // Execute graph with streaming
     const stream = graph.astream(initialState, {
       callbacks: [langfuseHandler(env)],
       env,
     });
-    
+
     // Transform to SSE
     const sseStream = transformToSSE(stream);
-    
+
     // Return response
     return new Response(sseStream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        Connection: 'keep-alive',
       },
     });
   },

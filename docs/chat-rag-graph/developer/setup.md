@@ -132,19 +132,19 @@ export const LlmService = {
       reason: 'Query is simple',
     };
   },
-  
+
   async rewriteQuery(env, query) {
     return `Rewritten: ${query}`;
   },
-  
+
   async extractToolInput() {
     return { input: 'mock input' };
   },
-  
+
   async generateResponse() {
     return 'This is a mock response from the LLM service.';
   },
-  
+
   MODEL: 'mock-model',
 };
 ```
@@ -198,11 +198,11 @@ export const SearchService = {
       },
     ];
   },
-  
+
   rankAndFilterDocuments(docs) {
     return docs;
   },
-  
+
   extractSourceMetadata(docs) {
     return docs.map(doc => ({
       id: doc.id,

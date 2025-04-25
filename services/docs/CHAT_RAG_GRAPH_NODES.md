@@ -13,10 +13,10 @@ First, let's define the state structure that will be passed between nodes:
 export interface AgentState {
   // User information
   userId: string;
-  
+
   // Conversation history
   messages: Message[];
-  
+
   // Configuration options
   options: {
     enhanceWithContext: boolean;
@@ -24,7 +24,7 @@ export interface AgentState {
     includeSourceInfo: boolean;
     maxTokens: number;
   };
-  
+
   // Intermediate processing data
   tasks?: {
     originalQuery?: string;
@@ -34,13 +34,13 @@ export interface AgentState {
     needsWidening?: boolean;
     wideningAttempts?: number;
   };
-  
+
   // Retrieved documents
   docs?: Document[];
-  
+
   // Generated content
   generatedText?: string;
-  
+
   // Metadata for tracking and debugging
   metadata?: {
     startTime: number;
@@ -89,7 +89,7 @@ export interface ToolResult {
 
 This node analyzes the user's query and potentially rewrites it to improve retrieval.
 
-```typescript
+````typescript
 import { getLogger } from '@dome/logging';
 import { countTokens } from '../utils/tokenCounter';
 
@@ -99,12 +99,12 @@ import { countTokens } from '../utils/tokenCounter';
 export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'splitRewrite' });
   const startTime = performance.now();
-  
+
   // Get the last user message
   const lastUserMessage = [...state.messages]
     .reverse()
     .find(msg => msg.role === 'user');
-  
+
   if (!lastUserMessage) {
     logger.warn('No user message found in history');
     return {
@@ -116,28 +116,28 @@ export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
       },
     };
   }
-  
+
   const originalQuery = lastUserMessage.content;
   logger.info({ originalQuery, messageCount: state.messages.length }, 'Processing user query');
-  
+
   // Count tokens in the query
   const tokenCount = countTokens(originalQuery);
   logger.debug({ tokenCount }, 'Counted tokens in query');
-  
+
   // Determine if query needs rewriting
   let rewrittenQuery = originalQuery;
   let needsRewriting = false;
-  
+
   // Check for multi-part questions
   if (originalQuery.includes('?') && originalQuery.split('?').length > 2) {
     needsRewriting = true;
   }
-  
+
   // Check for ambiguous references that might need context
   if (/\b(it|this|that|they|these|those)\b/i.test(originalQuery)) {
     needsRewriting = true;
   }
-  
+
   // Rewrite if needed
   if (needsRewriting) {
     try {
@@ -145,32 +145,32 @@ export const splitRewrite = async (state: AgentState): Promise<AgentState> => {
       // For pseudocode, we'll just simulate it
       rewrittenQuery = await simulateQueryRewrite(originalQuery);
       logger.info(
-        { originalQuery, rewrittenQuery }, 
+        { originalQuery, rewrittenQuery },
         'Query rewritten'
       );
     } catch (error) {
       logger.error(
-        { err: error, originalQuery }, 
+        { err: error, originalQuery },
         'Failed to rewrite query'
       );
       // Fall back to original query
       rewrittenQuery = originalQuery;
     }
   }
-  
+
   // Update state with timing information
   const endTime = performance.now();
   const executionTime = endTime - startTime;
-  
+
   logger.info(
-    { 
+    {
       executionTimeMs: executionTime,
       originalQuery,
       rewrittenQuery,
     },
     'Split/rewrite complete'
   );
-  
+
   return {
     ...state,
     tasks: {
@@ -203,7 +203,7 @@ async function simulateQueryRewrite(query: string): Promise<string> {
     const parts = query.split('?').filter(Boolean);
     return parts[0] + '?';
   }
-  
+
   // Expand pronouns
   return query
     .replace(/\bit\b/i, '[specific item from context]')
@@ -224,7 +224,7 @@ import { SearchService } from '../services/searchService';
 export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'retrieve' });
   const startTime = performance.now();
-  
+
   // Skip retrieval if not enabled
   if (!state.options.enhanceWithContext) {
     logger.info('Context enhancement disabled, skipping retrieval');
@@ -233,28 +233,28 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
       docs: [],
     };
   }
-  
+
   const { userId } = state;
   const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
   const maxItems = state.options.maxContextItems || 10;
-  
+
   // Track widening attempts
   const wideningAttempts = state.tasks?.wideningAttempts || 0;
-  
+
   // Adjust search parameters based on widening attempts
   const searchParams = {
     userId,
     query,
     limit: maxItems,
   };
-  
+
   // If we're widening, adjust search parameters
   if (wideningAttempts > 0) {
     logger.info(
-      { wideningAttempts, query }, 
+      { wideningAttempts, query },
       'Widening search parameters'
     );
-    
+
     // Expand search parameters based on widening attempt count
     // This could include reducing relevance threshold, expanding date range, etc.
     Object.assign(searchParams, {
@@ -263,44 +263,44 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
       includeRelated: true,
     });
   }
-  
+
   logger.info(
-    { 
-      userId, 
-      query, 
+    {
+      userId,
+      query,
       maxItems,
       wideningAttempts,
       searchParams,
-    }, 
+    },
     'Retrieving context'
   );
-  
+
   try {
     // Create search service instance
     const searchService = new SearchService();
-    
+
     // Perform search
     const searchResults = await searchService.search(env, searchParams);
-    
+
     // Process results
     const docs = searchResults?.results || [];
     const docsCount = docs.length;
-    
+
     logger.info(
-      { 
-        docsCount, 
+      {
+        docsCount,
         query,
         wideningAttempts,
-      }, 
+      },
       'Retrieved documents'
     );
-    
+
     // Calculate total tokens in retrieved docs
     let totalTokens = 0;
     const processedDocs = docs.map(doc => {
       const docTokens = countTokens(doc.title + ' ' + doc.body);
       totalTokens += docTokens;
-      
+
       return {
         ...doc,
         metadata: {
@@ -309,11 +309,11 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
         },
       };
     });
-    
+
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     return {
       ...state,
       docs: processedDocs,
@@ -336,10 +336,10 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
     };
   } catch (error) {
     logger.error(
-      { err: error, userId, query }, 
+      { err: error, userId, query },
       'Error retrieving context'
     );
-    
+
     // Return state with empty docs on error
     return {
       ...state,
@@ -358,7 +358,7 @@ export const retrieve = async (state: AgentState, env: Bindings): Promise<AgentS
     };
   }
 };
-```
+````
 
 ### 2.3 Route After Retrieve Node
 
@@ -373,42 +373,42 @@ import { getLogger } from '@dome/logging';
  */
 export const routeAfterRetrieve = (state: AgentState): 'widen' | 'tool' | 'answer' => {
   const logger = getLogger().child({ node: 'routeAfterRetrieve' });
-  
+
   // Check if we need to widen search
   if (state.tasks?.needsWidening) {
     const wideningAttempts = state.tasks?.wideningAttempts || 0;
     logger.info(
-      { 
+      {
         docsCount: state.docs?.length || 0,
         wideningAttempts,
-      }, 
-      'Need to widen search'
+      },
+      'Need to widen search',
     );
     return 'widen';
   }
-  
+
   // Check if we need to use a tool
   const query = state.tasks?.originalQuery || '';
   const toolIntent = detectToolIntent(query);
-  
+
   if (toolIntent.needsTool) {
     logger.info(
-      { 
+      {
         toolIntent,
         query,
-      }, 
-      'Detected tool intent'
+      },
+      'Detected tool intent',
     );
-    
+
     // Update state with required tools
     state.tasks = {
       ...state.tasks,
       requiredTools: toolIntent.tools,
     };
-    
+
     return 'tool';
   }
-  
+
   // Default to generating an answer
   logger.info('Proceeding to answer generation');
   return 'answer';
@@ -420,18 +420,16 @@ export const routeAfterRetrieve = (state: AgentState): 'widen' | 'tool' | 'answe
 function detectToolIntent(query: string): { needsTool: boolean; tools: string[] } {
   // This would be more sophisticated in a real implementation
   // Could use an LLM or a classifier
-  
+
   const toolPatterns = [
     { name: 'calculator', pattern: /calculate|compute|math|equation/i },
     { name: 'calendar', pattern: /schedule|appointment|meeting|calendar/i },
     { name: 'weather', pattern: /weather|temperature|forecast/i },
     { name: 'web_search', pattern: /search|find online|look up/i },
   ];
-  
-  const matchedTools = toolPatterns
-    .filter(tool => tool.pattern.test(query))
-    .map(tool => tool.name);
-  
+
+  const matchedTools = toolPatterns.filter(tool => tool.pattern.test(query)).map(tool => tool.name);
+
   return {
     needsTool: matchedTools.length > 0,
     tools: matchedTools,
@@ -452,32 +450,32 @@ import { getLogger } from '@dome/logging';
 export const dynamicWiden = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'dynamicWiden' });
   const startTime = performance.now();
-  
+
   // Increment widening attempts
   const wideningAttempts = (state.tasks?.wideningAttempts || 0) + 1;
-  
+
   logger.info(
-    { 
+    {
       wideningAttempts,
       originalQuery: state.tasks?.originalQuery,
       rewrittenQuery: state.tasks?.rewrittenQuery,
-    }, 
-    'Widening search parameters'
+    },
+    'Widening search parameters',
   );
-  
+
   // In a real implementation, we might:
   // 1. Expand the query with synonyms
   // 2. Reduce relevance thresholds
   // 3. Include related categories
   // 4. Expand date ranges
-  
+
   // For this pseudocode, we'll just update the attempt counter
   // The retrieve node will handle the actual parameter adjustments
-  
+
   // Update state with timing information
   const endTime = performance.now();
   const executionTime = endTime - startTime;
-  
+
   return {
     ...state,
     tasks: {
@@ -508,9 +506,9 @@ import { getLogger } from '@dome/logging';
 export const toolRouter = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'toolRouter' });
   const startTime = performance.now();
-  
+
   const requiredTools = state.tasks?.requiredTools || [];
-  
+
   if (requiredTools.length === 0) {
     logger.warn('No tools specified but reached tool router');
     return {
@@ -521,24 +519,24 @@ export const toolRouter = async (state: AgentState): Promise<AgentState> => {
       },
     };
   }
-  
+
   // For simplicity, just use the first tool
   // In a real implementation, we might use an LLM to select the most appropriate tool
   const toolToRun = requiredTools[0];
-  
+
   logger.info(
-    { 
+    {
       toolToRun,
       allTools: requiredTools,
       query: state.tasks?.originalQuery,
-    }, 
-    'Selected tool to run'
+    },
+    'Selected tool to run',
   );
-  
+
   // Update state with timing information
   const endTime = performance.now();
   const executionTime = endTime - startTime;
-  
+
   return {
     ...state,
     tasks: {
@@ -560,11 +558,11 @@ export const toolRouter = async (state: AgentState): Promise<AgentState> => {
  */
 export const routeAfterTool = (state: AgentState): 'run_tool' | 'answer' => {
   const toolToRun = state.tasks?.toolToRun;
-  
+
   if (toolToRun) {
     return 'run_tool';
   }
-  
+
   return 'answer';
 };
 ```
@@ -583,69 +581,62 @@ import { ToolRegistry } from '../tools/registry';
 export const runTool = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'runTool' });
   const startTime = performance.now();
-  
+
   const toolName = state.tasks?.toolToRun;
-  
+
   if (!toolName) {
     logger.warn('No tool specified but reached run_tool node');
     return state;
   }
-  
+
   logger.info(
-    { 
+    {
       toolName,
       query: state.tasks?.originalQuery,
-    }, 
-    'Running tool'
+    },
+    'Running tool',
   );
-  
+
   try {
     // Get tool from registry
     const tool = ToolRegistry.getTool(toolName);
-    
+
     if (!tool) {
       throw new Error(`Tool ${toolName} not found in registry`);
     }
-    
+
     // Extract tool input from query
-    const toolInput = await extractToolInput(
-      state.tasks?.originalQuery || '',
-      toolName
-    );
-    
+    const toolInput = await extractToolInput(state.tasks?.originalQuery || '', toolName);
+
     // Execute tool
     const toolOutput = await tool.execute(toolInput, env);
-    
+
     logger.info(
-      { 
+      {
         toolName,
         toolInput,
-        toolOutputPreview: typeof toolOutput === 'string' 
-          ? toolOutput.substring(0, 100) 
-          : 'complex output',
-      }, 
-      'Tool execution complete'
+        toolOutputPreview:
+          typeof toolOutput === 'string' ? toolOutput.substring(0, 100) : 'complex output',
+      },
+      'Tool execution complete',
     );
-    
+
     // Create tool result
     const toolResult: ToolResult = {
       toolName,
       input: toolInput,
       output: toolOutput,
     };
-    
+
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     return {
       ...state,
       tasks: {
         ...state.tasks,
-        toolResults: [
-          ...(state.tasks?.toolResults || []),
-          toolResult,
-        ],
+        toolResults: [...(state.tasks?.toolResults || []), toolResult],
       },
       metadata: {
         ...state.metadata,
@@ -657,13 +648,13 @@ export const runTool = async (state: AgentState, env: Bindings): Promise<AgentSt
     };
   } catch (error) {
     logger.error(
-      { 
+      {
         err: error,
         toolName,
-      }, 
-      'Error executing tool'
+      },
+      'Error executing tool',
     );
-    
+
     // Create error result
     const toolResult: ToolResult = {
       toolName,
@@ -671,15 +662,12 @@ export const runTool = async (state: AgentState, env: Bindings): Promise<AgentSt
       output: null,
       error: error.message,
     };
-    
+
     return {
       ...state,
       tasks: {
         ...state.tasks,
-        toolResults: [
-          ...(state.tasks?.toolResults || []),
-          toolResult,
-        ],
+        toolResults: [...(state.tasks?.toolResults || []), toolResult],
       },
       metadata: {
         ...state.metadata,
@@ -721,24 +709,18 @@ import { formatDocsForPrompt } from '../utils/promptFormatter';
 export const generateAnswer = async (state: AgentState, env: Bindings): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'generateAnswer' });
   const startTime = performance.now();
-  
+
   // Prepare context from retrieved documents
   const docs = state.docs || [];
-  const formattedDocs = formatDocsForPrompt(
-    docs, 
-    state.options.includeSourceInfo
-  );
-  
+  const formattedDocs = formatDocsForPrompt(docs, state.options.includeSourceInfo);
+
   // Prepare tool results if any
   const toolResults = state.tasks?.toolResults || [];
   const formattedToolResults = formatToolResultsForPrompt(toolResults);
-  
+
   // Build system prompt
-  const systemPrompt = buildSystemPrompt(
-    formattedDocs,
-    formattedToolResults
-  );
-  
+  const systemPrompt = buildSystemPrompt(formattedDocs, formattedToolResults);
+
   // Prepare messages for LLM
   const messages = [
     {
@@ -747,32 +729,32 @@ export const generateAnswer = async (state: AgentState, env: Bindings): Promise<
     },
     ...state.messages,
   ];
-  
+
   logger.info(
-    { 
+    {
       messageCount: messages.length,
       docsCount: docs.length,
       toolResultsCount: toolResults.length,
       systemPromptLength: systemPrompt.length,
-    }, 
-    'Generating answer'
+    },
+    'Generating answer',
   );
-  
+
   try {
     // Call LLM to generate response
     const response = await LlmClient.call(env, messages);
-    
+
     logger.info(
-      { 
+      {
         responseLength: response.length,
-      }, 
-      'Generated answer'
+      },
+      'Generated answer',
     );
-    
+
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     return {
       ...state,
       generatedText: response,
@@ -791,16 +773,17 @@ export const generateAnswer = async (state: AgentState, env: Bindings): Promise<
     };
   } catch (error) {
     logger.error(
-      { 
+      {
         err: error,
-      }, 
-      'Error generating answer'
+      },
+      'Error generating answer',
     );
-    
+
     // Provide fallback response
     return {
       ...state,
-      generatedText: "I'm sorry, but I encountered an issue while generating a response. Please try again.",
+      generatedText:
+        "I'm sorry, but I encountered an issue while generating a response. Please try again.",
       metadata: {
         ...state.metadata,
         errors: [
@@ -819,24 +802,23 @@ export const generateAnswer = async (state: AgentState, env: Bindings): Promise<
 /**
  * Build system prompt with context and tool results
  */
-function buildSystemPrompt(
-  formattedDocs: string,
-  formattedToolResults: string
-): string {
+function buildSystemPrompt(formattedDocs: string, formattedToolResults: string): string {
   let prompt = "You are an AI assistant with access to the user's personal knowledge base. ";
-  
+
   if (formattedDocs) {
     prompt += `Here is relevant information from the user's notes that may help with the response:\n\n${formattedDocs}\n\n`;
-    prompt += 'When referencing information from these notes, include the note number in brackets, e.g., [1], to help the user identify the source.\n\n';
+    prompt +=
+      'When referencing information from these notes, include the note number in brackets, e.g., [1], to help the user identify the source.\n\n';
   }
-  
+
   if (formattedToolResults) {
     prompt += `I've used tools to gather additional information:\n\n${formattedToolResults}\n\n`;
     prompt += 'Incorporate this tool-generated information into your response when relevant.\n\n';
   }
-  
-  prompt += 'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
-  
+
+  prompt +=
+    'Provide a helpful, accurate, and concise response based on the provided context and your knowledge.';
+
   return prompt;
 }
 
@@ -847,15 +829,15 @@ function formatToolResultsForPrompt(toolResults: ToolResult[]): string {
   if (toolResults.length === 0) {
     return '';
   }
-  
+
   return toolResults
     .map((result, index) => {
-      const output = result.error 
+      const output = result.error
         ? `Error: ${result.error}`
         : typeof result.output === 'string'
-          ? result.output
-          : JSON.stringify(result.output, null, 2);
-      
+        ? result.output
+        : JSON.stringify(result.output, null, 2);
+
       return `[Tool ${index + 1}] ${result.toolName}\nInput: ${result.input}\nOutput: ${output}`;
     })
     .join('\n\n');
@@ -874,11 +856,11 @@ import { getLogger } from '@dome/logging';
  */
 export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStream {
   const logger = getLogger().child({ component: 'sseTransformer' });
-  
+
   return new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
-      
+
       try {
         for await (const state of stream) {
           // Determine event type based on state
@@ -889,23 +871,24 @@ export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStrea
             })}\n\n`;
             controller.enqueue(encoder.encode(stepEvent));
           }
-          
+
           // If we have generated text, send answer event
           if (state.generatedText) {
             // Extract sources from docs if available
-            const sources = state.docs?.map(doc => ({
-              id: doc.id,
-              title: doc.title,
-              source: doc.metadata.source,
-            })) || [];
-            
+            const sources =
+              state.docs?.map(doc => ({
+                id: doc.id,
+                title: doc.title,
+                source: doc.metadata.source,
+              })) || [];
+
             const answerEvent = `event: answer\ndata: ${JSON.stringify({
               delta: state.generatedText,
               sources,
             })}\n\n`;
             controller.enqueue(encoder.encode(answerEvent));
           }
-          
+
           // If this is the final state, send done event
           if (state.metadata?.isFinalState) {
             const doneEvent = `event: done\ndata: ${JSON.stringify({
@@ -916,7 +899,7 @@ export function transformToSSE(stream: AsyncIterable<AgentState>): ReadableStrea
         }
       } catch (error) {
         logger.error({ err: error }, 'Error in SSE stream transformation');
-        
+
         // Send error event
         const errorEvent = `event: error\ndata: ${JSON.stringify({
           message: 'An error occurred during processing',
@@ -953,12 +936,12 @@ import { getLogger } from '@dome/logging';
  */
 export const buildChatGraph = (env: Bindings) => {
   const logger = getLogger().child({ component: 'graphBuilder' });
-  
+
   logger.info('Building chat graph');
-  
+
   // Create checkpointer
   const checkpointer = new D1Checkpointer(env.D1);
-  
+
   // Initialize graph
   const graph = new StateGraph<AgentState>()
     // Add nodes
@@ -968,11 +951,11 @@ export const buildChatGraph = (env: Bindings) => {
     .addNode('tool_router', nodes.toolRouter)
     .addNode('run_tool', nodes.runTool)
     .addNode('generate_answer', nodes.generateAnswer)
-    
+
     // Add edges
     .addEdge(START, 'split_rewrite')
     .addEdge('split_rewrite', 'retrieve')
-    
+
     // Add conditional edges
     .addConditionalEdges('retrieve', nodes.routeAfterRetrieve, {
       widen: 'dynamic_widen',
@@ -986,7 +969,7 @@ export const buildChatGraph = (env: Bindings) => {
     })
     .addEdge('run_tool', 'generate_answer')
     .addEdge('generate_answer', END);
-  
+
   // Add state change listener for logging
   graph.onStateChange((oldState, newState, nodeName) => {
     // Update current node in metadata
@@ -995,16 +978,16 @@ export const buildChatGraph = (env: Bindings) => {
       currentNode: nodeName,
       isFinalState: nodeName === END,
     };
-    
+
     logger.debug(
       {
         node: nodeName,
         stateChanges: getStateDiff(oldState, newState),
       },
-      'State transition'
+      'State transition',
     );
   });
-  
+
   // Compile with checkpointer and reducers
   return graph.compile({
     checkpointer,
@@ -1013,22 +996,22 @@ export const buildChatGraph = (env: Bindings) => {
       docs: (oldDocs = [], newDocs = []) => {
         if (!newDocs || newDocs.length === 0) return oldDocs;
         if (!oldDocs || oldDocs.length === 0) return newDocs;
-        
+
         // Merge and deduplicate by ID
         const docMap = new Map();
         [...oldDocs, ...newDocs].forEach(doc => {
           docMap.set(doc.id, doc);
         });
-        
+
         return Array.from(docMap.values());
       },
-      
+
       // Merge tasks objects
       tasks: (oldTasks = {}, newTasks = {}) => ({
         ...oldTasks,
         ...newTasks,
       }),
-      
+
       // Merge metadata
       metadata: (oldMetadata = {}, newMetadata = {}) => ({
         ...oldMetadata,
@@ -1041,10 +1024,7 @@ export const buildChatGraph = (env: Bindings) => {
           ...(oldMetadata.tokenCounts || {}),
           ...(newMetadata.tokenCounts || {}),
         },
-        errors: [
-          ...(oldMetadata.errors || []),
-          ...(newMetadata.errors || []),
-        ],
+        errors: [...(oldMetadata.errors || []), ...(newMetadata.errors || [])],
       }),
     },
   });
@@ -1055,7 +1035,7 @@ export const buildChatGraph = (env: Bindings) => {
  */
 function getStateDiff(oldState: AgentState, newState: AgentState): Record<string, any> {
   const changes: Record<string, any> = {};
-  
+
   // Check for new docs
   if (newState.docs?.length !== oldState.docs?.length) {
     changes.docsCount = {
@@ -1063,23 +1043,20 @@ function getStateDiff(oldState: AgentState, newState: AgentState): Record<string
       to: newState.docs?.length || 0,
     };
   }
-  
+
   // Check for new tool results
-  if (
-    newState.tasks?.toolResults?.length !== 
-    oldState.tasks?.toolResults?.length
-  ) {
+  if (newState.tasks?.toolResults?.length !== oldState.tasks?.toolResults?.length) {
     changes.toolResultsCount = {
       from: oldState.tasks?.toolResults?.length || 0,
       to: newState.tasks?.toolResults?.length || 0,
     };
   }
-  
+
   // Check for generated text
   if (newState.generatedText && !oldState.generatedText) {
     changes.generatedText = true;
   }
-  
+
   return changes;
 }
 ```

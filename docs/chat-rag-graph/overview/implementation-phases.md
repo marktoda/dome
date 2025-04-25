@@ -7,6 +7,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 **Focus:** Establish the fundamental RAG functionality and graph execution framework.
 
 **Key Deliverables:**
+
 - Basic graph execution engine
 - State management infrastructure
 - Simple query processing
@@ -15,6 +16,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 - Minimal API integration
 
 **Technical Components:**
+
 - Graph framework setup with LangChain
 - State definition and management
 - D1 checkpointing implementation
@@ -23,6 +25,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 - REST API endpoints
 
 **Success Criteria:**
+
 - System can process simple queries
 - Relevant documents are retrieved
 - Responses incorporate retrieved context
@@ -34,6 +37,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 **Focus:** Enhance query understanding and retrieval capabilities.
 
 **Key Deliverables:**
+
 - Query complexity analysis
 - Query rewriting for improved retrieval
 - Dynamic retrieval widening
@@ -41,6 +45,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 - Enhanced observability
 
 **Technical Components:**
+
 - Split/rewrite node implementation
 - Route after retrieve node
 - Dynamic widen node
@@ -49,6 +54,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 - Enhanced error handling
 
 **Success Criteria:**
+
 - Complex queries are properly analyzed and rewritten
 - Retrieval quality improves for ambiguous queries
 - System widens search when initial results are insufficient
@@ -60,6 +66,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 **Focus:** Extend capabilities beyond retrieval to include external tools.
 
 **Key Deliverables:**
+
 - Tool intent detection
 - Tool routing and execution
 - Tool registry framework
@@ -67,6 +74,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 - Tool result integration in responses
 
 **Technical Components:**
+
 - Tool router node
 - Run tool node
 - Tool registry implementation
@@ -74,6 +82,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 - Enhanced response generation with tool results
 
 **Success Criteria:**
+
 - System correctly identifies queries requiring tools
 - Appropriate tools are selected and executed
 - Tool results are properly integrated into responses
@@ -85,6 +94,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 **Focus:** Optimize performance, enhance security, and prepare for production deployment.
 
 **Key Deliverables:**
+
 - Performance optimizations
 - Caching mechanisms
 - Enhanced security controls
@@ -92,6 +102,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 - Comprehensive documentation
 
 **Technical Components:**
+
 - Response caching implementation
 - Parallel execution where possible
 - Enhanced authentication and authorization
@@ -100,6 +111,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 - Comprehensive monitoring and alerting
 
 **Success Criteria:**
+
 - Response times meet performance targets
 - Resource utilization is optimized
 - Security controls pass penetration testing
@@ -111,6 +123,7 @@ The Chat RAG Graph solution is being implemented in four distinct phases, each b
 Throughout all phases, the following activities are ongoing:
 
 ### Testing
+
 - Unit tests for individual components
 - Integration tests for node combinations
 - End-to-end tests for complete flows
@@ -118,6 +131,7 @@ Throughout all phases, the following activities are ongoing:
 - Security testing
 
 ### Documentation
+
 - Architecture documentation
 - API specifications
 - Developer guides
@@ -125,6 +139,7 @@ Throughout all phases, the following activities are ongoing:
 - Security documentation
 
 ### Security
+
 - Authentication and authorization
 - Input validation and sanitization
 - Data protection
@@ -133,22 +148,24 @@ Throughout all phases, the following activities are ongoing:
 
 ## Timeline and Milestones
 
-| Phase | Duration | Key Milestones |
-|-------|----------|----------------|
-| Phase 1 | 4 weeks | - Graph framework setup<br>- Basic retrieval working<br>- Simple responses generated<br>- Initial API integration |
-| Phase 2 | 6 weeks | - Query rewriting implemented<br>- Dynamic widening working<br>- Streaming responses enabled<br>- Enhanced observability in place |
-| Phase 3 | 8 weeks | - Tool registry established<br>- Initial tools implemented<br>- Tool routing working<br>- Tool results integrated in responses |
-| Phase 4 | 6 weeks | - Performance optimizations complete<br>- Security enhancements implemented<br>- Production readiness verified<br>- Documentation completed |
+| Phase   | Duration | Key Milestones                                                                                                                              |
+| ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 1 | 4 weeks  | - Graph framework setup<br>- Basic retrieval working<br>- Simple responses generated<br>- Initial API integration                           |
+| Phase 2 | 6 weeks  | - Query rewriting implemented<br>- Dynamic widening working<br>- Streaming responses enabled<br>- Enhanced observability in place           |
+| Phase 3 | 8 weeks  | - Tool registry established<br>- Initial tools implemented<br>- Tool routing working<br>- Tool results integrated in responses              |
+| Phase 4 | 6 weeks  | - Performance optimizations complete<br>- Security enhancements implemented<br>- Production readiness verified<br>- Documentation completed |
 
 ## Dependencies and Risks
 
 ### Key Dependencies
+
 - LLM service availability and performance
 - Vector database capabilities
 - External tool APIs
 - Cloudflare Workers platform features
 
 ### Risk Mitigation Strategies
+
 - Early prototyping of critical components
 - Fallback mechanisms for external dependencies
 - Comprehensive error handling

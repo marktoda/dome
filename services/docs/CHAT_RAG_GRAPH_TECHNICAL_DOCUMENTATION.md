@@ -52,10 +52,10 @@ The core state interface that flows through the graph:
 export interface AgentState {
   // User information
   userId: string;
-  
+
   // Conversation history
   messages: Message[];
-  
+
   // Configuration options
   options: {
     enhanceWithContext: boolean;
@@ -64,7 +64,7 @@ export interface AgentState {
     maxTokens: number;
     temperature?: number;
   };
-  
+
   // Intermediate processing data
   tasks?: {
     originalQuery?: string;
@@ -75,13 +75,13 @@ export interface AgentState {
     needsWidening?: boolean;
     wideningAttempts?: number;
   };
-  
+
   // Retrieved documents
   docs?: Document[];
-  
+
   // Generated content
   generatedText?: string;
-  
+
   // Metadata for tracking and debugging
   metadata?: {
     startTime: number;
@@ -158,6 +158,7 @@ The graph consists of the following node types:
 The Split/Rewrite node analyzes the user's query and potentially rewrites it to improve retrieval.
 
 **Key Functions:**
+
 - Extract the last user message
 - Analyze query complexity
 - Rewrite multi-part questions
@@ -165,6 +166,7 @@ The Split/Rewrite node analyzes the user's query and potentially rewrites it to 
 - Track token usage
 
 **Configuration Options:**
+
 - `enableQueryRewriting`: Whether to enable query rewriting (default: true)
 - `complexityThreshold`: Threshold for determining complex queries (default: 0.7)
 
@@ -173,12 +175,14 @@ The Split/Rewrite node analyzes the user's query and potentially rewrites it to 
 The Retrieve node fetches relevant documents based on the query.
 
 **Key Functions:**
+
 - Search for relevant documents
 - Rank and filter results
 - Track token usage
 - Handle search errors
 
 **Configuration Options:**
+
 - `maxContextItems`: Maximum number of documents to retrieve (default: 10)
 - `minRelevanceScore`: Minimum relevance score for documents (default: 0.7)
 - `includeMetadata`: Whether to include document metadata (default: true)
@@ -188,11 +192,13 @@ The Retrieve node fetches relevant documents based on the query.
 The Route After Retrieve node determines the next step after retrieval.
 
 **Key Functions:**
+
 - Check if search widening is needed
 - Detect tool intent
 - Route to appropriate next node
 
 **Routing Options:**
+
 - `widen`: Route to Dynamic Widen node if few results are found
 - `tool`: Route to Tool Router if tool intent is detected
 - `answer`: Route to Generate Answer node (default)
@@ -202,11 +208,13 @@ The Route After Retrieve node determines the next step after retrieval.
 The Dynamic Widen node adjusts search parameters to widen the retrieval scope.
 
 **Key Functions:**
+
 - Increment widening attempts
 - Adjust search parameters
 - Apply different widening strategies
 
 **Widening Strategies:**
+
 - `semantic`: Expand search to include semantically related terms
 - `temporal`: Adjust date ranges to include more historical content
 - `relevance`: Progressively reduce relevance thresholds
@@ -218,12 +226,14 @@ The Dynamic Widen node adjusts search parameters to widen the retrieval scope.
 The Tool Router node determines which tool to use.
 
 **Key Functions:**
+
 - Analyze query for tool intent
 - Select appropriate tool
 - Extract tool parameters
 - Handle ambiguous tool requests
 
 **Available Tools:**
+
 - `calculator`: Performs mathematical calculations
 - `calendar`: Retrieves calendar information
 - `weather`: Retrieves weather information
@@ -234,12 +244,14 @@ The Tool Router node determines which tool to use.
 The Run Tool node executes the selected tool.
 
 **Key Functions:**
+
 - Execute the selected tool
 - Handle tool errors
 - Format tool results
 - Track tool usage
 
 **Error Handling:**
+
 - Retry logic with exponential backoff
 - Fallback mechanisms for tool failures
 - Detailed error reporting
@@ -249,12 +261,14 @@ The Run Tool node executes the selected tool.
 The Generate Answer node generates the final response.
 
 **Key Functions:**
+
 - Format context from retrieved documents
 - Build prompt with conversation history
 - Call LLM for response generation
 - Format response with source attribution
 
 **Configuration Options:**
+
 - `maxTokens`: Maximum tokens for the response (default: 1000)
 - `temperature`: Temperature for response generation (default: 0.7)
 - `includeSourceInfo`: Whether to include source information (default: true)
@@ -284,20 +298,24 @@ async function transformToStream(graph, initialState) {
       try {
         // Execute the graph with callbacks for each step
         await graph.invoke(initialState, {
-          onNodeStart: (nodeName) => {
-            controller.enqueue(`event: workflow_step\ndata: {"node": "${nodeName}", "status": "start"}\n\n`);
+          onNodeStart: nodeName => {
+            controller.enqueue(
+              `event: workflow_step\ndata: {"node": "${nodeName}", "status": "start"}\n\n`,
+            );
           },
           onNodeComplete: (nodeName, result) => {
-            controller.enqueue(`event: workflow_step\ndata: {"node": "${nodeName}", "status": "complete"}\n\n`);
+            controller.enqueue(
+              `event: workflow_step\ndata: {"node": "${nodeName}", "status": "complete"}\n\n`,
+            );
           },
-          onToken: (token) => {
+          onToken: token => {
             controller.enqueue(`event: token\ndata: {"token": "${token}"}\n\n`);
           },
-          onSources: (sources) => {
+          onSources: sources => {
             controller.enqueue(`event: sources\ndata: ${JSON.stringify({ sources })}\n\n`);
           },
         });
-        
+
         // Signal completion
         controller.enqueue(`event: done\ndata: {}\n\n`);
         controller.close();
@@ -306,14 +324,14 @@ async function transformToStream(graph, initialState) {
         controller.enqueue(`event: error\ndata: {"message": "${error.message}"}\n\n`);
         controller.close();
       }
-    }
+    },
   });
-  
+
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
     },
   });
 }
@@ -357,16 +375,16 @@ Checkpoints are created at the following points:
 
 ### 6.1 Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CHAT_MODEL` | LLM model to use | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
-| `MAX_TOKENS` | Maximum tokens for responses | `1000` |
-| `DEFAULT_TEMPERATURE` | Default temperature for responses | `0.7` |
-| `ENABLE_CONTEXT` | Whether to enable RAG context | `true` |
-| `MAX_CONTEXT_ITEMS` | Maximum context items to retrieve | `10` |
-| `INCLUDE_SOURCE_INFO` | Whether to include source information | `true` |
-| `ENABLE_TOOLS` | Whether to enable tool usage | `true` |
-| `ENABLE_CHECKPOINTING` | Whether to enable checkpointing | `true` |
+| Variable               | Description                           | Default                                    |
+| ---------------------- | ------------------------------------- | ------------------------------------------ |
+| `CHAT_MODEL`           | LLM model to use                      | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
+| `MAX_TOKENS`           | Maximum tokens for responses          | `1000`                                     |
+| `DEFAULT_TEMPERATURE`  | Default temperature for responses     | `0.7`                                      |
+| `ENABLE_CONTEXT`       | Whether to enable RAG context         | `true`                                     |
+| `MAX_CONTEXT_ITEMS`    | Maximum context items to retrieve     | `10`                                       |
+| `INCLUDE_SOURCE_INFO`  | Whether to include source information | `true`                                     |
+| `ENABLE_TOOLS`         | Whether to enable tool usage          | `true`                                     |
+| `ENABLE_CHECKPOINTING` | Whether to enable checkpointing       | `true`                                     |
 
 ### 6.2 Runtime Configuration
 
@@ -507,12 +525,12 @@ Example node function:
 export const myNewNode = async (state: AgentState): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'myNewNode' });
   const startTime = performance.now();
-  
+
   // Node implementation
-  
+
   const endTime = performance.now();
   const executionTime = endTime - startTime;
-  
+
   return {
     ...state,
     metadata: {
@@ -539,9 +557,9 @@ Example tool implementation:
 ```typescript
 export const myNewTool = async (params: any): Promise<any> => {
   const logger = getLogger().child({ tool: 'myNewTool' });
-  
+
   // Tool implementation
-  
+
   return result;
 };
 
@@ -570,9 +588,9 @@ Example router node:
 ```typescript
 export const myCustomRouter = (state: AgentState): 'routeA' | 'routeB' => {
   const logger = getLogger().child({ node: 'myCustomRouter' });
-  
+
   // Routing logic
-  
+
   return condition ? 'routeA' : 'routeB';
 };
 ```
@@ -584,10 +602,12 @@ export const myCustomRouter = (state: AgentState): 'routeA' | 'routeB' => {
 #### LLM Errors
 
 **Symptoms:**
+
 - Error message: "Failed to generate response"
 - Empty or incomplete responses
 
 **Solutions:**
+
 - Check LLM service status
 - Verify API keys and quotas
 - Reduce token usage
@@ -596,10 +616,12 @@ export const myCustomRouter = (state: AgentState): 'routeA' | 'routeB' => {
 #### Retrieval Issues
 
 **Symptoms:**
+
 - No documents retrieved
 - Irrelevant documents retrieved
 
 **Solutions:**
+
 - Check search service status
 - Verify query formatting
 - Adjust relevance thresholds
@@ -608,10 +630,12 @@ export const myCustomRouter = (state: AgentState): 'routeA' | 'routeB' => {
 #### Tool Execution Errors
 
 **Symptoms:**
+
 - Error message: "Tool execution failed"
 - Incomplete tool results
 
 **Solutions:**
+
 - Check tool service status
 - Verify tool parameters
 - Check for rate limiting
@@ -620,10 +644,12 @@ export const myCustomRouter = (state: AgentState): 'routeA' | 'routeB' => {
 #### Streaming Issues
 
 **Symptoms:**
+
 - Stream disconnects
 - Missing events
 
 **Solutions:**
+
 - Check client connection
 - Verify SSE format
 - Check for timeouts

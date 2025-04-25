@@ -15,12 +15,14 @@ This service processes content from the NEW_CONTENT queue, extracts metadata usi
 The service includes enhanced JSON parsing capabilities to handle various edge cases in LLM responses:
 
 1. **Sanitization of common JSON syntax errors**:
+
    - Fixing trailing commas in arrays and objects
    - Adding missing commas between array elements or object properties
    - Quoting unquoted property names
    - Converting single quotes to double quotes
 
 2. **Fallback extraction for severely malformed JSON**:
+
    - When standard parsing fails, the service attempts to extract structured data using regex
    - Extracts key fields like title, summary, todos, and topics even from broken JSON
 
@@ -56,6 +58,7 @@ pnpm test
 ```
 
 The test suite includes specific tests for JSON parsing edge cases, including:
+
 - JSON with trailing commas
 - JSON with unquoted property names
 - JSON with single quotes

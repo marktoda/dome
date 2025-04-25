@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
-import { ChatOrchestratorClient } from '@dome/chat-orchestrator/client';
+import { ChatClient } from '@dome/chat/client';
 
 /**
  * Controller for chat endpoints
@@ -12,7 +12,7 @@ export class ChatController {
    * Create a new chat controller
    * @param chatService Chat service instance
    */
-  constructor(private chatService: ChatOrchestratorClient) { }
+  constructor(private chatService: ChatClient) {}
 
   /**
    * Handle chat requests
@@ -25,13 +25,16 @@ export class ChatController {
       const userId = c.req.header('x-user-id');
       if (!userId) {
         this.logger.warn('Missing user ID in request');
-        return c.json({
-          success: false,
-          error: {
-            code: 'MISSING_USER_ID',
-            message: 'User ID is required'
-          }
-        }, 401);
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'MISSING_USER_ID',
+              message: 'User ID is required',
+            },
+          },
+          401,
+        );
       }
 
       // Parse request body
@@ -40,26 +43,32 @@ export class ChatController {
       // Validate messages
       if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
         this.logger.warn({ userId }, 'Missing or invalid messages in request');
-        return c.json({
-          success: false,
-          error: {
-            code: 'INVALID_REQUEST',
-            message: 'Messages are required and must be an array'
-          }
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'INVALID_REQUEST',
+              message: 'Messages are required and must be an array',
+            },
+          },
+          400,
+        );
       }
 
       // Check if at least one user message is present
       const hasUserMessage = body.messages.some((msg: any) => msg.role === 'user');
       if (!hasUserMessage) {
         this.logger.warn({ userId }, 'No user message in request');
-        return c.json({
-          success: false,
-          error: {
-            code: 'INVALID_REQUEST',
-            message: 'At least one user message is required'
-          }
-        }, 400);
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'INVALID_REQUEST',
+              message: 'At least one user message is required',
+            },
+          },
+          400,
+        );
       }
 
       // Add user ID to request
@@ -73,7 +82,7 @@ export class ChatController {
           userId,
           stream: request.stream,
         },
-        'Processing chat request'
+        'Processing chat request',
       );
 
       try {
@@ -98,27 +107,33 @@ export class ChatController {
             userId,
             stream: request.stream,
           },
-          'Error processing chat request'
+          'Error processing chat request',
         );
 
-        return c.json({
-          success: false,
-          error: {
-            code: 'CHAT_ERROR',
-            message: error instanceof Error ? error.message : 'Unknown error',
-          }
-        }, 200);
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'CHAT_ERROR',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            },
+          },
+          200,
+        );
       }
     } catch (error) {
       this.logger.error({ err: error }, 'Unexpected error in chat controller');
 
-      return c.json({
-        success: false,
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred',
-        }
-      }, 500);
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'An unexpected error occurred',
+          },
+        },
+        500,
+      );
     }
   }
 }

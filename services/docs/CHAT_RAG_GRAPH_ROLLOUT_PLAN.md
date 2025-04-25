@@ -19,6 +19,7 @@ Week 3: Optimization and Documentation
 ### 2.1 Preparation Phase
 
 1. **Final Testing**
+
    - Complete all unit tests
    - Complete all integration tests
    - Perform load testing
@@ -33,14 +34,17 @@ Week 3: Optimization and Documentation
 ### 2.2 Deployment Phase
 
 1. **Remove Traffic Shifting Mechanism**
+
    - Delete `services/dome-api/src/utils/trafficShifter.ts`
    - Remove any references to traffic shifting in the codebase
 
 2. **Update Controllers**
+
    - Modify the ChatController to exclusively use the chat-orchestrator service
    - Remove any conditional logic that checks for feature flags or traffic percentages
 
 3. **Remove Legacy Implementation**
+
    - Delete the old ChatService implementation
    - Remove any unused imports, types, or utilities
    - Update tests to only test the new implementation
@@ -52,11 +56,13 @@ Week 3: Optimization and Documentation
 ### 2.3 Post-Deployment Phase
 
 1. **Monitoring**
+
    - Monitor system performance
    - Track error rates
    - Collect user feedback
 
 2. **Optimization**
+
    - Address any performance issues
    - Optimize resource usage
    - Fine-tune configuration
@@ -95,11 +101,13 @@ Week 3: Optimization and Documentation
 In case of critical issues, the following rollback procedure will be implemented:
 
 1. **Identify Issue**
+
    - Determine the severity of the issue
    - Assess impact on users
    - Decide whether rollback is necessary
 
 2. **Execute Rollback**
+
    - Deploy the previous version
    - Verify system functionality
    - Notify stakeholders
