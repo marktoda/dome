@@ -1,6 +1,8 @@
 import { getLogger } from '@dome/logging';
-import { Document } from '../types';
-import { Env } from '../types/env';
+import { Document, SourceMetadata } from '../types';
+import { ConstellationBinding, ConstellationClient, createConstellationClient } from '@dome/constellation/client';
+import { SiloClient } from '@dome/silo/client';
+import { VectorMeta, ContentCategory, MimeType } from '@dome/common';
 
 /**
  * Search options interface
@@ -10,8 +12,8 @@ export interface SearchOptions {
   query: string;
   limit?: number;
   offset?: number;
-  category?: string;
-  mimeType?: string;
+  category?: ContentCategory;
+  mimeType?: MimeType;
   startDate?: number;
   endDate?: number;
   minRelevance?: number;
@@ -23,15 +25,21 @@ export interface SearchOptions {
  * Service for searching content
  */
 export class SearchService {
-  private static readonly logger = getLogger();
+  private readonly logger = getLogger();
+
+  constructor(private constellation: ConstellationClient, private silo: SiloClient) { }
+
+  static fromEnv(env: Env): SearchService {
+    return new SearchService(env.CONSTELLATION as unknown as ConstellationClient, env.SILO as unknown as SiloClient);
+  }
 
   /**
-   * Search for content using the dome-api SearchService
+   * Search for content using the Constellation service directly
    * @param env Environment bindings
    * @param options Search options
    * @returns Promise resolving to an array of documents
    */
-  static async search(env: Env, options: SearchOptions): Promise<Document[]> {
+  async search(options: SearchOptions): Promise<Document[]> {
     const {
       userId,
       query,
@@ -50,92 +58,101 @@ export class SearchService {
         expandSynonyms,
         includeRelated,
       },
-      'Searching for content'
+      'Searching for content using Constellation'
     );
 
     try {
-      // Construct the API URL
-      const apiUrl = new URL('/api/search', env.DOME_API_URL || 'https://api.dome.cloud');
-      
-      // Add query parameters
-      apiUrl.searchParams.append('query', query);
-      apiUrl.searchParams.append('limit', limit.toString());
-      
-      if (minRelevance) {
-        apiUrl.searchParams.append('minRelevance', minRelevance.toString());
-      }
-      
-      if (expandSynonyms) {
-        apiUrl.searchParams.append('expandSynonyms', 'true');
-      }
-      
-      if (includeRelated) {
-        apiUrl.searchParams.append('includeRelated', 'true');
-      }
-      
+      // Create filter for the query
+      const filter: Partial<VectorMeta> = { userId };
+
+      // Add category filter if specified
       if (options.category) {
-        apiUrl.searchParams.append('category', options.category);
+        filter.category = options.category;
       }
-      
+
+      // Add mime type filter if specified
       if (options.mimeType) {
-        apiUrl.searchParams.append('mimeType', options.mimeType);
-      }
-      
-      if (options.startDate) {
-        apiUrl.searchParams.append('startDate', options.startDate.toString());
-      }
-      
-      if (options.endDate) {
-        apiUrl.searchParams.append('endDate', options.endDate.toString());
+        filter.mimeType = options.mimeType;
       }
 
-      // Make the API request
-      const response = await fetch(apiUrl.toString(), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': userId,
-          'x-api-key': env.DOME_API_KEY || '',
-        },
-      });
+      // Perform the vector search
+      const searchResults = await this.constellation.query(query, filter, limit);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Search API returned ${response.status}: ${errorText}`);
+      if (searchResults.length === 0) {
+        this.logger.info(
+          { userId, query },
+          'No search results found'
+        );
+        return [];
       }
 
-      const searchResults = await response.json();
-      
-      // @ts-ignore - Ignoring type errors for now to make progress
-      if (!searchResults.results || !Array.isArray(searchResults.results)) {
-        throw new Error('Invalid search results format');
-      }
-
-      // Transform the search results to the Document format
-      // @ts-ignore - Ignoring type errors for now to make progress
-      const documents: Document[] = searchResults.results.map((result: any, index: number) => ({
-        id: result.id,
-        title: result.title || `Document ${index + 1}`,
-        body: result.body || '',
-        metadata: {
-          source: result.category || 'unknown',
-          createdAt: new Date(result.createdAt || Date.now()).toISOString(),
-          relevanceScore: result.score || 0,
-          url: result.url || null,
-          mimeType: result.mimeType || 'text/plain',
-        },
-      }));
+      // Extract unique content IDs
+      const contentIds = [...new Set(searchResults.map(result => result.metadata.contentId))];
 
       this.logger.info(
         {
+          contentIdsCount: contentIds.length,
+          firstFewContentIds: contentIds.slice(0, 5),
           userId,
-          query,
-          resultCount: documents.length,
         },
-        'Search completed successfully'
+        'Unique content IDs extracted'
       );
 
-      return documents;
+      const contents = await this.silo.batchGet({ ids: contentIds, userId });
+      this.logger.info(
+        {
+          contentsCount: contents.items.length,
+          firstContentId: contents.items.length > 0 ? contents.items[0].id : null,
+        },
+        'Results from siloService.batchGet',
+      );
+
+      // Map content IDs to scores
+      const scoreMap = new Map<string, number>();
+      for (const result of searchResults) {
+        // Extract the contentId from the result.id which is in format "content:contentId:chunkId"
+        const contentId = result.metadata.contentId;
+        // Store score by contentId
+        if (!scoreMap.has(contentId) || result.score > scoreMap.get(contentId)!) {
+          scoreMap.set(contentId, result.score);
+        }
+      }
+      this.logger.info(
+        {
+          scoreMapSize: scoreMap.size,
+          scores: Array.from(scoreMap.entries()).slice(0, 5),
+          firstResult:
+            searchResults.length > 0
+              ? {
+                id: searchResults[0].id,
+                contentId: searchResults[0].metadata.contentId,
+                score: searchResults[0].score,
+              }
+              : null,
+        },
+        'Created score map',
+      );
+
+      return contents.items.map(content => {
+        const contentId = content.id;
+        const score = scoreMap.get(contentId) || 0;
+
+        return {
+          id: contentId,
+          title: content.title || `Unknown title`,
+          body: content.body || '',
+          metadata: {
+            source: content.category || 'unknown',
+            createdAt: new Date(content.createdAt || Date.now()).toISOString(),
+            relevanceScore: score,
+            url: content.url || null,
+            mimeType: content.mimeType || 'text/plain',
+          },
+        };
+      })
+        .filter(doc => doc.metadata.relevanceScore >= minRelevance);
+
+
     } catch (error) {
       this.logger.error(
         {
@@ -156,13 +173,7 @@ export class SearchService {
    * @param docs Array of documents
    * @returns Array of source metadata
    */
-  static extractSourceMetadata(docs: Document[]): Array<{
-    id: string;
-    title: string;
-    source: string;
-    url?: string | null;
-    relevanceScore: number;
-  }> {
+  static extractSourceMetadata(docs: Document[]): SourceMetadata[] {
     return docs.map(doc => ({
       id: doc.id,
       title: doc.title,
@@ -181,7 +192,7 @@ export class SearchService {
   static rankAndFilterDocuments(docs: Document[], minRelevance = 0.5): Document[] {
     // Filter out documents with low relevance scores
     const filteredDocs = docs.filter(doc => doc.metadata.relevanceScore >= minRelevance);
-    
+
     // Sort by relevance score (highest first)
     return filteredDocs.sort((a, b) => b.metadata.relevanceScore - a.metadata.relevanceScore);
   }
