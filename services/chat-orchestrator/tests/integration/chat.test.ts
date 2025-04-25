@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildChatGraph } from '../../src/graph';
 import { AgentState, Document } from '../../src/types';
-import { Env } from '../../src/types/env';
 import { LlmService } from '../../src/services/llmService';
 import { SearchService } from '../../src/services/searchService';
 import { ObservabilityService } from '../../src/services/observabilityService';
@@ -180,15 +179,8 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    // @ts-ignore - Ignoring type errors for now to make progress
-    const result = await graph.invoke({
-      configurable: {
-        state: initialState,
-        config: {
-          runId: 'test-run-id',
-        }
-      }
-    });
+    // @ts-ignore - Type issues with LangGraph will be fixed later
+    const result = await graph.invoke(initialState);
 
     // Verify the result
     expect(result).toBeDefined();
@@ -260,15 +252,8 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    // @ts-ignore - Ignoring type errors for now to make progress
-    const result = await graph.invoke({
-      configurable: {
-        state: initialState,
-        config: {
-          runId: 'test-run-id-2',
-        }
-      }
-    });
+    // @ts-ignore - Type issues with LangGraph will be fixed later
+    const result = await graph.invoke(initialState);
 
     // Verify the result
     expect(result).toBeDefined();
@@ -318,15 +303,8 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    // @ts-ignore - Ignoring type errors for now to make progress
-    const result = await graph.invoke({
-      configurable: {
-        state: initialState,
-        config: {
-          runId: 'test-run-id-3',
-        }
-      }
-    });
+    // @ts-ignore - Type issues with LangGraph will be fixed later
+    const result = await graph.invoke(initialState);
 
     // Verify the result
     expect(result).toBeDefined();
@@ -366,15 +344,8 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    // @ts-ignore - Ignoring type errors for now to make progress
-    const result = await graph.invoke({
-      configurable: {
-        state: initialState,
-        config: {
-          runId: 'test-run-id-4',
-        }
-      }
-    });
+    // @ts-ignore - Type issues with LangGraph will be fixed later
+    const result = await graph.invoke(initialState);
 
     // Verify the result contains an error
     expect(result).toBeDefined();

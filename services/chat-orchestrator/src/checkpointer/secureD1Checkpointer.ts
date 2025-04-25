@@ -2,7 +2,6 @@ import { BaseCheckpointSaver, type Checkpoint, type CheckpointMetadata } from '@
 import { RunnableConfig } from '@langchain/core/runnables';
 import { getLogger } from '@dome/logging';
 import { getUserInfo, UserInfo, UserRole } from '@dome/common/src/middleware/enhancedAuthMiddleware.js';
-import { Env } from '../types/env';
 // @ts-ignore - Using local mocks instead of @dome/errors
 import { ForbiddenError, UnauthorizedError, BadRequestError } from '../utils/errorMocks';
 import { Context } from 'hono';

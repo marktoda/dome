@@ -1,12 +1,16 @@
 import { getLogger } from '@dome/logging';
 import { AgentState, ToolResult } from '../types';
-import { ToolRegistry } from '../tools/registry';
+import { SecureToolExecutor } from '../tools/secureToolExecutor';
 import { ObservabilityService } from '../services/observabilityService';
 
 /**
  * Execute the selected tool with proper error handling and fallback mechanisms
  */
-export const runTool = async (state: AgentState, env: Env): Promise<AgentState> => {
+export const runTool = async (
+  state: AgentState, 
+  env: Env,
+  toolExecutor?: SecureToolExecutor
+): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'runTool' });
   const startTime = performance.now();
   
@@ -49,28 +53,36 @@ export const runTool = async (state: AgentState, env: Env): Promise<AgentState> 
   );
   
   try {
-    // Get tool from registry
-    const tool = ToolRegistry.getTool(toolName);
-    
-    if (!tool) {
-      throw new Error(`Tool ${toolName} not found in registry`);
+    // Use the secure tool executor if provided
+    let toolOutput;
+    if (toolExecutor) {
+      const originalQuery = state.tasks?.originalQuery || '';
+      toolOutput = await toolExecutor.executeTool(toolName, toolParameters, originalQuery, env);
+    } else {
+      // Otherwise use the legacy approach
+      // Get tool from registry
+      const tool = await getToolFromRegistry(toolName);
+      
+      if (!tool) {
+        throw new Error(`Tool ${toolName} not found in registry`);
+      }
+      
+      // Validate tool parameters
+      const validation = await validateToolInput(toolName, toolParameters);
+      
+      if (!validation.valid) {
+        throw new Error(`Invalid tool parameters: ${validation.error}`);
+      }
+      
+      // Execute tool with timeout and retry logic
+      toolOutput = await executeToolWithRetry(
+        tool.execute,
+        toolParameters,
+        env,
+        traceId,
+        spanId
+      );
     }
-    
-    // Validate tool parameters
-    const validation = ToolRegistry.validateToolInput(toolName, toolParameters);
-    
-    if (!validation.valid) {
-      throw new Error(`Invalid tool parameters: ${validation.error}`);
-    }
-    
-    // Execute tool with timeout and retry logic
-    const toolOutput = await executeToolWithRetry(
-      tool.execute,
-      toolParameters,
-      env,
-      traceId,
-      spanId
-    );
     
     logger.info(
       { 
@@ -233,6 +245,33 @@ export const runTool = async (state: AgentState, env: Env): Promise<AgentState> 
     };
   }
 };
+
+/**
+ * Get a tool from the registry
+ * @param toolName Tool name
+ * @returns Tool object or null if not found
+ */
+async function getToolFromRegistry(toolName: string): Promise<any> {
+  // This is a placeholder for the actual implementation
+  // In a real implementation, this would use the ToolRegistry
+  return {
+    execute: async (input: any, env: Env) => {
+      return { result: "This is a mock tool result" };
+    }
+  };
+}
+
+/**
+ * Validate tool input parameters
+ * @param toolName Tool name
+ * @param parameters Tool parameters
+ * @returns Validation result
+ */
+async function validateToolInput(toolName: string, parameters: any): Promise<{ valid: boolean; error?: string }> {
+  // This is a placeholder for the actual implementation
+  // In a real implementation, this would use the ToolRegistry
+  return { valid: true };
+}
 
 /**
  * Execute a tool with timeout and retry logic

@@ -9,6 +9,7 @@
           { type: 'ai', name: 'AI' },
           { type: 'd1Database', name: 'D1', databaseId: 'chatOrchestrator' },
           { type: 'service', name: 'DOME_API', service: 'dome-api' },
+          { type: 'service', name: 'CONSTELLATION', service: 'constellation' },
         ],
         vars: {
           VERSION: '0.1.0',

@@ -54,5 +54,12 @@ export function createServiceBindings(
     environment: 'production',
   });
 
+  // Create service binding for chat-orchestrator to constellation
+  bindings.chatOrchestratorToConstellation = new cloudflare.ServiceBinding('chat-orchestrator-to-constellation', {
+    name: 'CONSTELLATION',
+    service: workers.constellation.name,
+    environment: 'production',
+  });
+
   return bindings;
 }

@@ -1,27 +1,36 @@
+/**
+ * Chat Orchestrator Client
+ *
+ * This file exports a type-safe client for interacting with the Chat Orchestrator service.
+ * It provides methods for all Chat Orchestrator operations and handles error logging, metrics, and validation.
+ */
+
 import { getLogger, withLogger, logError, metrics } from '@dome/logging';
-import { AgentState } from '../types';
-import { Env } from '../types/env';
+import { ChatOrchestratorBinding } from './index';
 import { z } from 'zod';
+
+// Define schemas for request validation
+const chatRequestSchema = z.object({
+  initialState: z.object({
+    userId: z.string(),
+    messages: z.array(z.object({
+      role: z.enum(['user', 'assistant', 'system']),
+      content: z.string(),
+      timestamp: z.number().optional(),
+    })),
+    enhanceWithContext: z.boolean().optional().default(true),
+    maxContextItems: z.number().optional().default(5),
+    includeSourceInfo: z.boolean().optional().default(true),
+    maxTokens: z.number().optional().default(1000),
+    temperature: z.number().optional(),
+  }),
+  runId: z.string().optional(),
+});
 
 /**
  * Chat orchestrator client request interface
  */
-export interface ChatOrchestratorRequest {
-  initialState: {
-    userId: string;
-    messages: Array<{
-      role: 'user' | 'assistant' | 'system';
-      content: string;
-      timestamp?: number;
-    }>;
-    enhanceWithContext?: boolean;
-    maxContextItems?: number;
-    includeSourceInfo?: boolean;
-    maxTokens?: number;
-    temperature?: number;
-  };
-  runId?: string;
-}
+export interface ChatOrchestratorRequest extends z.infer<typeof chatRequestSchema> {}
 
 /**
  * Chat orchestrator client response interface
@@ -46,17 +55,15 @@ export interface ChatOrchestratorResponse {
  * Chat orchestrator client for direct RPC communication
  */
 export class ChatOrchestratorClient {
-  private logger = getLogger().child({ component: 'ChatOrchestratorClient' });
-
   /**
    * Create a new chat orchestrator client
-   * @param env Environment bindings with CHAT_ORCHESTRATOR service binding
+   * @param binding The Cloudflare Worker binding to the Chat Orchestrator service
+   * @param metricsPrefix Optional prefix for metrics (defaults to 'chat_orchestrator.client')
    */
-  constructor(private env: Env) {
-    if (!env.CHAT_ORCHESTRATOR) {
-      this.logger.warn('CHAT_ORCHESTRATOR binding not available');
-    }
-  }
+  constructor(
+    private readonly binding: ChatOrchestratorBinding,
+    private readonly metricsPrefix: string = 'chat_orchestrator.client'
+  ) {}
 
   /**
    * Generate a chat response
@@ -64,6 +71,8 @@ export class ChatOrchestratorClient {
    * @returns Promise resolving to the chat orchestrator response
    */
   async generateResponse(request: ChatOrchestratorRequest): Promise<ChatOrchestratorResponse> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'generateResponse',
@@ -71,15 +80,11 @@ export class ChatOrchestratorClient {
       runId: request.runId,
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
-        // Start timing
-        const startTime = performance.now();
-
+        // Validate request
+        const validatedRequest = chatRequestSchema.parse(request);
+        
         // Call the chat orchestrator directly via RPC
-        const response = await this.env.CHAT_ORCHESTRATOR.generateChatResponse(request);
+        const response = await this.binding.generateChatResponse(validatedRequest);
 
         // Process the streaming response to extract the generated text and sources
         const reader = response.body?.getReader();
@@ -136,7 +141,7 @@ export class ChatOrchestratorClient {
           },
         };
 
-        this.logger.info(
+        getLogger().info(
           {
             userId: request.initialState.userId,
             responseLength: result.response?.length || 0,
@@ -146,23 +151,17 @@ export class ChatOrchestratorClient {
         );
 
         // Track metrics
-        metrics.increment('chat_orchestrator_client.generate_response.success', 1);
+        metrics.increment(`${this.metricsPrefix}.generate_response.success`, 1);
         if (result.metadata?.executionTimeMs) {
-          metrics.timing('chat_orchestrator_client.generate_response.duration_ms', result.metadata.executionTimeMs);
+          metrics.timing(`${this.metricsPrefix}.generate_response.duration_ms`, result.metadata.executionTimeMs);
         }
 
         return result;
       } catch (error) {
-        this.logger.error(
-          {
-            err: error,
-            userId: request.initialState.userId,
-          },
-          'Error generating chat response via RPC'
-        );
+        logError(error, 'Error generating chat response via RPC', { userId: request.initialState.userId });
 
         // Track error metrics
-        metrics.increment('chat_orchestrator_client.generate_response.error', 1, {
+        metrics.increment(`${this.metricsPrefix}.generate_response.errors`, 1, {
           errorType: error instanceof Error ? error.constructor.name : 'unknown'
         });
 
@@ -177,6 +176,8 @@ export class ChatOrchestratorClient {
    * @returns Promise resolving to a streaming response
    */
   async streamResponse(request: ChatOrchestratorRequest): Promise<Response> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'streamResponse',
@@ -184,14 +185,13 @@ export class ChatOrchestratorClient {
       runId: request.runId,
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
+        // Validate request
+        const validatedRequest = chatRequestSchema.parse(request);
+        
         // Call the chat orchestrator directly via RPC
-        const response = await this.env.CHAT_ORCHESTRATOR.generateChatResponse(request);
+        const response = await this.binding.generateChatResponse(validatedRequest);
 
-        this.logger.info(
+        getLogger().info(
           {
             userId: request.initialState.userId,
             status: response.status,
@@ -200,21 +200,16 @@ export class ChatOrchestratorClient {
         );
 
         // Track metrics
-        metrics.increment('chat_orchestrator_client.stream_response.success', 1);
+        metrics.increment(`${this.metricsPrefix}.stream_response.success`, 1);
+        metrics.timing(`${this.metricsPrefix}.stream_response.latency_ms`, performance.now() - startTime);
 
         // Return the streaming response directly
         return response;
       } catch (error) {
-        this.logger.error(
-          {
-            err: error,
-            userId: request.initialState.userId,
-          },
-          'Error streaming chat response via RPC'
-        );
+        logError(error, 'Error streaming chat via RPC', { userId: request.initialState.userId });
 
         // Track error metrics
-        metrics.increment('chat_orchestrator_client.stream_response.error', 1, {
+        metrics.increment(`${this.metricsPrefix}.stream_response.errors`, 1, {
           errorType: error instanceof Error ? error.constructor.name : 'unknown'
         });
 
@@ -233,23 +228,21 @@ export class ChatOrchestratorClient {
     runId: string,
     newMessage?: { role: 'user' | 'assistant' | 'system'; content: string; timestamp?: number }
   ): Promise<Response> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'resumeChatSession',
       runId,
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
         // Call the chat orchestrator directly via RPC
-        const response = await this.env.CHAT_ORCHESTRATOR.resumeChatSession({
+        const response = await this.binding.resumeChatSession({
           runId,
           newMessage,
         });
 
-        this.logger.info(
+        getLogger().info(
           {
             runId,
             status: response.status,
@@ -258,21 +251,16 @@ export class ChatOrchestratorClient {
         );
 
         // Track metrics
-        metrics.increment('chat_orchestrator_client.resume_chat.success', 1);
+        metrics.increment(`${this.metricsPrefix}.resume_chat.success`, 1);
+        metrics.timing(`${this.metricsPrefix}.resume_chat.latency_ms`, performance.now() - startTime);
 
         // Return the streaming response directly
         return response;
       } catch (error) {
-        this.logger.error(
-          {
-            err: error,
-            runId,
-          },
-          'Error resuming chat session via RPC'
-        );
+        logError(error, 'Error resuming chat session via RPC', { runId });
 
         // Track error metrics
-        metrics.increment('chat_orchestrator_client.resume_chat.error', 1, {
+        metrics.increment(`${this.metricsPrefix}.resume_chat.errors`, 1, {
           errorType: error instanceof Error ? error.constructor.name : 'unknown'
         });
 
@@ -286,22 +274,29 @@ export class ChatOrchestratorClient {
    * @returns Promise resolving to checkpoint statistics
    */
   async getCheckpointStats(): Promise<any> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'getCheckpointStats',
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
         // Call the chat orchestrator directly via RPC
-        return await this.env.CHAT_ORCHESTRATOR.getCheckpointStats();
+        const result = await this.binding.getCheckpointStats();
+        
+        // Track metrics
+        metrics.increment(`${this.metricsPrefix}.get_checkpoint_stats.success`, 1);
+        metrics.timing(`${this.metricsPrefix}.get_checkpoint_stats.latency_ms`, performance.now() - startTime);
+        
+        return result;
       } catch (error) {
-        this.logger.error(
-          { err: error },
-          'Error getting checkpoint stats via RPC'
-        );
+        logError(error, 'Error getting checkpoint stats via RPC');
+        
+        // Track error metrics
+        metrics.increment(`${this.metricsPrefix}.get_checkpoint_stats.errors`, 1, {
+          errorType: error instanceof Error ? error.constructor.name : 'unknown'
+        });
+        
         throw error;
       }
     });
@@ -312,22 +307,29 @@ export class ChatOrchestratorClient {
    * @returns Promise resolving to cleanup result
    */
   async cleanupCheckpoints(): Promise<{ deletedCount: number }> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'cleanupCheckpoints',
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
         // Call the chat orchestrator directly via RPC
-        return await this.env.CHAT_ORCHESTRATOR.cleanupCheckpoints();
+        const result = await this.binding.cleanupCheckpoints();
+        
+        // Track metrics
+        metrics.increment(`${this.metricsPrefix}.cleanup_checkpoints.success`, 1);
+        metrics.timing(`${this.metricsPrefix}.cleanup_checkpoints.latency_ms`, performance.now() - startTime);
+        
+        return result;
       } catch (error) {
-        this.logger.error(
-          { err: error },
-          'Error cleaning up checkpoints via RPC'
-        );
+        logError(error, 'Error cleaning up checkpoints via RPC');
+        
+        // Track error metrics
+        metrics.increment(`${this.metricsPrefix}.cleanup_checkpoints.errors`, 1, {
+          errorType: error instanceof Error ? error.constructor.name : 'unknown'
+        });
+        
         throw error;
       }
     });
@@ -338,22 +340,29 @@ export class ChatOrchestratorClient {
    * @returns Promise resolving to data retention statistics
    */
   async getDataRetentionStats(): Promise<any> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'getDataRetentionStats',
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
         // Call the chat orchestrator directly via RPC
-        return await this.env.CHAT_ORCHESTRATOR.getDataRetentionStats();
+        const result = await this.binding.getDataRetentionStats();
+        
+        // Track metrics
+        metrics.increment(`${this.metricsPrefix}.get_data_retention_stats.success`, 1);
+        metrics.timing(`${this.metricsPrefix}.get_data_retention_stats.latency_ms`, performance.now() - startTime);
+        
+        return result;
       } catch (error) {
-        this.logger.error(
-          { err: error },
-          'Error getting data retention stats via RPC'
-        );
+        logError(error, 'Error getting data retention stats via RPC');
+        
+        // Track error metrics
+        metrics.increment(`${this.metricsPrefix}.get_data_retention_stats.errors`, 1, {
+          errorType: error instanceof Error ? error.constructor.name : 'unknown'
+        });
+        
         throw error;
       }
     });
@@ -364,22 +373,29 @@ export class ChatOrchestratorClient {
    * @returns Promise resolving to cleanup result
    */
   async cleanupExpiredData(): Promise<any> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'cleanupExpiredData',
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
         // Call the chat orchestrator directly via RPC
-        return await this.env.CHAT_ORCHESTRATOR.cleanupExpiredData();
+        const result = await this.binding.cleanupExpiredData();
+        
+        // Track metrics
+        metrics.increment(`${this.metricsPrefix}.cleanup_expired_data.success`, 1);
+        metrics.timing(`${this.metricsPrefix}.cleanup_expired_data.latency_ms`, performance.now() - startTime);
+        
+        return result;
       } catch (error) {
-        this.logger.error(
-          { err: error },
-          'Error cleaning up expired data via RPC'
-        );
+        logError(error, 'Error cleaning up expired data via RPC');
+        
+        // Track error metrics
+        metrics.increment(`${this.metricsPrefix}.cleanup_expired_data.errors`, 1, {
+          errorType: error instanceof Error ? error.constructor.name : 'unknown'
+        });
+        
         throw error;
       }
     });
@@ -391,23 +407,30 @@ export class ChatOrchestratorClient {
    * @returns Promise resolving to deletion result
    */
   async deleteUserData(userId: string): Promise<{ deletedCount: number }> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'deleteUserData',
       userId,
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
         // Call the chat orchestrator directly via RPC
-        return await this.env.CHAT_ORCHESTRATOR.deleteUserData(userId);
+        const result = await this.binding.deleteUserData(userId);
+        
+        // Track metrics
+        metrics.increment(`${this.metricsPrefix}.delete_user_data.success`, 1);
+        metrics.timing(`${this.metricsPrefix}.delete_user_data.latency_ms`, performance.now() - startTime);
+        
+        return result;
       } catch (error) {
-        this.logger.error(
-          { err: error, userId },
-          'Error deleting user data via RPC'
-        );
+        logError(error, 'Error deleting user data via RPC', { userId });
+        
+        // Track error metrics
+        metrics.increment(`${this.metricsPrefix}.delete_user_data.errors`, 1, {
+          errorType: error instanceof Error ? error.constructor.name : 'unknown'
+        });
+        
         throw error;
       }
     });
@@ -425,6 +448,8 @@ export class ChatOrchestratorClient {
     dataCategory: string,
     durationDays: number
   ): Promise<{ success: boolean }> {
+    const startTime = performance.now();
+    
     return withLogger({
       component: 'ChatOrchestratorClient',
       operation: 'recordConsent',
@@ -432,23 +457,41 @@ export class ChatOrchestratorClient {
       dataCategory,
     }, async () => {
       try {
-        if (!this.env.CHAT_ORCHESTRATOR) {
-          throw new Error('CHAT_ORCHESTRATOR binding not available');
-        }
-
         // Call the chat orchestrator directly via RPC
-        return await this.env.CHAT_ORCHESTRATOR.recordConsent(
+        const result = await this.binding.recordConsent(
           userId,
           dataCategory,
           { durationDays }
         );
+        
+        // Track metrics
+        metrics.increment(`${this.metricsPrefix}.record_consent.success`, 1);
+        metrics.timing(`${this.metricsPrefix}.record_consent.latency_ms`, performance.now() - startTime);
+        
+        return result;
       } catch (error) {
-        this.logger.error(
-          { err: error, userId, dataCategory },
-          'Error recording user consent via RPC'
-        );
+        logError(error, 'Error recording user consent via RPC', { userId, dataCategory });
+        
+        // Track error metrics
+        metrics.increment(`${this.metricsPrefix}.record_consent.errors`, 1, {
+          errorType: error instanceof Error ? error.constructor.name : 'unknown'
+        });
+        
         throw error;
       }
     });
   }
+}
+
+/**
+ * Create a new ChatOrchestratorClient
+ * @param binding The Cloudflare Worker binding to the Chat Orchestrator service
+ * @param metricsPrefix Optional prefix for metrics (defaults to 'chat_orchestrator.client')
+ * @returns A new ChatOrchestratorClient instance
+ */
+export function createChatOrchestratorClient(
+  binding: ChatOrchestratorBinding,
+  metricsPrefix?: string
+): ChatOrchestratorClient {
+  return new ChatOrchestratorClient(binding, metricsPrefix);
 }

@@ -1,6 +1,5 @@
 import { getLogger } from '@dome/logging';
 import { AIMessage } from '../types';
-import { Env } from '../types/env';
 
 /**
  * LLM model configuration
@@ -74,14 +73,20 @@ export class LlmService {
       maxTokens?: number;
     }
   ): Promise<string> {
-    // Check if AI binding is available
-    if (!env.AI) {
+    // Check if Workers AI is available
+    try {
+      // @ts-ignore - Allow access to AI through dynamic access
+      if (!env.AI) {
       // In test environment, return a mock response
       if (this.isTestEnvironment()) {
         return this.getMockResponse();
       }
 
       this.logger.warn('Workers AI binding is not available, using fallback response');
+      return this.fallbackResponse();
+      }
+    } catch (e) {
+      this.logger.warn({ error: e }, 'Error accessing AI binding, using fallback response');
       return this.fallbackResponse();
     }
 
@@ -95,7 +100,8 @@ export class LlmService {
         spanId: options?.spanId
       }, 'Calling Workers AI');
       
-      const response = await this.withTimeout(env.AI.run(MODEL, { 
+      // @ts-ignore - Allow access to AI through dynamic access
+      const response = await this.withTimeout(env.AI.run(MODEL, {
         messages,
         temperature: options?.temperature,
         max_tokens: options?.maxTokens

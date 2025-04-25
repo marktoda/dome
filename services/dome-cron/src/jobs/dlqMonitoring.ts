@@ -1,5 +1,4 @@
 import { getLogger, logError, metrics } from '@dome/logging';
-import { Env } from '../index';
 
 /**
  * Alert severity levels

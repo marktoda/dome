@@ -20,6 +20,8 @@
       "@dome/constellation/*": ["services/constellation/src/*"],
       "@dome/errors": ["services/errors/src"],
       "@dome/errors/*": ["services/errors/src/*"],
+      "@dome/chat-orchestrator": ["services/chat-orchestrator/src"],
+      "@dome/chat-orchestrator/*": ["services/chat-orchestrator/src/*"],
       "@dome/ai-processor": ["services/ai-processor/src"],
       "@dome/ai-processor/*": ["services/ai-processor/src/*"],
       "@dome/logging": ["packages/logging/src"],

@@ -581,6 +581,9 @@ export class DataRetentionManager {
     recordsByCategory: Record<string, number>;
     expiringRecords: number;
     anonymizedRecords: number;
+    oldestRecord?: number;
+    newestRecord?: number;
+    recordsByUser?: Record<string, number>;
   }> {
     try {
       // Get total records

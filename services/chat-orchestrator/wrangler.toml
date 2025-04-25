@@ -9,6 +9,15 @@ binding = "CHAT_DB"
 database_name = "chat_orchestrator"
 database_id = "placeholder-id" # This will be replaced during deployment
 
+# Service bindings
+[[services]]
+binding = "CONSTELLATION"
+service = "constellation"
+
+[[services]]
+binding = "SILO"
+service = "silo"
+
 # For local development
 [dev]
 port = 8788
@@ -16,6 +25,7 @@ port = 8788
 [vars]
 VERSION = "0.1.0"
 LOG_LEVEL = "debug"
+ENCRYPTION_KEY = "replace_me"
 
 [env.production]
 vars = { ENVIRONMENT = "production" }

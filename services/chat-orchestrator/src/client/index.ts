@@ -1,12 +1,28 @@
-import { ChatOrchestratorClient, ChatOrchestratorRequest, ChatOrchestratorResponse } from './client';
+/**
+ * Chat Orchestrator Client
+ *
+ * This file exports the client interface for the Chat Orchestrator service.
+ */
+
+import { 
+  ChatOrchestratorClient, 
+  ChatOrchestratorRequest, 
+  ChatOrchestratorResponse,
+  createChatOrchestratorClient
+} from './client';
 
 export {
   ChatOrchestratorClient,
   ChatOrchestratorRequest,
-  ChatOrchestratorResponse
+  ChatOrchestratorResponse,
+  createChatOrchestratorClient
 };
 
-// Define the binding interface for the chat orchestrator
+/**
+ * Chat Orchestrator Binding Interface
+ * 
+ * Defines the contract for the Cloudflare Worker binding to the Chat Orchestrator service
+ */
 export interface ChatOrchestratorBinding {
   // Chat methods
   generateChatResponse(request: ChatOrchestratorRequest): Promise<Response>;

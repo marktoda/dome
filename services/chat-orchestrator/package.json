@@ -1,5 +1,5 @@
 {
-  "name": "chat-orchestrator",
+  "name": "@dome/chat-orchestrator",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,7 +9,7 @@
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest run",
     "test:watch": "vitest",
-    "generate": "drizzle-kit generate:sqlite",
+    "generate-migrations": "drizzle-kit generate",
     "migrate": "wrangler d1 execute CHAT_DB --local --file=./migrations/0000_create_checkpoints_table.sql"
   },
   "dependencies": {
@@ -29,7 +29,7 @@
     "@types/node": "^22.14.1",
     "@typescript-eslint/eslint-plugin": "^5.57.1",
     "@typescript-eslint/parser": "^5.57.1",
-    "drizzle-kit": "^0.20.0",
+    "drizzle-kit": "^0.31.0",
     "eslint": "^8.38.0",
     "typescript": "^5.0.4",
     "vitest": "^0.31.0",
