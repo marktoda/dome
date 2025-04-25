@@ -2,10 +2,8 @@ import { getLogger } from '@dome/logging';
 import { ChatController } from './chatController';
 import { SearchController } from './searchController';
 import { SiloController } from './siloController';
-import { ChatService } from '../services/chatService';
-import { SearchService } from '../services/searchService';
-import { Bindings } from '../types';
 import { ServiceFactory } from '../services/serviceFactory';
+import { Bindings } from '../types';
 
 /**
  * Factory for creating controller instances
@@ -32,7 +30,7 @@ export class ControllerFactory {
   getChatController(env: Bindings): ChatController {
     if (!this.chatController) {
       this.logger.debug('Creating new ChatController instance');
-      const chatService = new ChatService(env);
+      const chatService = this.serviceFactory.getChatService(env);
       this.chatController = new ChatController(chatService);
     }
     return this.chatController;
@@ -61,7 +59,8 @@ export class ControllerFactory {
     if (!this.siloController) {
       this.logger.debug('Creating new SiloController instance');
       const siloService = this.serviceFactory.getSiloService(env);
-      this.siloController = new SiloController(siloService);
+      const aiProcessor = this.serviceFactory.getAiProcessorService(env);
+      this.siloController = new SiloController(siloService, aiProcessor);
     }
     return this.siloController;
   }

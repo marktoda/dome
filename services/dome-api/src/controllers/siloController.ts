@@ -2,7 +2,7 @@ import { Context } from 'hono';
 import type { Bindings } from '../types';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
-import { SiloClient, SiloBinding } from '@dome/silo/client';
+import { SiloClient } from '@dome/silo/client';
 import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { getLogger, metrics } from '@dome/logging';
@@ -50,13 +50,9 @@ const listNotesSchema = z.object({
  */
 export class SiloController {
   private logger;
-  private silo: SiloClient;
-  private aiProcessor: AiProcessorClient;
 
-  constructor(env: Bindings) {
+  constructor(private silo: SiloClient, private aiProcessor: AiProcessorClient) {
     this.logger = getLogger();
-    this.silo = new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE);
-    this.aiProcessor = new AiProcessorClient(env.AI_PROCESSOR);
   }
 
   /**

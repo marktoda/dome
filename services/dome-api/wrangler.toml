@@ -19,6 +19,11 @@ service = "silo"
 environment = "production"
 
 [[services]]
+binding = "CHAT"
+service = "chat-orchestrator"
+environment = "production"
+
+[[services]]
 binding = "AI_PROCESSOR"
 service = "ai-processor"
 environment = "production"

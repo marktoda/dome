@@ -1,5 +1,4 @@
 import { vi } from 'vitest';
-import { ChatService } from '../../src/services/chatService';
 import { SearchService } from '../../src/services/searchService';
 import { LlmClient } from '../../src/services/llmClient';
 import { PromptBuilder } from '../../src/services/promptBuilder';

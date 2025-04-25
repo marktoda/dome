@@ -2,8 +2,9 @@ import { Bindings } from '../types';
 import { getLogger } from '@dome/logging';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { ConstellationClient, ConstellationBinding } from '@dome/constellation/client';
+import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
 import { SearchService } from './searchService';
-import { ChatService } from './chatService';
+import { ChatOrchestratorClient } from '@dome/chat-orchestrator/client';
 
 /**
  * Service factory interface
@@ -11,9 +12,10 @@ import { ChatService } from './chatService';
  */
 export interface ServiceFactory {
   getConstellationService(env: Bindings): ConstellationClient;
+  getAiProcessorService(env: Bindings): AiProcessorClient;
   getSearchService(env: Bindings): SearchService;
   getSiloService(env: Bindings): SiloClient;
-  getChatService(env: Bindings): ChatService;
+  getChatService(env: Bindings): ChatOrchestratorClient;
 }
 
 /**
@@ -23,8 +25,9 @@ export interface ServiceFactory {
 export class DefaultServiceFactory implements ServiceFactory {
   // We'll use Maps to store service instances by env reference
   private constellationServices: Map<Bindings, ConstellationClient> = new Map();
+  private aiProcessorServices: Map<Bindings, AiProcessorClient> = new Map();
   private searchServices: Map<Bindings, SearchService> = new Map();
-  private chatServices: Map<Bindings, ChatService> = new Map();
+  private chatServices: Map<Bindings, ChatOrchestratorClient> = new Map();
   private siloServices: Map<Bindings, SiloClient> = new Map();
   private logger = getLogger();
 
@@ -43,6 +46,21 @@ export class DefaultServiceFactory implements ServiceFactory {
       this.logger.debug('Creating new ConstellationService instance');
       service = new ConstellationClient(env.CONSTELLATION as unknown as ConstellationBinding);
       this.constellationServices.set(env, service);
+    }
+    return service;
+  }
+
+  /**
+   * Get the constellation service instance for a specific env
+   * @param env Cloudflare Workers environment bindings
+   * @returns ConstellationService instance
+   */
+  getAiProcessorService(env: Bindings): AiProcessorClient {
+    let service = this.aiProcessorServices.get(env);
+    if (!service) {
+      this.logger.debug('Creating new ConstellationService instance');
+      service = new AiProcessorClient(env.AI_PROCESSOR);
+      this.aiProcessorServices.set(env, service);
     }
     return service;
   }
@@ -84,12 +102,11 @@ export class DefaultServiceFactory implements ServiceFactory {
    * @param env Cloudflare Workers environment bindings
    * @returns ChatService instance
    */
-  getChatService(env: Bindings): ChatService {
+  getChatService(env: Bindings): ChatOrchestratorClient {
     let service = this.chatServices.get(env);
     if (!service) {
       this.logger.debug('Creating new ChatService instance');
-      const searchService = this.getSearchService(env);
-      service = new ChatService(searchService);
+      service = new ChatOrchestratorClient(env.CHAT);
       this.chatServices.set(env, service);
     }
     return service;

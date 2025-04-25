@@ -1,21 +1,18 @@
 import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
-import { ChatService } from '../services/chatService';
+import { ChatOrchestratorClient } from '@dome/chat-orchestrator/client';
 
 /**
  * Controller for chat endpoints
  */
 export class ChatController {
   private logger = getLogger().child({ controller: 'ChatController' });
-  private chatService: ChatService;
 
   /**
    * Create a new chat controller
    * @param chatService Chat service instance
    */
-  constructor(chatService: ChatService) {
-    this.chatService = chatService;
-  }
+  constructor(private chatService: ChatOrchestratorClient) { }
 
   /**
    * Handle chat requests
@@ -39,7 +36,7 @@ export class ChatController {
 
       // Parse request body
       const body = await c.req.json();
-      
+
       // Validate messages
       if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
         this.logger.warn({ userId }, 'Missing or invalid messages in request');
@@ -70,7 +67,7 @@ export class ChatController {
         ...body,
         userId,
       };
-      
+
       this.logger.info(
         {
           userId,
@@ -83,12 +80,12 @@ export class ChatController {
         // Process request
         if (request.stream) {
           // Stream response
-          const response = await this.chatService.streamResponse(c.env, request);
+          const response = await this.chatService.streamResponse(request);
           return response;
         } else {
           // Generate response
-          const response = await this.chatService.generateResponse(c.env, request);
-          
+          const response = await this.chatService.generateResponse(request);
+
           return c.json({
             success: true,
             response,
@@ -103,7 +100,7 @@ export class ChatController {
           },
           'Error processing chat request'
         );
-        
+
         return c.json({
           success: false,
           error: {
@@ -114,7 +111,7 @@ export class ChatController {
       }
     } catch (error) {
       this.logger.error({ err: error }, 'Unexpected error in chat controller');
-      
+
       return c.json({
         success: false,
         error: {
