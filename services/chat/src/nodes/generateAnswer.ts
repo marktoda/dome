@@ -2,6 +2,7 @@ import { getLogger } from '@dome/logging';
 import { AgentState, ToolResult, SourceMetadata } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { formatDocsForPrompt } from '../utils/promptFormatter';
+import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { SearchService } from '../services/searchService';
@@ -19,7 +20,7 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
 
   // Prepare context from retrieved documents
   const docs = state.docs || [];
-  const formattedDocs = formatDocsForPrompt(docs, state.options.includeSourceInfo);
+  const formattedDocs = formatDocsForPrompt(docs, state.options?.includeSourceInfo || true);
 
   // Extract source metadata for attribution
   const sourceMetadata = docs.length > 0 ? SearchService.extractSourceMetadata(docs) : [];
@@ -32,7 +33,7 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
   const systemPrompt = buildSystemPrompt(
     formattedDocs,
     formattedToolResults,
-    state.options.includeSourceInfo,
+    state.options?.includeSourceInfo || true,
   );
 
   // Prepare messages for LLM
@@ -67,9 +68,9 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
     const response = await LlmService.generateResponse(env, state.messages, formattedDocs, {
       traceId,
       spanId,
-      temperature: state.options.temperature,
-      maxTokens: state.options.maxTokens,
-      includeSourceInfo: state.options.includeSourceInfo,
+      temperature: state.options?.temperature || 0.7,
+      maxTokens: state.options?.maxTokens || 1000,
+      includeSourceInfo: state.options?.includeSourceInfo || true,
     });
 
     // Count tokens in the response

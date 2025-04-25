@@ -1,6 +1,7 @@
 import { getLogger } from '@dome/logging';
 import { AgentState, Document } from '../types';
 import { countTokens } from '../utils/tokenCounter';
+import { getUserId } from '../utils/stateUtils';
 import { SearchService } from '../services/searchService';
 import { ObservabilityService } from '../services/observabilityService';
 
@@ -17,7 +18,7 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   const spanId = ObservabilityService.startSpan(env, traceId, 'retrieve', state);
 
   // Skip retrieval if not enabled
-  if (!state.options.enhanceWithContext) {
+  if (!state.options?.enhanceWithContext) {
     logger.info('Context enhancement disabled, skipping retrieval');
 
     // Log the skip event
@@ -39,9 +40,9 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     };
   }
 
-  const { userId } = state;
+  const userId = getUserId(state);
   const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
-  const maxItems = state.options.maxContextItems || 10;
+  const maxItems = state.options?.maxContextItems || 10;
 
   // Track widening attempts
   const wideningAttempts = state.tasks?.wideningAttempts || 0;

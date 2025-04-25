@@ -269,24 +269,31 @@ export async function chat(
   // Default to retry with non-streaming if not specified
   const shouldRetryNonStreaming = streamingOptions?.retryNonStreaming !== false;
 
-  // The new chat API expects a messages array with role and content
+  // The new chat API expects an initialState object with messages array
   const payload = {
-    messages: [
-      {
-        role: 'user',
-        content: message,
-      },
-    ],
+    initialState: {
+      userId: 'cli-user', // Default user ID for CLI
+      messages: [
+        {
+          role: 'user',
+          content: message,
+          timestamp: Date.now(),
+        },
+      ],
+      enhanceWithContext: true,
+      maxContextItems: 5,
+      includeSourceInfo: true,
+      maxTokens: 1000,
+    },
     stream: !!onChunk, // Enable streaming if onChunk callback is provided
-    enhanceWithContext: true,
-    maxContextItems: 5,
-    includeSourceInfo: true,
   };
 
   console.log('[DEBUG] Chat request payload:', {
     messageLength: message.length,
     streaming: !!onChunk,
     shouldRetryNonStreaming,
+    userId: payload.initialState.userId,
+    messageCount: payload.initialState.messages.length,
   });
 
   // If streaming is enabled, handle the response differently
@@ -549,7 +556,7 @@ export async function chat(
           // Notify the user that we're falling back
           onChunk('\n[Streaming failed. Falling back to standard mode...]\n');
 
-          // Create a non-streaming payload
+          // Create a non-streaming payload, maintaining the initialState structure
           const nonStreamingPayload = {
             ...payload,
             stream: false,
@@ -640,7 +647,12 @@ export async function chat(
     // Non-streaming path
     console.log('[DEBUG] Using non-streaming mode');
     try {
-      const response = await api.post('/chat', payload);
+      // Make sure stream is set to false for non-streaming requests
+      const nonStreamingPayload = {
+        ...payload,
+        stream: false,
+      };
+      const response = await api.post('/chat', nonStreamingPayload);
       console.log('[DEBUG] Non-streaming response received:', response);
 
       // Enhanced logging for debugging

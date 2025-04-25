@@ -5,37 +5,8 @@ import { buildChatGraph } from '../graph';
 import { secureMessages, secureOutput } from '../utils/securePromptHandler';
 import { validateInitialState } from '../utils/inputValidator';
 import { transformToSSE } from '../utils/sseTransformer';
+import { ChatRequest, chatRequestSchema, ResumeChatRequest, resumeChatRequestSchema } from '../types';
 
-// Define schemas for request validation
-const chatRequestSchema = z.object({
-  initialState: z.object({
-    userId: z.string(),
-    messages: z.array(
-      z.object({
-        role: z.enum(['user', 'assistant', 'system']),
-        content: z.string(),
-        timestamp: z.number().optional(),
-      }),
-    ),
-    enhanceWithContext: z.boolean().optional().default(true),
-    maxContextItems: z.number().optional().default(5),
-    includeSourceInfo: z.boolean().optional().default(true),
-    maxTokens: z.number().optional().default(1000),
-    temperature: z.number().optional(),
-  }),
-  runId: z.string().optional(),
-});
-
-const resumeChatRequestSchema = z.object({
-  runId: z.string(),
-  newMessage: z
-    .object({
-      role: z.enum(['user', 'assistant', 'system']),
-      content: z.string(),
-      timestamp: z.number().optional(),
-    })
-    .optional(),
-});
 
 /**
  * Chat Controller
@@ -51,14 +22,14 @@ export class ChatController {
    * @param env Environment bindings
    * @param services Service container
    */
-  constructor(private readonly env: Env, private readonly services: Services) {}
+  constructor(private readonly env: Env, private readonly services: Services) { }
 
   /**
    * Generate a chat response with streaming
    * @param request Chat request
    * @returns Streaming response
    */
-  async generateChatResponse(request: z.infer<typeof chatRequestSchema>): Promise<Response> {
+  async generateChatResponse(request: ChatRequest): Promise<Response> {
     const startTime = performance.now();
 
     return withLogger(
@@ -70,8 +41,24 @@ export class ChatController {
       },
       async () => {
         try {
+          // Log the incoming request
+          this.logger.debug(
+            {
+              request: JSON.stringify(request, null, 2),
+            },
+            'Received chat request'
+          );
+
           // Validate request
           const validatedRequest = chatRequestSchema.parse(request);
+
+          // Log the validate request
+          this.logger.debug(
+            {
+              validatedRequest: JSON.stringify(validatedRequest, null, 2),
+            },
+            'Validated chat request'
+          );
 
           // Validate initial state
           const validatedState = validateInitialState(validatedRequest.initialState);
@@ -84,9 +71,13 @@ export class ChatController {
 
           // Register this chat session for retention
           const runId = validatedRequest.runId || crypto.randomUUID();
+
+          // Make sure to access userId from initialState if available
+          const userId = validatedState.initialState?.userId || validatedState.userId;
+
           await this.services.dataRetention.registerDataRecord(
             runId,
-            validatedState.userId,
+            userId,
             'chatHistory',
           );
 
@@ -100,9 +91,14 @@ export class ChatController {
             this.services.toolRegistry,
           );
 
-          // Create a new state object with the validated state
+          // Create a new state object with the validated state that matches the AgentState interface
           const initialState = {
-            userId: validatedState.userId,
+            initialState: {
+              userId: validatedState.userId,
+              messages: validatedState.messages,
+              options: validatedState.options,
+            },
+            // Keep these at the top level for backward compatibility
             messages: validatedState.messages,
             options: validatedState.options,
             tasks: validatedState.tasks || {},
@@ -163,7 +159,7 @@ export class ChatController {
    * @param request Resume chat request
    * @returns Streaming response
    */
-  async resumeChatSession(request: z.infer<typeof resumeChatRequestSchema>): Promise<Response> {
+  async resumeChatSession(request: ResumeChatRequest): Promise<Response> {
     const startTime = performance.now();
 
     return withLogger(

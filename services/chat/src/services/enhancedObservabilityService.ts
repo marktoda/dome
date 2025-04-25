@@ -1,5 +1,6 @@
 import { getLogger } from '@dome/logging';
 import { AgentState } from '../types';
+import { getUserId } from '../utils/stateUtils';
 
 /**
  * Performance metric type
@@ -149,7 +150,7 @@ export class EnhancedObservabilityService {
       name: spanName,
       startTime,
       attributes: {
-        userId: state.userId,
+        userId: getUserId(state),
         messageCount: state.messages.length,
       },
       events: [],
@@ -167,7 +168,7 @@ export class EnhancedObservabilityService {
       traceId,
       spanId,
       spanName,
-      userId: state.userId,
+      userId: getUserId(state),
       environment: env.ENVIRONMENT || 'unknown',
     });
 
@@ -241,7 +242,7 @@ export class EnhancedObservabilityService {
       traceId,
       spanId,
       spanName,
-      userId: startState.userId,
+      userId: getUserId(startState),
       environment: env.ENVIRONMENT || 'unknown',
       status: span.status,
     });
@@ -251,7 +252,7 @@ export class EnhancedObservabilityService {
       traceId,
       spanId,
       spanName,
-      userId: startState.userId,
+      userId: getUserId(startState),
       environment: env.ENVIRONMENT || 'unknown',
     });
 
@@ -357,7 +358,7 @@ export class EnhancedObservabilityService {
     // Record trace end metric
     this.recordMetric(env, 'trace.end', 1, {
       traceId,
-      userId: finalState.userId,
+      userId: getUserId(finalState),
       environment: env.ENVIRONMENT || 'unknown',
       status: trace.status,
     });
@@ -365,7 +366,7 @@ export class EnhancedObservabilityService {
     // Record trace duration metric
     this.recordMetric(env, 'trace.duration', totalExecutionTimeMs, {
       traceId,
-      userId: finalState.userId,
+      userId: getUserId(finalState),
       environment: env.ENVIRONMENT || 'unknown',
     });
 
@@ -375,7 +376,7 @@ export class EnhancedObservabilityService {
         this.recordMetric(env, 'node.duration', duration as number, {
           traceId,
           nodeName,
-          userId: finalState.userId,
+          userId: getUserId(finalState),
           environment: env.ENVIRONMENT || 'unknown',
         });
       }
@@ -387,7 +388,7 @@ export class EnhancedObservabilityService {
         this.recordMetric(env, 'token.count', count as number, {
           traceId,
           tokenType,
-          userId: finalState.userId,
+          userId: getUserId(finalState),
           environment: env.ENVIRONMENT || 'unknown',
         });
       }

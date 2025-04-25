@@ -1,5 +1,6 @@
 import { getLogger } from '@dome/logging';
 import { AgentState } from '../types';
+import { getUserId } from '../utils/stateUtils';
 
 /**
  * Service for observability and tracing
@@ -22,7 +23,7 @@ export class ObservabilityService {
       {
         traceId,
         userId,
-        messageCount: initialState.messages.length,
+        messageCount: initialState.messages?.length || 0,
       },
       'Initialized trace',
     );

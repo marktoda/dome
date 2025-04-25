@@ -176,11 +176,15 @@ describe('ApiClient', () => {
     expect(mockPost).toHaveBeenCalledWith(
       '/chat',
       {
-        messages: [{ role: 'user', content: 'hello' }],
+        initialState: {
+          userId: 'cli-user',
+          messages: [{ role: 'user', content: 'hello', timestamp: expect.any(Number) }],
+          enhanceWithContext: true,
+          maxContextItems: 5,
+          includeSourceInfo: true,
+          maxTokens: 1000,
+        },
         stream: false,
-        enhanceWithContext: true,
-        maxContextItems: 5,
-        includeSourceInfo: true,
       },
       undefined,
     );

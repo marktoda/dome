@@ -257,6 +257,14 @@ export const InitialStateSchema = z.object({
  */
 export function validateInitialState(state: unknown): any {
   try {
+    // Log state for debugging
+    getLogger().debug(
+      {
+        state: JSON.stringify(state, null, 2),
+      },
+      'Validating initial state'
+    );
+    
     // Parse and validate the state
     const validatedState = InitialStateSchema.parse(state);
 

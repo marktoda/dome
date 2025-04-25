@@ -1,6 +1,7 @@
 import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
-import { ChatClient } from '@dome/chat/client';
+import { ChatClient, chatRequestSchema } from '@dome/chat/client';
+
 
 /**
  * Controller for chat endpoints
@@ -12,7 +13,7 @@ export class ChatController {
    * Create a new chat controller
    * @param chatService Chat service instance
    */
-  constructor(private chatService: ChatClient) {}
+  constructor(private chatService: ChatClient) { }
 
   /**
    * Handle chat requests
@@ -38,54 +39,30 @@ export class ChatController {
       }
 
       // Parse request body
-      const body = await c.req.json();
-
-      // Validate messages
-      if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
-        this.logger.warn({ userId }, 'Missing or invalid messages in request');
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'INVALID_REQUEST',
-              message: 'Messages are required and must be an array',
-            },
-          },
-          400,
-        );
-      }
-
-      // Check if at least one user message is present
-      const hasUserMessage = body.messages.some((msg: any) => msg.role === 'user');
-      if (!hasUserMessage) {
-        this.logger.warn({ userId }, 'No user message in request');
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'INVALID_REQUEST',
-              message: 'At least one user message is required',
-            },
-          },
-          400,
-        );
-      }
-
-      // Add user ID to request
-      const request = {
-        ...body,
-        userId,
-      };
-
-      this.logger.info(
-        {
-          userId,
-          stream: request.stream,
-        },
-        'Processing chat request',
-      );
+      const requestData = chatRequestSchema.parse(await c.req.json());
 
       try {
+
+        // Log the request data before validation
+        this.logger.debug(
+          {
+            requestData: JSON.stringify(requestData, null, 2),
+          },
+          'Request data before validation'
+        );
+
+        // Validate using Zod schema
+        const request = chatRequestSchema.parse(requestData);
+
+        this.logger.info(
+          {
+            userId,
+            request,
+            messageCount: request.initialState.messages.length,
+          },
+          'Processing validated chat request'
+        );
+
         // Process request
         if (request.stream) {
           // Stream response
@@ -100,25 +77,27 @@ export class ChatController {
             response,
           });
         }
-      } catch (error) {
-        this.logger.error(
+      } catch (validationError) {
+        // Handle validation errors
+        this.logger.warn(
           {
-            err: error,
-            userId,
-            stream: request.stream,
+            err: validationError,
+            userId
           },
-          'Error processing chat request',
+          'Invalid chat request format'
         );
 
         return c.json(
           {
             success: false,
             error: {
-              code: 'CHAT_ERROR',
-              message: error instanceof Error ? error.message : 'Unknown error',
+              code: 'INVALID_REQUEST',
+              message: validationError instanceof Error
+                ? validationError.message
+                : 'Invalid request format',
             },
           },
-          200,
+          400
         );
       }
     } catch (error) {
@@ -137,3 +116,4 @@ export class ChatController {
     }
   }
 }
+

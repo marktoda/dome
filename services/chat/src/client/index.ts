@@ -6,12 +6,15 @@
 
 import {
   ChatClient,
-  ChatOrchestratorRequest,
   ChatOrchestratorResponse,
   createChatClient,
 } from './client';
+import { ChatRequest } from '../types';
 
-export { ChatClient, ChatOrchestratorRequest, ChatOrchestratorResponse, createChatClient };
+export { ChatClient, ChatOrchestratorResponse, createChatClient };
+
+export * from '../types';
+
 
 /**
  * Chat Orchestrator Binding Interface
@@ -20,7 +23,7 @@ export { ChatClient, ChatOrchestratorRequest, ChatOrchestratorResponse, createCh
  */
 export interface ChatOrchestratorBinding {
   // Chat methods
-  generateChatResponse(request: ChatOrchestratorRequest): Promise<Response>;
+  generateChatResponse(request: ChatRequest): Promise<Response>;
   resumeChatSession(request: { runId: string; newMessage?: any }): Promise<Response>;
 
   // Admin methods

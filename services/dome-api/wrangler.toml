@@ -20,7 +20,7 @@ environment = "production"
 
 [[services]]
 binding = "CHAT"
-service = "chat-orchestrator"
+service = "chat"
 environment = "production"
 
 [[services]]

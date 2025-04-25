@@ -1,6 +1,7 @@
 import { getLogger } from '@dome/logging';
 import { AgentState, QueryAnalysis } from '../types';
 import { countTokens } from '../utils/tokenCounter';
+import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 
@@ -34,8 +35,9 @@ export const splitRewrite = async (state: AgentState, env: Env): Promise<AgentSt
   logger.debug({ tokenCount }, 'Counted tokens in query');
 
   // Create or get trace and span IDs for observability
+  const userId = getUserId(state);
   const traceId =
-    state.metadata?.traceId || ObservabilityService.initTrace(env, state.userId, state);
+    state.metadata?.traceId || ObservabilityService.initTrace(env, userId, state);
   const spanId = ObservabilityService.startSpan(env, traceId, 'splitRewrite', state);
 
   // Log the start of query processing

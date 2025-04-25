@@ -6,33 +6,8 @@
  */
 
 import { getLogger, withLogger, logError, metrics } from '@dome/logging';
-import { ChatOrchestratorBinding } from './index';
+import { ChatOrchestratorBinding, ChatRequest, chatRequestSchema, ResumeChatRequest } from '.';
 import { z } from 'zod';
-
-// Define schemas for request validation
-const chatRequestSchema = z.object({
-  initialState: z.object({
-    userId: z.string(),
-    messages: z.array(
-      z.object({
-        role: z.enum(['user', 'assistant', 'system']),
-        content: z.string(),
-        timestamp: z.number().optional(),
-      }),
-    ),
-    enhanceWithContext: z.boolean().optional().default(true),
-    maxContextItems: z.number().optional().default(5),
-    includeSourceInfo: z.boolean().optional().default(true),
-    maxTokens: z.number().optional().default(1000),
-    temperature: z.number().optional(),
-  }),
-  runId: z.string().optional(),
-});
-
-/**
- * Chat orchestrator client request interface
- */
-export interface ChatOrchestratorRequest extends z.infer<typeof chatRequestSchema> {}
 
 /**
  * Chat orchestrator client response interface
@@ -65,14 +40,14 @@ export class ChatClient {
   constructor(
     private readonly binding: ChatOrchestratorBinding,
     private readonly metricsPrefix: string = 'chat_orchestrator.client',
-  ) {}
+  ) { }
 
   /**
    * Generate a chat response
    * @param request Chat orchestrator request
    * @returns Promise resolving to the chat orchestrator response
    */
-  async generateResponse(request: ChatOrchestratorRequest): Promise<ChatOrchestratorResponse> {
+  async generateResponse(request: ChatRequest): Promise<ChatOrchestratorResponse> {
     const startTime = performance.now();
 
     return withLogger(
@@ -185,7 +160,7 @@ export class ChatClient {
    * @param request Chat orchestrator request
    * @returns Promise resolving to a streaming response
    */
-  async streamResponse(request: ChatOrchestratorRequest): Promise<Response> {
+  async streamResponse(request: ChatRequest): Promise<Response> {
     const startTime = performance.now();
 
     return withLogger(
@@ -240,11 +215,9 @@ export class ChatClient {
    * @param newMessage Optional new message to add to the conversation
    * @returns Promise resolving to a streaming response
    */
-  async resumeChatSession(
-    runId: string,
-    newMessage?: { role: 'user' | 'assistant' | 'system'; content: string; timestamp?: number },
-  ): Promise<Response> {
+  async resumeChatSession(request: ResumeChatRequest): Promise<Response> {
     const startTime = performance.now();
+    const { runId, newMessage } = request;
 
     return withLogger(
       {
