@@ -18,6 +18,8 @@
       "@dome/silo/*": ["services/silo/src/*"],
       "@dome/constellation": ["services/constellation/src"],
       "@dome/constellation/*": ["services/constellation/src/*"],
+      "@dome/errors": ["services/errors/src"],
+      "@dome/errors/*": ["services/errors/src/*"],
       "@dome/ai-processor": ["services/ai-processor/src"],
       "@dome/ai-processor/*": ["services/ai-processor/src/*"],
       "@dome/logging": ["packages/logging/src"],

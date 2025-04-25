@@ -169,18 +169,18 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
     items = Array.isArray(response.notes)
       ? response.notes
       : Array.isArray(response.items)
-      ? response.items
-      : Array.isArray(response)
-      ? response
-      : [];
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
   } else {
     items = Array.isArray(response.tasks)
       ? response.tasks
       : Array.isArray(response.items)
-      ? response.items
-      : Array.isArray(response)
-      ? response
-      : [];
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
   }
 
   // Return an object with the appropriate property containing the items array
@@ -234,9 +234,6 @@ export async function search(query: string, limit: number = 10): Promise<any> {
 
   // Use the dedicated search endpoint
   const response = await api.get('/search', { params });
-
-  // Log the raw response to debug score values
-  console.log('[DEBUG] Raw search response:', JSON.stringify(response, null, 2));
 
   // Ensure scores are properly mapped from the response
   const results = (response.results || []).map((result: any) => {
@@ -442,7 +439,7 @@ export async function chat(
                   console.log(
                     '[DEBUG] No recognized content format:',
                     JSON.stringify(data).substring(0, 100) +
-                      (JSON.stringify(data).length > 100 ? '...' : ''),
+                    (JSON.stringify(data).length > 100 ? '...' : ''),
                   );
 
                   // Try to extract any string content

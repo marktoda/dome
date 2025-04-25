@@ -1,88 +1,78 @@
-import { Bindings } from '../types';
 import { getLogger } from '@dome/logging';
-import { ServiceFactory } from '../services/serviceFactory';
-import { SearchController } from './searchController';
 import { ChatController } from './chatController';
+import { SearchController } from './searchController';
 import { SiloController } from './siloController';
+import { ChatService } from '../services/chatService';
+import { SearchService } from '../services/searchService';
+import { Bindings } from '../types';
+import { ServiceFactory } from '../services/serviceFactory';
 
 /**
- * Controller factory interface
- * This provides a consistent way to access all controllers
+ * Factory for creating controller instances
  */
-export interface ControllerFactory {
-  getSearchController(env: Bindings): SearchController;
-  getChatController(env: Bindings): ChatController;
-  getSiloController(env: Bindings): SiloController;
-}
-
-/**
- * Controller factory implementation
- * Creates and manages controller instances with their service dependencies
- */
-export class DefaultControllerFactory implements ControllerFactory {
-  // We'll use Maps to store controller instances by env reference
-  private searchControllers: Map<Bindings, SearchController> = new Map();
-  private chatControllers: Map<Bindings, ChatController> = new Map();
-  private siloControllers: Map<Bindings, SiloController> = new Map();
-  private logger = getLogger();
-  private serviceFactory: ServiceFactory;
-
-  constructor(serviceFactory: ServiceFactory) {
-    this.serviceFactory = serviceFactory;
-    this.logger.debug('Controller factory initialized');
-  }
+export class ControllerFactory {
+  private logger = getLogger().child({ component: 'ControllerFactory' });
+  private chatController: ChatController | null = null;
+  private searchController: SearchController | null = null;
+  private siloController: SiloController | null = null;
 
   /**
-   * Get the search controller instance for a specific env
-   * @param env Cloudflare Workers environment bindings
-   * @returns SearchController instance
+   * Create a new controller factory
+   * @param serviceFactory Service factory instance
    */
-  getSearchController(env: Bindings): SearchController {
-    let controller = this.searchControllers.get(env);
-    if (!controller) {
-      this.logger.debug('Creating new SearchController instance');
-      controller = new SearchController(this.serviceFactory.getSearchService(env));
-      this.searchControllers.set(env, controller);
-    }
-    return controller;
+  constructor(private serviceFactory: ServiceFactory) {
+    this.logger.debug('Creating new ControllerFactory instance');
   }
 
   /**
-   * Get the chat controller instance for a specific env
-   * @param env Cloudflare Workers environment bindings
-   * @returns ChatController instance
+   * Get a chat controller instance
+   * @param env Environment bindings
+   * @returns Chat controller instance
    */
   getChatController(env: Bindings): ChatController {
-    let controller = this.chatControllers.get(env);
-    if (!controller) {
+    if (!this.chatController) {
       this.logger.debug('Creating new ChatController instance');
-      controller = new ChatController(this.serviceFactory.getChatService(env));
-      this.chatControllers.set(env, controller);
+      const chatService = new ChatService(env);
+      this.chatController = new ChatController(chatService);
     }
-    return controller;
+    return this.chatController;
   }
 
   /**
-   * Get the silo controller instance for a specific env
-   * @param env Cloudflare Workers environment bindings
-   * @returns SiloController instance
+   * Get a search controller instance
+   * @param env Environment bindings
+   * @returns Search controller instance
+   */
+  getSearchController(env: Bindings): SearchController {
+    if (!this.searchController) {
+      this.logger.debug('Creating new SearchController instance');
+      const searchService = this.serviceFactory.getSearchService(env);
+      this.searchController = new SearchController(searchService);
+    }
+    return this.searchController;
+  }
+
+  /**
+   * Get a silo controller instance
+   * @param env Environment bindings
+   * @returns Silo controller instance
    */
   getSiloController(env: Bindings): SiloController {
-    let controller = this.siloControllers.get(env);
-    if (!controller) {
+    if (!this.siloController) {
       this.logger.debug('Creating new SiloController instance');
-      controller = new SiloController(env);
-      this.siloControllers.set(env, controller);
+      const siloService = this.serviceFactory.getSiloService(env);
+      this.siloController = new SiloController(siloService);
     }
-    return controller;
+    return this.siloController;
   }
+
 }
 
 /**
- * Create a controller factory instance
+ * Create a controller factory
  * @param serviceFactory Service factory instance
- * @returns ControllerFactory instance
+ * @returns Controller factory instance
  */
 export function createControllerFactory(serviceFactory: ServiceFactory): ControllerFactory {
-  return new DefaultControllerFactory(serviceFactory);
+  return new ControllerFactory(serviceFactory);
 }

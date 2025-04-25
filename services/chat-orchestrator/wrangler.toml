@@ -1,0 +1,29 @@
+name = "chat-orchestrator"
+main = "src/index.ts"
+compatibility_date = "2025-04-15"
+compatibility_flags = ["nodejs_als"]
+
+# D1 database for checkpointing
+[[d1_databases]]
+binding = "CHAT_DB"
+database_name = "chat_orchestrator"
+database_id = "placeholder-id" # This will be replaced during deployment
+
+# For local development
+[dev]
+port = 8788
+
+[vars]
+VERSION = "0.1.0"
+LOG_LEVEL = "debug"
+
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+vars = { ENVIRONMENT = "staging" }
+command = "pnpm build"
+
+[observability]
+enabled = true
+head_sampling_rate = 1

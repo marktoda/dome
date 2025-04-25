@@ -1,233 +1,127 @@
 import { Context } from 'hono';
-import { z } from 'zod';
-import { Bindings } from '../types';
-import { ServiceError, UnauthorizedError, ValidationError } from '@dome/common';
-import { ChatService, ChatMessage } from '../services/chatService';
 import { getLogger } from '@dome/logging';
+import { ChatService } from '../services/chatService';
 
 /**
- * Chat message schema
- */
-const chatMessageSchema = z.object({
-  role: z.enum(['user', 'assistant', 'system']),
-  content: z.string().min(1, 'Message content is required'),
-});
-
-/**
- * Chat request schema
- */
-const chatRequestSchema = z.object({
-  messages: z.array(chatMessageSchema).min(1, 'At least one message is required'),
-  stream: z.boolean().optional().default(false),
-  enhanceWithContext: z.boolean().optional().default(true),
-  maxContextItems: z.number().int().positive().optional().default(5),
-  includeSourceInfo: z.boolean().optional().default(true),
-  suggestAddCommand: z.boolean().optional().default(true),
-});
-
-/**
- * Controller for chat operations
+ * Controller for chat endpoints
  */
 export class ChatController {
-  private logger;
+  private logger = getLogger().child({ controller: 'ChatController' });
   private chatService: ChatService;
 
+  /**
+   * Create a new chat controller
+   * @param chatService Chat service instance
+   */
   constructor(chatService: ChatService) {
-    this.logger = getLogger();
     this.chatService = chatService;
   }
+
   /**
-   * Process a chat request with RAG enhancement
+   * Handle chat requests
    * @param c Hono context
-   * @returns Response
+   * @returns Response with chat result
    */
-  async chat(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    getLogger().info(
-      {
-        path: c.req.path,
-        method: c.req.method,
-      },
-      'Chat processing started',
-    );
-
+  async chat(c: Context): Promise<Response> {
     try {
-      // Validate request body
-      const body = await c.req.json();
-      getLogger().debug({ requestBody: body }, 'Received chat request data');
-      const validatedData = chatRequestSchema.parse(body);
-
-      // Get user ID from request headers or query parameters
-      const userId = c.req.header('x-user-id') || c.req.query('userId');
-      getLogger().debug({ userId }, 'User ID extracted for chat processing');
-
+      // Get user ID from header
+      const userId = c.req.header('x-user-id');
       if (!userId) {
-        getLogger().warn({ path: c.req.path }, 'Missing user ID in chat request');
-        throw new UnauthorizedError(
-          'User ID is required. Provide it via x-user-id header or userId query parameter',
-        );
+        this.logger.warn('Missing user ID in request');
+        return c.json({
+          success: false,
+          error: {
+            code: 'MISSING_USER_ID',
+            message: 'User ID is required'
+          }
+        }, 401);
       }
 
-      // Get the last user message
-      const lastUserMessage = [...validatedData.messages]
-        .reverse()
-        .find(msg => msg.role === 'user');
-
-      if (!lastUserMessage) {
-        getLogger().warn({ userId }, 'No user message found in chat request');
-        throw new ValidationError('At least one user message is required');
+      // Parse request body
+      const body = await c.req.json();
+      
+      // Validate messages
+      if (!body.messages || !Array.isArray(body.messages) || body.messages.length === 0) {
+        this.logger.warn({ userId }, 'Missing or invalid messages in request');
+        return c.json({
+          success: false,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'Messages are required and must be an array'
+          }
+        }, 400);
       }
 
-      // Prepare chat options
-      getLogger().debug(
+      // Check if at least one user message is present
+      const hasUserMessage = body.messages.some((msg: any) => msg.role === 'user');
+      if (!hasUserMessage) {
+        this.logger.warn({ userId }, 'No user message in request');
+        return c.json({
+          success: false,
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'At least one user message is required'
+          }
+        }, 400);
+      }
+
+      // Add user ID to request
+      const request = {
+        ...body,
+        userId,
+      };
+      
+      this.logger.info(
         {
           userId,
-          messageCount: validatedData.messages.length,
-          lastUserMessage:
-            lastUserMessage.content.substring(0, 100) +
-            (lastUserMessage.content.length > 100 ? '...' : ''),
-          enhanceWithContext: validatedData.enhanceWithContext,
-          streaming: validatedData.stream,
+          stream: request.stream,
         },
-        'Preparing chat options',
+        'Processing chat request'
       );
-
-      const chatOptions = {
-        messages: validatedData.messages as ChatMessage[],
-        userId,
-        enhanceWithContext: validatedData.enhanceWithContext,
-        maxContextItems: validatedData.maxContextItems,
-        includeSourceInfo: validatedData.includeSourceInfo,
-        suggestAddCommand: validatedData.suggestAddCommand,
-      };
-
-      // If streaming is requested, use streaming response
-      if (validatedData.stream) {
-        getLogger().info(
-          {
-            userId,
-            messageCount: validatedData.messages.length,
-            enhanceWithContext: validatedData.enhanceWithContext,
-            maxContextItems: validatedData.maxContextItems,
-            includeSourceInfo: validatedData.includeSourceInfo,
-            suggestAddCommand: validatedData.suggestAddCommand,
-            userAgent: c.req.header('user-agent'),
-            contentType: c.req.header('content-type'),
-            acceptHeader: c.req.header('accept'),
-          },
-          'Starting streaming chat response',
-        );
-
-        try {
-          const response = await this.chatService.streamResponse(c.env, chatOptions);
-
-          getLogger().info(
-            {
-              userId,
-              responseType: typeof response,
-              isResponse: response instanceof Response,
-              status: response.status,
-              headers: Object.fromEntries([...response.headers.entries()]),
-            },
-            'Streaming response initialized',
-          );
-
-          // Return the response directly as it already contains the proper headers
-          return response;
-        } catch (streamError) {
-          getLogger().error(
-            {
-              err: streamError,
-              errorType: typeof streamError,
-              errorName: streamError instanceof Error ? streamError.name : 'Unknown',
-              errorMessage:
-                streamError instanceof Error ? streamError.message : String(streamError),
-              errorStack: streamError instanceof Error ? streamError.stack : 'No stack trace',
-              userId,
-            },
-            'Error setting up streaming response in controller',
-          );
-
-          // Return a graceful error response
-          return c.json(
-            {
-              success: false,
-              error: {
-                code: 'STREAMING_ERROR',
-                message: 'Failed to set up streaming response',
-              },
-              response:
-                "I apologize, but I'm experiencing technical difficulties with streaming. Please try again with streaming disabled.",
-            },
-            200,
-          );
-        }
-      }
-
-      // Otherwise, use regular response
-      getLogger().info({ userId }, 'Generating chat response');
 
       try {
-        const response = await this.chatService.generateResponse(c.env, chatOptions);
-
-        // Ensure we have a valid response
-        if (response === undefined) {
-          getLogger().warn({ userId }, 'Chat response was undefined');
+        // Process request
+        if (request.stream) {
+          // Stream response
+          const response = await this.chatService.streamResponse(c.env, request);
+          return response;
+        } else {
+          // Generate response
+          const response = await this.chatService.generateResponse(c.env, request);
+          
           return c.json({
-            success: false,
-            error: {
-              code: 'CHAT_ERROR',
-              message: 'Failed to generate chat response',
-            },
-            response:
-              "I'm sorry, but I couldn't generate a response at this time. Please try again later.",
+            success: true,
+            response,
           });
         }
-
-        getLogger().info(
+      } catch (error) {
+        this.logger.error(
           {
+            err: error,
             userId,
-            response,
-            responseLength:
-              typeof response === 'string' ? response.length : JSON.stringify(response).length,
+            stream: request.stream,
           },
-          'Chat response successfully generated',
+          'Error processing chat request'
         );
+        
         return c.json({
-          success: true,
-          response,
-        });
-      } catch (chatError) {
-        getLogger().error({ err: chatError, userId }, 'Error generating chat response');
-
-        // Return a graceful error response instead of throwing
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'CHAT_ERROR',
-              message: 'Failed to generate chat response',
-            },
-            response:
-              "I apologize, but I'm experiencing technical difficulties. Please try again later.",
-          },
-          200,
-        ); // Return 200 status to allow the client to display the error message
+          success: false,
+          error: {
+            code: 'CHAT_ERROR',
+            message: error instanceof Error ? error.message : 'Unknown error',
+          }
+        }, 200);
       }
     } catch (error) {
-      getLogger().error(
-        {
-          err: error,
-          path: c.req.path,
-          userId: c.req.header('x-user-id') || c.req.query('userId'),
-        },
-        'Error in chat controller',
-      );
-
-      // Let the middleware handle the error
-      throw error;
+      this.logger.error({ err: error }, 'Unexpected error in chat controller');
+      
+      return c.json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'An unexpected error occurred',
+        }
+      }, 500);
     }
   }
 }
-
-// No longer exporting a singleton instance
-// The controller factory will create and manage instances

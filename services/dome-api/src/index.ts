@@ -142,6 +142,8 @@ app.post('/chat', async (c: Context<{ Bindings: Bindings }>) => {
   return await chatController.chat(c);
 });
 
+// Rollout management routes have been removed as part of the Chat RAG Graph migration
+
 // Mount routers
 app.route('/notes', notesRouter);
 app.route('/search', searchRouter);

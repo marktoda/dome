@@ -87,6 +87,17 @@ export class ForbiddenError extends DomeError {
   }
 }
 
+export class BadRequestError extends DomeError {
+  constructor(message: string, details?: Record<string, any>, cause?: Error) {
+    super(message, {
+      code: 'BAD_REQUEST',
+      statusCode: 400,
+      details,
+      cause,
+    });
+  }
+}
+
 export class InternalError extends DomeError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
     super(message, {
