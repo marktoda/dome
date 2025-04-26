@@ -92,10 +92,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "data_retention_consents_user_id_data_category_pk": {
-          "columns": [
-            "user_id",
-            "data_category"
-          ],
+          "columns": ["user_id", "data_category"],
           "name": "data_retention_consents_user_id_data_category_pk"
         }
       },

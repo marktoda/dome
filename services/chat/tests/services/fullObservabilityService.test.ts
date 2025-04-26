@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { FullObservabilityService, TraceContext } from '../../src/services/fullObservabilityService';
+import {
+  FullObservabilityService,
+  TraceContext,
+} from '../../src/services/fullObservabilityService';
 import { getLogger } from '@dome/logging';
 import { Metrics } from '@dome/metrics';
 
@@ -189,14 +192,7 @@ describe('FullObservabilityService', () => {
       );
 
       // Act
-      FullObservabilityService.endSpan(
-        mockEnv,
-        spanContext,
-        'testSpan',
-        mockState,
-        mockState,
-        150,
-      );
+      FullObservabilityService.endSpan(mockEnv, spanContext, 'testSpan', mockState, mockState, 150);
 
       // Assert
       // Verify logger was called

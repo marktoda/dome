@@ -261,9 +261,9 @@ export function validateInitialState(state: unknown): any {
       {
         state: JSON.stringify(state, null, 2),
       },
-      'Validating initial state'
+      'Validating initial state',
     );
-    
+
     // Parse and validate the state
     const validatedState = InitialStateSchema.parse(state);
 

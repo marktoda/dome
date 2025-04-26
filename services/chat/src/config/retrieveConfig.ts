@@ -20,7 +20,7 @@ export interface RetrieveConfig {
      * Used in retrieve.ts for truncating individual documents
      */
     maxPerDocument: number;
-    
+
     /**
      * Maximum percentage of model's context window to allocate for all documents
      * Used in retrieve.ts for limiting total document tokens
@@ -46,12 +46,12 @@ export interface RetrieveConfig {
      * Base minimum relevance score (before widening attempts)
      */
     baseMinRelevance: number;
-    
+
     /**
      * Reduction in relevance score per widening attempt
      */
     wideningReduction: number;
-    
+
     /**
      * Absolute minimum relevance score (floor)
      */
@@ -72,19 +72,19 @@ const ENVIRONMENT_CONFIGS: Record<string, Partial<RetrieveConfig>> = {
     },
     documentLimits: {
       maxDocuments: 8, // More documents for testing
-    }
+    },
   },
-  
+
   production: {
     // Production uses the default settings
   },
-  
+
   test: {
     // Test environment can have more documents for thorough testing
     documentLimits: {
       maxDocuments: 10,
-    }
-  }
+    },
+  },
 };
 
 /**
@@ -102,7 +102,7 @@ export const DEFAULT_RETRIEVE_CONFIG: RetrieveConfig = {
     baseMinRelevance: 0.5,
     wideningReduction: 0.1,
     minimumRelevanceFloor: 0.2,
-  }
+  },
 };
 
 /**
@@ -122,21 +122,21 @@ function getCurrentEnvironment(): string {
 export function getRetrieveConfig(): RetrieveConfig {
   const environment = getCurrentEnvironment();
   const envConfig = ENVIRONMENT_CONFIGS[environment] || {};
-  
+
   // Deep merge the environment config with the default config
   return {
     tokenAllocation: {
       ...DEFAULT_RETRIEVE_CONFIG.tokenAllocation,
-      ...(envConfig.tokenAllocation || {})
+      ...(envConfig.tokenAllocation || {}),
     },
     documentLimits: {
       ...DEFAULT_RETRIEVE_CONFIG.documentLimits,
-      ...(envConfig.documentLimits || {})
+      ...(envConfig.documentLimits || {}),
     },
     relevanceScores: {
       ...DEFAULT_RETRIEVE_CONFIG.relevanceScores,
-      ...(envConfig.relevanceScores || {})
-    }
+      ...(envConfig.relevanceScores || {}),
+    },
   };
 }
 
@@ -148,8 +148,8 @@ export function getRetrieveConfig(): RetrieveConfig {
 export function calculateMinRelevanceScore(wideningAttempts: number): number {
   const config = getRetrieveConfig();
   return Math.max(
-    config.relevanceScores.baseMinRelevance - 
-    wideningAttempts * config.relevanceScores.wideningReduction,
-    config.relevanceScores.minimumRelevanceFloor
+    config.relevanceScores.baseMinRelevance -
+      wideningAttempts * config.relevanceScores.wideningReduction,
+    config.relevanceScores.minimumRelevanceFloor,
   );
 }

@@ -296,12 +296,15 @@ export async function chat(
   });
 
   // Debug the full payload structure
-  console.log('[DEBUG] Full payload structure:', JSON.stringify({
-    userId: payload.userId,
-    messageCount: payload.messages.length,
-    hasOptions: !!payload.options,
-    stream: payload.stream
-  }));
+  console.log(
+    '[DEBUG] Full payload structure:',
+    JSON.stringify({
+      userId: payload.userId,
+      messageCount: payload.messages.length,
+      hasOptions: !!payload.options,
+      stream: payload.stream,
+    }),
+  );
 
   // If streaming is enabled, handle the response differently
   if (onChunk) {
@@ -659,7 +662,7 @@ export async function chat(
         ...payload,
         stream: false,
       };
-      
+
       // Log the full request payload for debugging
       console.log('[DEBUG] Full request payload:', JSON.stringify(nonStreamingPayload, null, 2));
       // Create a new payload with the right structure
@@ -681,17 +684,20 @@ export async function chat(
         },
         stream: false,
       };
-      
-      console.log('[DEBUG] Final payload:', JSON.stringify({
-        userId: newPayload.userId,
-        messageCount: newPayload.messages.length,
-        hasOptions: !!newPayload.options,
-        stream: newPayload.stream
-      }));
-      
+
+      console.log(
+        '[DEBUG] Final payload:',
+        JSON.stringify({
+          userId: newPayload.userId,
+          messageCount: newPayload.messages.length,
+          hasOptions: !!newPayload.options,
+          stream: newPayload.stream,
+        }),
+      );
+
       // Use the new payload
       nonStreamingPayload = newPayload;
-      
+
       const response = await api.post('/chat', nonStreamingPayload);
       console.log('[DEBUG] Non-streaming response received:', response);
 
@@ -716,12 +722,14 @@ export async function chat(
       }
 
       // Special case for the specific response structure we're seeing
-      if (response &&
-          response.success === true &&
-          typeof response.response === 'object' &&
-          response.response &&
-          'response' in response.response &&
-          response.response.response === '') {
+      if (
+        response &&
+        response.success === true &&
+        typeof response.response === 'object' &&
+        response.response &&
+        'response' in response.response &&
+        response.response.response === ''
+      ) {
         console.log('[DEBUG] Empty response string detected, returning fallback message');
         return "I'm sorry, but I couldn't generate a response at this time. The service may be experiencing issues.";
       }
@@ -741,7 +749,10 @@ export async function chat(
             return response.response.response;
           } else if ('response' in response.response) {
             // Handle case where response.response.response exists but isn't a string
-            return String(response.response.response || "I'm sorry, but I couldn't generate a response at this time.");
+            return String(
+              response.response.response ||
+                "I'm sorry, but I couldn't generate a response at this time.",
+            );
           } else {
             // Try to extract any text from the object
             const responseText = JSON.stringify(response.response);
@@ -753,7 +764,9 @@ export async function chat(
             }
           }
         } else {
-          return String(response.response || "I'm sorry, but I couldn't generate a response at this time.");
+          return String(
+            response.response || "I'm sorry, but I couldn't generate a response at this time.",
+          );
         }
       } else if (
         response &&
@@ -769,7 +782,7 @@ export async function chat(
 
       // Fallback to the entire response object if the expected structure isn't found
       console.log('[DEBUG] Using fallback response format');
-      
+
       // If we get here, we have an unexpected response format
       // Return a fallback message instead of the raw response
       return "I'm sorry, but I couldn't generate a response at this time. The service may be experiencing issues.";
@@ -778,7 +791,7 @@ export async function chat(
         '[DEBUG] Error in non-streaming mode:',
         error instanceof Error ? error.message : String(error),
       );
-      
+
       // Log more detailed error information
       if (error instanceof Error) {
         const errorObj = error as any;
@@ -788,7 +801,7 @@ export async function chat(
           console.log('[DEBUG] Error response data:', JSON.stringify(errorObj.response.data));
         }
       }
-      
+
       throw error;
     }
   }

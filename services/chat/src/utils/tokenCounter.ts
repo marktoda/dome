@@ -13,7 +13,10 @@ export function countTokens(text: string, model = 'gpt-4'): number {
 
   try {
     // Skip tiktoken in Cloudflare Workers environment due to WebAssembly compatibility issues
-    if (typeof globalThis.WorkerGlobalScope !== 'undefined' && globalThis instanceof WorkerGlobalScope) {
+    if (
+      typeof globalThis.WorkerGlobalScope !== 'undefined' &&
+      globalThis instanceof WorkerGlobalScope
+    ) {
       // We're in a Cloudflare Worker, use the fallback method
       return approximateTokenCount(text);
     }

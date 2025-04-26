@@ -10,7 +10,7 @@ import { getModelConfig, getRetrieveConfig, calculateMinRelevanceScore } from '.
 import {
   updateStateWithTiming,
   updateStateWithTokenCount,
-  addErrorToState
+  addErrorToState,
 } from '../utils/stateUpdateHelpers';
 
 /**
@@ -26,10 +26,13 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   const spanId = ObservabilityService.startSpan(env, traceId, 'retrieve', state);
 
   // Log minimal options for debugging
-  logger.info({
-    enhanceWithContext: state.options?.enhanceWithContext,
-    maxContextItems: state.options?.maxContextItems,
-  }, 'Retrieve node options');
+  logger.info(
+    {
+      enhanceWithContext: state.options?.enhanceWithContext,
+      maxContextItems: state.options?.maxContextItems,
+    },
+    'Retrieve node options',
+  );
 
   // Force enable context enhancement for now
   const enhanceWithContext = state.options?.enhanceWithContext ?? true;
@@ -44,12 +47,7 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       options: state.options,
     });
 
-    return updateStateWithTiming(
-      { ...state, docs: [] },
-      'retrieve',
-      0,
-      spanId
-    );
+    return updateStateWithTiming({ ...state, docs: [] }, 'retrieve', 0, spanId);
   }
 
   const userId = getUserId(state);
@@ -62,7 +60,6 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
 
   // Log the query for debugging
   logger.info({ query }, 'Query for retrieval');
-
 
   const maxItems = state.options?.maxContextItems || 10;
 
@@ -135,16 +132,18 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     // Get model configuration
     const modelId = state.options?.modelId || LlmService.MODEL;
     const modelConfig = getModelConfig(modelId);
-    
+
     // Calculate total tokens in retrieved docs and truncate if needed
     let totalTokens = 0;
     const processedDocs = docs.map(doc => {
       // First truncate each document to a reasonable size (max tokens per doc based on model)
       // Use configuration for max tokens per document
       const retrieveConfig = getRetrieveConfig();
-      const maxTokensPerDoc = Math.floor(modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxPerDocument);
+      const maxTokensPerDoc = Math.floor(
+        modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxPerDocument,
+      );
       const truncatedDoc = truncateDocumentToMaxTokens(doc, maxTokensPerDoc);
-      
+
       // Count tokens in the truncated document
       const docTokens = estimateDocumentTokens(truncatedDoc);
       totalTokens += docTokens;
@@ -163,14 +162,16 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
 
     // Rank and filter documents by relevance
     const rankedDocs = SearchService.rankAndFilterDocuments(processedDocs, minRelevance);
-    
+
     // Limit the total number of documents to control token count
     // Use configuration for max tokens for all documents
     const retrieveConfig = getRetrieveConfig();
-    const maxDocsTokens = Math.floor(modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxForAllDocuments);
+    const maxDocsTokens = Math.floor(
+      modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxForAllDocuments,
+    );
     let currentTokens = 0;
     const limitedDocs = [];
-    
+
     // Log model configuration
     logger.info(
       {
@@ -181,25 +182,25 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
         totalRetrievedDocs: rankedDocs.length,
         totalRetrievedTokens: totalTokens,
       },
-      'Document token limits based on model configuration'
+      'Document token limits based on model configuration',
     );
-    
+
     for (const doc of rankedDocs) {
       if (currentTokens + (doc.metadata?.tokenCount || 0) > maxDocsTokens) {
         // Skip this document if it would exceed our token budget
         continue;
       }
-      
+
       limitedDocs.push(doc);
       currentTokens += doc.metadata?.tokenCount || 0;
-      
+
       // If we've reached our document limit, stop adding more
       const retrieveConfig = getRetrieveConfig();
       if (limitedDocs.length >= retrieveConfig.documentLimits.maxDocuments) {
         break;
       }
     }
-    
+
     // Update the total token count
     totalTokens = currentTokens;
 
@@ -215,7 +216,7 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
         ...state.tasks,
         needsWidening: docsCount < 2 && wideningAttempts < 2,
         wideningAttempts,
-      }
+      },
     };
 
     // Add timing and token count information
@@ -235,10 +236,13 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
 
     return resultState;
   } catch (error) {
-    logger.error({
-      errorMessage: error instanceof Error ? error.message : String(error),
-      userId
-    }, 'Error retrieving context');
+    logger.error(
+      {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        userId,
+      },
+      'Error retrieving context',
+    );
 
     // Log the error event with minimal info
     ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_error', {
@@ -255,17 +259,16 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       { ...state, docs: [] },
       'retrieve',
       executionTime,
-      spanId
+      spanId,
     );
-    
+
     // Add error information and return
     return addErrorToState(
       errorState,
       'retrieve',
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
-    
+
     return errorState;
   }
 };
-

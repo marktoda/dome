@@ -65,7 +65,7 @@ describe('ObservabilityService', () => {
 
       // Assert
       expect(traceId).toMatch(/^trace-user123-\d+$/);
-      
+
       // Verify the trace exists in the internal storage
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
@@ -77,7 +77,7 @@ describe('ObservabilityService', () => {
     it('should start a span and return the spanId', () => {
       // Arrange
       const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
-      
+
       // Act
       const spanId = ObservabilityService.startSpan(mockEnv, traceId, 'testSpan', mockState);
 
@@ -91,22 +91,14 @@ describe('ObservabilityService', () => {
       // Arrange
       const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
       const spanId = ObservabilityService.startSpan(mockEnv, traceId, 'testNode', mockState);
-      
+
       // Act
-      ObservabilityService.endSpan(
-        mockEnv,
-        traceId,
-        spanId,
-        'testNode',
-        mockState,
-        mockState,
-        100,
-      );
+      ObservabilityService.endSpan(mockEnv, traceId, spanId, 'testNode', mockState, mockState, 100);
 
       // Assert
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
-      
+
       const span = trace.spans[spanId];
       expect(span).toBeDefined();
       expect(span.endTime).toBeDefined();
@@ -120,20 +112,14 @@ describe('ObservabilityService', () => {
       const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
       const spanId = ObservabilityService.startSpan(mockEnv, traceId, 'testNode', mockState);
       const eventData = { key: 'value' };
-      
+
       // Act
-      ObservabilityService.logEvent(
-        mockEnv,
-        traceId,
-        spanId,
-        'testEvent',
-        eventData,
-      );
+      ObservabilityService.logEvent(mockEnv, traceId, spanId, 'testEvent', eventData);
 
       // Assert
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
-      
+
       const span = trace.spans[spanId];
       expect(span).toBeDefined();
       expect(span.events.length).toBe(1);
@@ -146,14 +132,9 @@ describe('ObservabilityService', () => {
     it('should end a trace and update its status', () => {
       // Arrange
       const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
-      
+
       // Act
-      ObservabilityService.endTrace(
-        mockEnv,
-        traceId,
-        mockState,
-        300,
-      );
+      ObservabilityService.endTrace(mockEnv, traceId, mockState, 300);
 
       // Assert
       const trace = ObservabilityService.getTrace(traceId);
@@ -187,7 +168,7 @@ describe('ObservabilityService', () => {
       // Assert
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
-      
+
       const span = trace.spans[spanId];
       expect(span).toBeDefined();
       expect(span.events.length).toBe(1);
@@ -205,19 +186,12 @@ describe('ObservabilityService', () => {
       const results = [{ id: 'doc1', score: 0.9 }];
 
       // Act
-      ObservabilityService.logRetrieval(
-        mockEnv,
-        traceId,
-        spanId,
-        query,
-        results,
-        50,
-      );
+      ObservabilityService.logRetrieval(mockEnv, traceId, spanId, query, results, 50);
 
       // Assert
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
-      
+
       const span = trace.spans[spanId];
       expect(span).toBeDefined();
       expect(span.events.length).toBe(1);

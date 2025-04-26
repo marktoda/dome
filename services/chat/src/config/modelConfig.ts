@@ -1,6 +1,6 @@
 /**
  * AI Model Configuration
- * 
+ *
  * This file contains configuration for different AI models,
  * including their context window sizes and other parameters.
  */
@@ -77,7 +77,7 @@ export function getModelConfig(modelId?: string): ModelConfig {
   if (!modelId) {
     return DEFAULT_MODEL;
   }
-  
+
   // Find model by ID
   const model = Object.values(MODELS).find(m => m.id === modelId);
   return model || DEFAULT_MODEL;
@@ -93,16 +93,16 @@ export function getModelConfig(modelId?: string): ModelConfig {
 export function calculateTokenLimits(
   modelConfig: ModelConfig,
   inputTokens: number,
-  requestedMaxTokens?: number
+  requestedMaxTokens?: number,
 ): { maxContextTokens: number; maxResponseTokens: number } {
   // Reserve tokens for the response
   const defaultMaxTokens = requestedMaxTokens || modelConfig.defaultMaxTokens;
-  
+
   // Calculate maximum response tokens based on available context window
   // Leave a small buffer (100 tokens) for safety
   const availableTokens = Math.max(500, modelConfig.maxContextTokens - inputTokens - 100);
   const maxResponseTokens = Math.min(defaultMaxTokens, availableTokens);
-  
+
   return {
     maxContextTokens: modelConfig.maxContextTokens,
     maxResponseTokens,

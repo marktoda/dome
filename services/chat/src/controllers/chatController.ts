@@ -5,8 +5,12 @@ import { buildChatGraph } from '../graph';
 import { secureMessages, secureOutput } from '../utils/securePromptHandler';
 import { validateInitialState } from '../utils/inputValidator';
 import { transformToSSE } from '../utils/sseTransformer';
-import { ChatRequest, chatRequestSchema, ResumeChatRequest, resumeChatRequestSchema } from '../types';
-
+import {
+  ChatRequest,
+  chatRequestSchema,
+  ResumeChatRequest,
+  resumeChatRequestSchema,
+} from '../types';
 
 /**
  * Chat Controller
@@ -22,7 +26,7 @@ export class ChatController {
    * @param env Environment bindings
    * @param services Service container
    */
-  constructor(private readonly env: Env, private readonly services: Services) { }
+  constructor(private readonly env: Env, private readonly services: Services) {}
 
   /**
    * Generate a chat response with streaming
@@ -49,7 +53,7 @@ export class ChatController {
               hasOptions: !!request.options,
               stream: !!request.stream,
             },
-            'Received chat request'
+            'Received chat request',
           );
 
           // Validate request
@@ -61,7 +65,7 @@ export class ChatController {
               userId: validatedRequest.userId,
               messageCount: validatedRequest.messages?.length || 0,
             },
-            'Validated chat request'
+            'Validated chat request',
           );
 
           // Validate the request as the initial state
@@ -79,11 +83,7 @@ export class ChatController {
           // Get the userId from the validated state
           const userId = validatedState.userId;
 
-          await this.services.dataRetention.registerDataRecord(
-            runId,
-            userId,
-            'chatHistory',
-          );
+          await this.services.dataRetention.registerDataRecord(runId, userId, 'chatHistory');
 
           // Apply security to messages
           validatedState.messages = secureMessages(validatedState.messages);
@@ -113,8 +113,8 @@ export class ChatController {
           // Use the graph's stream method for streaming responses
           const result = await graph.stream(state, {
             configurable: {
-              runId: runId
-            }
+              runId: runId,
+            },
           });
 
           // Transform to SSE stream
@@ -216,8 +216,8 @@ export class ChatController {
 
           const result = await graph.stream(newState, {
             configurable: {
-              runId: validatedRequest.runId
-            }
+              runId: validatedRequest.runId,
+            },
           });
 
           // Transform to SSE stream

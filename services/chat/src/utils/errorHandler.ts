@@ -8,7 +8,7 @@ import { getLogger, logError, metrics } from '@dome/logging';
  */
 export function withErrorHandling<T, Args extends any[]>(
   operation: string,
-  fn: (...args: Args) => Promise<T>
+  fn: (...args: Args) => Promise<T>,
 ): (...args: Args) => Promise<T> {
   return async (...args: Args): Promise<T> => {
     try {
@@ -33,16 +33,19 @@ export function withErrorHandling<T, Args extends any[]>(
 export function withNodeErrorHandling<T, Args extends any[]>(
   nodeName: string,
   logger: ReturnType<typeof getLogger>,
-  fn: (...args: Args) => Promise<T>
+  fn: (...args: Args) => Promise<T>,
 ): (...args: Args) => Promise<T> {
   return async (...args: Args): Promise<T> => {
     try {
       return await fn(...args);
     } catch (error) {
-      logger.error({
-        errorMessage: error instanceof Error ? error.message : String(error),
-      }, `Error in ${nodeName} node`);
-      
+      logger.error(
+        {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+        `Error in ${nodeName} node`,
+      );
+
       // Re-throw the error for the caller to handle
       throw error;
     }

@@ -42,18 +42,24 @@ export default class ChatOrchestrator
    */
   async generateChatResponse(request: any): Promise<Response> {
     try {
-      this.logger.info({
-        operation: 'generateChatResponse',
-        userId: request?.userId,
-      }, 'RPC call received');
-      
+      this.logger.info(
+        {
+          operation: 'generateChatResponse',
+          userId: request?.userId,
+        },
+        'RPC call received',
+      );
+
       return await this.controllers.chat.generateChatResponse(request);
     } catch (error) {
-      this.logger.error({
-        operation: 'generateChatResponse',
-        error,
-      }, 'Error in RPC call');
-      
+      this.logger.error(
+        {
+          operation: 'generateChatResponse',
+          error,
+        },
+        'Error in RPC call',
+      );
+
       throw error;
     }
   }
@@ -65,18 +71,24 @@ export default class ChatOrchestrator
    */
   async resumeChatSession(request: any): Promise<Response> {
     try {
-      this.logger.info({
-        operation: 'resumeChatSession',
-        runId: request?.runId,
-      }, 'RPC call received');
-      
+      this.logger.info(
+        {
+          operation: 'resumeChatSession',
+          runId: request?.runId,
+        },
+        'RPC call received',
+      );
+
       return await this.controllers.chat.resumeChatSession(request);
     } catch (error) {
-      this.logger.error({
-        operation: 'resumeChatSession',
-        error,
-      }, 'Error in RPC call');
-      
+      this.logger.error(
+        {
+          operation: 'resumeChatSession',
+          error,
+        },
+        'Error in RPC call',
+      );
+
       throw error;
     }
   }
@@ -87,17 +99,23 @@ export default class ChatOrchestrator
    */
   async getCheckpointStats(): Promise<any> {
     try {
-      this.logger.info({
-        operation: 'getCheckpointStats',
-      }, 'RPC call received');
-      
+      this.logger.info(
+        {
+          operation: 'getCheckpointStats',
+        },
+        'RPC call received',
+      );
+
       return await this.controllers.admin.getCheckpointStats();
     } catch (error) {
-      this.logger.error({
-        operation: 'getCheckpointStats',
-        error,
-      }, 'Error in RPC call');
-      
+      this.logger.error(
+        {
+          operation: 'getCheckpointStats',
+          error,
+        },
+        'Error in RPC call',
+      );
+
       throw error;
     }
   }
@@ -108,17 +126,23 @@ export default class ChatOrchestrator
    */
   async cleanupCheckpoints(): Promise<{ deletedCount: number }> {
     try {
-      this.logger.info({
-        operation: 'cleanupCheckpoints',
-      }, 'RPC call received');
-      
+      this.logger.info(
+        {
+          operation: 'cleanupCheckpoints',
+        },
+        'RPC call received',
+      );
+
       return await this.controllers.admin.cleanupCheckpoints();
     } catch (error) {
-      this.logger.error({
-        operation: 'cleanupCheckpoints',
-        error,
-      }, 'Error in RPC call');
-      
+      this.logger.error(
+        {
+          operation: 'cleanupCheckpoints',
+          error,
+        },
+        'Error in RPC call',
+      );
+
       throw error;
     }
   }
@@ -129,17 +153,23 @@ export default class ChatOrchestrator
    */
   async getDataRetentionStats(): Promise<any> {
     try {
-      this.logger.info({
-        operation: 'getDataRetentionStats',
-      }, 'RPC call received');
-      
+      this.logger.info(
+        {
+          operation: 'getDataRetentionStats',
+        },
+        'RPC call received',
+      );
+
       return await this.controllers.admin.getDataRetentionStats();
     } catch (error) {
-      this.logger.error({
-        operation: 'getDataRetentionStats',
-        error,
-      }, 'Error in RPC call');
-      
+      this.logger.error(
+        {
+          operation: 'getDataRetentionStats',
+          error,
+        },
+        'Error in RPC call',
+      );
+
       throw error;
     }
   }
@@ -150,17 +180,23 @@ export default class ChatOrchestrator
    */
   async cleanupExpiredData(): Promise<any> {
     try {
-      this.logger.info({
-        operation: 'cleanupExpiredData',
-      }, 'RPC call received');
-      
+      this.logger.info(
+        {
+          operation: 'cleanupExpiredData',
+        },
+        'RPC call received',
+      );
+
       return await this.controllers.admin.cleanupExpiredData();
     } catch (error) {
-      this.logger.error({
-        operation: 'cleanupExpiredData',
-        error,
-      }, 'Error in RPC call');
-      
+      this.logger.error(
+        {
+          operation: 'cleanupExpiredData',
+          error,
+        },
+        'Error in RPC call',
+      );
+
       throw error;
     }
   }
@@ -172,19 +208,25 @@ export default class ChatOrchestrator
    */
   async deleteUserData(userId: string): Promise<{ deletedCount: number }> {
     try {
-      this.logger.info({
-        operation: 'deleteUserData',
-        userId,
-      }, 'RPC call received');
-      
+      this.logger.info(
+        {
+          operation: 'deleteUserData',
+          userId,
+        },
+        'RPC call received',
+      );
+
       return await this.controllers.admin.deleteUserData(userId);
     } catch (error) {
-      this.logger.error({
-        operation: 'deleteUserData',
-        userId,
-        error,
-      }, 'Error in RPC call');
-      
+      this.logger.error(
+        {
+          operation: 'deleteUserData',
+          userId,
+          error,
+        },
+        'Error in RPC call',
+      );
+
       throw error;
     }
   }
@@ -202,21 +244,27 @@ export default class ChatOrchestrator
     request: { durationDays: number },
   ): Promise<{ success: boolean }> {
     try {
-      this.logger.info({
-        operation: 'recordConsent',
-        userId,
-        dataCategory,
-      }, 'RPC call received');
-      
+      this.logger.info(
+        {
+          operation: 'recordConsent',
+          userId,
+          dataCategory,
+        },
+        'RPC call received',
+      );
+
       return await this.controllers.admin.recordConsent(userId, dataCategory, request);
     } catch (error) {
-      this.logger.error({
-        operation: 'recordConsent',
-        userId,
-        dataCategory,
-        error,
-      }, 'Error in RPC call');
-      
+      this.logger.error(
+        {
+          operation: 'recordConsent',
+          userId,
+          dataCategory,
+          error,
+        },
+        'Error in RPC call',
+      );
+
       throw error;
     }
   }

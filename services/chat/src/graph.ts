@@ -93,46 +93,49 @@ export async function buildChatGraph(
   }
 
   // Configure routing based on enabled features
-  if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_DYNAMIC_WIDENING) ||
-      FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER)) {
-    
+  if (
+    FeatureFlagService.isEnabled(FeatureFlag.ENABLE_DYNAMIC_WIDENING) ||
+    FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER)
+  ) {
     // Create routing options
     const routingOptions: Record<string, ChatNodeKey> = {
-      answer: 'generate_answer'
+      answer: 'generate_answer',
     };
-    
+
     if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_DYNAMIC_WIDENING)) {
       routingOptions.widen = 'dynamic_widen';
     }
-    
+
     if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER)) {
       routingOptions.tool = 'tool_router';
     }
-    
+
     // Add conditional edges from retrieve
     graph.addConditionalEdges(
       'retrieve',
       nodeWrappers.routeAfterRetrieve as any, // Type assertion to bypass type checking
-      routingOptions as any // Type assertion to bypass type checking
+      routingOptions as any, // Type assertion to bypass type checking
     );
-    
+
     // Add edge from dynamic widen back to retrieve if enabled
     if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_DYNAMIC_WIDENING)) {
       graph.addEdge('dynamic_widen' as any, 'retrieve');
     }
-    
+
     // Add conditional edges from tool router if both tool router and execution are enabled
-    if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER) &&
-        FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_EXECUTION)) {
+    if (
+      FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER) &&
+      FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_EXECUTION)
+    ) {
       graph.addConditionalEdges(
         'tool_router' as any,
         nodeWrappers.routeAfterTool as any,
         {
           run_tool: 'run_tool' as ChatNodeKey,
           answer: 'generate_answer',
-        } as any // Type assertion to bypass type checking
+        } as any, // Type assertion to bypass type checking
       );
-      
+
       // Add edge from run tool to generate answer
       graph.addEdge('run_tool' as any, 'generate_answer');
     } else if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER)) {
@@ -143,7 +146,7 @@ export async function buildChatGraph(
     // Default simple flow if no advanced features are enabled
     graph.addEdge('retrieve', 'generate_answer');
   }
-  
+
   // Final edge to end
   graph.addEdge('generate_answer', END);
 

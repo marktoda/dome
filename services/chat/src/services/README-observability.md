@@ -69,7 +69,15 @@ const spanId = ObservabilityService.startSpan(env, traceId, 'nodeName', state);
 ObservabilityService.logEvent(env, traceId, spanId, 'eventName', { key: 'value' });
 
 // End a span
-ObservabilityService.endSpan(env, traceId, spanId, 'nodeName', startState, endState, executionTimeMs);
+ObservabilityService.endSpan(
+  env,
+  traceId,
+  spanId,
+  'nodeName',
+  startState,
+  endState,
+  executionTimeMs,
+);
 
 // End a trace
 ObservabilityService.endTrace(env, traceId, finalState, totalExecutionTimeMs);
@@ -90,7 +98,14 @@ const spanContext = FullObservabilityService.startSpan(env, context, 'nodeName',
 FullObservabilityService.logEvent(env, spanContext, 'eventName', { key: 'value' });
 
 // End a span
-FullObservabilityService.endSpan(env, spanContext, 'nodeName', startState, endState, executionTimeMs);
+FullObservabilityService.endSpan(
+  env,
+  spanContext,
+  'nodeName',
+  startState,
+  endState,
+  executionTimeMs,
+);
 
 // End a trace
 FullObservabilityService.endTrace(env, context, finalState, totalExecutionTimeMs);
@@ -119,21 +134,14 @@ ObservabilityService.logLlmCall(
     prompt: 100,
     completion: 50,
     total: 150,
-  }
+  },
 );
 ```
 
 ### Retrieval Operations
 
 ```typescript
-ObservabilityService.logRetrieval(
-  env,
-  traceId,
-  spanId,
-  query,
-  results,
-  executionTimeMs
-);
+ObservabilityService.logRetrieval(env, traceId, spanId, query, results, executionTimeMs);
 ```
 
 ## Metrics Collection
@@ -141,17 +149,20 @@ ObservabilityService.logRetrieval(
 The system collects the following metrics:
 
 ### Trace Metrics
+
 - `trace.init`: Count of trace initializations
 - `trace.end`: Count of trace completions
 - `trace.duration`: Histogram of trace durations
 
 ### Span Metrics
+
 - `span.start`: Count of span starts
 - `span.end`: Count of span completions
 - `span.duration`: Histogram of span durations
 - `node.{nodeName}.duration`: Histogram of specific node durations
 
 ### LLM Metrics
+
 - `llm.call`: Count of LLM calls
 - `llm.latency`: Histogram of LLM call latencies
 - `llm.tokens.prompt`: Histogram of prompt token counts
@@ -159,6 +170,7 @@ The system collects the following metrics:
 - `llm.tokens.total`: Histogram of total token counts
 
 ### Retrieval Metrics
+
 - `retrieval.call`: Count of retrieval operations
 - `retrieval.latency`: Histogram of retrieval latencies
 - `retrieval.result_count`: Histogram of retrieval result counts

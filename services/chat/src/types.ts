@@ -1,9 +1,6 @@
 import { z } from 'zod';
-import {
-  Annotation,
-} from "@langchain/langgraph";
-import { BaseMessage } from "@langchain/core/messages";
-
+import { Annotation } from '@langchain/langgraph';
+import { BaseMessage } from '@langchain/core/messages';
 
 // Define schemas for request validation
 export const chatRequestSchema = z.object({
@@ -128,18 +125,18 @@ export const GraphStateAnnotation = Annotation.Root({
   userId: Annotation<string>(),
 
   /* ---------- conversation history -------------------------------- */
-  messages: concat<BaseMessage>(),                 // append new messages
+  messages: concat<BaseMessage>(), // append new messages
 
   /* ---------- static config --------------------------------------- */
-  options: Annotation<AgentState["options"]>(),    // usually written once
+  options: Annotation<AgentState['options']>(), // usually written once
 
   /* ---------- working area for nodes ------------------------------ */
-  tasks: merge<NonNullable<AgentState["tasks"]>>(),// merge nested fields
-  docs: concat<Document>(),                       // collect retrieved docs
-  generatedText: Annotation<string>(),             // last value wins
+  tasks: merge<NonNullable<AgentState['tasks']>>(), // merge nested fields
+  docs: concat<Document>(), // collect retrieved docs
+  generatedText: Annotation<string>(), // last value wins
 
   /* ---------- meta / tracing -------------------------------------- */
-  metadata: merge<NonNullable<AgentState["metadata"]>>(),
+  metadata: merge<NonNullable<AgentState['metadata']>>(),
 });
 
 /**

@@ -40,7 +40,7 @@ export class ChatClient {
   constructor(
     private readonly binding: ChatOrchestratorBinding,
     private readonly metricsPrefix: string = 'chat_orchestrator.client',
-  ) { }
+  ) {}
 
   /**
    * Generate a chat response

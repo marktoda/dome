@@ -6,7 +6,7 @@ import {
   successResponse,
   unauthorizedResponse,
   validationErrorResponse,
-  internalErrorResponse
+  internalErrorResponse,
 } from '../utils/responseHelpers';
 
 // Define the updated chat request schema
@@ -30,7 +30,6 @@ const chatRequestSchema = z.object({
   runId: z.string().optional(),
 });
 
-
 /**
  * Controller for chat endpoints
  */
@@ -41,7 +40,7 @@ export class ChatController {
    * Create a new chat controller
    * @param chatService Chat service instance
    */
-  constructor(private chatService: ChatClient) { }
+  constructor(private chatService: ChatClient) {}
 
   /**
    * Handle chat requests
@@ -61,13 +60,12 @@ export class ChatController {
       const requestData = chatRequestSchema.parse(await c.req.json());
 
       try {
-
         // Log the request data before validation
         this.logger.debug(
           {
             requestData: JSON.stringify(requestData, null, 2),
           },
-          'Request data before validation'
+          'Request data before validation',
         );
 
         // Validate using Zod schema
@@ -79,7 +77,7 @@ export class ChatController {
             request,
             messageCount: request.messages.length,
           },
-          'Processing validated chat request'
+          'Processing validated chat request',
         );
 
         // Process request
@@ -97,16 +95,14 @@ export class ChatController {
         this.logger.warn(
           {
             err: validationError,
-            userId
+            userId,
           },
-          'Invalid chat request format'
+          'Invalid chat request format',
         );
 
         return validationErrorResponse(
           c,
-          validationError instanceof Error
-            ? validationError.message
-            : 'Invalid request format'
+          validationError instanceof Error ? validationError.message : 'Invalid request format',
         );
       }
     } catch (error) {
@@ -115,4 +111,3 @@ export class ChatController {
     }
   }
 }
-

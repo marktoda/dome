@@ -15,12 +15,12 @@ export interface TimeoutConfig {
    * Default timeout for LLM service calls in milliseconds
    */
   llmServiceTimeout: number;
-  
+
   /**
    * Timeout for search operations in milliseconds
    */
   searchTimeout: number;
-  
+
   /**
    * Timeout for document processing in milliseconds
    */
@@ -37,7 +37,7 @@ const ENVIRONMENT_CONFIGS: Record<string, Partial<TimeoutConfig>> = {
     searchTimeout: 45000, // 45 seconds
     documentProcessingTimeout: 30000, // 30 seconds
   },
-  
+
   production: {
     // Production uses the default settings
     // Shorter timeouts for better user experience
@@ -45,13 +45,13 @@ const ENVIRONMENT_CONFIGS: Record<string, Partial<TimeoutConfig>> = {
     searchTimeout: 20000, // 20 seconds
     documentProcessingTimeout: 15000, // 15 seconds
   },
-  
+
   test: {
     // Test environment can have shorter timeouts for faster tests
     llmServiceTimeout: 10000, // 10 seconds
     searchTimeout: 5000, // 5 seconds
     documentProcessingTimeout: 5000, // 5 seconds
-  }
+  },
 };
 
 /**
@@ -80,10 +80,10 @@ function getCurrentEnvironment(): string {
 export function getTimeoutConfig(): TimeoutConfig {
   const environment = getCurrentEnvironment();
   const envConfig = ENVIRONMENT_CONFIGS[environment] || {};
-  
+
   // Merge the environment config with the default config
   return {
     ...DEFAULT_TIMEOUT_CONFIG,
-    ...envConfig
+    ...envConfig,
   };
 }

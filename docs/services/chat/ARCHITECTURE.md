@@ -12,7 +12,7 @@ The Chat Service is a Retrieval-Augmented Generation (RAG) system that enhances 
 graph TD
     A[Client] -->|Request| B[Dome API]
     B -->|RPC| C[Chat Service]
-    
+
     subgraph "Chat Service"
         C -->|Initialize| D[Graph Orchestrator]
         D -->|Process| E[RAG Graph]
@@ -22,9 +22,9 @@ graph TD
         E -->|Execute| I[Tool Registry]
         E -->|Log| J[Observability Service]
     end
-    
+
     G -->|Query| K[Vectorize]
-    
+
     style C fill:#d4f1f9,stroke:#333,stroke-width:2px
     style E fill:#d4f1f9,stroke:#333,stroke-width:2px
 ```
@@ -72,16 +72,16 @@ function buildChatGraph(env: Env) {
     .addNode('dynamic_widen', nodes.dynamicWiden)
     .addNode('tool_router', nodes.toolRouter)
     .addNode('run_tool', nodes.runTool)
-    .addNode('generate_answer', nodes.generateAnswer)
-    
-    // Add edges and conditional routing
-    // ...
-    
+    .addNode('generate_answer', nodes.generateAnswer);
+
+  // Add edges and conditional routing
+  // ...
+
   // Add state change listener for logging
   graph.onStateChange((oldState, newState, nodeName) => {
     // Update metadata and log state transitions
   });
-  
+
   // Compile with checkpointer and reducers
   return graph.compile({
     checkpointer,
@@ -97,6 +97,7 @@ function buildChatGraph(env: Env) {
 The RAG Graph is a directed graph of specialized processing nodes. Each node has a specific responsibility and can pass control to different subsequent nodes based on its output.
 
 Key nodes include:
+
 - **Split/Rewrite**: Analyzes and potentially rewrites user queries
 - **Retrieve**: Fetches relevant documents based on the query
 - **Dynamic Widen**: Adjusts search parameters to improve retrieval results
@@ -170,9 +171,30 @@ The Observability Service provides comprehensive logging, metrics, and tracing. 
 ```typescript
 class ObservabilityService {
   static startSpan(env: Env, traceId: string, name: string, state: AgentState): string;
-  static endSpan(env: Env, traceId: string, spanId: string, name: string, startState: AgentState, endState: AgentState, durationMs: number): void;
-  static logEvent(env: Env, traceId: string, spanId: string, name: string, attributes: Record<string, any>): void;
-  static logRetrieval(env: Env, traceId: string, spanId: string, query: string, results: any[], durationMs: number): void;
+  static endSpan(
+    env: Env,
+    traceId: string,
+    spanId: string,
+    name: string,
+    startState: AgentState,
+    endState: AgentState,
+    durationMs: number,
+  ): void;
+  static logEvent(
+    env: Env,
+    traceId: string,
+    spanId: string,
+    name: string,
+    attributes: Record<string, any>,
+  ): void;
+  static logRetrieval(
+    env: Env,
+    traceId: string,
+    spanId: string,
+    query: string,
+    results: any[],
+    durationMs: number,
+  ): void;
 }
 ```
 
@@ -192,32 +214,32 @@ sequenceDiagram
 
     Client->>DomeAPI: Chat Request
     DomeAPI->>ChatService: RPC Call
-    
+
     ChatService->>RAGGraph: Initialize Graph
     RAGGraph->>D1Database: Create Checkpoint
-    
+
     RAGGraph->>RAGGraph: Split/Rewrite Query
-    
+
     RAGGraph->>SearchService: Retrieve Context
     SearchService->>RAGGraph: Return Documents
-    
+
     alt Documents Insufficient
         RAGGraph->>RAGGraph: Widen Search
         RAGGraph->>SearchService: Retry with Wider Parameters
         SearchService->>RAGGraph: Return More Documents
     end
-    
+
     alt Tool Required
         RAGGraph->>RAGGraph: Route to Tool
         RAGGraph->>RAGGraph: Execute Tool
     end
-    
+
     RAGGraph->>LLMService: Generate Response
     LLMService->>RAGGraph: Return Generated Text
-    
+
     RAGGraph->>D1Database: Update Checkpoint
     RAGGraph->>ChatService: Return Final State
-    
+
     alt Streaming Enabled
         ChatService->>DomeAPI: Stream SSE Events
         DomeAPI->>Client: Stream Response
@@ -251,11 +273,12 @@ graph TD
     B -->|answer events| C
     B -->|sources events| C
     B -->|done event| C
-    
+
     style B fill:#d4f1f9,stroke:#333,stroke-width:2px
 ```
 
 Event types include:
+
 - `workflow_step`: Indicates the current processing step
 - `answer`: Contains generated text (may be incremental)
 - `sources`: Contains attribution information for retrieved documents
@@ -273,13 +296,13 @@ graph TD
     A[Client Request] --> B[Client Validation]
     B -->|Error| C[Client Error Response]
     B -->|Valid| D[Graph Processing]
-    
+
     D -->|Node Error| E[Node Error Handler]
     E -->|Recoverable| F[Continue Processing]
     E -->|Critical| G[Graph Error Response]
-    
+
     D -->|Success| H[Success Response]
-    
+
     style E fill:#f9d5e5,stroke:#333,stroke-width:2px
 ```
 
@@ -343,7 +366,7 @@ graph TD
     B -->|Database Binding| C[D1 Database]
     B -->|Vectorize Binding| D[Vectorize Index]
     B -->|Service Binding| E[Other Services]
-    
+
     style B fill:#d4f1f9,stroke:#333,stroke-width:2px
 ```
 
@@ -400,7 +423,7 @@ graph TD
     A[Node Processing] -->|Structured Logs| B[Logging Service]
     B -->|Aggregate| C[Log Storage]
     C --> D[Log Analysis]
-    
+
     style B fill:#d4f1f9,stroke:#333,stroke-width:2px
 ```
 

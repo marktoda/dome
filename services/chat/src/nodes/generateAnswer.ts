@@ -21,17 +21,17 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
 
   // Prepare context from retrieved documents
   const docs = state.docs || [];
-  
+
   // Get model configuration
   const modelId = state.options?.modelId || LlmService.MODEL;
   const modelConfig = getModelConfig(modelId);
-  
+
   // Set a maximum token limit for the formatted docs (half of model's context window)
   const maxDocsTokens = Math.floor(modelConfig.maxContextTokens * 0.5);
   const formattedDocs = formatDocsForPrompt(
     docs,
     state.options?.includeSourceInfo || true,
-    maxDocsTokens
+    maxDocsTokens,
   );
 
   // Extract source metadata for attribution
@@ -81,17 +81,17 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
     const userMessagesTokenCount = state.messages.reduce((total, msg) => {
       return total + countTokens(msg.content);
     }, 0);
-    
+
     // Calculate total input tokens
     const totalInputTokens = systemPromptTokenCount + userMessagesTokenCount;
-    
+
     // Calculate token limits based on model configuration
     const { maxResponseTokens } = calculateTokenLimits(
       modelConfig,
       totalInputTokens,
-      state.options?.maxTokens
+      state.options?.maxTokens,
     );
-    
+
     logger.info(
       {
         modelId,
@@ -102,7 +102,7 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
         totalInputTokens,
         maxResponseTokens,
       },
-      'Token counts before LLM call'
+      'Token counts before LLM call',
     );
 
     // Call the LLM service to generate a response
@@ -304,8 +304,8 @@ function formatToolResultsForPrompt(toolResults: ToolResult[]): string {
       const output = result.error
         ? `Error: ${result.error}`
         : typeof result.output === 'string'
-          ? result.output
-          : JSON.stringify(result.output, null, 2);
+        ? result.output
+        : JSON.stringify(result.output, null, 2);
 
       return `[Tool ${index + 1}] ${result.toolName}\nInput: ${result.input}\nOutput: ${output}`;
     })

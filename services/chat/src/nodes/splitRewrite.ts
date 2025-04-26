@@ -36,8 +36,7 @@ export const splitRewrite = async (state: AgentState, env: Env): Promise<AgentSt
 
   // Create or get trace and span IDs for observability
   const userId = getUserId(state);
-  const traceId =
-    state.metadata?.traceId || ObservabilityService.initTrace(env, userId, state);
+  const traceId = state.metadata?.traceId || ObservabilityService.initTrace(env, userId, state);
   const spanId = ObservabilityService.startSpan(env, traceId, 'splitRewrite', state);
 
   // Log the start of query processing

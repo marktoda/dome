@@ -4,17 +4,12 @@
  * This file exports the client interface for the Chat Orchestrator service.
  */
 
-import {
-  ChatClient,
-  ChatOrchestratorResponse,
-  createChatClient,
-} from './client';
+import { ChatClient, ChatOrchestratorResponse, createChatClient } from './client';
 import { ChatRequest } from '../types';
 
 export { ChatClient, ChatOrchestratorResponse, createChatClient };
 
 export * from '../types';
-
 
 /**
  * Chat Orchestrator Binding Interface

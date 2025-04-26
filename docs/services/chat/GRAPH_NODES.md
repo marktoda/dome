@@ -10,20 +10,20 @@ The Chat RAG Graph is a directed graph of specialized processing nodes that work
 graph TD
     START([Start]) --> SplitRewrite[Split/Rewrite]
     SplitRewrite --> Retrieve[Retrieve]
-    
+
     Retrieve -->|"needsWidening=true"| DynamicWiden[Dynamic Widen]
     Retrieve -->|"needsWidening=false & toolRequired=true"| ToolRouter[Tool Router]
     Retrieve -->|"needsWidening=false & toolRequired=false"| GenerateAnswer[Generate Answer]
-    
+
     DynamicWiden --> Retrieve
-    
+
     ToolRouter -->|"toolToRun=null"| GenerateAnswer
     ToolRouter -->|"toolToRun!=null"| RunTool[Run Tool]
-    
+
     RunTool --> GenerateAnswer
-    
+
     GenerateAnswer --> END([End])
-    
+
     style Retrieve fill:#f9d5e5,stroke:#333,stroke-width:2px
 ```
 
@@ -34,13 +34,16 @@ graph TD
 **Purpose**: Analyzes the user's query and potentially rewrites it to improve retrieval effectiveness.
 
 **Inputs**:
+
 - User messages from the conversation history
 
 **Outputs**:
+
 - Original query extracted from the last user message
 - Rewritten query (if applicable)
 
 **Side Effects**:
+
 - Updates state with timing and token count information
 - Logs query analysis details
 
@@ -49,17 +52,20 @@ graph TD
 **Purpose**: Fetches relevant documents based on the query to provide context for the response.
 
 **Inputs**:
+
 - User ID
 - Original or rewritten query
 - Configuration options (max context items, etc.)
 - Widening attempts count (if applicable)
 
 **Outputs**:
+
 - Retrieved documents with relevance scores
 - Flag indicating if search widening is needed
 - Updated widening attempts count
 
 **Side Effects**:
+
 - Logs retrieval metrics
 - Updates state with timing and token count information
 - Records observability data for tracing
@@ -69,27 +75,32 @@ graph TD
 The retrieve node is a critical component of the RAG system that fetches relevant documents to enhance the AI's response. Here's how it works:
 
 1. **Initialization**:
+
    - Creates a search service instance from environment bindings
    - Sets up logging and observability with trace/span IDs
    - Extracts configuration options from state
 
 2. **Query Processing**:
+
    - Gets the user ID and query from state
    - Logs the query for debugging purposes
    - Determines search parameters based on widening attempts
 
 3. **Search Execution**:
+
    - Calls the search service with appropriate parameters
    - Logs the number of documents retrieved and their relevance scores
    - Records retrieval metrics for observability
 
 4. **Document Processing**:
+
    - Calculates token counts for retrieved documents
    - Truncates documents to fit within token limits based on model configuration
    - Ranks and filters documents by relevance score
    - Limits the total number of documents to control token usage
 
 5. **State Management**:
+
    - Updates state with processed documents
    - Sets flags for search widening if needed
    - Records execution time and token counts
@@ -125,14 +136,17 @@ The retrieve node's behavior can be configured through several parameters:
 **Purpose**: Adjusts search parameters to improve retrieval results when initial results are insufficient.
 
 **Inputs**:
+
 - Current widening attempts count
 - Original and rewritten queries
 
 **Outputs**:
+
 - Incremented widening attempts count
 - Updated search parameters
 
 **Side Effects**:
+
 - Logs widening strategy details
 - Updates state with timing information
 
@@ -141,13 +155,16 @@ The retrieve node's behavior can be configured through several parameters:
 **Purpose**: Determines if specialized tools are needed to answer the query and which tool to use.
 
 **Inputs**:
+
 - Required tools list from previous analysis
 - Original query
 
 **Outputs**:
+
 - Selected tool to run (if applicable)
 
 **Side Effects**:
+
 - Logs tool selection details
 - Updates state with timing information
 
@@ -156,14 +173,17 @@ The retrieve node's behavior can be configured through several parameters:
 **Purpose**: Executes the selected tool to gather additional information.
 
 **Inputs**:
+
 - Tool name to run
 - Original query (for parameter extraction)
 
 **Outputs**:
+
 - Tool execution results
 - Error information (if applicable)
 
 **Side Effects**:
+
 - Logs tool execution details
 - Updates state with timing information
 - May interact with external systems
@@ -173,15 +193,18 @@ The retrieve node's behavior can be configured through several parameters:
 **Purpose**: Creates the final response using an LLM, incorporating retrieved context and tool results.
 
 **Inputs**:
+
 - User messages
 - Retrieved documents
 - Tool results (if applicable)
 - Configuration options
 
 **Outputs**:
+
 - Generated response text
 
 **Side Effects**:
+
 - Logs generation metrics
 - Updates state with timing and token count information
 - Records LLM usage metrics
@@ -251,11 +274,13 @@ interface AgentState {
 The graph uses conditional routing to determine the flow between nodes:
 
 1. After the **Retrieve** node:
+
    - If `needsWidening` is true, route to **Dynamic Widen**
    - If a tool is required, route to **Tool Router**
    - Otherwise, route to **Generate Answer**
 
 2. After the **Tool Router** node:
+
    - If a tool was selected (`toolToRun` is not null), route to **Run Tool**
    - Otherwise, route to **Generate Answer**
 

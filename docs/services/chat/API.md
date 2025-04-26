@@ -91,24 +91,28 @@ interface ChatOrchestratorResponse {
 Server-Sent Events (SSE) with the following event types:
 
 - `workflow_step`: Indicates the current processing step
+
   ```
   event: workflow_step
   data: {"step":"retrieve"}
   ```
 
 - `answer`: Contains generated text (may be incremental)
+
   ```
   event: answer
   data: {"delta":"This is the response text"}
   ```
 
 - `sources`: Contains attribution information for retrieved documents
+
   ```
   event: sources
   data: [{"id":"doc1","title":"Document Title","source":"source_name"}]
   ```
 
 - `done`: Indicates processing is complete
+
   ```
   event: done
   data: {"executionTimeMs":1234}
@@ -124,24 +128,24 @@ Server-Sent Events (SSE) with the following event types:
 
 ```typescript
 const request = {
-  userId: "user123",
+  userId: 'user123',
   messages: [
     {
-      role: "system",
-      content: "You are a helpful assistant."
+      role: 'system',
+      content: 'You are a helpful assistant.',
     },
     {
-      role: "user",
-      content: "What is the capital of France?"
-    }
+      role: 'user',
+      content: 'What is the capital of France?',
+    },
   ],
   options: {
     enhanceWithContext: true,
     maxContextItems: 5,
     includeSourceInfo: true,
-    maxTokens: 1000
+    maxTokens: 1000,
   },
-  stream: false
+  stream: false,
 };
 
 const response = await chatClient.generateResponse(request);
@@ -203,11 +207,11 @@ Same as the streaming response format for `generateChatResponse`.
 
 ```typescript
 const request = {
-  runId: "chat_session_123456",
+  runId: 'chat_session_123456',
   newMessage: {
-    role: "user",
-    content: "Can you provide more details about Paris?"
-  }
+    role: 'user',
+    content: 'Can you provide more details about Paris?',
+  },
 };
 
 const response = await chatClient.resumeChatSession(request);
@@ -306,7 +310,7 @@ interface DeleteUserDataResponse {
 **Example Request**:
 
 ```typescript
-const result = await chatClient.deleteUserData("user123");
+const result = await chatClient.deleteUserData('user123');
 ```
 
 **Example Response**:
@@ -344,11 +348,7 @@ interface RecordConsentResponse {
 **Example Request**:
 
 ```typescript
-const result = await chatClient.recordConsent(
-  "user123",
-  "conversation_history",
-  90
-);
+const result = await chatClient.recordConsent('user123', 'conversation_history', 90);
 ```
 
 **Example Response**:
@@ -406,15 +406,15 @@ interface ErrorResponse {
 
 ### 5.2 Common Error Codes
 
-| Code | Description | HTTP Status | Cause |
-|------|-------------|-------------|-------|
-| `validation_error` | Request validation failed | 400 | Invalid request format or parameters |
-| `authentication_error` | Authentication failed | 401 | Missing or invalid user ID |
-| `authorization_error` | Authorization failed | 403 | Insufficient permissions |
-| `not_found` | Resource not found | 404 | Requested resource does not exist |
-| `rate_limit_exceeded` | Rate limit exceeded | 429 | Too many requests |
-| `processing_error` | Error during processing | 500 | Error in the processing pipeline |
-| `service_unavailable` | Service unavailable | 503 | Dependent service unavailable |
+| Code                   | Description               | HTTP Status | Cause                                |
+| ---------------------- | ------------------------- | ----------- | ------------------------------------ |
+| `validation_error`     | Request validation failed | 400         | Invalid request format or parameters |
+| `authentication_error` | Authentication failed     | 401         | Missing or invalid user ID           |
+| `authorization_error`  | Authorization failed      | 403         | Insufficient permissions             |
+| `not_found`            | Resource not found        | 404         | Requested resource does not exist    |
+| `rate_limit_exceeded`  | Rate limit exceeded       | 429         | Too many requests                    |
+| `processing_error`     | Error during processing   | 500         | Error in the processing pipeline     |
+| `service_unavailable`  | Service unavailable       | 503         | Dependent service unavailable        |
 
 ### 5.3 Error Handling Example
 
@@ -458,25 +458,21 @@ const chatClient = new ChatClient(env.CHAT_SERVICE);
 
 // Generate response
 const response = await chatClient.generateResponse({
-  userId: "user123",
-  messages: [
-    { role: "user", content: "Hello, world!" }
-  ],
+  userId: 'user123',
+  messages: [{ role: 'user', content: 'Hello, world!' }],
   options: {
-    enhanceWithContext: true
-  }
+    enhanceWithContext: true,
+  },
 });
 
 // Stream response
 const streamingResponse = await chatClient.streamResponse({
-  userId: "user123",
-  messages: [
-    { role: "user", content: "Hello, world!" }
-  ],
+  userId: 'user123',
+  messages: [{ role: 'user', content: 'Hello, world!' }],
   options: {
-    enhanceWithContext: true
+    enhanceWithContext: true,
   },
-  stream: true
+  stream: true,
 });
 
 // Process streaming response
@@ -486,7 +482,7 @@ const decoder = new TextDecoder();
 while (true) {
   const { done, value } = await reader.read();
   if (done) break;
-  
+
   const chunk = decoder.decode(value, { stream: true });
   // Process SSE chunk
 }
@@ -577,28 +573,28 @@ const chatClient = new ChatClient(env.CHAT_SERVICE);
 
 // Generate response
 const response = await chatClient.generateResponse({
-  userId: "user123",
+  userId: 'user123',
   messages: [
     {
-      role: "system",
-      content: "You are a helpful assistant."
+      role: 'system',
+      content: 'You are a helpful assistant.',
     },
     {
-      role: "user",
-      content: "What is the capital of France?"
-    }
+      role: 'user',
+      content: 'What is the capital of France?',
+    },
   ],
   options: {
     enhanceWithContext: true,
     maxContextItems: 5,
-    includeSourceInfo: true
-  }
+    includeSourceInfo: true,
+  },
 });
 
-console.log("Response:", response.response);
+console.log('Response:', response.response);
 
 if (response.sources && response.sources.length > 0) {
-  console.log("Sources:");
+  console.log('Sources:');
   response.sources.forEach(source => {
     console.log(`- ${source.title} (${source.source})`);
   });
@@ -613,56 +609,56 @@ const chatClient = new ChatClient(env.CHAT_SERVICE);
 
 // Stream response
 const streamingResponse = await chatClient.streamResponse({
-  userId: "user123",
+  userId: 'user123',
   messages: [
     {
-      role: "user",
-      content: "Write a short poem about Paris."
-    }
+      role: 'user',
+      content: 'Write a short poem about Paris.',
+    },
   ],
   options: {
-    enhanceWithContext: true
+    enhanceWithContext: true,
   },
-  stream: true
+  stream: true,
 });
 
 // Process streaming response
 const reader = streamingResponse.body.getReader();
 const decoder = new TextDecoder();
-let buffer = "";
-let responseText = "";
+let buffer = '';
+let responseText = '';
 
 while (true) {
   const { done, value } = await reader.read();
   if (done) break;
-  
+
   buffer += decoder.decode(value, { stream: true });
-  
+
   // Process complete SSE events
-  const events = buffer.split("\n\n");
-  buffer = events.pop() || "";
-  
+  const events = buffer.split('\n\n');
+  buffer = events.pop() || '';
+
   for (const event of events) {
     if (!event.trim()) continue;
-    
-    const lines = event.split("\n");
-    const eventType = lines[0].replace("event: ", "");
-    const data = JSON.parse(lines[1].replace("data: ", ""));
-    
-    if (eventType === "answer" && data.delta) {
+
+    const lines = event.split('\n');
+    const eventType = lines[0].replace('event: ', '');
+    const data = JSON.parse(lines[1].replace('data: ', ''));
+
+    if (eventType === 'answer' && data.delta) {
       responseText += data.delta;
-      console.log("Received chunk:", data.delta);
-    } else if (eventType === "sources") {
-      console.log("Sources:", data);
-    } else if (eventType === "done") {
-      console.log("Processing complete in", data.executionTimeMs, "ms");
-    } else if (eventType === "error") {
-      console.error("Error:", data.message);
+      console.log('Received chunk:', data.delta);
+    } else if (eventType === 'sources') {
+      console.log('Sources:', data);
+    } else if (eventType === 'done') {
+      console.log('Processing complete in', data.executionTimeMs, 'ms');
+    } else if (eventType === 'error') {
+      console.error('Error:', data.message);
     }
   }
 }
 
-console.log("Final response:", responseText);
+console.log('Final response:', responseText);
 ```
 
 ### 10.3 Resuming a Chat Session
@@ -673,30 +669,30 @@ const chatClient = new ChatClient(env.CHAT_SERVICE);
 
 // Initial request with runId
 const initialResponse = await chatClient.streamResponse({
-  userId: "user123",
+  userId: 'user123',
   messages: [
     {
-      role: "user",
-      content: "Tell me about Paris."
-    }
+      role: 'user',
+      content: 'Tell me about Paris.',
+    },
   ],
   options: {
-    enhanceWithContext: true
+    enhanceWithContext: true,
   },
   stream: true,
-  runId: "session_" + Date.now()
+  runId: 'session_' + Date.now(),
 });
 
 // Process initial response and extract runId from headers
-const runId = initialResponse.headers.get("x-run-id");
+const runId = initialResponse.headers.get('x-run-id');
 
 // Later, resume the session
 const resumedResponse = await chatClient.resumeChatSession({
   runId,
   newMessage: {
-    role: "user",
-    content: "What about its history?"
-  }
+    role: 'user',
+    content: 'What about its history?',
+  },
 });
 
 // Process resumed response
@@ -707,13 +703,13 @@ const resumedResponse = await chatClient.resumeChatSession({
 
 ### 11.1 Common Issues
 
-| Issue | Possible Causes | Resolution |
-|-------|----------------|------------|
-| Validation Error | Invalid request format | Check request against schema |
-| Authentication Error | Missing user ID | Ensure user ID is provided |
-| Rate Limit Exceeded | Too many requests | Implement backoff and retry |
-| Processing Timeout | Complex query or system overload | Simplify query or retry later |
-| Empty Response | No relevant context found | Adjust query or disable context enhancement |
+| Issue                | Possible Causes                  | Resolution                                  |
+| -------------------- | -------------------------------- | ------------------------------------------- |
+| Validation Error     | Invalid request format           | Check request against schema                |
+| Authentication Error | Missing user ID                  | Ensure user ID is provided                  |
+| Rate Limit Exceeded  | Too many requests                | Implement backoff and retry                 |
+| Processing Timeout   | Complex query or system overload | Simplify query or retry later               |
+| Empty Response       | No relevant context found        | Adjust query or disable context enhancement |
 
 ### 11.2 Debugging
 

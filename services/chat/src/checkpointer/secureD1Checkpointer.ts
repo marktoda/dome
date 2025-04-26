@@ -203,9 +203,7 @@ export class SecureD1Checkpointer extends BaseCheckpointSaver {
    * @param runId Unique identifier for the conversation
    * @returns The stored state or null if not found
    */
-  async getTuple(
-    config: RunnableConfig,
-  ): Promise<
+  async getTuple(config: RunnableConfig): Promise<
     | {
         config: RunnableConfig;
         checkpoint: Checkpoint;

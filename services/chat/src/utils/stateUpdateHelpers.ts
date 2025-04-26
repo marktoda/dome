@@ -4,7 +4,7 @@ import { AgentState, Document } from '../types';
 function ensureDocsArray(state: AgentState): AgentState & { docs: Document[] } {
   return {
     ...state,
-    docs: state.docs || []
+    docs: state.docs || [],
   } as AgentState & { docs: Document[] };
 }
 
@@ -20,11 +20,11 @@ export function updateStateWithTiming(
   state: AgentState,
   nodeName: string,
   executionTime: number,
-  spanId?: string
+  spanId?: string,
 ): AgentState {
   // Ensure state has the correct structure
   const safeState = ensureDocsArray(state);
-  
+
   return {
     ...safeState,
     metadata: {
@@ -48,11 +48,11 @@ export function updateStateWithTiming(
 export function updateStateWithTokenCount(
   state: AgentState,
   category: string,
-  count: number
+  count: number,
 ): AgentState {
   // Ensure state has the correct structure
   const safeState = ensureDocsArray(state);
-  
+
   return {
     ...safeState,
     metadata: {
@@ -75,13 +75,13 @@ export function updateStateWithTokenCount(
 export function addErrorToState(
   state: AgentState,
   nodeName: string,
-  error: Error | string
+  error: Error | string,
 ): AgentState {
   const errorMessage = error instanceof Error ? error.message : error;
-  
+
   // Ensure state has the correct structure
   const safeState = ensureDocsArray(state);
-  
+
   return {
     ...safeState,
     metadata: {
@@ -104,13 +104,10 @@ export function addErrorToState(
  * @param updates Object containing metadata updates
  * @returns Updated agent state
  */
-export function updateStateMetadata(
-  state: AgentState,
-  updates: Record<string, any>
-): AgentState {
+export function updateStateMetadata(state: AgentState, updates: Record<string, any>): AgentState {
   // Ensure state has the correct structure
   const safeState = ensureDocsArray(state);
-  
+
   return {
     ...safeState,
     metadata: {

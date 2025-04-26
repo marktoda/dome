@@ -18,12 +18,12 @@ The Chat Service is a core component of the Dome platform that provides conversa
 
 ### Goals and Non-Goals
 
-|          | ✅ In Scope      | ❌ Out of Scope      |
-| -------- | ---------------- | -------------------- |
-| Functionality | Conversational AI with RAG, tool execution, context management | General-purpose AI, training custom models |
-| Performance | Optimized retrieval, efficient token usage, response streaming | Real-time voice processing, video analysis |
-| Integration | Cloudflare Workers, D1 database, Vectorize | Direct integration with external AI providers |
-| Security | User data isolation, consent management | End-to-end encryption, advanced threat detection |
+|               | ✅ In Scope                                                    | ❌ Out of Scope                                  |
+| ------------- | -------------------------------------------------------------- | ------------------------------------------------ |
+| Functionality | Conversational AI with RAG, tool execution, context management | General-purpose AI, training custom models       |
+| Performance   | Optimized retrieval, efficient token usage, response streaming | Real-time voice processing, video analysis       |
+| Integration   | Cloudflare Workers, D1 database, Vectorize                     | Direct integration with external AI providers    |
+| Security      | User data isolation, consent management                        | End-to-end encryption, advanced threat detection |
 
 ## 2. Architecture
 
@@ -39,7 +39,7 @@ graph TD
     D -->|Execute| G[Tool Registry]
     D -->|Store State| H[(D1 Database)]
     E -->|Vector Search| I[(Vectorize)]
-    
+
     style C fill:#d4f1f9,stroke:#333,stroke-width:2px
     style D fill:#d4f1f9,stroke:#333,stroke-width:2px
 ```
@@ -53,6 +53,7 @@ The Chat Service follows a modular architecture centered around a directed graph
 The core of the Chat Service is the RAG (Retrieval-Augmented Generation) Graph, which orchestrates the flow of processing through specialized nodes. The graph is implemented using LangChain's StateGraph, which manages state transitions and checkpointing.
 
 Key nodes in the graph include:
+
 - **Split/Rewrite**: Analyzes and potentially rewrites user queries for better retrieval
 - **Retrieve**: Fetches relevant documents based on the query
 - **Dynamic Widen**: Adjusts search parameters to improve retrieval results
@@ -74,13 +75,13 @@ Manages interactions with Large Language Models, handling prompt construction, t
 
 ### Integration with Other Services
 
-| Service     | Integration Type             | Purpose                  |
-| ----------- | ---------------------------- | ------------------------ |
-| Dome API | Service Binding | Entry point for client requests |
-| Vectorize | Database Binding | Vector storage for semantic search |
-| D1 Database | Database Binding | State persistence and checkpointing |
-| Logging Service | Package Import | Structured logging and observability |
-| Metrics Service | Package Import | Performance and usage metrics |
+| Service         | Integration Type | Purpose                              |
+| --------------- | ---------------- | ------------------------------------ |
+| Dome API        | Service Binding  | Entry point for client requests      |
+| Vectorize       | Database Binding | Vector storage for semantic search   |
+| D1 Database     | Database Binding | State persistence and checkpointing  |
+| Logging Service | Package Import   | Structured logging and observability |
+| Metrics Service | Package Import   | Performance and usage metrics        |
 
 ## 3. Data Model
 
@@ -162,23 +163,23 @@ sequenceDiagram
     RAGGraph->>RAGGraph: Split/Rewrite Query
     RAGGraph->>SearchService: Retrieve Context
     SearchService->>RAGGraph: Return Documents
-    
+
     alt Documents Insufficient
         RAGGraph->>RAGGraph: Widen Search
         RAGGraph->>SearchService: Retry with Wider Parameters
         SearchService->>RAGGraph: Return More Documents
     end
-    
+
     alt Tool Required
         RAGGraph->>RAGGraph: Route to Tool
         RAGGraph->>RAGGraph: Execute Tool
     end
-    
+
     RAGGraph->>LLMService: Generate Response
     LLMService->>RAGGraph: Return Generated Text
     RAGGraph->>D1Database: Update Checkpoint
     RAGGraph->>ChatService: Return Final State
-    
+
     alt Streaming Enabled
         ChatService->>DomeAPI: Stream SSE Events
         DomeAPI->>Client: Stream Response
@@ -198,13 +199,13 @@ The Chat Service exposes a client API for integration with other services:
 class ChatClient {
   // Generate a complete response
   async generateResponse(request: ChatRequest): Promise<ChatOrchestratorResponse>;
-  
+
   // Stream a response as Server-Sent Events
   async streamResponse(request: ChatRequest): Promise<Response>;
-  
+
   // Resume an existing chat session
   async resumeChatSession(request: ResumeChatRequest): Promise<Response>;
-  
+
   // Administrative methods
   async getCheckpointStats(): Promise<any>;
   async cleanupCheckpoints(): Promise<{ deletedCount: number }>;
@@ -266,14 +267,14 @@ interface ChatOrchestratorResponse {
 
 ### Environment Variables
 
-| Variable     | Description   | Required | Default         |
-| ------------ | ------------- | -------- | --------------- |
-| `CHAT_MODEL` | Default LLM model to use | No | "gpt-4o" |
-| `CHAT_TEMPERATURE` | Default temperature for LLM | No | 0.7 |
-| `MAX_CONTEXT_TOKENS` | Maximum tokens for context | No | 8000 |
-| `CHECKPOINT_TTL_SECONDS` | Time-to-live for checkpoints | No | 3600 |
-| `ENABLE_TRACING` | Enable detailed tracing | No | false |
-| `MIN_RELEVANCE_SCORE` | Minimum relevance score for docs | No | 0.7 |
+| Variable                 | Description                      | Required | Default  |
+| ------------------------ | -------------------------------- | -------- | -------- |
+| `CHAT_MODEL`             | Default LLM model to use         | No       | "gpt-4o" |
+| `CHAT_TEMPERATURE`       | Default temperature for LLM      | No       | 0.7      |
+| `MAX_CONTEXT_TOKENS`     | Maximum tokens for context       | No       | 8000     |
+| `CHECKPOINT_TTL_SECONDS` | Time-to-live for checkpoints     | No       | 3600     |
+| `ENABLE_TRACING`         | Enable detailed tracing          | No       | false    |
+| `MIN_RELEVANCE_SCORE`    | Minimum relevance score for docs | No       | 0.7      |
 
 ## 6. Development
 

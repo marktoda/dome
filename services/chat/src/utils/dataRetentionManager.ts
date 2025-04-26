@@ -133,22 +133,17 @@ export class DataRetentionManager {
    * @param dataCategory Data category
    * @param durationDays Duration in days (optional)
    */
-  async recordConsent(
-    userId: string,
-    dataCategory: string,
-    durationDays?: number,
-  ): Promise<void> {
+  async recordConsent(userId: string, dataCategory: string, durationDays?: number): Promise<void> {
     try {
       // Initialize Drizzle with the D1 database
       const db = drizzle(this.db);
-      
+
       // Calculate expiration date if provided
-      const expiresAt = durationDays
-        ? Date.now() + durationDays * 24 * 60 * 60 * 1000
-        : null;
-      
+      const expiresAt = durationDays ? Date.now() + durationDays * 24 * 60 * 60 * 1000 : null;
+
       // Insert or update consent record using Drizzle
-      await db.insert(dataRetentionConsents)
+      await db
+        .insert(dataRetentionConsents)
         .values({
           userId,
           dataCategory,
@@ -202,7 +197,7 @@ export class DataRetentionManager {
       if (this.policy.requiresConsentCategories.includes(dataCategory)) {
         // Check if user has consented
         const hasConsent = await this.hasConsent(userId, dataCategory);
-        
+
         if (!hasConsent) {
           // If context is available, check if user is an admin
           if (context) {
@@ -236,17 +231,16 @@ export class DataRetentionManager {
 
       // Initialize Drizzle with the D1 database
       const db = drizzle(this.db);
-      
+
       // Insert record using Drizzle
-      await db.insert(dataRetentionRecords)
-        .values({
-          recordId,
-          userId,
-          dataCategory,
-          createdAt: now,
-          expiresAt,
-          anonymized: false,
-        });
+      await db.insert(dataRetentionRecords).values({
+        recordId,
+        userId,
+        dataCategory,
+        createdAt: now,
+        expiresAt,
+        anonymized: false,
+      });
 
       this.logger.info(
         {
@@ -290,14 +284,14 @@ export class DataRetentionManager {
 
       // Initialize Drizzle with the D1 database
       const db = drizzle(this.db);
-      
+
       // Get expired records using Drizzle
-      const expiredRecords = await db.select()
+      const expiredRecords = await db
+        .select()
         .from(dataRetentionRecords)
-        .where(and(
-          lte(dataRetentionRecords.expiresAt, now),
-          eq(dataRetentionRecords.anonymized, false)
-        ))
+        .where(
+          and(lte(dataRetentionRecords.expiresAt, now), eq(dataRetentionRecords.anonymized, false)),
+        )
         .limit(100);
 
       if (expiredRecords.length === 0) {
@@ -312,7 +306,8 @@ export class DataRetentionManager {
           await this.anonymizeData(record.recordId, record.dataCategory);
 
           // Mark as anonymized using Drizzle
-          await db.update(dataRetentionRecords)
+          await db
+            .update(dataRetentionRecords)
             .set({ anonymized: true })
             .where(eq(dataRetentionRecords.recordId, record.recordId));
 
@@ -322,7 +317,8 @@ export class DataRetentionManager {
           await this.deleteData(record.recordId, record.dataCategory);
 
           // Remove from retention records using Drizzle
-          await db.delete(dataRetentionRecords)
+          await db
+            .delete(dataRetentionRecords)
             .where(eq(dataRetentionRecords.recordId, record.recordId));
 
           deleted++;
@@ -373,12 +369,13 @@ export class DataRetentionManager {
 
       // Initialize Drizzle with the D1 database
       const db = drizzle(this.db);
-      
+
       // Get all records for this user using Drizzle
-      const userRecords = await db.select({
-        recordId: dataRetentionRecords.recordId,
-        dataCategory: dataRetentionRecords.dataCategory
-      })
+      const userRecords = await db
+        .select({
+          recordId: dataRetentionRecords.recordId,
+          dataCategory: dataRetentionRecords.dataCategory,
+        })
         .from(dataRetentionRecords)
         .where(eq(dataRetentionRecords.userId, userId));
 
@@ -392,12 +389,12 @@ export class DataRetentionManager {
       }
 
       // Remove from retention records using Drizzle
-      const result = await db.delete(dataRetentionRecords)
+      const result = await db
+        .delete(dataRetentionRecords)
         .where(eq(dataRetentionRecords.userId, userId));
-      
+
       // Delete consent records using Drizzle
-      await db.delete(dataRetentionConsents)
-        .where(eq(dataRetentionConsents.userId, userId));
+      await db.delete(dataRetentionConsents).where(eq(dataRetentionConsents.userId, userId));
 
       const deletedCount = userRecords.length;
 
@@ -530,18 +527,20 @@ export class DataRetentionManager {
     try {
       // Initialize Drizzle with the D1 database
       const db = drizzle(this.db);
-      
+
       // Get total records using Drizzle
-      const totalResult = await db.select({ 
-        count: sql`count(*)` 
-      })
+      const totalResult = await db
+        .select({
+          count: sql`count(*)`,
+        })
         .from(dataRetentionRecords);
 
       // Get records by category using Drizzle
-      const categoryResults = await db.select({
-        dataCategory: dataRetentionRecords.dataCategory,
-        count: sql`count(*)`
-      })
+      const categoryResults = await db
+        .select({
+          dataCategory: dataRetentionRecords.dataCategory,
+          count: sql`count(*)`,
+        })
         .from(dataRetentionRecords)
         .groupBy(dataRetentionRecords.dataCategory);
 
@@ -549,25 +548,29 @@ export class DataRetentionManager {
       const now = Date.now();
       const nextWeek = now + 7 * 24 * 60 * 60 * 1000; // Convert days to milliseconds
 
-      const expiringResult = await db.select({
-        count: sql`count(*)`
-      })
+      const expiringResult = await db
+        .select({
+          count: sql`count(*)`,
+        })
         .from(dataRetentionRecords)
-        .where(and(
-          gte(dataRetentionRecords.expiresAt, now),
-          lte(dataRetentionRecords.expiresAt, nextWeek)
-        ));
+        .where(
+          and(
+            gte(dataRetentionRecords.expiresAt, now),
+            lte(dataRetentionRecords.expiresAt, nextWeek),
+          ),
+        );
 
       // Get anonymized records using Drizzle
-      const anonymizedResult = await db.select({
-        count: sql`count(*)`
-      })
+      const anonymizedResult = await db
+        .select({
+          count: sql`count(*)`,
+        })
         .from(dataRetentionRecords)
         .where(eq(dataRetentionRecords.anonymized, true));
 
       // Build records by category map
       const recordsByCategory: Record<string, number> = {};
-      
+
       // Process category results from Drizzle
       for (const row of categoryResults) {
         recordsByCategory[row.dataCategory] = Number(row.count);

@@ -1,5 +1,9 @@
 import { Document } from '../types';
-import { DEFAULT_MAX_TOTAL_DOC_TOKENS, DOC_METADATA_TOKENS, approximateTokenCount } from './tokenConstants';
+import {
+  DEFAULT_MAX_TOTAL_DOC_TOKENS,
+  DOC_METADATA_TOKENS,
+  approximateTokenCount,
+} from './tokenConstants';
 
 /**
  * Format retrieved documents for inclusion in a prompt
@@ -11,7 +15,7 @@ import { DEFAULT_MAX_TOTAL_DOC_TOKENS, DOC_METADATA_TOKENS, approximateTokenCoun
 export function formatDocsForPrompt(
   docs: Document[],
   includeSourceInfo = true,
-  maxTotalTokens = DEFAULT_MAX_TOTAL_DOC_TOKENS
+  maxTotalTokens = DEFAULT_MAX_TOTAL_DOC_TOKENS,
 ): string {
   if (!docs || docs.length === 0) {
     return '';
@@ -31,11 +35,11 @@ export function formatDocsForPrompt(
 
     // Calculate approximate token count for this document
     const tokenCount = approximateTokenCount(formattedDoc);
-    
+
     return {
       text: formattedDoc,
       tokenCount,
-      relevanceScore: doc.metadata?.relevanceScore || 0
+      relevanceScore: doc.metadata?.relevanceScore || 0,
     };
   });
 

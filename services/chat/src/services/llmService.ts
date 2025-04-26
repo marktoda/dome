@@ -7,7 +7,7 @@ import {
   getTimeoutConfig,
   getQueryRewritingPrompt,
   getQueryComplexityAnalysisPrompt,
-  getResponseGenerationPrompt
+  getResponseGenerationPrompt,
 } from '../config';
 
 /**
@@ -246,11 +246,10 @@ export class LlmService {
             : undefined,
         };
       } catch (parseError) {
-        logError(
-          parseError,
-          'Failed to parse query analysis response',
-          { response: analysisResponse, query },
-        );
+        logError(parseError, 'Failed to parse query analysis response', {
+          response: analysisResponse,
+          query,
+        });
         return {
           isComplex: false,
           shouldSplit: false,
@@ -293,7 +292,10 @@ export class LlmService {
 
     // Estimate token count for context
     const contextTokens = Math.ceil(context.length / 4);
-    const messagesTokens = messages.reduce((total, msg) => total + Math.ceil(msg.content.length / 4), 0);
+    const messagesTokens = messages.reduce(
+      (total, msg) => total + Math.ceil(msg.content.length / 4),
+      0,
+    );
 
     // If context is too large, truncate it
     let finalContext = context;
@@ -307,9 +309,9 @@ export class LlmService {
           maxContextTokens,
           modelId: modelConfig.id,
           traceId: options?.traceId,
-          spanId: options?.spanId
+          spanId: options?.spanId,
         },
-        'Context exceeds token limit, truncating'
+        'Context exceeds token limit, truncating',
       );
 
       // Simple truncation - in a real implementation, you might want to be smarter about this
@@ -330,7 +332,7 @@ export class LlmService {
     const { maxResponseTokens } = calculateTokenLimits(
       modelConfig,
       totalInputTokens,
-      options?.maxTokens
+      options?.maxTokens,
     );
 
     this.logger.info(
@@ -343,16 +345,16 @@ export class LlmService {
         totalInputTokens,
         maxResponseTokens,
         traceId: options?.traceId,
-        spanId: options?.spanId
+        spanId: options?.spanId,
       },
-      'Token counts for LLM call'
+      'Token counts for LLM call',
     );
 
     const allMessages: AIMessage[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
     return this.call(env, allMessages, {
       ...options,
-      maxTokens: maxResponseTokens
+      maxTokens: maxResponseTokens,
     });
   }
 }

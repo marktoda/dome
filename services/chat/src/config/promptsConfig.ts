@@ -20,7 +20,7 @@ export interface PromptsConfig {
      */
     systemPrompt: string;
   };
-  
+
   /**
    * Prompts for query complexity analysis
    */
@@ -30,7 +30,7 @@ export interface PromptsConfig {
      */
     systemPrompt: string;
   };
-  
+
   /**
    * Prompts for response generation
    */
@@ -39,7 +39,7 @@ export interface PromptsConfig {
      * Base system prompt for response generation
      */
     baseSystemPrompt: string;
-    
+
     /**
      * Additional instruction for including source information
      */
@@ -54,24 +54,24 @@ const ENVIRONMENT_CONFIGS: Record<string, Partial<PromptsConfig>> = {
   development: {
     // Development environment can have more verbose prompts for debugging
   },
-  
+
   production: {
     // Production uses the default settings
   },
-  
+
   test: {
     // Test environment can have simplified prompts
     queryRewriting: {
-      systemPrompt: `Rewrite the query to make it more effective for retrieval.`
+      systemPrompt: `Rewrite the query to make it more effective for retrieval.`,
     },
     queryComplexityAnalysis: {
-      systemPrompt: `Analyze if this query is complex and should be split.`
+      systemPrompt: `Analyze if this query is complex and should be split.`,
     },
     responseGeneration: {
       baseSystemPrompt: `You are an AI assistant. Provide a helpful response.`,
-      sourceInfoInstruction: `Include source information when available.`
-    }
-  }
+      sourceInfoInstruction: `Include source information when available.`,
+    },
+  },
 };
 
 /**
@@ -86,9 +86,9 @@ If the query contains multiple questions, focus on the main question or split it
 If the query contains ambiguous references (like "it", "this", "that"), replace them with specific entities from the conversation context.
 If the query is already clear and specific, you can keep it as is.
 
-Respond ONLY with the rewritten query, without any explanations or additional text.`
+Respond ONLY with the rewritten query, without any explanations or additional text.`,
   },
-  
+
   queryComplexityAnalysis: {
     systemPrompt: `You are an AI assistant that analyzes search queries.
 Your task is to determine if a query is complex and should be split into multiple simpler queries.
@@ -103,13 +103,14 @@ Respond with a JSON object with the following properties:
 - isComplex: boolean indicating if the query is complex
 - shouldSplit: boolean indicating if the query should be split
 - reason: brief explanation of your decision
-- suggestedQueries: array of simpler queries if shouldSplit is true (max 3)`
+- suggestedQueries: array of simpler queries if shouldSplit is true (max 3)`,
   },
-  
+
   responseGeneration: {
     baseSystemPrompt: `You are an AI assistant with access to the user's personal knowledge base.`,
-    sourceInfoInstruction: 'When referencing information from these documents, include the document number in brackets, e.g., [1], to help the user identify the source.\n\n'
-  }
+    sourceInfoInstruction:
+      'When referencing information from these documents, include the document number in brackets, e.g., [1], to help the user identify the source.\n\n',
+  },
 };
 
 /**
@@ -129,21 +130,21 @@ function getCurrentEnvironment(): string {
 export function getPromptsConfig(): PromptsConfig {
   const environment = getCurrentEnvironment();
   const envConfig = ENVIRONMENT_CONFIGS[environment] || {};
-  
+
   // Deep merge the environment config with the default config
   return {
     queryRewriting: {
       ...DEFAULT_PROMPTS_CONFIG.queryRewriting,
-      ...(envConfig.queryRewriting || {})
+      ...(envConfig.queryRewriting || {}),
     },
     queryComplexityAnalysis: {
       ...DEFAULT_PROMPTS_CONFIG.queryComplexityAnalysis,
-      ...(envConfig.queryComplexityAnalysis || {})
+      ...(envConfig.queryComplexityAnalysis || {}),
     },
     responseGeneration: {
       ...DEFAULT_PROMPTS_CONFIG.responseGeneration,
-      ...(envConfig.responseGeneration || {})
-    }
+      ...(envConfig.responseGeneration || {}),
+    },
   };
 }
 
@@ -169,20 +170,24 @@ export function getQueryComplexityAnalysisPrompt(): string {
  * @param includeSourceInfo Whether to include source information instructions
  * @returns The system prompt for response generation
  */
-export function getResponseGenerationPrompt(context: string = '', includeSourceInfo: boolean = false): string {
+export function getResponseGenerationPrompt(
+  context: string = '',
+  includeSourceInfo: boolean = false,
+): string {
   const config = getPromptsConfig();
-  
+
   let prompt = config.responseGeneration.baseSystemPrompt;
-  
+
   if (context) {
     prompt += `\nHere is relevant information from the user's knowledge base that may help with the response:\n\n${context}\n\n`;
   }
-  
+
   if (includeSourceInfo) {
     prompt += config.responseGeneration.sourceInfoInstruction;
   }
-  
-  prompt += '\nProvide a helpful, accurate, and concise response based on the provided context and your knowledge.';
-  
+
+  prompt +=
+    '\nProvide a helpful, accurate, and concise response based on the provided context and your knowledge.';
+
   return prompt;
 }

@@ -24,17 +24,17 @@ graph TD
     B --> C[Graph Layer]
     C --> D[Node Layer]
     D --> E[Service Layer]
-    
+
     B -->|Validation Errors| F[Client Error Response]
     C -->|Graph Errors| G[Graph Error Response]
     D -->|Node Errors| H[Node Error Handling]
     E -->|Service Errors| I[Service Error Handling]
-    
+
     H -->|Recoverable| J[Continue Processing]
     H -->|Critical| G
     I -->|Recoverable| J
     I -->|Critical| G
-    
+
     style D fill:#f9d5e5,stroke:#333,stroke-width:2px
     style H fill:#f9d5e5,stroke:#333,stroke-width:2px
 ```
@@ -48,14 +48,14 @@ graph TD
 
 The Chat Service handles several categories of errors:
 
-| Error Category | Description | Examples | Handling Strategy |
-| -------------- | ----------- | -------- | ----------------- |
-| Validation Errors | Invalid input data | Missing required fields, invalid data types | Return 400 Bad Request with details |
-| Authentication Errors | User identity issues | Missing user ID, invalid credentials | Return 401 Unauthorized |
-| Authorization Errors | Permission issues | Insufficient permissions | Return 403 Forbidden |
-| Resource Errors | Missing or unavailable resources | Document not found, service unavailable | Graceful degradation, fallbacks |
-| Processing Errors | Errors during processing | LLM generation failure, search failure | Node-specific error handling |
-| System Errors | Infrastructure issues | Database connection failure | Retry with backoff, fallback to defaults |
+| Error Category        | Description                      | Examples                                    | Handling Strategy                        |
+| --------------------- | -------------------------------- | ------------------------------------------- | ---------------------------------------- |
+| Validation Errors     | Invalid input data               | Missing required fields, invalid data types | Return 400 Bad Request with details      |
+| Authentication Errors | User identity issues             | Missing user ID, invalid credentials        | Return 401 Unauthorized                  |
+| Authorization Errors  | Permission issues                | Insufficient permissions                    | Return 403 Forbidden                     |
+| Resource Errors       | Missing or unavailable resources | Document not found, service unavailable     | Graceful degradation, fallbacks          |
+| Processing Errors     | Errors during processing         | LLM generation failure, search failure      | Node-specific error handling             |
+| System Errors         | Infrastructure issues            | Database connection failure                 | Retry with backoff, fallback to defaults |
 
 ## 3. Error Handling Implementation
 
@@ -76,6 +76,7 @@ metadata: {
 ```
 
 This approach allows:
+
 - Tracking multiple errors across the processing pipeline
 - Understanding the sequence of errors
 - Diagnosing cascading failures
@@ -88,14 +89,17 @@ Each node implements its own error handling strategy. For example, the retrieve 
 try {
   // Call the search service to retrieve documents
   const docs = await searchService.search(searchOptions);
-  
+
   // Process results and update state
   // ...
 } catch (error) {
-  logger.error({
-    errorMessage: error instanceof Error ? error.message : String(error),
-    userId
-  }, 'Error retrieving context');
+  logger.error(
+    {
+      errorMessage: error instanceof Error ? error.message : String(error),
+      userId,
+    },
+    'Error retrieving context',
+  );
 
   // Log the error event with minimal info
   ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_error', {
@@ -108,19 +112,20 @@ try {
     { ...state, docs: [] },
     'retrieve',
     executionTime,
-    spanId
+    spanId,
   );
-  
+
   // Add error information and return
   return addErrorToState(
     errorState,
     'retrieve',
-    error instanceof Error ? error.message : String(error)
+    error instanceof Error ? error.message : String(error),
   );
 }
 ```
 
 Key aspects of node-level error handling:
+
 1. **Catch and Log**: Errors are caught and logged with context
 2. **Observability**: Error events are recorded for tracing
 3. **Fallback Behavior**: Empty document list provided as fallback
@@ -140,7 +145,7 @@ The Chat Service includes several helper utilities for consistent error handling
 export function addErrorToState(
   state: AgentState,
   nodeName: string,
-  errorMessage: string
+  errorMessage: string,
 ): AgentState {
   return {
     ...state,
@@ -165,19 +170,15 @@ export function addErrorToState(
 /**
  * Log an error with context
  */
-export function logError(
-  error: unknown,
-  message: string,
-  context?: Record<string, any>
-): void {
+export function logError(error: unknown, message: string, context?: Record<string, any>): void {
   const logger = getLogger();
   const errorObj = {
     err: error,
     ...(context || {}),
   };
-  
+
   logger.error(errorObj, message);
-  
+
   // Track error metrics
   metrics.increment('errors', 1, {
     errorType: error instanceof Error ? error.constructor.name : 'unknown',
@@ -197,10 +198,10 @@ try {
 
   // Call the chat orchestrator directly via RPC
   const response = await this.binding.generateChatResponse(validatedRequest);
-  
+
   // Process response
   // ...
-  
+
   return result;
 } catch (error) {
   logError(error, 'Error generating chat response via RPC', {
@@ -228,14 +229,14 @@ sequenceDiagram
     participant Graph
     participant Client
     participant User
-    
+
     Node->>Node: Try operation
-    
+
     alt Operation Fails
         Node->>Node: Catch error
         Node->>Node: Log error details
         Node->>Node: Record error in state
-        
+
         alt Recoverable Error
             Node->>Node: Apply fallback behavior
             Node->>Graph: Return updated state
@@ -289,6 +290,7 @@ const graph = new StateGraph<AgentState>()
 ```
 
 This allows:
+
 1. **Session Resumption**: Conversations can be resumed after interruptions
 2. **Error Recovery**: Processing can restart from the last valid state
 3. **Debugging**: Intermediate states can be inspected for troubleshooting
@@ -304,29 +306,26 @@ The system implements several retry mechanisms:
 Example retry implementation:
 
 ```typescript
-async function withRetry<T>(
-  operation: () => Promise<T>,
-  options: RetryOptions
-): Promise<T> {
+async function withRetry<T>(operation: () => Promise<T>, options: RetryOptions): Promise<T> {
   let lastError: Error | undefined;
-  
+
   for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
     try {
       return await operation();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       if (attempt < options.maxAttempts) {
         const delay = Math.min(
           options.baseDelayMs * Math.pow(options.backoffFactor, attempt - 1),
-          options.maxDelayMs
+          options.maxDelayMs,
         );
-        
+
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
-  
+
   throw lastError;
 }
 ```
@@ -355,7 +354,7 @@ logger.error(
     traceId,
     spanId,
   },
-  'Error retrieving context'
+  'Error retrieving context',
 );
 ```
 

@@ -103,7 +103,7 @@ describe('Services', () => {
     it('should provide methods that delegate to static methods', async () => {
       // Arrange
       const services = createServices(mockEnv);
-      
+
       // Mock the LlmService class directly
       vi.mock('../../src/services/llmService', () => ({
         LlmService: {
@@ -111,9 +111,9 @@ describe('Services', () => {
           rewriteQuery: vi.fn().mockResolvedValue('Rewritten query'),
           analyzeQueryComplexity: vi.fn().mockResolvedValue({ isComplex: false }),
           generateResponse: vi.fn().mockResolvedValue('Generated response'),
-        }
+        },
       }));
-      
+
       // Import the mocked module
       const { LlmService } = await import('../../src/services/llmService');
 
@@ -121,10 +121,7 @@ describe('Services', () => {
       await services.llm.call(mockEnv, [{ role: 'user', content: 'Test' }]);
 
       // Assert
-      expect(LlmService.call).toHaveBeenCalledWith(
-        mockEnv,
-        [{ role: 'user', content: 'Test' }],
-      );
+      expect(LlmService.call).toHaveBeenCalledWith(mockEnv, [{ role: 'user', content: 'Test' }]);
     });
   });
 });

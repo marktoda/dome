@@ -19,11 +19,7 @@ interface ApiResponse<T> {
  * @param status HTTP status code (default: 200)
  * @returns JSON response
  */
-export function successResponse<T>(
-  c: Context,
-  data: T,
-  status = 200
-): Response {
+export function successResponse<T>(c: Context, data: T, status = 200): Response {
   const response: ApiResponse<T> = {
     success: true,
     data,
@@ -39,12 +35,7 @@ export function successResponse<T>(
  * @param status HTTP status code (default: 400)
  * @returns JSON response
  */
-export function errorResponse(
-  c: Context,
-  code: string,
-  message: string,
-  status = 400
-): Response {
+export function errorResponse(c: Context, code: string, message: string, status = 400): Response {
   const response: ApiResponse<never> = {
     success: false,
     error: {
@@ -61,10 +52,7 @@ export function errorResponse(
  * @param message Error message (default: 'Unauthorized')
  * @returns JSON response
  */
-export function unauthorizedResponse(
-  c: Context,
-  message = 'Unauthorized'
-): Response {
+export function unauthorizedResponse(c: Context, message = 'Unauthorized'): Response {
   return errorResponse(c, 'UNAUTHORIZED', message, 401);
 }
 
@@ -74,10 +62,7 @@ export function unauthorizedResponse(
  * @param error Error object or message
  * @returns JSON response
  */
-export function validationErrorResponse(
-  c: Context,
-  error: Error | string
-): Response {
+export function validationErrorResponse(c: Context, error: Error | string): Response {
   const message = error instanceof Error ? error.message : error;
   return errorResponse(c, 'INVALID_REQUEST', message, 400);
 }
@@ -90,7 +75,7 @@ export function validationErrorResponse(
  */
 export function internalErrorResponse(
   c: Context,
-  message = 'An unexpected error occurred'
+  message = 'An unexpected error occurred',
 ): Response {
   return errorResponse(c, 'INTERNAL_ERROR', message, 500);
 }

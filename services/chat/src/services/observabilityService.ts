@@ -27,23 +27,29 @@ export class ObservabilityService {
   private static readonly metrics = new ServiceMetrics('chat');
 
   // Trace and span storage for in-memory correlation
-  private static traces: Map<string, {
-    userId: string;
-    startTime: number;
-    endTime?: number;
-    spans: Map<string, {
-      name: string;
+  private static traces: Map<
+    string,
+    {
+      userId: string;
       startTime: number;
       endTime?: number;
+      spans: Map<
+        string,
+        {
+          name: string;
+          startTime: number;
+          endTime?: number;
+          status: SpanStatus;
+          events: Array<{
+            name: string;
+            timestamp: number;
+            attributes: Record<string, any>;
+          }>;
+        }
+      >;
       status: SpanStatus;
-      events: Array<{
-        name: string;
-        timestamp: number;
-        attributes: Record<string, any>;
-      }>;
-    }>;
-    status: SpanStatus;
-  }> = new Map();
+    }
+  > = new Map();
 
   /**
    * Initialize a trace for a conversation
@@ -95,12 +101,7 @@ export class ObservabilityService {
    * @param state Current agent state
    * @returns Span ID
    */
-  static startSpan(
-    env: Env,
-    traceId: string,
-    nodeName: string,
-    state: AgentState,
-  ): string {
+  static startSpan(env: Env, traceId: string, nodeName: string, state: AgentState): string {
     const context: TraceContext = { traceId, spanId: '' };
     const parentSpanId = context.spanId;
     const spanId = `${traceId}-${nodeName}-${Date.now()}`;
@@ -110,7 +111,10 @@ export class ObservabilityService {
     // Get the trace
     const trace = this.traces.get(traceId);
     if (!trace) {
-      this.logger.warn({ traceId, spanName: nodeName }, 'Attempted to start span for unknown trace');
+      this.logger.warn(
+        { traceId, spanName: nodeName },
+        'Attempted to start span for unknown trace',
+      );
       return spanId;
     }
 
@@ -173,7 +177,10 @@ export class ObservabilityService {
     // Get the trace and span
     const trace = this.traces.get(traceId);
     if (!trace) {
-      this.logger.warn({ traceId, spanId, spanName: nodeName }, 'Attempted to end span for unknown trace');
+      this.logger.warn(
+        { traceId, spanId, spanName: nodeName },
+        'Attempted to end span for unknown trace',
+      );
       return;
     }
 
@@ -193,17 +200,11 @@ export class ObservabilityService {
 
       // Add error events
       for (const error of endState.metadata.errors) {
-        this.logEvent(
-          env,
-          traceId,
-          spanId,
-          'error',
-          {
-            message: error.message,
-            timestamp: error.timestamp,
-            node: error.node || nodeName,
-          }
-        );
+        this.logEvent(env, traceId, spanId, 'error', {
+          message: error.message,
+          timestamp: error.timestamp,
+          node: error.node || nodeName,
+        });
       }
     }
 
