@@ -6,26 +6,51 @@ import { Document } from '../types';
  * @param includeSourceInfo Whether to include source information
  * @returns Formatted document string
  */
-export function formatDocsForPrompt(docs: Document[], includeSourceInfo = true): string {
+export function formatDocsForPrompt(docs: Document[], includeSourceInfo = true, maxTotalTokens = 15000): string {
   if (!docs || docs.length === 0) {
     return '';
   }
 
-  return docs
-    .map((doc, index) => {
-      const docNumber = index + 1;
-      let formattedDoc = `[${docNumber}] ${doc.title}\n${doc.body}`;
+  // First, format all documents
+  const formattedDocs = docs.map((doc, index) => {
+    const docNumber = index + 1;
+    let formattedDoc = `[${docNumber}] ${doc.title}\n${doc.body}`;
 
-      if (includeSourceInfo && doc.metadata) {
-        formattedDoc += `\nSource: ${doc.metadata.source}`;
-        if (doc.metadata.createdAt) {
-          formattedDoc += ` (${formatDate(doc.metadata.createdAt)})`;
-        }
+    if (includeSourceInfo && doc.metadata) {
+      formattedDoc += `\nSource: ${doc.metadata.source}`;
+      if (doc.metadata.createdAt) {
+        formattedDoc += ` (${formatDate(doc.metadata.createdAt)})`;
       }
+    }
 
-      return formattedDoc;
-    })
-    .join('\n\n');
+    // Calculate approximate token count for this document
+    const tokenCount = Math.ceil(formattedDoc.length / 4);
+    
+    return {
+      text: formattedDoc,
+      tokenCount,
+      relevanceScore: doc.metadata?.relevanceScore || 0
+    };
+  });
+
+  // Sort by relevance score (highest first)
+  formattedDocs.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+  // Limit total tokens
+  let totalTokens = 0;
+  const includedDocs: string[] = [];
+
+  for (const doc of formattedDocs) {
+    // If adding this document would exceed the limit, skip it
+    if (totalTokens + doc.tokenCount > maxTotalTokens) {
+      continue;
+    }
+
+    includedDocs.push(doc.text);
+    totalTokens += doc.tokenCount;
+  }
+
+  return includedDocs.join('\n\n');
 }
 
 /**
@@ -66,4 +91,31 @@ export function truncateToMaxTokens(text: string, maxTokens: number): string {
   // Truncate to approximate length and add ellipsis
   const truncatedLength = Math.floor(maxTokens * 4);
   return text.substring(0, truncatedLength) + '...';
+}
+
+/**
+ * Truncate a document to a maximum number of tokens
+ * @param doc The document to truncate
+ * @param maxTokens The maximum number of tokens
+ * @returns Truncated document
+ */
+export function truncateDocumentToMaxTokens(doc: Document, maxTokens: number): Document {
+  // Reserve tokens for title and metadata
+  const titleTokens = Math.ceil(doc.title.length / 4);
+  const metadataTokens = 50; // Approximate tokens for metadata
+  const bodyMaxTokens = maxTokens - titleTokens - metadataTokens;
+
+  // If body is already within limits, return the original document
+  const bodyTokens = Math.ceil(doc.body.length / 4);
+  if (bodyTokens <= bodyMaxTokens) {
+    return doc;
+  }
+
+  // Truncate the body
+  const truncatedBody = truncateToMaxTokens(doc.body, bodyMaxTokens);
+
+  return {
+    ...doc,
+    body: truncatedBody,
+  };
 }

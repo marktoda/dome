@@ -44,7 +44,10 @@ export function createServices(env: Env): Services {
   // Create service instances
   const llm = new LlmService();
   const search = SearchService.fromEnv(env);
-  const observability = new ObservabilityService();
+  
+  // Use the ObservabilityService adapter which internally uses FullObservabilityService
+  // This is a static class, so we don't need to instantiate it
+  const observability = ObservabilityService;
 
   // Return the services container
   return {

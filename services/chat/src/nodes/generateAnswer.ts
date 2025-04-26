@@ -6,6 +6,7 @@ import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { SearchService } from '../services/searchService';
+import { DEFAULT_MODEL, getModelConfig, calculateTokenLimits } from '../config/modelConfig';
 
 /**
  * Generate the final answer
@@ -20,7 +21,18 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
 
   // Prepare context from retrieved documents
   const docs = state.docs || [];
-  const formattedDocs = formatDocsForPrompt(docs, state.options?.includeSourceInfo || true);
+  
+  // Get model configuration
+  const modelId = state.options?.modelId || LlmService.MODEL;
+  const modelConfig = getModelConfig(modelId);
+  
+  // Set a maximum token limit for the formatted docs (half of model's context window)
+  const maxDocsTokens = Math.floor(modelConfig.maxContextTokens * 0.5);
+  const formattedDocs = formatDocsForPrompt(
+    docs,
+    state.options?.includeSourceInfo || true,
+    maxDocsTokens
+  );
 
   // Extract source metadata for attribution
   const sourceMetadata = docs.length > 0 ? SearchService.extractSourceMetadata(docs) : [];
@@ -64,18 +76,47 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
   });
 
   try {
+    // Count tokens in the system prompt and user messages to ensure we don't exceed limits
+    const systemPromptTokenCount = countTokens(systemPrompt);
+    const userMessagesTokenCount = state.messages.reduce((total, msg) => {
+      return total + countTokens(msg.content);
+    }, 0);
+    
+    // Calculate total input tokens
+    const totalInputTokens = systemPromptTokenCount + userMessagesTokenCount;
+    
+    // Calculate token limits based on model configuration
+    const { maxResponseTokens } = calculateTokenLimits(
+      modelConfig,
+      totalInputTokens,
+      state.options?.maxTokens
+    );
+    
+    logger.info(
+      {
+        modelId,
+        modelName: modelConfig.name,
+        maxContextTokens: modelConfig.maxContextTokens,
+        systemPromptTokens: systemPromptTokenCount,
+        userMessagesTokens: userMessagesTokenCount,
+        totalInputTokens,
+        maxResponseTokens,
+      },
+      'Token counts before LLM call'
+    );
+
     // Call the LLM service to generate a response
     const response = await LlmService.generateResponse(env, state.messages, formattedDocs, {
       traceId,
       spanId,
-      temperature: state.options?.temperature || 0.7,
-      maxTokens: state.options?.maxTokens || 1000,
+      modelId,
+      temperature: state.options?.temperature || modelConfig.defaultTemperature,
+      maxTokens: maxResponseTokens,
       includeSourceInfo: state.options?.includeSourceInfo || true,
     });
 
     // Count tokens in the response
     const responseTokenCount = countTokens(response);
-    const systemPromptTokenCount = countTokens(systemPrompt);
 
     logger.info(
       {

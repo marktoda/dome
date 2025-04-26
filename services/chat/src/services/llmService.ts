@@ -1,18 +1,20 @@
 import { getLogger, logError } from '@dome/logging';
 import { AIMessage } from '../types';
+import { DEFAULT_MODEL, getModelConfig, calculateTokenLimits } from '../config/modelConfig';
 
 /**
  * LLM model configuration
  */
-export const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+export const MODEL = DEFAULT_MODEL.id;
 
 /**
  * Service for interacting with the LLM
  */
 export class LlmService {
   private static readonly logger = getLogger();
-  private static readonly DEFAULT_TIMEOUT_MS = 15000; // 15 seconds
+  private static readonly DEFAULT_TIMEOUT_MS = 30000;
   public static readonly MODEL = MODEL; // Reference to the exported MODEL constant
+  public static readonly DEFAULT_MODEL_CONFIG = DEFAULT_MODEL;
 
   /**
    * Execute a promise with a timeout
@@ -296,13 +298,44 @@ Respond with a JSON object with the following properties:
       temperature?: number;
       maxTokens?: number;
       includeSourceInfo?: boolean;
+      modelId?: string;
     },
   ): Promise<string> {
+    // Get model configuration
+    const modelConfig = getModelConfig(options?.modelId || MODEL);
+
+    // Estimate token count for context
+    const contextTokens = Math.ceil(context.length / 4);
+    const messagesTokens = messages.reduce((total, msg) => total + Math.ceil(msg.content.length / 4), 0);
+
+    // If context is too large, truncate it
+    let finalContext = context;
+    // Use half of the model's context window for context, leaving room for messages and response
+    const maxContextTokens = Math.floor(modelConfig.maxContextTokens * 0.5);
+
+    if (contextTokens > maxContextTokens) {
+      this.logger.warn(
+        {
+          contextTokens,
+          maxContextTokens,
+          modelId: modelConfig.id,
+          traceId: options?.traceId,
+          spanId: options?.spanId
+        },
+        'Context exceeds token limit, truncating'
+      );
+
+      // Simple truncation - in a real implementation, you might want to be smarter about this
+      const truncationRatio = maxContextTokens / contextTokens;
+      const truncatedLength = Math.floor(context.length * truncationRatio);
+      finalContext = context.substring(0, truncatedLength) + '...';
+    }
+
     const systemPrompt = `You are an AI assistant with access to the user's personal knowledge base.
-${context
+${finalContext
         ? `Here is relevant information from the user's knowledge base that may help with the response:
 
-${context}
+${finalContext}
 
 `
         : ''
@@ -312,8 +345,39 @@ ${context}
       }
 Provide a helpful, accurate, and concise response based on the provided context and your knowledge.`;
 
+    // Calculate system prompt tokens
+    const systemPromptTokens = Math.ceil(systemPrompt.length / 4);
+
+    // Calculate total input tokens
+    const totalInputTokens = systemPromptTokens + messagesTokens;
+
+    // Calculate token limits based on model configuration
+    const { maxResponseTokens } = calculateTokenLimits(
+      modelConfig,
+      totalInputTokens,
+      options?.maxTokens
+    );
+
+    this.logger.info(
+      {
+        modelId: modelConfig.id,
+        modelName: modelConfig.name,
+        maxContextTokens: modelConfig.maxContextTokens,
+        systemPromptTokens,
+        messagesTokens,
+        totalInputTokens,
+        maxResponseTokens,
+        traceId: options?.traceId,
+        spanId: options?.spanId
+      },
+      'Token counts for LLM call'
+    );
+
     const allMessages: AIMessage[] = [{ role: 'system', content: systemPrompt }, ...messages];
 
-    return this.call(env, allMessages, options);
+    return this.call(env, allMessages, {
+      ...options,
+      maxTokens: maxResponseTokens
+    });
   }
 }

@@ -2,8 +2,11 @@ import { getLogger } from '@dome/logging';
 import { AgentState, Document } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { getUserId } from '../utils/stateUtils';
+import { truncateDocumentToMaxTokens } from '../utils/promptFormatter';
 import { SearchService } from '../services/searchService';
 import { ObservabilityService } from '../services/observabilityService';
+import { LlmService } from '../services/llmService';
+import { getModelConfig } from '../config/modelConfig';
 
 /**
  * Retrieve relevant documents based on the query
@@ -130,16 +133,26 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       performance.now() - startTime,
     );
 
-    // Calculate total tokens in retrieved docs
+    // Get model configuration
+    const modelId = state.options?.modelId || LlmService.MODEL;
+    const modelConfig = getModelConfig(modelId);
+    
+    // Calculate total tokens in retrieved docs and truncate if needed
     let totalTokens = 0;
     const processedDocs = docs.map(doc => {
-      const docTokens = countTokens(doc.title + ' ' + doc.body);
+      // First truncate each document to a reasonable size (max tokens per doc based on model)
+      // Use 10% of model's context window as max per document
+      const maxTokensPerDoc = Math.floor(modelConfig.maxContextTokens * 0.1);
+      const truncatedDoc = truncateDocumentToMaxTokens(doc, maxTokensPerDoc);
+      
+      // Count tokens in the truncated document
+      const docTokens = countTokens(truncatedDoc.title + ' ' + truncatedDoc.body);
       totalTokens += docTokens;
 
       return {
-        ...doc,
+        ...truncatedDoc,
         metadata: {
-          ...doc.metadata,
+          ...truncatedDoc.metadata,
           tokenCount: docTokens,
         },
       };
@@ -150,6 +163,43 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
 
     // Rank and filter documents by relevance
     const rankedDocs = SearchService.rankAndFilterDocuments(processedDocs, minRelevance);
+    
+    // Limit the total number of documents to control token count
+    // Use 50% of model's context window for documents, leaving room for the prompt and response
+    const maxDocsTokens = Math.floor(modelConfig.maxContextTokens * 0.5);
+    let currentTokens = 0;
+    const limitedDocs = [];
+    
+    // Log model configuration
+    logger.info(
+      {
+        modelId,
+        modelName: modelConfig.name,
+        maxContextTokens: modelConfig.maxContextTokens,
+        maxDocsTokens,
+        totalRetrievedDocs: rankedDocs.length,
+        totalRetrievedTokens: totalTokens,
+      },
+      'Document token limits based on model configuration'
+    );
+    
+    for (const doc of rankedDocs) {
+      if (currentTokens + (doc.metadata?.tokenCount || 0) > maxDocsTokens) {
+        // Skip this document if it would exceed our token budget
+        continue;
+      }
+      
+      limitedDocs.push(doc);
+      currentTokens += doc.metadata?.tokenCount || 0;
+      
+      // If we've reached our document limit, stop adding more
+      if (limitedDocs.length >= 5) {
+        break;
+      }
+    }
+    
+    // Update the total token count
+    totalTokens = currentTokens;
 
     // Update state with timing information
     const endTime = performance.now();

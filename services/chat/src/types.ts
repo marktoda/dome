@@ -22,6 +22,7 @@ export const chatRequestSchema = z.object({
     includeSourceInfo: z.boolean().optional().default(true),
     maxTokens: z.number().optional().default(1000),
     temperature: z.number().optional(),
+    modelId: z.string().optional(),
   }),
   runId: z.string().optional(),
 });
@@ -57,6 +58,7 @@ export interface AgentState {
     includeSourceInfo: boolean;
     maxTokens: number;
     temperature?: number;
+    modelId?: string;
   };
 
   // Intermediate processing data

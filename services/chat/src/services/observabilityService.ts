@@ -1,10 +1,12 @@
 import { getLogger } from '@dome/logging';
 import { AgentState } from '../types';
 import { getUserId } from '../utils/stateUtils';
+import { FullObservabilityService, TraceContext } from './fullObservabilityService';
 
 /**
  * Service for observability and tracing
- * This is a placeholder implementation that will be replaced with actual Langfuse integration
+ * This is an adapter that maintains the same API as the old ObservabilityService
+ * but uses the new FullObservabilityService internally
  */
 export class ObservabilityService {
   private static readonly logger = getLogger();
@@ -17,18 +19,8 @@ export class ObservabilityService {
    * @returns Trace ID
    */
   static initTrace(env: Env, userId: string, initialState: AgentState): string {
-    const traceId = `trace-${userId}-${Date.now()}`;
-
-    this.logger.info(
-      {
-        traceId,
-        userId,
-        messageCount: initialState.messages?.length || 0,
-      },
-      'Initialized trace',
-    );
-
-    return traceId;
+    const context = FullObservabilityService.initTrace(env, userId, initialState);
+    return context.traceId;
   }
 
   /**
@@ -40,18 +32,14 @@ export class ObservabilityService {
    * @returns Span ID
    */
   static startSpan(env: Env, traceId: string, nodeName: string, state: AgentState): string {
-    const spanId = `${traceId}-${nodeName}-${Date.now()}`;
-
-    this.logger.info(
-      {
-        traceId,
-        spanId,
-        nodeName,
-      },
-      'Started span',
-    );
-
-    return spanId;
+    // Create a context object from the traceId
+    const context: TraceContext = { traceId, spanId: '' };
+    
+    // Call the new service
+    const newContext = FullObservabilityService.startSpan(env, context, nodeName, state);
+    
+    // Return just the spanId to maintain the old API
+    return newContext.spanId;
   }
 
   /**
@@ -73,14 +61,17 @@ export class ObservabilityService {
     endState: AgentState,
     executionTimeMs: number,
   ): void {
-    this.logger.info(
-      {
-        traceId,
-        spanId,
-        nodeName,
-        executionTimeMs,
-      },
-      'Ended span',
+    // Create a context object
+    const context: TraceContext = { traceId, spanId };
+    
+    // Call the new service
+    FullObservabilityService.endSpan(
+      env,
+      context,
+      nodeName,
+      startState,
+      endState,
+      executionTimeMs,
     );
   }
 
@@ -99,15 +90,11 @@ export class ObservabilityService {
     eventName: string,
     data: Record<string, any>,
   ): void {
-    this.logger.info(
-      {
-        traceId,
-        spanId,
-        eventName,
-        ...data,
-      },
-      'Logged event',
-    );
+    // Create a context object
+    const context: TraceContext = { traceId, spanId };
+    
+    // Call the new service
+    FullObservabilityService.logEvent(env, context, eventName, data);
   }
 
   /**
@@ -123,15 +110,11 @@ export class ObservabilityService {
     finalState: AgentState,
     totalExecutionTimeMs: number,
   ): void {
-    this.logger.info(
-      {
-        traceId,
-        totalExecutionTimeMs,
-        nodeTimings: finalState.metadata?.nodeTimings,
-        tokenCounts: finalState.metadata?.tokenCounts,
-      },
-      'Ended trace',
-    );
+    // Create a context object
+    const context: TraceContext = { traceId, spanId: '' };
+    
+    // Call the new service
+    FullObservabilityService.endTrace(env, context, finalState, totalExecutionTimeMs);
   }
 
   /**
@@ -159,17 +142,18 @@ export class ObservabilityService {
       total?: number;
     },
   ): void {
-    this.logger.info(
-      {
-        traceId,
-        spanId,
-        model,
-        messageCount: messages.length,
-        responseLength: response.length,
-        executionTimeMs,
-        tokenCounts,
-      },
-      'LLM call',
+    // Create a context object
+    const context: TraceContext = { traceId, spanId };
+    
+    // Call the new service
+    FullObservabilityService.logLlmCall(
+      env,
+      context,
+      model,
+      messages,
+      response,
+      executionTimeMs,
+      tokenCounts,
     );
   }
 
@@ -190,17 +174,11 @@ export class ObservabilityService {
     results: Array<{ id: string; score: number }>,
     executionTimeMs: number,
   ): void {
-    this.logger.info(
-      {
-        traceId,
-        spanId,
-        query,
-        resultCount: results.length,
-        topResults: results.slice(0, 3),
-        executionTimeMs,
-      },
-      'Retrieval operation',
-    );
+    // Create a context object
+    const context: TraceContext = { traceId, spanId };
+    
+    // Call the new service
+    FullObservabilityService.logRetrieval(env, context, query, results, executionTimeMs);
   }
 
   /**
@@ -209,27 +187,6 @@ export class ObservabilityService {
    * @returns Metrics object
    */
   static collectMetrics(state: AgentState): Record<string, number> {
-    const metrics: Record<string, number> = {
-      totalExecutionTimeMs: 0,
-      messageCount: state.messages.length,
-      documentCount: state.docs?.length || 0,
-    };
-
-    // Add node timings
-    if (state.metadata?.nodeTimings) {
-      Object.entries(state.metadata.nodeTimings).forEach(([nodeName, time]) => {
-        metrics[`nodeTime_${nodeName}`] = time;
-        metrics.totalExecutionTimeMs += time;
-      });
-    }
-
-    // Add token counts
-    if (state.metadata?.tokenCounts) {
-      Object.entries(state.metadata.tokenCounts).forEach(([key, count]) => {
-        metrics[`tokenCount_${key}`] = count;
-      });
-    }
-
-    return metrics;
+    return FullObservabilityService.collectMetrics(state);
   }
 }
