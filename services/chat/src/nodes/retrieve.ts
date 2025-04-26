@@ -17,13 +17,23 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   const traceId = state.metadata?.traceId || '';
   const spanId = ObservabilityService.startSpan(env, traceId, 'retrieve', state);
 
-  // Skip retrieval if not enabled
-  if (!state.options?.enhanceWithContext) {
+  // Log the options for debugging
+  logger.info({
+    options: state.options,
+    enhanceWithContext: state.options?.enhanceWithContext,
+  }, 'Retrieve node options');
+
+  // Force enable context enhancement for now
+  const enhanceWithContext = state.options?.enhanceWithContext ?? true;
+
+  // Skip retrieval if not enabled (but we're forcing it on for now)
+  if (!enhanceWithContext) {
     logger.info('Context enhancement disabled, skipping retrieval');
 
     // Log the skip event
     ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_skipped', {
       reason: 'Context enhancement disabled',
+      options: state.options,
     });
 
     return {
@@ -41,7 +51,17 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   }
 
   const userId = getUserId(state);
-  const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
+  let query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery;
+  // If query is empty, use the last user message as a fallback
+  if (!query) {
+    logger.info({ state }, 'No query provided');
+    throw new Error('No query provided for retrieval');
+  }
+
+  // Log the query for debugging
+  logger.info({ query, tasks: state.tasks }, 'Query for retrieval');
+
+
   const maxItems = state.options?.maxContextItems || 10;
 
   // Track widening attempts
@@ -225,3 +245,4 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     };
   }
 };
+

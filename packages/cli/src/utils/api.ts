@@ -280,7 +280,7 @@ export async function chat(
       },
     ],
     options: {
-      enhanceWithContext: true,
+      enhanceWithContext: true, // Explicitly enable context enhancement
       maxContextItems: 5,
       includeSourceInfo: true,
       maxTokens: 1000,
@@ -724,7 +724,23 @@ export async function chat(
         return response;
       } else if (response && typeof response === 'object' && 'response' in response) {
         // If response.response exists but isn't a string, convert it
-        return String(response.response);
+        if (typeof response.response === 'object') {
+          // Check if response.response has a 'response' property (nested response)
+          if ('response' in response.response && typeof response.response.response === 'string') {
+            return response.response.response;
+          } else {
+            // Try to extract any text from the object
+            const responseText = JSON.stringify(response.response);
+            if (responseText !== '{}' && responseText !== '[]') {
+              return responseText;
+            } else {
+              // If the response is empty, provide a fallback message
+              return "I'm sorry, but I couldn't generate a response at this time.";
+            }
+          }
+        } else {
+          return String(response.response);
+        }
       } else if (
         response &&
         typeof response === 'object' &&

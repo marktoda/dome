@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  Annotation,
+} from "@langchain/langgraph";
+import { BaseMessage } from "@langchain/core/messages";
+
 
 // Define schemas for request validation
 export const chatRequestSchema = z.object({
@@ -95,6 +100,45 @@ export interface AgentState {
     executionTimeMs?: number;
   };
 }
+
+/* ------------------------------------------------------------------ */
+/*  1.  Helper reducers                                               */
+/* ------------------------------------------------------------------ */
+
+const concat = <T>() =>
+  Annotation<T[]>({
+    reducer: (prev, next) => prev.concat(next),
+    default: () => [],
+  });
+
+const merge = <T extends object>() =>
+  Annotation<T>({
+    reducer: (prev, next) => ({ ...prev, ...next }),
+    default: () => ({} as T),
+  });
+
+/* ------------------------------------------------------------------ */
+/*  2.  Graph-state definition that matches your AgentState           */
+/* ------------------------------------------------------------------ */
+
+export const GraphStateAnnotation = Annotation.Root({
+  /* ---------- required / scalar ----------------------------------- */
+  userId: Annotation<string>(),
+
+  /* ---------- conversation history -------------------------------- */
+  messages: concat<BaseMessage>(),                 // append new messages
+
+  /* ---------- static config --------------------------------------- */
+  options: Annotation<AgentState["options"]>(),    // usually written once
+
+  /* ---------- working area for nodes ------------------------------ */
+  tasks: merge<NonNullable<AgentState["tasks"]>>(),// merge nested fields
+  docs: concat<Document>(),                       // collect retrieved docs
+  generatedText: Annotation<string>(),             // last value wins
+
+  /* ---------- meta / tracing -------------------------------------- */
+  metadata: merge<NonNullable<AgentState["metadata"]>>(),
+});
 
 /**
  * Message interface

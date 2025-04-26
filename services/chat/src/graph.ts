@@ -21,7 +21,7 @@ import { IterableReadableStream } from '@langchain/core/utils/stream';
 import { SecureD1Checkpointer } from './checkpointer/secureD1Checkpointer';
 import { SecureToolExecutor } from './tools/secureToolExecutor';
 import * as nodes from './nodes';
-import { AgentState } from './types';
+import { AgentState, GraphStateAnnotation } from './types';
 
 type ChatNodeKey =
   | typeof START // "__start__"
@@ -61,14 +61,8 @@ export async function buildChatGraph(
 
   // Create node wrappers that include environment
   const nodeWrappers = createNodeWrappers(env, toolExecutor);
-  const GraphState = Annotation.Root({
-    messages: Annotation<BaseMessage[]>({
-      reducer: (x, y) => x.concat(y),
-      default: () => [],
-    }),
-  });
   // Initialize the state graph
-  const graph = new StateGraph(GraphState)
+  const graph = new StateGraph(GraphStateAnnotation)
     .addNode('split_rewrite', nodeWrappers.splitRewrite)
     .addNode('retrieve', nodeWrappers.retrieve)
     // .addNode('dynamic_widen', nodeWrappers.dynamicWiden)

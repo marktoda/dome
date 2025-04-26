@@ -80,6 +80,7 @@ export const generateAnswer = async (state: AgentState, env: Env): Promise<Agent
     logger.info(
       {
         responseLength: response.length,
+        responseStart: response.slice(0, 100),
         responseTokenCount,
         systemPromptTokenCount,
       },
@@ -262,8 +263,8 @@ function formatToolResultsForPrompt(toolResults: ToolResult[]): string {
       const output = result.error
         ? `Error: ${result.error}`
         : typeof result.output === 'string'
-        ? result.output
-        : JSON.stringify(result.output, null, 2);
+          ? result.output
+          : JSON.stringify(result.output, null, 2);
 
       return `[Tool ${index + 1}] ${result.toolName}\nInput: ${result.input}\nOutput: ${output}`;
     })

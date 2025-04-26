@@ -238,7 +238,16 @@ Respond with a JSON object with the following properties:
 
       // Try to parse the JSON response
       try {
-        const analysis = JSON.parse(analysisResponse);
+        // Extract JSON from markdown code blocks if present
+        let jsonStr = analysisResponse;
+        
+        // Check if response is wrapped in markdown code blocks
+        const codeBlockMatch = analysisResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (codeBlockMatch && codeBlockMatch[1]) {
+          jsonStr = codeBlockMatch[1].trim();
+        }
+        
+        const analysis = JSON.parse(jsonStr);
         return {
           isComplex: !!analysis.isComplex,
           shouldSplit: !!analysis.shouldSplit,

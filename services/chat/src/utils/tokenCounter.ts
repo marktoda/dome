@@ -1,4 +1,5 @@
 import { encoding_for_model } from '@dqbd/tiktoken';
+import { logError } from '@dome/logging';
 
 /**
  * Count the number of tokens in a string using tiktoken
@@ -10,13 +11,20 @@ export function countTokens(text: string, model = 'gpt-4'): number {
   if (!text) return 0;
 
   try {
+    // Skip tiktoken in Cloudflare Workers environment due to WebAssembly compatibility issues
+    if (typeof globalThis.WorkerGlobalScope !== 'undefined' && globalThis instanceof WorkerGlobalScope) {
+      // We're in a Cloudflare Worker, use the fallback method
+      return Math.ceil(text.length / 4);
+    }
+
     // @ts-ignore - Ignoring type errors for now to make progress
     const encoder = encoding_for_model(model as any);
     const tokens = encoder.encode(text);
     encoder.free();
     return tokens.length;
   } catch (error) {
-    console.warn('Error counting tokens, falling back to approximate count', error);
+    // Don't log the full error as it's expected in some environments
+    logError(error, 'Error counting tokens, falling back to approximate count');
     // Fallback to approximate count (roughly 4 characters per token)
     return Math.ceil(text.length / 4);
   }
