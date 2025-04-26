@@ -41,10 +41,13 @@ export class ChatController {
       },
       async () => {
         try {
-          // Log the incoming request
+          // Log minimal request info instead of the full request
           this.logger.debug(
             {
-              request: JSON.stringify(request, null, 2),
+              userId: request.userId,
+              messageCount: request.messages?.length || 0,
+              hasOptions: !!request.options,
+              stream: !!request.stream,
             },
             'Received chat request'
           );
@@ -52,10 +55,11 @@ export class ChatController {
           // Validate request
           const validatedRequest = chatRequestSchema.parse(request);
 
-          // Log the validate request
+          // Log minimal validation info
           this.logger.debug(
             {
-              validatedRequest: JSON.stringify(validatedRequest, null, 2),
+              userId: validatedRequest.userId,
+              messageCount: validatedRequest.messages?.length || 0,
             },
             'Validated chat request'
           );

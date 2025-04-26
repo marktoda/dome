@@ -433,7 +433,7 @@ export class SecureD1Checkpointer extends BaseCheckpointSaver {
           step,
           userId,
           stateSize: stateJson.length,
-          state: sanitizedState,
+          // Don't log the entire state object, even if sanitized
         },
         'Checkpoint saved',
       );

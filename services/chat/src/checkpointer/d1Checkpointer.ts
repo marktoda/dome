@@ -210,6 +210,7 @@ export class D1Checkpointer extends BaseCheckpointSaver {
           runId,
           step,
           stateSize: stateJson.length,
+          // Only log metadata, not the full state
         },
         'Checkpoint saved',
       );

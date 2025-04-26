@@ -17,10 +17,10 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   const traceId = state.metadata?.traceId || '';
   const spanId = ObservabilityService.startSpan(env, traceId, 'retrieve', state);
 
-  // Log the options for debugging
+  // Log minimal options for debugging
   logger.info({
-    options: state.options,
     enhanceWithContext: state.options?.enhanceWithContext,
+    maxContextItems: state.options?.maxContextItems,
   }, 'Retrieve node options');
 
   // Force enable context enhancement for now
@@ -54,12 +54,12 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   let query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery;
   // If query is empty, use the last user message as a fallback
   if (!query) {
-    logger.info({ state }, 'No query provided');
+    logger.info('No query provided');
     throw new Error('No query provided for retrieval');
   }
 
   // Log the query for debugging
-  logger.info({ query, tasks: state.tasks }, 'Query for retrieval');
+  logger.info({ query }, 'Query for retrieval');
 
 
   const maxItems = state.options?.maxContextItems || 10;
@@ -110,11 +110,10 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     const docs = await searchService.search(searchOptions);
     const docsCount = docs.length;
 
-    // Log the retrieval results
+    // Log the retrieval results with minimal info
     logger.info(
       {
         docsCount,
-        query,
         wideningAttempts,
         topRelevanceScore: docs.length > 0 ? docs[0].metadata.relevanceScore : 0,
       },
@@ -209,13 +208,15 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       },
     };
   } catch (error) {
-    logger.error({ err: error, userId, query }, 'Error retrieving context');
+    logger.error({
+      errorMessage: error instanceof Error ? error.message : String(error),
+      userId
+    }, 'Error retrieving context');
 
-    // Log the error event
+    // Log the error event with minimal info
     ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_error', {
       userId,
-      query,
-      error: error instanceof Error ? error.message : String(error),
+      errorMessage: error instanceof Error ? error.message : String(error),
     });
 
     // Update state with timing information

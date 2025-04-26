@@ -715,6 +715,17 @@ export async function chat(
         }
       }
 
+      // Special case for the specific response structure we're seeing
+      if (response &&
+          response.success === true &&
+          typeof response.response === 'object' &&
+          response.response &&
+          'response' in response.response &&
+          response.response.response === '') {
+        console.log('[DEBUG] Empty response string detected, returning fallback message');
+        return "I'm sorry, but I couldn't generate a response at this time. The service may be experiencing issues.";
+      }
+
       // Handle the response structure properly
       if (response && response.success === true && typeof response.response === 'string') {
         // Return just the response text if it's available
@@ -728,6 +739,9 @@ export async function chat(
           // Check if response.response has a 'response' property (nested response)
           if ('response' in response.response && typeof response.response.response === 'string') {
             return response.response.response;
+          } else if ('response' in response.response) {
+            // Handle case where response.response.response exists but isn't a string
+            return String(response.response.response || "I'm sorry, but I couldn't generate a response at this time.");
           } else {
             // Try to extract any text from the object
             const responseText = JSON.stringify(response.response);
@@ -739,7 +753,7 @@ export async function chat(
             }
           }
         } else {
-          return String(response.response);
+          return String(response.response || "I'm sorry, but I couldn't generate a response at this time.");
         }
       } else if (
         response &&
@@ -755,7 +769,10 @@ export async function chat(
 
       // Fallback to the entire response object if the expected structure isn't found
       console.log('[DEBUG] Using fallback response format');
-      return typeof response === 'object' ? JSON.stringify(response) : String(response);
+      
+      // If we get here, we have an unexpected response format
+      // Return a fallback message instead of the raw response
+      return "I'm sorry, but I couldn't generate a response at this time. The service may be experiencing issues.";
     } catch (error) {
       console.log(
         '[DEBUG] Error in non-streaming mode:',

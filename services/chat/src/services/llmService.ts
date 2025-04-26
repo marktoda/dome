@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger, logError } from '@dome/logging';
 import { AIMessage } from '../types';
 
 /**
@@ -86,7 +86,7 @@ export class LlmService {
         return this.fallbackResponse();
       }
     } catch (e) {
-      this.logger.warn({ error: e }, 'Error accessing AI binding, using fallback response');
+      logError(e, 'Error accessing AI binding, using fallback response');
       return this.fallbackResponse();
     }
 
@@ -124,7 +124,7 @@ export class LlmService {
       // @ts-ignore - Ignoring type errors for now to make progress
       return response.response;
     } catch (error) {
-      this.logger.error({ err: error }, 'Error from AI service');
+      logError(error, 'Error from AI service');
 
       // Provide a fallback response instead of throwing
       return "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.";
@@ -148,7 +148,7 @@ export class LlmService {
       spanId?: string;
     },
   ): Promise<string> {
-    const systemPrompt = `You are an AI assistant that helps improve search queries. 
+    const systemPrompt = `You are an AI assistant that helps improve search queries.
 Your task is to analyze the user's query and rewrite it to make it more effective for retrieval.
 
 If the query contains multiple questions, focus on the main question or split it into separate queries.
@@ -188,7 +188,7 @@ Respond ONLY with the rewritten query, without any explanations or additional te
 
       return cleanedQuery;
     } catch (error) {
-      this.logger.error({ err: error, originalQuery }, 'Error rewriting query');
+      logError(error, 'Error rewriting query', { originalQuery });
       return originalQuery;
     }
   }
@@ -240,13 +240,13 @@ Respond with a JSON object with the following properties:
       try {
         // Extract JSON from markdown code blocks if present
         let jsonStr = analysisResponse;
-        
+
         // Check if response is wrapped in markdown code blocks
         const codeBlockMatch = analysisResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         if (codeBlockMatch && codeBlockMatch[1]) {
           jsonStr = codeBlockMatch[1].trim();
         }
-        
+
         const analysis = JSON.parse(jsonStr);
         return {
           isComplex: !!analysis.isComplex,
@@ -257,9 +257,10 @@ Respond with a JSON object with the following properties:
             : undefined,
         };
       } catch (parseError) {
-        this.logger.error(
-          { err: parseError, response: analysisResponse },
+        logError(
+          parseError,
           'Failed to parse query analysis response',
+          { response: analysisResponse, query },
         );
         return {
           isComplex: false,
@@ -268,7 +269,7 @@ Respond with a JSON object with the following properties:
         };
       }
     } catch (error) {
-      this.logger.error({ err: error, query }, 'Error analyzing query complexity');
+      logError(error, 'Error analyzing query complexity', { query });
       return {
         isComplex: false,
         shouldSplit: false,
@@ -297,20 +298,18 @@ Respond with a JSON object with the following properties:
       includeSourceInfo?: boolean;
     },
   ): Promise<string> {
-    const systemPrompt = `You are an AI assistant with access to the user's personal knowledge base. 
-${
-  context
-    ? `Here is relevant information from the user's knowledge base that may help with the response:
+    const systemPrompt = `You are an AI assistant with access to the user's personal knowledge base.
+${context
+        ? `Here is relevant information from the user's knowledge base that may help with the response:
 
 ${context}
 
 `
-    : ''
-}${
-      options?.includeSourceInfo
+        : ''
+      }${options?.includeSourceInfo
         ? 'When referencing information from these documents, include the document number in brackets, e.g., [1], to help the user identify the source.\n\n'
         : ''
-    }
+      }
 Provide a helpful, accurate, and concise response based on the provided context and your knowledge.`;
 
     const allMessages: AIMessage[] = [{ role: 'system', content: systemPrompt }, ...messages];
