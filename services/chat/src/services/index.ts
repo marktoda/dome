@@ -42,7 +42,8 @@ export function createServices(env: Env): Services {
   const toolRegistry = initializeToolRegistry();
 
   // Create service instances
-  const llm = new LlmService();
+  // LlmService is a static class, so we don't need to instantiate it
+  const llm = LlmService;
   const search = SearchService.fromEnv(env);
   
   // Use the ObservabilityService
