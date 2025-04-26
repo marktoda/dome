@@ -1,6 +1,14 @@
 import { getLogger, logError } from '@dome/logging';
 import { AIMessage } from '../types';
-import { DEFAULT_MODEL, getModelConfig, calculateTokenLimits } from '../config/modelConfig';
+import {
+  DEFAULT_MODEL,
+  getModelConfig,
+  calculateTokenLimits,
+  getTimeoutConfig,
+  getQueryRewritingPrompt,
+  getQueryComplexityAnalysisPrompt,
+  getResponseGenerationPrompt
+} from '../config';
 
 /**
  * LLM model configuration
@@ -12,7 +20,6 @@ export const MODEL = DEFAULT_MODEL.id;
  */
 export class LlmService {
   private static readonly logger = getLogger();
-  private static readonly DEFAULT_TIMEOUT_MS = 30000;
   public static readonly MODEL = MODEL; // Reference to the exported MODEL constant
   public static readonly DEFAULT_MODEL_CONFIG = DEFAULT_MODEL;
 
@@ -24,7 +31,7 @@ export class LlmService {
    */
   private static async withTimeout<T>(
     promise: Promise<T>,
-    timeoutMs = this.DEFAULT_TIMEOUT_MS,
+    timeoutMs = getTimeoutConfig().llmServiceTimeout,
   ): Promise<T> {
     return Promise.race([
       promise,
@@ -150,14 +157,7 @@ export class LlmService {
       spanId?: string;
     },
   ): Promise<string> {
-    const systemPrompt = `You are an AI assistant that helps improve search queries.
-Your task is to analyze the user's query and rewrite it to make it more effective for retrieval.
-
-If the query contains multiple questions, focus on the main question or split it into separate queries.
-If the query contains ambiguous references (like "it", "this", "that"), replace them with specific entities from the conversation context.
-If the query is already clear and specific, you can keep it as is.
-
-Respond ONLY with the rewritten query, without any explanations or additional text.`;
+    const systemPrompt = getQueryRewritingPrompt();
 
     const messages: AIMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -215,20 +215,7 @@ Respond ONLY with the rewritten query, without any explanations or additional te
     reason: string;
     suggestedQueries?: string[];
   }> {
-    const systemPrompt = `You are an AI assistant that analyzes search queries.
-Your task is to determine if a query is complex and should be split into multiple simpler queries.
-
-A query might be complex if:
-1. It contains multiple distinct questions
-2. It asks for comparisons between multiple topics
-3. It requests information across different domains or categories
-4. It contains too many constraints or conditions
-
-Respond with a JSON object with the following properties:
-- isComplex: boolean indicating if the query is complex
-- shouldSplit: boolean indicating if the query should be split
-- reason: brief explanation of your decision
-- suggestedQueries: array of simpler queries if shouldSplit is true (max 3)`;
+    const systemPrompt = getQueryComplexityAnalysisPrompt();
 
     const messages: AIMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -331,19 +318,7 @@ Respond with a JSON object with the following properties:
       finalContext = context.substring(0, truncatedLength) + '...';
     }
 
-    const systemPrompt = `You are an AI assistant with access to the user's personal knowledge base.
-${finalContext
-        ? `Here is relevant information from the user's knowledge base that may help with the response:
-
-${finalContext}
-
-`
-        : ''
-      }${options?.includeSourceInfo
-        ? 'When referencing information from these documents, include the document number in brackets, e.g., [1], to help the user identify the source.\n\n'
-        : ''
-      }
-Provide a helpful, accurate, and concise response based on the provided context and your knowledge.`;
+    const systemPrompt = getResponseGenerationPrompt(finalContext, options?.includeSourceInfo);
 
     // Calculate system prompt tokens
     const systemPromptTokens = Math.ceil(systemPrompt.length / 4);

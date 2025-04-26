@@ -1,16 +1,18 @@
 // Import vitest for mocking
 import { vi } from 'vitest';
+import { TextEncoder, TextDecoder } from 'util';
 
 // Mock global objects that are available in Cloudflare Workers
-global.TextEncoder = require('util').TextEncoder;
-global.TextDecoder = require('util').TextDecoder;
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
 
 // Mock ReadableStream if not available
 if (typeof ReadableStream === 'undefined') {
   global.ReadableStream = class ReadableStream {
-    constructor(options) {
+    constructor(options: any) {
       this._options = options;
     }
+    _options: any;
   };
 }
 
@@ -25,7 +27,7 @@ if (typeof performance === 'undefined') {
 if (typeof crypto === 'undefined') {
   global.crypto = {
     subtle: {},
-    getRandomValues: arr => {
+    getRandomValues: (arr: Uint8Array) => {
       const bytes = new Uint8Array(arr.length);
       for (let i = 0; i < bytes.length; i++) {
         bytes[i] = Math.floor(Math.random() * 256);

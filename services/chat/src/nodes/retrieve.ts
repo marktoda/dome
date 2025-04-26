@@ -1,12 +1,17 @@
 import { getLogger } from '@dome/logging';
 import { AgentState, Document } from '../types';
-import { countTokens } from '../utils/tokenCounter';
+import { countTokens, estimateDocumentTokens } from '../utils/tokenCounter';
 import { getUserId } from '../utils/stateUtils';
 import { truncateDocumentToMaxTokens } from '../utils/promptFormatter';
 import { SearchService } from '../services/searchService';
 import { ObservabilityService } from '../services/observabilityService';
 import { LlmService } from '../services/llmService';
-import { getModelConfig } from '../config/modelConfig';
+import { getModelConfig, getRetrieveConfig, calculateMinRelevanceScore } from '../config';
+import {
+  updateStateWithTiming,
+  updateStateWithTokenCount,
+  addErrorToState
+} from '../utils/stateUpdateHelpers';
 
 /**
  * Retrieve relevant documents based on the query
@@ -39,18 +44,12 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       options: state.options,
     });
 
-    return {
-      ...state,
-      docs: [],
-      metadata: {
-        ...state.metadata,
-        spanId,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          retrieve: 0,
-        },
-      },
-    };
+    return updateStateWithTiming(
+      { ...state, docs: [] },
+      'retrieve',
+      0,
+      spanId
+    );
   }
 
   const userId = getUserId(state);
@@ -70,8 +69,8 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   // Track widening attempts
   const wideningAttempts = state.tasks?.wideningAttempts || 0;
 
-  // Adjust search parameters based on widening attempts
-  const minRelevance = Math.max(0.5 - wideningAttempts * 0.1, 0.2);
+  // Adjust search parameters based on widening attempts and configuration
+  const minRelevance = calculateMinRelevanceScore(wideningAttempts);
   const expandSynonyms = wideningAttempts > 0;
   const includeRelated = wideningAttempts > 1;
 
@@ -141,12 +140,13 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     let totalTokens = 0;
     const processedDocs = docs.map(doc => {
       // First truncate each document to a reasonable size (max tokens per doc based on model)
-      // Use 10% of model's context window as max per document
-      const maxTokensPerDoc = Math.floor(modelConfig.maxContextTokens * 0.1);
+      // Use configuration for max tokens per document
+      const retrieveConfig = getRetrieveConfig();
+      const maxTokensPerDoc = Math.floor(modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxPerDocument);
       const truncatedDoc = truncateDocumentToMaxTokens(doc, maxTokensPerDoc);
       
       // Count tokens in the truncated document
-      const docTokens = countTokens(truncatedDoc.title + ' ' + truncatedDoc.body);
+      const docTokens = estimateDocumentTokens(truncatedDoc);
       totalTokens += docTokens;
 
       return {
@@ -165,8 +165,9 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     const rankedDocs = SearchService.rankAndFilterDocuments(processedDocs, minRelevance);
     
     // Limit the total number of documents to control token count
-    // Use 50% of model's context window for documents, leaving room for the prompt and response
-    const maxDocsTokens = Math.floor(modelConfig.maxContextTokens * 0.5);
+    // Use configuration for max tokens for all documents
+    const retrieveConfig = getRetrieveConfig();
+    const maxDocsTokens = Math.floor(modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxForAllDocuments);
     let currentTokens = 0;
     const limitedDocs = [];
     
@@ -193,7 +194,8 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       currentTokens += doc.metadata?.tokenCount || 0;
       
       // If we've reached our document limit, stop adding more
-      if (limitedDocs.length >= 5) {
+      const retrieveConfig = getRetrieveConfig();
+      if (limitedDocs.length >= retrieveConfig.documentLimits.maxDocuments) {
         break;
       }
     }
@@ -205,6 +207,21 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     const endTime = performance.now();
     const executionTime = endTime - startTime;
 
+    // Create updated state with docs and tasks
+    const updatedState = {
+      ...state,
+      docs: rankedDocs,
+      tasks: {
+        ...state.tasks,
+        needsWidening: docsCount < 2 && wideningAttempts < 2,
+        wideningAttempts,
+      }
+    };
+
+    // Add timing and token count information
+    let resultState = updateStateWithTiming(updatedState, 'retrieve', executionTime, spanId);
+    resultState = updateStateWithTokenCount(resultState, 'retrievedDocs', totalTokens);
+
     // End the span
     ObservabilityService.endSpan(
       env,
@@ -212,51 +229,11 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       spanId,
       'retrieve',
       state,
-      {
-        ...state,
-        docs: rankedDocs,
-        tasks: {
-          ...state.tasks,
-          needsWidening: docsCount < 2 && wideningAttempts < 2,
-          wideningAttempts,
-        },
-        metadata: {
-          ...state.metadata,
-          spanId,
-          nodeTimings: {
-            ...state.metadata?.nodeTimings,
-            retrieve: executionTime,
-          },
-          tokenCounts: {
-            ...state.metadata?.tokenCounts,
-            retrievedDocs: totalTokens,
-          },
-        },
-      },
+      resultState,
       executionTime,
     );
 
-    return {
-      ...state,
-      docs: rankedDocs,
-      tasks: {
-        ...state.tasks,
-        needsWidening: docsCount < 2 && wideningAttempts < 2,
-        wideningAttempts,
-      },
-      metadata: {
-        ...state.metadata,
-        spanId,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          retrieve: executionTime,
-        },
-        tokenCounts: {
-          ...state.metadata?.tokenCounts,
-          retrievedDocs: totalTokens,
-        },
-      },
-    };
+    return resultState;
   } catch (error) {
     logger.error({
       errorMessage: error instanceof Error ? error.message : String(error),
@@ -273,27 +250,22 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     const endTime = performance.now();
     const executionTime = endTime - startTime;
 
-    // Return state with empty docs on error
-    return {
-      ...state,
-      docs: [],
-      metadata: {
-        ...state.metadata,
-        spanId,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          retrieve: executionTime,
-        },
-        errors: [
-          ...(state.metadata?.errors || []),
-          {
-            node: 'retrieve',
-            message: error instanceof Error ? error.message : String(error),
-            timestamp: Date.now(),
-          },
-        ],
-      },
-    };
+    // Create error state with empty docs
+    const errorState = updateStateWithTiming(
+      { ...state, docs: [] },
+      'retrieve',
+      executionTime,
+      spanId
+    );
+    
+    // Add error information and return
+    return addErrorToState(
+      errorState,
+      'retrieve',
+      error instanceof Error ? error.message : String(error)
+    );
+    
+    return errorState;
   }
 };
 

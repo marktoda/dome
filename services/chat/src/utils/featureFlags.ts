@@ -9,6 +9,8 @@ export enum FeatureFlag {
   ENABLE_ADVANCED_RETRIEVAL = 'enable_advanced_retrieval',
   ENABLE_CACHING = 'enable_caching',
   ENABLE_PARALLEL_PROCESSING = 'enable_parallel_processing',
+  ENABLE_TOOL_ROUTER = 'enable_tool_router',
+  ENABLE_TOOL_EXECUTION = 'enable_tool_execution',
 }
 
 /**
@@ -29,6 +31,8 @@ const DEFAULT_CONFIG: FeatureFlagConfig = {
     [FeatureFlag.ENABLE_ADVANCED_RETRIEVAL]: false,
     [FeatureFlag.ENABLE_CACHING]: false,
     [FeatureFlag.ENABLE_PARALLEL_PROCESSING]: false,
+    [FeatureFlag.ENABLE_TOOL_ROUTER]: false,
+    [FeatureFlag.ENABLE_TOOL_EXECUTION]: false,
   },
   overrides: {
     // Override flags for specific user IDs

@@ -1,12 +1,18 @@
 import { Document } from '../types';
+import { DEFAULT_MAX_TOTAL_DOC_TOKENS, DOC_METADATA_TOKENS, approximateTokenCount } from './tokenConstants';
 
 /**
  * Format retrieved documents for inclusion in a prompt
  * @param docs The documents to format
  * @param includeSourceInfo Whether to include source information
+ * @param maxTotalTokens Maximum total tokens for all documents
  * @returns Formatted document string
  */
-export function formatDocsForPrompt(docs: Document[], includeSourceInfo = true, maxTotalTokens = 15000): string {
+export function formatDocsForPrompt(
+  docs: Document[],
+  includeSourceInfo = true,
+  maxTotalTokens = DEFAULT_MAX_TOTAL_DOC_TOKENS
+): string {
   if (!docs || docs.length === 0) {
     return '';
   }
@@ -24,7 +30,7 @@ export function formatDocsForPrompt(docs: Document[], includeSourceInfo = true, 
     }
 
     // Calculate approximate token count for this document
-    const tokenCount = Math.ceil(formattedDoc.length / 4);
+    const tokenCount = approximateTokenCount(formattedDoc);
     
     return {
       text: formattedDoc,
@@ -80,9 +86,8 @@ function formatDate(dateString: string): string {
  * @returns Truncated text
  */
 export function truncateToMaxTokens(text: string, maxTokens: number): string {
-  // This is a very rough approximation (4 chars ≈ 1 token)
-  // In a real implementation, use a proper tokenizer
-  const approximateTokens = text.length / 4;
+  // Use the standardized token approximation
+  const approximateTokens = approximateTokenCount(text);
 
   if (approximateTokens <= maxTokens) {
     return text;
@@ -101,12 +106,12 @@ export function truncateToMaxTokens(text: string, maxTokens: number): string {
  */
 export function truncateDocumentToMaxTokens(doc: Document, maxTokens: number): Document {
   // Reserve tokens for title and metadata
-  const titleTokens = Math.ceil(doc.title.length / 4);
-  const metadataTokens = 50; // Approximate tokens for metadata
+  const titleTokens = approximateTokenCount(doc.title);
+  const metadataTokens = DOC_METADATA_TOKENS;
   const bodyMaxTokens = maxTokens - titleTokens - metadataTokens;
 
   // If body is already within limits, return the original document
-  const bodyTokens = Math.ceil(doc.body.length / 4);
+  const bodyTokens = approximateTokenCount(doc.body);
   if (bodyTokens <= bodyMaxTokens) {
     return doc;
   }

@@ -1,214 +1,307 @@
-# Chat Orchestrator Service
+# Chat Service
 
-The Chat Orchestrator service is responsible for processing user queries through a series of nodes to generate responses. It uses a graph-based approach to orchestrate the flow of information between different components.
+## 1. Service Overview
 
-## Performance Optimizations
+### Purpose
 
-This service has been optimized for performance and scalability with the following enhancements:
+The Chat Service is a core component of the Dome platform that provides conversational AI capabilities with Retrieval-Augmented Generation (RAG). It orchestrates the process of analyzing user queries, retrieving relevant context, and generating accurate, contextually-aware responses.
 
-### 1. Enhanced Caching
+### Key Features
 
-- **Advanced Cache Implementation**: A sophisticated caching system with TTL, LRU eviction, and memory-aware caching.
-- **Sharded Caching**: Support for concurrent access with sharded caches to reduce contention.
-- **Stale-While-Revalidate**: Ability to return stale values while revalidating in the background.
-- **Memory Usage Tracking**: Monitoring of cache memory usage to prevent memory leaks.
+- **Retrieval-Augmented Generation (RAG)**: Enhances responses with relevant context from the user's knowledge base
+- **Streaming Responses**: Supports real-time streaming of AI responses
+- **Modular Graph Architecture**: Uses a directed graph of specialized nodes for flexible processing
+- **Context Widening**: Dynamically adjusts search parameters to improve retrieval results
+- **Tool Integration**: Can detect when specialized tools are needed and execute them
+- **Observability**: Comprehensive logging, metrics, and tracing throughout the processing pipeline
+- **Error Resilience**: Robust error handling at each processing step
 
-```typescript
-// Example: Using the advanced cache
-import { getAdvancedCache } from './utils/advancedCache';
+### Goals and Non-Goals
 
-const cache = getAdvancedCache<SearchResult>('searchResults', {
-  ttl: 5 * 60 * 1000, // 5 minutes
-  maxSize: 1000,
-  maxMemoryUsage: 50 * 1024 * 1024, // 50 MB
-  staleWhileRevalidate: true,
-  segmentCount: 4, // Use 4 shards for concurrent access
-});
+|          | ✅ In Scope      | ❌ Out of Scope      |
+| -------- | ---------------- | -------------------- |
+| Functionality | Conversational AI with RAG, tool execution, context management | General-purpose AI, training custom models |
+| Performance | Optimized retrieval, efficient token usage, response streaming | Real-time voice processing, video analysis |
+| Integration | Cloudflare Workers, D1 database, Vectorize | Direct integration with external AI providers |
+| Security | User data isolation, consent management | End-to-end encryption, advanced threat detection |
 
-// Cache a result
-cache.set('key', result);
+## 2. Architecture
 
-// Get a cached result
-const cachedResult = cache.get('key');
+### High-Level Architecture
+
+```mermaid
+graph TD
+    A[Client] -->|Request| B[Dome API]
+    B -->|RPC| C[Chat Service]
+    C -->|Process| D[RAG Graph]
+    D -->|Retrieve| E[Search Service]
+    D -->|Generate| F[LLM Service]
+    D -->|Execute| G[Tool Registry]
+    D -->|Store State| H[(D1 Database)]
+    E -->|Vector Search| I[(Vectorize)]
+    
+    style C fill:#d4f1f9,stroke:#333,stroke-width:2px
+    style D fill:#d4f1f9,stroke:#333,stroke-width:2px
 ```
 
-### 2. Optimized Retrieval
+The Chat Service follows a modular architecture centered around a directed graph of specialized processing nodes. When a request is received, it flows through this graph, with each node performing a specific function such as query analysis, context retrieval, tool execution, or response generation.
 
-- **Batched Retrieval**: Support for processing multiple queries in a single operation.
-- **Pagination**: Efficient handling of large result sets with pagination.
-- **Dynamic Widening**: Automatic adjustment of search parameters based on result quality.
-- **Vector Search Optimization**: Improved filtering and ranking of search results.
+### Component Breakdown
 
-```typescript
-// Example: Using the optimized search service
-import { OptimizedSearchService } from './services/optimizedSearchService';
+#### RAG Graph
 
-// Single search
-const searchResult = await OptimizedSearchService.search(env, {
-  userId,
-  query,
-  limit: 10,
-  minRelevance: 0.5,
-});
+The core of the Chat Service is the RAG (Retrieval-Augmented Generation) Graph, which orchestrates the flow of processing through specialized nodes. The graph is implemented using LangChain's StateGraph, which manages state transitions and checkpointing.
 
-// Batch search
-const batchResult = await OptimizedSearchService.batchSearch(env, {
-  userId,
-  queries: ['query1', 'query2', 'query3'],
-  limit: 5,
-});
-```
+Key nodes in the graph include:
+- **Split/Rewrite**: Analyzes and potentially rewrites user queries for better retrieval
+- **Retrieve**: Fetches relevant documents based on the query
+- **Dynamic Widen**: Adjusts search parameters to improve retrieval results
+- **Tool Router**: Determines if specialized tools are needed
+- **Run Tool**: Executes selected tools
+- **Generate Answer**: Creates the final response using an LLM
 
-### 3. Error Resilience
+#### Client API
 
-- **Circuit Breaker Pattern**: Protection against cascading failures with automatic recovery.
-- **Retry Logic**: Exponential backoff with jitter for transient failures.
-- **Fallback Mechanisms**: Graceful degradation with fallback responses.
-- **Error Tracking**: Comprehensive error tracking and reporting.
+The Chat Service exposes a client API that provides methods for generating responses, streaming responses, and managing chat sessions. The client handles validation, error handling, and metrics tracking.
 
-```typescript
-// Example: Using the circuit breaker
-import { getCircuitBreaker } from './utils/circuitBreaker';
+#### Search Service
 
-const circuitBreaker = getCircuitBreaker({
-  name: 'service-name',
-  failureThreshold: 5,
-  resetTimeout: 30000, // 30 seconds
-  fallbackFn: () => ({
-    /* fallback response */
-  }),
-});
+Responsible for retrieving relevant documents based on user queries. It interfaces with Vectorize for semantic search and supports features like relevance scoring, document ranking, and search parameter adjustment.
 
-// Execute with circuit breaker protection
-const result = await circuitBreaker.execute(async () => {
-  // Call potentially failing service
-  return await someService.call();
-});
-```
+#### LLM Service
 
-### 4. Resource Optimization
+Manages interactions with Large Language Models, handling prompt construction, token counting, and response processing. It supports different models and configurations.
 
-- **Object Pooling**: Reuse of objects to reduce garbage collection pressure.
-- **String Interning**: Reduction of memory usage for repeated strings.
-- **Streaming**: Efficient processing of large responses with streaming.
-- **Memory Tracking**: Monitoring of memory usage to identify leaks.
+### Integration with Other Services
+
+| Service     | Integration Type             | Purpose                  |
+| ----------- | ---------------------------- | ------------------------ |
+| Dome API | Service Binding | Entry point for client requests |
+| Vectorize | Database Binding | Vector storage for semantic search |
+| D1 Database | Database Binding | State persistence and checkpointing |
+| Logging Service | Package Import | Structured logging and observability |
+| Metrics Service | Package Import | Performance and usage metrics |
+
+## 3. Data Model
+
+### Key Data Structures
 
 ```typescript
-// Example: Using the object pool
-import { getObjectPool } from './utils/resourceOptimizer';
+// Core state interface for the RAG graph
+interface AgentState {
+  // User information
+  userId: string;
 
-const bufferPool = getObjectPool<Uint8Array>({
-  name: 'bufferPool',
-  initialSize: 10,
-  maxSize: 100,
-  factory: () => new Uint8Array(4096),
-  reset: buffer => buffer.fill(0),
-});
+  // Conversation history
+  messages: Message[];
 
-// Acquire a buffer
-const buffer = bufferPool.acquire();
+  // Configuration options
+  options: {
+    enhanceWithContext: boolean;
+    maxContextItems: number;
+    includeSourceInfo: boolean;
+    maxTokens: number;
+    temperature?: number;
+    modelId?: string;
+  };
 
-// Release the buffer when done
-bufferPool.release(buffer);
+  // Intermediate processing data
+  tasks?: {
+    originalQuery?: string;
+    rewrittenQuery?: string;
+    requiredTools?: string[];
+    toolResults?: ToolResult[];
+    needsWidening?: boolean;
+    wideningAttempts?: number;
+    toolToRun?: string | null;
+    queryAnalysis?: QueryAnalysis;
+    // Additional task-related fields
+  };
+
+  // Retrieved documents
+  docs?: Document[];
+
+  // Generated content
+  generatedText?: string;
+
+  // Metadata for tracking and debugging
+  metadata?: {
+    startTime?: number;
+    nodeTimings?: Record<string, number>;
+    tokenCounts?: Record<string, number>;
+    currentNode?: string;
+    isFinalState?: boolean;
+    errors?: Array<{
+      node: string;
+      message: string;
+      timestamp: number;
+    }>;
+    traceId?: string;
+    spanId?: string;
+    executionTimeMs?: number;
+  };
+}
 ```
 
-### 5. Performance Monitoring
+### Data Flow
 
-- **Trace-Based Monitoring**: Comprehensive tracing of request flow through the system.
-- **Metrics Collection**: Collection of key performance metrics for analysis.
-- **Timing Information**: Detailed timing for critical operations.
-- **Performance Dashboard**: Visualization of performance data.
+```mermaid
+sequenceDiagram
+    participant Client
+    participant DomeAPI
+    participant ChatService
+    participant RAGGraph
+    participant SearchService
+    participant LLMService
+    participant D1Database
+
+    Client->>DomeAPI: Chat Request
+    DomeAPI->>ChatService: RPC Call
+    ChatService->>RAGGraph: Initialize Graph
+    RAGGraph->>D1Database: Create Checkpoint
+    RAGGraph->>RAGGraph: Split/Rewrite Query
+    RAGGraph->>SearchService: Retrieve Context
+    SearchService->>RAGGraph: Return Documents
+    
+    alt Documents Insufficient
+        RAGGraph->>RAGGraph: Widen Search
+        RAGGraph->>SearchService: Retry with Wider Parameters
+        SearchService->>RAGGraph: Return More Documents
+    end
+    
+    alt Tool Required
+        RAGGraph->>RAGGraph: Route to Tool
+        RAGGraph->>RAGGraph: Execute Tool
+    end
+    
+    RAGGraph->>LLMService: Generate Response
+    LLMService->>RAGGraph: Return Generated Text
+    RAGGraph->>D1Database: Update Checkpoint
+    RAGGraph->>ChatService: Return Final State
+    
+    alt Streaming Enabled
+        ChatService->>DomeAPI: Stream SSE Events
+        DomeAPI->>Client: Stream Response
+    else
+        ChatService->>DomeAPI: Return Complete Response
+        DomeAPI->>Client: Return Response
+    end
+```
+
+## 4. API Reference
+
+### Client API
+
+The Chat Service exposes a client API for integration with other services:
 
 ```typescript
-// Example: Using the enhanced observability service
-import { EnhancedObservabilityService } from './services/enhancedObservabilityService';
-
-// Initialize a trace
-const traceId = EnhancedObservabilityService.initTrace(env, userId, state);
-
-// Start a span
-const spanId = EnhancedObservabilityService.startSpan(env, traceId, 'operation', state);
-
-// Record a metric
-EnhancedObservabilityService.recordMetric(env, 'metric.name', value, { traceId, spanId });
-
-// Log an event
-EnhancedObservabilityService.logEvent(env, traceId, spanId, 'event_name', { key: 'value' });
-
-// End a span
-EnhancedObservabilityService.endSpan(
-  env,
-  traceId,
-  spanId,
-  'operation',
-  startState,
-  endState,
-  executionTime,
-);
-
-// End a trace
-EnhancedObservabilityService.endTrace(env, traceId, finalState, totalExecutionTime);
+class ChatClient {
+  // Generate a complete response
+  async generateResponse(request: ChatRequest): Promise<ChatOrchestratorResponse>;
+  
+  // Stream a response as Server-Sent Events
+  async streamResponse(request: ChatRequest): Promise<Response>;
+  
+  // Resume an existing chat session
+  async resumeChatSession(request: ResumeChatRequest): Promise<Response>;
+  
+  // Administrative methods
+  async getCheckpointStats(): Promise<any>;
+  async cleanupCheckpoints(): Promise<{ deletedCount: number }>;
+  async getDataRetentionStats(): Promise<any>;
+  async cleanupExpiredData(): Promise<any>;
+  async deleteUserData(userId: string): Promise<{ deletedCount: number }>;
+  async recordConsent(
+    userId: string,
+    dataCategory: string,
+    durationDays: number,
+  ): Promise<{ success: boolean }>;
+}
 ```
 
-## Using the Optimized Graph
-
-The optimized graph implementation provides enhanced performance and resilience compared to the original implementation. To use it:
+### Request Format
 
 ```typescript
-import { buildOptimizedChatGraph } from './optimizedGraph';
-
-// Build the optimized graph
-const graph = await buildOptimizedChatGraph(env);
-
-// Create initial state
-const initialState = {
-  userId,
-  messages,
-  options,
-  metadata: {},
-};
-
-// Execute the graph
-const result = await graph.invoke({
-  configurable: {
-    state: initialState,
-    config: {
-      runId: 'run-id',
-    },
-  },
-});
+interface ChatRequest {
+  userId: string;
+  messages: Array<{
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    timestamp?: number;
+  }>;
+  options: {
+    enhanceWithContext?: boolean;
+    maxContextItems?: number;
+    includeSourceInfo?: boolean;
+    maxTokens?: number;
+    temperature?: number;
+    modelId?: string;
+  };
+  stream?: boolean;
+  runId?: string;
+}
 ```
 
-## Performance Comparison
+### Response Format
 
-The optimized implementation provides significant performance improvements:
+```typescript
+interface ChatOrchestratorResponse {
+  response: string;
+  sources?: Array<{
+    id: string;
+    title: string;
+    source: string;
+    url?: string | null;
+    relevanceScore: number;
+  }>;
+  metadata?: {
+    executionTimeMs: number;
+    nodeTimings: Record<string, number>;
+    tokenCounts: Record<string, number>;
+  };
+}
+```
 
-| Metric                | Original | Optimized | Improvement |
-| --------------------- | -------- | --------- | ----------- |
-| Average Response Time | 1200ms   | 450ms     | 62.5%       |
-| p95 Response Time     | 2500ms   | 850ms     | 66.0%       |
-| Cache Hit Rate        | 0%       | 65%       | +65%        |
-| Error Rate            | 2.5%     | 0.5%      | 80.0%       |
-| Memory Usage          | 250MB    | 150MB     | 40.0%       |
+## 5. Configuration
 
-## Monitoring and Observability
+### Environment Variables
 
-The optimized implementation includes comprehensive monitoring and observability features:
+| Variable     | Description   | Required | Default         |
+| ------------ | ------------- | -------- | --------------- |
+| `CHAT_MODEL` | Default LLM model to use | No | "gpt-4o" |
+| `CHAT_TEMPERATURE` | Default temperature for LLM | No | 0.7 |
+| `MAX_CONTEXT_TOKENS` | Maximum tokens for context | No | 8000 |
+| `CHECKPOINT_TTL_SECONDS` | Time-to-live for checkpoints | No | 3600 |
+| `ENABLE_TRACING` | Enable detailed tracing | No | false |
+| `MIN_RELEVANCE_SCORE` | Minimum relevance score for docs | No | 0.7 |
 
-- **Traces**: Each request is traced through the system with detailed timing information.
-- **Spans**: Individual operations within a request are tracked as spans.
-- **Metrics**: Key performance metrics are collected for analysis.
-- **Events**: Significant events are logged for debugging and analysis.
-- **Dashboards**: Performance data is visualized in dashboards.
+## 6. Development
 
-## Configuration
+### Local Development Setup
 
-The optimized implementation can be configured through environment variables:
+1. Clone the repository
+2. Install dependencies with `pnpm install`
+3. Build the service with `pnpm build`
+4. Run tests with `pnpm test`
+5. Start the development server with `pnpm dev`
 
-- `CACHE_TTL_MS`: Time-to-live for cached items in milliseconds (default: 300000).
-- `CACHE_MAX_SIZE`: Maximum number of items in the cache (default: 1000).
-- `CACHE_MAX_MEMORY_MB`: Maximum memory usage for the cache in MB (default: 50).
-- `CIRCUIT_BREAKER_THRESHOLD`: Number of failures before opening the circuit (default: 5).
-- `CIRCUIT_BREAKER_RESET_MS`: Time before attempting to close the circuit in milliseconds (default: 30000).
-- `RETRY_COUNT`: Maximum number of retries for transient failures (default: 3).
-- `RETRY_INITIAL_DELAY_MS`: Initial delay before retrying in milliseconds (default: 1000).
+### Testing
+
+The Chat Service includes several types of tests:
+
+- **Unit Tests**: Test individual components in isolation
+- **Integration Tests**: Test interactions between components
+- **End-to-End Tests**: Test the complete request/response flow
+
+Run tests with:
+
+```bash
+pnpm test
+```
+
+## 7. References
+
+- [Chat RAG Graph Nodes Documentation](../docs/CHAT_RAG_GRAPH_NODES.md)
+- [Chat RAG Graph Technical Documentation](../docs/CHAT_RAG_GRAPH_TECHNICAL_DOCUMENTATION.md)
+- [LangChain StateGraph Documentation](https://js.langchain.com/docs/modules/chains/langgraph/)
+- [Cloudflare Workers Documentation](https://developers.cloudflare.com/workers/)

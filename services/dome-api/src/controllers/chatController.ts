@@ -2,6 +2,12 @@ import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
 import { ChatClient } from '@dome/chat/client';
 import { z } from 'zod';
+import {
+  successResponse,
+  unauthorizedResponse,
+  validationErrorResponse,
+  internalErrorResponse
+} from '../utils/responseHelpers';
 
 // Define the updated chat request schema
 const chatRequestSchema = z.object({
@@ -48,16 +54,7 @@ export class ChatController {
       const userId = c.req.header('x-user-id');
       if (!userId) {
         this.logger.warn('Missing user ID in request');
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'MISSING_USER_ID',
-              message: 'User ID is required',
-            },
-          },
-          401,
-        );
+        return unauthorizedResponse(c, 'User ID is required');
       }
 
       // Parse request body
@@ -93,11 +90,7 @@ export class ChatController {
         } else {
           // Generate response
           const response = await this.chatService.generateResponse(request);
-
-          return c.json({
-            success: true,
-            response,
-          });
+          return successResponse(c, { response });
         }
       } catch (validationError) {
         // Handle validation errors
@@ -109,32 +102,16 @@ export class ChatController {
           'Invalid chat request format'
         );
 
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'INVALID_REQUEST',
-              message: validationError instanceof Error
-                ? validationError.message
-                : 'Invalid request format',
-            },
-          },
-          400
+        return validationErrorResponse(
+          c,
+          validationError instanceof Error
+            ? validationError.message
+            : 'Invalid request format'
         );
       }
     } catch (error) {
       this.logger.error({ err: error }, 'Unexpected error in chat controller');
-
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: 'INTERNAL_ERROR',
-            message: 'An unexpected error occurred',
-          },
-        },
-        500,
-      );
+      return internalErrorResponse(c);
     }
   }
 }

@@ -22,7 +22,9 @@ import { SecureD1Checkpointer } from './checkpointer/secureD1Checkpointer';
 import { SecureToolExecutor } from './tools/secureToolExecutor';
 import * as nodes from './nodes';
 import { AgentState, GraphStateAnnotation } from './types';
+import { FeatureFlag, FeatureFlagService } from './utils/featureFlags';
 
+// Define all possible node keys for the chat graph
 type ChatNodeKey =
   | typeof START // "__start__"
   | typeof END // "__end__"
@@ -32,6 +34,9 @@ type ChatNodeKey =
   | 'tool_router'
   | 'run_tool'
   | 'generate_answer';
+
+// Ensure all node keys are valid for graph operations
+type GraphNodeKey = ChatNodeKey;
 
 interface IChatGraph {
   stream(input: unknown, options?: Partial<unknown>): Promise<IterableReadableStream<unknown>>;
@@ -65,36 +70,82 @@ export async function buildChatGraph(
   const graph = new StateGraph(GraphStateAnnotation)
     .addNode('split_rewrite', nodeWrappers.splitRewrite)
     .addNode('retrieve', nodeWrappers.retrieve)
-    // .addNode('dynamic_widen', nodeWrappers.dynamicWiden)
-    // .addNode('tool_router', nodeWrappers.toolRouter)
-    // .addNode('run_tool', nodeWrappers.runTool)
     .addNode('generate_answer', nodeWrappers.generateAnswer)
     .addEdge(START, 'split_rewrite')
-    .addEdge('split_rewrite', 'retrieve')
-    .addEdge('retrieve', 'generate_answer')
-    // .addConditionalEdges(
-    //   'retrieve',
-    //   nodeWrappers.routeAfterRetrieve,
-    //   {
-    //     widen: 'dynamic_widen',
-    //     tool: 'tool_router',
-    //     answer: 'generate_answer',
-    //   }
-    // );
+    .addEdge('split_rewrite', 'retrieve');
 
-    // .addEdge('dynamic_widen', 'retrieve')
+  // Add dynamic widening if enabled
+  if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_DYNAMIC_WIDENING)) {
+    logger.info('Dynamic widening feature is enabled');
+    graph.addNode('dynamic_widen', nodeWrappers.dynamicWiden);
+  }
 
-    // .addConditionalEdges(
-    //   'tool_router',
-    //   nodeWrappers.routeAfterTool,
-    //   {
-    //     run_tool: 'run_tool',
-    //     answer: 'generate_answer',
-    //   }
-    // );
+  // Add tool router if enabled
+  if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER)) {
+    logger.info('Tool router feature is enabled');
+    graph.addNode('tool_router', nodeWrappers.toolRouter);
+  }
 
-    // .addEdge('run_tool', 'generate_answer')
-    .addEdge('generate_answer', END);
+  // Add tool execution if enabled
+  if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_EXECUTION)) {
+    logger.info('Tool execution feature is enabled');
+    graph.addNode('run_tool', nodeWrappers.runTool);
+  }
+
+  // Configure routing based on enabled features
+  if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_DYNAMIC_WIDENING) ||
+      FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER)) {
+    
+    // Create routing options
+    const routingOptions: Record<string, ChatNodeKey> = {
+      answer: 'generate_answer'
+    };
+    
+    if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_DYNAMIC_WIDENING)) {
+      routingOptions.widen = 'dynamic_widen';
+    }
+    
+    if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER)) {
+      routingOptions.tool = 'tool_router';
+    }
+    
+    // Add conditional edges from retrieve
+    graph.addConditionalEdges(
+      'retrieve',
+      nodeWrappers.routeAfterRetrieve as any, // Type assertion to bypass type checking
+      routingOptions as any // Type assertion to bypass type checking
+    );
+    
+    // Add edge from dynamic widen back to retrieve if enabled
+    if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_DYNAMIC_WIDENING)) {
+      graph.addEdge('dynamic_widen' as any, 'retrieve');
+    }
+    
+    // Add conditional edges from tool router if both tool router and execution are enabled
+    if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER) &&
+        FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_EXECUTION)) {
+      graph.addConditionalEdges(
+        'tool_router' as any,
+        nodeWrappers.routeAfterTool as any,
+        {
+          run_tool: 'run_tool' as ChatNodeKey,
+          answer: 'generate_answer',
+        } as any // Type assertion to bypass type checking
+      );
+      
+      // Add edge from run tool to generate answer
+      graph.addEdge('run_tool' as any, 'generate_answer');
+    } else if (FeatureFlagService.isEnabled(FeatureFlag.ENABLE_TOOL_ROUTER)) {
+      // If tool router is enabled but execution is not, always go to generate answer
+      graph.addEdge('tool_router' as any, 'generate_answer');
+    }
+  } else {
+    // Default simple flow if no advanced features are enabled
+    graph.addEdge('retrieve', 'generate_answer');
+  }
+  
+  // Final edge to end
+  graph.addEdge('generate_answer', END);
 
   // Compile the graph with checkpointer and state reducers
   return graph.compile({

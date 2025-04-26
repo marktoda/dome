@@ -1,23 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ObservabilityService } from '../../src/services/observabilityService';
-import { FullObservabilityService } from '../../src/services/fullObservabilityService';
 
-// Mock the FullObservabilityService
-vi.mock('../../src/services/fullObservabilityService', () => {
-  return {
-    FullObservabilityService: {
-      initTrace: vi.fn().mockReturnValue({ traceId: 'mock-trace-id', spanId: 'mock-span-id' }),
-      startSpan: vi.fn().mockReturnValue({ traceId: 'mock-trace-id', spanId: 'mock-span-id', parentSpanId: 'parent-span-id' }),
-      endSpan: vi.fn(),
-      logEvent: vi.fn(),
-      endTrace: vi.fn(),
-      logLlmCall: vi.fn(),
-      logRetrieval: vi.fn(),
-      collectMetrics: vi.fn().mockReturnValue({ metric1: 100, metric2: 200 }),
-    },
-    TraceContext: vi.fn(),
-  };
-});
+// Mock the metrics and logger
+vi.mock('@dome/logging', () => ({
+  getLogger: vi.fn(() => ({
+    child: vi.fn(() => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    })),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  })),
+  logError: vi.fn(),
+}));
+
+vi.mock('@dome/metrics', () => ({
+  ServiceMetrics: vi.fn().mockImplementation(() => ({
+    counter: vi.fn(),
+    gauge: vi.fn(),
+    timing: vi.fn(),
+  })),
+}));
 
 describe('ObservabilityService', () => {
   let mockEnv: Env;
@@ -52,157 +59,189 @@ describe('ObservabilityService', () => {
   });
 
   describe('initTrace', () => {
-    it('should call FullObservabilityService.initTrace and return the traceId', () => {
+    it('should initialize a trace and return the traceId', () => {
       // Act
       const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
 
       // Assert
-      expect(traceId).toBe('mock-trace-id');
-      expect(FullObservabilityService.initTrace).toHaveBeenCalledWith(mockEnv, 'user123', mockState);
+      expect(traceId).toMatch(/^trace-user123-\d+$/);
+      
+      // Verify the trace exists in the internal storage
+      const trace = ObservabilityService.getTrace(traceId);
+      expect(trace).not.toBeNull();
+      expect(trace.userId).toBe('user123');
     });
   });
 
   describe('startSpan', () => {
-    it('should call FullObservabilityService.startSpan and return the spanId', () => {
+    it('should start a span and return the spanId', () => {
+      // Arrange
+      const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
+      
       // Act
-      const spanId = ObservabilityService.startSpan(mockEnv, 'trace-123', 'testSpan', mockState);
+      const spanId = ObservabilityService.startSpan(mockEnv, traceId, 'testSpan', mockState);
 
       // Assert
-      expect(spanId).toBe('mock-span-id');
-      expect(FullObservabilityService.startSpan).toHaveBeenCalledWith(
-        mockEnv,
-        { traceId: 'trace-123', spanId: '' },
-        'testSpan',
-        mockState,
-      );
+      expect(spanId).toMatch(new RegExp(`^${traceId}-testSpan-\\d+$`));
     });
   });
 
   describe('endSpan', () => {
-    it('should call FullObservabilityService.endSpan with the correct parameters', () => {
+    it('should end a span and update its status', () => {
+      // Arrange
+      const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
+      const spanId = ObservabilityService.startSpan(mockEnv, traceId, 'testNode', mockState);
+      
       // Act
       ObservabilityService.endSpan(
         mockEnv,
-        'trace-123',
-        'span-123',
-        'testSpan',
+        traceId,
+        spanId,
+        'testNode',
         mockState,
         mockState,
-        150,
+        100,
       );
 
       // Assert
-      expect(FullObservabilityService.endSpan).toHaveBeenCalledWith(
-        mockEnv,
-        { traceId: 'trace-123', spanId: 'span-123' },
-        'testSpan',
-        mockState,
-        mockState,
-        150,
-      );
+      const trace = ObservabilityService.getTrace(traceId);
+      expect(trace).not.toBeNull();
+      
+      const span = trace.spans.get(spanId);
+      expect(span).toBeDefined();
+      expect(span.endTime).toBeDefined();
+      expect(span.status).toBe('success');
     });
   });
 
   describe('logEvent', () => {
-    it('should call FullObservabilityService.logEvent with the correct parameters', () => {
+    it('should log an event within a span', () => {
       // Arrange
-      const eventData = { key1: 'value1', key2: 'value2' };
-
+      const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
+      const spanId = ObservabilityService.startSpan(mockEnv, traceId, 'testNode', mockState);
+      const eventData = { key: 'value' };
+      
       // Act
-      ObservabilityService.logEvent(mockEnv, 'trace-123', 'span-123', 'testEvent', eventData);
-
-      // Assert
-      expect(FullObservabilityService.logEvent).toHaveBeenCalledWith(
+      ObservabilityService.logEvent(
         mockEnv,
-        { traceId: 'trace-123', spanId: 'span-123' },
+        traceId,
+        spanId,
         'testEvent',
         eventData,
       );
+
+      // Assert
+      const trace = ObservabilityService.getTrace(traceId);
+      expect(trace).not.toBeNull();
+      
+      const span = trace.spans.get(spanId);
+      expect(span).toBeDefined();
+      expect(span.events.length).toBe(1);
+      expect(span.events[0].name).toBe('testEvent');
+      expect(span.events[0].attributes.key).toBe('value');
     });
   });
 
   describe('endTrace', () => {
-    it('should call FullObservabilityService.endTrace with the correct parameters', () => {
+    it('should end a trace and update its status', () => {
+      // Arrange
+      const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
+      
       // Act
-      ObservabilityService.endTrace(mockEnv, 'trace-123', mockState, 500);
+      ObservabilityService.endTrace(
+        mockEnv,
+        traceId,
+        mockState,
+        300,
+      );
 
       // Assert
-      expect(FullObservabilityService.endTrace).toHaveBeenCalledWith(
-        mockEnv,
-        { traceId: 'trace-123', spanId: '' },
-        mockState,
-        500,
-      );
+      const trace = ObservabilityService.getTrace(traceId);
+      expect(trace).not.toBeNull();
+      expect(trace.endTime).toBeDefined();
+      expect(trace.status).toBe('success');
     });
   });
 
   describe('logLlmCall', () => {
-    it('should call FullObservabilityService.logLlmCall with the correct parameters', () => {
+    it('should log an LLM call as an event', () => {
       // Arrange
+      const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
+      const spanId = ObservabilityService.startSpan(mockEnv, traceId, 'testNode', mockState);
       const messages = [{ role: 'user', content: 'Test message' }];
       const response = 'Test response';
-      const tokenCounts = {
-        prompt: 100,
-        completion: 50,
-        total: 150,
-      };
+      const tokenCounts = { prompt: 10, completion: 5, total: 15 };
 
       // Act
       ObservabilityService.logLlmCall(
         mockEnv,
-        'trace-123',
-        'span-123',
+        traceId,
+        spanId,
         'gpt-4',
         messages,
         response,
-        300,
+        150,
         tokenCounts,
       );
 
       // Assert
-      expect(FullObservabilityService.logLlmCall).toHaveBeenCalledWith(
-        mockEnv,
-        { traceId: 'trace-123', spanId: 'span-123' },
-        'gpt-4',
-        messages,
-        response,
-        300,
-        tokenCounts,
-      );
+      const trace = ObservabilityService.getTrace(traceId);
+      expect(trace).not.toBeNull();
+      
+      const span = trace.spans.get(spanId);
+      expect(span).toBeDefined();
+      expect(span.events.length).toBe(1);
+      expect(span.events[0].name).toBe('llm_call');
+      expect(span.events[0].attributes.model).toBe('gpt-4');
     });
   });
 
   describe('logRetrieval', () => {
-    it('should call FullObservabilityService.logRetrieval with the correct parameters', () => {
+    it('should log a retrieval operation as an event', () => {
       // Arrange
+      const traceId = ObservabilityService.initTrace(mockEnv, 'user123', mockState);
+      const spanId = ObservabilityService.startSpan(mockEnv, traceId, 'testNode', mockState);
       const query = 'Test query';
-      const results = [
-        { id: 'doc1', score: 0.9 },
-        { id: 'doc2', score: 0.8 },
-      ];
+      const results = [{ id: 'doc1', score: 0.9 }];
 
       // Act
-      ObservabilityService.logRetrieval(mockEnv, 'trace-123', 'span-123', query, results, 200);
-
-      // Assert
-      expect(FullObservabilityService.logRetrieval).toHaveBeenCalledWith(
+      ObservabilityService.logRetrieval(
         mockEnv,
-        { traceId: 'trace-123', spanId: 'span-123' },
+        traceId,
+        spanId,
         query,
         results,
-        200,
+        50,
       );
+
+      // Assert
+      const trace = ObservabilityService.getTrace(traceId);
+      expect(trace).not.toBeNull();
+      
+      const span = trace.spans.get(spanId);
+      expect(span).toBeDefined();
+      expect(span.events.length).toBe(1);
+      expect(span.events[0].name).toBe('retrieval');
+      expect(span.events[0].attributes.query).toBe(query);
     });
   });
 
   describe('collectMetrics', () => {
-    it('should call FullObservabilityService.collectMetrics and return the result', () => {
+    it('should collect metrics from the agent state', () => {
       // Act
       const metrics = ObservabilityService.collectMetrics(mockState);
 
       // Assert
-      expect(metrics).toEqual({ metric1: 100, metric2: 200 });
-      expect(FullObservabilityService.collectMetrics).toHaveBeenCalledWith(mockState);
+      expect(metrics).toEqual({
+        totalExecutionTimeMs: 300,
+        messageCount: 1,
+        documentCount: 1,
+        nodeTime_retrieve: 100,
+        nodeTime_generateAnswer: 200,
+        tokenCount_prompt: 100,
+        tokenCount_completion: 50,
+        tokenCount_total: 150,
+      });
     });
   });
 });

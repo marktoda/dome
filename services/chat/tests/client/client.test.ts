@@ -59,16 +59,28 @@ describe('ChatClient', () => {
     // Reset mocks
     vi.clearAllMocks();
 
-    // Create mock binding
+    // Create mock binding with default return values
     mockBinding = {
-      generateChatResponse: vi.fn(),
-      resumeChatSession: vi.fn(),
-      getCheckpointStats: vi.fn(),
-      cleanupCheckpoints: vi.fn(),
-      getDataRetentionStats: vi.fn(),
-      cleanupExpiredData: vi.fn(),
-      deleteUserData: vi.fn(),
-      recordConsent: vi.fn(),
+      generateChatResponse: vi.fn().mockResolvedValue(new Response()),
+      resumeChatSession: vi.fn().mockResolvedValue(new Response()),
+      getCheckpointStats: vi.fn().mockResolvedValue({
+        totalCheckpoints: 100,
+        oldestCheckpoint: Date.now() - 86400000,
+        newestCheckpoint: Date.now(),
+        averageStateSize: 1024,
+        checkpointsByUser: { 'test-user': 10 },
+      }),
+      cleanupCheckpoints: vi.fn().mockResolvedValue({ deletedCount: 5 }),
+      getDataRetentionStats: vi.fn().mockResolvedValue({
+        totalRecords: 200,
+        recordsByCategory: { chatHistory: 150, userPreferences: 50 },
+        recordsByUser: { 'test-user': 20 },
+        oldestRecord: Date.now() - 86400000 * 30,
+        newestRecord: Date.now(),
+      }),
+      cleanupExpiredData: vi.fn().mockResolvedValue({ deletedCount: 10 }),
+      deleteUserData: vi.fn().mockResolvedValue({ deletedCount: 15 }),
+      recordConsent: vi.fn().mockResolvedValue({ success: true }),
     };
 
     // Create client

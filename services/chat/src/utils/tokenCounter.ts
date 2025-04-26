@@ -1,5 +1,6 @@
 import { encoding_for_model } from '@dqbd/tiktoken';
 import { logError } from '@dome/logging';
+import { CHARS_PER_TOKEN, MESSAGE_FORMAT_TOKENS, approximateTokenCount } from './tokenConstants';
 
 /**
  * Count the number of tokens in a string using tiktoken
@@ -14,7 +15,7 @@ export function countTokens(text: string, model = 'gpt-4'): number {
     // Skip tiktoken in Cloudflare Workers environment due to WebAssembly compatibility issues
     if (typeof globalThis.WorkerGlobalScope !== 'undefined' && globalThis instanceof WorkerGlobalScope) {
       // We're in a Cloudflare Worker, use the fallback method
-      return Math.ceil(text.length / 4);
+      return approximateTokenCount(text);
     }
 
     // @ts-ignore - Ignoring type errors for now to make progress
@@ -25,8 +26,8 @@ export function countTokens(text: string, model = 'gpt-4'): number {
   } catch (error) {
     // Don't log the full error as it's expected in some environments
     logError(error, 'Error counting tokens, falling back to approximate count');
-    // Fallback to approximate count (roughly 4 characters per token)
-    return Math.ceil(text.length / 4);
+    // Fallback to approximate count
+    return approximateTokenCount(text);
   }
 }
 
@@ -44,10 +45,7 @@ export function countMessageTokens(
   const contentTokens = countTokens(message.content, model);
 
   // Add tokens for message format (role, etc.)
-  // This is an approximation and may vary by model
-  const formatTokens = 4; // ~4 tokens for role formatting
-
-  return contentTokens + formatTokens;
+  return contentTokens + MESSAGE_FORMAT_TOKENS;
 }
 
 /**
@@ -64,4 +62,13 @@ export function countMessagesTokens(
 
   // Sum tokens for all messages
   return messages.reduce((total, message) => total + countMessageTokens(message, model), 0);
+}
+
+/**
+ * Estimate token count for a document
+ * @param doc Document object with title and body
+ * @returns Estimated token count
+ */
+export function estimateDocumentTokens(doc: { title: string; body: string }): number {
+  return approximateTokenCount(doc.title + ' ' + doc.body);
 }
