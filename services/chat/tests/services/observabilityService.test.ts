@@ -107,7 +107,7 @@ describe('ObservabilityService', () => {
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
       
-      const span = trace.spans.get(spanId);
+      const span = trace.spans[spanId];
       expect(span).toBeDefined();
       expect(span.endTime).toBeDefined();
       expect(span.status).toBe('success');
@@ -134,7 +134,7 @@ describe('ObservabilityService', () => {
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
       
-      const span = trace.spans.get(spanId);
+      const span = trace.spans[spanId];
       expect(span).toBeDefined();
       expect(span.events.length).toBe(1);
       expect(span.events[0].name).toBe('testEvent');
@@ -188,7 +188,7 @@ describe('ObservabilityService', () => {
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
       
-      const span = trace.spans.get(spanId);
+      const span = trace.spans[spanId];
       expect(span).toBeDefined();
       expect(span.events.length).toBe(1);
       expect(span.events[0].name).toBe('llm_call');
@@ -218,7 +218,7 @@ describe('ObservabilityService', () => {
       const trace = ObservabilityService.getTrace(traceId);
       expect(trace).not.toBeNull();
       
-      const span = trace.spans.get(spanId);
+      const span = trace.spans[spanId];
       expect(span).toBeDefined();
       expect(span.events.length).toBe(1);
       expect(span.events[0].name).toBe('retrieval');

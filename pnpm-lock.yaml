@@ -285,6 +285,9 @@ importers:
       '@dome/common':
         specifier: workspace:*
         version: link:../../packages/common
+      '@dome/errors':
+        specifier: workspace:*
+        version: link:../../packages/errors
       '@dome/logging':
         specifier: workspace:*
         version: link:../../packages/logging

@@ -1,7 +1,6 @@
 import { getLogger } from '@dome/logging';
 import { validateToolInput } from '../utils/inputValidator';
-// @ts-ignore - Using local mocks instead of @dome/errors
-import { ForbiddenError, BadRequestError } from '../utils/errorMocks';
+import { ForbiddenError, BadRequestError } from '@dome/errors';
 import { getUserInfo, UserRole } from '@dome/common/src/middleware/enhancedAuthMiddleware';
 import { Context } from 'hono';
 

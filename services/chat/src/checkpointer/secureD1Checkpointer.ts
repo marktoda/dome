@@ -10,8 +10,7 @@ import {
   UserInfo,
   UserRole,
 } from '@dome/common/src/middleware/enhancedAuthMiddleware.js';
-// @ts-ignore - Using local mocks instead of @dome/errors
-import { ForbiddenError, UnauthorizedError, BadRequestError } from '../utils/errorMocks';
+import { ForbiddenError, UnauthorizedError, BadRequestError } from '@dome/errors';
 import { Context } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, lt, and, sql } from 'drizzle-orm';

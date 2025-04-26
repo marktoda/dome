@@ -1,7 +1,6 @@
 import { getLogger } from '@dome/logging';
 import { z } from 'zod';
-// @ts-ignore - Using local mocks instead of @dome/errors
-import { ForbiddenError, BadRequestError } from './errorMocks';
+import { ForbiddenError, BadRequestError } from '@dome/errors';
 import { AgentState } from '../types';
 
 /**

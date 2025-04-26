@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@dome/common": "workspace:*",
+    "@dome/errors": "workspace:*",
     "@dome/logging": "workspace:*",
     "@dome/metrics": "workspace:*",
     "@langchain/langgraph": "^0.2.67",
