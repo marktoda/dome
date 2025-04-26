@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_als"]
 [[d1_databases]]
 binding = "CHAT_DB"
 database_name = "chat-db"
-database_id = "9b5ae03f-82f9-4501-bd08-c713cd41f344"
+database_id = "81cd6689-95fd-4cee-94ef-a60ef8d62040"
 
 # Workers AI binding
 [ai]
@@ -29,7 +29,6 @@ port = 8788
 [vars]
 VERSION = "0.1.0"
 LOG_LEVEL = "debug"
-ENCRYPTION_KEY = "replace_me"
 
 [env.production]
 vars = { ENVIRONMENT = "production" }

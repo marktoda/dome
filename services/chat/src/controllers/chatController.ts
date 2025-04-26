@@ -36,7 +36,7 @@ export class ChatController {
       {
         service: 'chat-orchestrator',
         operation: 'generateChatResponse',
-        userId: request.initialState.userId,
+        userId: request.userId,
         runId: request.runId,
       },
       async () => {
@@ -60,8 +60,8 @@ export class ChatController {
             'Validated chat request'
           );
 
-          // Validate initial state
-          const validatedState = validateInitialState(validatedRequest.initialState);
+          // Validate the request as the initial state
+          const validatedState = validateInitialState(validatedRequest);
 
           // Initialize checkpointer
           await this.services.checkpointer.initialize();
@@ -72,8 +72,8 @@ export class ChatController {
           // Register this chat session for retention
           const runId = validatedRequest.runId || crypto.randomUUID();
 
-          // Make sure to access userId from initialState if available
-          const userId = validatedState.initialState?.userId || validatedState.userId;
+          // Get the userId from the validated state
+          const userId = validatedState.userId;
 
           await this.services.dataRetention.registerDataRecord(
             runId,
@@ -91,14 +91,9 @@ export class ChatController {
             this.services.toolRegistry,
           );
 
-          // Create a new state object with the validated state that matches the AgentState interface
-          const initialState = {
-            initialState: {
-              userId: validatedState.userId,
-              messages: validatedState.messages,
-              options: validatedState.options,
-            },
-            // Keep these at the top level for backward compatibility
+          // Create a state object with a consistent structure
+          const state = {
+            userId: validatedState.userId,
             messages: validatedState.messages,
             options: validatedState.options,
             tasks: validatedState.tasks || {},
@@ -112,7 +107,7 @@ export class ChatController {
           };
 
           // Use the graph's stream method for streaming responses
-          const result = await graph.stream(initialState);
+          const result = await graph.stream(state);
 
           // Transform to SSE stream
           const transformedStream = transformToSSE(result, startTime);
@@ -131,7 +126,7 @@ export class ChatController {
         } catch (error) {
           // Log error
           logError(error, 'Error generating chat response', {
-            userId: request.initialState?.userId,
+            userId: request.userId,
             runId: request.runId,
             executionTimeMs: Math.round(performance.now() - startTime),
           });

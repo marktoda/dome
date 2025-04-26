@@ -54,7 +54,7 @@ export class ChatClient {
       {
         component: 'ChatClient',
         operation: 'generateResponse',
-        userId: request.initialState.userId,
+        userId: request.userId,
         runId: request.runId,
       },
       async () => {
@@ -122,7 +122,7 @@ export class ChatClient {
 
           getLogger().info(
             {
-              userId: request.initialState.userId,
+              userId: request.userId,
               responseLength: result.response?.length || 0,
               executionTimeMs: result.metadata?.executionTimeMs,
             },
@@ -141,7 +141,7 @@ export class ChatClient {
           return result;
         } catch (error) {
           logError(error, 'Error generating chat response via RPC', {
-            userId: request.initialState.userId,
+            userId: request.userId,
           });
 
           // Track error metrics
@@ -167,7 +167,7 @@ export class ChatClient {
       {
         component: 'ChatClient',
         operation: 'streamResponse',
-        userId: request.initialState.userId,
+        userId: request.userId,
         runId: request.runId,
       },
       async () => {
@@ -180,7 +180,7 @@ export class ChatClient {
 
           getLogger().info(
             {
-              userId: request.initialState.userId,
+              userId: request.userId,
               status: response.status,
             },
             'Chat stream initiated successfully',
@@ -196,7 +196,7 @@ export class ChatClient {
           // Return the streaming response directly
           return response;
         } catch (error) {
-          logError(error, 'Error streaming chat via RPC', { userId: request.initialState.userId });
+          logError(error, 'Error streaming chat via RPC', { userId: request.userId });
 
           // Track error metrics
           metrics.increment(`${this.metricsPrefix}.stream_response.errors`, 1, {

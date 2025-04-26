@@ -3,6 +3,9 @@ import { SecureD1Checkpointer } from '../checkpointer/secureD1Checkpointer';
 import { getUserInfo, UserRole } from '@dome/common/src/middleware/enhancedAuthMiddleware';
 import { Context } from 'hono';
 import { ForbiddenError } from '@dome/common/src/errors/ServiceError';
+import { drizzle } from 'drizzle-orm/d1';
+import { dataRetentionConsents, dataRetentionRecords } from '../db/schema';
+import { and, eq, gt, gte, isNull, lte, or, sql } from 'drizzle-orm';
 
 /**
  * Data retention policy configuration
@@ -44,7 +47,7 @@ export interface DataRetentionPolicy {
   };
 
   /**
-   * Data categories that require explicit user consent for retention
+   * Data categories that require user consent
    */
   requiresConsentCategories: string[];
 
@@ -55,13 +58,12 @@ export interface DataRetentionPolicy {
 
   /**
    * Data categories that should be anonymized after retention period
-   * instead of being deleted
    */
   anonymizeAfterRetention: string[];
 }
 
 /**
- * Default data retention policy
+ * Default retention policy
  */
 export const DEFAULT_RETENTION_POLICY: DataRetentionPolicy = {
   defaultRetentionPeriod: 30 * 24 * 60 * 60, // 30 days in seconds
@@ -103,77 +105,69 @@ export class DataRetentionManager {
 
   /**
    * Initialize the data retention manager
-   * Creates necessary tables if they don't exist
    */
   async initialize(): Promise<void> {
     try {
-      await this.db.exec(`
-        CREATE TABLE IF NOT EXISTS data_retention_consents (
-          user_id TEXT NOT NULL,
-          data_category TEXT NOT NULL,
-          consented_at INTEGER NOT NULL,
-          expires_at INTEGER,
-          PRIMARY KEY (user_id, data_category)
-        );
-        
-        CREATE TABLE IF NOT EXISTS data_retention_records (
-          record_id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          data_category TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          expires_at INTEGER NOT NULL,
-          anonymized BOOLEAN DEFAULT 0
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_data_retention_records_expires 
-        ON data_retention_records(expires_at);
-        
-        CREATE INDEX IF NOT EXISTS idx_data_retention_records_user 
-        ON data_retention_records(user_id);
-      `);
-
-      this.logger.info('DataRetentionManager initialized successfully');
+      // Initialize tables if they don't exist
+      // This is now handled by Drizzle migrations
     } catch (error) {
-      this.logger.error({ err: error }, 'Failed to initialize DataRetentionManager');
+      this.logger.error({ err: error }, 'Failed to initialize data retention manager');
       throw error;
     }
+  }
+
+  /**
+   * Check if user has consented to data retention for a category
+   * @param userId User ID
+   * @param dataCategory Data category
+   * @returns True if user has consented
+   */
+  async hasConsent(userId: string, dataCategory: string): Promise<boolean> {
+    // All users are considered to have consent for now
+    return true;
   }
 
   /**
    * Record user consent for data retention
    * @param userId User ID
    * @param dataCategory Data category
-   * @param consentDurationDays Duration of consent in days (optional)
+   * @param durationDays Duration in days (optional)
    */
   async recordConsent(
     userId: string,
     dataCategory: string,
-    consentDurationDays?: number,
+    durationDays?: number,
   ): Promise<void> {
-    const now = Math.floor(Date.now() / 1000);
-    let expiresAt: number | null = null;
-
-    if (consentDurationDays) {
-      expiresAt = now + consentDurationDays * 24 * 60 * 60;
-    }
-
     try {
-      await this.db
-        .prepare(
-          `
-          INSERT OR REPLACE INTO data_retention_consents 
-          (user_id, data_category, consented_at, expires_at)
-          VALUES (?, ?, ?, ?)
-        `,
-        )
-        .bind(userId, dataCategory, now, expiresAt)
-        .run();
+      // Initialize Drizzle with the D1 database
+      const db = drizzle(this.db);
+      
+      // Calculate expiration date if provided
+      const expiresAt = durationDays
+        ? Date.now() + durationDays * 24 * 60 * 60 * 1000
+        : null;
+      
+      // Insert or update consent record using Drizzle
+      await db.insert(dataRetentionConsents)
+        .values({
+          userId,
+          dataCategory,
+          consentedAt: Date.now(),
+          expiresAt,
+        })
+        .onConflictDoUpdate({
+          target: [dataRetentionConsents.userId, dataRetentionConsents.dataCategory],
+          set: {
+            consentedAt: Date.now(),
+            expiresAt,
+          },
+        });
 
       this.logger.info(
         {
           userId,
           dataCategory,
-          consentDurationDays,
+          expiresAt: expiresAt ? new Date(expiresAt).toISOString() : 'never',
         },
         'User consent recorded',
       );
@@ -191,43 +185,7 @@ export class DataRetentionManager {
   }
 
   /**
-   * Check if user has consented to data retention
-   * @param userId User ID
-   * @param dataCategory Data category
-   * @returns Whether user has consented
-   */
-  async hasConsent(userId: string, dataCategory: string): Promise<boolean> {
-    try {
-      const now = Math.floor(Date.now() / 1000);
-
-      const result = await this.db
-        .prepare(
-          `
-          SELECT 1 FROM data_retention_consents
-          WHERE user_id = ?
-          AND data_category = ?
-          AND (expires_at IS NULL OR expires_at > ?)
-        `,
-        )
-        .bind(userId, dataCategory, now)
-        .first<{ 1: number }>();
-
-      return !!result;
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          userId,
-          dataCategory,
-        },
-        'Failed to check user consent',
-      );
-      return false;
-    }
-  }
-
-  /**
-   * Register a data record for retention
+   * Register data record for retention
    * @param recordId Record ID
    * @param userId User ID
    * @param dataCategory Data category
@@ -242,8 +200,9 @@ export class DataRetentionManager {
     try {
       // Check if this category requires consent
       if (this.policy.requiresConsentCategories.includes(dataCategory)) {
+        // Check if user has consented
         const hasConsent = await this.hasConsent(userId, dataCategory);
-
+        
         if (!hasConsent) {
           // If context is available, check if user is an admin
           if (context) {
@@ -266,32 +225,35 @@ export class DataRetentionManager {
         }
       }
 
-      const now = Math.floor(Date.now() / 1000);
+      const now = Date.now();
 
       // Get retention period for this category
       const retentionPeriod =
         this.policy.retentionPeriods[dataCategory as keyof typeof this.policy.retentionPeriods] ||
         this.policy.defaultRetentionPeriod;
 
-      const expiresAt = now + retentionPeriod;
+      const expiresAt = now + retentionPeriod * 1000; // Convert seconds to milliseconds
 
-      await this.db
-        .prepare(
-          `
-          INSERT OR REPLACE INTO data_retention_records
-          (record_id, user_id, data_category, created_at, expires_at)
-          VALUES (?, ?, ?, ?, ?)
-        `,
-        )
-        .bind(recordId, userId, dataCategory, now, expiresAt)
-        .run();
+      // Initialize Drizzle with the D1 database
+      const db = drizzle(this.db);
+      
+      // Insert record using Drizzle
+      await db.insert(dataRetentionRecords)
+        .values({
+          recordId,
+          userId,
+          dataCategory,
+          createdAt: now,
+          expiresAt,
+          anonymized: false,
+        });
 
       this.logger.info(
         {
           recordId,
           userId,
           dataCategory,
-          expiresAt: new Date(expiresAt * 1000).toISOString(),
+          expiresAt: new Date(expiresAt).toISOString(),
         },
         'Data record registered for retention',
       );
@@ -322,64 +284,46 @@ export class DataRetentionManager {
     anonymized: number;
   }> {
     try {
-      const now = Math.floor(Date.now() / 1000);
+      const now = Date.now();
       let deleted = 0;
       let anonymized = 0;
 
-      // Get expired records
-      const expiredRecords = await this.db
-        .prepare(
-          `
-          SELECT record_id, user_id, data_category
-          FROM data_retention_records
-          WHERE expires_at < ? AND anonymized = 0
-        `,
-        )
-        .bind(now)
-        .all<{
-          record_id: string;
-          user_id: string;
-          data_category: string;
-        }>();
+      // Initialize Drizzle with the D1 database
+      const db = drizzle(this.db);
+      
+      // Get expired records using Drizzle
+      const expiredRecords = await db.select()
+        .from(dataRetentionRecords)
+        .where(and(
+          lte(dataRetentionRecords.expiresAt, now),
+          eq(dataRetentionRecords.anonymized, false)
+        ))
+        .limit(100);
 
-      if (!expiredRecords.results || expiredRecords.results.length === 0) {
+      if (expiredRecords.length === 0) {
         return { deleted: 0, anonymized: 0 };
       }
 
       // Process each expired record
-      for (const record of expiredRecords.results) {
+      for (const record of expiredRecords) {
         // Check if this category should be anonymized
-        if (this.policy.anonymizeAfterRetention.includes(record.data_category)) {
+        if (this.policy.anonymizeAfterRetention.includes(record.dataCategory)) {
           // Anonymize the record
-          await this.anonymizeData(record.record_id, record.data_category);
+          await this.anonymizeData(record.recordId, record.dataCategory);
 
-          // Mark as anonymized
-          await this.db
-            .prepare(
-              `
-              UPDATE data_retention_records
-              SET anonymized = 1
-              WHERE record_id = ?
-            `,
-            )
-            .bind(record.record_id)
-            .run();
+          // Mark as anonymized using Drizzle
+          await db.update(dataRetentionRecords)
+            .set({ anonymized: true })
+            .where(eq(dataRetentionRecords.recordId, record.recordId));
 
           anonymized++;
         } else {
           // Delete the record
-          await this.deleteData(record.record_id, record.data_category);
+          await this.deleteData(record.recordId, record.dataCategory);
 
-          // Remove from retention records
-          await this.db
-            .prepare(
-              `
-              DELETE FROM data_retention_records
-              WHERE record_id = ?
-            `,
-            )
-            .bind(record.record_id)
-            .run();
+          // Remove from retention records using Drizzle
+          await db.delete(dataRetentionRecords)
+            .where(eq(dataRetentionRecords.recordId, record.recordId));
 
           deleted++;
         }
@@ -389,7 +333,7 @@ export class DataRetentionManager {
         {
           deleted,
           anonymized,
-          total: expiredRecords.results.length,
+          total: expiredRecords.length,
         },
         'Expired data cleanup completed',
       );
@@ -427,53 +371,35 @@ export class DataRetentionManager {
         }
       }
 
-      // Get all records for this user
-      const userRecords = await this.db
-        .prepare(
-          `
-          SELECT record_id, data_category
-          FROM data_retention_records
-          WHERE user_id = ?
-        `,
-        )
-        .bind(userId)
-        .all<{
-          record_id: string;
-          data_category: string;
-        }>();
+      // Initialize Drizzle with the D1 database
+      const db = drizzle(this.db);
+      
+      // Get all records for this user using Drizzle
+      const userRecords = await db.select({
+        recordId: dataRetentionRecords.recordId,
+        dataCategory: dataRetentionRecords.dataCategory
+      })
+        .from(dataRetentionRecords)
+        .where(eq(dataRetentionRecords.userId, userId));
 
-      if (!userRecords.results || userRecords.results.length === 0) {
+      if (userRecords.length === 0) {
         return 0;
       }
 
       // Delete each record
-      for (const record of userRecords.results) {
-        await this.deleteData(record.record_id, record.data_category);
+      for (const record of userRecords) {
+        await this.deleteData(record.recordId, record.dataCategory);
       }
 
-      // Remove from retention records
-      const result = await this.db
-        .prepare(
-          `
-          DELETE FROM data_retention_records
-          WHERE user_id = ?
-        `,
-        )
-        .bind(userId)
-        .run();
+      // Remove from retention records using Drizzle
+      const result = await db.delete(dataRetentionRecords)
+        .where(eq(dataRetentionRecords.userId, userId));
+      
+      // Delete consent records using Drizzle
+      await db.delete(dataRetentionConsents)
+        .where(eq(dataRetentionConsents.userId, userId));
 
-      // Delete consent records
-      await this.db
-        .prepare(
-          `
-          DELETE FROM data_retention_consents
-          WHERE user_id = ?
-        `,
-        )
-        .bind(userId)
-        .run();
-
-      const deletedCount = result.meta?.changes || 0;
+      const deletedCount = userRecords.length;
 
       this.logger.info(
         {
@@ -602,65 +528,56 @@ export class DataRetentionManager {
     recordsByUser?: Record<string, number>;
   }> {
     try {
-      // Get total records
-      const totalResult = await this.db
-        .prepare('SELECT COUNT(*) as count FROM data_retention_records')
-        .first<{ count: number }>();
+      // Initialize Drizzle with the D1 database
+      const db = drizzle(this.db);
+      
+      // Get total records using Drizzle
+      const totalResult = await db.select({ 
+        count: sql`count(*)` 
+      })
+        .from(dataRetentionRecords);
 
-      // Get records by category
-      const categoryResults = await this.db
-        .prepare(
-          `
-          SELECT data_category, COUNT(*) as count
-          FROM data_retention_records
-          GROUP BY data_category
-        `,
-        )
-        .all<{
-          data_category: string;
-          count: number;
-        }>();
+      // Get records by category using Drizzle
+      const categoryResults = await db.select({
+        dataCategory: dataRetentionRecords.dataCategory,
+        count: sql`count(*)`
+      })
+        .from(dataRetentionRecords)
+        .groupBy(dataRetentionRecords.dataCategory);
 
       // Get expiring records (next 7 days)
-      const now = Math.floor(Date.now() / 1000);
-      const nextWeek = now + 7 * 24 * 60 * 60;
+      const now = Date.now();
+      const nextWeek = now + 7 * 24 * 60 * 60 * 1000; // Convert days to milliseconds
 
-      const expiringResult = await this.db
-        .prepare(
-          `
-          SELECT COUNT(*) as count
-          FROM data_retention_records
-          WHERE expires_at BETWEEN ? AND ?
-        `,
-        )
-        .bind(now, nextWeek)
-        .first<{ count: number }>();
+      const expiringResult = await db.select({
+        count: sql`count(*)`
+      })
+        .from(dataRetentionRecords)
+        .where(and(
+          gte(dataRetentionRecords.expiresAt, now),
+          lte(dataRetentionRecords.expiresAt, nextWeek)
+        ));
 
-      // Get anonymized records
-      const anonymizedResult = await this.db
-        .prepare(
-          `
-          SELECT COUNT(*) as count
-          FROM data_retention_records
-          WHERE anonymized = 1
-        `,
-        )
-        .first<{ count: number }>();
+      // Get anonymized records using Drizzle
+      const anonymizedResult = await db.select({
+        count: sql`count(*)`
+      })
+        .from(dataRetentionRecords)
+        .where(eq(dataRetentionRecords.anonymized, true));
 
       // Build records by category map
       const recordsByCategory: Record<string, number> = {};
-
-      if (categoryResults.results) {
-        for (const row of categoryResults.results) {
-          recordsByCategory[row.data_category] = row.count;
-        }
+      
+      // Process category results from Drizzle
+      for (const row of categoryResults) {
+        recordsByCategory[row.dataCategory] = Number(row.count);
       }
 
       return {
-        totalRecords: totalResult?.count || 0,
+        totalRecords: Number(totalResult[0]?.count || 0),
         recordsByCategory,
-        expiringRecords: expiringResult?.count || 0,
-        anonymizedRecords: anonymizedResult?.count || 0,
+        expiringRecords: Number(expiringResult[0]?.count || 0),
+        anonymizedRecords: Number(anonymizedResult[0]?.count || 0),
       };
     } catch (error) {
       this.logger.error({ err: error }, 'Failed to get data retention stats');

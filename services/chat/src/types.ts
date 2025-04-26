@@ -3,15 +3,15 @@ import { z } from 'zod';
 // Define schemas for request validation
 export const chatRequestSchema = z.object({
   stream: z.boolean().optional().default(true),
-  initialState: z.object({
-    userId: z.string(),
-    messages: z.array(
-      z.object({
-        role: z.enum(['user', 'assistant', 'system']),
-        content: z.string(),
-        timestamp: z.number().optional(),
-      }),
-    ),
+  userId: z.string(),
+  messages: z.array(
+    z.object({
+      role: z.enum(['user', 'assistant', 'system']),
+      content: z.string(),
+      timestamp: z.number().optional(),
+    }),
+  ),
+  options: z.object({
     enhanceWithContext: z.boolean().optional().default(true),
     maxContextItems: z.number().optional().default(5),
     includeSourceInfo: z.boolean().optional().default(true),
@@ -39,29 +39,14 @@ export type ResumeChatRequest = z.infer<typeof resumeChatRequestSchema>;
  * Core state interface for the RAG graph
  */
 export interface AgentState {
-  // The initial state - moved properties from the top level to match actual structure
-  initialState?: {
-    // User information
-    userId: string;
+  // User information
+  userId: string;
 
-    // Conversation history
-    messages: Message[];
-
-    // Configuration options
-    options?: {
-      enhanceWithContext: boolean;
-      maxContextItems: number;
-      includeSourceInfo: boolean;
-      maxTokens: number;
-      temperature?: number;
-    };
-  };
-
-  // Conversation history - kept for backward compatibility
+  // Conversation history
   messages: Message[];
 
-  // Configuration options - kept for backward compatibility
-  options?: {
+  // Configuration options
+  options: {
     enhanceWithContext: boolean;
     maxContextItems: number;
     includeSourceInfo: boolean;

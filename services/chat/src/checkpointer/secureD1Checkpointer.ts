@@ -28,12 +28,12 @@ class EncryptionService {
    * @param env Environment bindings containing the encryption key
    */
   async initialize(env: Env): Promise<void> {
-    if (!env.ENCRYPTION_KEY) {
-      throw new Error('ENCRYPTION_KEY environment variable is required');
+    if (!env.CHAT_ENCRYPTION_KEY) {
+      throw new Error('CHAT_ENCRYPTION_KEY environment variable is required');
     }
 
     // Convert the base64 key to a CryptoKey
-    const keyData = this.base64ToArrayBuffer(env.ENCRYPTION_KEY);
+    const keyData = this.base64ToArrayBuffer(env.CHAT_ENCRYPTION_KEY);
     this.encryptionKey = await crypto.subtle.importKey('raw', keyData, { name: 'AES-GCM' }, false, [
       'encrypt',
       'decrypt',

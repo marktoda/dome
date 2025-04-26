@@ -1,6 +1,28 @@
 import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
-import { ChatClient, chatRequestSchema } from '@dome/chat/client';
+import { ChatClient } from '@dome/chat/client';
+import { z } from 'zod';
+
+// Define the updated chat request schema
+const chatRequestSchema = z.object({
+  userId: z.string(),
+  messages: z.array(
+    z.object({
+      role: z.enum(['user', 'assistant', 'system']),
+      content: z.string(),
+      timestamp: z.number().optional(),
+    }),
+  ),
+  options: z.object({
+    enhanceWithContext: z.boolean().optional().default(true),
+    maxContextItems: z.number().optional().default(5),
+    includeSourceInfo: z.boolean().optional().default(true),
+    maxTokens: z.number().optional().default(1000),
+    temperature: z.number().optional(),
+  }),
+  stream: z.boolean().optional().default(false),
+  runId: z.string().optional(),
+});
 
 
 /**
@@ -58,7 +80,7 @@ export class ChatController {
           {
             userId,
             request,
-            messageCount: request.initialState.messages.length,
+            messageCount: request.messages.length,
           },
           'Processing validated chat request'
         );

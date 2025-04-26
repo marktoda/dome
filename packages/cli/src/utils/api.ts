@@ -269,21 +269,22 @@ export async function chat(
   // Default to retry with non-streaming if not specified
   const shouldRetryNonStreaming = streamingOptions?.retryNonStreaming !== false;
 
-  // The new chat API expects an initialState object with messages array
+  // The chat API expects a unified structure
   const payload = {
-    initialState: {
-      userId: 'cli-user', // Default user ID for CLI
-      messages: [
-        {
-          role: 'user',
-          content: message,
-          timestamp: Date.now(),
-        },
-      ],
+    userId: 'cli-user', // Default user ID for CLI
+    messages: [
+      {
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
+      },
+    ],
+    options: {
       enhanceWithContext: true,
       maxContextItems: 5,
       includeSourceInfo: true,
       maxTokens: 1000,
+      temperature: 0.7,
     },
     stream: !!onChunk, // Enable streaming if onChunk callback is provided
   };
@@ -292,9 +293,15 @@ export async function chat(
     messageLength: message.length,
     streaming: !!onChunk,
     shouldRetryNonStreaming,
-    userId: payload.initialState.userId,
-    messageCount: payload.initialState.messages.length,
   });
+
+  // Debug the full payload structure
+  console.log('[DEBUG] Full payload structure:', JSON.stringify({
+    userId: payload.userId,
+    messageCount: payload.messages.length,
+    hasOptions: !!payload.options,
+    stream: payload.stream
+  }));
 
   // If streaming is enabled, handle the response differently
   if (onChunk) {
@@ -648,10 +655,43 @@ export async function chat(
     console.log('[DEBUG] Using non-streaming mode');
     try {
       // Make sure stream is set to false for non-streaming requests
-      const nonStreamingPayload = {
+      let nonStreamingPayload = {
         ...payload,
         stream: false,
       };
+      
+      // Log the full request payload for debugging
+      console.log('[DEBUG] Full request payload:', JSON.stringify(nonStreamingPayload, null, 2));
+      // Create a new payload with the right structure
+      const newPayload = {
+        userId: 'cli-user',
+        messages: [
+          {
+            role: 'user',
+            content: message,
+            timestamp: Date.now(),
+          },
+        ],
+        options: {
+          enhanceWithContext: true,
+          maxContextItems: 5,
+          includeSourceInfo: true,
+          maxTokens: 1000,
+          temperature: 0.7,
+        },
+        stream: false,
+      };
+      
+      console.log('[DEBUG] Final payload:', JSON.stringify({
+        userId: newPayload.userId,
+        messageCount: newPayload.messages.length,
+        hasOptions: !!newPayload.options,
+        stream: newPayload.stream
+      }));
+      
+      // Use the new payload
+      nonStreamingPayload = newPayload;
+      
       const response = await api.post('/chat', nonStreamingPayload);
       console.log('[DEBUG] Non-streaming response received:', response);
 
@@ -705,6 +745,17 @@ export async function chat(
         '[DEBUG] Error in non-streaming mode:',
         error instanceof Error ? error.message : String(error),
       );
+      
+      // Log more detailed error information
+      if (error instanceof Error) {
+        const errorObj = error as any;
+        if (errorObj.response) {
+          console.log('[DEBUG] Error response status:', errorObj.response.status);
+          console.log('[DEBUG] Error response headers:', JSON.stringify(errorObj.response.headers));
+          console.log('[DEBUG] Error response data:', JSON.stringify(errorObj.response.data));
+        }
+      }
+      
       throw error;
     }
   }

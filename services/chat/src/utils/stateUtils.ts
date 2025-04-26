@@ -12,15 +12,8 @@ import { AgentState } from "../types";
  * @returns The userId or "unknown-user" if not found
  */
 export function getUserId(state: AgentState): string {
-  // Try to get userId from initialState (new structure)
-  if (state.initialState && state.initialState.userId) {
-    return state.initialState.userId;
-  }
-  
-  // Legacy fallback (old structure)
-  // @ts-ignore - For backward compatibility
+  // Get userId from the unified structure
   if (state.userId) {
-    // @ts-ignore
     return state.userId;
   }
   
