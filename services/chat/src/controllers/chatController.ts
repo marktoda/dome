@@ -107,7 +107,11 @@ export class ChatController {
           };
 
           // Use the graph's stream method for streaming responses
-          const result = await graph.stream(state);
+          const result = await graph.stream(state, {
+            configurable: {
+              runId: runId
+            }
+          });
 
           // Transform to SSE stream
           const transformedStream = transformToSSE(result, startTime);
@@ -206,7 +210,11 @@ export class ChatController {
             },
           };
 
-          const result = await graph.stream(newState);
+          const result = await graph.stream(newState, {
+            configurable: {
+              runId: validatedRequest.runId
+            }
+          });
 
           // Transform to SSE stream
           const transformedStream = transformToSSE(result, startTime);
