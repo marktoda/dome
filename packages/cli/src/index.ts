@@ -13,6 +13,7 @@ import { chatCommand } from './commands/chat';
 import { loginCommand } from './commands/login';
 import { logoutCommand } from './commands/logout';
 import { configCommand } from './commands/config';
+import { contentCommand } from './commands/content';
 import { startPromptTui } from './tui/index';
 
 // Load configuration
@@ -54,6 +55,7 @@ chatCommand(program);
 loginCommand(program);
 logoutCommand(program);
 configCommand(program);
+contentCommand(program);
 
 // Add a command to launch the prompt-based TUI
 program

@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
-import { TsunamiClient } from '../../../tsunami/src/client';
+import { TsunamiClient } from '@dome/tsunami/client';
 import { Bindings } from '../types';
 import { UserIdContext } from '../middleware/userIdMiddleware';
 import { z } from 'zod';

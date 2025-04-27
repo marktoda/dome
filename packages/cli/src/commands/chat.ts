@@ -10,6 +10,8 @@ import chalk from 'chalk';
  * @param program The commander program
  */
 export function chatCommand(program: Command): void {
+  // Add a buffer for accumulating thinking tokens
+  let thinkingBuffer = '';
   program
     .command('chat')
     .description('Chat with the RAG-enhanced interface')
@@ -46,21 +48,37 @@ export function chatCommand(program: Command): void {
             } else {
               // Handle structured message chunks
               if (chunk.type === 'thinking') {
+                // Accumulate thinking tokens instead of printing each one separately
+                if (!thinkingBuffer) {
+                  thinkingBuffer = '';
+                  // Don't print the thinking header until we have complete JSON
+                }
+                
+                // Add the new token to our buffer
+                thinkingBuffer += chunk.content;
+                
                 try {
-                  // Try to parse and format JSON thinking steps
-                  const jsonObj = JSON.parse(chunk.content);
+                  // Try to parse as JSON to see if we have a complete object
+                  const jsonObj = JSON.parse(thinkingBuffer);
+                  // Only print if it's valid JSON
                   console.log();
                   console.log(chalk.gray('Thinking:'));
                   console.log(chalk.gray(JSON.stringify(jsonObj, null, 2)));
                   console.log();
+                  // Reset buffer after successful display
+                  thinkingBuffer = '';
                 } catch (e) {
-                  // Not valid JSON, display as is
-                  console.log();
-                  console.log(chalk.gray('Thinking: ' + chunk.content));
-                  console.log();
+                  // Not valid JSON yet, continue accumulating
+                  // Don't print anything until we have a complete thinking step
                 }
               } else {
                 // Display regular content
+                // If we were accumulating thinking content, discard any remaining buffer
+                // Since it's incomplete, don't try to display it
+                if (thinkingBuffer) {
+                  // Just reset the buffer without displaying incomplete thinking
+                  thinkingBuffer = '';
+                }
                 process.stdout.write(chunk.content);
                 chunks.push(chunk.content);
               }
@@ -104,21 +122,37 @@ export function chatCommand(program: Command): void {
                 } else {
                   // Handle structured message chunks
                   if (chunk.type === 'thinking') {
+                    // Accumulate thinking tokens instead of printing each one separately
+                    if (!thinkingBuffer) {
+                      thinkingBuffer = '';
+                      // Don't print the thinking header until we have complete JSON
+                    }
+                    
+                    // Add the new token to our buffer
+                    thinkingBuffer += chunk.content;
+                    
                     try {
-                      // Try to parse and format JSON thinking steps
-                      const jsonObj = JSON.parse(chunk.content);
+                      // Try to parse as JSON to see if we have a complete object
+                      const jsonObj = JSON.parse(thinkingBuffer);
+                      // Only print if it's valid JSON
                       console.log();
                       console.log(chalk.gray('Thinking:'));
                       console.log(chalk.gray(JSON.stringify(jsonObj, null, 2)));
                       console.log();
+                      // Reset buffer after successful display
+                      thinkingBuffer = '';
                     } catch (e) {
-                      // Not valid JSON, display as is
-                      console.log();
-                      console.log(chalk.gray('Thinking: ' + chunk.content));
-                      console.log();
+                      // Not valid JSON yet, continue accumulating
+                      // Don't print anything until we have a complete thinking step
                     }
                   } else {
                     // Display regular content
+                    // If we were accumulating thinking content, discard any remaining buffer
+                    // Since it's incomplete, don't try to display it
+                    if (thinkingBuffer) {
+                      // Just reset the buffer without displaying incomplete thinking
+                      thinkingBuffer = '';
+                    }
                     process.stdout.write(chunk.content);
                     chunks.push(chunk.content);
                   }

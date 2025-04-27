@@ -51,11 +51,18 @@ export class TsunamiClient implements TsunamiService {
 
       return result;
     } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.create_sync_plan.errors`);
-      logError(error, 'Error creating sync plan');
-      throw error;
+      metrics.increment(`${this.metricsPrefix}.create_sync_plan.error`);
+      this.logger.error(error, 'Error creating sync plan');
+      throw toDomeError(error);
     }
   }
+
+  /**
+   * Gets an existing sync plan by resource ID
+   *
+   * @param resourceId - The resource identifier
+   * @returns The sync plan details
+   */
 
   /**
    * Gets an existing sync plan by resource ID

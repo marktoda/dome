@@ -177,6 +177,41 @@ export async function chat(
   return getResponseText(res);
 }
 
+// ---------- GitHub repository API functions -------------------------------------
+/**
+ * Register a GitHub repository in Dome
+ * @param owner GitHub repository owner
+ * @param repo GitHub repository name
+ * @param cadence Optional sync cadence (default: 'PT1H' = hourly)
+ * @returns Registration result
+ */
+async function registerGithubRepo(
+  owner: string,
+  repo: string,
+  cadence: string = 'PT1H'
+): Promise<{ success: boolean; id: string; resourceId: string; wasInitialised: boolean }> {
+  return api.post('/content/github', {
+    owner,
+    repo,
+    cadence
+  });
+}
+
+/**
+ * Get GitHub repository sync history
+ * @param owner GitHub repository owner
+ * @param repo GitHub repository name
+ * @param limit Maximum number of history records to return
+ * @returns Sync history
+ */
+async function getGithubRepoHistory(
+  owner: string,
+  repo: string,
+  limit: number = 10
+): Promise<{ success: boolean; owner: string; repo: string; resourceId: string; history: any[] }> {
+  return api.get(`/content/github/${owner}/${repo}/history?limit=${limit}`);
+}
+
 // ---------- Helpers -------------------------------------------------------------
 function getResponseText(res: any): string {
   if (!res) return "I'm sorry, but I couldn't generate a response at this time.";
@@ -190,3 +225,7 @@ function getResponseText(res: any): string {
 
 // ---------- Type re‑exports for compatibility -----------------------------------
 export type { AxiosRequestConfig } from 'axios';
+
+// Export search functions
+export { search as searchContent };
+export { registerGithubRepo, getGithubRepoHistory };
