@@ -33,31 +33,13 @@ port = 8788
 [vars]
 VERSION = "0.1.0"
 LOG_LEVEL = "debug"
-# Default model to use - can be overridden in environment-specific configs
-# Options include: GPT_4_TURBO, GPT_3_5_TURBO, LLAMA_3_70B, LLAMA_3_8B
-DEFAULT_MODEL_ID = "GPT_4_TURBO"
 
 [env.production]
-vars = {
-  ENVIRONMENT = "production",
-  # Production environment uses GPT-4 Turbo for best quality
-  DEFAULT_MODEL_ID = "GPT_4_TURBO"
-}
+vars = { ENVIRONMENT = "production" }
 
 [env.staging]
-vars = {
-  ENVIRONMENT = "staging",
-  # Staging environment can use a more cost-effective model
-  DEFAULT_MODEL_ID = "GPT_3_5_TURBO"
-}
+vars = { ENVIRONMENT = "staging" }
 command = "pnpm build"
-
-[env.development]
-vars = {
-  ENVIRONMENT = "development",
-  # Development environment can use Cloudflare's Llama model to reduce costs
-  DEFAULT_MODEL_ID = "LLAMA_3_8B"
-}
 
 [observability]
 enabled = true
