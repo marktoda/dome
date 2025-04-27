@@ -50,9 +50,9 @@ export class DomeError extends Error {
           ? this.cause instanceof DomeError
             ? this.cause.toJSON()
             : {
-                message: this.cause.message,
-                stack: process.env.NODE_ENV !== 'production' ? this.cause.stack : undefined,
-              }
+              message: this.cause.message,
+              stack: process.env.NODE_ENV !== 'production' ? this.cause.stack : undefined,
+            }
           : this.cause,
     };
   }
@@ -275,8 +275,8 @@ export function errorHandler(options: ErrorHandlerOptions = {}) {
       const error = errorMapper
         ? errorMapper(err)
         : err instanceof DomeError
-        ? err
-        : new InternalError(
+          ? err
+          : new InternalError(
             'An unexpected error occurred',
             {},
             err instanceof Error ? err : undefined,
@@ -303,15 +303,15 @@ export function errorHandler(options: ErrorHandlerOptions = {}) {
       };
 
       // Include stack traces and cause if configured
-      if (includeStack && process.env.NODE_ENV !== 'production') {
+      if (includeStack) {
         responseBody.error.stack = error.stack;
       }
 
-      if (includeCause && process.env.NODE_ENV !== 'production' && error.cause) {
-        responseBody.error.cause = error.cause instanceof Error 
-          ? error.cause.message 
+      if (includeCause && error.cause) {
+        responseBody.error.cause = error.cause instanceof Error
+          ? error.cause.message
           : String(error.cause);
-        
+
         if (includeStack && error.cause instanceof Error) {
           responseBody.error.causeStack = error.cause.stack;
         }
@@ -451,20 +451,20 @@ export function handleDatabaseError(
   details: Record<string, any> = {}
 ): DomeError {
   const errorObj = error as any;
-  
+
   // Common database error codes and patterns
   if (errorObj?.code === 'P2025' || errorObj?.message?.includes('not found')) {
     return new NotFoundError(`Resource not found during ${operation}`, details, error as Error);
   }
-  
+
   if (errorObj?.code === 'P2002' || errorObj?.message?.includes('unique constraint')) {
     return new ConflictError(`Duplicate entry found during ${operation}`, details, error as Error);
   }
-  
+
   if (errorObj?.code === 'P2003' || errorObj?.message?.includes('foreign key constraint')) {
     return new ValidationError(`Foreign key constraint failed during ${operation}`, details, error as Error);
   }
-  
+
   return new InternalError(`Database error during ${operation}`, details, error as Error);
 }
 
@@ -478,39 +478,39 @@ export function createErrorFactory(domain: string, defaultDetails: Record<string
   return {
     validation: (message: string, details?: Record<string, any>, cause?: Error) =>
       new ValidationError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     notFound: (message: string, details?: Record<string, any>, cause?: Error) =>
       new NotFoundError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     unauthorized: (message: string, details?: Record<string, any>, cause?: Error) =>
       new UnauthorizedError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     forbidden: (message: string, details?: Record<string, any>, cause?: Error) =>
       new ForbiddenError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     badRequest: (message: string, details?: Record<string, any>, cause?: Error) =>
       new BadRequestError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     internal: (message: string, details?: Record<string, any>, cause?: Error) =>
       new InternalError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     conflict: (message: string, details?: Record<string, any>, cause?: Error) =>
       new ConflictError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     serviceUnavailable: (message: string, details?: Record<string, any>, cause?: Error) =>
       new ServiceUnavailableError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     rateLimit: (message: string, details?: Record<string, any>, cause?: Error) =>
       new RateLimitError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
-      
+
     wrap: createErrorWrapper(`[${domain}] Operation failed`, defaultDetails),
-    
+
     assertValid: (condition: boolean, message: string, details: Record<string, any> = {}) =>
       assertValid(condition, `[${domain}] ${message}`, { ...defaultDetails, ...details }),
-      
+
     assertExists: <T>(value: T | null | undefined, message: string, details: Record<string, any> = {}) =>
       assertExists(value, `[${domain}] ${message}`, { ...defaultDetails, ...details }),
-      
+
     handleDatabaseError: (error: unknown, operation: string, details: Record<string, any> = {}) =>
       handleDatabaseError(error, `${domain}.${operation}`, { ...defaultDetails, ...details }),
   };

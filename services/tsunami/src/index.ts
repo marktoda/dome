@@ -53,7 +53,7 @@ const handle = (
     const path = c.req?.path || 'unknown';
     const method = c.req?.method || 'unknown';
     const requestId = c.req?.header('x-request-id') || 'unknown';
-    
+
     const domeError = toDomeError(err, 'Unhandled request error', {
       path,
       method,
@@ -81,7 +81,7 @@ const buildServices = (env: Bindings) => ({
 const serviceInfo: ServiceInfo = {
   name: 'tsunami',
   version: '0.1.0',
-  environment: process.env.ENVIRONMENT || 'development'
+  environment: 'development'
 };
 logger.info({
   event: 'service_start',
@@ -232,7 +232,7 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async c =>
       },
       'GitHub repository initialised & synced successfully',
     );
-    
+
     metrics.trackOperation('github_repo_registration', true, { created: String(created) });
 
     return c.json({

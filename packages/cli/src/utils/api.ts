@@ -239,7 +239,6 @@ export async function search(query: string, limit: number = 10): Promise<any> {
   const results = (response.results || []).map((result: any) => {
     // Make sure score is a number (not a string) and has a valid value
     if (result.score === undefined || result.score === null) {
-      console.log(`[DEBUG] Missing score for result ${result.id}, using default 0`);
       result.score = 0;
     } else if (typeof result.score === 'string') {
       result.score = parseFloat(result.score);
@@ -289,22 +288,6 @@ export async function chat(
     stream: !!onChunk, // Enable streaming if onChunk callback is provided
   };
 
-  console.log('[DEBUG] Chat request payload:', {
-    messageLength: message.length,
-    streaming: !!onChunk,
-    shouldRetryNonStreaming,
-  });
-
-  // Debug the full payload structure
-  console.log(
-    '[DEBUG] Full payload structure:',
-    JSON.stringify({
-      userId: payload.userId,
-      messageCount: payload.messages.length,
-      hasOptions: !!payload.options,
-      stream: payload.stream,
-    }),
-  );
 
   // If streaming is enabled, handle the response differently
   if (onChunk) {
@@ -315,10 +298,6 @@ export async function chat(
     try {
       // Use axios directly with the base URL and headers from the config
       const config = loadConfig();
-      console.log('[DEBUG] Using API config:', {
-        baseUrl: config.baseUrl,
-        hasApiKey: !!config.apiKey,
-      });
 
       const axiosInstance = axios.create({
         baseURL: config.baseUrl,
@@ -329,7 +308,6 @@ export async function chat(
         },
       });
 
-      console.log('[DEBUG] Sending streaming request to /chat endpoint');
 
       // Make the streaming request
       const response = await axiosInstance.post('/chat', payload, {
@@ -338,12 +316,8 @@ export async function chat(
         timeout: 60000, // 60 second timeout
       });
 
-      console.log('[DEBUG] Received streaming response with status:', response.status);
-      console.log('[DEBUG] Response headers:', JSON.stringify(response.headers));
-
       // Set up event handling for the stream
       const stream = response.data;
-      console.log('[DEBUG] Stream object received:', typeof stream);
 
       // Create a promise that resolves when the stream ends
       return new Promise((resolve, reject) => {
@@ -356,7 +330,6 @@ export async function chat(
           const now = Date.now();
           if (now - lastProcessedTime > 15000) {
             // 15 seconds without data
-            console.log('[DEBUG] Stream appears to be stalled, closing');
             clearInterval(watchdogInterval);
 
             // If we have some content, resolve with what we have
@@ -378,7 +351,6 @@ export async function chat(
           chunkCount++;
           const chunkStr = chunk.toString();
           console.log(
-            `[DEBUG] Received chunk #${chunkCount}:`,
             chunkStr.substring(0, 100) + (chunkStr.length > 100 ? '...' : ''),
           );
           buffer += chunkStr;
@@ -387,25 +359,21 @@ export async function chat(
           const lines = buffer.split('\n');
           buffer = ''; // Clear the buffer
 
-          console.log(`[DEBUG] Processing ${lines.length} lines from buffer`);
 
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
 
             // Skip empty lines and "data: [DONE]" messages
             if (!line) {
-              console.log('[DEBUG] Skipping empty line');
               continue;
             }
 
             if (line === 'data: [DONE]') {
-              console.log('[DEBUG] Received DONE signal');
               continue;
             }
 
             // Handle plain text streaming (non-JSON format)
             if (!line.startsWith('data: ')) {
-              console.log('[DEBUG] Processing plain text chunk:', line);
               fullResponse += line + '\n';
               onChunk(line + '\n');
               continue;
@@ -415,14 +383,9 @@ export async function chat(
             if (line.startsWith('data: ')) {
               try {
                 const jsonStr = line.substring(6); // Remove 'data: ' prefix
-                console.log(
-                  '[DEBUG] Parsing JSON:',
-                  jsonStr.substring(0, 100) + (jsonStr.length > 100 ? '...' : ''),
-                );
 
                 // Handle non-JSON data format
                 if (!jsonStr.trim().startsWith('{') && !jsonStr.trim().startsWith('[')) {
-                  console.log('[DEBUG] Non-JSON data format detected, using as plain text');
                   fullResponse += jsonStr;
                   onChunk(jsonStr);
                   continue;
@@ -439,22 +402,18 @@ export async function chat(
                 ) {
                   // OpenAI-style format
                   const content = data.choices[0].delta.content;
-                  console.log('[DEBUG] Extracted content (OpenAI format):', content);
                   fullResponse += content;
                   onChunk(content);
                 } else if (data.response && typeof data.response === 'string') {
                   // Direct response format
-                  console.log('[DEBUG] Extracted content (direct format):', data.response);
                   fullResponse += data.response;
                   onChunk(data.response);
                 } else if (typeof data === 'string') {
                   // Plain string format
-                  console.log('[DEBUG] Extracted content (string format):', data);
                   fullResponse += data;
                   onChunk(data);
                 } else {
                   console.log(
-                    '[DEBUG] No recognized content format:',
                     JSON.stringify(data).substring(0, 100) +
                     (JSON.stringify(data).length > 100 ? '...' : ''),
                   );
@@ -469,20 +428,13 @@ export async function chat(
 
                 // Check for source information
                 if (data.sources && Array.isArray(data.sources) && data.sources.length > 0) {
-                  console.log('[DEBUG] Found source information');
                   sourceInfo = data.sources;
                 }
               } catch (e) {
-                console.log(
-                  '[DEBUG] Error parsing JSON:',
-                  e instanceof Error ? e.message : String(e),
-                );
-                console.log('[DEBUG] Problematic line:', line);
 
                 // If it looks like plain text, just use it directly
                 const content = line.substring(6); // Remove 'data: ' prefix
                 if (content && content.trim()) {
-                  console.log('[DEBUG] Using as plain text after parse error:', content);
                   fullResponse += content;
                   onChunk(content);
                 } else {
@@ -492,7 +444,6 @@ export async function chat(
                 }
               }
             } else {
-              console.log('[DEBUG] Non-data line:', line);
               // If it's not a data line but not empty, keep it for next processing
               buffer += line + '\n';
             }
@@ -500,7 +451,6 @@ export async function chat(
         });
 
         stream.on('end', () => {
-          console.log('[DEBUG] Stream ended, full response length:', fullResponse.length);
 
           // Clear the watchdog timer
           clearInterval(watchdogInterval);
@@ -514,8 +464,6 @@ export async function chat(
         });
 
         stream.on('error', (err: Error) => {
-          console.log('[DEBUG] Stream error:', err.message);
-          console.log('[DEBUG] Error details:', err);
 
           // Clear the watchdog timer
           clearInterval(watchdogInterval);
@@ -655,7 +603,6 @@ export async function chat(
     }
   } else {
     // Non-streaming path
-    console.log('[DEBUG] Using non-streaming mode');
     try {
       // Make sure stream is set to false for non-streaming requests
       let nonStreamingPayload = {
@@ -663,8 +610,6 @@ export async function chat(
         stream: false,
       };
 
-      // Log the full request payload for debugging
-      console.log('[DEBUG] Full request payload:', JSON.stringify(nonStreamingPayload, null, 2));
       // Create a new payload with the right structure
       const newPayload = {
         userId: 'cli-user',
@@ -685,23 +630,12 @@ export async function chat(
         stream: false,
       };
 
-      console.log(
-        '[DEBUG] Final payload:',
-        JSON.stringify({
-          userId: newPayload.userId,
-          messageCount: newPayload.messages.length,
-          hasOptions: !!newPayload.options,
-          stream: newPayload.stream,
-        }),
-      );
 
       // Use the new payload
       nonStreamingPayload = newPayload;
 
       // Use the new non-streaming endpoint
-      console.log('[DEBUG] Using /chat/message endpoint for non-streaming request');
       const response = await api.post('/chat', nonStreamingPayload);
-      console.log('[DEBUG] Non-streaming response received:', response);
 
       // Enhanced logging for debugging
       if (response) {
@@ -709,7 +643,7 @@ export async function chat(
         console.log('[DEBUG] Response has success property:', 'success' in response);
         console.log('[DEBUG] Response has response property:', 'response' in response);
         console.log('[DEBUG] Response has data property:', 'data' in response);
-        
+
         // Log the structure to understand nested properties
         const structure = {
           hasSuccess: 'success' in response,
@@ -720,7 +654,7 @@ export async function chat(
             Object.keys(response.data.response).join(',') : 'N/A'
         };
         console.log('[DEBUG] Response structure:', JSON.stringify(structure));
-        
+
         if ('response' in response) {
           console.log('[DEBUG] Response.response type:', typeof response.response);
           console.log(
@@ -734,7 +668,7 @@ export async function chat(
             );
           }
         }
-        
+
         if ('data' in response && response.data && 'response' in response.data) {
           console.log('[DEBUG] Response.data.response type:', typeof response.data.response);
           if (typeof response.data.response === 'object' && 'response' in response.data.response) {

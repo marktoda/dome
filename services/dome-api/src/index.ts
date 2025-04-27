@@ -1,4 +1,5 @@
 import { Hono, Context } from 'hono';
+import { upgradeWebSocket } from 'hono/cloudflare-workers'
 import { cors } from 'hono/cors';
 import type { ServiceInfo } from '@dome/common';
 import {
@@ -141,6 +142,46 @@ app.post('/chat', async (c: Context<{ Bindings: Bindings }>) => {
   const chatController = controllerFactory.getChatController(c.env);
   return await chatController.chat(c);
 });
+
+
+app.get(
+  '/chat',                     // public endpoint -> wss://api.example.com/v1/chat
+  upgradeWebSocket((c) => {
+    // NB: Cloudflare Workers has no `onOpen`; first client frame is where we start
+    return {
+      async onMessage(event, ws) {
+        const chatService = serviceFactory.getChatService(c.env);
+        const resp = await chatService.streamResponse(event.data);
+
+        // // Forward the JSON payload to the chat worker
+        // const resp = await c.env.CHAT.fetch('https://chat.internal/stream', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: event.data,        // the user's request (prompt, opts, etc.)
+        // })
+
+        // Pump the streaming body into the socket
+        const reader = resp.body!.getReader()
+        const td = new TextDecoder()
+
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) break
+          ws.send(td.decode(value))   // send LangGraph chunk to the client
+        }
+        ws.close()                    // tell the client we’re done
+      },
+
+      onClose() {
+        /* metrics / cleanup */
+      },
+
+      onError(err) {
+        console.error('ws error', err)
+      },
+    }
+  }),
+)
 
 // Rollout management routes have been removed as part of the Chat RAG Graph migration
 

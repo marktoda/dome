@@ -62,7 +62,7 @@ export class LlmClient {
    * @returns True if in test environment
    */
   private static isTestEnvironment(): boolean {
-    return process.env.NODE_ENV === 'test' || !!process.env.VITEST;
+    return false;
   }
 
   /**
