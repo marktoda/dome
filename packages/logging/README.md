@@ -1,10 +1,12 @@
 # @dome/logging
 
-A pragmatic logging package for Cloudflare Workers that:
+A comprehensive, context-aware logging package for Cloudflare Workers that:
 
-1. Stops the "context-not-available" spam
+1. Provides structured, contextual logging across async operations
 2. Makes the logger available everywhere (fetch / scheduled / queue / tests)
-3. Keeps the output Cloudflare-Logs-friendly
+3. Keeps output Cloudflare-Logs-friendly with optimized JSON formatting
+4. Includes built-in metrics collection and operation tracking
+5. Offers powerful utilities for standardized error logging
 
 ## Key Features
 
@@ -13,6 +15,8 @@ A pragmatic logging package for Cloudflare Workers that:
 - Cloudflare-Logs-friendly JSON output
 - Error stack traces bubbled to top level for better visibility in Cloudflare Logs
 - Compatible with Hono middleware for request-scoped logging
+- Standardized metrics collection
+- Common logging pattern helpers for consistent logging
 
 ## Requirements
 
@@ -33,10 +37,10 @@ export default {
   async fetch(request, env, ctx) {
     return withLogger(
       {
-        svc: 'dome-api',
-        op: 'fetch_handler',
-        env: env.ENVIRONMENT,
-        ver: env.VERSION,
+        service: 'dome-api',
+        component: 'fetch_handler',
+        environment: env.ENVIRONMENT,
+        version: env.VERSION,
       },
       async log => {
         log.info({ path: new URL(request.url).pathname }, 'Request received');
@@ -51,11 +55,11 @@ export default {
   async queue(batch, env, ctx) {
     return withLogger(
       {
-        svc: 'dome-api',
-        op: 'queue_consumer',
+        service: 'dome-api',
+        component: 'queue_consumer',
         batchSize: batch.messages.length,
-        env: env.ENVIRONMENT,
-        ver: env.VERSION,
+        environment: env.ENVIRONMENT,
+        version: env.VERSION,
       },
       async log => {
         log.info('Processing batch');
@@ -67,11 +71,11 @@ export default {
   async scheduled(event, env, ctx) {
     return withLogger(
       {
-        svc: 'dome-cron',
-        op: 'scheduled_job',
+        service: 'dome-cron',
+        component: 'scheduled_job',
         cron: event.cron,
-        env: env.ENVIRONMENT,
-        ver: env.VERSION,
+        environment: env.ENVIRONMENT,
+        version: env.VERSION,
       },
       async log => {
         log.info('Running scheduled job');
@@ -122,46 +126,227 @@ app.get('/', c => {
 export default app;
 ```
 
-### Logging Errors
+### Enhanced Error Logging
 
 ```typescript
-import { getLogger } from '@dome/logging';
+import { getLogger, logError } from '@dome/logging';
 
 try {
   // Some code that might throw
 } catch (error) {
-  const log = getLogger();
-  log.error(error, 'Operation failed');
-  // Error stack traces are automatically bubbled to top level
+  logError(error, 'Operation failed', { operationId: 'create-user' });
+  // Error stack traces and detailed information are automatically included
 }
 ```
 
-## Migration from Previous Version
-
-If you were using the previous version of this package, here are the changes:
-
-1. `runWithLogger` has been replaced with `withLogger` (with a different parameter order)
-2. No more "context-not-available" spam in logs
-3. Logger is available in all environments (fetch, scheduled, queue, tests)
-4. Error stack traces are automatically bubbled to top level
-
-### Parameter Order Change
-
-The parameter order has changed from:
+### Tracking Operations with Standard Patterns
 
 ```typescript
-// Old
-runWithLogger(meta, level, fn, ctx);
+import { trackOperation, logOperationStart, logOperationSuccess, logOperationFailure } from '@dome/logging';
 
-// New
-withLogger(meta, fn, level);
+// Option 1: All-in-one tracking helper
+const result = await trackOperation(
+  'user-creation',
+  async () => {
+    // Your operation logic here
+    return await createUser(userData);
+  },
+  { userId: userData.id }
+);
+
+// Option 2: Manual tracking
+function createResource(data) {
+  const logger = getLogger();
+  const operationName = 'resource-creation';
+  const context = { resourceType: data.type };
+  
+  logOperationStart(operationName, context);
+  const startTime = performance.now();
+  
+  try {
+    const result = /* create the resource */;
+    const duration = performance.now() - startTime;
+    logOperationSuccess(operationName, duration, { ...context, resourceId: result.id });
+    return result;
+  } catch (error) {
+    logOperationFailure(operationName, error, context);
+    throw error;
+  }
+}
 ```
 
-Note that the `ctx` parameter is no longer needed as AsyncLocalStorage handles the context automatically.
+### Using Metrics
 
-## Optional Enhancements
+```typescript
+import { createServiceMetrics } from '@dome/logging';
 
-- **Hide metrics from regular logs**: Add a dedicated Pino transport that filters on metric field and ships them to Telemetry/Prometheus instead of Workers Logs.
-- **Per-request correlation**: Include requestId (from CF trace-id header) in the meta you pass to withLogger for automatic correlation across micro-services.
-- **Pretty output in local development**: Use pino-pretty in development environments with `if (env.ENVIRONMENT === 'development') baseLogger.transport = { target:'pino-pretty' }`.
-- **Flush on exit**: For long-running cron/queue jobs, wrap the worker entry point in `pino.final(baseLogger, ...)` so nothing is lost on isolate shutdown.
+const metrics = createServiceMetrics('silo');
+
+// Increment a counter
+metrics.counter('requests.count');
+
+// Record a gauge value
+metrics.gauge('memory.usage', process.memoryUsage().heapUsed);
+
+// Time an operation
+const timer = metrics.startTimer('database.query');
+try {
+  await database.query('SELECT * FROM items');
+} finally {
+  timer.stop(); // Automatically logs the duration
+}
+
+// Track operation success/failure
+try {
+  await processItem(item);
+  metrics.trackOperation('item.process', true);
+} catch (error) {
+  metrics.trackOperation('item.process', false);
+  throw error;
+}
+```
+
+### Making External API Calls with Request ID Propagation
+
+```typescript
+import { trackedFetch, getRequestId } from '@dome/logging';
+
+// Automatically propagates request ID and logs the external call
+const response = await trackedFetch(
+  'https://api.example.com/data',
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: 'example' })
+  },
+  { operation: 'fetch-external-data' }
+);
+
+// Manual request ID propagation
+async function callExternalService(url, data) {
+  const requestId = getRequestId();
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-request-id': requestId
+    },
+    body: JSON.stringify(data)
+  });
+}
+```
+
+### Sanitizing Sensitive Data
+
+```typescript
+import { sanitizeForLogging } from '@dome/logging';
+
+const userData = {
+  name: 'John Doe',
+  email: 'john@example.com',
+  password: 'secret123',
+  apiToken: 'sk_live_1234',
+  preferences: {
+    theme: 'dark',
+    accessToken: 'eyJhbGciOi...'
+  }
+};
+
+// Sanitize before logging
+const safeUserData = sanitizeForLogging(userData);
+logger.info({ user: safeUserData }, 'User preferences updated');
+
+// Output will mask sensitive fields:
+// { "user": { "name": "John Doe", "email": "john@example.com", "password": "***", "apiToken": "***", "preferences": { "theme": "dark", "accessToken": "***" } } }
+```
+
+### Advanced Middleware Configuration
+
+```typescript
+import { buildLoggingMiddleware } from '@dome/logging';
+import { Hono } from 'hono';
+
+const app = new Hono();
+
+// Create custom middleware with advanced options
+app.use('*', buildLoggingMiddleware({
+  extraBindings: {
+    service: 'dome-api',
+    version: '1.0.0',
+  },
+  includeHeaders: true,
+  includeRequestBody: true,
+  maxBodySize: 2048,
+  sensitiveHeaders: ['authorization', 'cookie', 'x-api-key'],
+  shouldLogRequest: (c) => !c.req.path.startsWith('/health'),
+  metadataExtractor: (c) => ({
+    tenant: c.req.header('x-tenant-id'),
+    clientApp: c.req.header('x-client-app')
+  })
+}));
+```
+
+## Log Levels
+
+| Level   | Purpose                                                              |
+|---------|----------------------------------------------------------------------|
+| `trace` | Extremely detailed information for debugging specific issues          |
+| `debug` | Detailed information useful during development and troubleshooting    |
+| `info`  | General operational information about system behavior                 |
+| `warn`  | Potentially harmful situations that don't prevent normal operation    |
+| `error` | Error conditions that prevent an operation from completing correctly  |
+| `fatal` | Critical errors that prevent the application from functioning properly|
+
+## Best Practices
+
+1. **Use structured logging**
+   ```typescript
+   // Good
+   logger.info({ userId, action: 'login', device }, 'User logged in');
+   
+   // Avoid
+   logger.info(`User ${userId} logged in from ${device}`);
+   ```
+
+2. **Use appropriate log levels**
+   ```typescript
+   // Debug information
+   logger.debug({ config }, 'Application configured');
+   
+   // Normal operations
+   logger.info({ userId }, 'User account created');
+   
+   // Issues that don't stop operation
+   logger.warn({ feature: 'legacy-auth' }, 'Using deprecated authentication method');
+   
+   // Errors that prevent completion
+   logger.error({ error }, 'Failed to process payment');
+   ```
+
+3. **Include contextual information**
+   ```typescript
+   logger.info({
+     requestId,
+     userId, 
+     operation: 'document-upload',
+     fileSize: file.size,
+     mimeType: file.type
+   }, 'Document uploaded successfully');
+   ```
+
+4. **Use helper utilities for common patterns**
+   ```typescript
+   // For tracked operations
+   await trackOperation('payment-processing', async () => {
+     // process payment
+   }, { orderId, amount });
+   
+   // For error logging
+   try {
+     // risky operation
+   } catch (error) {
+     logError(error, 'Payment processing failed', { orderId });
+   }
+   ```
+
+For more detailed guidelines, refer to the [Logging Standards](../../docs/standards/logging.md) documentation.

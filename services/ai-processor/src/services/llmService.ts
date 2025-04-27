@@ -1,4 +1,5 @@
-import { getLogger } from '@dome/logging';
+import { getLogger, logError, trackOperation } from '../utils/logging';
+import { toDomeError, LLMProcessingError, assertValid } from '../utils/errors';
 
 /**
  * LLM Service for processing content with AI
@@ -6,6 +7,8 @@ import { getLogger } from '@dome/logging';
  */
 export class LlmService {
   private readonly MODEL_NAME = '@cf/google/gemma-7b-it-lora';
+  private readonly MAX_RETRY_ATTEMPTS = 2;
+  private readonly logger = getLogger().child({ component: 'LlmService' });
 
   constructor(private env: Env) {}
 
@@ -16,62 +19,144 @@ export class LlmService {
    * @returns Enriched metadata from LLM processing
    */
   async processContent(content: string, contentType: string): Promise<any> {
-    try {
-      // Select the appropriate prompt based on content type
-      const prompt = this.getPromptForContentType(content, contentType);
+    // Validate inputs
+    assertValid(!!content, 'Content is required for LLM processing', { contentType });
+    assertValid(!!contentType, 'Content type is required for LLM processing');
+    
+    const requestId = crypto.randomUUID();
+    
+    return trackOperation(
+      'llm_process_content',
+      async () => {
+        try {
+          // Select the appropriate prompt based on content type
+          const prompt = this.getPromptForContentType(content, contentType);
 
-      // Process with LLM
-      getLogger().debug(
-        { contentType, contentLength: content.length },
-        'Processing content with LLM',
-      );
+          // Add detailed context for all logs
+          const logContext = {
+            contentType,
+            contentLength: content.length,
+            requestId,
+            modelName: this.MODEL_NAME
+          };
+          
+          this.logger.debug(
+            logContext,
+            'Processing content with LLM',
+          );
 
-      const raw = await this.env.AI.run(this.MODEL_NAME, {
-        messages: [{ role: 'user', content: prompt }],
-        stream: false,
-      });
+          // Attempt to process with LLM with retry logic
+          let lastError = null;
+          let attempt = 0;
+          
+          while (attempt <= this.MAX_RETRY_ATTEMPTS) {
+            try {
+              // Perform the LLM call
+              const raw = await this.env.AI.run(this.MODEL_NAME, {
+                messages: [{ role: 'user', content: prompt }],
+                stream: false,
+              });
 
-      if (raw instanceof ReadableStream) {
-        // ...convert the stream to text or throw – but you said stream: false,
-        // so this branch should never run
-        throw new Error('Unexpected streaming response');
-      }
+              if (raw instanceof ReadableStream) {
+                throw new LLMProcessingError('Unexpected streaming response', { requestId });
+              }
 
-      // Parse and validate the response
-      const metadata = this.parseResponse(raw.response || '');
+              // Parse and validate the response
+              const metadata = this.parseResponse(raw.response || '', requestId);
 
-      getLogger().info(
-        {
-          contentType,
-          hasSummary: !!metadata.summary,
-          hasTodos: Array.isArray(metadata.todos) && metadata.todos.length > 0,
-          hasReminders: Array.isArray(metadata.reminders) && metadata.reminders.length > 0,
-          topics: metadata.topics,
-        },
-        'Successfully processed content with LLM',
-      );
+              // Log success with detailed metrics
+              this.logger.info(
+                {
+                  ...logContext,
+                  hasSummary: !!metadata.summary,
+                  summaryLength: metadata.summary ? metadata.summary.length : 0,
+                  hasTodos: Array.isArray(metadata.todos) && metadata.todos.length > 0,
+                  todoCount: Array.isArray(metadata.todos) ? metadata.todos.length : 0,
+                  hasReminders: Array.isArray(metadata.reminders) && metadata.reminders.length > 0,
+                  reminderCount: Array.isArray(metadata.reminders) ? metadata.reminders.length : 0,
+                  hasTopics: Array.isArray(metadata.topics) && metadata.topics.length > 0,
+                  topicCount: Array.isArray(metadata.topics) ? metadata.topics.length : 0,
+                  attempt: attempt + 1,
+                  responseLength: raw.response ? raw.response.length : 0
+                },
+                'Successfully processed content with LLM',
+              );
 
-      return {
-        ...metadata,
-        processingVersion: 1,
-        modelUsed: this.MODEL_NAME,
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      getLogger().error(
-        { error, contentType, contentLength: content.length },
-        'Error processing content with LLM',
-      );
+              return {
+                ...metadata,
+                processingVersion: 1,
+                modelUsed: this.MODEL_NAME,
+              };
+            } catch (error) {
+              lastError = error;
+              
+              // Check if we should retry
+              if (attempt < this.MAX_RETRY_ATTEMPTS) {
+                const backoffMs = Math.pow(2, attempt) * 100; // Exponential backoff
+                
+                this.logger.warn({
+                  ...logContext,
+                  attempt: attempt + 1,
+                  maxAttempts: this.MAX_RETRY_ATTEMPTS,
+                  error: error instanceof Error ? error.message : String(error),
+                  backoffMs
+                }, `LLM processing attempt failed, retrying in ${backoffMs}ms`);
+                
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+                attempt++;
+              } else {
+                break;
+              }
+            }
+          }
+          
+          // All retries failed
+          const domeError = toDomeError(
+            lastError,
+            `All LLM processing attempts failed for content type: ${contentType}`,
+            {
+              ...logContext,
+              attemptsMade: attempt + 1
+            }
+          );
+          
+          logError(domeError, 'LLM processing failed after all retry attempts');
 
-      // Return minimal metadata on error
-      return {
-        title: this.generateFallbackTitle(content),
-        summary: 'Content processing failed',
-        processingVersion: 1,
-        modelUsed: this.MODEL_NAME,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
+          // Return minimal metadata on error
+          return {
+            title: this.generateFallbackTitle(content),
+            summary: 'Content processing failed',
+            processingVersion: 1,
+            modelUsed: this.MODEL_NAME,
+            error: domeError.message,
+            errorCode: domeError.code,
+          };
+        } catch (error) {
+          const domeError = toDomeError(
+            error,
+            `Error in LLM processing for content type: ${contentType}`,
+            {
+              contentType,
+              contentLength: content.length,
+              requestId
+            }
+          );
+          
+          logError(domeError, 'Unexpected error in LLM processing');
+
+          // Return minimal metadata on error
+          return {
+            title: this.generateFallbackTitle(content),
+            summary: 'Content processing failed',
+            processingVersion: 1,
+            modelUsed: this.MODEL_NAME,
+            error: domeError.message,
+            errorCode: domeError.code,
+          };
+        }
+      },
+      { contentType, contentLength: content.length, requestId }
+    );
   }
 
   /**
@@ -215,82 +300,102 @@ export class LlmService {
    * @param response The raw response from the LLM
    * @returns Parsed metadata object
    */
-  private parseResponse(response: string): any {
-    try {
-      // Try to extract JSON from the response, handling markdown code blocks
-      let jsonString = response;
+  /**
+   * Parse the LLM response into a structured object
+   * @param response The raw response from the LLM
+   * @param requestId Request ID for correlation
+   * @returns Parsed metadata object
+   */
+  private parseResponse(response: string, requestId: string): any {
+    return trackOperation(
+      'parse_llm_response',
+      async () => {
+        try {
+          // Try to extract JSON from the response, handling markdown code blocks
+          let jsonString = response;
 
-      // Check if response is wrapped in markdown code blocks
-      const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (codeBlockMatch && codeBlockMatch[1]) {
-        jsonString = codeBlockMatch[1];
-      } else {
-        // Fall back to the original curly brace matching if no code block is found
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          jsonString = jsonMatch[0];
-        }
-      }
-
-      // Attempt to fix common JSON syntax errors before parsing
-      jsonString = this.sanitizeJsonString(jsonString);
-
-      try {
-        const parsed = JSON.parse(jsonString);
-
-        // Normalize priority values to lowercase
-        if (parsed.todos && Array.isArray(parsed.todos)) {
-          parsed.todos = parsed.todos.map((todo: { priority?: string; [key: string]: any }) => {
-            if (todo.priority) {
-              todo.priority = todo.priority.toLowerCase();
+          // Check if response is wrapped in markdown code blocks
+          const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+          if (codeBlockMatch && codeBlockMatch[1]) {
+            jsonString = codeBlockMatch[1];
+          } else {
+            // Fall back to the original curly brace matching if no code block is found
+            const jsonMatch = response.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              jsonString = jsonMatch[0];
             }
-            return todo;
-          });
-        }
+          }
 
-        return parsed;
-      } catch (parseError) {
-        // If standard parsing fails, try a more aggressive approach with JSON5
-        // or fallback to a best-effort manual extraction
-        return this.extractStructuredData(jsonString);
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+          // Attempt to fix common JSON syntax errors before parsing
+          jsonString = this.sanitizeJsonString(jsonString);
 
-      // Enhanced logging with more context about the response format
-      const hasCodeBlock = response.includes('```');
-      const firstFewChars = response.substring(0, 50).replace(/\n/g, '\\n');
-      const lastFewChars = response.substring(response.length - 50).replace(/\n/g, '\\n');
+          try {
+            const parsed = JSON.parse(jsonString);
 
-      getLogger().error(
-        {
-          error,
-          source: {
+            // Validate essential fields
+            assertValid(
+              !!parsed.title && typeof parsed.title === 'string',
+              'Parsed response missing valid title field',
+              { requestId }
+            );
+            
+            assertValid(
+              !!parsed.summary && typeof parsed.summary === 'string',
+              'Parsed response missing valid summary field',
+              { requestId }
+            );
+
+            // Normalize priority values to lowercase
+            if (parsed.todos && Array.isArray(parsed.todos)) {
+              parsed.todos = parsed.todos.map((todo: { priority?: string; [key: string]: any }) => {
+                if (todo.priority) {
+                  todo.priority = todo.priority.toLowerCase();
+                }
+                return todo;
+              });
+            }
+
+            return parsed;
+          } catch (parseError) {
+            this.logger.warn(
+              {
+                error: parseError instanceof Error ? parseError.message : String(parseError),
+                fallback: true,
+                requestId
+              },
+              'Standard JSON parsing failed, attempting fallback extraction'
+            );
+            
+            // If standard parsing fails, try a more aggressive approach
+            // or fallback to a best-effort manual extraction
+            return this.extractStructuredData(jsonString, requestId);
+          }
+        } catch (error) {
+          const domeError = toDomeError(
             error,
-            hasCodeBlock,
-            time: new Date().toISOString(),
-            service: 'ai-processor',
-            op: 'reprocess',
-          },
-          responsePreview: response.substring(0, 200) + '...',
-          responseLength: response.length,
-          hasCodeBlock,
-          firstFewChars,
-          lastFewChars,
-          parseErrorMessage: errorMessage,
-          msg: 'Failed to parse LLM response',
-          level: 50,
-        },
-        'Failed to parse LLM response',
-      );
+            'Failed to parse LLM response',
+            {
+              requestId,
+              hasCodeBlock: response.includes('```'),
+              responseLength: response.length,
+              responseSample: response.substring(0, 100) + '...',
+              operation: 'parseResponse'
+            }
+          );
+          
+          logError(domeError, 'Failed to parse LLM response');
 
-      // Return a minimal valid object
-      return {
-        title: 'Untitled Content',
-        summary: 'Failed to generate summary from content',
-        error: 'Response parsing failed',
-      };
-    }
+          // Return a minimal valid object
+          return {
+            title: 'Untitled Content',
+            summary: 'Failed to generate summary from content',
+            error: 'Response parsing failed',
+            errorCode: domeError.code,
+          };
+        }
+      },
+      { responseLength: response.length, requestId }
+    );
   }
 
   /**
@@ -324,23 +429,34 @@ export class LlmService {
    * @param jsonString The JSON string to extract data from
    * @returns A best-effort structured object
    */
-  private extractStructuredData(jsonString: string): any {
+  /**
+   * Extract structured data from a potentially malformed JSON string
+   * @param jsonString The JSON string to extract data from
+   * @param requestId Request ID for correlation
+   * @returns A best-effort structured object
+   */
+  private extractStructuredData(jsonString: string, requestId: string): any {
     const result: any = {
       title: 'Untitled Content',
       summary: 'Content extracted with best-effort parsing',
     };
 
     try {
+      // Track fields we successfully extract
+      const extractedFields: string[] = [];
+
       // Extract title using regex
       const titleMatch = jsonString.match(/"title"\s*:\s*"([^"]+)"/);
       if (titleMatch && titleMatch[1]) {
         result.title = titleMatch[1];
+        extractedFields.push('title');
       }
 
       // Extract summary using regex
       const summaryMatch = jsonString.match(/"summary"\s*:\s*"([^"]+)"/);
       if (summaryMatch && summaryMatch[1]) {
         result.summary = summaryMatch[1];
+        extractedFields.push('summary');
       }
 
       // Extract todos if present (simplified approach)
@@ -350,12 +466,33 @@ export class LlmService {
         result.todos = todoItems.map(item => {
           const textMatch = item.match(/"text"\s*:\s*"([^"]+)"/);
           const locationMatch = item.match(/"location"\s*:\s*"([^"]+)"/);
+          const priorityMatch = item.match(/"priority"\s*:\s*"([^"]+)"/);
+          const dueDateMatch = item.match(/"dueDate"\s*:\s*"([^"]+)"/);
 
           return {
             text: textMatch ? textMatch[1] : 'Unknown todo',
             location: locationMatch ? locationMatch[1] : '',
+            priority: priorityMatch ? priorityMatch[1].toLowerCase() : 'medium',
+            dueDate: dueDateMatch ? dueDateMatch[1] : undefined
           };
         });
+        extractedFields.push('todos');
+      }
+
+      // Extract reminders if present
+      const remindersMatch = jsonString.match(/"reminders"\s*:\s*\[(.*?)\]/s);
+      if (remindersMatch && remindersMatch[1]) {
+        const reminderItems = remindersMatch[1].split('},');
+        result.reminders = reminderItems.map(item => {
+          const textMatch = item.match(/"text"\s*:\s*"([^"]+)"/);
+          const timeMatch = item.match(/"reminderTime"\s*:\s*"([^"]+)"/);
+
+          return {
+            text: textMatch ? textMatch[1] : 'Unknown reminder',
+            reminderTime: timeMatch ? timeMatch[1] : undefined
+          };
+        });
+        extractedFields.push('reminders');
       }
 
       // Extract topics if present
@@ -368,16 +505,41 @@ export class LlmService {
             return cleaned || 'Unknown topic';
           })
           .filter(Boolean);
+        extractedFields.push('topics');
       }
 
-      getLogger().info(
-        { extractedFields: Object.keys(result) },
+      // Extract key points if present (for articles)
+      const keyPointsMatch = jsonString.match(/"keyPoints"\s*:\s*\[(.*?)\]/s);
+      if (keyPointsMatch && keyPointsMatch[1]) {
+        result.keyPoints = keyPointsMatch[1]
+          .split(',')
+          .map(point => {
+            const cleaned = point.trim().replace(/^"/, '').replace(/"$/, '');
+            return cleaned || 'Unknown point';
+          })
+          .filter(Boolean);
+        extractedFields.push('keyPoints');
+      }
+
+      this.logger.info(
+        {
+          extractedFields,
+          fieldCount: extractedFields.length,
+          requestId,
+          operation: 'extractStructuredData'
+        },
         'Extracted structured data using fallback method',
       );
 
       return result;
     } catch (error) {
-      getLogger().error({ error }, 'Error in fallback structured data extraction');
+      const domeError = toDomeError(
+        error,
+        'Error in fallback structured data extraction',
+        { requestId, operation: 'extractStructuredData' }
+      );
+      
+      logError(domeError, 'Failed to extract structured data with fallback method');
       return result;
     }
   }

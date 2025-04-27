@@ -1,4 +1,5 @@
 # Constellation Service Alert Configuration
+# Updated to reflect enhanced logging and error handling
 
 # Queue Alerts
 queue_depth:
@@ -176,6 +177,132 @@ worker_memory:
     - email
     - slack
   message: "Constellation worker memory usage is high. Check for memory leaks or consider scaling."
+
+# Error Type Alerts
+error_validation:
+  name: "High Validation Error Rate"
+  description: "High rate of validation errors indicating potential client issues"
+  metric: "errors.validation"
+  condition: "> 20"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Multiple validation errors detected. Check for client integration issues or malformed requests."
+
+error_not_found:
+  name: "High Not Found Error Rate"
+  description: "High rate of not found errors indicating resource issues"
+  metric: "errors.notFound"
+  condition: "> 15"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Multiple resources not found. Check for potential data consistency issues."
+
+error_internal:
+  name: "Critical Internal Errors"
+  description: "Internal server errors requiring immediate attention"
+  metric: "errors.internal"
+  condition: "> 5"
+  duration: "2m"
+  severity: "critical"
+  notification_channels:
+    - email
+    - slack
+    - pagerduty
+  message: "Multiple internal server errors detected. Immediate investigation required."
+
+error_service_unavailable:
+  name: "Service Unavailable Errors"
+  description: "Service unavailable errors indicating downstream dependency issues"
+  metric: "errors.serviceUnavailable"
+  condition: "> 0"
+  duration: "1m"
+  severity: "critical"
+  notification_channels:
+    - email
+    - slack
+    - pagerduty
+  message: "Service unavailable errors detected. Check downstream dependencies and service health."
+
+# Operation Duration Alerts
+operation_embedding_duration:
+  name: "Slow Embedding Operations"
+  description: "Embedding operations exceeding duration threshold"
+  metric: "operation.duration_ms.embedding"
+  condition: "> 8000"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Embedding operations are taking longer than expected. Check AI service performance."
+
+operation_vectorize_duration:
+  name: "Slow Vectorize Operations"
+  description: "Vectorize operations exceeding duration threshold"
+  metric: "operation.duration_ms.vectorize"
+  condition: "> 3000"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Vectorize operations are taking longer than expected. Check Vectorize service performance."
+
+operation_query_duration:
+  name: "Slow Query Operations"
+  description: "Query operations exceeding duration threshold"
+  metric: "operation.duration_ms.query"
+  condition: "> 2000"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Query operations are taking longer than expected. Check indexes and query patterns."
+
+operation_batch_duration:
+  name: "Slow Batch Processing"
+  description: "Batch processing exceeding duration threshold"
+  metric: "operation.duration_ms.processBatch"
+  condition: "> 10000"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Batch processing operations are taking longer than expected. Check for bottlenecks."
+
+# Request Lifecycle Alerts
+request_error_rate:
+  name: "High Request Error Rate"
+  description: "High rate of request errors"
+  metric: "request.error"
+  condition: "> 10"
+  duration: "5m"
+  severity: "critical"
+  notification_channels:
+    - email
+    - slack
+    - pagerduty
+  message: "High rate of request errors detected. Check for service disruptions."
+
+request_duration:
+  name: "Slow Request Processing"
+  description: "Requests taking too long to process"
+  metric: "request.duration_ms"
+  condition: "> 5000"
+  duration: "5m"
+  severity: "warning"
+  notification_channels:
+    - email
+    - slack
+  message: "Requests are taking longer than expected to process. Check for performance bottlenecks."
 
 # Notification Channels
 notification_channels:

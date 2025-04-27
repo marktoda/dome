@@ -6,7 +6,11 @@
  */
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics, trackOperation, trackedFetch } from '@dome/logging';
+import {
+  DomeError, ValidationError, NotFoundError, toDomeError,
+  assertValid, assertExists
+} from '@dome/errors';
 import { SiloBinding, DLQMessage, R2Event, DLQFilterOptions, DLQStats } from './types';
 import { wrap } from './utils/wrap';
 import { createServices, Services } from './services';
@@ -49,32 +53,66 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
     queueName: string,
     retryCount?: number,
   ): Promise<void> {
-    try {
-      // Use retryCount parameter if provided, otherwise use message.retryCount or message.attempts
-      const actualRetryCount = retryCount ?? message.retryCount ?? message.attempts ?? 0;
+    // Use trackOperation to ensure consistent logging of the DLQ operation
+    return trackOperation('silo.sendToDLQ', async () => {
+      try {
+        // Use retryCount parameter if provided, otherwise use message.retryCount or message.attempts
+        const actualRetryCount = retryCount ?? message.retryCount ?? message.attempts ?? 0;
+        
+        // Create standard context object for consistent logging
+        const context = {
+          messageId: message.id,
+          queueName,
+          retryCount: actualRetryCount,
+          errorType: error.name,
+          errorMessage: error.message
+        };
 
-      await this.services.dlq.sendToDLQ(message.body, error, {
-        queueName,
-        messageId: message.id,
-        retryCount: actualRetryCount,
-      });
+        await this.services.dlq.sendToDLQ(message.body, error, {
+          queueName,
+          messageId: message.id,
+          retryCount: actualRetryCount,
+        });
 
-      // Acknowledge the original message since it's now in the DLQ
-      message.ack();
+        // Acknowledge the original message since it's now in the DLQ
+        message.ack();
 
-      getLogger().info(
-        { messageId: message.id, error: error.message, queueName },
-        'Message sent to DLQ',
-      );
-    } catch (dlqError) {
-      // If we can't send to DLQ, log the error but still acknowledge the message
-      // to prevent an infinite retry loop
-      logError(dlqError, 'Error sending message to DLQ, acknowledging original message anyway', {
-        originalError: error.message,
-        messageId: message.id,
-      });
-      message.ack();
-    }
+        getLogger().info(
+          context,
+          `Message ${message.id} sent to DLQ ${queueName}`,
+        );
+      } catch (dlqError) {
+        // Convert to DomeError for consistent error handling
+        const domeError = toDomeError(
+          dlqError,
+          'Error sending message to DLQ',
+          {
+            originalErrorMessage: error.message,
+            originalErrorType: error.name,
+            messageId: message.id,
+            queueName,
+            serviceName: 'silo'
+          }
+        );
+
+        // If we can't send to DLQ, log the error but still acknowledge the message
+        // to prevent an infinite retry loop
+        logError(
+          domeError,
+          'Failed to send message to DLQ, acknowledging original message anyway',
+          {
+            messageId: message.id,
+            queueName
+          }
+        );
+        
+        // Still acknowledge to prevent retry loops
+        message.ack();
+        
+        // Track the DLQ failure metric
+        metrics.increment('silo.dlq.send_failures', 1, { queueName });
+      }
+    }, { messageId: message.id, queueName });
   }
 
   /**
@@ -225,24 +263,65 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
    * Efficiently retrieve multiple content items
    */
   async batchGet(data: SiloBatchGetInput): Promise<SiloContentBatch> {
-    return wrap({ operation: 'batchGet' }, async () => {
+    return wrap({ operation: 'batchGet', inputSize: data?.ids?.length || 0 }, async () => {
       try {
         // Validate input
         const validatedData = siloBatchGetSchema.parse(data);
+        
+        // Add request validation metrics
+        metrics.increment('silo.request.valid', 1, { method: 'batchGet' });
+        
         return await this.services.content.batchGet(validatedData);
       } catch (error) {
         if (error instanceof z.ZodError) {
-          getLogger().error({ error: error.errors }, 'Validation error in batchGet');
-          metrics.increment('silo.validation.errors', 1, { method: 'batchGet' });
-          throw new Error(
-            `Validation error: ${error.errors
-              .map(e => `${e.path.join('.')}: ${e.message}`)
-              .join(', ')}`,
+          // Convert Zod errors to ValidationError with detailed context
+          const errorDetails = error.errors.map(e => ({
+            path: e.path.join('.'),
+            message: e.message,
+            code: e.code
+          }));
+          
+          // Create a structured ValidationError
+          const validationError = new ValidationError(
+            `Invalid batchGet request parameters`,
+            {
+              validationErrors: errorDetails,
+              method: 'batchGet',
+              inputData: JSON.stringify(data)
+            },
+            error
           );
+          
+          logError(validationError, 'Validation error in batchGet request', {
+            method: 'batchGet',
+            errorCount: error.errors.length
+          });
+          
+          metrics.increment('silo.validation.errors', 1, { method: 'batchGet' });
+          throw validationError;
         }
-        logError(error, 'Error in batchGet');
-        metrics.increment('silo.rpc.errors', 1, { method: 'batchGet' });
-        throw error;
+        
+        // Handle other errors
+        const domeError = toDomeError(
+          error,
+          'Failed to retrieve batch content',
+          {
+            method: 'batchGet',
+            ids: data?.ids?.length ? data.ids.join(',') : 'none',
+          }
+        );
+        
+        // Log structured error
+        logError(domeError, 'Error processing batchGet request', {
+          method: 'batchGet'
+        });
+        
+        metrics.increment('silo.rpc.errors', 1, {
+          method: 'batchGet',
+          errorType: domeError.code
+        });
+        
+        throw domeError;
       }
     });
   }
@@ -253,22 +332,63 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
   async delete(data: SiloDeleteInput): Promise<SiloDeleteResponse> {
     return wrap({ operation: 'delete', id: data.id }, async () => {
       try {
-        // Validate input
+        // Make sure required data is present
+        assertValid(!!data, 'Delete request must include data', { method: 'delete' });
+        assertValid(!!data.id, 'Delete request must include an ID', { method: 'delete' });
+        
+        // Validate input with schema
         const validatedData = siloDeleteSchema.parse(data);
+        
+        // Track valid request
+        metrics.increment('silo.request.valid', 1, { method: 'delete' });
+        
+        // Perform the delete operation
         return await this.services.content.delete(validatedData);
       } catch (error) {
         if (error instanceof z.ZodError) {
-          getLogger().error({ error: error.errors }, 'Validation error in delete');
-          metrics.increment('silo.validation.errors', 1, { method: 'delete' });
-          throw new Error(
-            `Validation error: ${error.errors
-              .map(e => `${e.path.join('.')}: ${e.message}`)
-              .join(', ')}`,
+          // Convert Zod validation errors to ValidationError
+          const errorDetails = error.errors.map(e => ({
+            path: e.path.join('.'),
+            message: e.message,
+            code: e.code
+          }));
+          
+          const validationError = new ValidationError(
+            `Invalid delete request parameters`,
+            {
+              validationErrors: errorDetails,
+              method: 'delete',
+              contentId: data.id
+            },
+            error
           );
+          
+          logError(validationError, 'Validation error in delete request', {
+            method: 'delete',
+            contentId: data.id,
+            errorCount: error.errors.length
+          });
+          
+          metrics.increment('silo.validation.errors', 1, { method: 'delete' });
+          throw validationError;
+        } else if (error instanceof DomeError) {
+          // If already a DomeError, just add context if needed
+          error.withContext({ method: 'delete', contentId: data.id });
+          logError(error, `Error deleting content ${data.id}`, { method: 'delete' });
+          metrics.increment('silo.rpc.errors', 1, { method: 'delete', errorType: error.code });
+          throw error;
         }
-        logError(error, 'Error in delete');
-        metrics.increment('silo.rpc.errors', 1, { method: 'delete' });
-        throw error;
+        
+        // Convert other errors to DomeError
+        const domeError = toDomeError(
+          error,
+          `Failed to delete content with ID ${data.id}`,
+          { method: 'delete', contentId: data.id }
+        );
+        
+        logError(domeError, `Error deleting content ${data.id}`, { method: 'delete' });
+        metrics.increment('silo.rpc.errors', 1, { method: 'delete', errorType: domeError.code });
+        throw domeError;
       }
     });
   }
@@ -281,20 +401,63 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
       try {
         // Validate input (empty object is fine for stats)
         siloStatsSchema.parse(data);
-        return await this.services.stats.getStats();
+        
+        // Track valid request
+        metrics.increment('silo.request.valid', 1, { method: 'stats' });
+        
+        const startTime = performance.now();
+        const result = await this.services.stats.getStats();
+        const duration = performance.now() - startTime;
+        
+        // Log stats fetching time
+        getLogger().info(
+          {
+            method: 'stats',
+            duration,
+            total: result.total,
+            totalSize: result.totalSize
+          },
+          `Retrieved storage statistics in ${duration.toFixed(2)}ms`
+        );
+        
+        // Track timing for stats retrieval
+        metrics.timing('silo.stats.duration', duration, { method: 'stats' });
+        
+        return result;
       } catch (error) {
         if (error instanceof z.ZodError) {
-          getLogger().error({ error: error.errors }, 'Validation error in stats');
-          metrics.increment('silo.validation.errors', 1, { method: 'stats' });
-          throw new Error(
-            `Validation error: ${error.errors
-              .map(e => `${e.path.join('.')}: ${e.message}`)
-              .join(', ')}`,
+          // Convert Zod validation errors
+          const errorDetails = error.errors.map(e => ({
+            path: e.path.join('.'),
+            message: e.message,
+            code: e.code
+          }));
+          
+          const validationError = new ValidationError(
+            `Invalid stats request parameters`,
+            { validationErrors: errorDetails, method: 'stats' },
+            error
           );
+          
+          logError(validationError, 'Validation error in stats request', {
+            method: 'stats',
+            errorCount: error.errors.length
+          });
+          
+          metrics.increment('silo.validation.errors', 1, { method: 'stats' });
+          throw validationError;
         }
-        logError(error, 'Error in stats');
-        metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
-        throw error;
+        
+        // Handle other errors
+        const domeError = toDomeError(
+          error,
+          'Failed to retrieve storage statistics',
+          { method: 'stats' }
+        );
+        
+        logError(domeError, 'Error retrieving storage statistics', { method: 'stats' });
+        metrics.increment('silo.rpc.errors', 1, { method: 'stats', errorType: domeError.code });
+        throw domeError;
       }
     });
   }
@@ -305,11 +468,44 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
   async findContentWithFailedSummary(): Promise<SiloContentMetadata[]> {
     return wrap({ operation: 'findContentWithFailedSummary' }, async () => {
       try {
-        return await this.services.metadata.findContentWithFailedSummary();
+        // Track operation start
+        metrics.increment('silo.request.started', 1, { method: 'findContentWithFailedSummary' });
+        
+        const startTime = performance.now();
+        const result = await this.services.metadata.findContentWithFailedSummary();
+        const duration = performance.now() - startTime;
+        
+        // Log success and track metrics
+        getLogger().info(
+          { method: 'findContentWithFailedSummary', itemCount: result.length, duration },
+          `Found ${result.length} content items with failed summaries in ${duration.toFixed(2)}ms`
+        );
+        
+        metrics.timing('silo.operation.duration', duration, { method: 'findContentWithFailedSummary' });
+        metrics.increment('silo.request.success', 1, { method: 'findContentWithFailedSummary' });
+        
+        return result;
       } catch (error) {
-        logError(error, 'Error in findContentWithFailedSummary');
-        metrics.increment('silo.rpc.errors', 1, { method: 'findContentWithFailedSummary' });
-        throw error;
+        // Convert to DomeError for consistent handling
+        const domeError = toDomeError(
+          error,
+          'Failed to find content with failed summaries',
+          { method: 'findContentWithFailedSummary' }
+        );
+        
+        // Log with enhanced context
+        logError(domeError, 'Error finding content with failed summaries', {
+          method: 'findContentWithFailedSummary',
+          errorType: domeError.code
+        });
+        
+        // Track error metrics with error type for better analytics
+        metrics.increment('silo.rpc.errors', 1, {
+          method: 'findContentWithFailedSummary',
+          errorType: domeError.code
+        });
+        
+        throw domeError;
       }
     });
   }
@@ -320,11 +516,68 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
   async getMetadataById(id: string): Promise<SiloContentMetadata | null> {
     return wrap({ operation: 'getMetadataById', id }, async () => {
       try {
-        return await this.services.metadata.getMetadataById(id);
+        // Check for valid ID
+        assertValid(!!id, 'Content ID is required', { method: 'getMetadataById' });
+        
+        // Track operation start
+        metrics.increment('silo.request.started', 1, { method: 'getMetadataById' });
+        
+        const startTime = performance.now();
+        const result = await this.services.metadata.getMetadataById(id);
+        const duration = performance.now() - startTime;
+        
+        // Log results with different messages based on whether content was found
+        if (result) {
+          getLogger().info(
+            { method: 'getMetadataById', id, duration, found: true },
+            `Retrieved metadata for content ID ${id} in ${duration.toFixed(2)}ms`
+          );
+        } else {
+          getLogger().info(
+            { method: 'getMetadataById', id, duration, found: false },
+            `No content found with ID ${id} (query took ${duration.toFixed(2)}ms)`
+          );
+        }
+        
+        metrics.timing('silo.operation.duration', duration, { method: 'getMetadataById' });
+        metrics.increment('silo.request.success', 1, { method: 'getMetadataById', found: result ? 'true' : 'false' });
+        
+        return result;
       } catch (error) {
-        logError(error, 'Error in getMetadataById');
-        metrics.increment('silo.rpc.errors', 1, { method: 'getMetadataById' });
-        throw error;
+        // For validation errors we already have a DomeError
+        if (error instanceof DomeError) {
+          // Add additional context
+          error.withContext({ method: 'getMetadataById', contentId: id });
+          
+          logError(error, `Error retrieving metadata for content ID ${id}`, {
+            method: 'getMetadataById'
+          });
+          
+          metrics.increment('silo.rpc.errors', 1, {
+            method: 'getMetadataById',
+            errorType: error.code
+          });
+          
+          throw error;
+        }
+        
+        // Convert other errors to DomeError
+        const domeError = toDomeError(
+          error,
+          `Failed to retrieve metadata for content ID ${id}`,
+          { method: 'getMetadataById', contentId: id }
+        );
+        
+        logError(domeError, `Error retrieving metadata for content ID ${id}`, {
+          method: 'getMetadataById'
+        });
+        
+        metrics.increment('silo.rpc.errors', 1, {
+          method: 'getMetadataById',
+          errorType: domeError.code
+        });
+        
+        throw domeError;
       }
     });
   }
@@ -335,11 +588,48 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
   async dlqStats(): Promise<DLQStats> {
     return wrap({ operation: 'dlqStats' }, async () => {
       try {
-        return await this.services.dlq.getStats();
+        // Track operation start
+        metrics.increment('silo.request.started', 1, { method: 'dlqStats' });
+        
+        const startTime = performance.now();
+        const result = await this.services.dlq.getStats();
+        const duration = performance.now() - startTime;
+        
+        // Log success with relevant stats
+        getLogger().info(
+          {
+            method: 'dlqStats',
+            duration,
+            totalMessages: result.totalMessages,
+            pendingMessages: result.pendingMessages,
+            reprocessedMessages: result.reprocessedMessages
+          },
+          `Retrieved DLQ statistics in ${duration.toFixed(2)}ms: ${result.totalMessages} total, ${result.pendingMessages} pending, ${result.reprocessedMessages} reprocessed`
+        );
+        
+        metrics.timing('silo.operation.duration', duration, { method: 'dlqStats' });
+        metrics.increment('silo.request.success', 1, { method: 'dlqStats' });
+        
+        return result;
       } catch (error) {
-        logError(error, 'Error in dlqStats');
-        metrics.increment('silo.rpc.errors', 1, { method: 'dlqStats' });
-        throw error;
+        // Convert to DomeError for consistent handling
+        const domeError = toDomeError(
+          error,
+          'Failed to retrieve DLQ statistics',
+          { method: 'dlqStats' }
+        );
+        
+        logError(domeError, 'Error retrieving DLQ statistics', {
+          method: 'dlqStats',
+          errorType: domeError.code
+        });
+        
+        metrics.increment('silo.rpc.errors', 1, {
+          method: 'dlqStats',
+          errorType: domeError.code
+        });
+        
+        throw domeError;
       }
     });
   }
@@ -348,13 +638,70 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
    * Get DLQ messages
    */
   async dlqMessages(options: DLQFilterOptions = {}): Promise<DLQMessage<unknown>[]> {
-    return wrap({ operation: 'dlqMessages' }, async () => {
+    return wrap({ operation: 'dlqMessages', options: JSON.stringify(options) }, async () => {
       try {
-        return await this.services.dlq.getMessages(options);
+        // Track operation start
+        metrics.increment('silo.request.started', 1, { method: 'dlqMessages' });
+        
+        // Extract filter options for logging context
+        const filterContext = {
+          queueName: options.queueName || 'all',
+          errorType: options.errorType || 'all',
+          reprocessed: options.reprocessed !== undefined ? options.reprocessed.toString() : 'all',
+          limit: options.limit || 100,
+          offset: options.offset || 0
+        };
+        
+        getLogger().info(
+          { method: 'dlqMessages', filters: filterContext },
+          `Retrieving DLQ messages with filters: ${JSON.stringify(filterContext)}`
+        );
+        
+        const startTime = performance.now();
+        const messages = await this.services.dlq.getMessages(options);
+        const duration = performance.now() - startTime;
+        
+        // Log success
+        getLogger().info(
+          {
+            method: 'dlqMessages',
+            duration,
+            messageCount: messages.length,
+            filters: filterContext
+          },
+          `Retrieved ${messages.length} DLQ messages in ${duration.toFixed(2)}ms`
+        );
+        
+        metrics.timing('silo.operation.duration', duration, { method: 'dlqMessages' });
+        metrics.increment('silo.request.success', 1, { method: 'dlqMessages' });
+        metrics.gauge('silo.dlq.message_count', messages.length, {
+          queue: filterContext.queueName,
+          reprocessed: filterContext.reprocessed
+        });
+        
+        return messages;
       } catch (error) {
-        logError(error, 'Error in dlqMessages');
-        metrics.increment('silo.rpc.errors', 1, { method: 'dlqMessages' });
-        throw error;
+        // Convert to DomeError for consistent handling
+        const domeError = toDomeError(
+          error,
+          'Failed to retrieve DLQ messages',
+          {
+            method: 'dlqMessages',
+            filters: JSON.stringify(options)
+          }
+        );
+        
+        logError(domeError, 'Error retrieving DLQ messages', {
+          method: 'dlqMessages',
+          errorType: domeError.code
+        });
+        
+        metrics.increment('silo.rpc.errors', 1, {
+          method: 'dlqMessages',
+          errorType: domeError.code
+        });
+        
+        throw domeError;
       }
     });
   }
@@ -365,11 +712,66 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
   async dlqReprocess(id: string): Promise<string> {
     return wrap({ operation: 'dlqReprocess', id }, async () => {
       try {
-        return await this.services.dlq.reprocessMessage(id);
+        // Validate ID is provided
+        assertValid(!!id, 'Message ID is required for reprocessing', { method: 'dlqReprocess' });
+        
+        // Track operation start
+        metrics.increment('silo.request.started', 1, { method: 'dlqReprocess' });
+        getLogger().info(
+          { method: 'dlqReprocess', messageId: id },
+          `Reprocessing DLQ message ${id}`
+        );
+        
+        const startTime = performance.now();
+        const result = await this.services.dlq.reprocessMessage(id);
+        const duration = performance.now() - startTime;
+        
+        // Log success with result
+        getLogger().info(
+          { method: 'dlqReprocess', messageId: id, duration, result },
+          `Reprocessed DLQ message ${id} in ${duration.toFixed(2)}ms: ${result}`
+        );
+        
+        metrics.timing('silo.operation.duration', duration, { method: 'dlqReprocess' });
+        metrics.increment('silo.request.success', 1, { method: 'dlqReprocess' });
+        metrics.increment('silo.dlq.reprocessed', 1);
+        
+        return result;
       } catch (error) {
-        logError(error, 'Error in dlqReprocess');
-        metrics.increment('silo.rpc.errors', 1, { method: 'dlqReprocess' });
-        throw error;
+        // Handle NotFoundError specifically
+        if (error instanceof NotFoundError) {
+          logError(error.withContext({ messageId: id }), `DLQ message ${id} not found`, {
+            method: 'dlqReprocess',
+            messageId: id
+          });
+          
+          metrics.increment('silo.rpc.errors', 1, {
+            method: 'dlqReprocess',
+            errorType: 'NOT_FOUND'
+          });
+          
+          throw error;
+        }
+        
+        // Convert other errors to DomeError
+        const domeError = toDomeError(
+          error,
+          `Failed to reprocess DLQ message ${id}`,
+          { method: 'dlqReprocess', messageId: id }
+        );
+        
+        logError(domeError, `Error reprocessing DLQ message ${id}`, {
+          method: 'dlqReprocess',
+          messageId: id,
+          errorType: domeError.code
+        });
+        
+        metrics.increment('silo.rpc.errors', 1, {
+          method: 'dlqReprocess',
+          errorType: domeError.code
+        });
+        
+        throw domeError;
       }
     });
   }
@@ -378,13 +780,68 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
    * Purge DLQ messages
    */
   async dlqPurge(options: DLQFilterOptions = {}): Promise<number> {
-    return wrap({ operation: 'dlqPurge' }, async () => {
+    return wrap({ operation: 'dlqPurge', options: JSON.stringify(options) }, async () => {
       try {
-        return await this.services.dlq.purgeMessages(options);
+        // Track operation start
+        metrics.increment('silo.request.started', 1, { method: 'dlqPurge' });
+        
+        // Extract filter options for logging context
+        const filterContext = {
+          queueName: options.queueName || 'all',
+          errorType: options.errorType || 'all',
+          reprocessed: options.reprocessed !== undefined ? options.reprocessed.toString() : 'all'
+        };
+        
+        getLogger().info(
+          { method: 'dlqPurge', filters: filterContext },
+          `Purging DLQ messages with filters: ${JSON.stringify(filterContext)}`
+        );
+        
+        const startTime = performance.now();
+        const purgedCount = await this.services.dlq.purgeMessages(options);
+        const duration = performance.now() - startTime;
+        
+        // Log success with count
+        getLogger().info(
+          {
+            method: 'dlqPurge',
+            duration,
+            purgedCount,
+            filters: filterContext
+          },
+          `Purged ${purgedCount} DLQ messages in ${duration.toFixed(2)}ms`
+        );
+        
+        metrics.timing('silo.operation.duration', duration, { method: 'dlqPurge' });
+        metrics.increment('silo.request.success', 1, { method: 'dlqPurge' });
+        metrics.increment('silo.dlq.purged', purgedCount, {
+          queue: filterContext.queueName,
+          reprocessed: filterContext.reprocessed
+        });
+        
+        return purgedCount;
       } catch (error) {
-        logError(error, 'Error in dlqPurge');
-        metrics.increment('silo.rpc.errors', 1, { method: 'dlqPurge' });
-        throw error;
+        // Convert to DomeError for consistent handling
+        const domeError = toDomeError(
+          error,
+          'Failed to purge DLQ messages',
+          {
+            method: 'dlqPurge',
+            filters: JSON.stringify(options)
+          }
+        );
+        
+        logError(domeError, 'Error purging DLQ messages', {
+          method: 'dlqPurge',
+          errorType: domeError.code
+        });
+        
+        metrics.increment('silo.rpc.errors', 1, {
+          method: 'dlqPurge',
+          errorType: domeError.code
+        });
+        
+        throw domeError;
       }
     });
   }

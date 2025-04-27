@@ -1,6 +1,6 @@
-import {
-  getLogger as getDomeLogger,
-  metrics,
+import { 
+  getLogger as getDomeLogger, 
+  metrics, 
   logError as domeLogError,
   trackOperation as domeTrackOperation,
   logOperationStart,
@@ -8,16 +8,16 @@ import {
   logOperationFailure,
   createServiceMetrics
 } from '@dome/logging';
-import { toDomeError } from '@dome/errors';
+import { toDomeError } from './errors';
 
 // Create service-specific metrics
-export const aiProcessorMetrics = createServiceMetrics('ai-processor');
+export const constellationMetrics = createServiceMetrics('constellation');
 
 /**
- * Get a logger instance with the ai-processor service name
+ * Get a logger instance with the constellation service name
  */
 export function getLogger(): any {
-  return getDomeLogger().child({ service: 'ai-processor' });
+  return getDomeLogger().child({ service: 'constellation' });
 }
 
 /**
@@ -27,15 +27,15 @@ export function getLogger(): any {
  * @param context Additional context information
  */
 export function logError(error: unknown, message: string, context: Record<string, any> = {}): void {
-  const domeError = toDomeError(error, message, {
-    service: 'ai-processor',
-    ...context
+  const domeError = toDomeError(error, message, { 
+    service: 'constellation',
+    ...context 
   });
   
   domeLogError(domeError, message, context);
   
   // Track error metrics for monitoring
-  aiProcessorMetrics.trackOperation('error', false, {
+  constellationMetrics.trackOperation('error', false, { 
     errorType: domeError.code,
     operation: context.operation || 'unknown'
   });
@@ -56,36 +56,8 @@ export async function trackOperation<T>(
   return domeTrackOperation(
     operationName,
     fn,
-    { service: 'ai-processor', ...context }
+    { service: 'constellation', ...context }
   );
-}
-
-/**
- * Initialize logging with the environment
- * @param env Environment variables
- */
-export function initLogging(env: { LOG_LEVEL?: string; ENVIRONMENT?: string; VERSION?: string }) {
-  // The @dome/logging package handles configuration internally
-  // We just need to add some context for our service
-  const environment = env.ENVIRONMENT || 'dev';
-  const version = env.VERSION || '0.1.0';
-
-  getLogger().info(
-    {
-      level: env.LOG_LEVEL || 'info',
-      environment,
-      version,
-      service: 'ai-processor',
-      initTimestamp: new Date().toISOString()
-    },
-    'Initialized logging for ai-processor service',
-  );
-  
-  // Set up initial metrics
-  aiProcessorMetrics.gauge('service.initialized', 1, {
-    environment,
-    version
-  });
 }
 
 /**
@@ -111,7 +83,7 @@ export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
 /**
  * Export metrics and logging utilities from @dome/logging
  */
-export {
+export { 
   metrics,
   logOperationStart,
   logOperationSuccess,

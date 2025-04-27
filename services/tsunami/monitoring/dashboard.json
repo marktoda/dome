@@ -1,6 +1,6 @@
 {
   "name": "Constellation Embedding Service Dashboard",
-  "description": "Monitoring dashboard for the Constellation embedding service",
+  "description": "Monitoring dashboard for the Constellation embedding service with enhanced logging and error tracking",
   "panels": [
     {
       "title": "Queue Processing",
@@ -203,6 +203,94 @@
           "description": "Vector dimension"
         }
       ]
+    },
+    {
+      "title": "Error Rates by Type",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "errors.validation",
+          "aggregation": "sum",
+          "description": "ValidationError count"
+        },
+        {
+          "name": "errors.notFound",
+          "aggregation": "sum",
+          "description": "NotFoundError count"
+        },
+        {
+          "name": "errors.unauthorized",
+          "aggregation": "sum",
+          "description": "UnauthorizedError count"
+        },
+        {
+          "name": "errors.forbidden",
+          "aggregation": "sum",
+          "description": "ForbiddenError count"
+        },
+        {
+          "name": "errors.internal",
+          "aggregation": "sum",
+          "description": "InternalError count"
+        },
+        {
+          "name": "errors.serviceUnavailable",
+          "aggregation": "sum",
+          "description": "ServiceUnavailableError count"
+        }
+      ]
+    },
+    {
+      "title": "Operation Durations",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "operation.duration_ms.embedding",
+          "aggregation": "avg",
+          "description": "Average embedding operation duration (ms)"
+        },
+        {
+          "name": "operation.duration_ms.vectorize",
+          "aggregation": "avg",
+          "description": "Average vectorize operation duration (ms)"
+        },
+        {
+          "name": "operation.duration_ms.query",
+          "aggregation": "avg",
+          "description": "Average query operation duration (ms)"
+        },
+        {
+          "name": "operation.duration_ms.processBatch",
+          "aggregation": "avg",
+          "description": "Average batch processing duration (ms)"
+        }
+      ]
+    },
+    {
+      "title": "Request Lifecycle",
+      "type": "timeseries",
+      "metrics": [
+        {
+          "name": "request.start",
+          "aggregation": "sum",
+          "description": "Request start count"
+        },
+        {
+          "name": "request.end",
+          "aggregation": "sum",
+          "description": "Request end count"
+        },
+        {
+          "name": "request.error",
+          "aggregation": "sum",
+          "description": "Request error count"
+        },
+        {
+          "name": "request.duration_ms",
+          "aggregation": "avg",
+          "description": "Average request duration (ms)"
+        }
+      ]
     }
   ],
   "alerts": [
@@ -245,6 +333,54 @@
       "condition": "> 5",
       "duration": "5m",
       "severity": "critical"
+    },
+    {
+      "name": "Error Rate by Type",
+      "description": "High rate of specific error types",
+      "metric": "errors.*.sum",
+      "condition": "> 20",
+      "duration": "5m",
+      "severity": "warning"
+    },
+    {
+      "name": "Critical Internal Errors",
+      "description": "High rate of internal server errors",
+      "metric": "errors.internal.sum",
+      "condition": "> 5",
+      "duration": "2m",
+      "severity": "critical"
+    },
+    {
+      "name": "Service Unavailable",
+      "description": "Service unavailable errors detected",
+      "metric": "errors.serviceUnavailable.sum",
+      "condition": "> 0",
+      "duration": "1m",
+      "severity": "critical"
+    },
+    {
+      "name": "Operation Duration - Embedding",
+      "description": "Embedding operations taking too long",
+      "metric": "operation.duration_ms.embedding",
+      "condition": "> 8000",
+      "duration": "5m",
+      "severity": "warning"
+    },
+    {
+      "name": "Operation Duration - Vectorize",
+      "description": "Vectorize operations taking too long",
+      "metric": "operation.duration_ms.vectorize",
+      "condition": "> 3000",
+      "duration": "5m",
+      "severity": "warning"
+    },
+    {
+      "name": "Operation Duration - Query",
+      "description": "Query operations taking too long",
+      "metric": "operation.duration_ms.query",
+      "condition": "> 2000",
+      "duration": "5m",
+      "severity": "warning"
     }
   ]
 }

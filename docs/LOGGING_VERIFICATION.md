@@ -1,493 +1,198 @@
-# @dome/logging - Verification and Documentation Report
+# Logging and Error Handling Verification Plan
 
-## 1. Summary of Changes Across the Monorepo
+**Last Updated:** April 27, 2025
 
-### 1.1 The New @dome/logging Package
+## Overview
 
-The `@dome/logging` package has been successfully implemented as a structured, request-aware logging solution for all Dome Workers. This package provides a consistent logging interface across different types of Cloudflare Workers (HTTP, Cron, Queue) with minimal setup.
+This document outlines the verification and testing plan for the logging and error handling improvements across the Dome platform. It covers the automated verification scripts, test cases, integration tests, and documentation that ensure consistent implementation and behavior across all services.
 
-#### Package Structure
+## 1. Verification Scripts
 
-- **Package Name**: `@dome/logging`
-- **Version**: `0.1.0`
-- **Dependencies**:
-  - `hono`: ^4.0.0 (for context storage and middleware)
-  - `pino`: ^8.0.0 (for structured logging)
-  - `nanoid`: ^3.3.4 (for generating request IDs)
-  - `@cloudflare/workers-types`: ^4.0.0 (for TypeScript types)
+### 1.1 Compliance Scanning (`scripts/verify-logging-errors.js`)
 
-#### Core Components
+We've created a comprehensive verification script that:
 
-1. **Base Logger** (`src/base.ts`):
+- Scans all services for proper usage of `@dome/logging` and `@dome/errors` packages
+- Identifies any remaining `console.log` statements or non-standard error handling patterns
+- Verifies consistent use of `logError`, request ID propagation, and structured logging
+- Checks for appropriate log level usage across services
+- Generates a detailed report in the `docs/LOGGING_VERIFICATION.md` file
 
-   - Creates a global Pino logger instance
-   - Configures log level from environment or defaults to 'info'
-   - Sets up browser-compatible logging for Cloudflare Workers
+The script provides:
+- Service-by-service overview of compliance
+- Detailed lists of files with issues
+- Technical debt tracking for future cleanup
 
-2. **Helper Functions** (`src/helper.ts`):
-
-   - `getLogger()`: Returns the request-scoped logger if inside ALS context, otherwise returns the base logger
-
-3. **Middleware** (`src/middleware.ts`):
-
-   - `initLogging()`: Convenience function to wire both contextStorage & logging in one call
-   - `buildLoggingMiddleware()`: Creates a middleware that attaches a child logger to each request context
-
-4. **Run With Logger** (`src/runWithLogger.ts`):
-
-   - `runWithLogger()`: Function for non-HTTP workers (Cron, Queue) to run code with a logger in context
-
-5. **Types** (`src/types.ts`):
-   - `InitOptions`: Interface for logger initialization options
-
-### 1.2 Service Integration
-
-The `@dome/logging` package has been integrated into all three services:
-
-#### 1. dome-api (HTTP API Worker)
-
-- **Integration Method**: Using `initLogging(app)` middleware
-- **Configuration**: Added `nodejs_als` compatibility flag in wrangler.toml
-- **Usage**:
-  - Initialized in main app setup
-  - Used in error handlers and route handlers via `getLogger()`
-- **Key Files Modified**:
-  - `services/dome-api/src/index.ts`: Added import and initialization
-  - `services/dome-api/wrangler.toml`: Added compatibility flag
-
-#### 2. dome-cron (Scheduled Worker)
-
-- **Integration Method**: Using `runWithLogger()` function
-- **Configuration**: Added `nodejs_als` compatibility flag in wrangler.toml
-- **Dependencies**: Added `@dome/logging` as a workspace dependency
-- **Usage**: Wraps the scheduled job execution with logging context
-- **Key Files Modified**:
-  - `services/dome-cron/src/index.ts`: Added import and implementation
-  - `services/dome-cron/wrangler.toml`: Added compatibility flag
-  - `services/dome-cron/package.json`: Added dependency
-
-#### 3. dome-notify (Queue Worker)
-
-- **Integration Method**: Using `runWithLogger()` function
-- **Configuration**: Added `nodejs_als` compatibility flag in wrangler.toml
-- **Dependencies**: Added `@dome/logging` as a workspace dependency
-- **Usage**: Wraps the queue message processing with logging context
-- **Key Files Modified**:
-  - `services/dome-notify/src/index.ts`: Added import and implementation
-  - `services/dome-notify/wrangler.toml`: Added compatibility flag
-  - `services/dome-notify/package.json`: Added dependency
-
-### 1.3 Configuration Changes
-
-All services have been updated with the required configuration:
-
-1. **Wrangler.toml Updates**:
-
-   - All services now include `compatibility_flags = ["nodejs_als"]`
-   - All services have a recent `compatibility_date`
-
-2. **Package.json Dependencies**:
-   - `dome-cron` and `dome-notify` explicitly list `@dome/logging` as a workspace dependency
-   - `dome-api` imports and uses the package but may need to update its package.json to explicitly list the dependency
-
-## 2. Verification Steps
-
-### 2.1 Testing the Logging Functionality
-
-A verification script has been created at `scripts/verify-logging.js` to test the logging implementation. This script:
-
-- Makes requests to a test endpoint to generate logs
-- Tracks request IDs for verification
-- Provides SQL queries to check logs in Cloudflare Logs Engine
-
-#### Running the Verification Script
-
+**Usage:**
 ```bash
-# Basic verification with default settings
-node scripts/verify-logging.js
-
-# Custom verification with options
-node scripts/verify-logging.js --endpoint https://api.example.com --requests 20 --interval 1000 --error
+node scripts/verify-logging-errors.js
 ```
 
-#### Verification Options
-
-- `--endpoint <url>`: Test endpoint URL (default: http://localhost:8787)
-- `--requests <num>`: Number of requests to make (default: 10)
-- `--interval <ms>`: Interval between requests in ms (default: 500)
-- `--error`: Include error requests to test error logging
-- `--help`: Show help message
-
-### 2.2 What to Look for in the Logs
-
-When verifying the logging implementation, check for the following:
-
-#### For HTTP API Workers (dome-api)
-
-1. **Request Context Information**:
+## 2. Test Suites
 
-   - Each log entry should include a `reqId` field
-   - IP address (`ip`) should be captured
-   - Cloudflare data (`colo`, `cfRay`) should be present
+### 2.1 Error Handling Tests
 
-2. **Log Levels**:
+#### 2.1.1 Unit Tests (`packages/errors/tests/error-handling.test.ts`)
 
-   - `info` level for normal operations
-   - `error` level for exceptions
-   - `debug` level for detailed debugging (if enabled)
+Comprehensive unit tests for the error handling library covering:
 
-3. **Structured Data**:
-   - Log entries should include relevant contextual data as JSON
-   - Error logs should include error details
+- Base `DomeError` class and all error subclasses
+- Error conversion utilities (`toDomeError`)
+- Error wrapping and assertion utilities
+- Database error handling
+- Error factory functionality
+- Error handler middleware
 
-#### For Cron Workers (dome-cron)
+#### 2.1.2 Error Propagation Tests (`packages/errors/tests/error-propagation.test.ts`)
 
-1. **Execution Context**:
+Tests that verify error propagation across service boundaries:
 
-   - Logs should include `trigger: 'cron'`
-   - Cron schedule information should be present
-   - Environment information should be included
+- Request ID propagation through service calls
+- Error context preservation across service boundaries
+- Error enrichment at each service level
+- End-to-end error handling with middleware integration
+- Error standardization across multiple services
 
-2. **Batch Processing**:
-   - Logs for batch processing should include counts
-   - Start and completion logs should be present
+### 2.2 Logging Tests
 
-#### For Queue Workers (dome-notify)
+#### 2.2.1 Core Functionality Tests (`packages/logging/tests/logging-functionality.test.ts`)
 
-1. **Message Processing**:
+Tests covering core logging functionality:
 
-   - Logs should include `trigger: 'queue'`
-   - Batch size information should be present
-   - Message IDs should be logged
+- Logger creation and configuration
+- Operation logging helpers (`logOperationStart`, `logOperationSuccess`, `logOperationFailure`)
+- Operation tracking with automatic timing
+- External API call logging
+- Request ID propagation in fetch requests
+- Service metrics collection
 
-2. **Error Handling**:
-   - Failed message processing should be logged with error details
-   - Successful processing should be logged
+#### 2.2.2 Middleware Integration Tests (`packages/logging/tests/middleware-integration.test.ts`)
 
-### 2.3 Checking Logs in Cloudflare Logs Engine
+Tests that verify the integration of logging with middleware and cross-service communication:
 
-To verify logs in Cloudflare Logs Engine:
+- Logger context injection in middleware
+- Request ID propagation across service boundaries
+- End-to-end request flow with proper context maintenance
+- Error handling with context preservation
+- Nested operation tracking with context inheritance
 
-1. Log in to the Cloudflare Dashboard (https://dash.cloudflare.com)
-2. Navigate to Workers & Pages → Logs
-3. Select the "dome_logs" dataset
-4. Run one of these queries to view the logs:
+## 3. Test Coverage
 
-```sql
--- Query for all logs from a verification run
-SELECT
-  ts,
-  lvl,
-  service,
-  msg,
-  requestId,
-  data
-FROM dome_logs
-WHERE requestId IN ('request-id-1', 'request-id-2', ...)
-ORDER BY ts ASC
+The test suite covers the following key areas:
 
--- Query for error logs
-SELECT
-  ts,
-  service,
-  msg,
-  err.name,
-  err.msg,
-  requestId
-FROM dome_logs
-WHERE lvl = 'error'
-  AND ts > now() - INTERVAL 1 HOUR
-ORDER BY ts DESC
-LIMIT 100
+### 3.1 Error Handling Coverage
 
--- Query for request durations
-SELECT
-  requestId,
-  service,
-  durMs,
-  data.path as path
-FROM dome_logs
-WHERE msg = 'request:end'
-  AND ts > now() - INTERVAL 1 HOUR
-ORDER BY durMs DESC
-LIMIT 20
-```
+| Feature | Coverage | Tests |
+|---------|----------|-------|
+| Error class hierarchy | ✅ Complete | error-handling.test.ts |
+| Error conversion | ✅ Complete | error-handling.test.ts |
+| Error middleware | ✅ Complete | error-handling.test.ts |
+| Error context propagation | ✅ Complete | error-propagation.test.ts |
+| Database error handling | ✅ Complete | error-handling.test.ts |
+| Error factory | ✅ Complete | error-handling.test.ts |
 
-### 2.4 Potential Issues to Watch For
+### 3.2 Logging Coverage
 
-1. **Missing ALS Configuration**:
+| Feature | Coverage | Tests |
+|---------|----------|-------|
+| Logger creation | ✅ Complete | logging-functionality.test.ts |
+| Log level usage | ✅ Complete | logging-functionality.test.ts |
+| Operation tracking | ✅ Complete | logging-functionality.test.ts, middleware-integration.test.ts |
+| Request ID propagation | ✅ Complete | middleware-integration.test.ts |
+| Middleware integration | ✅ Complete | middleware-integration.test.ts |
+| External API logging | ✅ Complete | logging-functionality.test.ts |
+| Metrics collection | ✅ Complete | logging-functionality.test.ts |
 
-   - If logs don't include request context, check that `nodejs_als` is enabled in wrangler.toml
-   - Verify the compatibility date is recent enough
+## 4. Integration Verification
 
-2. **Logger Not Initialized**:
+### 4.1 Cross-Service Tests
 
-   - If logs are missing, ensure `initLogging(app)` is called before other middleware in HTTP workers
-   - For Cron/Queue workers, ensure `runWithLogger()` wraps the execution
+The integration tests specifically verify:
 
-3. **Incorrect Log Levels**:
+- Request ID propagation across service boundaries
+- Context preservation throughout the request chain
+- Error propagation and enrichment across service boundaries
+- Structured logging consistency across services
+- Metrics collection across service operations
 
-   - If logs are too verbose or too sparse, check the log level configuration
-   - Default level is 'info', but can be customized
+### 4.2 End-to-End Test Scenarios
 
-4. **Performance Impact**:
-   - Monitor request durations to ensure logging doesn't significantly impact performance
-   - Avoid excessive logging in hot paths
+1. **Happy Path Flow**
+   - Request flows through multiple services
+   - Request ID is properly propagated
+   - Operations are tracked with timing and context
+   - Successful response is returned
 
-## 3. Migration Guide for Future Services
+2. **Error Handling Flow**
+   - Error occurs in a downstream service
+   - Error is properly contextualized and propagated
+   - Error details and request context are preserved
+   - Appropriate status codes and error formats are returned
 
-### 3.1 Step-by-Step Integration Instructions
+## 5. Service Compliance Status
 
-#### For HTTP API Workers
+As of the latest verification run, service compliance status is:
 
-1. **Add the dependency**:
+| Service | @dome/logging | @dome/errors | Request ID Propagation | Console.log Free |
+|---------|---------------|--------------|------------------------|------------------|
+| ai-processor | 🟢 | 🟢 | 🟢 | 🟢 |
+| chat | 🟢 | 🟢 | 🟢 | 🟡 |
+| constellation | 🟢 | 🟢 | 🟢 | 🟢 |
+| dome-api | 🟢 | 🟢 | 🟢 | 🟢 |
+| dome-notify | 🟢 | 🟢 | 🟢 | 🟢 |
+| silo | 🟢 | 🟢 | 🟢 | 🟢 |
+| tsunami | 🟡 | 🟡 | 🔴 | 🔴 |
 
-   ```bash
-   pnpm add @dome/logging --filter your-service
-   ```
+Legend:
+- 🟢 Fully compliant
+- 🟡 Partially compliant (some issues)
+- 🔴 Non-compliant (significant issues)
 
-2. **Update wrangler.toml**:
+## 6. Technical Debt
 
-   ```toml
-   compatibility_date = "2025-04-17"  # or newer
-   compatibility_flags = ["nodejs_als"]
-   ```
+The following items have been identified as technical debt that should be addressed in future sprints:
 
-3. **Initialize in your application**:
+### 6.1 Code Quality Issues
 
-   ```typescript
-   import { Hono } from 'hono';
-   import { initLogging, getLogger } from '@dome/logging';
+- Replace remaining `console.log` statements in the `chat` service
+- Update `tsunami` service to use `@dome/logging` and `@dome/errors`
+- Implement request ID propagation in `tsunami` service
+- Standardize error handling in all RPC calls between services
 
-   const app = new Hono();
+### 6.2 Test Coverage Gaps
 
-   // Initialize logging early in the middleware chain
-   initLogging(app);
+- Add more integration tests for error handling between specific services
+- Create load tests to verify logging performance under high traffic
+- Add tests for log rotation and log persistence
 
-   // Add other middleware and routes
-   app.use('*', otherMiddleware());
+### 6.3 Documentation Improvements
 
-   app.get('/example', c => {
-     getLogger().info({ path: c.req.path }, 'Handling request');
-     return c.json({ success: true });
-   });
+- Document standard log levels and when to use each
+- Create a troubleshooting guide using error codes
+- Document metrics collection and alerting based on errors
 
-   // Add error handling
-   app.onError((err, c) => {
-     getLogger().error({ err, path: c.req.path }, 'Unhandled error');
-     return c.json({ error: 'Internal server error' }, 500);
-   });
+## 7. Next Steps
 
-   export default app;
-   ```
+1. **Run Verification Script in CI/CD Pipeline**
+   - Add the verification script to the CI/CD pipeline
+   - Fail builds when new violations are introduced
 
-#### For Cron Workers
+2. **Address Technical Debt**
+   - Prioritize fixing the `tsunami` service
+   - Remove all remaining `console.log` statements
 
-1. **Add the dependency**:
+3. **Enhance Monitoring**
+   - Set up alerts based on error rates
+   - Create dashboards for monitoring error patterns
 
-   ```bash
-   pnpm add @dome/logging --filter your-cron-service
-   ```
+4. **Regular Audits**
+   - Schedule monthly audits of logging and error handling
+   - Track improvements over time
 
-2. **Update wrangler.toml**:
+## Conclusion
 
-   ```toml
-   compatibility_date = "2025-04-17"  # or newer
-   compatibility_flags = ["nodejs_als"]
-   ```
+The comprehensive verification and testing plan ensures consistent logging and error handling across all services in the Dome platform. By implementing these tests and scripts, we can maintain high-quality error reporting, consistent log formats, and reliable request tracing throughout the system.
 
-3. **Implement in your scheduled handler**:
+The test suite provides confidence that errors are properly propagated, contextualized, and reported, making debugging and monitoring more effective. The verification script enables ongoing monitoring of compliance with best practices.
 
-   ```typescript
-   import { runWithLogger, getLogger } from '@dome/logging';
-
-   export default {
-     async scheduled(event, env, ctx) {
-       await runWithLogger(
-         {
-           trigger: 'cron',
-           cron: event.cron,
-           environment: env.ENVIRONMENT,
-         },
-         async () => {
-           getLogger().info('Starting scheduled job');
-
-           try {
-             // Your job logic here
-             getLogger().info('Job completed successfully');
-           } catch (error) {
-             getLogger().error({ error }, 'Job failed');
-             throw error;
-           }
-         },
-         ctx,
-       );
-     },
-   };
-   ```
-
-#### For Queue Workers
-
-1. **Add the dependency**:
-
-   ```bash
-   pnpm add @dome/logging --filter your-queue-service
-   ```
-
-2. **Update wrangler.toml**:
-
-   ```toml
-   compatibility_date = "2025-04-17"  # or newer
-   compatibility_flags = ["nodejs_als"]
-   ```
-
-3. **Implement in your queue handler**:
-
-   ```typescript
-   import { runWithLogger, getLogger } from '@dome/logging';
-
-   export default {
-     async queue(batch, env, ctx) {
-       await runWithLogger(
-         {
-           trigger: 'queue',
-           batchSize: batch.messages.length,
-           environment: env.ENVIRONMENT,
-         },
-         async () => {
-           getLogger().info({ batchSize: batch.messages.length }, 'Processing message batch');
-
-           for (const message of batch.messages) {
-             try {
-               getLogger().info({ messageId: message.id }, 'Processing message');
-
-               // Process the message
-
-               batch.ack(message.id);
-               getLogger().info({ messageId: message.id }, 'Successfully processed message');
-             } catch (error) {
-               getLogger().error({ messageId: message.id, error }, 'Error processing message');
-               batch.ack(message.id); // or retry logic
-             }
-           }
-         },
-         ctx,
-       );
-     },
-   };
-   ```
-
-### 3.2 Best Practices for Using the Logging Package
-
-1. **Structured Logging**:
-
-   - Always include relevant context as an object in the first parameter
-   - Use the message string (second parameter) for human-readable descriptions
-
-   ```typescript
-   // Good
-   getLogger().info({ userId, action }, 'User logged in');
-
-   // Avoid
-   getLogger().info(`User ${userId} logged in`);
-   ```
-
-2. **Log Levels**:
-
-   - Use appropriate log levels for different types of information:
-     - `error`: For errors and exceptions
-     - `warn`: For warning conditions
-     - `info`: For general informational messages (default)
-     - `debug`: For detailed debugging information
-     - `trace`: For very detailed tracing information
-
-3. **Error Logging**:
-
-   - Always include the full error object when logging errors
-
-   ```typescript
-   try {
-     // code that might throw
-   } catch (error) {
-     getLogger().error({ error }, 'Operation failed');
-   }
-   ```
-
-4. **Request Lifecycle Logging**:
-
-   - Log at key points in the request lifecycle:
-     - Start of request processing
-     - Important decision points
-     - End of request processing
-     - Error conditions
-
-5. **Performance Considerations**:
-
-   - Avoid excessive logging in hot paths
-   - Use conditional logging for verbose information
-
-   ```typescript
-   if (getLogger().isLevelEnabled('debug')) {
-     // Expensive operation to gather debug data
-     getLogger().debug({ detailedData }, 'Detailed debug info');
-   }
-   ```
-
-6. **Sensitive Information**:
-
-   - Never log sensitive information (passwords, tokens, PII)
-   - Consider implementing a redaction mechanism for sensitive fields
-
-7. **Custom Request IDs**:
-
-   - You can provide a custom ID factory when initializing logging:
-
-   ```typescript
-   initLogging(app, {
-     idFactory: () => `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-   });
-   ```
-
-8. **Extra Bindings**:
-   - Add service-wide context using extraBindings:
-   ```typescript
-   initLogging(app, {
-     extraBindings: {
-       service: 'my-service',
-       version: '1.0.0',
-       environment: env.ENVIRONMENT,
-     },
-   });
-   ```
-
-### 3.3 Troubleshooting Common Issues
-
-1. **Logger Not Available in Context**:
-
-   - Ensure `initLogging(app)` is called before accessing the logger
-   - For non-HTTP workers, ensure code is wrapped with `runWithLogger()`
-   - Check that `nodejs_als` is enabled in wrangler.toml
-
-2. **Missing Request Context**:
-
-   - Verify the middleware is registered correctly
-   - Ensure the middleware runs before your route handlers
-
-3. **Logs Not Appearing**:
-
-   - Check the log level configuration
-   - Verify Cloudflare Logs Engine is properly configured
-   - For local development, check console output
-
-4. **Performance Issues**:
-   - Reduce log verbosity in production
-   - Use conditional logging for expensive operations
-   - Consider sampling for high-volume endpoints
-
-## 4. Conclusion
-
-The `@dome/logging` package provides a robust, consistent logging solution across all Dome Workers. By following this guide, you can ensure that all services use the same logging patterns, making it easier to monitor, debug, and maintain the platform.
-
-The implementation follows best practices for structured logging and takes advantage of Cloudflare Workers' features like ALS (Async Local Storage) to maintain request context throughout the request lifecycle.
-
-For any issues or questions about the logging implementation, refer to the package documentation or contact the platform team.
+While there are still some areas of technical debt to address, the overall architecture for logging and error handling is robust and well-tested.

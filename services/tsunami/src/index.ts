@@ -7,15 +7,24 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import {
   ServiceInfo,
-  createErrorMiddleware,
-  formatZodError,
   createDetailedLoggerMiddleware,
+  formatZodError,
 } from '@dome/common';
-import { getLogger, logError } from '@dome/logging';
+import {
+  getLogger,
+  logError,
+  trackOperation,
+  createServiceMetrics
+} from '@dome/logging';
+import {
+  toDomeError,
+  NotFoundError,
+  ConflictError,
+  ValidationError,
+  createErrorMiddleware,
+} from './utils/errors';
 import {
   createSyncPlanService,
-  AlreadyExistsError,
-  NotFoundError,
 } from './services/syncPlanService';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { syncHistoryOperations } from './db/client';
@@ -27,14 +36,39 @@ export { ResourceObject } from './resourceObject';
 /* ─────────── shared utils ─────────── */
 
 const logger = getLogger();
+const metrics = createServiceMetrics('tsunami');
 
 const handle = (
-  c: { json: (d: unknown, status?: number) => Response },
+  c: {
+    json: (d: unknown, status?: number) => Response;
+    req: {
+      path: string;
+      method: string;
+      header: (name: string) => string | undefined;
+    }
+  },
   fn: () => Promise<Response>,
 ) =>
   fn().catch(err => {
-    logError(err, 'Unhandled request error');
-    return c.json({ success: false, error: err.message ?? 'Internal error' }, 500);
+    const path = c.req?.path || 'unknown';
+    const method = c.req?.method || 'unknown';
+    const requestId = c.req?.header('x-request-id') || 'unknown';
+    
+    const domeError = toDomeError(err, 'Unhandled request error', {
+      path,
+      method,
+      requestId
+    });
+    logError(domeError, 'Unhandled request error');
+    metrics.trackOperation('request', false, { path, error_code: domeError.code });
+    return c.json({
+      success: false,
+      error: {
+        code: domeError.code,
+        message: domeError.message,
+        details: domeError.details
+      }
+    }, domeError.statusCode);
   });
 
 const buildServices = (env: Bindings) => ({
@@ -44,13 +78,28 @@ const buildServices = (env: Bindings) => ({
 
 /* ─────────── app bootstrap ─────────── */
 
-const serviceInfo: ServiceInfo = { name: 'tsunami', version: '0.1.0', environment: 'development' };
-logger.info(serviceInfo, 'Starting Tsunami service');
+const serviceInfo: ServiceInfo = {
+  name: 'tsunami',
+  version: '0.1.0',
+  environment: process.env.ENVIRONMENT || 'development'
+};
+logger.info({
+  event: 'service_start',
+  ...serviceInfo
+}, 'Starting Tsunami service');
 
 const app = new Hono<{ Bindings: Bindings }>();
 app.use(cors());
 app.use('*', createDetailedLoggerMiddleware());
-app.use('*', createErrorMiddleware(formatZodError));
+app.use('*', createErrorMiddleware({
+  errorMapper: (err) => {
+    if (err instanceof Error && err.name === 'ZodError') {
+      // Format Zod validation errors
+      return new ValidationError('Validation error', formatZodError(err as any));
+    }
+    return toDomeError(err);
+  }
+}));
 app.get('/', c => c.text('Hello from Tsunami!'));
 
 /* ─────────── schemas ─────────── */
@@ -78,7 +127,13 @@ function historyRoute(path: string, idParamKey: string, fetcher: HistoryFetcher)
       const { limit } = c.req.valid('query');
 
       const history = await fetcher(c.env.SYNC_PLAN, id, limit);
-      logger.info({ id, path, count: history.length }, 'History fetched');
+      logger.info({
+        event: 'history_fetched',
+        id,
+        path,
+        count: history.length,
+        requestId: c.req.header('x-request-id')
+      }, 'History fetched successfully');
 
       return c.json({ success: true, [idParamKey]: id, history });
     }),
@@ -93,41 +148,92 @@ app.post('/resource/github', zValidator('json', githubRepoSchema), async c =>
     const { owner, repo, userId } = c.req.valid('json');
     const resourceId = `${owner}/${repo}`;
     const { syncPlan } = buildServices(c.env);
+    const requestId = c.req.header('x-request-id') || 'unknown';
 
-    logger.info({ owner, repo, resourceId, userId }, 'Registering GitHub repository');
+    logger.info({
+      event: 'github_repo_registration_start',
+      owner,
+      repo,
+      resourceId,
+      userId,
+      requestId
+    }, 'Starting GitHub repository registration');
 
     // create sync plan (or skip if it exists)
     let syncPlanId: string;
     try {
       // Try to create a brand‑new sync‑plan
-      syncPlanId = await syncPlan.createSyncPlan('github', resourceId, userId);
-      logger.info({ syncPlanId, resourceId }, 'Sync‑plan created');
+      syncPlanId = await trackOperation(
+        'create_sync_plan',
+        () => syncPlan.createSyncPlan('github', resourceId, userId),
+        { resourceId, userId, requestId }
+      );
+      logger.info({
+        event: 'sync_plan_created',
+        syncPlanId,
+        resourceId,
+        requestId
+      }, 'Sync‑plan created successfully');
     } catch (err) {
-      if (err instanceof AlreadyExistsError) {
+      if (err instanceof ConflictError) {
         // Plan exists – fetch its id
-        const plan = await syncPlan.getSyncPlan(resourceId);
+        const plan = await trackOperation(
+          'get_sync_plan',
+          () => syncPlan.getSyncPlan(resourceId),
+          { resourceId, requestId }
+        );
         syncPlanId = plan.id;
-        logger.info({ syncPlanId, resourceId }, 'Sync‑plan already exists');
+        logger.info({
+          event: 'sync_plan_exists',
+          syncPlanId,
+          resourceId,
+          requestId
+        }, 'Sync‑plan already exists');
       } else {
-        throw err;
+        throw toDomeError(err, 'Failed to create or retrieve sync plan', {
+          resourceId,
+          userId,
+          requestId
+        });
       }
     }
 
     // Always attach the user if supplied (idempotent if already attached)
     if (userId) {
-      await syncPlan.attachUser(syncPlanId, userId);
-      logger.info({ syncPlanId, userId }, 'User attached to sync‑plan');
+      await trackOperation(
+        'attach_user_to_plan',
+        () => syncPlan.attachUser(syncPlanId, userId),
+        { syncPlanId, userId, requestId }
+      );
+      logger.info({
+        event: 'user_attached',
+        syncPlanId,
+        userId,
+        requestId
+      }, 'User attached to sync‑plan successfully');
     }
 
-    const created = await syncPlan.initializeResource(
-      { resourceId, providerType: ProviderType.GITHUB, userId },
-      /* cadenceSecs = */ 3_600,
+    const created = await trackOperation(
+      'initialize_resource',
+      () => syncPlan.initializeResource(
+        { resourceId, providerType: ProviderType.GITHUB, userId },
+        /* cadenceSecs = */ 3_600,
+      ),
+      { syncPlanId, resourceId, userId, requestId }
     );
 
     logger.info(
-      { syncPlanId, resourceId, created },
+      {
+        event: 'github_repo_initialized',
+        syncPlanId,
+        resourceId,
+        created,
+        requestId
+      },
       'GitHub repository initialised & synced successfully',
     );
+    
+    metrics.trackOperation('github_repo_registration', true, { created: String(created) });
 
     return c.json({
       success: true,

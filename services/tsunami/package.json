@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@dome/common": "workspace:*",
+    "@dome/errors": "workspace:*",
     "@dome/logging": "workspace:*",
     "@hono/zod-validator": "^0.1.11",
     "drizzle-orm": "^0.42.0",

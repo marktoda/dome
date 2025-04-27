@@ -1,60 +1,53 @@
+import {
+  ValidationError,
+  NotFoundError,
+  InternalError,
+  ConflictError,
+  ServiceUnavailableError,
+  toDomeError,
+  assertValid,
+  assertExists,
+  createErrorFactory,
+} from '@dome/errors';
+
+// Create domain-specific error factory
+export const AiProcessorErrors = createErrorFactory('aiprocessor', {
+  service: 'ai-processor',
+});
+
 /**
- * Custom error for validation failures
+ * Specialized error for LLM processing failures
  */
-export class ValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ValidationError';
+export class LLMProcessingError extends InternalError {
+  constructor(message: string, details?: Record<string, any>, cause?: Error) {
+    super(message, {
+      code: 'LLM_PROCESSING_ERROR',
+      ...details,
+    }, cause);
   }
 }
 
 /**
- * Custom error for queue operations
+ * Specialized error for content processing failures
  */
-export class QueueError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'QueueError';
+export class ContentProcessingError extends InternalError {
+  constructor(message: string, details?: Record<string, any>, cause?: Error) {
+    super(message, {
+      code: 'CONTENT_PROCESSING_ERROR',
+      ...details,
+    }, cause);
   }
 }
 
 /**
- * Custom error for persistence operations
+ * Specialized error for queue operations
  */
-export class PersistenceError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'PersistenceError';
-  }
-}
-
-/**
- * Custom error for notification operations
- */
-export class NotificationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NotificationError';
-  }
-}
-
-/**
- * Custom error for authorization failures
- */
-export class AuthorizationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AuthorizationError';
-  }
-}
-
-/**
- * Custom error for resource not found
- */
-export class NotFoundError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NotFoundError';
+export class QueueError extends InternalError {
+  constructor(message: string, details?: Record<string, any>, cause?: Error) {
+    super(message, {
+      code: 'QUEUE_ERROR',
+      ...details,
+    }, cause);
   }
 }
 
@@ -64,19 +57,8 @@ export class NotFoundError extends Error {
  * @returns Error type string
  */
 export function determineErrorType(error: unknown): string {
-  if (error instanceof ValidationError) {
-    return 'validation_error';
-  } else if (error instanceof QueueError) {
-    return 'queue_error';
-  } else if (error instanceof PersistenceError) {
-    return 'persistence_error';
-  } else if (error instanceof NotificationError) {
-    return 'notification_error';
-  } else if (error instanceof AuthorizationError) {
-    return 'authorization_error';
-  } else if (error instanceof NotFoundError) {
-    return 'not_found_error';
-  } else {
-    return 'internal_error';
-  }
+  const domeError = toDomeError(error);
+  return domeError.code;
 }
+
+export { toDomeError, assertValid, assertExists };

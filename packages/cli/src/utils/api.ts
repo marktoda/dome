@@ -169,18 +169,18 @@ export async function listItems(type: 'notes' | 'tasks', filter?: string): Promi
     items = Array.isArray(response.notes)
       ? response.notes
       : Array.isArray(response.items)
-      ? response.items
-      : Array.isArray(response)
-      ? response
-      : [];
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
   } else {
     items = Array.isArray(response.tasks)
       ? response.tasks
       : Array.isArray(response.items)
-      ? response.items
-      : Array.isArray(response)
-      ? response
-      : [];
+        ? response.items
+        : Array.isArray(response)
+          ? response
+          : [];
   }
 
   // Return an object with the appropriate property containing the items array
@@ -456,7 +456,7 @@ export async function chat(
                   console.log(
                     '[DEBUG] No recognized content format:',
                     JSON.stringify(data).substring(0, 100) +
-                      (JSON.stringify(data).length > 100 ? '...' : ''),
+                    (JSON.stringify(data).length > 100 ? '...' : ''),
                   );
 
                   // Try to extract any string content
@@ -700,7 +700,7 @@ export async function chat(
 
       // Use the new non-streaming endpoint
       console.log('[DEBUG] Using /chat/message endpoint for non-streaming request');
-      const response = await api.post('/chat/message', nonStreamingPayload);
+      const response = await api.post('/chat', nonStreamingPayload);
       console.log('[DEBUG] Non-streaming response received:', response);
 
       // Enhanced logging for debugging
@@ -708,6 +708,19 @@ export async function chat(
         console.log('[DEBUG] Response type:', typeof response);
         console.log('[DEBUG] Response has success property:', 'success' in response);
         console.log('[DEBUG] Response has response property:', 'response' in response);
+        console.log('[DEBUG] Response has data property:', 'data' in response);
+        
+        // Log the structure to understand nested properties
+        const structure = {
+          hasSuccess: 'success' in response,
+          hasResponse: 'response' in response,
+          hasData: 'data' in response,
+          dataHasResponse: response.data && 'response' in response.data,
+          nestedResponseStructure: response.data?.response ?
+            Object.keys(response.data.response).join(',') : 'N/A'
+        };
+        console.log('[DEBUG] Response structure:', JSON.stringify(structure));
+        
         if ('response' in response) {
           console.log('[DEBUG] Response.response type:', typeof response.response);
           console.log(
@@ -718,6 +731,17 @@ export async function chat(
             console.log(
               '[DEBUG] Response.response preview:',
               response.response.substring(0, 100) + (response.response.length > 100 ? '...' : ''),
+            );
+          }
+        }
+        
+        if ('data' in response && response.data && 'response' in response.data) {
+          console.log('[DEBUG] Response.data.response type:', typeof response.data.response);
+          if (typeof response.data.response === 'object' && 'response' in response.data.response) {
+            console.log('[DEBUG] Found nested response in data.response.response');
+            console.log('[DEBUG] Final response content:',
+              typeof response.data.response.response === 'string' ?
+                response.data.response.response.substring(0, 100) : 'not a string'
             );
           }
         }
@@ -737,7 +761,22 @@ export async function chat(
       }
 
       // Handle the response structure properly
-      if (response && response.success === true && typeof response.response === 'string') {
+      // Handle the new structure with data.response.response
+      if (
+        response &&
+        response.success === true &&
+        'data' in response &&
+        response.data &&
+        typeof response.data === 'object' &&
+        'response' in response.data &&
+        response.data.response &&
+        typeof response.data.response === 'object' &&
+        'response' in response.data.response &&
+        typeof response.data.response.response === 'string'
+      ) {
+        console.log('[DEBUG] Found response in data.response.response path');
+        return response.data.response.response;
+      } else if (response && response.success === true && typeof response.response === 'string') {
         // Return just the response text if it's available
         return response.response;
       } else if (response && typeof response === 'string') {
@@ -753,7 +792,7 @@ export async function chat(
             // Handle case where response.response.response exists but isn't a string
             return String(
               response.response.response ||
-                "I'm sorry, but I couldn't generate a response at this time.",
+              "I'm sorry, but I couldn't generate a response at this time.",
             );
           } else {
             // Try to extract any text from the object

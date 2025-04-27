@@ -7,7 +7,18 @@ This document outlines the standards and best practices for error handling in th
 The Dome project uses a consistent error hierarchy based on the `DomeError` class. All application-specific errors should extend this base class.
 
 ```typescript
-import { DomeError, ValidationError, NotFoundError } from '@dome/errors';
+import { 
+  DomeError, 
+  ValidationError, 
+  NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+  BadRequestError,
+  InternalError,
+  ConflictError,
+  RateLimitError,
+  ServiceUnavailableError
+} from '@dome/errors';
 ```
 
 ### Base Error Class
@@ -23,13 +34,17 @@ import { DomeError, ValidationError, NotFoundError } from '@dome/errors';
 
 The following standard error types are provided:
 
-| Error Class         | Code               | Status Code | Use Case                  |
-| ------------------- | ------------------ | ----------- | ------------------------- |
-| `ValidationError`   | `VALIDATION_ERROR` | 400         | Input validation failures |
-| `NotFoundError`     | `NOT_FOUND`        | 404         | Resource not found        |
-| `UnauthorizedError` | `UNAUTHORIZED`     | 401         | Authentication required   |
-| `ForbiddenError`    | `FORBIDDEN`        | 403         | Permission denied         |
-| `InternalError`     | `INTERNAL_ERROR`   | 500         | Unexpected server errors  |
+| Error Class             | Code                   | Status Code | Use Case                                      |
+|-------------------------|------------------------|-------------|-----------------------------------------------|
+| `ValidationError`       | `VALIDATION_ERROR`     | 400         | Input validation failures                     |
+| `BadRequestError`       | `BAD_REQUEST`          | 400         | Malformed requests                           |
+| `UnauthorizedError`     | `UNAUTHORIZED`         | 401         | Authentication required                      |
+| `ForbiddenError`        | `FORBIDDEN`            | 403         | Permission denied                            |
+| `NotFoundError`         | `NOT_FOUND`            | 404         | Resource not found                           |
+| `ConflictError`         | `CONFLICT`             | 409         | Resource conflicts (e.g., duplicates)        |
+| `RateLimitError`        | `RATE_LIMIT_EXCEEDED`  | 429         | Rate limit exceeded                          |
+| `InternalError`         | `INTERNAL_ERROR`       | 500         | Unexpected server errors                     |
+| `ServiceUnavailableError`| `SERVICE_UNAVAILABLE` | 503         | Service temporarily unavailable             |
 
 ## When to Use Each Error Type
 
@@ -47,6 +62,27 @@ Example:
 if (!isValidEmail(email)) {
   throw new ValidationError('Invalid email format', { field: 'email' });
 }
+
+// With multiple validation errors
+if (validationErrors.length > 0) {
+  throw new ValidationError('Validation failed', { errors: validationErrors });
+}
+```
+
+### BadRequestError
+
+Use `BadRequestError` when:
+
+- The request structure itself is malformed
+- Missing required headers or query parameters
+- Content-type issues
+
+Example:
+
+```typescript
+if (!request.headers.get('content-type')?.includes('application/json')) {
+  throw new BadRequestError('Content-Type must be application/json');
+}
 ```
 
 ### NotFoundError
@@ -61,7 +97,7 @@ Example:
 ```typescript
 const user = await userRepository.findById(userId);
 if (!user) {
-  throw new NotFoundError(`User with ID ${userId} not found`);
+  throw new NotFoundError(`User with ID ${userId} not found`, { userId });
 }
 ```
 
@@ -79,6 +115,10 @@ Example:
 if (!authToken) {
   throw new UnauthorizedError('Authentication required');
 }
+
+if (isTokenExpired(authToken)) {
+  throw new UnauthorizedError('Authentication token expired', { expiredAt: token.expiryTime });
+}
 ```
 
 ### ForbiddenError
@@ -91,8 +131,47 @@ Use `ForbiddenError` when:
 Example:
 
 ```typescript
-if (user.role !== 'admin') {
-  throw new ForbiddenError('Admin access required');
+if (user.role !== 'admin' && resource.ownerId !== user.id) {
+  throw new ForbiddenError('Insufficient permissions', { 
+    requiredRole: 'admin', 
+    userRole: user.role,
+    resourceId: resource.id 
+  });
+}
+```
+
+### ConflictError
+
+Use `ConflictError` when:
+
+- An entity being created already exists
+- A unique constraint is violated
+- A concurrent update conflict occurs
+
+Example:
+
+```typescript
+const existingUser = await userRepository.findByEmail(email);
+if (existingUser) {
+  throw new ConflictError('User with this email already exists', { email });
+}
+```
+
+### RateLimitError
+
+Use `RateLimitError` when:
+
+- A user or client has exceeded their allowed request rate
+- API usage quotas have been reached
+
+Example:
+
+```typescript
+if (requestCount > RATE_LIMIT) {
+  throw new RateLimitError('Rate limit exceeded', { 
+    limit: RATE_LIMIT, 
+    resetAt: new Date(Date.now() + RESET_PERIOD).toISOString() 
+  });
 }
 ```
 
@@ -110,7 +189,33 @@ Example:
 try {
   await databaseService.connect();
 } catch (error) {
-  throw new InternalError('Database connection failed', {}, error);
+  throw new InternalError('Database connection failed', {
+    operation: 'connect',
+    database: DB_NAME
+  }, error instanceof Error ? error : undefined);
+}
+```
+
+### ServiceUnavailableError
+
+Use `ServiceUnavailableError` when:
+
+- A service is temporarily unavailable (maintenance, overload)
+- A required downstream service is not responding
+
+Example:
+
+```typescript
+if (isMaintenanceMode) {
+  throw new ServiceUnavailableError('Service is in maintenance mode', {
+    estimatedResumption: maintenanceEndTime
+  });
+}
+
+if (!dependencyService.isAvailable()) {
+  throw new ServiceUnavailableError('Dependency service unavailable', {
+    dependency: 'payment-processor'
+  });
 }
 ```
 
@@ -122,6 +227,7 @@ try {
 2. **Include meaningful messages**: Error messages should be clear and descriptive.
 3. **Add context in details**: Use the `details` parameter to provide additional context.
 4. **Chain errors**: Use the `cause` parameter to preserve the original error.
+5. **Standardize codes**: Follow consistent code naming conventions.
 
 ```typescript
 try {
@@ -129,7 +235,11 @@ try {
 } catch (error) {
   throw new ValidationError(
     'Failed to process input data',
-    { inputId: input.id },
+    { 
+      inputId: input.id,
+      operation: 'processData',
+      step: 'validation' 
+    },
     error instanceof Error ? error : undefined,
   );
 }
@@ -140,19 +250,89 @@ try {
 1. **Handle errors at the appropriate level**: Catch errors where you can provide meaningful recovery or feedback.
 2. **Don't swallow errors**: Always log or rethrow errors unless you have a good reason not to.
 3. **Transform errors when crossing boundaries**: Convert internal errors to appropriate user-facing errors.
+4. **Use utility functions**: Leverage the error utilities for consistent handling.
 
 ```typescript
+import { toDomeError, logError } from '@dome/errors';
+
 try {
   return await userService.createUser(userData);
 } catch (error) {
-  if (error instanceof ValidationError) {
+  // Log the error with context
+  logError(error, 'User creation failed', { userData });
+  
+  // Convert to an appropriate DomeError if it's not already
+  const domeError = error instanceof DomeError ? error : toDomeError(error, 'Failed to create user');
+  
+  if (domeError instanceof ValidationError) {
     // Pass validation errors through
-    throw error;
+    throw domeError;
   }
+  
+  // Don't expose internal details to users
+  throw new InternalError('An error occurred while creating user');
+}
+```
 
-  // Log and transform other errors
-  logger.error('User creation failed', { error, userData });
-  throw new InternalError('Failed to create user');
+### Using Error Utilities
+
+The `@dome/errors` package provides several utilities to make error handling more consistent:
+
+#### Error Conversion
+
+```typescript
+import { toDomeError } from '@dome/errors';
+
+// Converts any error type to the most appropriate DomeError
+const domeError = toDomeError(
+  error,
+  'Operation failed', // Default message
+  { operation: 'processData' } // Default details
+);
+```
+
+#### Assertions
+
+```typescript
+import { assertValid, assertExists } from '@dome/errors';
+
+// Throws ValidationError if false
+assertValid(userId && userId.length > 0, 'User ID is required');
+
+// Throws NotFoundError if null/undefined
+const user = assertExists(await db.user.findById(userId), `User with ID ${userId} not found`);
+```
+
+#### Error Factory for Domains
+
+```typescript
+import { createErrorFactory } from '@dome/errors';
+
+// Create domain-specific error factory
+const userErrors = createErrorFactory('UserService', { component: 'user-management' });
+
+// Use with consistent domain prefixing
+throw userErrors.validation('Email is required', { field: 'email' });
+throw userErrors.notFound(`User with ID ${userId} not found`);
+
+// Use wrapped operations
+return userErrors.wrap(
+  () => updateUser(user),
+  'Failed to update user',
+  { userId: user.id }
+);
+```
+
+#### Database Error Handling
+
+```typescript
+import { handleDatabaseError } from '@dome/errors';
+
+try {
+  return await db.user.create({ data: userData });
+} catch (dbError) {
+  // Automatically converts DB-specific errors to appropriate DomeErrors
+  throw handleDatabaseError(dbError, 'createUser', { userData });
 }
 ```
 
@@ -166,20 +346,18 @@ import { Hono } from 'hono';
 
 const app = new Hono();
 
-// Apply error handling middleware
+// Basic error handler
 app.use('*', errorHandler());
 
-// Define routes
-app.get('/users/:id', async c => {
-  const userId = c.req.param('id');
-  const user = await userService.findById(userId);
-
-  if (!user) {
-    throw new NotFoundError(`User with ID ${userId} not found`);
+// With custom options
+app.use('*', errorHandler({
+  includeStack: process.env.NODE_ENV !== 'production',
+  includeCause: process.env.NODE_ENV !== 'production',
+  errorMapper: (err) => {
+    // Custom error mapping logic
+    return err instanceof DomeError ? err : new InternalError('Internal server error', {}, err instanceof Error ? err : undefined);
   }
-
-  return c.json({ user });
-});
+}));
 ```
 
 The middleware will:
@@ -205,6 +383,20 @@ All API errors are returned in a consistent format:
 }
 ```
 
+In development environments, additional debugging information may be included:
+
+```json
+{
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "Database connection failed",
+    "details": { "operation": "connect" },
+    "stack": "Error: Database connection failed\n    at connectToDatabase (...)",
+    "cause": "ECONNREFUSED 127.0.0.1:5432"
+  }
+}
+```
+
 ## Guidelines for Error Messages and Codes
 
 ### Error Messages
@@ -213,6 +405,7 @@ All API errors are returned in a consistent format:
 2. **Use plain language**: Write messages that are easy to understand.
 3. **Be consistent**: Use a consistent tone and format across all error messages.
 4. **Include actionable information**: When possible, suggest how to fix the error.
+5. **Follow the format**: `[Domain/Component] Specific error description`
 
 ### Error Codes
 
@@ -227,15 +420,18 @@ When writing tests for error scenarios:
 1. **Test error throwing**: Verify that functions throw the expected error types.
 2. **Test error properties**: Check that error objects have the correct properties.
 3. **Test error middleware**: Ensure the middleware handles errors correctly.
+4. **Test error utilities**: Verify that utility functions work as expected.
 
 Example:
 
 ```typescript
 it('should throw ValidationError for invalid input', async () => {
   const invalidData = { name: '' };
-
+  
+  // Test that the right error type is thrown
   await expect(userService.createUser(invalidData)).rejects.toThrow(ValidationError);
-
+  
+  // Test error properties in detail
   try {
     await userService.createUser(invalidData);
   } catch (error) {
@@ -245,17 +441,132 @@ it('should throw ValidationError for invalid input', async () => {
     expect(error.details).toHaveProperty('field', 'name');
   }
 });
+
+it('should convert unknown errors to DomeErrors', () => {
+  const originalError = new Error('Database connection failed');
+  
+  const domeError = toDomeError(originalError, 'Operation failed');
+  
+  expect(domeError).toBeInstanceOf(InternalError);
+  expect(domeError.message).toBe('Database connection failed');
+  expect(domeError.cause).toBe(originalError);
+});
 ```
 
-## Migrating from Existing Error Handling
+## Common Error Scenarios
 
-If you're working with code that uses the older error handling approach from the `@dome/common` package:
+### Input Validation
 
-1. Replace `BaseError` with `DomeError`
-2. Replace `status` property with `statusCode`
-3. Update error constructors to use the new parameter structure
-4. Replace `createErrorMiddleware` with `errorHandler`
+```typescript
+import { ValidationError } from '@dome/errors';
+
+function validateUser(user) {
+  const errors = [];
+  
+  if (!user.name) {
+    errors.push({ field: 'name', message: 'Name is required' });
+  }
+  
+  if (!user.email || !isValidEmail(user.email)) {
+    errors.push({ field: 'email', message: 'Valid email is required' });
+  }
+  
+  if (errors.length > 0) {
+    throw new ValidationError('User validation failed', { errors });
+  }
+  
+  return user;
+}
+```
+
+### Resource Not Found
+
+```typescript
+import { NotFoundError } from '@dome/errors';
+
+async function getUserById(id) {
+  const user = await db.user.findUnique({ where: { id } });
+  
+  if (!user) {
+    throw new NotFoundError(`User with ID ${id} not found`, { userId: id });
+  }
+  
+  return user;
+}
+```
+
+### Authorization Checks
+
+```typescript
+import { UnauthorizedError, ForbiddenError } from '@dome/errors';
+
+function checkAccess(user, resource) {
+  if (!user) {
+    throw new UnauthorizedError('Authentication required');
+  }
+  
+  if (resource.ownerId !== user.id && !user.roles.includes('admin')) {
+    throw new ForbiddenError('Access denied', {
+      resourceId: resource.id,
+      requiredRoles: ['admin', 'owner']
+    });
+  }
+}
+```
+
+### External Service Calls
+
+```typescript
+import { ServiceUnavailableError, InternalError } from '@dome/errors';
+
+async function callExternalAPI(endpoint, data) {
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      
+      if (response.status === 503) {
+        throw new ServiceUnavailableError('External service unavailable', {
+          status: response.status,
+          endpoint
+        });
+      }
+      
+      throw new InternalError(`External API error: ${text}`, {
+        status: response.status,
+        endpoint
+      });
+    }
+    
+    return await response.json();
+  } catch (error) {
+    if (error instanceof DomeError) throw error;
+    
+    if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+      throw new ServiceUnavailableError('External service request timed out', {
+        endpoint
+      }, error);
+    }
+    
+    throw new InternalError('Failed to call external service', { endpoint }, error);
+  }
+}
+```
 
 ## Conclusion
 
 Consistent error handling improves the developer experience, makes debugging easier, and provides better feedback to API consumers. By following these standards, we ensure that errors throughout the Dome project are handled in a consistent and user-friendly way.
+
+Always remember:
+1. Use the most specific error type
+2. Include meaningful context
+3. Preserve error causes
+4. Convert errors appropriately at boundaries
+5. Return standardized error responses
+6. Log detailed error information
+7. Use the provided error utilities for consistency
