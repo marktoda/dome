@@ -26,7 +26,7 @@ export class ChatController {
    * @param env Environment bindings
    * @param services Service container
    */
-  constructor(private readonly env: Env, private readonly services: Services) {}
+  constructor(private readonly env: Env, private readonly services: Services) { }
 
   /**
    * Generate a chat response with streaming
@@ -53,7 +53,7 @@ export class ChatController {
               hasOptions: !!request.options,
               stream: !!request.stream,
             },
-            'Received chat request',
+            'Received chat request'
           );
 
           // Validate request
@@ -65,35 +65,22 @@ export class ChatController {
               userId: validatedRequest.userId,
               messageCount: validatedRequest.messages?.length || 0,
             },
-            'Validated chat request',
+            'Validated chat request'
           );
 
           // Validate the request as the initial state
           const validatedState = validateInitialState(validatedRequest);
-
-          // Initialize checkpointer
-          await this.services.checkpointer.initialize();
 
           // Initialize data retention manager
           await this.services.dataRetention.initialize();
 
           // Register this chat session for retention
           const runId = validatedRequest.runId || crypto.randomUUID();
-
-          // Get the userId from the validated state
           const userId = validatedState.userId;
-
           await this.services.dataRetention.registerDataRecord(runId, userId, 'chatHistory');
 
           // Apply security to messages
           validatedState.messages = secureMessages(validatedState.messages);
-
-          // Build the chat graph
-          const graph = await buildChatGraph(
-            this.env,
-            this.services.checkpointer,
-            this.services.toolRegistry,
-          );
 
           // Create a state object with a consistent structure
           const state = {
@@ -110,27 +97,11 @@ export class ChatController {
             },
           };
 
-          // Use the graph's stream method for streaming responses
-          const result = await graph.stream(state, {
-            configurable: {
-              runId: runId,
-            },
-          });
+          // Process the chat using the common handler
+          const response = await this.processChatRequest(state, runId, startTime, 'generated');
 
-          // Transform to SSE stream
-          const transformedStream = transformToSSE(result, startTime);
-
-          // Track metrics
-          metrics.increment('chat_orchestrator.chat.generated', 1);
-
-          // Return the stream
-          return new Response(transformedStream, {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-            },
-          });
+          // Return the response
+          return response;
         } catch (error) {
           // Log error
           logError(error, 'Error generating chat response', {
@@ -153,7 +124,7 @@ export class ChatController {
             },
           });
         }
-      },
+      }
     );
   }
 
@@ -182,20 +153,10 @@ export class ChatController {
             newMessage = secureMessages([validatedRequest.newMessage])[0];
           }
 
-          // Initialize checkpointer
-          await this.services.checkpointer.initialize();
-
-          // Build the chat graph
-          const graph = await buildChatGraph(
-            this.env,
-            this.services.checkpointer,
-            this.services.toolRegistry,
-          );
-
           // Create a new state object with the message
-          const newState = {
+          const state = {
             userId: validatedRequest.runId, // Use runId as userId for now
-            messages: [newMessage],
+            messages: newMessage ? [newMessage] : [],
             options: {
               enhanceWithContext: true,
               maxContextItems: 5,
@@ -214,26 +175,11 @@ export class ChatController {
             },
           };
 
-          const result = await graph.stream(newState, {
-            configurable: {
-              runId: validatedRequest.runId,
-            },
-          });
+          // Process the chat using the common handler
+          const response = await this.processChatRequest(state, validatedRequest.runId, startTime, 'resumed');
 
-          // Transform to SSE stream
-          const transformedStream = transformToSSE(result, startTime);
-
-          // Track metrics
-          metrics.increment('chat_orchestrator.chat.resumed', 1);
-
-          // Return the stream
-          return new Response(transformedStream, {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-            },
-          });
+          // Return the response
+          return response;
         } catch (error) {
           // Log error
           logError(error, 'Error resuming chat session', {
@@ -256,8 +202,67 @@ export class ChatController {
             },
           });
         }
-      },
+      }
     );
+  }
+
+  /**
+   * Common method to process chat requests for both new chats and resuming sessions
+   * @param state The initial state for the graph
+   * @param runId The run ID for the chat session
+   * @param startTime The time when processing started
+   * @param metricsType The type of metrics to track ('generated' or 'resumed')
+   * @returns A streaming response
+   */
+  private async processChatRequest(
+    state: AgentState,
+    runId: string,
+    startTime: number,
+    metricsType: 'generated' | 'resumed'
+  ): Promise<Response> {
+    // Initialize checkpointer
+    await this.services.checkpointer.initialize();
+
+    // Build the chat graph
+    const graph = await buildChatGraph(
+      this.env,
+      this.services.checkpointer,
+      this.services.toolRegistry
+    );
+
+    // Generate a unique thread_id for this request to prevent checkpoint conflicts
+    const thread_id = crypto.randomUUID();
+
+    this.logger.info(
+      { thread_id, runId },
+      metricsType === 'generated'
+        ? 'Starting graph stream with fresh thread_id'
+        : 'Resuming chat with fresh thread_id'
+    );
+
+    // Use "messages" mode to get LLM tokens as they're generated
+    const result = await graph.stream(state, {
+      configurable: {
+        thread_id: thread_id,
+        runId: runId,
+      },
+      streamMode: "messages", // Optimized for LLM token streaming
+    });
+
+    // Transform to SSE stream
+    const transformedStream = transformToSSE(result, startTime);
+
+    // Track metrics
+    metrics.increment(`chat_orchestrator.chat.${metricsType}`, 1);
+
+    // Return the stream
+    return new Response(transformedStream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    });
   }
 
   /**

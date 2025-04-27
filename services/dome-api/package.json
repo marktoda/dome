@@ -16,6 +16,7 @@
     "@dome/metrics": "workspace:*",
     "@dome/silo": "workspace:*",
     "@dome/constellation": "workspace:*",
+    "@dome/chat": "workspace:*",
     "@dome/ai-processor": "workspace:*",
     "@dqbd/tiktoken": "^1.0.7",
     "@graphql-tools/schema": "^10.0.2",

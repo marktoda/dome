@@ -1,5 +1,5 @@
-import { getLogger, logError } from '@dome/logging';
-import { AIMessage } from '../types';
+import { getLogger } from '@dome/logging';
+import { AIMessage, WorkersAiMessage, WorkersAi } from '../types';
 import {
   DEFAULT_MODEL,
   getModelConfig,
@@ -10,351 +10,177 @@ import {
   getResponseGenerationPrompt,
 } from '../config';
 
-/**
- * LLM model configuration
- */
 export const MODEL = DEFAULT_MODEL.id;
+const logger = getLogger();
 
-/**
- * Service for interacting with the LLM
- */
+/* -------------------------------------------------------- */
+/*  Core helpers                                            */
+/* -------------------------------------------------------- */
+const isTest = () => process.env.NODE_ENV === 'test' || !!process.env.VITEST;
+const mockResponse = 'This is a mock response for testing purposes.';
+const fallbackResponse =
+  "I'm sorry, but I couldn't process that just now – please try again.";
+
+function withTimeout<T>(p: Promise<T>, ms = getTimeoutConfig().llmServiceTimeout) {
+  return Promise.race<T>([
+    p,
+    new Promise<T>((_, rej) =>
+      setTimeout(() => rej(new Error(`LLM call timed out after ${ms} ms`)), ms),
+    ),
+  ]);
+}
+
+function truncateContext(context: string, cfg: ReturnType<typeof getModelConfig>): string {
+  const ctxTokens = Math.ceil(context.length / 4);
+  const maxCtx = Math.floor(cfg.maxContextTokens * 0.5);
+  if (ctxTokens <= maxCtx) return context;
+  const ratio = maxCtx / ctxTokens;
+  return context.slice(0, Math.floor(context.length * ratio)) + '…';
+}
+
+/* -------------------------------------------------------- */
+/*  Thin Workers-AI wrapper                                 */
+/* -------------------------------------------------------- */
 export class LlmService {
-  private static readonly logger = getLogger();
-  public static readonly MODEL = MODEL; // Reference to the exported MODEL constant
-  public static readonly DEFAULT_MODEL_CONFIG = DEFAULT_MODEL;
+  static MODEL = MODEL;
 
-  /**
-   * Execute a promise with a timeout
-   * @param promise The promise to execute
-   * @param timeoutMs Timeout in milliseconds
-   * @returns Promise result
-   */
-  private static async withTimeout<T>(
-    promise: Promise<T>,
-    timeoutMs = getTimeoutConfig().llmServiceTimeout,
-  ): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`AI call timed-out after ${timeoutMs} ms`)), timeoutMs),
-      ),
-    ]);
-  }
-
-  /**
-   * Get a fallback response for when the AI service is unavailable
-   * @returns Fallback response
-   */
-  static fallbackResponse(): string {
-    return "I'm sorry, but I'm unable to process your request at the moment due to a technical issue. The AI service is currently unavailable. Please try again later.";
-  }
-
-  /**
-   * Check if we're in a test environment
-   * @returns True if in test environment
-   */
-  private static isTestEnvironment(): boolean {
-    return process.env.NODE_ENV === 'test' || !!process.env.VITEST;
-  }
-
-  /**
-   * Get a mock response for testing
-   * @returns Mock response
-   */
-  private static getMockResponse(): string {
-    return 'This is a mock response for testing purposes.';
-  }
-
-  /**
-   * Call the AI service with the given messages
-   * @param env Environment bindings
-   * @param messages Array of messages to send to the AI
-   * @param options Additional options for the LLM call
-   * @returns Promise resolving to the AI response
-   */
+  /* ------------------------------------------------------ */
+  /*  Low‑level wrappers                                    */
+  /* ------------------------------------------------------ */
   static async call(
     env: Env,
     messages: AIMessage[],
-    options?: {
-      traceId?: string;
-      spanId?: string;
-      temperature?: number;
-      maxTokens?: number;
-    },
+    opts: { temperature?: number; maxTokens?: number } = {},
   ): Promise<string> {
-    // Check if Workers AI is available
+    if (!env.AI) return isTest() ? mockResponse : fallbackResponse;
     try {
-      // @ts-ignore - Allow access to AI through dynamic access
-      if (!env.AI) {
-        // In test environment, return a mock response
-        if (this.isTestEnvironment()) {
-          return this.getMockResponse();
-        }
+      // Cast messages to WorkersAiMessage[]
+      const aiMessages: WorkersAiMessage[] = messages.map(m => ({
+        role: m.role,
+        content: m.content
+      }));
 
-        this.logger.warn('Workers AI binding is not available, using fallback response');
-        return this.fallbackResponse();
-      }
+      // Use typed Workers AI
+      const { response } = await withTimeout(
+        (env.AI as unknown as WorkersAi).run(MODEL, {
+          messages: aiMessages,
+          ...opts
+        })
+      ) as { response: string };
+      
+      return response ?? fallbackResponse;
     } catch (e) {
-      logError(e, 'Error accessing AI binding, using fallback response');
-      return this.fallbackResponse();
-    }
-
-    try {
-      // Call Workers AI with timeout and error handling
-      this.logger.info(
-        {
-          model: MODEL,
-          temperature: options?.temperature,
-          maxTokens: options?.maxTokens,
-          traceId: options?.traceId,
-          spanId: options?.spanId,
-        },
-        'Calling Workers AI',
-      );
-
-      // @ts-ignore - Allow access to AI through dynamic access
-      const response = await this.withTimeout(
-        env.AI.run(MODEL, {
-          messages,
-          temperature: options?.temperature,
-          max_tokens: options?.maxTokens,
-        }),
-      );
-
-      // Check if we have a valid response
-      // @ts-ignore - Ignoring type errors for now to make progress
-      if (!response || !response.response) {
-        this.logger.warn('AI returned an invalid or empty response, using fallback');
-        return "I'm sorry, but I couldn't generate a proper response at this time. Please try again with a different question.";
-      }
-
-      // @ts-ignore - Ignoring type errors for now to make progress
-      this.logger.info({ responseLength: response.response.length }, 'Got valid AI response');
-      // @ts-ignore - Ignoring type errors for now to make progress
-      return response.response;
-    } catch (error) {
-      logError(error, 'Error from AI service');
-
-      // Provide a fallback response instead of throwing
-      return "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.";
+      logger.warn({ err: e }, 'LLM call failed – returning fallback');
+      return fallbackResponse;
     }
   }
 
-  /**
-   * Generate a rewritten query based on the original query
-   * @param env Environment bindings
-   * @param originalQuery The original user query
-   * @param conversationContext Previous messages for context
-   * @param options Additional options
-   * @returns Promise resolving to the rewritten query
-   */
-  static async rewriteQuery(
-    env: Env,
-    originalQuery: string,
-    conversationContext: AIMessage[] = [],
-    options?: {
-      traceId?: string;
-      spanId?: string;
-    },
-  ): Promise<string> {
-    const systemPrompt = getQueryRewritingPrompt();
-
-    const messages: AIMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...conversationContext,
-      { role: 'user', content: `Original query: "${originalQuery}"` },
-    ];
-
-    try {
-      const rewrittenQuery = await this.call(env, messages, options);
-
-      // Clean up the response - remove quotes and any explanations
-      let cleanedQuery = rewrittenQuery.trim();
-
-      // Remove quotes if present
-      if (
-        (cleanedQuery.startsWith('"') && cleanedQuery.endsWith('"')) ||
-        (cleanedQuery.startsWith("'") && cleanedQuery.endsWith("'"))
-      ) {
-        cleanedQuery = cleanedQuery.substring(1, cleanedQuery.length - 1);
-      }
-
-      // If the response is too long or contains explanations, just return the original
-      if (cleanedQuery.length > originalQuery.length * 2 || cleanedQuery.includes('\n')) {
-        this.logger.warn(
-          { originalQuery, rewrittenQuery: cleanedQuery },
-          'Rewritten query seems invalid, using original',
-        );
-        return originalQuery;
-      }
-
-      return cleanedQuery;
-    } catch (error) {
-      logError(error, 'Error rewriting query', { originalQuery });
-      return originalQuery;
-    }
-  }
-
-  /**
-   * Analyze a query to determine if it should be split into multiple queries
-   * @param env Environment bindings
-   * @param query The query to analyze
-   * @param options Additional options
-   * @returns Promise resolving to analysis result
-   */
-  static async analyzeQueryComplexity(
-    env: Env,
-    query: string,
-    options?: {
-      traceId?: string;
-      spanId?: string;
-    },
-  ): Promise<{
-    isComplex: boolean;
-    shouldSplit: boolean;
-    reason: string;
-    suggestedQueries?: string[];
-  }> {
-    const systemPrompt = getQueryComplexityAnalysisPrompt();
-
-    const messages: AIMessage[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Analyze this query: "${query}"` },
-    ];
-
-    try {
-      const analysisResponse = await this.call(env, messages, options);
-
-      // Try to parse the JSON response
-      try {
-        // Extract JSON from markdown code blocks if present
-        let jsonStr = analysisResponse;
-
-        // Check if response is wrapped in markdown code blocks
-        const codeBlockMatch = analysisResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-        if (codeBlockMatch && codeBlockMatch[1]) {
-          jsonStr = codeBlockMatch[1].trim();
-        }
-
-        const analysis = JSON.parse(jsonStr);
-        return {
-          isComplex: !!analysis.isComplex,
-          shouldSplit: !!analysis.shouldSplit,
-          reason: analysis.reason || 'No reason provided',
-          suggestedQueries: Array.isArray(analysis.suggestedQueries)
-            ? analysis.suggestedQueries
-            : undefined,
-        };
-      } catch (parseError) {
-        logError(parseError, 'Failed to parse query analysis response', {
-          response: analysisResponse,
-          query,
-        });
-        return {
-          isComplex: false,
-          shouldSplit: false,
-          reason: 'Failed to analyze query complexity',
-        };
-      }
-    } catch (error) {
-      logError(error, 'Error analyzing query complexity', { query });
-      return {
-        isComplex: false,
-        shouldSplit: false,
-        reason: 'Error during analysis',
-      };
-    }
-  }
-
-  /**
-   * Generate a response based on retrieved documents and conversation history
-   * @param env Environment bindings
-   * @param messages Conversation history
-   * @param context Retrieved documents formatted for the prompt
-   * @param options Additional options
-   * @returns Promise resolving to the generated response
-   */
-  static async generateResponse(
+  static async *stream(
     env: Env,
     messages: AIMessage[],
-    context: string,
-    options?: {
-      traceId?: string;
-      spanId?: string;
+    opts: { temperature?: number; maxTokens?: number } = {},
+  ): AsyncGenerator<string> {
+    if (!env.AI) {
+      yield isTest() ? mockResponse : fallbackResponse;
+      return;
+    }
+
+    let stream: ReadableStream;
+    try {
+      // Cast messages to WorkersAiMessage[]
+      const aiMessages: WorkersAiMessage[] = messages.map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
+      // Use typed Workers AI
+      stream = await withTimeout(
+        (env.AI as unknown as WorkersAi).run(MODEL, {
+          messages: aiMessages,
+          stream: true,
+          ...opts
+        })
+      ) as ReadableStream;
+    } catch (e) {
+      logger.warn({ err: e }, 'LLM stream failed – sending fallback');
+      yield fallbackResponse;
+      return;
+    }
+
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      yield decoder.decode(value, { stream: true });
+    }
+  }
+
+  /* ------------------------------------------------------ */
+  /*  Higher‑level helpers                                  */
+  /* ------------------------------------------------------ */
+  static async rewriteQuery(
+    env: Env,
+    original: string,
+    ctx: AIMessage[] = [],
+  ): Promise<string> {
+    const msgs: AIMessage[] = [
+      { role: 'system', content: getQueryRewritingPrompt() },
+      ...ctx,
+      { role: 'user', content: `Original query: "${original}"` },
+    ];
+    const out = await this.call(env, msgs);
+    const trimmed = out.trim().replace(/^['"]|['"]$/g, '');
+    return trimmed.length > 2 * original.length || trimmed.includes('\n') ? original : trimmed;
+  }
+
+  static async analyzeQuery(
+    env: Env,
+    query: string,
+  ): Promise<{ isComplex: boolean; shouldSplit: boolean; reason: string; suggested?: string[] }> {
+    const msgs: AIMessage[] = [
+      { role: 'system', content: getQueryComplexityAnalysisPrompt() },
+      { role: 'user', content: `Analyze: "${query}"` },
+    ];
+    const out = await this.call(env, msgs);
+    try {
+      const json = JSON.parse(/```(?:json)?\s*([\s\S]*?)\s*```/.exec(out)?.[1] ?? out);
+      return {
+        isComplex: !!json.isComplex,
+        shouldSplit: !!json.shouldSplit,
+        reason: json.reason ?? '',
+        suggested: Array.isArray(json.suggestedQueries) ? json.suggestedQueries : undefined,
+      };
+    } catch {
+      return { isComplex: false, shouldSplit: false, reason: 'parse_error' };
+    }
+  }
+
+  /** Build + stream final answer */
+  static async *streamAnswer(
+    env: Env,
+    conv: AIMessage[],
+    docs: string,
+    opts: {
       temperature?: number;
       maxTokens?: number;
       includeSourceInfo?: boolean;
       modelId?: string;
-    },
-  ): Promise<string> {
-    // Get model configuration
-    const modelConfig = getModelConfig(options?.modelId || MODEL);
+    } = {},
+  ): AsyncGenerator<string> {
+    const cfg = getModelConfig(opts.modelId ?? MODEL);
+    const ctx = truncateContext(docs, cfg);
+    const sysPrompt = getResponseGenerationPrompt(ctx, opts.includeSourceInfo);
 
-    // Estimate token count for context
-    const contextTokens = Math.ceil(context.length / 4);
-    const messagesTokens = messages.reduce(
-      (total, msg) => total + Math.ceil(msg.content.length / 4),
-      0,
-    );
+    const inTokens = Math.ceil((sysPrompt.length + conv.reduce((n, m) => n + m.content.length, 0)) / 4);
+    const { maxResponseTokens } = calculateTokenLimits(cfg, inTokens, opts.maxTokens);
 
-    // If context is too large, truncate it
-    let finalContext = context;
-    // Use half of the model's context window for context, leaving room for messages and response
-    const maxContextTokens = Math.floor(modelConfig.maxContextTokens * 0.5);
-
-    if (contextTokens > maxContextTokens) {
-      this.logger.warn(
-        {
-          contextTokens,
-          maxContextTokens,
-          modelId: modelConfig.id,
-          traceId: options?.traceId,
-          spanId: options?.spanId,
-        },
-        'Context exceeds token limit, truncating',
-      );
-
-      // Simple truncation - in a real implementation, you might want to be smarter about this
-      const truncationRatio = maxContextTokens / contextTokens;
-      const truncatedLength = Math.floor(context.length * truncationRatio);
-      finalContext = context.substring(0, truncatedLength) + '...';
-    }
-
-    const systemPrompt = getResponseGenerationPrompt(finalContext, options?.includeSourceInfo);
-
-    // Calculate system prompt tokens
-    const systemPromptTokens = Math.ceil(systemPrompt.length / 4);
-
-    // Calculate total input tokens
-    const totalInputTokens = systemPromptTokens + messagesTokens;
-
-    // Calculate token limits based on model configuration
-    const { maxResponseTokens } = calculateTokenLimits(
-      modelConfig,
-      totalInputTokens,
-      options?.maxTokens,
-    );
-
-    this.logger.info(
-      {
-        modelId: modelConfig.id,
-        modelName: modelConfig.name,
-        maxContextTokens: modelConfig.maxContextTokens,
-        systemPromptTokens,
-        messagesTokens,
-        totalInputTokens,
-        maxResponseTokens,
-        traceId: options?.traceId,
-        spanId: options?.spanId,
-      },
-      'Token counts for LLM call',
-    );
-
-    const allMessages: AIMessage[] = [{ role: 'system', content: systemPrompt }, ...messages];
-
-    return this.call(env, allMessages, {
-      ...options,
+    const messages: AIMessage[] = [{ role: 'system', content: sysPrompt }, ...conv];
+    for await (const chunk of this.stream(env, messages, {
+      temperature: opts.temperature ?? cfg.defaultTemperature,
       maxTokens: maxResponseTokens,
-    });
+    })) {
+      yield chunk;
+    }
   }
 }

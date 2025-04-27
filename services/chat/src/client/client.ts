@@ -5,7 +5,7 @@
  * It provides methods for all Chat Orchestrator operations and handles error logging, metrics, and validation.
  */
 
-import { getLogger, withLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { ChatOrchestratorBinding, ChatRequest, chatRequestSchema, ResumeChatRequest } from '.';
 import { z } from 'zod';
 
@@ -40,7 +40,7 @@ export class ChatClient {
   constructor(
     private readonly binding: ChatOrchestratorBinding,
     private readonly metricsPrefix: string = 'chat_orchestrator.client',
-  ) {}
+  ) { }
 
   /**
    * Generate a chat response
@@ -50,109 +50,213 @@ export class ChatClient {
   async generateResponse(request: ChatRequest): Promise<ChatOrchestratorResponse> {
     const startTime = performance.now();
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'generateResponse',
-        userId: request.userId,
-        runId: request.runId,
-      },
-      async () => {
-        try {
-          // Validate request
-          const validatedRequest = chatRequestSchema.parse(request);
+    try {
+      // Validate request
+      const validatedRequest = chatRequestSchema.parse(request);
 
-          // Call the chat orchestrator directly via RPC
-          const response = await this.binding.generateChatResponse(validatedRequest);
+      // Call the chat orchestrator directly via RPC
+      const response = await this.binding.generateChatResponse(validatedRequest);
+      getLogger().info('[ChatClient]: Chat response received');
 
-          // Process the streaming response to extract the generated text and sources
-          const reader = response.body?.getReader();
-          if (!reader) {
-            throw new Error('Response body is not readable');
+      // Process the streaming response to extract the generated text and sources
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Response body is not readable');
+      }
+      getLogger().info('[ChatClient]: Reader available');
+
+      let generatedText = '';
+      const sources: any[] = [];
+      let executionTimeMs = 0;
+      let rawChunks: string[] = [];
+
+      // Read the stream directly
+      const textDecoder = new TextDecoder();
+      let buffer = '';
+      let totalBytesRead = 0;
+
+      try {
+        // Collect all chunks first
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            getLogger().info('[ChatClient]: End of stream reached');
+            break;
           }
-
-          let generatedText = '';
-          const sources: any[] = [];
-          let executionTimeMs = 0;
-
-          // Read the SSE stream
-          const textDecoder = new TextDecoder();
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            // Decode the chunk and add it to the buffer
-            buffer += textDecoder.decode(value, { stream: true });
-
-            // Process complete SSE events in the buffer
-            const events = buffer.split('\n\n');
-            buffer = events.pop() || ''; // Keep the last incomplete event in the buffer
-
-            for (const event of events) {
-              if (!event.trim()) continue;
-
-              const lines = event.split('\n');
-              const eventType = lines[0].replace('event: ', '');
-              const data = JSON.parse(lines[1].replace('data: ', ''));
-
-              if (eventType === 'text' && data.text) {
-                generatedText = data.text;
-              } else if (eventType === 'sources' && Array.isArray(data)) {
-                sources.push(...data);
-              } else if (eventType === 'final' && data.executionTimeMs) {
-                executionTimeMs = data.executionTimeMs;
-              } else if (eventType === 'error' && data.message) {
-                throw new Error(data.message);
+          
+          // Log every single chunk as it comes in
+          const chunk = textDecoder.decode(value, { stream: true });
+          totalBytesRead += value.length;
+          
+          getLogger().info({
+            chunkLength: chunk.length,
+            chunkPreview: chunk.substring(0, 100),
+            totalBytesRead
+          }, '[ChatClient]: Received chunk');
+          
+          rawChunks.push(chunk);
+          buffer += chunk;
+        }
+        
+        // Log the entire buffer for debugging
+        getLogger().info({
+          bufferLength: buffer.length,
+          bufferPreview: buffer.substring(0, 200)
+        }, '[ChatClient]: Complete buffer received');
+        
+        // First attempt: Try to parse as SSE events
+        const events = buffer.split('\n\n');
+        getLogger().info({ eventCount: events.length }, '[ChatClient]: Split buffer into events');
+        
+        let foundText = false;
+        
+        // Process each event
+        for (const event of events) {
+          if (!event.trim()) continue;
+          
+          // Log each event
+          getLogger().info({
+            eventLength: event.length,
+            eventPreview: event.substring(0, 100)
+          }, '[ChatClient]: Processing event');
+          
+          try {
+            // Try to extract event type and data
+            const lines = event.split('\n');
+            let eventType = '';
+            let dataContent = '';
+            
+            // Extract event type and data
+            for (const line of lines) {
+              if (line.startsWith('event:')) {
+                eventType = line.replace('event:', '').trim();
+              } else if (line.startsWith('data:')) {
+                dataContent = line.replace('data:', '').trim();
               }
             }
+            
+            // Found a valid event with data
+            if (dataContent) {
+              getLogger().info({
+                eventType,
+                dataContentLength: dataContent.length,
+                dataPreview: dataContent.substring(0, 100)
+              }, '[ChatClient]: Found data in event');
+              
+              // Try to parse as JSON first
+              try {
+                const data = JSON.parse(dataContent);
+                
+                // Handle known event types
+                if (eventType === 'text' && data.text) {
+                  getLogger().info({ textLength: data.text.length }, '[ChatClient]: Extracted text from JSON');
+                  generatedText = data.text;
+                  foundText = true;
+                } else if (eventType === 'sources' && Array.isArray(data)) {
+                  getLogger().info({ sourcesCount: data.length }, '[ChatClient]: Found sources');
+                  sources.push(...data);
+                } else if (eventType === 'final' && data.executionTimeMs) {
+                  getLogger().info({ executionTimeMs: data.executionTimeMs }, '[ChatClient]: Found execution time');
+                  executionTimeMs = data.executionTimeMs;
+                }
+              } catch (e) {
+                // Not JSON, try using raw data
+                getLogger().info({ error: e }, '[ChatClient]: Failed to parse as JSON, using raw data');
+                
+                // If this is a text event, use the raw data
+                if (eventType === 'text' && !foundText) {
+                  getLogger().info({ dataLength: dataContent.length }, '[ChatClient]: Using raw data as text');
+                  generatedText = dataContent;
+                  foundText = true;
+                }
+              }
+            }
+          } catch (e) {
+            getLogger().warn({ error: e }, '[ChatClient]: Error processing event');
           }
-
-          // Create the response object
-          const result: ChatOrchestratorResponse = {
-            response: generatedText,
-            sources: sources.length > 0 ? sources : undefined,
-            metadata: {
-              executionTimeMs: executionTimeMs || Math.round(performance.now() - startTime),
-              nodeTimings: {},
-              tokenCounts: {},
-            },
-          };
-
-          getLogger().info(
-            {
-              userId: request.userId,
-              responseLength: result.response?.length || 0,
-              executionTimeMs: result.metadata?.executionTimeMs,
-            },
-            'Chat response generated successfully',
-          );
-
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.generate_response.success`, 1);
-          if (result.metadata?.executionTimeMs) {
-            metrics.timing(
-              `${this.metricsPrefix}.generate_response.duration_ms`,
-              result.metadata.executionTimeMs,
-            );
-          }
-
-          return result;
-        } catch (error) {
-          logError(error, 'Error generating chat response via RPC', {
-            userId: request.userId,
-          });
-
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.generate_response.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
-
-          throw error;
         }
-      },
-    );
+        
+        // If we still don't have text, try alternative approaches
+        if (!generatedText && buffer.length > 0) {
+          getLogger().info('[ChatClient]: No text found in events, trying alternative extraction');
+          
+          // Approach 1: Look for a large text block
+          const cleanBuffer = buffer.replace(/event:.*?\n/g, '')
+                                  .replace(/data:/g, '')
+                                  .trim();
+          
+          if (cleanBuffer.length > 100) { // Arbitrary threshold for "real" content
+            getLogger().info({
+              cleanLength: cleanBuffer.length,
+              cleanPreview: cleanBuffer.substring(0, 200)
+            }, '[ChatClient]: Extracted clean text');
+            generatedText = cleanBuffer;
+          } else {
+            // Approach 2: Just use the raw concatenated chunks
+            const allContent = rawChunks.join('');
+            if (allContent.length > 100) {
+              getLogger().info({
+                allContentLength: allContent.length
+              }, '[ChatClient]: Using concatenated chunks');
+              generatedText = allContent;
+            }
+          }
+        }
+      } catch (streamError) {
+        getLogger().error({ error: streamError }, '[ChatClient]: Error processing stream');
+        throw streamError;
+      }
+      
+      // Log the final extracted text
+      getLogger().info({
+        extractedTextLength: generatedText?.length || 0,
+        textPreview: generatedText ? generatedText.substring(0, 100) : ''
+      }, '[ChatClient]: Final extracted text');
+
+      // Create the response object with the extracted text
+      const result: ChatOrchestratorResponse = {
+        response: generatedText || '',  // Ensure we never return undefined
+        sources: sources.length > 0 ? sources : undefined,
+        metadata: {
+          executionTimeMs: executionTimeMs || Math.round(performance.now() - startTime),
+          nodeTimings: {},
+          tokenCounts: {},
+        },
+      };
+
+      // Log the response
+      getLogger().info(
+        {
+          userId: request.userId,
+          responseLength: result.response?.length || 0,
+          executionTimeMs: result.metadata?.executionTimeMs,
+        },
+        'Chat response generated successfully',
+      );
+
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.generate_response.success`, 1);
+      if (result.metadata?.executionTimeMs) {
+        metrics.timing(
+          `${this.metricsPrefix}.generate_response.duration_ms`,
+          result.metadata.executionTimeMs,
+        );
+      }
+
+      return result;
+    } catch (error) {
+      logError(error, 'Error generating chat response via RPC', {
+        userId: request.userId,
+      });
+
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.generate_response.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
+
+      throw error;
+    }
   }
 
   /**
@@ -163,50 +267,41 @@ export class ChatClient {
   async streamResponse(request: ChatRequest): Promise<Response> {
     const startTime = performance.now();
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'streamResponse',
-        userId: request.userId,
-        runId: request.runId,
-      },
-      async () => {
-        try {
-          // Validate request
-          const validatedRequest = chatRequestSchema.parse(request);
+    try {
+      // Validate request
+      const validatedRequest = chatRequestSchema.parse(request);
 
-          // Call the chat orchestrator directly via RPC
-          const response = await this.binding.generateChatResponse(validatedRequest);
+      // Call the chat orchestrator directly via RPC
+      const response = await this.binding.generateChatResponse(validatedRequest);
 
-          getLogger().info(
-            {
-              userId: request.userId,
-              status: response.status,
-            },
-            'Chat stream initiated successfully',
-          );
+      // Log the response
+      getLogger().info(
+        {
+          userId: request.userId,
+          status: response.status,
+        },
+        'Chat stream initiated successfully',
+      );
 
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.stream_response.success`, 1);
-          metrics.timing(
-            `${this.metricsPrefix}.stream_response.latency_ms`,
-            performance.now() - startTime,
-          );
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.stream_response.success`, 1);
+      metrics.timing(
+        `${this.metricsPrefix}.stream_response.latency_ms`,
+        performance.now() - startTime,
+      );
 
-          // Return the streaming response directly
-          return response;
-        } catch (error) {
-          logError(error, 'Error streaming chat via RPC', { userId: request.userId });
+      // Return the streaming response directly
+      return response;
+    } catch (error) {
+      logError(error, 'Error streaming chat via RPC', { userId: request.userId });
 
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.stream_response.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.stream_response.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
 
-          throw error;
-        }
-      },
-    );
+      throw error;
+    }
   }
 
   /**
@@ -219,49 +314,41 @@ export class ChatClient {
     const startTime = performance.now();
     const { runId, newMessage } = request;
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'resumeChatSession',
+    try {
+      // Call the chat orchestrator directly via RPC
+      const response = await this.binding.resumeChatSession({
         runId,
-      },
-      async () => {
-        try {
-          // Call the chat orchestrator directly via RPC
-          const response = await this.binding.resumeChatSession({
-            runId,
-            newMessage,
-          });
+        newMessage,
+      });
 
-          getLogger().info(
-            {
-              runId,
-              status: response.status,
-            },
-            'Chat session resumed successfully',
-          );
+      // Log the response
+      getLogger().info(
+        {
+          runId,
+          status: response.status,
+        },
+        'Chat session resumed successfully',
+      );
 
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.resume_chat.success`, 1);
-          metrics.timing(
-            `${this.metricsPrefix}.resume_chat.latency_ms`,
-            performance.now() - startTime,
-          );
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.resume_chat.success`, 1);
+      metrics.timing(
+        `${this.metricsPrefix}.resume_chat.latency_ms`,
+        performance.now() - startTime,
+      );
 
-          // Return the streaming response directly
-          return response;
-        } catch (error) {
-          logError(error, 'Error resuming chat session via RPC', { runId });
+      // Return the streaming response directly
+      return response;
+    } catch (error) {
+      logError(error, 'Error resuming chat session via RPC', { runId });
 
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.resume_chat.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.resume_chat.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
 
-          throw error;
-        }
-      },
-    );
+      throw error;
+    }
   }
 
   /**
@@ -271,36 +358,28 @@ export class ChatClient {
   async getCheckpointStats(): Promise<any> {
     const startTime = performance.now();
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'getCheckpointStats',
-      },
-      async () => {
-        try {
-          // Call the chat orchestrator directly via RPC
-          const result = await this.binding.getCheckpointStats();
+    try {
+      // Call the chat orchestrator directly via RPC
+      const result = await this.binding.getCheckpointStats();
 
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.get_checkpoint_stats.success`, 1);
-          metrics.timing(
-            `${this.metricsPrefix}.get_checkpoint_stats.latency_ms`,
-            performance.now() - startTime,
-          );
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.get_checkpoint_stats.success`, 1);
+      metrics.timing(
+        `${this.metricsPrefix}.get_checkpoint_stats.latency_ms`,
+        performance.now() - startTime,
+      );
 
-          return result;
-        } catch (error) {
-          logError(error, 'Error getting checkpoint stats via RPC');
+      return result;
+    } catch (error) {
+      logError(error, 'Error getting checkpoint stats via RPC');
 
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.get_checkpoint_stats.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.get_checkpoint_stats.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
 
-          throw error;
-        }
-      },
-    );
+      throw error;
+    }
   }
 
   /**
@@ -310,36 +389,28 @@ export class ChatClient {
   async cleanupCheckpoints(): Promise<{ deletedCount: number }> {
     const startTime = performance.now();
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'cleanupCheckpoints',
-      },
-      async () => {
-        try {
-          // Call the chat orchestrator directly via RPC
-          const result = await this.binding.cleanupCheckpoints();
+    try {
+      // Call the chat orchestrator directly via RPC
+      const result = await this.binding.cleanupCheckpoints();
 
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.cleanup_checkpoints.success`, 1);
-          metrics.timing(
-            `${this.metricsPrefix}.cleanup_checkpoints.latency_ms`,
-            performance.now() - startTime,
-          );
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.cleanup_checkpoints.success`, 1);
+      metrics.timing(
+        `${this.metricsPrefix}.cleanup_checkpoints.latency_ms`,
+        performance.now() - startTime,
+      );
 
-          return result;
-        } catch (error) {
-          logError(error, 'Error cleaning up checkpoints via RPC');
+      return result;
+    } catch (error) {
+      logError(error, 'Error cleaning up checkpoints via RPC');
 
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.cleanup_checkpoints.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.cleanup_checkpoints.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
 
-          throw error;
-        }
-      },
-    );
+      throw error;
+    }
   }
 
   /**
@@ -349,36 +420,28 @@ export class ChatClient {
   async getDataRetentionStats(): Promise<any> {
     const startTime = performance.now();
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'getDataRetentionStats',
-      },
-      async () => {
-        try {
-          // Call the chat orchestrator directly via RPC
-          const result = await this.binding.getDataRetentionStats();
+    try {
+      // Call the chat orchestrator directly via RPC
+      const result = await this.binding.getDataRetentionStats();
 
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.get_data_retention_stats.success`, 1);
-          metrics.timing(
-            `${this.metricsPrefix}.get_data_retention_stats.latency_ms`,
-            performance.now() - startTime,
-          );
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.get_data_retention_stats.success`, 1);
+      metrics.timing(
+        `${this.metricsPrefix}.get_data_retention_stats.latency_ms`,
+        performance.now() - startTime,
+      );
 
-          return result;
-        } catch (error) {
-          logError(error, 'Error getting data retention stats via RPC');
+      return result;
+    } catch (error) {
+      logError(error, 'Error getting data retention stats via RPC');
 
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.get_data_retention_stats.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.get_data_retention_stats.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
 
-          throw error;
-        }
-      },
-    );
+      throw error;
+    }
   }
 
   /**
@@ -388,36 +451,28 @@ export class ChatClient {
   async cleanupExpiredData(): Promise<any> {
     const startTime = performance.now();
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'cleanupExpiredData',
-      },
-      async () => {
-        try {
-          // Call the chat orchestrator directly via RPC
-          const result = await this.binding.cleanupExpiredData();
+    try {
+      // Call the chat orchestrator directly via RPC
+      const result = await this.binding.cleanupExpiredData();
 
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.cleanup_expired_data.success`, 1);
-          metrics.timing(
-            `${this.metricsPrefix}.cleanup_expired_data.latency_ms`,
-            performance.now() - startTime,
-          );
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.cleanup_expired_data.success`, 1);
+      metrics.timing(
+        `${this.metricsPrefix}.cleanup_expired_data.latency_ms`,
+        performance.now() - startTime,
+      );
 
-          return result;
-        } catch (error) {
-          logError(error, 'Error cleaning up expired data via RPC');
+      return result;
+    } catch (error) {
+      logError(error, 'Error cleaning up expired data via RPC');
 
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.cleanup_expired_data.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.cleanup_expired_data.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
 
-          throw error;
-        }
-      },
-    );
+      throw error;
+    }
   }
 
   /**
@@ -428,37 +483,28 @@ export class ChatClient {
   async deleteUserData(userId: string): Promise<{ deletedCount: number }> {
     const startTime = performance.now();
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'deleteUserData',
-        userId,
-      },
-      async () => {
-        try {
-          // Call the chat orchestrator directly via RPC
-          const result = await this.binding.deleteUserData(userId);
+    try {
+      // Call the chat orchestrator directly via RPC
+      const result = await this.binding.deleteUserData(userId);
 
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.delete_user_data.success`, 1);
-          metrics.timing(
-            `${this.metricsPrefix}.delete_user_data.latency_ms`,
-            performance.now() - startTime,
-          );
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.delete_user_data.success`, 1);
+      metrics.timing(
+        `${this.metricsPrefix}.delete_user_data.latency_ms`,
+        performance.now() - startTime,
+      );
 
-          return result;
-        } catch (error) {
-          logError(error, 'Error deleting user data via RPC', { userId });
+      return result;
+    } catch (error) {
+      logError(error, 'Error deleting user data via RPC', { userId });
 
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.delete_user_data.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.delete_user_data.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
 
-          throw error;
-        }
-      },
-    );
+      throw error;
+    }
   }
 
   /**
@@ -475,38 +521,28 @@ export class ChatClient {
   ): Promise<{ success: boolean }> {
     const startTime = performance.now();
 
-    return withLogger(
-      {
-        component: 'ChatClient',
-        operation: 'recordConsent',
-        userId,
-        dataCategory,
-      },
-      async () => {
-        try {
-          // Call the chat orchestrator directly via RPC
-          const result = await this.binding.recordConsent(userId, dataCategory, { durationDays });
+    try {
+      // Call the chat orchestrator directly via RPC
+      const result = await this.binding.recordConsent(userId, dataCategory, { durationDays });
 
-          // Track metrics
-          metrics.increment(`${this.metricsPrefix}.record_consent.success`, 1);
-          metrics.timing(
-            `${this.metricsPrefix}.record_consent.latency_ms`,
-            performance.now() - startTime,
-          );
+      // Track metrics
+      metrics.increment(`${this.metricsPrefix}.record_consent.success`, 1);
+      metrics.timing(
+        `${this.metricsPrefix}.record_consent.latency_ms`,
+        performance.now() - startTime,
+      );
 
-          return result;
-        } catch (error) {
-          logError(error, 'Error recording user consent via RPC', { userId, dataCategory });
+      return result;
+    } catch (error) {
+      logError(error, 'Error recording user consent via RPC', { userId, dataCategory });
 
-          // Track error metrics
-          metrics.increment(`${this.metricsPrefix}.record_consent.errors`, 1, {
-            errorType: error instanceof Error ? error.constructor.name : 'unknown',
-          });
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.record_consent.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
 
-          throw error;
-        }
-      },
-    );
+      throw error;
+    }
   }
 }
 

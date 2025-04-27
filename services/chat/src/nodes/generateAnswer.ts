@@ -1,321 +1,81 @@
-import { getLogger } from '@dome/logging';
-import { AgentState, ToolResult, SourceMetadata } from '../types';
+import { getLogger, logError } from '@dome/logging';
+import { AgentState, ToolResult } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { formatDocsForPrompt } from '../utils/promptFormatter';
-import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
-import { SearchService } from '../services/searchService';
-import { DEFAULT_MODEL, getModelConfig, calculateTokenLimits } from '../config/modelConfig';
+import { getModelConfig, calculateTokenLimits } from '../config/modelConfig';
 
 /**
- * Generate the final answer
+ * Node: generate_answer – async generator
  */
-export const generateAnswer = async (state: AgentState, env: Env): Promise<AgentState> => {
-  const logger = getLogger().child({ node: 'generateAnswer' });
-  const startTime = performance.now();
+export async function* generateAnswer(
+  state: AgentState,
+  env: Env,
+): AsyncGenerator<Partial<AgentState>, Partial<AgentState>, void> {
+  const t0 = performance.now();
+  getLogger().info({ state }, '[GenerateAnswer]: starting generation');
 
-  // Get trace and span IDs for observability
-  const traceId = state.metadata?.traceId || '';
+  /* Trace */
+  const traceId = state.metadata?.traceId ?? crypto.randomUUID();
   const spanId = ObservabilityService.startSpan(env, traceId, 'generateAnswer', state);
+  const logEvt = (e: string, p: Record<string, unknown>) => ObservabilityService.logEvent(env, traceId, spanId, e, p);
 
-  // Prepare context from retrieved documents
-  const docs = state.docs || [];
+  /* Context */
+  const includeSources = state.options?.includeSourceInfo ?? true;
+  const modelId = state.options?.modelId;
+  const docs = state.docs ?? [];
+  const docsFmt = formatDocsForPrompt(docs, includeSources, Math.floor(getModelConfig(modelId ?? LlmService.MODEL).maxContextTokens * 0.5));
+  const toolFmt = formatToolResults(state.tasks?.toolResults ?? []);
 
-  // Get model configuration
-  const modelId = state.options?.modelId || LlmService.MODEL;
-  const modelConfig = getModelConfig(modelId);
+  const systemPrompt = buildSystemPrompt(docsFmt, toolFmt, includeSources);
+  getLogger().info({ systemPrompt }, '[GenerateAnswer]: got system prompt');
+  const sysTokens = countTokens(systemPrompt);
+  const userTokens = state.messages.reduce((t, m) => t + countTokens(m.content), 0);
+  const { maxResponseTokens } = calculateTokenLimits(getModelConfig(modelId ?? LlmService.MODEL), sysTokens + userTokens, state.options?.maxTokens);
 
-  // Set a maximum token limit for the formatted docs (half of model's context window)
-  const maxDocsTokens = Math.floor(modelConfig.maxContextTokens * 0.5);
-  const formattedDocs = formatDocsForPrompt(
-    docs,
-    state.options?.includeSourceInfo || true,
-    maxDocsTokens,
-  );
-
-  // Extract source metadata for attribution
-  const sourceMetadata = docs.length > 0 ? SearchService.extractSourceMetadata(docs) : [];
-
-  // Prepare tool results if any
-  const toolResults = state.tasks?.toolResults || [];
-  const formattedToolResults = formatToolResultsForPrompt(toolResults);
-
-  // Build system prompt
-  const systemPrompt = buildSystemPrompt(
-    formattedDocs,
-    formattedToolResults,
-    state.options?.includeSourceInfo || true,
-  );
-
-  // Prepare messages for LLM
-  const messages = [
-    {
-      role: 'system',
-      content: systemPrompt,
-    },
-    ...state.messages,
-  ];
-
-  logger.info(
-    {
-      messageCount: messages.length,
-      docsCount: docs.length,
-      toolResultsCount: toolResults.length,
-      systemPromptLength: systemPrompt.length,
-    },
-    'Generating answer',
-  );
-
-  // Log the generation start event
-  ObservabilityService.logEvent(env, traceId, spanId, 'answer_generation_start', {
-    messageCount: messages.length,
-    docsCount: docs.length,
-    toolResultsCount: toolResults.length,
-    systemPromptLength: systemPrompt.length,
-  });
-
+  /* Stream LLM */
+  let full = '';
   try {
-    // Count tokens in the system prompt and user messages to ensure we don't exceed limits
-    const systemPromptTokenCount = countTokens(systemPrompt);
-    const userMessagesTokenCount = state.messages.reduce((total, msg) => {
-      return total + countTokens(msg.content);
-    }, 0);
-
-    // Calculate total input tokens
-    const totalInputTokens = systemPromptTokenCount + userMessagesTokenCount;
-
-    // Calculate token limits based on model configuration
-    const { maxResponseTokens } = calculateTokenLimits(
-      modelConfig,
-      totalInputTokens,
-      state.options?.maxTokens,
-    );
-
-    logger.info(
-      {
-        modelId,
-        modelName: modelConfig.name,
-        maxContextTokens: modelConfig.maxContextTokens,
-        systemPromptTokens: systemPromptTokenCount,
-        userMessagesTokens: userMessagesTokenCount,
-        totalInputTokens,
-        maxResponseTokens,
-      },
-      'Token counts before LLM call',
-    );
-
-    // Call the LLM service to generate a response
-    const response = await LlmService.generateResponse(env, state.messages, formattedDocs, {
-      traceId,
-      spanId,
-      modelId,
-      temperature: state.options?.temperature || modelConfig.defaultTemperature,
+    for await (const chunk of LlmService.streamAnswer(env, state.messages, docsFmt + toolFmt, {
+      temperature: state.options?.temperature,
       maxTokens: maxResponseTokens,
-      includeSourceInfo: state.options?.includeSourceInfo || true,
-    });
-
-    // Count tokens in the response
-    const responseTokenCount = countTokens(response);
-
-    logger.info(
-      {
-        responseLength: response.length,
-        responseStart: response.slice(0, 100),
-        responseTokenCount,
-        systemPromptTokenCount,
-      },
-      'Generated answer',
-    );
-
-    // Log the LLM call
-    ObservabilityService.logLlmCall(
-      env,
-      traceId,
-      spanId,
-      LlmService.MODEL,
-      messages,
-      response,
-      performance.now() - startTime,
-      {
-        prompt: systemPromptTokenCount,
-        completion: responseTokenCount,
-        total: systemPromptTokenCount + responseTokenCount,
-      },
-    );
-
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // End the span
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'generateAnswer',
-      state,
-      {
-        ...state,
-        generatedText: response,
-        metadata: {
-          ...state.metadata,
-          spanId,
-          nodeTimings: {
-            ...state.metadata?.nodeTimings,
-            generateAnswer: executionTime,
-          },
-          tokenCounts: {
-            ...state.metadata?.tokenCounts,
-            systemPrompt: systemPromptTokenCount,
-            response: responseTokenCount,
-          },
-        },
-      },
-      executionTime,
-    );
-
-    // End the trace if this is the final node
-    ObservabilityService.endTrace(
-      env,
-      traceId,
-      {
-        ...state,
-        generatedText: response,
-        metadata: {
-          ...state.metadata,
-          spanId,
-          nodeTimings: {
-            ...state.metadata?.nodeTimings,
-            generateAnswer: executionTime,
-          },
-          tokenCounts: {
-            ...state.metadata?.tokenCounts,
-            systemPrompt: systemPromptTokenCount,
-            response: responseTokenCount,
-          },
-          isFinalState: true,
-        },
-      },
-      getTotalExecutionTime(state) + executionTime,
-    );
-
-    return {
-      ...state,
-      generatedText: response,
-      metadata: {
-        ...state.metadata,
-        spanId,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          generateAnswer: executionTime,
-        },
-        tokenCounts: {
-          ...state.metadata?.tokenCounts,
-          systemPrompt: systemPromptTokenCount,
-          response: responseTokenCount,
-        },
-        isFinalState: true,
-      },
-    };
-  } catch (error) {
-    logger.error(
-      {
-        err: error,
-      },
-      'Error generating answer',
-    );
-
-    // Log the error event
-    ObservabilityService.logEvent(env, traceId, spanId, 'answer_generation_error', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // Provide fallback response
-    return {
-      ...state,
-      generatedText:
-        "I'm sorry, but I encountered an issue while generating a response. Please try again.",
-      metadata: {
-        ...state.metadata,
-        spanId,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          generateAnswer: executionTime,
-        },
-        errors: [
-          ...(state.metadata?.errors || []),
-          {
-            node: 'generateAnswer',
-            message: error instanceof Error ? error.message : String(error),
-            timestamp: Date.now(),
-          },
-        ],
-        isFinalState: true,
-      },
-    };
-  }
-};
-
-/**
- * Build system prompt with context and tool results
- */
-function buildSystemPrompt(
-  formattedDocs: string,
-  formattedToolResults: string,
-  includeSourceInfo: boolean = true,
-): string {
-  let prompt = "You are an AI assistant with access to the user's personal knowledge base. ";
-
-  if (formattedDocs) {
-    prompt += `Here is relevant information from the user's knowledge base that may help with the response:\n\n${formattedDocs}\n\n`;
-
-    if (includeSourceInfo) {
-      prompt +=
-        'When referencing information from these documents, include the document number in brackets, e.g., [1], to help the user identify the source.\n\n';
+      includeSourceInfo: includeSources,
+      modelId,
+    })) {
+      getLogger().info({ chunk }, '[GenerateAnswer]: yielding chunk');
+      full += chunk;
+      yield { generatedText: chunk, metadata: { currentNode: 'generate_answer' } };
     }
+  } catch (e) {
+    logError(e, 'Error streaming answer');
+
   }
 
-  if (formattedToolResults) {
-    prompt += `I've used tools to gather additional information:\n\n${formattedToolResults}\n\n`;
-    prompt += 'Incorporate this tool-generated information into your response when relevant.\n\n';
-  }
+  /* Finish */
+  const elapsed = performance.now() - t0;
+  ObservabilityService.endSpan(env, traceId, spanId, 'generateAnswer', state, state, elapsed);
+  ObservabilityService.endTrace(env, traceId, state, elapsed);
+  getLogger().info({ elapsedMs: elapsed, fullLen: full.length }, 'generateAnswer done');
 
-  prompt +=
-    "Provide a helpful, accurate, and concise response based on the provided context and your knowledge. If the provided context doesn't contain relevant information, acknowledge this and provide the best answer you can based on general knowledge.";
-
-  return prompt;
+  return { generatedText: full, metadata: { currentNode: 'generate_answer', isFinalState: true } };
 }
 
-/**
- * Format tool results for inclusion in prompt
- */
-function formatToolResultsForPrompt(toolResults: ToolResult[]): string {
-  if (toolResults.length === 0) {
-    return '';
+function buildSystemPrompt(docs: string, tools: string, includeSrc: boolean) {
+  let p = 'You are an AI assistant with access to the user\'s knowledge base.';
+  if (docs) {
+    p += `\n\nContext:\n${docs}`;
+    if (includeSrc) p += '\nUse bracketed numbers like [1] when citing.';
   }
+  if (tools) p += `\n\nTool outputs:\n${tools}`;
+  return p + '\n\nGive a concise, helpful answer.';
+}
 
-  return toolResults
-    .map((result, index) => {
-      const output = result.error
-        ? `Error: ${result.error}`
-        : typeof result.output === 'string'
-        ? result.output
-        : JSON.stringify(result.output, null, 2);
-
-      return `[Tool ${index + 1}] ${result.toolName}\nInput: ${result.input}\nOutput: ${output}`;
+function formatToolResults(results: ToolResult[]): string {
+  return results
+    .map((r, i) => {
+      const out = r.error ? `Error: ${r.error}` : typeof r.output === 'string' ? r.output : JSON.stringify(r.output);
+      return `[Tool ${i + 1}] ${r.toolName}\nInput: ${r.input}\nOutput: ${out}`;
     })
     .join('\n\n');
-}
-
-/**
- * Calculate total execution time from node timings
- */
-function getTotalExecutionTime(state: AgentState): number {
-  const nodeTimings = state.metadata?.nodeTimings || {};
-  return Object.values(nodeTimings).reduce((sum, time) => sum + time, 0);
 }

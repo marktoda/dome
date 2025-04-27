@@ -24,7 +24,7 @@ export function successResponse<T>(c: Context, data: T, status = 200): Response 
     success: true,
     data,
   };
-  return c.json(response, status);
+  return c.json(response, status as any);
 }
 
 /**
@@ -43,7 +43,7 @@ export function errorResponse(c: Context, code: string, message: string, status 
       message,
     },
   };
-  return c.json(response, status);
+  return c.json(response, status as any);
 }
 
 /**

@@ -1,238 +1,100 @@
 import { getLogger } from '@dome/logging';
-import { AgentState, QueryAnalysis } from '../types';
+import { AgentState } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 
 /**
- * Split and rewrite the user query to improve retrieval
+ * Node: split_rewrite
+ * ------------------------------------------------------------------
+ *  1. Identify the last user question.
+ *  2. Decide whether it needs rewriting (multi‑question, ambiguous, or
+ *     complex according to an LLM quick‑check).
+ *  3. If so, call the LLM to rewrite it.
+ *  4. Emit a **partial** state update (delta) — not the whole state —
+ *     so downstream reducers can merge efficiently.
  */
-export const splitRewrite = async (state: AgentState, env: Env): Promise<AgentState> => {
+export const splitRewrite = async (
+  state: AgentState,
+  env: Env,
+): Promise<Partial<AgentState>> => {
   const logger = getLogger().child({ node: 'splitRewrite' });
-  const startTime = performance.now();
+  const t0 = performance.now();
 
-  // Get the last user message
-  const lastUserMessage = [...state.messages].reverse().find(msg => msg.role === 'user');
-
-  if (!lastUserMessage) {
-    logger.warn('No user message found in history');
-    return {
-      ...state,
-      tasks: {
-        ...state.tasks,
-        originalQuery: '',
-        rewrittenQuery: '',
-      },
-    };
+  /* --------------------------------------------------------------- */
+  /*  1. Grab the latest user message                               */
+  /* --------------------------------------------------------------- */
+  const lastUserMsg = [...state.messages].reverse().find(m => m.role === 'user');
+  if (!lastUserMsg) {
+    logger.warn('No user message found');
+    return { tasks: { originalQuery: '', rewrittenQuery: '' } };
   }
 
-  const originalQuery = lastUserMessage.content;
-  logger.info({ originalQuery, messageCount: state.messages.length }, 'Processing user query');
+  const original = lastUserMsg.content;
+  const originalTokens = countTokens(original);
 
-  // Count tokens in the query
-  const tokenCount = countTokens(originalQuery);
-  logger.debug({ tokenCount }, 'Counted tokens in query');
-
-  // Create or get trace and span IDs for observability
+  /* --------------------------------------------------------------- */
+  /*  2. Observability IDs                                           */
+  /* --------------------------------------------------------------- */
   const userId = getUserId(state);
-  const traceId = state.metadata?.traceId || ObservabilityService.initTrace(env, userId, state);
+  const traceId = state.metadata?.traceId ?? ObservabilityService.initTrace(env, userId, state);
   const spanId = ObservabilityService.startSpan(env, traceId, 'splitRewrite', state);
+  const logEvt = (e: string, p: Record<string, unknown>) => ObservabilityService.logEvent(env, traceId, spanId, e, p);
 
-  // Log the start of query processing
-  ObservabilityService.logEvent(env, traceId, spanId, 'query_processing_start', {
-    originalQuery,
-    tokenCount,
-  });
+  logEvt('query_processing_start', { original, originalTokens });
 
-  // TODO: why do this pre analysis instead of always rewriting?
-  // note that for ex: quivr splits into instructions and tasks
-  // where instructions are added to system tx and tasks each separately query vectordb
-  try {
-    // Analyze query complexity to determine if it should be split
-    const queryAnalysis = await LlmService.analyzeQueryComplexity(env, originalQuery, {
-      traceId,
-      spanId,
-    });
+  /* --------------------------------------------------------------- */
+  /*  3. Decide whether we need a rewrite                            */
+  /* --------------------------------------------------------------- */
+  const analysis = await LlmService.analyzeQueryComplexity(env, original, { traceId, spanId });
+  const multiQuestion = original.split('?').length > 2;
+  const ambiguous = /\b(it|this|that|they|these|those)\b/i.test(original);
+  const needsRewrite = multiQuestion || ambiguous || analysis.isComplex;
 
-    // Log the query analysis
-    ObservabilityService.logEvent(env, traceId, spanId, 'query_analysis_complete', {
-      originalQuery,
-      analysis: queryAnalysis,
-    });
-
-    // Determine if query needs rewriting
-    let needsRewriting = false;
-
-    // Check for multi-part questions
-    if (originalQuery.includes('?') && originalQuery.split('?').length > 2) {
-      needsRewriting = true;
-      logger.info('Query contains multiple questions, needs rewriting');
-    }
-
-    // Check for ambiguous references that might need context
-    if (/\b(it|this|that|they|these|those)\b/i.test(originalQuery)) {
-      needsRewriting = true;
-      logger.info('Query contains ambiguous references, needs rewriting');
-    }
-
-    // Check if the query analysis suggests it's complex
-    if (queryAnalysis.isComplex) {
-      needsRewriting = true;
-      logger.info(
-        { reason: queryAnalysis.reason },
-        'Query is complex according to analysis, needs rewriting',
-      );
-    }
-
-    // Get conversation context for rewriting (last few messages)
-    const conversationContext = state.messages
-      .slice(-6) // Take last 6 messages for context
-      .filter(msg => msg.role !== 'system'); // Exclude system messages
-
-    // Rewrite the query if needed
-    let rewrittenQuery = originalQuery;
-    if (needsRewriting) {
-      logger.info('Rewriting query using LLM');
-
-      // Call LLM to rewrite the query
-      rewrittenQuery = await LlmService.rewriteQuery(env, originalQuery, conversationContext, {
-        traceId,
-        spanId,
-      });
-
-      logger.info({ originalQuery, rewrittenQuery }, 'Query rewritten');
-
-      // Log the rewriting
-      ObservabilityService.logEvent(env, traceId, spanId, 'query_rewrite_complete', {
-        originalQuery,
-        rewrittenQuery,
-        needsRewriting,
-      });
-    } else {
-      logger.info('Query does not need rewriting');
-    }
-
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // Log completion of the node
-    ObservabilityService.logEvent(env, traceId, spanId, 'split_rewrite_complete', {
-      originalQuery,
-      rewrittenQuery,
-      executionTimeMs: executionTime,
-    });
-
-    // End the span
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'splitRewrite',
-      state,
-      {
-        ...state,
-        tasks: {
-          ...state.tasks,
-          originalQuery,
-          rewrittenQuery,
-          queryAnalysis,
-        },
-        metadata: {
-          ...state.metadata,
-          traceId,
-          spanId,
-          nodeTimings: {
-            ...state.metadata?.nodeTimings,
-            splitRewrite: executionTime,
-          },
-          tokenCounts: {
-            ...state.metadata?.tokenCounts,
-            originalQuery: tokenCount,
-            rewrittenQuery: countTokens(rewrittenQuery),
-          },
-        },
-      },
-      executionTime,
-    );
-
-    logger.info(
-      {
-        executionTimeMs: executionTime,
-        originalQuery,
-        rewrittenQuery,
-      },
-      'Split/rewrite complete',
-    );
-
-    return {
-      ...state,
-      tasks: {
-        ...state.tasks,
-        originalQuery,
-        rewrittenQuery,
-        queryAnalysis,
-      },
-      metadata: {
-        ...state.metadata,
-        traceId,
-        spanId,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          splitRewrite: executionTime,
-        },
-        tokenCounts: {
-          ...state.metadata?.tokenCounts,
-          originalQuery: tokenCount,
-          rewrittenQuery: countTokens(rewrittenQuery),
-        },
-      },
-    };
-  } catch (error) {
-    // Log the error
-    logger.error({ err: error, originalQuery }, 'Error in split/rewrite node');
-
-    // Log the error to observability
-    ObservabilityService.logEvent(env, traceId, spanId, 'split_rewrite_error', {
-      originalQuery,
-      error: error instanceof Error ? error.message : String(error),
-    });
-
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // Fall back to original query
-    return {
-      ...state,
-      tasks: {
-        ...state.tasks,
-        originalQuery,
-        rewrittenQuery: originalQuery,
-      },
-      metadata: {
-        ...state.metadata,
-        traceId,
-        spanId,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          splitRewrite: executionTime,
-        },
-        tokenCounts: {
-          ...state.metadata?.tokenCounts,
-          originalQuery: tokenCount,
-          rewrittenQuery: tokenCount,
-        },
-        errors: [
-          ...(state.metadata?.errors || []),
-          {
-            node: 'splitRewrite',
-            message: error instanceof Error ? error.message : String(error),
-            timestamp: Date.now(),
-          },
-        ],
-      },
-    };
+  /* --------------------------------------------------------------- */
+  /*  4. Rewrite if needed                                           */
+  /* --------------------------------------------------------------- */
+  let rewritten = original;
+  if (needsRewrite) {
+    const ctx = state.messages.slice(-6).filter(m => m.role !== 'system');
+    rewritten = await LlmService.rewriteQuery(env, original, ctx);
+    logEvt('query_rewrite_complete', { original, rewritten });
   }
+
+  /* --------------------------------------------------------------- */
+  /*  5. Finish up                                                   */
+  /* --------------------------------------------------------------- */
+  const elapsed = performance.now() - t0;
+  logEvt('split_rewrite_complete', { original, rewritten, elapsedMs: elapsed });
+  ObservabilityService.endSpan(env, traceId, spanId, 'splitRewrite', state, state, elapsed);
+
+  logger.info({ original, rewritten, elapsedMs: elapsed }, 'splitRewrite done');
+
+  /* --------------------------------------------------------------- */
+  /*  6. Return only the delta                                       */
+  /* --------------------------------------------------------------- */
+  return {
+    tasks: {
+      ...state.tasks,
+      originalQuery: original,
+      rewrittenQuery: rewritten,
+      queryAnalysis: analysis,
+    },
+    metadata: {
+      ...state.metadata,
+      traceId,
+      spanId,
+      currentNode: 'split_rewrite',
+      nodeTimings: {
+        ...state.metadata?.nodeTimings,
+        splitRewrite: elapsed,
+      },
+      tokenCounts: {
+        ...state.metadata?.tokenCounts,
+        originalQuery: originalTokens,
+        rewrittenQuery: countTokens(rewritten),
+      },
+    },
+  };
 };

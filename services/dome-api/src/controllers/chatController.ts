@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
-import { ChatClient } from '@dome/chat/client';
+import { ChatClient, chatRequestSchema } from '@dome/chat/client';
 import { z } from 'zod';
 import {
   successResponse,
@@ -8,27 +8,6 @@ import {
   validationErrorResponse,
   internalErrorResponse,
 } from '../utils/responseHelpers';
-
-// Define the updated chat request schema
-const chatRequestSchema = z.object({
-  userId: z.string(),
-  messages: z.array(
-    z.object({
-      role: z.enum(['user', 'assistant', 'system']),
-      content: z.string(),
-      timestamp: z.number().optional(),
-    }),
-  ),
-  options: z.object({
-    enhanceWithContext: z.boolean().optional().default(true),
-    maxContextItems: z.number().optional().default(5),
-    includeSourceInfo: z.boolean().optional().default(true),
-    maxTokens: z.number().optional().default(1000),
-    temperature: z.number().optional(),
-  }),
-  stream: z.boolean().optional().default(false),
-  runId: z.string().optional(),
-});
 
 /**
  * Controller for chat endpoints
@@ -40,7 +19,7 @@ export class ChatController {
    * Create a new chat controller
    * @param chatService Chat service instance
    */
-  constructor(private chatService: ChatClient) {}
+  constructor(private chatService: ChatClient) { }
 
   /**
    * Handle chat requests

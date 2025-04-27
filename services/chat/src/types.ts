@@ -68,12 +68,12 @@ export interface AgentState {
     wideningAttempts?: number;
     toolToRun?: string | null;
     queryAnalysis?: QueryAnalysis;
-    toolParameters?: Record<string, any>;
+    toolParameters?: Record<string, unknown>;
     toolError?: string;
     wideningStrategy?: string;
     toolSelectionReason?: string;
     toolSelectionConfidence?: number;
-    wideningParams?: Record<string, any>;
+    wideningParams?: Record<string, unknown>;
   };
 
   // Retrieved documents
@@ -211,7 +211,7 @@ export interface TraceEvent {
   name: string;
   timestamp: number;
   duration?: number;
-  attributes: Record<string, any>;
+  attributes: Record<string, unknown>;
 }
 
 /**

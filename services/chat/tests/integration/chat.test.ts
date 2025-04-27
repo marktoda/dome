@@ -35,25 +35,42 @@ vi.mock('../../src/services/observabilityService', () => ({
   },
 }));
 
-// Create a mock logger that can be accessed globally
-const mockLogger = {
-  info: vi.fn(),
-  debug: vi.fn(),
-  error: vi.fn(),
-  warn: vi.fn(),
-  child: vi.fn().mockReturnValue({
+// Mock logger
+vi.mock('@dome/logging', () => {
+  // Create a mockLogger that can be reused
+  const mockLogger = {
     info: vi.fn(),
     debug: vi.fn(),
     error: vi.fn(),
     warn: vi.fn(),
-  }),
-};
+    child: vi.fn().mockReturnValue({
+      info: vi.fn(),
+      debug: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+    }),
+  };
 
-// Mock logger
-vi.mock('@dome/logging', () => {
   return {
-    getLogger: vi.fn().mockReturnValue(mockLogger),
+    getLogger: vi.fn(() => mockLogger),
     logError: vi.fn(),
+    metrics: {
+      increment: vi.fn(),
+      timing: vi.fn(),
+      gauge: vi.fn(),
+      startTimer: vi.fn(() => ({ stop: vi.fn() })),
+      trackOperation: vi.fn(),
+    },
+    withLogger: vi.fn((_, fn) => fn()),
+    baseLogger: mockLogger,
+    createLogger: vi.fn(() => mockLogger),
+    createServiceMetrics: vi.fn(() => ({
+      counter: vi.fn(),
+      gauge: vi.fn(),
+      timing: vi.fn(),
+      startTimer: vi.fn(() => ({ stop: vi.fn() })),
+      trackOperation: vi.fn(),
+    })),
   };
 });
 

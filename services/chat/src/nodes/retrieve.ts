@@ -129,49 +129,43 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       performance.now() - startTime,
     );
 
-    // Get model configuration
+    // Get model configuration and retrieval config
     const modelId = state.options?.modelId || LlmService.MODEL;
     const modelConfig = getModelConfig(modelId);
-
-    // Calculate total tokens in retrieved docs and truncate if needed
-    let totalTokens = 0;
-    const processedDocs = docs.map(doc => {
-      // First truncate each document to a reasonable size (max tokens per doc based on model)
-      // Use configuration for max tokens per document
-      const retrieveConfig = getRetrieveConfig();
-      const maxTokensPerDoc = Math.floor(
-        modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxPerDocument,
-      );
-      const truncatedDoc = truncateDocumentToMaxTokens(doc, maxTokensPerDoc);
-
-      // Count tokens in the truncated document
-      const docTokens = estimateDocumentTokens(truncatedDoc);
-      totalTokens += docTokens;
-
-      return {
-        ...truncatedDoc,
-        metadata: {
-          ...truncatedDoc.metadata,
-          tokenCount: docTokens,
-        },
-      };
-    });
-
+    const retrieveConfig = getRetrieveConfig();
+    
+    // Calculate token limits
+    const maxTokensPerDoc = Math.floor(
+      modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxPerDocument
+    );
+    const maxDocsTokens = Math.floor(
+      modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxForAllDocuments
+    );
+    
     // Extract source metadata for attribution
     const sourceMetadata = SearchService.extractSourceMetadata(docs);
-
-    // Rank and filter documents by relevance
-    const rankedDocs = SearchService.rankAndFilterDocuments(processedDocs, minRelevance);
-
-    // Limit the total number of documents to control token count
-    // Use configuration for max tokens for all documents
-    const retrieveConfig = getRetrieveConfig();
-    const maxDocsTokens = Math.floor(
-      modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxForAllDocuments,
+    
+    // Process documents in a single pass
+    const processedDocs: Document[] = [];
+    let totalTokens = 0;
+    
+    // First, truncate and rank documents by relevance
+    const rankedDocs = SearchService.rankAndFilterDocuments(
+      docs.map(doc => {
+        const truncatedDoc = truncateDocumentToMaxTokens(doc, maxTokensPerDoc);
+        const docTokens = estimateDocumentTokens(truncatedDoc);
+        
+        return {
+          ...truncatedDoc,
+          metadata: {
+            ...truncatedDoc.metadata,
+            tokenCount: docTokens,
+          },
+        };
+      }),
+      minRelevance
     );
-    let currentTokens = 0;
-    const limitedDocs = [];
-
+    
     // Log model configuration
     logger.info(
       {
@@ -180,29 +174,28 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
         maxContextTokens: modelConfig.maxContextTokens,
         maxDocsTokens,
         totalRetrievedDocs: rankedDocs.length,
-        totalRetrievedTokens: totalTokens,
       },
-      'Document token limits based on model configuration',
+      'Document token limits based on model configuration'
     );
-
+    
+    // Then select documents respecting token budget and document limit
     for (const doc of rankedDocs) {
-      if (currentTokens + (doc.metadata?.tokenCount || 0) > maxDocsTokens) {
-        // Skip this document if it would exceed our token budget
+      const docTokens = doc.metadata?.tokenCount || 0;
+      
+      // Skip if would exceed token budget
+      if (totalTokens + docTokens > maxDocsTokens) {
         continue;
       }
-
-      limitedDocs.push(doc);
-      currentTokens += doc.metadata?.tokenCount || 0;
-
-      // If we've reached our document limit, stop adding more
-      const retrieveConfig = getRetrieveConfig();
-      if (limitedDocs.length >= retrieveConfig.documentLimits.maxDocuments) {
+      
+      // Add document and update token count
+      processedDocs.push(doc);
+      totalTokens += docTokens;
+      
+      // Stop if we've reached document limit
+      if (processedDocs.length >= retrieveConfig.documentLimits.maxDocuments) {
         break;
       }
     }
-
-    // Update the total token count
-    totalTokens = currentTokens;
 
     // Update state with timing information
     const endTime = performance.now();
@@ -211,7 +204,7 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     // Create updated state with docs and tasks
     const updatedState = {
       ...state,
-      docs: rankedDocs,
+      docs: processedDocs,
       tasks: {
         ...state.tasks,
         needsWidening: docsCount < 2 && wideningAttempts < 2,
@@ -268,7 +261,5 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       'retrieve',
       error instanceof Error ? error.message : String(error),
     );
-
-    return errorState;
   }
 };

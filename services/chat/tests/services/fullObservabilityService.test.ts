@@ -7,20 +7,45 @@ import { getLogger } from '@dome/logging';
 import { Metrics } from '@dome/metrics';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => ({
-  getLogger: vi.fn(() => ({
-    child: vi.fn(() => ({
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    })),
+vi.mock('@dome/logging', () => {
+  // Create a mockLogger that can be reused
+  const mockChildLogger = {
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
-  })),
-}));
+  };
+  
+  const mockLogger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn(() => mockChildLogger),
+  };
+
+  return {
+    getLogger: vi.fn(() => mockLogger),
+    logError: vi.fn(),
+    metrics: {
+      increment: vi.fn(),
+      timing: vi.fn(),
+      gauge: vi.fn(),
+      startTimer: vi.fn(() => ({ stop: vi.fn() })),
+      trackOperation: vi.fn(),
+    },
+    withLogger: vi.fn((_, fn) => fn()),
+    baseLogger: mockLogger,
+    createLogger: vi.fn(() => mockLogger),
+    createServiceMetrics: vi.fn(() => ({
+      counter: vi.fn(),
+      gauge: vi.fn(),
+      timing: vi.fn(),
+      startTimer: vi.fn(() => ({ stop: vi.fn() })),
+      trackOperation: vi.fn(),
+    })),
+  };
+});
 
 vi.mock('@dome/metrics', () => {
   return {
