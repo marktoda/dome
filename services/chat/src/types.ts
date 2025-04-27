@@ -2,13 +2,15 @@ import { z } from 'zod';
 import { Annotation } from '@langchain/langgraph';
 import { BaseMessage } from '@langchain/core/messages';
 
+export const roleSchema = z.enum(['user', 'assistant', 'system']);
+
 // Define schemas for request validation
 export const chatRequestSchema = z.object({
   stream: z.boolean().optional().default(true),
   userId: z.string(),
   messages: z.array(
     z.object({
-      role: z.enum(['user', 'assistant', 'system']),
+      role: roleSchema,
       content: z.string(),
       timestamp: z.number().optional(),
     }),
@@ -28,7 +30,7 @@ export const resumeChatRequestSchema = z.object({
   runId: z.string(),
   newMessage: z
     .object({
-      role: z.enum(['user', 'assistant', 'system']),
+      role: roleSchema,
       content: z.string(),
       timestamp: z.number().optional(),
     })
@@ -36,6 +38,7 @@ export const resumeChatRequestSchema = z.object({
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
+export type Role = z.infer<typeof roleSchema>;
 export type ResumeChatRequest = z.infer<typeof resumeChatRequestSchema>;
 
 /**

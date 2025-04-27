@@ -47,7 +47,7 @@ export const splitRewrite = async (
   /* --------------------------------------------------------------- */
   /*  3. Decide whether we need a rewrite                            */
   /* --------------------------------------------------------------- */
-  const analysis = await LlmService.analyzeQueryComplexity(env, original, { traceId, spanId });
+  const analysis = await LlmService.analyzeQuery(env, original);
   const multiQuestion = original.split('?').length > 2;
   const ambiguous = /\b(it|this|that|they|these|those)\b/i.test(original);
   const needsRewrite = multiQuestion || ambiguous || analysis.isComplex;

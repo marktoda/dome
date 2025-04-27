@@ -10,6 +10,7 @@ import {
   chatRequestSchema,
   ResumeChatRequest,
   resumeChatRequestSchema,
+  AgentState
 } from '../types';
 
 /**

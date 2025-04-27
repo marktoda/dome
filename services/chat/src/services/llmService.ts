@@ -1,5 +1,6 @@
 import { getLogger } from '@dome/logging';
-import { AIMessage, WorkersAiMessage, WorkersAi } from '../types';
+import { AIMessage } from '../types';
+import { WorkersAiMessage, WorkersAi } from '../types/workersAi';
 import {
   DEFAULT_MODEL,
   getModelConfig,

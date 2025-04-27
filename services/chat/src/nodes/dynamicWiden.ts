@@ -17,7 +17,7 @@ export enum WideningStrategy {
 /**
  * Interface for widening parameters
  */
-interface WideningParams {
+interface WideningParams extends Record<string, unknown> {
   strategy: WideningStrategy;
   minRelevance?: number;
   expandSynonyms?: boolean;

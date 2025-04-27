@@ -6,6 +6,7 @@ import {
   END,
   StateGraph,
   BaseCheckpointSaver,
+  LangGraphRunnableConfig,
 } from "@langchain/langgraph";
 import { IterableReadableStream } from "@langchain/core/utils/stream";
 import { getLogger } from "@dome/logging";
@@ -68,9 +69,9 @@ function createNodeWrappers(env: Env, tools: SecureToolExecutor) {
       return nodes.retrieve(s, env);
     },
 
-    generateAnswer: (state: AgentState) => {
+    generateAnswer: (state: AgentState, cfg: LangGraphRunnableConfig) => {
       log.info('→ generateAnswer');
-      return nodes.generateAnswer(state, env);
+      return nodes.generateAnswer(state, cfg, env);
     },
 
     /* optional extras */

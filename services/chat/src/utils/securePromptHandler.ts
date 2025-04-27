@@ -1,6 +1,7 @@
 import { getLogger } from '@dome/logging';
 import { filterLlmOutput } from './inputValidator';
 import { ForbiddenError } from '@dome/common/src/errors/ServiceError';
+import { Role } from '../types';
 
 /**
  * Secure prompt handler with protection against prompt injection attacks
@@ -175,9 +176,9 @@ export function detectPromptInjection(
  * @throws ForbiddenError if a prompt injection is detected
  */
 export function secureMessages(
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<{ role: Role; content: string }>,
   options: PromptSecurityOptions = {},
-): Array<{ role: string; content: string }> {
+): Array<{ role: Role; content: string }> {
   const opts = { ...DEFAULT_SECURITY_OPTIONS, ...options };
 
   // Process each message
