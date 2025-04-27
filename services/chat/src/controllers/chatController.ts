@@ -396,6 +396,7 @@ export class ChatController {
         runId: runId,
       },
     });
+    this.logger.info({ result }, 'CHAT RESPONSE!!');
 
     // Track metrics
     metrics.increment('chat_orchestrator.chat.generated', 1, {

@@ -339,11 +339,19 @@ export class ChatClient {
 
       // Call the non-streaming chat endpoint via RPC
       const response = await this.binding.generateChatMessage(validatedRequest);
+
+      // Collect header keys without using keys() method
+      const headerKeys: string[] = [];
+      response.headers.forEach((_, key) => {
+        headerKeys.push(key);
+      });
+
       getLogger().info({
         status: response.status,
         statusText: response.statusText,
-        headerKeys: Array.from(response.headers.keys()),
-        isBodyUsed: response.bodyUsed
+        headerKeys: headerKeys,
+        isBodyUsed: response.bodyUsed,
+        response,
       }, '[ChatClient]: Non-streaming chat response received');
 
       if (!response.ok) {
@@ -352,7 +360,7 @@ export class ChatClient {
 
       // Clone the response before parsing to enable safer debugging
       const responseClone = response.clone();
-      
+
       try {
         // Parse the JSON response using the defined type
         const responseData = await response.json() as ChatServerResponse;
@@ -372,7 +380,7 @@ export class ChatClient {
             tokenCounts: responseData.metadata?.tokenCounts || {},
           },
         };
-        
+
         // Log the response
         getLogger().info(
           {
@@ -391,17 +399,17 @@ export class ChatClient {
             result.metadata.executionTimeMs,
           );
         }
-        
+
         return result;
       } catch (parseError) {
         // If JSON parsing fails, attempt to get response text for better debugging
         getLogger().error({ error: parseError }, '[ChatClient]: Failed to parse JSON response');
-        
+
         try {
           // Try to get the raw text to see what went wrong
           const rawText = await responseClone.text();
           getLogger().error({ rawText, rawTextLength: rawText.length }, '[ChatClient]: Raw response text');
-          
+
           // Attempt to recover if there's actual text in the response
           if (rawText && rawText.length > 0 && rawText !== '{}') {
             const fallbackResult = {
@@ -412,22 +420,22 @@ export class ChatClient {
                 tokenCounts: {},
               },
             };
-            
+
             getLogger().info('Recovered using raw text response');
             metrics.increment(`${this.metricsPrefix}.generate_direct_response.recovery`, 1);
-            
+
             return fallbackResult;
           }
         } catch (textError) {
           getLogger().error({ error: textError }, '[ChatClient]: Failed to get response text');
         }
-        
+
         // If all else fails, provide a fallback response
         // Handle the error properly with type checking
         const errorMessage = parseError instanceof Error
           ? parseError.message
           : 'Unknown parsing error';
-          
+
         throw new Error(`Failed to parse chat response: ${errorMessage}`);
       }
     } catch (error) {

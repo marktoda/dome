@@ -59,7 +59,12 @@ export async function generateAnswer(
     state.options?.maxTokens
   );
 
-  const response = await llm.invoke(state.messages.map(m => ({
+  const chatMessages = [
+    { role: "system", content: systemPrompt },   // 👈 context now travels
+    ...state.messages,
+  ];
+
+  const response = await llm.invoke(chatMessages.map(m => ({
     role: m.role,
     content: m.content,
   })));
@@ -74,7 +79,7 @@ export async function generateAnswer(
   getLogger().info({ elapsedMs: elapsed, fullLen: response.text.length, content: response.text }, "[GenerateAnswer] done");
 
   return {
-    messages: response,
+    generatedText: response.text,
     metadata: {
       currentNode: "generate_answer",
       isFinalState: true,
@@ -93,6 +98,7 @@ function buildSystemPrompt(docs: string, tools: string, includeSrc: boolean) {
     if (includeSrc) p += "\nUse bracketed numbers like [1] when citing.";
   }
   if (tools) p += `\n\nTool outputs:\n${tools}`;
+
   return p + "\n\nGive a concise, helpful answer.";
 }
 
