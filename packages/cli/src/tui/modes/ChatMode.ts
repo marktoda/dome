@@ -1,6 +1,6 @@
 import { Widgets } from 'blessed';
 import { BaseMode } from './BaseMode';
-import { chat } from '../../utils/api';
+import { chat, ChatMessageChunk } from '../../utils/api';
 
 /**
  * Chat mode for interacting with the Dome AI
@@ -305,13 +305,80 @@ export class ChatMode extends BaseMode {
       // Create an AbortController for potential cancellation
       const abortController = new AbortController();
 
+      // Flag to track if thinking has been shown
+      let hasShownThinking = false;
+      
       // Function to handle each chunk as it arrives
-      const handleChunk = (chunk: string) => {
-        // Append the chunk to the current response line
-        currentResponseLine += chunk;
-
+      const handleChunk = (chunk: string | ChatMessageChunk) => {
         // Get the container width for wrapping
         const containerWidth = (this.container as any).width - 4;
+        
+        if (typeof chunk === 'string') {
+          // Handle string chunks (original behavior)
+          processTextChunk(chunk);
+        } else {
+          // Handle structured message chunks
+          if (chunk.type === 'thinking' && !hasShownThinking) {
+            // Only show thinking content once to avoid duplication
+            hasShownThinking = true;
+            
+            // Clear any existing content and start fresh to avoid duplication
+            // Get all content up to the most recent user message
+            const content = this.container.getContent();
+            const lines = content.split('\n');
+            let lastUserIndex = -1;
+            
+            // Find the last "You:" line
+            for (let i = lines.length - 1; i >= 0; i--) {
+              if (lines[i].includes('{bold}{green-fg}You:{/green-fg}{/bold}')) {
+                lastUserIndex = i;
+                break;
+              }
+            }
+            
+            if (lastUserIndex !== -1) {
+              // Keep everything up to and including a few lines after the user message
+              const contentBeforeAssistant = lines.slice(0, lastUserIndex + 3).join('\n');
+              this.container.setContent(contentBeforeAssistant);
+            }
+            
+            // Show thinking content in gray
+            this.container.pushLine('');
+            this.container.pushLine('{gray-fg}Thinking:{/gray-fg}');
+            
+            try {
+              // Try to parse and format JSON if possible
+              const jsonObj = JSON.parse(chunk.content);
+              const formattedJson = JSON.stringify(jsonObj, null, 2);
+              this.container.pushLine(`{gray-fg}${formattedJson}{/gray-fg}`);
+            } catch (e) {
+              // Not JSON, just display as is
+              this.container.pushLine(`{gray-fg}${chunk.content}{/gray-fg}`);
+            }
+            
+            this.container.pushLine('');
+            
+            // Reset the response state
+            currentResponseLine = '';
+            isFirstChunk = true;
+            
+            // Add the Dome label to start the response
+            this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
+          } else if (chunk.type === 'content') {
+            // For normal content chunks
+            processTextChunk(chunk.content);
+          }
+        }
+        
+        // Ensure we scroll to the bottom and render
+        this.container.setScrollPerc(100);
+        this.screen.render();
+      };
+      
+      // Helper function to process text chunks
+      const processTextChunk = (text: string) => {
+        // Append the chunk to the current response line
+        currentResponseLine += text;
 
         // Simpler approach: If this is the first chunk, we've already added the "Dome:" label
         // For subsequent chunks, we'll clear the container and rebuild it
@@ -344,16 +411,18 @@ export class ChatMode extends BaseMode {
             this.wrapText(currentResponseLine, containerWidth);
           }
         }
-
-        // Ensure we scroll to the bottom and render
-        this.container.setScrollPerc(100);
-        this.screen.render();
       };
 
       try {
-        // Send message to API with streaming enabled
+        // Check if verbose mode is enabled via environment or command line args
+        const isVerbose = process.env.DOME_VERBOSE === 'true' ||
+                        process.argv.includes('--verbose') ||
+                        process.argv.includes('-v');
+        
+        // Send message to API with streaming enabled and debug option
         const apiResponse = await chat(input, handleChunk, {
           abortSignal: abortController.signal,
+          debug: isVerbose
         });
 
         // After streaming is complete, handle any sources if available

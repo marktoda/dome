@@ -276,7 +276,7 @@ export function connectWebSocketChat(
   return new Promise((resolve, reject) => {
     try {
       const config = loadConfig();
-      
+
       // The dome-api endpoint is /chat
       let wsUrl = config.baseUrl.replace(/^http/, 'ws');
       wsUrl = `${wsUrl}/chat`;
@@ -284,24 +284,24 @@ export function connectWebSocketChat(
       if (options.debug) {
         console.log(`[DEBUG] Connecting to WebSocket: ${wsUrl}`);
       }
-      
+
       // Create WebSocket connection with headers in the connection string
       // Some WebSocket implementations don't support headers in the options
       const apiKey = config.apiKey || '';
       const authParams = `?apiKey=${encodeURIComponent(apiKey)}&userId=test-user-id`;
       const wsUrlWithAuth = `${wsUrl}${authParams}`;
-      
+
       const ws = new WebSocket(wsUrlWithAuth);
-      
+
       // Track the complete response
       let fullResponse = '';
-      
+
       // Set up event handlers
       ws.on('open', () => {
         if (options.debug) {
           console.log('[DEBUG] WebSocket connection established');
         }
-        
+
         // Create the exact message format expected by the chat service
         // Important: Looking at the server logs, we need to make sure the
         // JSON string is exactly what the server expects
@@ -323,40 +323,40 @@ export function connectWebSocketChat(
           },
           stream: true
         };
-        
+
         // Send the JSON string directly
         ws.send(JSON.stringify(chatMessage));
       });
-      
+
       ws.on('message', (data: Buffer | ArrayBuffer | Buffer[]) => {
         try {
           const chunk = data.toString();
           if (options.debug) {
-            console.log(`[DEBUG] Received chunk: ${chunk.substring(0, 80)}${chunk.length > 80 ? '...' : ''}`);
+            console.log(`[DEBUG] Received chunk: ${chunk}`);
           }
-          
+
           try {
             // Parse the JSON response from LangChain
             const parsed = JSON.parse(chunk);
-            
+
             // Extract just the content from the LangChain message chunk
             if (Array.isArray(parsed) && parsed.length > 0 &&
-                parsed[0].type === 'constructor' &&
-                parsed[0].id &&
-                parsed[0].id[2] === 'AIMessageChunk' &&
-                parsed[0].kwargs &&
-                parsed[0].kwargs.content !== undefined) {
-              
+              parsed[0].type === 'constructor' &&
+              parsed[0].id &&
+              parsed[0].id[2] === 'AIMessageChunk' &&
+              parsed[0].kwargs &&
+              parsed[0].kwargs.content !== undefined) {
+
               const content = parsed[0].kwargs.content;
-              
+
               // Check if this is a thinking/analysis JSON object
               try {
                 const contentObj = JSON.parse(content);
                 if (contentObj &&
-                    typeof contentObj === 'object' &&
-                    'isComplex' in contentObj &&
-                    'shouldSplit' in contentObj &&
-                    'reason' in contentObj) {
+                  typeof contentObj === 'object' &&
+                  'isComplex' in contentObj &&
+                  'shouldSplit' in contentObj &&
+                  'reason' in contentObj) {
                   // This is a thinking step - don't add to full response
                   // Send a special formatted chunk for thinking steps
                   onChunk({
@@ -368,7 +368,7 @@ export function connectWebSocketChat(
               } catch (jsonError) {
                 // Not a JSON object, treat as normal content
               }
-              
+
               // Normal content
               fullResponse += content;
               onChunk({
@@ -397,7 +397,7 @@ export function connectWebSocketChat(
           }
         }
       });
-      
+
       ws.on('close', () => {
         if (options.debug) {
           console.log('[DEBUG] WebSocket connection closed');
@@ -407,14 +407,14 @@ export function connectWebSocketChat(
           success: true
         });
       });
-      
+
       ws.on('error', (error: Error) => {
         if (options.debug) {
           console.error('[DEBUG] WebSocket error:', error);
         }
         reject(error);
       });
-      
+
       // Set a timeout in case the server doesn't close the connection
       const timeout = setTimeout(() => {
         if (options.debug) {
@@ -427,10 +427,10 @@ export function connectWebSocketChat(
           note: 'Connection timed out but partial response recovered'
         });
       }, 60000); // 60 second timeout
-      
+
       // Clear timeout when connection closes
       ws.on('close', () => clearTimeout(timeout));
-      
+
     } catch (error) {
       if (options.debug) {
         console.error('[DEBUG] Error setting up WebSocket:', error);
@@ -500,14 +500,14 @@ export async function chat(
         '[DEBUG] WebSocket streaming failed:',
         error instanceof Error ? error.message : String(error)
       );
-      
+
       // If we should retry with the old streaming method
       if (shouldRetryNonStreaming) {
         console.log('[DEBUG] Falling back to HTTP streaming');
         try {
           // Notify the user that we're falling back
           onChunk('\n[WebSocket streaming failed. Falling back to HTTP streaming...]\n');
-          
+
           // Use the original HTTP streaming implementation
           return await httpStreamingChat(message, onChunk, streamingOptions);
         } catch (httpError) {
@@ -515,26 +515,26 @@ export async function chat(
             '[DEBUG] HTTP streaming also failed:',
             httpError instanceof Error ? httpError.message : String(httpError)
           );
-          
+
           // If both streaming methods fail, try non-streaming
           try {
             onChunk('\n[All streaming methods failed. Falling back to standard mode...]\n');
-            
+
             // Create a non-streaming payload
             const nonStreamingPayload = {
               ...payload,
               stream: false,
             };
-            
+
             // Make a non-streaming request
             const fallbackResponse = await api.post('/chat', nonStreamingPayload);
-            
+
             // Extract the response text
             const responseText = getResponseText(fallbackResponse);
-            
+
             // Send the complete response through the chunk handler
             onChunk(responseText);
-            
+
             return {
               response: responseText,
               success: true,
@@ -550,7 +550,7 @@ export async function chat(
           }
         }
       }
-      
+
       // If we shouldn't retry, just return the error
       return {
         success: false,
@@ -573,7 +573,7 @@ export async function chat(
 
       // Use the chat endpoint
       const response = await api.post('/chat', nonStreamingPayload);
-      
+
       return getResponseText(response);
     } catch (error) {
       console.log(
