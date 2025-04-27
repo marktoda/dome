@@ -153,7 +153,7 @@ app.get(
       async onMessage(event, ws) {
         try {
           const chatService = serviceFactory.getChatService(c.env);
-          
+
           // Parse the incoming data as JSON if it's a string
           let jsonData;
           if (typeof event.data === 'string') {
@@ -169,27 +169,27 @@ app.get(
           } else {
             jsonData = event.data;
           }
-          
+
           // Validate against the Zod schema
           try {
             // Ensure userId is present
             if (!jsonData.userId) {
               jsonData.userId = 'test-user-id'; // Default for CLI
             }
-            
+
             // Parse with Zod schema
             const validatedRequest = chatRequestSchema.parse(jsonData);
             getLogger().info({
               req: validatedRequest,
               op: 'startChatSession'
             }, 'ChatController request');
-            
+
             const resp = await chatService.streamResponse(validatedRequest);
-            
+
             // Pump the streaming body into the socket
             const reader = resp.body!.getReader()
             const td = new TextDecoder()
-            
+
             while (true) {
               const { value, done } = await reader.read()
               getLogger().debug({ value }, 'streaming response')
@@ -228,6 +228,36 @@ app.get(
 // Mount routers
 app.route('/notes', notesRouter);
 app.route('/search', searchRouter);
+
+const contentRouter = new Hono();
+contentRouter.use('*', userIdMiddleware);
+
+// Register a GitHub repository
+contentRouter.post('/github', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env);
+  return await tsunamiController.registerGithubRepo(c);
+});
+
+// Get GitHub repository history
+contentRouter.get('/github/:owner/:repo/history', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env);
+  return await tsunamiController.getGithubRepoHistory(c);
+});
+
+// Get user sync history
+contentRouter.get('/sync/user/:userId/history', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env);
+  return await tsunamiController.getUserHistory(c);
+});
+
+// Get sync plan history
+contentRouter.get('/sync/plan/:syncPlanId/history', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env);
+  return await tsunamiController.getSyncPlanHistory(c);
+});
+
+// Mount GitHub router under content path
+app.route('/content', contentRouter);
 
 // AI endpoints
 const aiRouter = new Hono();

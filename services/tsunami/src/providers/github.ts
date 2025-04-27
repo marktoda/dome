@@ -7,7 +7,6 @@
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
 import { getLogger, metrics } from '@dome/logging';
-import { Bindings } from '../types';
 import {
   createGitHubMetadata,
   getLanguageFromPath,
@@ -66,7 +65,7 @@ export class GithubProvider implements Provider {
   private ignoreFileService: IgnoreFileService;
   private filterConfig = DEFAULT_FILTER_CONFIG;
 
-  constructor(env: Bindings) {
+  constructor(env: Env) {
     const token = (env as any).GITHUB_TOKEN ?? '';
     this.headers = {
       Accept: 'application/vnd.github.v3+json',

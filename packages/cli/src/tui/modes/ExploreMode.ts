@@ -63,8 +63,9 @@ export class ExploreMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Loading notes...');
       this.screen.render();
 
-      // The updated listNotes function should already return an array
-      this.notes = await listNotes();
+      // Extract the items array from the listNotes response
+      const response = await listNotes();
+      this.notes = response.items || [];
 
       // Calculate total pages
       this.totalPages = Math.ceil(this.notes.length / this.pageSize);

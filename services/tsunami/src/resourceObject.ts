@@ -2,7 +2,6 @@ import { DurableObject } from 'cloudflare:workers';
 import { getLogger, logError, metrics } from '@dome/logging';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { ProviderType, GithubProvider, Provider } from './providers';
-import { Bindings } from './types';
 import { syncHistoryOperations, syncPlanOperations } from './db/client';
 import { ulid } from 'ulid';
 
@@ -31,12 +30,12 @@ const DEFAULT_CFG: Config = {
 /*  durable object                                                    */
 /* ------------------------------------------------------------------ */
 
-export class ResourceObject extends DurableObject<Bindings> {
+export class ResourceObject extends DurableObject<Env> {
   protected cfg: Config = DEFAULT_CFG;
   protected readonly silo: SiloClient;
   protected readonly log = getLogger();
 
-  constructor(ctx: any, env: Bindings) {
+  constructor(ctx: any, env: Env) {
     super(ctx, env);
     (this.silo = new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE)),
       // Load stored configuration (do **not** throw – an empty cfg just means un‑initialised).

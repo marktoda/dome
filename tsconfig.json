@@ -20,6 +20,8 @@
       "@dome/constellation/*": ["services/constellation/src/*"],
       "@dome/errors": ["services/errors/src"],
       "@dome/errors/*": ["services/errors/src/*"],
+      "@dome/tsunami": ["services/tsunami/src"],
+      "@dome/tsunami/*": ["services/tsunami/src/*"],
       "@dome/chat": ["services/chat/src"],
       "@dome/chat/*": ["services/chat/src/*"],
       "@dome/ai-processor": ["services/ai-processor/src"],

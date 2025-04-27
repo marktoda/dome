@@ -430,8 +430,8 @@ export class NoteMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Loading recent notes...');
       this.screen.render();
 
-      const notes = await listNotes();
-      this.searchResults = notes || [];
+      const response = await listNotes();
+      this.searchResults = response.items || [];
 
       this.container.setContent('');
       this.container.pushLine('{center}{bold}Recent Notes{/bold}{/center}');

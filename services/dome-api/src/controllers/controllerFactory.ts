@@ -2,6 +2,7 @@ import { getLogger } from '@dome/logging';
 import { ChatController } from './chatController';
 import { SearchController } from './searchController';
 import { SiloController } from './siloController';
+import { TsunamiController } from './tsunamiController';
 import { ServiceFactory } from '../services/serviceFactory';
 import { Bindings } from '../types';
 
@@ -13,6 +14,7 @@ export class ControllerFactory {
   private chatController: ChatController | null = null;
   private searchController: SearchController | null = null;
   private siloController: SiloController | null = null;
+  private tsunamiController: TsunamiController | null = null;
 
   /**
    * Create a new controller factory
@@ -63,6 +65,20 @@ export class ControllerFactory {
       this.siloController = new SiloController(siloService, aiProcessor);
     }
     return this.siloController;
+  }
+
+  /**
+   * Get a tsunami controller instance
+   * @param env Environment bindings
+   * @returns Tsunami controller instance
+   */
+  getTsunamiController(env: Bindings): TsunamiController {
+    if (!this.tsunamiController) {
+      this.logger.debug('Creating new TsunamiController instance');
+      const tsunamiService = this.serviceFactory.getTsunamiService(env);
+      this.tsunamiController = new TsunamiController(tsunamiService);
+    }
+    return this.tsunamiController;
   }
 }
 

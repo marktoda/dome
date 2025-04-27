@@ -5,6 +5,7 @@ import { ConstellationClient, ConstellationBinding } from '@dome/constellation/c
 import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
 import { SearchService } from './searchService';
 import { ChatClient } from '@dome/chat/client';
+import { TsunamiClient, TsunamiBinding } from '@dome/tsunami/client';
 
 /**
  * Service factory interface
@@ -16,6 +17,7 @@ export interface ServiceFactory {
   getSearchService(env: Bindings): SearchService;
   getSiloService(env: Bindings): SiloClient;
   getChatService(env: Bindings): ChatClient;
+  getTsunamiService(env: Bindings): TsunamiClient;
 }
 
 /**
@@ -29,6 +31,7 @@ export class DefaultServiceFactory implements ServiceFactory {
   private searchServices: Map<Bindings, SearchService> = new Map();
   private chatServices: Map<Bindings, ChatClient> = new Map();
   private siloServices: Map<Bindings, SiloClient> = new Map();
+  private tsunamiServices: Map<Bindings, TsunamiClient> = new Map();
   private logger = getLogger();
 
   constructor() {
@@ -108,6 +111,21 @@ export class DefaultServiceFactory implements ServiceFactory {
       this.logger.debug('Creating new ChatService instance');
       service = new ChatClient(env.CHAT);
       this.chatServices.set(env, service);
+    }
+    return service;
+  }
+
+  /**
+   * Get the tsunami service instance for a specific env
+   * @param env Cloudflare Workers environment bindings
+   * @returns TsunamiClient instance
+   */
+  getTsunamiService(env: Bindings): TsunamiClient {
+    let service = this.tsunamiServices.get(env);
+    if (!service) {
+      this.logger.debug('Creating new TsunamiClient instance');
+      service = new TsunamiClient(env.TSUNAMI);
+      this.tsunamiServices.set(env, service);
     }
     return service;
   }

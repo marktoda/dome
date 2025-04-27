@@ -6,8 +6,6 @@
  * @module types
  */
 
-// Re-export types from the main types file
-export * from '../types';
 
 // Export metadata types
 export * from './metadata';

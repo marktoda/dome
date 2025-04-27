@@ -2,6 +2,7 @@ import type { MessageData, SiloSimplePutInput } from '@dome/common';
 import type { AiProcessorBinding } from '@dome/ai-processor/client';
 import { SiloBinding } from '@dome/silo/client';
 import { ChatBinding } from '@dome/chat/client';
+import { TsunamiBinding } from '@dome/tsunami/client';
 
 /**
  * Interface for Workers AI binding
@@ -19,7 +20,8 @@ export type Bindings = {
   AI?: WorkersAI; // Optional to support testing environments
   CONSTELLATION?: Fetcher; // Optional to support testing environments
   SILO: SiloBinding; // Silo service binding
-  CHAT: ChatBinding; // Silo service binding
+  CHAT: ChatBinding; // Chat service binding
+  TSUNAMI: TsunamiBinding; // Tsunami service binding
   AI_PROCESSOR: AiProcessorBinding; // AI processor service binding
   VERSION?: string; // Version of the service
   ENVIRONMENT?: string; // Environment (development, staging, production)

@@ -274,206 +274,142 @@ export class ChatMode extends BaseMode {
     // Ensure container is properly configured
     this.configureContainer();
 
-    // Add a separator line for better readability
-    this.container.pushLine('');
-
-    // Display user message with proper wrapping
-    this.container.pushLine(`{bold}{green-fg}You:{/green-fg}{/bold}`);
-
     // Get the container width (minus padding and borders)
     const containerWidth = (this.container as any).width - 4;
 
-    // Use the helper function to wrap the text
-    this.wrapText(input, containerWidth);
+    // Store conversation state to prevent duplication
+    const conversation = {
+      userInput: input,
+      thinking: '',
+      response: ''
+    };
 
-    // Ensure we scroll to the bottom after adding content
-    this.container.setScrollPerc(100);
-    this.screen.render();
+    // Function to rebuild the entire conversation display
+    const rebuildDisplay = () => {
+      // Clear the container and add header
+      this.container.setContent('');
+      this.container.pushLine('{center}{bold}Chat Mode{/bold}{/center}');
+      this.container.pushLine('{center}Type a message to chat with Dome AI{/center}');
+      this.container.pushLine('');
+
+      // Add user message
+      this.container.pushLine(`{bold}{green-fg}You:{/green-fg}{/bold}`);
+      this.wrapText(conversation.userInput, containerWidth);
+      this.container.pushLine('');
+
+      // Add thinking section if present
+      if (conversation.thinking) {
+        this.container.pushLine('{gray-fg}Thinking:{/gray-fg}');
+        this.container.pushLine(`{gray-fg}${conversation.thinking}{/gray-fg}`);
+        this.container.pushLine('');
+      }
+
+      // Add Dome's response if present
+      if (conversation.response || conversation.thinking) {
+        this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
+        if (conversation.response) {
+          this.wrapText(conversation.response, containerWidth);
+        }
+      }
+
+      // Make sure we scroll to the bottom
+      this.container.setScrollPerc(100);
+      this.screen.render();
+    };
 
     try {
+      // Display initial user message
+      rebuildDisplay();
+
       // Update status
       this.statusBar.setContent(' {bold}Status:{/bold} Dome is thinking...');
       this.screen.render();
 
-      // Add the Dome label before we start receiving chunks
-      this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
-
-      // Create a line for the streaming response
-      let currentResponseLine = '';
-      let isFirstChunk = true;
-
       // Create an AbortController for potential cancellation
       const abortController = new AbortController();
 
-      // Flag to track if thinking has been shown
-      let hasShownThinking = false;
-      
-      // Function to handle each chunk as it arrives
+      // Track if we've started receiving actual content
+      let hasStartedContent = false;
+
+      // Function to handle message chunks
       const handleChunk = (chunk: string | ChatMessageChunk) => {
-        // Get the container width for wrapping
-        const containerWidth = (this.container as any).width - 4;
-        
         if (typeof chunk === 'string') {
-          // Handle string chunks (original behavior)
-          processTextChunk(chunk);
+          // Plain text chunk - treat as content
+          conversation.response += chunk;
+          hasStartedContent = true;
         } else {
-          // Handle structured message chunks
-          if (chunk.type === 'thinking' && !hasShownThinking) {
-            // Only show thinking content once to avoid duplication
-            hasShownThinking = true;
-            
-            // Clear any existing content and start fresh to avoid duplication
-            // Get all content up to the most recent user message
-            const content = this.container.getContent();
-            const lines = content.split('\n');
-            let lastUserIndex = -1;
-            
-            // Find the last "You:" line
-            for (let i = lines.length - 1; i >= 0; i--) {
-              if (lines[i].includes('{bold}{green-fg}You:{/green-fg}{/bold}')) {
-                lastUserIndex = i;
-                break;
-              }
-            }
-            
-            if (lastUserIndex !== -1) {
-              // Keep everything up to and including a few lines after the user message
-              const contentBeforeAssistant = lines.slice(0, lastUserIndex + 3).join('\n');
-              this.container.setContent(contentBeforeAssistant);
-            }
-            
-            // Show thinking content in gray
-            this.container.pushLine('');
-            this.container.pushLine('{gray-fg}Thinking:{/gray-fg}');
-            
+          // Structured chunk
+          if (chunk.type === 'thinking' && !hasStartedContent) {
+            // Process thinking step only if we haven't started content yet
             try {
-              // Try to parse and format JSON if possible
-              const jsonObj = JSON.parse(chunk.content);
-              const formattedJson = JSON.stringify(jsonObj, null, 2);
-              this.container.pushLine(`{gray-fg}${formattedJson}{/gray-fg}`);
+              // Try to parse as JSON for better formatting
+              const thinkingObj = JSON.parse(chunk.content);
+              conversation.thinking = JSON.stringify(thinkingObj, null, 2);
             } catch (e) {
               // Not JSON, just display as is
-              this.container.pushLine(`{gray-fg}${chunk.content}{/gray-fg}`);
+              conversation.thinking = chunk.content;
             }
-            
-            this.container.pushLine('');
-            
-            // Reset the response state
-            currentResponseLine = '';
-            isFirstChunk = true;
-            
-            // Add the Dome label to start the response
-            this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
-          } else if (chunk.type === 'content') {
-            // For normal content chunks
-            processTextChunk(chunk.content);
+          } else if (chunk.type === 'content' || chunk.type === 'unknown') {
+            // Content chunk - add to response
+            conversation.response += chunk.content;
+            hasStartedContent = true;
           }
         }
-        
-        // Ensure we scroll to the bottom and render
-        this.container.setScrollPerc(100);
-        this.screen.render();
-      };
-      
-      // Helper function to process text chunks
-      const processTextChunk = (text: string) => {
-        // Append the chunk to the current response line
-        currentResponseLine += text;
 
-        // Simpler approach: If this is the first chunk, we've already added the "Dome:" label
-        // For subsequent chunks, we'll clear the container and rebuild it
-        if (isFirstChunk) {
-          // For the first chunk, just add the content after the "Dome:" label
-          this.wrapText(currentResponseLine, containerWidth);
-          isFirstChunk = false;
-        } else {
-          // For subsequent chunks, we need to rebuild the content
-
-          // Get all content up to the "Dome:" label
-          const content = this.container.getContent();
-          const domeIndex = content.lastIndexOf('{bold}{blue-fg}Dome:{/blue-fg}{/bold}');
-
-          if (domeIndex !== -1) {
-            // Keep everything up to and including the "Dome:" label
-            const contentBeforeDome = content.substring(
-              0,
-              domeIndex + '{bold}{blue-fg}Dome:{/blue-fg}{/bold}'.length,
-            );
-
-            // Set the content to include everything before the response
-            this.container.setContent(contentBeforeDome);
-
-            // Now add the updated response
-            this.wrapText(currentResponseLine, containerWidth);
-          } else {
-            // Fallback if we can't find the Dome label
-            this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
-            this.wrapText(currentResponseLine, containerWidth);
-          }
-        }
+        // Rebuild display with updated state
+        rebuildDisplay();
       };
 
+      // Check if verbose mode is enabled via environment or command line args
+      const isVerbose = process.env.DOME_VERBOSE === 'true' || 
+                      process.argv.includes('--verbose') || 
+                      process.argv.includes('-v');
+
+      // Send message to API with streaming enabled
+      const apiResponse = await chat(input, handleChunk, {
+        abortSignal: abortController.signal,
+        debug: isVerbose
+      });
+
+      // Process any sources if available
       try {
-        // Check if verbose mode is enabled via environment or command line args
-        const isVerbose = process.env.DOME_VERBOSE === 'true' ||
-                        process.argv.includes('--verbose') ||
-                        process.argv.includes('-v');
-        
-        // Send message to API with streaming enabled and debug option
-        const apiResponse = await chat(input, handleChunk, {
-          abortSignal: abortController.signal,
-          debug: isVerbose
-        });
-
-        // After streaming is complete, handle any sources if available
-        try {
-          if (
-            apiResponse &&
-            apiResponse.sources &&
-            Array.isArray(apiResponse.sources) &&
-            apiResponse.sources.length > 0
-          ) {
-            this.displaySources(apiResponse.sources, containerWidth);
-            this.container.setScrollPerc(100);
-            this.screen.render();
-          }
-        } catch (sourceError) {
-          // Ignore errors when processing sources
-          this.container.pushLine('{italic}(Error displaying sources){/italic}');
+        if (
+          apiResponse &&
+          apiResponse.sources &&
+          Array.isArray(apiResponse.sources) &&
+          apiResponse.sources.length > 0
+        ) {
+          this.displaySources(apiResponse.sources, containerWidth);
           this.container.setScrollPerc(100);
           this.screen.render();
         }
-      } catch (chatError) {
-        // Handle any exceptions during the chat API call
-        this.container.pushLine(`{bold}{red-fg}Error:{/red-fg}{/bold}`);
-        const errorMessage = chatError instanceof Error ? chatError.message : String(chatError);
-        const truncatedError =
-          errorMessage.length > 500
-            ? errorMessage.substring(0, 500) + '... [error message truncated]'
-            : errorMessage;
-
-        this.wrapText(
-          `I encountered an error while processing your request: ${truncatedError}`,
-          containerWidth,
-        );
-
+      } catch (sourceError) {
+        // Ignore errors when processing sources
+        this.container.pushLine('{italic}(Error displaying sources){/italic}');
         this.container.setScrollPerc(100);
         this.screen.render();
       }
 
-      // Reset status
+      // Reset status when done
       this.statusBar.setContent(
         ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
       );
       this.screen.render();
     } catch (err) {
+      // Handle any errors during chat
       const errorMessage = err instanceof Error ? err.message : String(err);
       const truncatedError =
         errorMessage.length > 500
           ? errorMessage.substring(0, 500) + '... [error message truncated]'
           : errorMessage;
 
-      this.container.pushLine(`{red-fg}Error: ${truncatedError}{/red-fg}`);
+      // Display error in the container
+      this.container.pushLine(`{bold}{red-fg}Error:{/red-fg}{/bold}`);
+      this.wrapText(`I encountered an error while processing your request: ${truncatedError}`, containerWidth);
+      this.container.setScrollPerc(100);
+      this.screen.render();
+
+      // Reset status
       this.statusBar.setContent(
         ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
       );

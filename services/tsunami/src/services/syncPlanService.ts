@@ -18,7 +18,6 @@ import { assertValid } from '../utils/errors';
 import { syncPlanOperations } from '../db/client';
 import { ResourceObject } from '../resourceObject';
 import { ProviderType } from '../providers';
-import { Bindings } from '../types';
 
 export interface InitParams {
   resourceId: string;
@@ -29,15 +28,15 @@ export interface InitParams {
 export class SyncPlanService {
   private logger = getLogger();
   private domain = 'tsunami.syncPlanService';
-  
-  constructor(private env: Bindings) {}
+
+  constructor(private env: Env) { }
 
   /* ─────────── Sync‑plan CRUD ─────────── */
 
   async getSyncPlan(resourceId: string) {
     return trackOperation('getSyncPlan', async () => {
       assertValid(resourceId && resourceId.trim().length > 0, 'ResourceId cannot be empty', { resourceId });
-      
+
       const plan = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
       return assertExists(plan, `Sync‑plan for "${resourceId}" not found`, { resourceId, operation: 'getSyncPlan' });
     }, { resourceId, requestId: getRequestId() });
@@ -47,7 +46,7 @@ export class SyncPlanService {
     return trackOperation('createSyncPlan', async () => {
       assertValid(provider && provider.trim().length > 0, 'Provider cannot be empty', { provider, resourceId });
       assertValid(resourceId && resourceId.trim().length > 0, 'ResourceId cannot be empty', { provider, resourceId });
-      
+
       const exists = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
       if (exists) {
         throw new ConflictError(`Sync‑plan for "${resourceId}" already exists`, {
@@ -59,7 +58,7 @@ export class SyncPlanService {
 
       const id = ulid();
       await syncPlanOperations.create(this.env.SYNC_PLAN, { id, provider, resourceId, userId });
-      
+
       this.logger.info({
         event: 'sync_plan_created',
         id,
@@ -68,7 +67,7 @@ export class SyncPlanService {
         userId,
         requestId: getRequestId()
       }, `Created new sync plan for ${resourceId}`);
-      
+
       return id;
     }, { provider, resourceId, userId, requestId: getRequestId() });
   }
@@ -77,10 +76,10 @@ export class SyncPlanService {
     return trackOperation('attachUser', async () => {
       assertValid(syncPlanId && syncPlanId.trim().length > 0, 'SyncPlanId cannot be empty', { syncPlanId, userId });
       assertValid(userId && userId.trim().length > 0, 'UserId cannot be empty', { syncPlanId, userId });
-      
+
       try {
         await syncPlanOperations.addUserToSyncPlan(this.env.SYNC_PLAN, syncPlanId, userId);
-        
+
         this.logger.info({
           event: 'user_attached_to_plan',
           syncPlanId,
@@ -119,7 +118,7 @@ export class SyncPlanService {
           configResourceId,
           requestId: getRequestId()
         }, 'Checking if resource already exists');
-        
+
         if (resourceId === configResourceId) {
           throw new ConflictError(`Resource already exists: ${resourceId}`, {
             resourceId,
@@ -148,14 +147,14 @@ export class SyncPlanService {
         cadenceSecs,
         requestId: getRequestId()
       }, `Initializing new resource object ${resourceId}`);
-      
+
       await obj.initialize({
         userIds: userId ? [userId] : [],
         providerType,
         resourceId,
         cadenceSecs,
       });
-      
+
       return true;
     }, { resourceId, providerType, userId, cadenceSecs, requestId: getRequestId() });
   }
@@ -166,7 +165,7 @@ export class SyncPlanService {
 
     return trackOperation('syncResource', async () => {
       const obj = this.getDurableObject(resourceId);
-      
+
       if (userId) {
         this.logger.info({
           event: 'adding_user_to_resource',
@@ -174,10 +173,10 @@ export class SyncPlanService {
           userId,
           requestId: getRequestId()
         }, `Adding user ${userId} to resource ${resourceId}`);
-        
+
         await obj.addUser(userId);
       }
-      
+
       this.logger.info({
         event: 'sync_resource_start',
         resourceId,
@@ -185,9 +184,9 @@ export class SyncPlanService {
         userId,
         requestId: getRequestId()
       }, `Starting sync for resource ${resourceId}`);
-      
+
       await obj.sync();
-      
+
       this.logger.info({
         event: 'sync_resource_complete',
         resourceId,
@@ -195,7 +194,7 @@ export class SyncPlanService {
         userId,
         requestId: getRequestId()
       }, `Completed sync for resource ${resourceId}`);
-      
+
     }, { resourceId, providerType, userId, requestId: getRequestId() });
   }
 
@@ -211,15 +210,15 @@ export class SyncPlanService {
       providerType: pt,
       operation: 'validateResourceId'
     });
-    
+
     if (pt === ProviderType.GITHUB) {
       assertValid(/^[^/]+\/[^/]+$/.test(id),
         `Invalid GitHub resourceId "${id}" (owner/repo required)`, {
-          providerType: pt,
-          resourceId: id,
-          operation: 'validateResourceId',
-          pattern: 'owner/repo'
-        }
+        providerType: pt,
+        resourceId: id,
+        operation: 'validateResourceId',
+        pattern: 'owner/repo'
+      }
       );
     }
   }
@@ -234,15 +233,15 @@ export class SyncPlanService {
         domain: this.domain,
         requestId: getRequestId()
       });
-      
+
       logError(domeError, `SyncPlanService.${op} operation failed`);
       metrics.increment(`tsunami.syncplan.${op}.errors`);
       metrics.trackOperation(`tsunami.syncplan.${op}`, false);
-      
+
       throw domeError;
     }
   }
 }
 
 /* factory so the rest of the codebase changes ⟶ one line */
-export const createSyncPlanService = (env: Bindings) => new SyncPlanService(env);
+export const createSyncPlanService = (env: Env) => new SyncPlanService(env);
