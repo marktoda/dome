@@ -70,7 +70,7 @@ export const DEFAULT_TIMEOUT_CONFIG: TimeoutConfig = {
 function getCurrentEnvironment(): string {
   // Check for environment variables that might indicate the environment
   // Default to 'development' if not specified
-  return process.env.NODE_ENV || 'development';
+  return 'development';
 }
 
 /**

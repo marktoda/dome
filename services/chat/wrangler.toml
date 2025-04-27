@@ -9,9 +9,12 @@ binding = "CHAT_DB"
 database_name = "chat-db"
 database_id = "81cd6689-95fd-4cee-94ef-a60ef8d62040"
 
-# Workers AI binding
-[ai]
-binding = "AI"
+# API keys and secrets (use wrangler secret to set these)
+# - wrangler secret put OPENAI_API_KEY
+
+# Deprecated: Workers AI binding - we're now using OpenAI directly via LangChain
+# [ai]
+# binding = "AI"
 
 # Service bindings
 [[services]]

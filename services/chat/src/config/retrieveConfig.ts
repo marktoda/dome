@@ -112,7 +112,7 @@ export const DEFAULT_RETRIEVE_CONFIG: RetrieveConfig = {
 function getCurrentEnvironment(): string {
   // Check for environment variables that might indicate the environment
   // Default to 'development' if not specified
-  return process.env.NODE_ENV || 'development';
+  return 'development';
 }
 
 /**
@@ -149,7 +149,7 @@ export function calculateMinRelevanceScore(wideningAttempts: number): number {
   const config = getRetrieveConfig();
   return Math.max(
     config.relevanceScores.baseMinRelevance -
-      wideningAttempts * config.relevanceScores.wideningReduction,
+    wideningAttempts * config.relevanceScores.wideningReduction,
     config.relevanceScores.minimumRelevanceFloor,
   );
 }

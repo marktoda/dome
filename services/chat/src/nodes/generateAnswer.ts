@@ -1,4 +1,6 @@
 import { getLogger, logError } from '@dome/logging';
+import { ChatOpenAI } from "@langchain/openai";
+import { CloudflareWorkersAI } from "@langchain/cloudflare";
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { AgentState, ToolResult } from '../types';
 import { countTokens } from '../utils/tokenCounter';
@@ -15,9 +17,15 @@ export async function generateAnswer(
   state: AgentState,
   cfg: LangGraphRunnableConfig,
   env: Env,
-): Promise<Partial<AgentState>> {
+) {
   const t0 = performance.now();
   getLogger().info({ state }, "[GenerateAnswer] starting");
+
+  const llm = new ChatOpenAI({
+    model: "gpt-4o",
+    temperature: 0.7,
+    apiKey: env.OPENAI_API_KEY,
+  });
 
   /* ------------------------------------------------------------------ */
   /*  Trace / logging helpers                                           */
@@ -51,33 +59,11 @@ export async function generateAnswer(
     state.options?.maxTokens
   );
 
-  /* ------------------------------------------------------------------ */
-  /*  Stream from LLM and push deltas via cfg.writer                    */
-  /* ------------------------------------------------------------------ */
-  let full = "";
-  try {
-    for await (const chunk of LlmService.streamAnswer(
-      env,
-      state.messages,
-      docsFmt + toolFmt,
-      {
-        temperature: state.options?.temperature,
-        maxTokens: maxResponseTokens,
-        includeSourceInfo: includeSources,
-        modelId,
-      }
-    )) {
-      // 1) give real-time tokens to whoever is consuming `graph.stream(...)`
-      cfg.writer?.(chunk);
+  const response = await llm.invoke(state.messages.map(m => ({
+    role: m.role,
+    content: m.content,
+  })));
 
-      // 2) keep building the full answer locally
-      full += chunk;
-    }
-  } catch (err) {
-    logError(err, "Error streaming answer");
-    // surface the error to the caller so the graph can handle it
-    throw err;
-  }
 
   /* ------------------------------------------------------------------ */
   /*  Finish, log, and return the state update                          */
@@ -85,10 +71,10 @@ export async function generateAnswer(
   const elapsed = performance.now() - t0;
   ObservabilityService.endSpan(env, traceId, spanId, "generateAnswer", state, state, elapsed);
   ObservabilityService.endTrace(env, traceId, state, elapsed);
-  getLogger().info({ elapsedMs: elapsed, fullLen: full.length }, "[GenerateAnswer] done");
+  getLogger().info({ elapsedMs: elapsed, fullLen: response.text.length, content: response.text }, "[GenerateAnswer] done");
 
   return {
-    generatedText: full,
+    messages: response,
     metadata: {
       currentNode: "generate_answer",
       isFinalState: true,

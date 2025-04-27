@@ -120,7 +120,7 @@ Respond with a JSON object with the following properties:
 function getCurrentEnvironment(): string {
   // Check for environment variables that might indicate the environment
   // Default to 'development' if not specified
-  return process.env.NODE_ENV || 'development';
+  return 'development';
 }
 
 /**

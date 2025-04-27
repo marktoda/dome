@@ -66,7 +66,7 @@ export const MODELS = {
 /**
  * Default model to use
  */
-export const DEFAULT_MODEL = MODELS.LLAMA_3_70B;
+export const DEFAULT_MODEL = MODELS.GPT_4;
 
 /**
  * Get model configuration by ID

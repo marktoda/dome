@@ -47,9 +47,7 @@ export async function buildChatGraph(
     .addEdge("generate_answer", END);
 
 
-  const compiled = graph.compile({ checkpointer });
-  getLogger().info((await compiled.getGraphAsync()).drawMermaid());
-  return compiled;
+  return graph.compile({ checkpointer });
 }
 
 /* ------------------------------------------------------------------ */
