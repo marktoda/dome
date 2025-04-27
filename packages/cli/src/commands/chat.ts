@@ -26,14 +26,19 @@ export function chatCommand(program: Command): void {
 
       try {
         if (options.message) {
-          // Send a single message (non-streaming)
+          // Send a single message (non-interactive mode)
           console.log(heading('Chat'));
           console.log(chalk.bold.green('You: ') + options.message);
-          console.log(chalk.bold.blue('Dome: '));
+          process.stdout.write(chalk.bold.blue('Dome: '));
 
-          // Force non-streaming mode
-          const response = await chat(options.message, undefined, { retryNonStreaming: false });
-          console.log(response);
+          // Stream the response using WebSocket with debug mode disabled
+          const chunks: string[] = [];
+          await chat(options.message, (chunk) => {
+            // Display each chunk as it comes in
+            process.stdout.write(chunk);
+            chunks.push(chunk);
+          }, { retryNonStreaming: true });
+          console.log(); // Add newline after response
         } else {
           // Start interactive chat mode
           console.log(heading('Interactive Chat'));
@@ -60,9 +65,14 @@ export function chatCommand(program: Command): void {
               // Display "thinking" indicator
               process.stdout.write(chalk.bold.blue('Dome: '));
 
-              // Force non-streaming mode
-              const response = await chat(userMessage, undefined, { retryNonStreaming: false });
-              console.log(response);
+              // Use WebSocket streaming with debug mode disabled
+              const chunks: string[] = [];
+              await chat(userMessage, (chunk) => {
+                // Display each chunk as it comes in
+                process.stdout.write(chunk);
+                chunks.push(chunk);
+              }, { retryNonStreaming: true });
+              console.log(); // Add newline after response
             } catch (err) {
               console.log(error(`Error: ${err instanceof Error ? err.message : String(err)}`));
             }

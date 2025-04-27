@@ -230,4 +230,6 @@ See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for detailed setup instructions.
 
 # TODO
 
+- make TODO a tool for the langgraph (todo_add, todo_fetch, todo_update)
+
 - include file metadata when ingesting (i.e. filename etc)

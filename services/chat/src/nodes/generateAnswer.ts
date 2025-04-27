@@ -17,7 +17,7 @@ export async function generateAnswer(
   state: AgentState,
   cfg: LangGraphRunnableConfig,
   env: Env,
-) {
+): Promise<Partial<AgentState>> {
   const t0 = performance.now();
   getLogger().info({ messages: state.messages }, "[GenerateAnswer] starting");
 

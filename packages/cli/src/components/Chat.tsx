@@ -23,6 +23,7 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
   );
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(initialMessage ? true : false);
+  const [isStreaming, setIsStreaming] = useState(false);
 
   // Send initial message if provided
   React.useEffect(() => {
@@ -43,6 +44,7 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
       // Create a placeholder for the assistant's response
       const assistantMessageIndex = messages.length + ((!initialMessage || messages.length > 0) ? 1 : 0);
       setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+      setIsStreaming(true);
       
       // Create a function to handle streaming chunks
       const handleChunk = (chunk: string) => {
@@ -67,9 +69,9 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
         });
       };
       
-      // Send message to API with streaming enabled
+      // Send message to API with WebSocket streaming enabled (debug mode disabled)
       try {
-        const response = await chat(content, handleChunk);
+        const response = await chat(content, handleChunk, { retryNonStreaming: true });
         
         // If the streaming didn't work for some reason, ensure we have the complete response
         if (response && typeof response === 'object' && response.response) {
@@ -89,6 +91,7 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
         }
         
         setIsLoading(false);
+        setIsStreaming(false);
       } catch (chatError) {
         // Handle chat-specific errors
         const errorMessage = chatError instanceof Error ? chatError.message : String(chatError);
@@ -103,6 +106,7 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
           return newMessages;
         });
         setIsLoading(false);
+        setIsStreaming(false);
       }
     } catch (err) {
       // Handle general errors
@@ -111,6 +115,7 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
         { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : String(err)}` },
       ]);
       setIsLoading(false);
+      setIsStreaming(false);
     }
   };
 
@@ -140,9 +145,14 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
           </Box>
         ))}
         
-        {isLoading && (
+        {isLoading && !isStreaming && (
           <Box marginTop={1}>
             <Loading text="Dome is thinking..." />
+          </Box>
+        )}
+        {isStreaming && (
+          <Box marginTop={1}>
+            <Text color="yellow">Streaming response...</Text>
           </Box>
         )}
       </Box>

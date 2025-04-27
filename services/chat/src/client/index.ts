@@ -41,10 +41,9 @@ export * from '../types';
  * Defines the contract for the Cloudflare Worker binding to the Chat Orchestrator service
  */
 export interface ChatBinding {
+  fetch(request: Request): Promise<Response>;
   // Chat methods
-  generateChatResponse(request: ChatRequest): Promise<Response>;
   generateChatMessage(request: ChatRequest): Promise<Response>;
-  resumeChatSession(request: { runId: string; newMessage?: any }): Promise<Response>;
 
   // Admin methods
   getCheckpointStats(): Promise<any>;

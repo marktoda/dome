@@ -12,8 +12,7 @@ import { getLogger, logError } from '@dome/logging';
 import { createServices } from './services';
 import { createControllers } from './controllers';
 import { ChatBinding } from './client';
-import { withErrorHandling } from './utils/errorHandler';
-import { handleWebSocketChat } from './controllers/chatController';
+import { ChatRequest } from './types';
 
 export * from './client';
 
@@ -22,8 +21,7 @@ export * from './client';
  */
 export default class Chat
   extends WorkerEntrypoint<Env>
-  implements ChatBinding
-{
+  implements ChatBinding {
   private services;
   private controllers;
   private app: Hono;
@@ -34,180 +32,38 @@ export default class Chat
 
     // Initialize services and controllers
     this.services = createServices(env);
-    this.controllers = createControllers(env, this.services);
-    
+    this.controllers = createControllers(env, this.services, ctx);
+
     // Create Hono app instance
     this.app = new Hono();
-    
-    // Setup routes
-    this.setupRoutes(env);
+
+    this.app.post('/stream', async (c) => {
+      // Parse once, Hono does *not* auto-parse JSON for you
+      const body = await c.req.json<ChatRequest>()
+
+      // Ask the controller for the stream
+      const stream = await this.controllers.chat.startChatSession(body)
+
+      // Standard SSE headers; change Content-Type if you use ND-JSON, etc.
+      c.header('Content-Type', 'text/event-stream')
+      c.header('Cache-Control', 'no-cache')
+      c.status(200)
+
+      // Done.  c.body() also works, but returning Response is simplest.
+      return new Response(stream)
+    })
+
+    this.app.get('/healthz', () => new Response('ok'))
 
     this.logger.info('Chat Orchestrator service initialized');
   }
-  
-  /**
-   * Setup all HTTP and WebSocket routes
-   */
-  private setupRoutes(env: Env) {
-    // WebSocket route
-    this.app.get('/ws', upgradeWebSocket((c) => {
-      const logger = this.logger.child({ component: 'WebSocketHandler' });
-      logger.info('WebSocket connection upgrade requested');
-      
-      return {
-        onMessage: (event, ws) => {
-          try {
-            // Parse the message as JSON
-            const message = JSON.parse(event.data as string);
-            logger.debug({ messageType: message.type }, 'Received WebSocket message');
-            
-            // Handle the message based on type
-            if (message.type === 'new_chat' || message.type === 'resume_chat') {
-              // Handle the chat request - using the new handler
-              handleWebSocketChat(
-                env,
-                this.services,
-                ws as unknown as WebSocket, // Cast to WebSocket interface
-                message
-              );
-            } else {
-              logger.warn({ messageType: message.type }, 'Unknown WebSocket message type');
-              ws.send(JSON.stringify({
-                type: 'error',
-                data: { message: `Unknown message type: ${message.type}` }
-              }));
-            }
-          } catch (error) {
-            logError(error, 'Error handling WebSocket message');
-            ws.send(JSON.stringify({
-              type: 'error',
-              data: { message: error instanceof Error ? error.message : String(error) }
-            }));
-          }
-        },
-        onClose: () => {
-          logger.info('WebSocket connection closed');
-        },
-        onError: (err) => {
-          logError(err, 'WebSocket connection error');
-        }
-      };
-    }));
-    
-    // HTTP routes
-    this.app.post('/chat', async (c) => {
-      const requestData = await c.req.json();
-      return await this.controllers.chat.generateChatResponse(requestData);
-    });
-    
-    this.app.post('/chat/message', async (c) => {
-      const requestData = await c.req.json();
-      return await this.controllers.chat.generateChatMessage(requestData);
-    });
-    
-    this.app.post('/chat/resume', async (c) => {
-      const requestData = await c.req.json();
-      return await this.controllers.chat.resumeChatSession(requestData);
-    });
-    
-    this.app.get('/admin/checkpoints', async (c) => {
-      return c.json(await this.controllers.admin.getCheckpointStats());
-    });
-    
-    this.app.post('/admin/checkpoints/cleanup', async (c) => {
-      return c.json(await this.controllers.admin.cleanupCheckpoints());
-    });
-    
-    // Catch-all for 404
-    this.app.notFound((c) => {
-      return c.json({ error: 'Not Found' }, 404);
-    });
-  }
 
-  /**
-   * Generate a chat response with streaming
-   * @param request Chat request
-   * @returns Streaming response
-   */
-  /**
-   * Main fetch handler for the worker
-   * This handles HTTP and WebSocket requests
-   */
-  /**
-   * Main fetch handler for the worker
-   * This delegates to the Hono app
-   */
-  async fetch(request: Request): Promise<Response> {
-    const env = this.env;
-    const ctx = this.ctx;
-    try {
-      return this.app.fetch(request, env, ctx);
-    } catch (error) {
-      logError(error, 'Error handling HTTP request');
-      return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-  }
-  
-  /**
-   * Generate a chat response with streaming
-   * @param request Chat request
-   * @returns Streaming response
-   */
-  async generateChatResponse(request: any): Promise<Response> {
-    try {
-      this.logger.info(
-        {
-          operation: 'generateChatResponse',
-          userId: request?.userId,
-        },
-        'RPC call received',
-      );
+  // ⭐ Central fetch: hand *all* HTTP traffic to Hono,
+  // let WorkerEntrypoint take care of RPC calls (service bindings).
+  async fetch(req: Request) {
 
-      // Now this just delegates to the controller
-      return await this.controllers.chat.generateChatResponse(request);
-    } catch (error) {
-      this.logger.error(
-        {
-          operation: 'generateChatResponse',
-          error,
-        },
-        'Error in RPC call',
-      );
-
-      throw error;
-    }
-  }
-
-  /**
-   * Resume a chat session
-   * @param request Resume chat request
-   * @returns Streaming response
-   */
-  async resumeChatSession(request: any): Promise<Response> {
-    try {
-      this.logger.info(
-        {
-          operation: 'resumeChatSession',
-          runId: request?.runId,
-        },
-        'RPC call received',
-      );
-
-      return await this.controllers.chat.resumeChatSession(request);
-    } catch (error) {
-      this.logger.error(
-        {
-          operation: 'resumeChatSession',
-          error,
-        },
-        'Error in RPC call',
-      );
-
-      throw error;
-    }
+    // Otherwise treat it as a normal HTTP request
+    return this.app.fetch(req)
   }
 
   /**

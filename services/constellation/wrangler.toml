@@ -1,5 +1,6 @@
 name = "constellation"
 main = "src/index.ts"
+workers_dev = false
 compatibility_date = "2025-04-15"
 compatibility_flags = ["nodejs_als"]
 

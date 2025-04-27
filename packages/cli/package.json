@@ -38,6 +38,7 @@
     "node-fetch": "^3.3.2",
     "ora": "^5.4.1",
     "react": "^18.2.0",
+    "ws": "^8.18.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -47,6 +48,7 @@
     "@types/keypress": "^2.0.30",
     "@types/node": "^18.15.11",
     "@types/react": "^18.2.21",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^5.57.1",
     "@typescript-eslint/parser": "^5.57.1",
     "eslint": "^8.38.0",

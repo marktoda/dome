@@ -4,6 +4,8 @@ import { BaseMessage } from '@langchain/core/messages';
 
 export const roleSchema = z.enum(['user', 'assistant', 'system']);
 
+export type ChatTokenStream = AsyncIterable<string>
+
 // Define schemas for request validation
 export const chatRequestSchema = z.object({
   stream: z.boolean().optional().default(true),

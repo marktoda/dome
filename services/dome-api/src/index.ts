@@ -2,6 +2,7 @@ import { Hono, Context } from 'hono';
 import { upgradeWebSocket } from 'hono/cloudflare-workers'
 import { cors } from 'hono/cors';
 import type { ServiceInfo } from '@dome/common';
+import { chatRequestSchema } from '@dome/chat/client';
 import {
   createRequestContextMiddleware,
   createErrorMiddleware,
@@ -150,26 +151,65 @@ app.get(
     // NB: Cloudflare Workers has no `onOpen`; first client frame is where we start
     return {
       async onMessage(event, ws) {
-        const chatService = serviceFactory.getChatService(c.env);
-        const resp = await chatService.streamResponse(event.data);
-
-        // // Forward the JSON payload to the chat worker
-        // const resp = await c.env.CHAT.fetch('https://chat.internal/stream', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: event.data,        // the user's request (prompt, opts, etc.)
-        // })
-
-        // Pump the streaming body into the socket
-        const reader = resp.body!.getReader()
-        const td = new TextDecoder()
-
-        while (true) {
-          const { value, done } = await reader.read()
-          if (done) break
-          ws.send(td.decode(value))   // send LangGraph chunk to the client
+        try {
+          const chatService = serviceFactory.getChatService(c.env);
+          
+          // Parse the incoming data as JSON if it's a string
+          let jsonData;
+          if (typeof event.data === 'string') {
+            try {
+              jsonData = JSON.parse(event.data);
+              getLogger().debug('Successfully parsed WebSocket message as JSON');
+            } catch (parseError) {
+              getLogger().error({ error: parseError }, 'Failed to parse WebSocket message as JSON');
+              ws.send('Error: Invalid JSON payload');
+              ws.close(1008, 'Invalid JSON payload');
+              return;
+            }
+          } else {
+            jsonData = event.data;
+          }
+          
+          // Validate against the Zod schema
+          try {
+            // Ensure userId is present
+            if (!jsonData.userId) {
+              jsonData.userId = 'test-user-id'; // Default for CLI
+            }
+            
+            // Parse with Zod schema
+            const validatedRequest = chatRequestSchema.parse(jsonData);
+            getLogger().info({
+              req: validatedRequest,
+              op: 'startChatSession'
+            }, 'ChatController request');
+            
+            const resp = await chatService.streamResponse(validatedRequest);
+            
+            // Pump the streaming body into the socket
+            const reader = resp.body!.getReader()
+            const td = new TextDecoder()
+            
+            while (true) {
+              const { value, done } = await reader.read()
+              getLogger().debug({ value }, 'streaming response')
+              if (done) break
+              ws.send(td.decode(value))   // send LangGraph chunk to the client
+            }
+            ws.close()                    // tell the client we're done
+          } catch (zodError) {
+            getLogger().error({ error: zodError }, 'Zod validation error for WebSocket message');
+            const errorMessage = zodError instanceof Error ?
+              zodError.message :
+              'Unknown validation error';
+            ws.send(`Error: Invalid request format - ${errorMessage}`);
+            ws.close(1007, 'Invalid message format');
+          }
+        } catch (error) {
+          getLogger().error({ error }, 'Error processing WebSocket message');
+          ws.send(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          ws.close(1011, 'Internal server error');
         }
-        ws.close()                    // tell the client we’re done
       },
 
       onClose() {

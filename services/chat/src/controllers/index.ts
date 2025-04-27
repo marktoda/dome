@@ -17,12 +17,12 @@ export interface Controllers {
  * @param services Service container
  * @returns Controllers container
  */
-export function createControllers(env: Env, services: Services): Controllers {
+export function createControllers(env: Env, services: Services, ctx: ExecutionContext): Controllers {
   const logger = getLogger().child({ component: 'ControllerFactory' });
   logger.info('Initializing chat orchestrator controllers');
 
   return {
-    chat: createChatController(env, services),
+    chat: createChatController(env, services, ctx),
     admin: createAdminController(env, services),
   };
 }
