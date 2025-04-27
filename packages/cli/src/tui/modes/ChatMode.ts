@@ -2,484 +2,235 @@ import { Widgets } from 'blessed';
 import { BaseMode } from './BaseMode';
 import { chat, ChatMessageChunk } from '../../utils/api';
 
-/**
- * Chat mode for interacting with the Dome AI
- */
+type Conversation = {
+  user: string;
+  thinking: string;
+  reply: string;
+};
+
+/* ------------------------------------------------------------------ */
+/*  ChatMode                                                           */
+/* ------------------------------------------------------------------ */
+
 export class ChatMode extends BaseMode {
-  /**
-   * Helper function to wrap text to fit the container width
-   * @param text The text to wrap
-   * @param containerWidth The width of the container
-   * @returns void - pushes lines directly to the container
-   */
-  /**
-   * Enhanced text wrapping function that handles various edge cases
-   * @param text The text to wrap
-   * @param containerWidth The width of the container
-   * @returns void - pushes lines directly to the container
-   */
-  private wrapText(text: string, containerWidth: number): void {
-    // Safety check for container width
-    if (containerWidth <= 0) {
-      containerWidth = 80; // Fallback to a reasonable default
-    }
+  private static readonly MAX_LINES = 1_000;
+  private static readonly MAX_LINE_LEN = 5_000;
+  private static readonly MAX_SOURCES = 5;
+  private static readonly HEADER = [
+    '{center}{bold}Chat Mode{/bold}{/center}',
+    '{center}Type a message to chat with Dome AI{/center}',
+    '',
+  ];
 
-    // More conservative space reservation for safety margin
-    const safeWidth = Math.max(containerWidth - 4, 10);
-
-    // Add maximum text length protection
-    const maxTextLength = 5000; // Reasonable limit
-    if (text && text.length > maxTextLength) {
-      text = text.substring(0, maxTextLength) + '... [content truncated due to length]';
-    }
-
-    // Handle empty or undefined text
-    if (!text) {
-      this.container.pushLine('');
-      return;
-    }
-
-    // Split the text into lines and handle each line
-    const lines = text.split('\n');
-
-    // Limit number of lines to prevent overflow
-    const maxLines = 300;
-    if (lines.length > maxLines) {
-      const truncatedLines = lines.slice(0, maxLines);
-      truncatedLines.push('... [additional lines truncated]');
-      this.container.pushLine('{yellow-fg}Message truncated due to excessive length{/yellow-fg}');
-      lines.length = 0; // Clear the array
-      lines.push(...truncatedLines); // Replace with truncated version
-    }
-
-    for (const line of lines) {
-      // Skip empty lines but preserve them in output
-      if (line.trim() === '') {
-        this.container.pushLine('');
-        continue;
-      }
-
-      // If the line is shorter than the safe width, add it directly
-      if (line.length <= safeWidth) {
-        this.container.pushLine(line);
-        continue;
-      }
-
-      // For longer lines, use word-based wrapping when possible
-      let currentLine = '';
-      const words = line.split(' ');
-
-      for (let i = 0; i < words.length; i++) {
-        let word = words[i];
-
-        // Handle very long words (like URLs) by breaking them up
-        if (word.length > safeWidth) {
-          // If we have content in the current line, push it first
-          if (currentLine) {
-            this.container.pushLine(currentLine);
-            currentLine = '';
-          }
-
-          // Break up the long word with improved handling
-          while (word.length > safeWidth) {
-            const chunk = word.substring(0, safeWidth - 1) + '-';
-            this.container.pushLine(chunk);
-            word = word.substring(safeWidth - 1);
-
-            // Safety check to prevent infinite loops with very long words
-            if (this.getContainerLines().length > 500) {
-              this.container.pushLine('... [content truncated - word too long]');
-              word = '';
-              break;
-            }
-          }
-
-          // Add the remainder to the current line
-          currentLine = word;
-        } else {
-          // Check if adding this word would exceed the line width
-          const testLine = currentLine ? currentLine + ' ' + word : word;
-
-          if (testLine.length <= safeWidth) {
-            currentLine = testLine;
-          } else {
-            // Line would be too long, push current line and start a new one
-            this.container.pushLine(currentLine);
-            currentLine = word;
-          }
-        }
-      }
-
-      // Push any remaining content
-      if (currentLine) {
-        this.container.pushLine(currentLine);
-      }
-    }
-
-    // Enforce overall container size limits
-    this.enforceContentLimits();
-  }
-
-  /**
-   * Safely get lines from the container
-   * @returns Array of lines in the container
-   */
-  private getContainerLines(): string[] {
-    try {
-      // Try to use getLines() method if available
-      if (typeof this.container.getLines === 'function') {
-        return this.container.getLines();
-      }
-
-      // Fallback: get content and split by newlines
-      const content = this.container.getContent();
-      if (content && typeof content === 'string') {
-        return content.split('\n');
-      }
-
-      // Last resort: get content via property access
-      const containerAny = this.container as any;
-      if (containerAny.content && typeof containerAny.content === 'string') {
-        return containerAny.content.split('\n');
-      }
-
-      return [];
-    } catch (err) {
-      // Return empty array on error
-      return [];
-    }
-  }
-
-  /**
-   * Enforce content limits to prevent overflow
-   */
-  private enforceContentLimits(): void {
-    try {
-      const maxTotalLines = 1000;
-      const lines = this.getContainerLines();
-
-      if (lines && lines.length > maxTotalLines) {
-        // Keep header (first 3 lines) and most recent content
-        const headerLines = 3;
-        const linesToKeep = maxTotalLines - headerLines - 1;
-
-        const newContent = [
-          ...lines.slice(0, headerLines),
-          '{yellow-fg}[Older messages removed to prevent overflow]{/yellow-fg}',
-          ...lines.slice(lines.length - linesToKeep),
-        ].join('\n');
-
-        this.container.setContent(newContent);
-      }
-    } catch (err) {
-      // Silently handle any errors in the content limiting logic
-      // to prevent cascading failures
-    }
-  }
-  /**
-   * Create a new chat mode
-   */
   constructor() {
     super({
       id: 'chat',
       name: 'Chat',
       description: 'Chat with Dome AI',
-      shortcut: 'C-t', // Changed from C-c to C-t (for Talk)
+      shortcut: 'C-t',
       color: 'green',
     });
   }
 
-  /**
-   * Handle mode initialization
-   */
-  protected onInit(): void {
-    // Nothing to initialize
+  /* ------------------------------------------------------------------ */
+  /*  lifecycle                                                         */
+  /* ------------------------------------------------------------------ */
+
+  protected onInit(): void {/* nothing */ }
+
+  protected onActivate(): void {
+    this.configureContainer();
+    this.container.setLabel(' Chat with Dome ');
+    this.renderHeader();
   }
 
-  /**
-   * Handle mode activation
-   */
-  protected onActivate(): void {
-    // Configure container for optimal text handling
-    this.configureContainer();
+  protected onDeactivate(): void {/* nothing */ }
 
-    this.container.setLabel(' Chat with Dome ');
-    this.container.setContent('');
-    this.container.pushLine('{center}{bold}Chat Mode{/bold}{/center}');
-    this.container.pushLine('{center}Type a message to chat with Dome AI{/center}');
-    this.container.pushLine('');
+  /* ------------------------------------------------------------------ */
+  /*  input handler                                                     */
+  /* ------------------------------------------------------------------ */
+
+  async handleInput(input: string): Promise<void> {
+    this.configureContainer();
+    const cw = (this.container as any).width - 4;
+
+    const convo: Conversation = { user: input, thinking: '', reply: '' };
+    const rebuild = () => this.renderConversation(convo, cw);
+
+    rebuild();
+    this.setStatus('Dome is thinking…');
+
+    /* stream handler ------------------------------------------------- */
+    let startedContent = false;
+    const onChunk = (chunk: string | ChatMessageChunk) => {
+      if (typeof chunk === 'string') {
+        convo.reply += chunk;
+        startedContent = true;
+      } else if (chunk.type === 'thinking' && !startedContent) {
+        try {
+          convo.thinking = JSON.stringify(JSON.parse(chunk.content), null, 2);
+        } catch { convo.thinking = chunk.content; }
+      } else {
+        convo.reply += chunk.content;
+        startedContent = true;
+      }
+      rebuild();
+    };
+
+    /* api call ------------------------------------------------------- */
+    try {
+      const verbose = process.env.DOME_VERBOSE === 'true' ||
+        process.argv.includes('-v') || process.argv.includes('--verbose');
+
+      const result = await chat(input, onChunk, { debug: verbose });
+
+      /* sources ------------------------------------------------------ */
+      if (result?.sources?.length) {
+        this.displaySources(result.sources.slice(0, ChatMode.MAX_SOURCES), cw);
+        this.scrollToBottom();
+      }
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+      this.printBlock('{bold}{red-fg}Error:{/red-fg}{/bold}', `I encountered an error: ${msg}`, cw);
+    } finally {
+      this.setStatus(); // reset
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  rendering helpers                                                 */
+  /* ------------------------------------------------------------------ */
+
+  private renderHeader(): void {
+    this.container.setContent(ChatMode.HEADER.join('\n'));
     this.screen.render();
   }
 
-  /**
-   * Configure the container for optimal text handling
-   */
+  private renderConversation({ user, thinking, reply }: Conversation, cw: number): void {
+    this.container.setContent('');
+    ChatMode.HEADER.forEach(l => this.container.pushLine(l));
+
+    this.printBlock('{bold}{green-fg}You:{/green-fg}{/bold}', user, cw);
+    if (thinking) this.printBlock('{gray-fg}Thinking:{/gray-fg}', thinking, cw);
+    if (thinking || reply) this.printBlock('{bold}{blue-fg}Dome:{/blue-fg}{/bold}', reply, cw);
+
+    this.scrollToBottom();
+  }
+
+  private printBlock(header: string, text: string, cw: number): void {
+    this.container.pushLine(header);
+    this.wrapText(text, cw);
+    this.container.pushLine('');
+    this.enforceLimit();
+  }
+
+  private wrapText(text: string, cw: number): void {
+    if (!text) { this.container.pushLine(''); return; }
+
+    const safeWidth = Math.max(cw - 2, 10);
+    const lines = text
+      .split('\n')
+      .flatMap(line => this.wordWrap(line, safeWidth));
+
+    lines.forEach(l => this.container.pushLine(l));
+  }
+
+  private wordWrap(line: string, width: number): string[] {
+    if (line.length <= width) return [line];
+
+    const out: string[] = [];
+    let cur = '';
+    for (const word of line.split(' ')) {
+      if (word.length > width) {
+        if (cur) { out.push(cur); cur = ''; }
+        let w = word;
+        while (w.length > width) {
+          out.push(w.slice(0, width - 1) + '-');
+          w = w.slice(width - 1);
+        }
+        cur = w;
+      } else if ((cur + ' ' + word).trim().length <= width) {
+        cur = (cur ? cur + ' ' : '') + word;
+      } else {
+        out.push(cur);
+        cur = word;
+      }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  private displaySources(sources: any[], cw: number): void {
+    this.container.pushLine('{bold}Sources:{/bold}');
+    sources.forEach((s, i) => {
+      const title = s.title?.length > 80 ? s.title.slice(0, 80) + '…' : s.title;
+      if (title) this.container.pushLine(`${i + 1}. {underline}${title}{/underline}`);
+      if (s.snippet) this.wrapText('   ' + s.snippet.slice(0, 100) + (s.snippet.length > 100 ? '…' : ''), cw);
+    });
+    if (sources.length > ChatMode.MAX_SOURCES)
+      this.container.pushLine(`{italic}(showing ${ChatMode.MAX_SOURCES} of ${sources.length}){/italic}`);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  container helpers                                                 */
+  /* ------------------------------------------------------------------ */
+
   private configureContainer(): void {
-    // Ensure the container is properly configured for text display
-    if (this.container) {
-      // Use type casting to avoid TypeScript errors
-      const container = this.container as any;
-
-      // Enable scrolling
-      container.scrollable = true;
-      container.alwaysScroll = true;
-
-      // Configure scrollbar
-      container.scrollbar = {
-        ch: '█',
-        track: {
-          bg: 'black',
-        },
-        style: {
-          inverse: true,
-        },
-      };
-
-      // Enable mouse and keyboard navigation
-      container.keys = true;
-      container.vi = true;
-      container.mouse = true;
-
-      // Set padding for better text display
-      container.padding = {
-        left: 1,
-        right: 1,
-        top: 0,
-        bottom: 0,
-      };
-
-      // Ensure word wrapping is enabled but let our custom wrapping handle most cases
-      container.wrap = false;
-
-      // Set a reasonable height limit for each line to prevent overflow
-      container.lineLimit = 300;
-
-      // Check if container content is already too large and trim if needed
-      this.enforceContentLimits();
-    }
+    const c = this.container as any;
+    Object.assign(c, {
+      scrollable: true,
+      alwaysScroll: true,
+      keys: true,
+      vi: true,
+      mouse: true,
+      wrap: false,
+      padding: { left: 1, right: 1 },
+      scrollbar: { ch: '█', style: { inverse: true }, track: { bg: 'black' } },
+    });
   }
 
-  /**
-   * Handle mode deactivation
-   */
-  protected onDeactivate(): void {
-    // Nothing to clean up
+  private scrollToBottom(): void {
+    this.container.setScrollPerc(100);
+    this.screen.render();
   }
 
-  /**
-   * Handle input in this mode
-   * @param input The input to handle
-   */
-  async handleInput(input: string): Promise<void> {
-    // Ensure container is properly configured
-    this.configureContainer();
+  private enforceLimit(): void {
+    const lines = (this.container.getContent() ?? '').split('\n');
+    if (lines.length <= ChatMode.MAX_LINES) return;
 
-    // Get the container width (minus padding and borders)
-    const containerWidth = (this.container as any).width - 4;
-
-    // Store conversation state to prevent duplication
-    const conversation = {
-      userInput: input,
-      thinking: '',
-      response: ''
-    };
-
-    // Function to rebuild the entire conversation display
-    const rebuildDisplay = () => {
-      // Clear the container and add header
-      this.container.setContent('');
-      this.container.pushLine('{center}{bold}Chat Mode{/bold}{/center}');
-      this.container.pushLine('{center}Type a message to chat with Dome AI{/center}');
-      this.container.pushLine('');
-
-      // Add user message
-      this.container.pushLine(`{bold}{green-fg}You:{/green-fg}{/bold}`);
-      this.wrapText(conversation.userInput, containerWidth);
-      this.container.pushLine('');
-
-      // Add thinking section if present
-      if (conversation.thinking) {
-        this.container.pushLine('{gray-fg}Thinking:{/gray-fg}');
-        this.container.pushLine(`{gray-fg}${conversation.thinking}{/gray-fg}`);
-        this.container.pushLine('');
-      }
-
-      // Add Dome's response if present
-      if (conversation.response || conversation.thinking) {
-        this.container.pushLine(`{bold}{blue-fg}Dome:{/blue-fg}{/bold}`);
-        if (conversation.response) {
-          this.wrapText(conversation.response, containerWidth);
-        }
-      }
-
-      // Make sure we scroll to the bottom
-      this.container.setScrollPerc(100);
-      this.screen.render();
-    };
-
-    try {
-      // Display initial user message
-      rebuildDisplay();
-
-      // Update status
-      this.statusBar.setContent(' {bold}Status:{/bold} Dome is thinking...');
-      this.screen.render();
-
-      // Create an AbortController for potential cancellation
-      const abortController = new AbortController();
-
-      // Track if we've started receiving actual content
-      let hasStartedContent = false;
-
-      // Function to handle message chunks
-      const handleChunk = (chunk: string | ChatMessageChunk) => {
-        if (typeof chunk === 'string') {
-          // Plain text chunk - treat as content
-          conversation.response += chunk;
-          hasStartedContent = true;
-        } else {
-          // Structured chunk
-          if (chunk.type === 'thinking' && !hasStartedContent) {
-            // Process thinking step only if we haven't started content yet
-            try {
-              // Try to parse as JSON for better formatting
-              const thinkingObj = JSON.parse(chunk.content);
-              conversation.thinking = JSON.stringify(thinkingObj, null, 2);
-            } catch (e) {
-              // Not JSON, just display as is
-              conversation.thinking = chunk.content;
-            }
-          } else if (chunk.type === 'content' || chunk.type === 'unknown') {
-            // Content chunk - add to response
-            conversation.response += chunk.content;
-            hasStartedContent = true;
-          }
-        }
-
-        // Rebuild display with updated state
-        rebuildDisplay();
-      };
-
-      // Check if verbose mode is enabled via environment or command line args
-      const isVerbose = process.env.DOME_VERBOSE === 'true' || 
-                      process.argv.includes('--verbose') || 
-                      process.argv.includes('-v');
-
-      // Send message to API with streaming enabled
-      const apiResponse = await chat(input, handleChunk, {
-        abortSignal: abortController.signal,
-        debug: isVerbose
-      });
-
-      // Process any sources if available
-      try {
-        if (
-          apiResponse &&
-          apiResponse.sources &&
-          Array.isArray(apiResponse.sources) &&
-          apiResponse.sources.length > 0
-        ) {
-          this.displaySources(apiResponse.sources, containerWidth);
-          this.container.setScrollPerc(100);
-          this.screen.render();
-        }
-      } catch (sourceError) {
-        // Ignore errors when processing sources
-        this.container.pushLine('{italic}(Error displaying sources){/italic}');
-        this.container.setScrollPerc(100);
-        this.screen.render();
-      }
-
-      // Reset status when done
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
-      this.screen.render();
-    } catch (err) {
-      // Handle any errors during chat
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      const truncatedError =
-        errorMessage.length > 500
-          ? errorMessage.substring(0, 500) + '... [error message truncated]'
-          : errorMessage;
-
-      // Display error in the container
-      this.container.pushLine(`{bold}{red-fg}Error:{/red-fg}{/bold}`);
-      this.wrapText(`I encountered an error while processing your request: ${truncatedError}`, containerWidth);
-      this.container.setScrollPerc(100);
-      this.screen.render();
-
-      // Reset status
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
-      this.screen.render();
-    }
+    const keep = ChatMode.MAX_LINES - 4; // header + notice
+    const newContent = [
+      ...lines.slice(0, 3),
+      '{yellow-fg}[Older messages removed]{/yellow-fg}',
+      ...lines.slice(lines.length - keep),
+    ].join('\n');
+    this.container.setContent(newContent);
   }
 
-  /**
-   * Get help text for this mode
-   */
+  private setStatus(msg?: string): void {
+    const text = msg
+      ? ` {bold}Status:{/bold} ${msg}`
+      : ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`;
+    this.statusBar.setContent(text);
+    this.screen.render();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  help                                                              */
+  /* ------------------------------------------------------------------ */
+
   getHelpText(): string {
     return `
 {bold}Chat Mode Help{/bold}
 
-In Chat Mode, you can have a conversation with Dome AI.
-
-{bold}Usage:{/bold}
-- Type your message and press Enter to send
-- Dome will respond to your message
+Type a message and press Enter to chat with Dome AI.
 
 {bold}Commands:{/bold}
-- {cyan-fg}/help{/cyan-fg} - Show this help
-- {cyan-fg}/clear{/cyan-fg} - Clear the chat history
+  {cyan-fg}/help{/cyan-fg}   Show this help
+  {cyan-fg}/clear{/cyan-fg}  Clear the chat
 
-{bold}Shortcuts:{/bold}
-- {cyan-fg}${this.config.shortcut}{/cyan-fg} - Switch to Chat Mode
+{bold}Shortcut:{/bold}
+  {cyan-fg}${this.config.shortcut}{/cyan-fg} – switch to Chat Mode
 `;
-  }
-
-  /**
-   * Display sources in a controlled manner to prevent overflow
-   * @param sources Array of source objects
-   * @param containerWidth Width of the container for wrapping
-   */
-  private displaySources(sources: any[], containerWidth: number): void {
-    try {
-      // Limit the number of sources to display
-      const maxSources = 5;
-      const sourcesToDisplay = sources.length > maxSources ? sources.slice(0, maxSources) : sources;
-
-      this.container.pushLine('');
-      this.container.pushLine('{bold}Sources:{/bold}');
-
-      if (sources.length > maxSources) {
-        this.container.pushLine(
-          `{italic}(Showing ${maxSources} of ${sources.length} sources){/italic}`,
-        );
-      }
-
-      sourcesToDisplay.forEach((source: any, index: number) => {
-        // Handle title with truncation if needed
-        if (source.title) {
-          const title =
-            source.title.length > 80 ? source.title.substring(0, 80) + '...' : source.title;
-          this.container.pushLine(`${index + 1}. {underline}${title}{/underline}`);
-        }
-
-        // Handle snippet with truncation
-        if (source.snippet) {
-          const snippet =
-            source.snippet.substring(0, 100) + (source.snippet.length > 100 ? '...' : '');
-
-          // Use the wrapping function to handle long snippets properly
-          this.container.pushLine('   '); // Indent
-          this.wrapText(snippet, containerWidth - 3); // Account for indent
-        }
-      });
-    } catch (err) {
-      // Silently handle errors in source display
-      this.container.pushLine('{italic}(Error formatting sources){/italic}');
-    }
   }
 }
