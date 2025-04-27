@@ -1,12 +1,11 @@
 import { getLogger, logError } from '@dome/logging';
-import { ChatOpenAI } from "@langchain/openai";
-import { CloudflareWorkersAI } from "@langchain/cloudflare";
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { AgentState, ToolResult } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { formatDocsForPrompt } from '../utils/promptFormatter';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
+import { ModelFactory } from '../services/modelFactory';
 import { getModelConfig, calculateTokenLimits } from '../config/modelConfig';
 
 /**
@@ -21,10 +20,11 @@ export async function generateAnswer(
   const t0 = performance.now();
   getLogger().info({ messages: state.messages }, "[GenerateAnswer] starting");
 
-  const llm = new ChatOpenAI({
-    model: "gpt-4o",
-    temperature: 0.7,
-    apiKey: env.OPENAI_API_KEY,
+  // Use the ModelFactory to create a properly configured model based on user's preference
+  // or system default if not specified
+  const llm = ModelFactory.createChatModel(env, {
+    modelId: state.options?.modelId ?? LlmService.MODEL,
+    temperature: state.options?.temperature ?? 0.7,
   });
 
   /* ------------------------------------------------------------------ */

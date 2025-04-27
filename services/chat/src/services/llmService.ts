@@ -5,14 +5,17 @@ import { HumanMessage, MessageContent, SystemMessage, AIMessage as LangChainAIMe
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import {
   DEFAULT_MODEL,
+  ModelProvider,
   getModelConfig,
   calculateTokenLimits,
+  configureDefaultModel,
   getTimeoutConfig,
   getQueryRewritingPrompt,
   getQueryComplexityAnalysisPrompt,
   getResponseGenerationPrompt,
 } from '../config';
 
+// Default model ID to use - will be properly initialized during service startup
 export const MODEL = DEFAULT_MODEL.id;
 const logger = getLogger();
 
@@ -42,28 +45,86 @@ function truncateContext(context: string, cfg: ReturnType<typeof getModelConfig>
 }
 
 /* -------------------------------------------------------- */
-/*  LangChain OpenAI implementation                         */
+/*  LLM Service implementation                              */
 /* -------------------------------------------------------- */
 export class LlmService {
   static MODEL = MODEL;
+  
+  /**
+   * Initialize the LLM service with environment variables
+   * This must be called during service startup
+   */
+  static initialize(env: Env): void {
+    // Create a safe configuration object from env
+    const config: Record<string, unknown> = {};
+    
+    // Extract model configuration if available
+    if ('DEFAULT_MODEL_ID' in env && typeof env.DEFAULT_MODEL_ID === 'string') {
+      config.DEFAULT_MODEL_ID = env.DEFAULT_MODEL_ID;
+    }
+    
+    // Configure the default model based on environment variables
+    configureDefaultModel(config);
+    
+    // Update the static MODEL property to match the configured default
+    this.MODEL = DEFAULT_MODEL.id;
+    
+    logger.info({
+      model: DEFAULT_MODEL.id,
+      modelName: DEFAULT_MODEL.name,
+      provider: DEFAULT_MODEL.provider
+    }, 'LLM service initialized');
+  }
 
   /**
    * Get a configured ChatOpenAI instance
    */
   private static getClient(
     env: Env,
-    opts: { temperature?: number; maxTokens?: number } = {}
+    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {}
   ): ChatOpenAI {
-    // Use environment variables to configure the client
-    const apiKey = env.OPENAI_API_KEY || 'sk-dummy-key-for-testing';
-
-    return new ChatOpenAI({
-      modelName: MODEL,
-      temperature: opts.temperature ?? 0.7,
+    // Get model config - use specified modelId or default
+    const modelConfig = getModelConfig(opts.modelId ?? this.MODEL);
+    
+    // Base client options
+    const clientOptions = {
+      modelName: modelConfig.id,
+      temperature: opts.temperature ?? modelConfig.defaultTemperature,
       maxTokens: opts.maxTokens,
-      openAIApiKey: apiKey,
       streaming: false,
-    });
+    };
+    
+    // Provider-specific configuration
+    switch (modelConfig.provider) {
+      case ModelProvider.OPENAI:
+        return new ChatOpenAI({
+          ...clientOptions,
+          openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
+        });
+        
+      case ModelProvider.CLOUDFLARE:
+        // Cloudflare Workers AI integration would be configured here
+        // This might use a different client implementation in the future
+        return new ChatOpenAI({
+          ...clientOptions,
+          openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
+        });
+        
+      case ModelProvider.ANTHROPIC:
+        // Anthropic integration would be configured here
+        // This would likely use a different client implementation
+        return new ChatOpenAI({
+          ...clientOptions,
+          openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
+        });
+        
+      default:
+        // Fall back to OpenAI configuration
+        return new ChatOpenAI({
+          ...clientOptions,
+          openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
+        });
+    }
   }
 
   /**
@@ -71,18 +132,53 @@ export class LlmService {
    */
   private static getStreamingClient(
     env: Env,
-    opts: { temperature?: number; maxTokens?: number } = {}
+    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {}
   ): ChatOpenAI {
-    // Use environment variables to configure the client
-    const apiKey = env.OPENAI_API_KEY || 'sk-dummy-key-for-testing';
-
-    return new ChatOpenAI({
-      modelName: MODEL,
-      temperature: opts.temperature ?? 0.7,
+    // Get model config - use specified modelId or default
+    const modelConfig = getModelConfig(opts.modelId ?? this.MODEL);
+    
+    // Verify the model supports streaming
+    if (!modelConfig.capabilities.streaming) {
+      logger.warn({ modelId: modelConfig.id }, 'Model does not support streaming, using non-streaming client');
+    }
+    
+    // Base client options
+    const clientOptions = {
+      modelName: modelConfig.id,
+      temperature: opts.temperature ?? modelConfig.defaultTemperature,
       maxTokens: opts.maxTokens,
-      openAIApiKey: apiKey,
       streaming: true,
-    });
+    };
+    
+    // Provider-specific configuration
+    switch (modelConfig.provider) {
+      case ModelProvider.OPENAI:
+        return new ChatOpenAI({
+          ...clientOptions,
+          openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
+        });
+        
+      case ModelProvider.CLOUDFLARE:
+        // Cloudflare Workers AI integration would be configured here
+        return new ChatOpenAI({
+          ...clientOptions,
+          openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
+        });
+        
+      case ModelProvider.ANTHROPIC:
+        // Anthropic integration would be configured here
+        return new ChatOpenAI({
+          ...clientOptions,
+          openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
+        });
+        
+      default:
+        // Fall back to OpenAI configuration
+        return new ChatOpenAI({
+          ...clientOptions,
+          openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
+        });
+    }
   }
 
   /**
@@ -106,7 +202,7 @@ export class LlmService {
   static async call(
     env: Env,
     messages: AIMessage[],
-    opts: { temperature?: number; maxTokens?: number } = {},
+    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {},
   ): Promise<string> {
     if (isTest()) return mockResponse;
 
@@ -115,7 +211,10 @@ export class LlmService {
       const langChainMessages = this.convertMessages(messages);
 
       // Get client and call the model
-      const model = this.getClient(env, opts);
+      const model = this.getClient(env, {
+        ...opts,
+        modelId: opts.modelId ?? this.MODEL,
+      });
       const outputParser = new StringOutputParser();
 
       const chain = model.pipe(outputParser);
@@ -131,7 +230,7 @@ export class LlmService {
   static async *stream(
     env: Env,
     messages: AIMessage[],
-    opts: { temperature?: number; maxTokens?: number } = {},
+    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {},
   ): AsyncGenerator<MessageContent> {
     if (isTest()) {
       yield mockResponse;
@@ -143,7 +242,10 @@ export class LlmService {
       const langChainMessages = this.convertMessages(messages);
 
       // Get streaming-enabled client
-      const model = this.getStreamingClient(env, opts);
+      const model = this.getStreamingClient(env, {
+        ...opts,
+        modelId: opts.modelId ?? this.MODEL,
+      });
 
       // Use LangChain's streaming capability
       const stream = await model.stream(langChainMessages);
@@ -211,7 +313,7 @@ export class LlmService {
       modelId?: string;
     } = {},
   ): AsyncGenerator<MessageContent> {
-    const cfg = getModelConfig(opts.modelId ?? MODEL);
+    const cfg = getModelConfig(opts.modelId ?? this.MODEL);
     const ctx = truncateContext(docs, cfg);
     const sysPrompt = getResponseGenerationPrompt(ctx, opts.includeSourceInfo);
 
@@ -222,6 +324,7 @@ export class LlmService {
     for await (const chunk of this.stream(env, messages, {
       temperature: opts.temperature ?? cfg.defaultTemperature,
       maxTokens: maxResponseTokens,
+      modelId: opts.modelId ?? this.MODEL,
     })) {
       yield chunk;
     }

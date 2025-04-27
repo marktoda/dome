@@ -73,7 +73,7 @@ const DEFAULT_FILTER_OPTIONS: ContentFilterOptions = {
  */
 const MALICIOUS_PATTERNS = [
   // SQL injection patterns
-  /('|;|--|\/\*|\*\/|xp_|sp_|exec|execute|select|insert|update|delete|drop|alter|create|truncate|union\s+select)/i,
+  /('|;|--|\/\*|\*\/|xp_|sp_|exec|execute|select|insert|update|delete|drop|alter|truncate|union\s+select)/i,
   // Command injection patterns
   /(\$\(|\`|\||\&\&|\|\||\;|\$\{|eval\(|exec\(|system\(|popen\(|proc_open\(|passthru\(|shell_exec\()/i,
   // Path traversal patterns
