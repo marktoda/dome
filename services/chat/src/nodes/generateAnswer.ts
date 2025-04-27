@@ -19,7 +19,7 @@ export async function generateAnswer(
   env: Env,
 ) {
   const t0 = performance.now();
-  getLogger().info({ state }, "[GenerateAnswer] starting");
+  getLogger().info({ messages: state.messages }, "[GenerateAnswer] starting");
 
   const llm = new ChatOpenAI({
     model: "gpt-4o",

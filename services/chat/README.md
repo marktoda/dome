@@ -198,7 +198,7 @@ The Chat Service exposes a client API for integration with other services:
 ```typescript
 class ChatClient {
   // Generate a complete response
-  async generateResponse(request: ChatRequest): Promise<ChatOrchestratorResponse>;
+  async generateResponse(request: ChatRequest): Promise<ChatResponse>;
 
   // Stream a response as Server-Sent Events
   async streamResponse(request: ChatRequest): Promise<Response>;
@@ -246,7 +246,7 @@ interface ChatRequest {
 ### Response Format
 
 ```typescript
-interface ChatOrchestratorResponse {
+interface ChatResponse {
   response: string;
   sources?: Array<{
     id: string;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import ChatOrchestrator from '../src/index';
+import Chat from '../src/index';
 import { createServices } from '../src/services';
 import { createControllers } from '../src/controllers';
 import { getLogger, metrics } from '@dome/logging';
@@ -57,8 +57,8 @@ vi.mock('../src/controllers', () => ({
   })),
 }));
 
-describe('ChatOrchestrator', () => {
-  let orchestrator: ChatOrchestrator;
+describe('Chat', () => {
+  let orchestrator: Chat;
   let mockEnv: any;
   let mockCtx: any;
   let mockControllers: any;
@@ -97,7 +97,7 @@ describe('ChatOrchestrator', () => {
     (createControllers as any).mockReturnValue(mockControllers);
 
     // Create orchestrator
-    orchestrator = new ChatOrchestrator(mockCtx, mockEnv);
+    orchestrator = new Chat(mockCtx, mockEnv);
   });
 
   afterEach(() => {
@@ -109,7 +109,7 @@ describe('ChatOrchestrator', () => {
       // Assert
       expect(createServices).toHaveBeenCalledWith(mockEnv);
       expect(createControllers).toHaveBeenCalled();
-      expect(getLogger().child).toHaveBeenCalledWith({ component: 'ChatOrchestrator' });
+      expect(getLogger().child).toHaveBeenCalledWith({ component: 'Chat' });
     });
   });
 

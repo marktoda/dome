@@ -26,12 +26,13 @@ export function chatCommand(program: Command): void {
 
       try {
         if (options.message) {
-          // Send a single message
+          // Send a single message (non-streaming)
           console.log(heading('Chat'));
           console.log(chalk.bold.green('You: ') + options.message);
           console.log(chalk.bold.blue('Dome: '));
 
-          const response = await chat(options.message);
+          // Force non-streaming mode
+          const response = await chat(options.message, undefined, { retryNonStreaming: false });
           console.log(response);
         } else {
           // Start interactive chat mode
@@ -59,7 +60,8 @@ export function chatCommand(program: Command): void {
               // Display "thinking" indicator
               process.stdout.write(chalk.bold.blue('Dome: '));
 
-              const response = await chat(userMessage);
+              // Force non-streaming mode
+              const response = await chat(userMessage, undefined, { retryNonStreaming: false });
               console.log(response);
             } catch (err) {
               console.log(error(`Error: ${err instanceof Error ? err.message : String(err)}`));

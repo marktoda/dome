@@ -698,7 +698,9 @@ export async function chat(
       // Use the new payload
       nonStreamingPayload = newPayload;
 
-      const response = await api.post('/chat', nonStreamingPayload);
+      // Use the new non-streaming endpoint
+      console.log('[DEBUG] Using /chat/message endpoint for non-streaming request');
+      const response = await api.post('/chat/message', nonStreamingPayload);
       console.log('[DEBUG] Non-streaming response received:', response);
 
       // Enhanced logging for debugging

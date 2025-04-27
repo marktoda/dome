@@ -48,7 +48,7 @@ export function createServiceBindings(
   });
 
   // Create service binding for dome-api to chat-orchestrator
-  bindings.domeApiToChatOrchestrator = new cloudflare.ServiceBinding(
+  bindings.domeApiToChat = new cloudflare.ServiceBinding(
     'dome-api-to-chat-orchestrator',
     {
       name: 'CHAT_ORCHESTRATOR',

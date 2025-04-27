@@ -6,26 +6,47 @@
  */
 
 import { getLogger, logError, metrics } from '@dome/logging';
-import { ChatOrchestratorBinding, ChatRequest, chatRequestSchema, ResumeChatRequest } from '.';
+import { ChatBinding, ChatRequest, chatRequestSchema, ResumeChatRequest } from '.';
+import { SourceMetadata } from '../types';
 import { z } from 'zod';
 
 /**
  * Chat orchestrator client response interface
  */
-export interface ChatOrchestratorResponse {
+export interface ChatResponse {
   response: string;
-  sources?: Array<{
-    id: string;
-    title: string;
-    source: string;
-    url?: string | null;
-    relevanceScore: number;
-  }>;
-  metadata?: {
-    executionTimeMs: number;
-    nodeTimings: Record<string, number>;
-    tokenCounts: Record<string, number>;
-  };
+  sources?: SourceMetadata[];
+  metadata?: ResponseMetadata;
+}
+
+/**
+ * Server response type definition matching the API schema
+ * This ensures type parity between client and server responses
+ */
+export interface ResponseMetadata {
+  executionTimeMs: number;
+  nodeTimings: Record<string, number>;
+  tokenCounts: Record<string, number>;
+}
+
+/**
+ * Server response metadata with optional fields
+ * Used specifically by ChatServerResponse
+ */
+export interface ServerResponseMetadata {
+  executionTimeMs?: number;
+  nodeTimings?: Record<string, number>;
+  tokenCounts?: Record<string, number>;
+}
+
+/**
+ * Standardized server response type definition
+ * This ensures type parity between client and server responses
+ */
+export interface ChatServerResponse {
+  generatedText: string;
+  sources?: SourceMetadata[];
+  metadata?: ServerResponseMetadata;
 }
 
 /**
@@ -38,7 +59,7 @@ export class ChatClient {
    * @param metricsPrefix Optional prefix for metrics (defaults to 'chat_orchestrator.client')
    */
   constructor(
-    private readonly binding: ChatOrchestratorBinding,
+    private readonly binding: ChatBinding,
     private readonly metricsPrefix: string = 'chat_orchestrator.client',
   ) { }
 
@@ -47,7 +68,7 @@ export class ChatClient {
    * @param request Chat orchestrator request
    * @returns Promise resolving to the chat orchestrator response
    */
-  async generateResponse(request: ChatRequest): Promise<ChatOrchestratorResponse> {
+  async generateResponse(request: ChatRequest): Promise<ChatResponse> {
     const startTime = performance.now();
 
     try {
@@ -79,54 +100,54 @@ export class ChatClient {
         // Collect all chunks first
         while (true) {
           const { done, value } = await reader.read();
-          
+
           if (done) {
             getLogger().info('[ChatClient]: End of stream reached');
             break;
           }
-          
+
           // Log every single chunk as it comes in
           const chunk = textDecoder.decode(value, { stream: true });
           totalBytesRead += value.length;
-          
+
           getLogger().info({
             chunkLength: chunk.length,
             chunkPreview: chunk.substring(0, 100),
             totalBytesRead
           }, '[ChatClient]: Received chunk');
-          
+
           rawChunks.push(chunk);
           buffer += chunk;
         }
-        
+
         // Log the entire buffer for debugging
         getLogger().info({
           bufferLength: buffer.length,
           bufferPreview: buffer.substring(0, 200)
         }, '[ChatClient]: Complete buffer received');
-        
+
         // First attempt: Try to parse as SSE events
         const events = buffer.split('\n\n');
         getLogger().info({ eventCount: events.length }, '[ChatClient]: Split buffer into events');
-        
+
         let foundText = false;
-        
+
         // Process each event
         for (const event of events) {
           if (!event.trim()) continue;
-          
+
           // Log each event
           getLogger().info({
             eventLength: event.length,
             eventPreview: event.substring(0, 100)
           }, '[ChatClient]: Processing event');
-          
+
           try {
             // Try to extract event type and data
             const lines = event.split('\n');
             let eventType = '';
             let dataContent = '';
-            
+
             // Extract event type and data
             for (const line of lines) {
               if (line.startsWith('event:')) {
@@ -135,7 +156,7 @@ export class ChatClient {
                 dataContent = line.replace('data:', '').trim();
               }
             }
-            
+
             // Found a valid event with data
             if (dataContent) {
               getLogger().info({
@@ -143,11 +164,11 @@ export class ChatClient {
                 dataContentLength: dataContent.length,
                 dataPreview: dataContent.substring(0, 100)
               }, '[ChatClient]: Found data in event');
-              
+
               // Try to parse as JSON first
               try {
                 const data = JSON.parse(dataContent);
-                
+
                 // Handle known event types
                 if (eventType === 'text' && data.text) {
                   getLogger().info({ textLength: data.text.length }, '[ChatClient]: Extracted text from JSON');
@@ -163,7 +184,7 @@ export class ChatClient {
               } catch (e) {
                 // Not JSON, try using raw data
                 getLogger().info({ error: e }, '[ChatClient]: Failed to parse as JSON, using raw data');
-                
+
                 // If this is a text event, use the raw data
                 if (eventType === 'text' && !foundText) {
                   getLogger().info({ dataLength: dataContent.length }, '[ChatClient]: Using raw data as text');
@@ -176,16 +197,16 @@ export class ChatClient {
             getLogger().warn({ error: e }, '[ChatClient]: Error processing event');
           }
         }
-        
+
         // If we still don't have text, try alternative approaches
         if (!generatedText && buffer.length > 0) {
           getLogger().info('[ChatClient]: No text found in events, trying alternative extraction');
-          
+
           // Approach 1: Look for a large text block
           const cleanBuffer = buffer.replace(/event:.*?\n/g, '')
-                                  .replace(/data:/g, '')
-                                  .trim();
-          
+            .replace(/data:/g, '')
+            .trim();
+
           if (cleanBuffer.length > 100) { // Arbitrary threshold for "real" content
             getLogger().info({
               cleanLength: cleanBuffer.length,
@@ -207,7 +228,7 @@ export class ChatClient {
         getLogger().error({ error: streamError }, '[ChatClient]: Error processing stream');
         throw streamError;
       }
-      
+
       // Log the final extracted text
       getLogger().info({
         extractedTextLength: generatedText?.length || 0,
@@ -215,7 +236,7 @@ export class ChatClient {
       }, '[ChatClient]: Final extracted text');
 
       // Create the response object with the extracted text
-      const result: ChatOrchestratorResponse = {
+      const result: ChatResponse = {
         response: generatedText || '',  // Ensure we never return undefined
         sources: sources.length > 0 ? sources : undefined,
         metadata: {
@@ -297,6 +318,125 @@ export class ChatClient {
 
       // Track error metrics
       metrics.increment(`${this.metricsPrefix}.stream_response.errors`, 1, {
+        errorType: error instanceof Error ? error.constructor.name : 'unknown',
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a chat response (non-streaming)
+   * @param request Chat orchestrator request
+   * @returns Promise resolving to the complete response
+   */
+  async generateDirectResponse(request: ChatRequest): Promise<ChatResponse> {
+    const startTime = performance.now();
+
+    try {
+      // Validate request
+      const validatedRequest = chatRequestSchema.parse(request);
+
+      // Call the non-streaming chat endpoint via RPC
+      const response = await this.binding.generateChatMessage(validatedRequest);
+      getLogger().info({
+        status: response.status,
+        statusText: response.statusText,
+        headerKeys: Array.from(response.headers.keys()),
+        isBodyUsed: response.bodyUsed
+      }, '[ChatClient]: Non-streaming chat response received');
+
+      if (!response.ok) {
+        throw new Error(`Failed to generate chat message: ${response.status} ${response.statusText}`);
+      }
+
+      // Clone the response before parsing to enable safer debugging
+      const responseClone = response.clone();
+      
+      try {
+        // Parse the JSON response using the defined type
+        const responseData = await response.json() as ChatServerResponse;
+        getLogger().info({
+          responseDataKeys: Object.keys(responseData),
+          hasGeneratedText: !!responseData.generatedText,
+          generatedTextLength: responseData.generatedText?.length || 0
+        }, '[ChatClient]: Successfully parsed response JSON');
+
+        // Create the response object using standardized types
+        const result: ChatResponse = {
+          response: responseData.generatedText || '',
+          sources: responseData.sources,
+          metadata: {
+            executionTimeMs: responseData.metadata?.executionTimeMs || Math.round(performance.now() - startTime),
+            nodeTimings: responseData.metadata?.nodeTimings || {},
+            tokenCounts: responseData.metadata?.tokenCounts || {},
+          },
+        };
+        
+        // Log the response
+        getLogger().info(
+          {
+            userId: request.userId,
+            responseLength: result.response?.length || 0,
+            executionTimeMs: result.metadata?.executionTimeMs,
+          },
+          'Non-streaming chat response generated successfully',
+        );
+
+        // Track metrics
+        metrics.increment(`${this.metricsPrefix}.generate_direct_response.success`, 1);
+        if (result.metadata?.executionTimeMs) {
+          metrics.timing(
+            `${this.metricsPrefix}.generate_direct_response.duration_ms`,
+            result.metadata.executionTimeMs,
+          );
+        }
+        
+        return result;
+      } catch (parseError) {
+        // If JSON parsing fails, attempt to get response text for better debugging
+        getLogger().error({ error: parseError }, '[ChatClient]: Failed to parse JSON response');
+        
+        try {
+          // Try to get the raw text to see what went wrong
+          const rawText = await responseClone.text();
+          getLogger().error({ rawText, rawTextLength: rawText.length }, '[ChatClient]: Raw response text');
+          
+          // Attempt to recover if there's actual text in the response
+          if (rawText && rawText.length > 0 && rawText !== '{}') {
+            const fallbackResult = {
+              response: rawText,
+              metadata: {
+                executionTimeMs: Math.round(performance.now() - startTime),
+                nodeTimings: {},
+                tokenCounts: {},
+              },
+            };
+            
+            getLogger().info('Recovered using raw text response');
+            metrics.increment(`${this.metricsPrefix}.generate_direct_response.recovery`, 1);
+            
+            return fallbackResult;
+          }
+        } catch (textError) {
+          getLogger().error({ error: textError }, '[ChatClient]: Failed to get response text');
+        }
+        
+        // If all else fails, provide a fallback response
+        // Handle the error properly with type checking
+        const errorMessage = parseError instanceof Error
+          ? parseError.message
+          : 'Unknown parsing error';
+          
+        throw new Error(`Failed to parse chat response: ${errorMessage}`);
+      }
+    } catch (error) {
+      logError(error, 'Error generating non-streaming chat response via RPC', {
+        userId: request.userId,
+      });
+
+      // Track error metrics
+      metrics.increment(`${this.metricsPrefix}.generate_direct_response.errors`, 1, {
         errorType: error instanceof Error ? error.constructor.name : 'unknown',
       });
 
@@ -553,7 +693,7 @@ export class ChatClient {
  * @returns A new ChatClient instance
  */
 export function createChatClient(
-  binding: ChatOrchestratorBinding,
+  binding: ChatBinding,
   metricsPrefix?: string,
 ): ChatClient {
   return new ChatClient(binding, metricsPrefix);

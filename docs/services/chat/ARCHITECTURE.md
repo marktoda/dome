@@ -42,7 +42,7 @@ The Chat Service exposes a client interface that provides methods for generating
 
 ```typescript
 class ChatClient {
-  async generateResponse(request: ChatRequest): Promise<ChatOrchestratorResponse>;
+  async generateResponse(request: ChatRequest): Promise<ChatResponse>;
   async streamResponse(request: ChatRequest): Promise<Response>;
   async resumeChatSession(request: ResumeChatRequest): Promise<Response>;
   // Administrative methods...

@@ -59,16 +59,20 @@ export class ChatController {
           'Processing validated chat request',
         );
 
-        // Process request
-        if (request.stream) {
-          // Stream response
-          const response = await this.chatService.streamResponse(request);
-          return response;
-        } else {
-          // Generate response
-          const response = await this.chatService.generateResponse(request);
-          return successResponse(c, { response });
-        }
+        // Process request - temporarily use non-streaming only
+        // This is a workaround until streaming issues are fixed
+        const response = await this.chatService.generateDirectResponse(request);
+        this.logger.info(
+          {
+            userId,
+            responseLength: response.response.length,
+            hasSourceInfo: response.sources && response.sources.length > 0,
+            response,
+          },
+          'Generated non-streaming chat response'
+        );
+
+        return successResponse(c, { response });
       } catch (validationError) {
         // Handle validation errors
         this.logger.warn(

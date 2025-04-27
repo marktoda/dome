@@ -4,10 +4,34 @@
  * This file exports the client interface for the Chat Orchestrator service.
  */
 
-import { ChatClient, ChatOrchestratorResponse, createChatClient } from './client';
+import {
+  ChatClient,
+  ChatResponse,
+  ChatServerResponse,
+  ResponseMetadata,
+  ServerResponseMetadata,
+  createChatClient
+} from './client';
+import {
+  WebSocketClient,
+  WebSocketCallbacks,
+  WebSocketOptions,
+  createWebSocketClient
+} from './websocketClient';
 import { ChatRequest } from '../types';
 
-export { ChatClient, ChatOrchestratorResponse, createChatClient };
+export {
+  ChatClient,
+  ChatResponse,
+  ChatServerResponse,
+  ResponseMetadata,
+  ServerResponseMetadata,
+  createChatClient,
+  WebSocketClient,
+  WebSocketCallbacks,
+  WebSocketOptions,
+  createWebSocketClient
+};
 
 export * from '../types';
 
@@ -16,9 +40,10 @@ export * from '../types';
  *
  * Defines the contract for the Cloudflare Worker binding to the Chat Orchestrator service
  */
-export interface ChatOrchestratorBinding {
+export interface ChatBinding {
   // Chat methods
   generateChatResponse(request: ChatRequest): Promise<Response>;
+  generateChatMessage(request: ChatRequest): Promise<Response>;
   resumeChatSession(request: { runId: string; newMessage?: any }): Promise<Response>;
 
   // Admin methods

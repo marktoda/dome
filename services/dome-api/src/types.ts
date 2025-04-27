@@ -1,7 +1,7 @@
 import type { MessageData, SiloSimplePutInput } from '@dome/common';
 import type { AiProcessorBinding } from '@dome/ai-processor/client';
 import { SiloBinding } from '@dome/silo/client';
-import { ChatOrchestratorBinding } from '@dome/chat/client';
+import { ChatBinding } from '@dome/chat/client';
 
 /**
  * Interface for Workers AI binding
@@ -19,7 +19,7 @@ export type Bindings = {
   AI?: WorkersAI; // Optional to support testing environments
   CONSTELLATION?: Fetcher; // Optional to support testing environments
   SILO: SiloBinding; // Silo service binding
-  CHAT: ChatOrchestratorBinding; // Silo service binding
+  CHAT: ChatBinding; // Silo service binding
   AI_PROCESSOR: AiProcessorBinding; // AI processor service binding
   VERSION?: string; // Version of the service
   ENVIRONMENT?: string; // Environment (development, staging, production)

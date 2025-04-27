@@ -69,7 +69,7 @@ interface ChatRequest {
 **Response Format (Non-Streaming)**:
 
 ```typescript
-interface ChatOrchestratorResponse {
+interface ChatResponse {
   response: string;
   sources?: Array<{
     id: string;

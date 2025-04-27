@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ChatClient, ChatOrchestratorRequest } from '../../src/client/client';
-import { ChatOrchestratorBinding } from '../../src/client';
+import { ChatClient, ChatRequest } from '../../src/client/client';
+import { ChatBinding } from '../../src/client';
 import { getLogger, metrics } from '@dome/logging';
 
 // Mock dependencies
@@ -70,7 +70,7 @@ class MockReadableStream {
 
 describe('ChatClient', () => {
   let client: ChatClient;
-  let mockBinding: ChatOrchestratorBinding;
+  let mockBinding: ChatBinding;
 
   beforeEach(() => {
     // Reset mocks
