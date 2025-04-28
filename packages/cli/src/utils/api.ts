@@ -76,7 +76,17 @@ export const search = async (query: string, limit = 10) => {
 };
 
 // ---------- Streaming / WebSocket chat -----------------------------------------
-export type ChatMessageChunk = { type: 'content' | 'thinking' | 'unknown'; content: string };
+export type ChatMessageChunk = { type: 'content' | 'thinking' | 'unknown'; content: string } | {
+  type: 'final'; node: {
+    sources: {
+      id: string;
+      title: string;
+      source: string;
+      url?: string;
+      relevanceScore: number;
+    };
+  }
+};
 
 // Extensible chunk‑type detector stack
 interface ChunkDetector { (raw: string, parsed: any): ChatMessageChunk | null; }
@@ -85,8 +95,19 @@ const detectors: ChunkDetector[] = [
   (raw, p) => {
     if (Array.isArray(p) && p[0] === 'updates') {
       const nodeId: string = Object.keys(p[1])[0];
+      if (nodeId !== "generate_rag") return null;
       const node = p[1][nodeId];
-      console.log(nodeId, node);
+
+      return { type: 'final', node };
+    }
+    return null;
+  },
+
+  // LangGraph update node
+  (raw, p) => {
+    if (Array.isArray(p) && p[0] === 'updates') {
+      const nodeId: string = Object.keys(p[1])[0];
+      const node = p[1][nodeId];
 
       return { type: 'thinking', content: node.reasoning[node.reasoning.length - 1] };
     }

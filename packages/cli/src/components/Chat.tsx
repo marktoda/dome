@@ -57,6 +57,9 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
           if (chunk.type === 'thinking') {
             // For thinking content, show in a separate thinking message
             showThinkingMessage(chunk.content);
+          } else if (chunk.type === 'final') {
+            // Final chunks with sources don't have content property
+            // Sources are displayed in the CLI version, we don't need to do anything here
           } else {
             // Normal content
             updateAssistantMessage(chunk.content);

@@ -57,6 +57,28 @@ async function streamChatResponse(
         }
       } else if (chunk.type === 'content') {
         process.stdout.write(chunk.content);
+      } else if (chunk.type === 'final') {
+        if (chunk.node.sources) {
+          console.log(); // Empty line before sources
+          console.log(chalk.bold.yellow('Sources:'));
+          
+          const sources = Array.isArray(chunk.node.sources)
+            ? chunk.node.sources
+            : [chunk.node.sources];
+          
+          sources.forEach((source, index) => {
+            console.log(chalk.yellow(`[${index + 1}] ${source.title || 'Unnamed Source'}`));
+            if (source.source) console.log(chalk.gray(`    Source: ${source.source}`));
+            if (source.url) console.log(chalk.blue(`    URL: ${source.url}`));
+            if (source.relevanceScore !== undefined) {
+              // Format relevance score as percentage
+              const scorePercentage = Math.round(source.relevanceScore * 100);
+              const scoreColor = scorePercentage > 70 ? chalk.green : scorePercentage > 40 ? chalk.yellow : chalk.red;
+              console.log(scoreColor(`    Relevance: ${scorePercentage}%`));
+            }
+            if (index < sources.length - 1) console.log(); // Add space between sources
+          });
+        }
       } else {
         // any other content chunk
         thinking.reset(); // discard partial thinking on normal output

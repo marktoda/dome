@@ -70,6 +70,10 @@ export class ChatMode extends BaseMode {
         try {
           convo.thinking = JSON.stringify(JSON.parse(chunk.content), null, 2);
         } catch { convo.thinking = chunk.content; }
+      } else if (chunk.type === 'final') {
+        // Final chunks with sources don't need to add content to the reply
+        // The sources will be displayed separately
+        startedContent = true;
       } else {
         convo.reply += chunk.content;
         startedContent = true;

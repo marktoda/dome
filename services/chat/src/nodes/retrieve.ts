@@ -17,7 +17,7 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   // Get task information from state
   const taskIds = state.taskIds || [];
   const taskEntities = state.taskEntities || {};
-  
+
   getLogger().info({ taskIds, taskEntities }, 'Tasks in state');
 
   // If there are no tasks, skip retrieval
@@ -64,14 +64,14 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
 
   // Prepare to collect all retrieved documents
   let allRetrievedDocs: Document[] = [];
-  
+
   // Track tasks that need widening
   const tasksNeedingWidening: Record<string, boolean> = {};
 
   // Process each task sequentially
   for (const taskId of taskIds) {
     const task = taskEntities[taskId];
-    
+
     // Skip invalid tasks
     if (!task) {
       logger.warn({ taskId }, 'Task ID not found in taskEntities');
@@ -81,7 +81,7 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     // Extract query from task
     const query = task.rewrittenQuery || task.originalQuery || '';
     const trimmedQuery = query.trim();
-    
+
     // Define minimum query length
     const MIN_QUERY_LENGTH = 3;
 
@@ -98,7 +98,7 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
         },
         trimmedQuery ? 'Query too short, skipping' : 'Empty query, skipping',
       );
-      
+
       // Mark this task as not needing widening
       tasksNeedingWidening[taskId] = false;
       continue;
@@ -215,12 +215,20 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   const updatedState = {
     ...state,
     docs: allRetrievedDocs,
+    sources: allRetrievedDocs.map(doc => ({
+      id: doc.id,
+      title: doc.title,
+      source: doc.metadata.source,
+      url: doc.metadata.url,
+      relevanceScore: doc.metadata.relevanceScore,
+
+    })),
   };
 
   // Update widening status for each task
   if (Object.keys(tasksNeedingWidening).length > 0) {
     updatedState.taskEntities = { ...taskEntities };
-    
+
     for (const [taskId, needsWidening] of Object.entries(tasksNeedingWidening)) {
       if (updatedState.taskEntities[taskId]) {
         updatedState.taskEntities[taskId] = {

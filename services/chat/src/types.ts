@@ -122,6 +122,7 @@ export interface AgentState {
 
   // Retrieved documents
   docs?: Document[];
+  sources?: SourceMetadata[];
 
   // Reasoning and instructions
   reasoning?: string[];
@@ -289,6 +290,7 @@ export const GraphStateAnnotation = Annotation.Root({
   taskIds: Annotation<string[]>(),
   taskEntities: merge<Record<string, UserTaskEntity>>(),
   docs: Annotation<Document[]>(),  // Changed from concat to simple annotation
+  sources: Annotation<SourceMetadata[]>(),  // Changed from concat to simple annotation
   reasoning: Annotation<string[]>(),  // Changed from concat to simple annotation
   instructions: Annotation<string>(),
   files: Annotation<string>(),
