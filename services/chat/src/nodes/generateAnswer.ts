@@ -1,16 +1,27 @@
 import { getLogger, logError } from '@dome/logging';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
-import { AgentState, ToolResult } from '../types';
+import { AgentState, ToolResult, Document } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { formatDocsForPrompt } from '../utils/promptFormatter';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { getModelConfig, calculateTokenLimits } from '../config/modelConfig';
+import { reduceRagContext } from '../utils/ragUtils';
+import { transformToSSE } from '../utils/sseTransformer';
+import { getRagAnswerPrompt } from '../config/promptsConfig';
 
 /**
- * Build the node as a *factory* so we can capture `env` once and keep
- * the node signature `(state, cfg)` as LangGraph expects.
+ * RAG Answer Generation Node
+ *
+ * Implements streaming answer generation with document sources and tool outputs.
+ * Uses context reduction to fit within token limits while prioritizing the most
+ * relevant information.
+ *
+ * @param state Current agent state
+ * @param cfg LangGraph runnable configuration
+ * @param env Environment variables
+ * @returns Updated agent state with generated answer
  */
 export async function generateAnswer(
   state: AgentState,
@@ -18,14 +29,8 @@ export async function generateAnswer(
   env: Env,
 ): Promise<Partial<AgentState>> {
   const t0 = performance.now();
-  getLogger().info({ messages: state.messages }, "[GenerateAnswer] starting");
-
-  // Use the ModelFactory to create a properly configured model based on user's preference
-  // or system default if not specified
-  const llm = ModelFactory.createChatModel(env, {
-    modelId: state.options?.modelId ?? LlmService.MODEL,
-    temperature: state.options?.temperature ?? 0.7,
-  });
+  const logger = getLogger().child({ component: 'generateRAG' });
+  logger.info({ messageCount: state.messages.length, hasTools: !!state.tasks?.toolResults?.length }, "Starting RAG answer generation");
 
   /* ------------------------------------------------------------------ */
   /*  Trace / logging helpers                                           */
@@ -36,35 +41,67 @@ export async function generateAnswer(
     ObservabilityService.logEvent(env, traceId, spanId, e, p);
 
   /* ------------------------------------------------------------------ */
-  /*  Prompt + token-limit setup                                        */
+  /*  Context preparation with token-aware reduction                    */
   /* ------------------------------------------------------------------ */
   const includeSources = state.options?.includeSourceInfo ?? true;
-  const modelId = state.options?.modelId;
+  const modelId = state.options?.modelId ?? LlmService.MODEL;
+  const modelConfig = getModelConfig(modelId);
 
-  const docs = state.docs ?? [];
+  // Context reduction - use token-aware context reduction to fit within limits
+  const maxContextTokens = Math.floor(modelConfig.maxContextTokens * 0.5);
+  const { docs: reducedDocs, tokenCount: contextTokens } = reduceRagContext(state, maxContextTokens);
+
+  // Format documents for prompt
   const docsFmt = formatDocsForPrompt(
-    docs,
+    reducedDocs,
     includeSources,
-    Math.floor(getModelConfig(modelId ?? LlmService.MODEL).maxContextTokens * 0.5)
+    maxContextTokens
   );
+
+  // Format tool results if available
   const toolFmt = formatToolResults(state.tasks?.toolResults ?? []);
 
-  const systemPrompt = buildSystemPrompt(docsFmt, toolFmt, includeSources);
+  // Build the RAG-enhanced system prompt
+  const systemPrompt = buildRAGSystemPrompt(docsFmt, toolFmt, includeSources);
   const sysTokens = countTokens(systemPrompt);
   const userTokens = state.messages.reduce((t, m) => t + countTokens(m.content), 0);
 
+  // Calculate token limits based on model constraints
   const { maxResponseTokens } = calculateTokenLimits(
-    getModelConfig(modelId ?? LlmService.MODEL),
+    modelConfig,
     sysTokens + userTokens,
     state.options?.maxTokens
   );
 
+  // Prepare chat messages with system prompt
   const chatMessages = [
-    { role: "system", content: systemPrompt },   // 👈 context now travels
+    { role: "system", content: systemPrompt },
     ...state.messages,
   ];
 
-  const response = await llm.invoke(chatMessages.map(m => ({
+  // Log context statistics for observability
+  logEvt("context_stats", {
+    originalDocsCount: state.docs?.length ?? 0,
+    reducedDocsCount: reducedDocs.length,
+    contextTokens,
+    sysTokens,
+    userTokens,
+    maxResponseTokens
+  });
+
+  /* ------------------------------------------------------------------ */
+  /*  Streaming setup for response generation                           */
+  /* ------------------------------------------------------------------ */
+
+  // Create streaming-enabled model
+  const model = ModelFactory.createChatModel(env, {
+    modelId: modelId,
+    temperature: state.options?.temperature ?? 0.7,
+    maxTokens: maxResponseTokens,
+  });
+
+  // Start streaming
+  const response = await model.invoke(chatMessages.map(m => ({
     role: m.role,
     content: m.content,
   })));
@@ -76,13 +113,26 @@ export async function generateAnswer(
   const elapsed = performance.now() - t0;
   ObservabilityService.endSpan(env, traceId, spanId, "generateAnswer", state, state, elapsed);
   ObservabilityService.endTrace(env, traceId, state, elapsed);
-  getLogger().info({ elapsedMs: elapsed, fullLen: response.text.length, content: response.text }, "[GenerateAnswer] done");
+
+  logger.info({
+    elapsedMs: elapsed,
+    responseLength: response.text.length,
+    response: response.text,
+    docsUsed: reducedDocs.length,
+    toolsUsed: state.tasks?.toolResults?.length ?? 0
+  }, "RAG answer generation complete");
 
   return {
     generatedText: response.text,
     metadata: {
-      currentNode: "generate_answer",
+      currentNode: "generate_rag",
       isFinalState: true,
+      executionTimeMs: elapsed,
+      nodeTimings: {
+        contextReduction: contextTokens,
+        docsCount: reducedDocs.length,
+        toolsCount: state.tasks?.toolResults?.length ?? 0
+      }
     },
   };
 };
@@ -91,18 +141,27 @@ export async function generateAnswer(
 /*  Helpers                                                               */
 /* ---------------------------------------------------------------------- */
 
-function buildSystemPrompt(docs: string, tools: string, includeSrc: boolean) {
+/**
+ * Build the RAG-enhanced system prompt with context and tool outputs
+ */
+function buildRAGSystemPrompt(docs: string, tools: string, includeSrc: boolean): string {
   let p = "You are an AI assistant with access to the user's knowledge base.";
   if (docs) {
     p += `\n\nContext:\n${docs}`;
     if (includeSrc) p += "\nUse bracketed numbers like [1] when citing.";
   }
   if (tools) p += `\n\nTool outputs:\n${tools}`;
-
   return p + "\n\nGive a concise, helpful answer.";
 }
 
+/**
+ * Format tool results for inclusion in the prompt
+ */
 function formatToolResults(results: ToolResult[]): string {
+  if (!results || results.length === 0) {
+    return "";
+  }
+
   return results
     .map((r, i) => {
       const out = r.error

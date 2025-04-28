@@ -1,15 +1,16 @@
 import { getLogger } from '@dome/logging';
-import { AgentState, ToolResult } from '../types';
+import { AgentState, Document, ToolResult } from '../types';
 import { SecureToolExecutor } from '../tools/secureToolExecutor';
 import { ObservabilityService } from '../services/observabilityService';
 
 /**
- * Execute the selected tool with proper error handling and fallback mechanisms
+ * Execute a selected tool securely and convert its output to document format
+ * for further processing in the RAG pipeline
  */
 export const runTool = async (
   state: AgentState,
   env: Env,
-  toolExecutor?: SecureToolExecutor,
+  toolExecutor: SecureToolExecutor = new SecureToolExecutor(),
 ): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'runTool' });
   const startTime = performance.now();
@@ -20,6 +21,7 @@ export const runTool = async (
 
   const toolName = state.tasks?.toolToRun;
   const toolParameters = state.tasks?.toolParameters || {};
+  const query = state.tasks?.originalQuery || state.tasks?.rewrittenQuery || '';
 
   if (!toolName) {
     logger.warn({ traceId, spanId }, 'No tool specified but reached run_tool node');
@@ -82,6 +84,12 @@ export const runTool = async (
       'Tool execution complete',
     );
 
+    // Convert tool output to properly formatted Document objects
+    const toolDocuments = await convertToolOutputToDocuments(toolName, toolOutput, query);
+    
+    // Score the tool documents for relevance
+    const scoredDocuments = await scoreToolDocuments(toolDocuments, query);
+
     // Create tool result
     const toolResult: ToolResult = {
       toolName,
@@ -101,6 +109,11 @@ export const runTool = async (
         ...state.tasks,
         toolResults: [...(state.tasks?.toolResults || []), toolResult],
       },
+      // Add tool output documents to state
+      docs: [
+        ...(state.docs || []),
+        ...scoredDocuments
+      ],
     };
 
     ObservabilityService.endSpan(
@@ -376,4 +389,175 @@ async function tryFallbackMechanism(
         error: error instanceof Error ? error.message : String(error),
       };
   }
+}
+
+/**
+ * Convert tool output to Document objects for use in RAG pipeline
+ */
+async function convertToolOutputToDocuments(
+  toolName: string,
+  toolOutput: any,
+  query: string
+): Promise<Document[]> {
+  const logger = getLogger().child({ function: 'convertToolOutputToDocuments' });
+  
+  try {
+    // Handle different output types based on the tool
+    if (typeof toolOutput === 'string') {
+      // Simple text output
+      return [{
+        id: `tool-${toolName}-${Date.now()}`,
+        title: `${toolName} result`,
+        body: toolOutput,
+        metadata: {
+          source: 'tool',
+          createdAt: new Date().toISOString(),
+          relevanceScore: 0.9, // High initial score for tool outputs
+          mimeType: 'text/plain',
+          url: null,
+          confidence: 0.9,
+          semantic_similarity: 0.9,
+        },
+      }];
+    } else if (Array.isArray(toolOutput)) {
+      // Array output - create a document for each item
+      return toolOutput.map((item, index) => ({
+        id: `tool-${toolName}-${Date.now()}-${index}`,
+        title: `${toolName} result ${index + 1}`,
+        body: typeof item === 'string' ? item : JSON.stringify(item, null, 2),
+        metadata: {
+          source: 'tool',
+          createdAt: new Date().toISOString(),
+          relevanceScore: 0.9,
+          mimeType: 'text/plain',
+          url: null,
+          confidence: 0.9,
+          semantic_similarity: 0.9,
+        },
+      }));
+    } else if (toolOutput && typeof toolOutput === 'object') {
+      // Object output - create one document with JSON representation
+      // Or split into multiple documents if it has sensible properties
+      const documents: Document[] = [];
+      
+      // Handle objects with specific structures based on tool type
+      if (toolOutput.content || toolOutput.data) {
+        // Common API response pattern
+        const mainContent = toolOutput.content || toolOutput.data;
+        documents.push({
+          id: `tool-${toolName}-${Date.now()}`,
+          title: toolOutput.title || `${toolName} result`,
+          body: typeof mainContent === 'string' ? mainContent : JSON.stringify(mainContent, null, 2),
+          metadata: {
+            source: 'tool',
+            createdAt: new Date().toISOString(),
+            relevanceScore: 0.9,
+            mimeType: typeof mainContent === 'string' ? 'text/plain' : 'application/json',
+            url: null,
+            confidence: 0.9,
+            semantic_similarity: 0.9,
+          },
+        });
+      } else {
+        // Generic object - create a single document
+        documents.push({
+          id: `tool-${toolName}-${Date.now()}`,
+          title: `${toolName} result`,
+          body: JSON.stringify(toolOutput, null, 2),
+          metadata: {
+            source: 'tool',
+            createdAt: new Date().toISOString(),
+            relevanceScore: 0.9,
+            mimeType: 'application/json',
+            url: null,
+            confidence: 0.9,
+            semantic_similarity: 0.9,
+          },
+        });
+      }
+      
+      return documents;
+    }
+    
+    // Default case - create a simple document with stringified output
+    return [{
+      id: `tool-${toolName}-${Date.now()}`,
+      title: `${toolName} result`,
+      body: typeof toolOutput === 'undefined' ? 'No output' : String(toolOutput),
+      metadata: {
+        source: 'tool',
+        createdAt: new Date().toISOString(),
+        relevanceScore: 0.8,
+        mimeType: 'text/plain',
+        url: null,
+        confidence: 0.8,
+        semantic_similarity: 0.8,
+      },
+    }];
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        toolName,
+      },
+      'Error converting tool output to documents',
+    );
+    
+    // Return a document with error information so the conversation can continue
+    return [{
+      id: `tool-${toolName}-error-${Date.now()}`,
+      title: `${toolName} result (error)`,
+      body: `The tool execution completed but there was an error processing the results: ${error instanceof Error ? error.message : String(error)}`,
+      metadata: {
+        source: 'tool',
+        createdAt: new Date().toISOString(),
+        relevanceScore: 0.5, // Lower score for error outputs
+        mimeType: 'text/plain',
+        url: null,
+        confidence: 0.5,
+        semantic_similarity: 0.5,
+      },
+    }];
+  }
+}
+
+/**
+ * Score tool documents for relevance to the query
+ */
+async function scoreToolDocuments(documents: Document[], query: string): Promise<Document[]> {
+  // Calculate relevance based on query terms appearing in the document
+  const queryTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 3);
+  
+  return documents.map(doc => {
+    // Start with the base relevance score already in the document
+    let baseScore = doc.metadata.relevanceScore || 0.8;
+    
+    // If we have query terms, adjust the score based on term matches
+    if (queryTerms.length > 0) {
+      const content = doc.body.toLowerCase();
+      let termMatches = 0;
+      
+      for (const term of queryTerms) {
+        if (content.includes(term)) {
+          termMatches++;
+        }
+      }
+      
+      // Calculate match percentage and use it to adjust the score
+      const matchPercentage = termMatches / queryTerms.length;
+      const queryBoost = matchPercentage * 0.2; // Max 0.2 boost based on query match
+      
+      // Combine base score with query boost, keeping within 0-1 range
+      baseScore = Math.min(baseScore + queryBoost, 1);
+    }
+    
+    // Return document with updated relevance score
+    return {
+      ...doc,
+      metadata: {
+        ...doc.metadata,
+        relevanceScore: baseScore,
+      },
+    };
+  });
 }

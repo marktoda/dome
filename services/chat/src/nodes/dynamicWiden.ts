@@ -1,5 +1,5 @@
 import { getLogger } from '@dome/logging';
-import { AgentState, QueryAnalysis } from '../types';
+import { AgentState, Document, QueryAnalysis } from '../types';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 
@@ -7,17 +7,18 @@ import { ObservabilityService } from '../services/observabilityService';
  * Widening strategy types
  */
 export enum WideningStrategy {
-  SEMANTIC = 'semantic',
-  TEMPORAL = 'temporal',
-  RELEVANCE = 'relevance',
-  CATEGORY = 'category',
-  SYNONYM = 'synonym',
+  SEMANTIC = 'semantic',    // Expands semantic scope for better recall
+  TEMPORAL = 'temporal',    // Extends time range for historical content
+  RELEVANCE = 'relevance',  // Reduces relevance threshold to include more results
+  CATEGORY = 'category',    // Expands to related content categories
+  SYNONYM = 'synonym',      // Includes synonyms and related terms
+  HYBRID = 'hybrid'         // Combines multiple strategies
 }
 
 /**
  * Interface for widening parameters
  */
-interface WideningParams extends Record<string, unknown> {
+export interface WideningParams extends Record<string, unknown> {
   strategy: WideningStrategy;
   minRelevance?: number;
   expandSynonyms?: boolean;
@@ -25,10 +26,13 @@ interface WideningParams extends Record<string, unknown> {
   startDate?: number;
   endDate?: number;
   category?: string;
+  maxIterations?: number;
+  reasonForWidening?: string;
 }
 
 /**
- * Widen search parameters for better retrieval with intelligent parameter adjustment
+ * Dynamically widen search parameters for better retrieval with intelligent parameter adjustment
+ * Implements safeguards for maximum iterations and tracks effectiveness of widening strategies
  */
 export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'dynamicWiden' });
@@ -40,12 +44,55 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
 
   // Increment widening attempts
   const wideningAttempts = (state.tasks?.wideningAttempts || 0) + 1;
+  
+  // Set maximum iterations to prevent infinite widening
+  const MAX_WIDENING_ATTEMPTS = 3;
+  
+  // Check if we've reached maximum attempts
+  if (wideningAttempts > MAX_WIDENING_ATTEMPTS) {
+    logger.warn(
+      {
+        wideningAttempts,
+        maxAttempts: MAX_WIDENING_ATTEMPTS,
+        traceId,
+        spanId,
+      },
+      'Maximum widening attempts reached',
+    );
+    
+    const endTime = performance.now();
+    const executionTime = endTime - startTime;
+    
+    // Return state with no further widening
+    return {
+      ...state,
+      tasks: {
+        ...state.tasks,
+        needsWidening: false,
+        wideningAttempts,
+        wideningStrategy: WideningStrategy.HYBRID,
+        wideningParams: {
+          strategy: WideningStrategy.HYBRID,
+          maxIterations: MAX_WIDENING_ATTEMPTS,
+          minRelevance: 0.2, // Lower threshold as a final attempt
+        },
+      },
+      metadata: {
+        ...state.metadata,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          dynamicWiden: executionTime,
+        },
+      },
+    };
+  }
 
   logger.info(
     {
       wideningAttempts,
       originalQuery: state.tasks?.originalQuery,
       rewrittenQuery: state.tasks?.rewrittenQuery,
+      previousDocCount: state.docs?.length || 0,
       traceId,
       spanId,
     },
@@ -53,7 +100,8 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
   );
 
   try {
-    // Analyze the query and previous results to determine the best widening strategy
+    // Analyze query characteristics, previous results, and retrieval metrics
+    // to determine the optimal widening strategy
     const wideningParams = await determineWideningStrategy(
       state,
       env,
@@ -61,6 +109,9 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
       traceId,
       spanId,
     );
+    
+    // Add maximum iterations to widening parameters
+    wideningParams.maxIterations = MAX_WIDENING_ATTEMPTS;
 
     // Log the selected strategy
     logger.info(

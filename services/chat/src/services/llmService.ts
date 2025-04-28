@@ -3,6 +3,10 @@ import { AIMessage } from '../types';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, MessageContent, SystemMessage, AIMessage as LangChainAIMessage } from '@langchain/core/messages';
 import { StringOutputParser } from '@langchain/core/output_parsers';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { Tool } from '@langchain/core/tools';
+import { ZodSchema } from 'zod';
+import { ModelFactory } from './modelFactory';
 import {
   DEFAULT_MODEL,
   ModelProvider,
@@ -49,7 +53,7 @@ function truncateContext(context: string, cfg: ReturnType<typeof getModelConfig>
 /* -------------------------------------------------------- */
 export class LlmService {
   static MODEL = MODEL;
-  
+
   /**
    * Initialize the LLM service with environment variables
    * This must be called during service startup
@@ -57,18 +61,18 @@ export class LlmService {
   static initialize(env: Env): void {
     // Create a safe configuration object from env
     const config: Record<string, unknown> = {};
-    
+
     // Extract model configuration if available
     if ('DEFAULT_MODEL_ID' in env && typeof env.DEFAULT_MODEL_ID === 'string') {
       config.DEFAULT_MODEL_ID = env.DEFAULT_MODEL_ID;
     }
-    
+
     // Configure the default model based on environment variables
     configureDefaultModel(config);
-    
+
     // Update the static MODEL property to match the configured default
     this.MODEL = DEFAULT_MODEL.id;
-    
+
     logger.info({
       model: DEFAULT_MODEL.id,
       modelName: DEFAULT_MODEL.name,
@@ -85,7 +89,7 @@ export class LlmService {
   ): ChatOpenAI {
     // Get model config - use specified modelId or default
     const modelConfig = getModelConfig(opts.modelId ?? this.MODEL);
-    
+
     // Base client options
     const clientOptions = {
       modelName: modelConfig.id,
@@ -93,7 +97,7 @@ export class LlmService {
       maxTokens: opts.maxTokens,
       streaming: false,
     };
-    
+
     // Provider-specific configuration
     switch (modelConfig.provider) {
       case ModelProvider.OPENAI:
@@ -101,7 +105,7 @@ export class LlmService {
           ...clientOptions,
           openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
         });
-        
+
       case ModelProvider.CLOUDFLARE:
         // Cloudflare Workers AI integration would be configured here
         // This might use a different client implementation in the future
@@ -109,7 +113,7 @@ export class LlmService {
           ...clientOptions,
           openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
         });
-        
+
       case ModelProvider.ANTHROPIC:
         // Anthropic integration would be configured here
         // This would likely use a different client implementation
@@ -117,7 +121,7 @@ export class LlmService {
           ...clientOptions,
           openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
         });
-        
+
       default:
         // Fall back to OpenAI configuration
         return new ChatOpenAI({
@@ -136,12 +140,12 @@ export class LlmService {
   ): ChatOpenAI {
     // Get model config - use specified modelId or default
     const modelConfig = getModelConfig(opts.modelId ?? this.MODEL);
-    
+
     // Verify the model supports streaming
     if (!modelConfig.capabilities.streaming) {
       logger.warn({ modelId: modelConfig.id }, 'Model does not support streaming, using non-streaming client');
     }
-    
+
     // Base client options
     const clientOptions = {
       modelName: modelConfig.id,
@@ -149,7 +153,7 @@ export class LlmService {
       maxTokens: opts.maxTokens,
       streaming: true,
     };
-    
+
     // Provider-specific configuration
     switch (modelConfig.provider) {
       case ModelProvider.OPENAI:
@@ -157,27 +161,71 @@ export class LlmService {
           ...clientOptions,
           openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
         });
-        
+
       case ModelProvider.CLOUDFLARE:
         // Cloudflare Workers AI integration would be configured here
         return new ChatOpenAI({
           ...clientOptions,
           openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
         });
-        
+
       case ModelProvider.ANTHROPIC:
         // Anthropic integration would be configured here
         return new ChatOpenAI({
           ...clientOptions,
           openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
         });
-        
+
       default:
         // Fall back to OpenAI configuration
         return new ChatOpenAI({
           ...clientOptions,
           openAIApiKey: env.OPENAI_API_KEY || 'sk-dummy-key-for-testing',
         });
+    }
+  }
+
+  /**
+   * Create an LLM with tools bound
+   * @param env Environment variables
+   * @param tools Array of tools to bind to the model
+   * @param opts Optional parameters (temperature, maxTokens, modelId)
+   * @returns A chat model with tools bound
+   */
+  static createToolBoundLLM(
+    env: Env,
+    tools: Tool[],
+    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {}
+  ): BaseChatModel {
+    const modelId = opts.modelId ?? this.MODEL;
+    const modelConfig = getModelConfig(modelId);
+
+    logger.info({
+      modelId,
+      toolCount: tools.length
+    }, 'Creating tool-bound LLM');
+
+    try {
+      return ModelFactory.createToolBoundModel(env, tools, {
+        modelId,
+        temperature: opts.temperature,
+        maxTokens: opts.maxTokens
+      });
+    } catch (error) {
+      logger.error({
+        err: error,
+        modelId
+      }, 'Failed to create tool-bound LLM');
+
+      // Fall back to default model if specified model fails
+      if (modelId !== DEFAULT_MODEL.id) {
+        logger.info('Falling back to default model for tool binding');
+        return ModelFactory.createToolBoundModel(env, tools, {
+          temperature: opts.temperature,
+          maxTokens: opts.maxTokens
+        });
+      }
+      throw error;
     }
   }
 
@@ -220,10 +268,57 @@ export class LlmService {
       const chain = model.pipe(outputParser);
       const response = await withTimeout(chain.invoke(langChainMessages));
 
-      return response || fallbackResponse;
+      return (response as string) || fallbackResponse;
     } catch (e) {
       logger.warn({ err: e }, 'LLM call failed – returning fallback');
       return fallbackResponse;
+    }
+  }
+
+  /**
+   * Invoke LLM with structured output schema
+   * @param env Environment variables
+   * @param messages Array of messages for the LLM
+   * @param opts Optional parameters (temperature, modelId, schema)
+   * @returns Structured output of type T
+   */
+  static async invokeStructured<T>(
+    env: Env,
+    messages: AIMessage[],
+
+    opts: {
+      temperature?: number;
+      modelId?: string;
+      schema: ZodSchema,
+      schemaInstructions: string;
+    }
+  ): Promise<T> {
+    if (isTest()) return mockResponse as unknown as T;
+
+    try {
+      logger.info({
+        modelId: opts.modelId ?? this.MODEL,
+        messageCount: messages.length
+      }, 'Invoking LLM with structured output schema');
+
+      // Convert messages to LangChain format
+      const langChainMessages = this.convertMessages(messages);
+
+      // Create structured output model
+      const model = ModelFactory.createStructuredOutputModel<T>(env, {
+        modelId: opts.modelId ?? this.MODEL,
+        temperature: opts.temperature,
+        schema: opts.schema,
+        schemaInstructions: opts.schemaInstructions,
+      }).withStructuredOutput(opts.schema);
+
+      // Get the result with timeout
+      const result = await withTimeout(model.invoke(langChainMessages));
+
+      return result as T;
+    } catch (e: any) {
+      logger.error({ err: e }, 'Structured output LLM call failed');
+      throw new Error(`Failed to get structured output: ${e?.message || 'Unknown error'}`);
     }
   }
 
@@ -327,6 +422,65 @@ export class LlmService {
       modelId: opts.modelId ?? this.MODEL,
     })) {
       yield chunk;
+    }
+  }
+
+  /**
+   * Stream answer with tool use capability
+   * @param env Environment variables
+   * @param conv Conversation messages
+   * @param tools Array of tools available for the model to use
+   * @param docs Context documents
+   * @param opts Optional parameters
+   * @returns Async generator of message content
+   */
+  static async *streamAnswerWithTools(
+    env: Env,
+    conv: AIMessage[],
+    tools: Tool[],
+    docs: string,
+    opts: {
+      temperature?: number;
+      maxTokens?: number;
+      includeSourceInfo?: boolean;
+      modelId?: string;
+    } = {},
+  ): AsyncGenerator<MessageContent> {
+    const cfg = getModelConfig(opts.modelId ?? this.MODEL);
+    const ctx = truncateContext(docs, cfg);
+    const sysPrompt = getResponseGenerationPrompt(ctx, opts.includeSourceInfo);
+
+    // Add tool usage instructions to system prompt
+    const toolNames = tools.map(t => t.name).join(", ");
+    const enhancedSysPrompt = `${sysPrompt}\n\nYou have access to the following tools: ${toolNames}. Use them when appropriate to provide the most accurate information.`;
+
+    const inTokens = Math.ceil((enhancedSysPrompt.length + conv.reduce((n, m) => n + m.content.length, 0)) / 4);
+    const { maxResponseTokens } = calculateTokenLimits(cfg, inTokens, opts.maxTokens);
+
+    const messages: AIMessage[] = [{ role: 'system', content: enhancedSysPrompt }, ...conv];
+
+    try {
+      // Create a tool-bound model
+      const model = this.createToolBoundLLM(env, tools, {
+        temperature: opts.temperature ?? cfg.defaultTemperature,
+        maxTokens: maxResponseTokens,
+        modelId: opts.modelId ?? this.MODEL,
+      });
+
+      // Convert messages to LangChain format
+      const langChainMessages = this.convertMessages(messages);
+
+      // Stream the response
+      const stream = await model.stream(langChainMessages);
+
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          yield chunk.content;
+        }
+      }
+    } catch (e) {
+      logger.warn({ err: e }, 'LLM tool-enabled stream failed – sending fallback');
+      yield fallbackResponse;
     }
   }
 }

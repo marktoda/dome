@@ -24,7 +24,11 @@ export interface ModelCapabilities {
   /** Whether the model supports streaming responses */
   streaming: boolean;
   /** Whether the model supports function calling */
-  functionCalling?: boolean;
+  functionCalling: boolean;
+  /** Whether the model supports tool use (e.g. external API calls) */
+  toolUse: boolean;
+  /** Whether the model supports returning structured outputs directly */
+  structuredOutput: boolean;
   /** Whether the model supports vision/image inputs */
   vision?: boolean;
   /** Whether the model supports embeddings */
@@ -69,6 +73,8 @@ export const MODELS = {
       capabilities: {
         streaming: true,
         functionCalling: true,
+        toolUse: true,
+        structuredOutput: true,
         vision: false,
       },
       productionReady: true,
@@ -83,6 +89,8 @@ export const MODELS = {
       capabilities: {
         streaming: true,
         functionCalling: true,
+        toolUse: true,
+        structuredOutput: true,
         vision: false,
       },
       productionReady: true,
@@ -97,6 +105,8 @@ export const MODELS = {
       capabilities: {
         streaming: true,
         functionCalling: true,
+        toolUse: true,
+        structuredOutput: true,
         vision: false,
       },
       productionReady: true,
@@ -115,6 +125,8 @@ export const MODELS = {
       capabilities: {
         streaming: true,
         functionCalling: false,
+        toolUse: false,
+        structuredOutput: false,
         vision: false,
       },
       productionReady: true,
@@ -129,6 +141,8 @@ export const MODELS = {
       capabilities: {
         streaming: true,
         functionCalling: false,
+        toolUse: false,
+        structuredOutput: false,
         vision: false,
       },
       productionReady: true,
@@ -147,6 +161,8 @@ export const MODELS = {
       capabilities: {
         streaming: true,
         functionCalling: true,
+        toolUse: true,
+        structuredOutput: true,
         vision: true,
       },
       productionReady: false, // Set to true when integration is ready
@@ -161,6 +177,8 @@ export const MODELS = {
       capabilities: {
         streaming: true,
         functionCalling: true,
+        toolUse: true,
+        structuredOutput: true,
         vision: true,
       },
       productionReady: false, // Set to true when integration is ready

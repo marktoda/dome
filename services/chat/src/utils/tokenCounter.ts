@@ -1,6 +1,28 @@
 import { encoding_for_model } from '@dqbd/tiktoken';
-import { logError } from '@dome/logging';
+import { getLogger, logError } from '@dome/logging';
 import { CHARS_PER_TOKEN, MESSAGE_FORMAT_TOKENS, approximateTokenCount } from './tokenConstants';
+
+// Track if we've already logged the tokenizer error to avoid flooding logs
+let hasLoggedTokenizerError = false;
+
+/**
+ * Detect if we're in a Cloudflare Workers environment
+ * This needs to be robust to handle various ways the environment might be identified
+ */
+function isCloudflareWorkersEnvironment(): boolean {
+  return (
+    // Standard check for Cloudflare Workers
+    (typeof globalThis.WorkerGlobalScope !== 'undefined' &&
+     globalThis instanceof WorkerGlobalScope) ||
+    // Check for Cloudflare Workers specific globals
+    typeof globalThis.caches !== 'undefined' ||
+    // WebAssembly support check - another indicator we might be in a restricted environment
+    typeof WebAssembly === 'undefined' ||
+    // Check if we're in an environment where wasm functions might be missing
+    // This addresses the TypeError: wasm.__wbindgen_add_to_stack_pointer is not a function
+    (typeof WebAssembly !== 'undefined' && typeof WebAssembly.instantiate === 'undefined')
+  );
+}
 
 /**
  * Count the number of tokens in a string using tiktoken
@@ -11,24 +33,26 @@ import { CHARS_PER_TOKEN, MESSAGE_FORMAT_TOKENS, approximateTokenCount } from '.
 export function countTokens(text: string, model = 'gpt-4'): number {
   if (!text) return 0;
 
-  try {
-    // Skip tiktoken in Cloudflare Workers environment due to WebAssembly compatibility issues
-    if (
-      typeof globalThis.WorkerGlobalScope !== 'undefined' &&
-      globalThis instanceof WorkerGlobalScope
-    ) {
-      // We're in a Cloudflare Worker, use the fallback method
-      return approximateTokenCount(text);
-    }
+  // First check if we're in a Cloudflare Workers environment
+  if (isCloudflareWorkersEnvironment()) {
+    // We're in a Cloudflare Worker or restricted environment, use the fallback method
+    return approximateTokenCount(text);
+  }
 
+  try {
     // @ts-ignore - Ignoring type errors for now to make progress
     const encoder = encoding_for_model(model as any);
     const tokens = encoder.encode(text);
     encoder.free();
     return tokens.length;
   } catch (error) {
-    // Don't log the full error as it's expected in some environments
-    logError(error, 'Error counting tokens, falling back to approximate count');
+    // Only log the first occurrence to avoid flooding logs
+    if (!hasLoggedTokenizerError) {
+      // Use warning level instead of error since we have a fallback
+      const logger = getLogger();
+      logger.warn({ error }, 'WebAssembly tokenizer failed, using approximate token count fallback');
+      hasLoggedTokenizerError = true;
+    }
     // Fallback to approximate count
     return approximateTokenCount(text);
   }

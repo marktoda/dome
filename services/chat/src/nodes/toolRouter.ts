@@ -1,8 +1,10 @@
 import { getLogger } from '@dome/logging';
-import { AgentState } from '../types';
+import { AgentState, Document } from '../types';
 import { ToolRegistry } from '../tools/registry';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
+import { getToolRoutingPrompt } from '../config/promptsConfig';
+
 
 // Define the Message type to match the expected format
 type Message = {
@@ -18,6 +20,17 @@ interface ToolSelectionResult {
   toolName: string;
   confidence: number;
   reason: string;
+}
+
+/**
+ * Interface for task analysis result from LLM
+ */
+interface TaskAnalysisResult {
+  needsTool: boolean;
+  recommendedTools: string[];
+  completable: boolean;
+  reasoning: string;
+  confidence: number;
 }
 
 /**
@@ -225,12 +238,25 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
  * Determine next step after tool routing
  */
 export const routeAfterTool = (state: AgentState): 'run_tool' | 'answer' => {
+  const logger = getLogger().child({ node: 'routeAfterTool' });
+  
   const toolToRun = state.tasks?.toolToRun;
-
+  const toolResults = state.tasks?.toolResults || [];
+  
+  // If a tool is selected, route to run_tool
   if (toolToRun) {
+    logger.info({
+      toolToRun,
+      previousToolCount: toolResults.length,
+    }, 'Routing to run_tool');
     return 'run_tool';
   }
-
+  
+  // Otherwise, route to answer generation
+  logger.info({
+    toolToRun,
+    previousToolCount: toolResults.length,
+  }, 'Routing directly to answer generation');
   return 'answer';
 };
 
@@ -242,6 +268,133 @@ export const routeAfterTool = (state: AgentState): 'run_tool' | 'answer' => {
  * @param traceId Trace ID for observability
  * @param spanId Span ID for observability
  * @returns Selected tool name and confidence score
+ */
+/**
+ * Analyze the task to determine if tools are needed and which ones would be most appropriate
+ */
+async function analyzeTaskForTools(
+  env: Env,
+  query: string,
+  retrievedDocs: Document[],
+  availableTools: string[],
+  traceId: string,
+  spanId: string
+): Promise<TaskAnalysisResult> {
+  const logger = getLogger().child({ function: 'analyzeTaskForTools' });
+
+  // If no tools are available, return early
+  if (availableTools.length === 0) {
+    return {
+      needsTool: false,
+      recommendedTools: [],
+      completable: true,
+      reasoning: "No tools available for this task.",
+      confidence: 1.0
+    };
+  }
+
+  try {
+    // Get tool descriptions for context
+    const toolDescriptions = availableTools
+      .map(toolName => {
+        const tool = ToolRegistry.getTool(toolName);
+        if (!tool) {
+          return `${toolName}: No description available`;
+        }
+        return `${toolName}: ${tool.description}`;
+      })
+      .join('\n');
+
+    // Create a summary of the retrieved documents for context
+    const docsSummary = retrievedDocs.length > 0
+      ? retrievedDocs.slice(0, 3).map(doc => `- ${doc.title}: ${doc.body.substring(0, 100)}...`).join('\n')
+      : "No documents retrieved.";
+
+    // Create a prompt for the LLM to analyze if tools are needed
+    const systemPrompt = getToolRoutingPrompt()
+      .replace('{toolDescriptions}', toolDescriptions)
+      .replace('{docsSummary}', docsSummary);
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `User query: "${query}"` },
+    ];
+
+    // Call the LLM to analyze the task
+    // @ts-ignore - Ignoring type errors for now to make progress
+    const response = await LlmService.call(env, messages as Message[], {});
+
+    // Parse the response as JSON
+    try {
+      const result = JSON.parse(response);
+
+      // Validate the result
+      if (typeof result.needsTool !== 'boolean') {
+        throw new Error(`Invalid task analysis: missing needsTool property`);
+      }
+
+      // Normalize the recommended tools to ensure they exist
+      const recommendedTools = Array.isArray(result.recommendedTools)
+        ? result.recommendedTools.filter((tool: string) => availableTools.includes(tool))
+        : [];
+
+      // Ensure confidence is a number between 0 and 1
+      const confidence = typeof result.confidence === 'number'
+        ? Math.max(0, Math.min(1, result.confidence))
+        : 0.5;
+
+      return {
+        needsTool: result.needsTool,
+        recommendedTools,
+        completable: result.completable === false ? false : true, // Default to true if not specified
+        reasoning: result.reasoning || 'No reasoning provided',
+        confidence,
+      };
+    } catch (parseError) {
+      logger.error(
+        {
+          err: parseError,
+          response,
+          traceId,
+          spanId,
+        },
+        'Failed to parse task analysis response'
+      );
+
+      // Fall back to a simple heuristic
+      return {
+        needsTool: availableTools.length > 0,
+        recommendedTools: availableTools,
+        completable: true,
+        reasoning: 'Failed to parse LLM response, using fallback analysis',
+        confidence: 0.5,
+      };
+    }
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        query,
+        availableTools,
+        traceId,
+        spanId,
+      },
+      'Error analyzing task for tools'
+    );
+
+    // Fall back to a simple heuristic
+    return {
+      needsTool: availableTools.length > 0,
+      recommendedTools: availableTools,
+      completable: true,
+      reasoning: 'Error during task analysis, using fallback',
+      confidence: 0.5,
+    };
+  }
+}
+
+/**
+ * Select the best tool based on query intent and task analysis
  */
 async function selectBestTool(
   env: Env,

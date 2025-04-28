@@ -1,23 +1,12 @@
 import { getLogger } from '@dome/logging';
 import { AgentState, Document } from '../types';
-import { countTokens, estimateDocumentTokens } from '../utils/tokenCounter';
-import { getUserId } from '../utils/stateUtils';
-import { truncateDocumentToMaxTokens } from '../utils/promptFormatter';
-import { SearchService } from '../services/searchService';
+import { SearchService, SearchOptions } from '../services/searchService';
 import { ObservabilityService } from '../services/observabilityService';
-import { LlmService } from '../services/llmService';
-import { getModelConfig, getRetrieveConfig, calculateMinRelevanceScore } from '../config';
-import {
-  updateStateWithTiming,
-  updateStateWithTokenCount,
-  addErrorToState,
-} from '../utils/stateUpdateHelpers';
 
 /**
- * Retrieve relevant documents based on the query
+ * Enhanced retrieval node that uses contextual compression and relevance scoring
  */
 export const retrieve = async (state: AgentState, env: Env): Promise<AgentState> => {
-  const searchService = SearchService.fromEnv(env);
   const logger = getLogger().child({ node: 'retrieve' });
   const startTime = performance.now();
 
@@ -25,196 +14,221 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   const traceId = state.metadata?.traceId || '';
   const spanId = ObservabilityService.startSpan(env, traceId, 'retrieve', state);
 
-  // Log minimal options for debugging
-  logger.info(
-    {
-      enhanceWithContext: state.options?.enhanceWithContext,
-      maxContextItems: state.options?.maxContextItems,
-    },
-    'Retrieve node options',
-  );
+  // Get the query for retrieval
+  getLogger().info({ tasks: state.tasks }, 'Tasks in state');
+  const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
+  const trimmedQuery = query.trim();
 
-  // Force enable context enhancement for now
-  const enhanceWithContext = state.options?.enhanceWithContext ?? true;
+  // Define minimum query length
+  const MIN_QUERY_LENGTH = 3;
 
-  // Skip retrieval if not enabled (but we're forcing it on for now)
-  if (!enhanceWithContext) {
-    logger.info('Context enhancement disabled, skipping retrieval');
-
-    // Log the skip event
-    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_skipped', {
-      reason: 'Context enhancement disabled',
-      options: state.options,
-    });
-
-    return updateStateWithTiming({ ...state, docs: [] }, 'retrieve', 0, spanId);
-  }
-
-  const userId = getUserId(state);
-  let query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery;
-  // If query is empty, use the last user message as a fallback
-  if (!query) {
-    logger.info('No query provided');
-    throw new Error('No query provided for retrieval');
-  }
-
-  // Log the query for debugging
-  logger.info({ query }, 'Query for retrieval');
-
-  const maxItems = state.options?.maxContextItems || 10;
-
-  // Track widening attempts
-  const wideningAttempts = state.tasks?.wideningAttempts || 0;
-
-  // Adjust search parameters based on widening attempts and configuration
-  const minRelevance = calculateMinRelevanceScore(wideningAttempts);
-  const expandSynonyms = wideningAttempts > 0;
-  const includeRelated = wideningAttempts > 1;
-
-  logger.info(
-    {
-      userId,
-      query,
-      maxItems,
-      wideningAttempts,
-      minRelevance,
-      expandSynonyms,
-      includeRelated,
-    },
-    'Retrieving context',
-  );
-
-  // Log the retrieval start event
-  ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_start', {
-    userId,
-    query,
-    maxItems,
-    wideningAttempts,
-    minRelevance,
-    expandSynonyms,
-    includeRelated,
-  });
-
-  try {
-    // Call the search service to retrieve documents
-    const searchOptions = {
-      userId,
-      query,
-      limit: maxItems,
-      minRelevance,
-      expandSynonyms,
-      includeRelated,
-    };
-
-    const docs = await searchService.search(searchOptions);
-    const docsCount = docs.length;
-
-    // Log the retrieval results with minimal info
-    logger.info(
+  // Validate query to prevent empty or too short query errors
+  if (!trimmedQuery) {
+    logger.warn(
       {
-        docsCount,
-        wideningAttempts,
-        topRelevanceScore: docs.length > 0 ? docs[0].metadata.relevanceScore : 0,
+        userId: state.userId,
+        traceId,
+        spanId,
       },
-      'Retrieved documents',
+      'Empty query detected, skipping vector search',
     );
 
-    // Log the retrieval completion event
-    ObservabilityService.logRetrieval(
+    // Record timing for skipped search
+    const endTime = performance.now();
+    const executionTime = endTime - startTime;
+
+    // End the span early
+    ObservabilityService.endSpan(
       env,
       traceId,
       spanId,
-      query,
-      docs.map(doc => ({ id: doc.id, score: doc.metadata.relevanceScore })),
-      performance.now() - startTime,
+      'retrieve',
+      state,
+      {
+        ...state,
+        docs: [],
+        tasks: {
+          ...state.tasks,
+          needsWidening: false,
+        },
+      },
+      executionTime,
     );
 
-    // Get model configuration and retrieval config
-    const modelId = state.options?.modelId || LlmService.MODEL;
-    const modelConfig = getModelConfig(modelId);
-    const retrieveConfig = getRetrieveConfig();
-    
-    // Calculate token limits
-    const maxTokensPerDoc = Math.floor(
-      modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxPerDocument
-    );
-    const maxDocsTokens = Math.floor(
-      modelConfig.maxContextTokens * retrieveConfig.tokenAllocation.maxForAllDocuments
-    );
-    
-    // Extract source metadata for attribution
-    const sourceMetadata = SearchService.extractSourceMetadata(docs);
-    
-    // Process documents in a single pass
-    const processedDocs: Document[] = [];
-    let totalTokens = 0;
-    
-    // First, truncate and rank documents by relevance
-    const rankedDocs = SearchService.rankAndFilterDocuments(
-      docs.map(doc => {
-        const truncatedDoc = truncateDocumentToMaxTokens(doc, maxTokensPerDoc);
-        const docTokens = estimateDocumentTokens(truncatedDoc);
-        
-        return {
-          ...truncatedDoc,
-          metadata: {
-            ...truncatedDoc.metadata,
-            tokenCount: docTokens,
-          },
-        };
-      }),
-      minRelevance
-    );
-    
-    // Log model configuration
-    logger.info(
-      {
-        modelId,
-        modelName: modelConfig.name,
-        maxContextTokens: modelConfig.maxContextTokens,
-        maxDocsTokens,
-        totalRetrievedDocs: rankedDocs.length,
+    // Log the empty query event
+    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_skipped', {
+      reason: 'empty_query',
+      executionTimeMs: executionTime,
+    });
+
+    // Return state with empty docs and timing information
+    return {
+      ...state,
+      docs: [],
+      tasks: {
+        ...state.tasks,
+        needsWidening: false,
       },
-      'Document token limits based on model configuration'
+      metadata: {
+        ...state.metadata,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrieve: executionTime,
+        },
+      },
+    };
+  }
+
+  // Check for query length
+  if (trimmedQuery.length < MIN_QUERY_LENGTH) {
+    logger.warn(
+      {
+        userId: state.userId,
+        traceId,
+        spanId,
+        query: trimmedQuery,
+        queryLength: trimmedQuery.length,
+      },
+      'Query too short, skipping vector search',
     );
-    
-    // Then select documents respecting token budget and document limit
-    for (const doc of rankedDocs) {
-      const docTokens = doc.metadata?.tokenCount || 0;
-      
-      // Skip if would exceed token budget
-      if (totalTokens + docTokens > maxDocsTokens) {
-        continue;
+
+    // Record timing for skipped search
+    const endTime = performance.now();
+    const executionTime = endTime - startTime;
+
+    // End the span early
+    ObservabilityService.endSpan(
+      env,
+      traceId,
+      spanId,
+      'retrieve',
+      state,
+      {
+        ...state,
+        docs: [],
+        tasks: {
+          ...state.tasks,
+          needsWidening: false,
+        },
+      },
+      executionTime,
+    );
+
+    // Log the short query event
+    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_skipped', {
+      reason: 'query_too_short',
+      queryLength: trimmedQuery.length,
+      executionTimeMs: executionTime,
+    });
+
+    // Return state with empty docs and timing information
+    return {
+      ...state,
+      docs: [],
+      tasks: {
+        ...state.tasks,
+        needsWidening: false,
+      },
+      metadata: {
+        ...state.metadata,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrieve: executionTime,
+        },
+      },
+    };
+  }
+
+  logger.info(
+    {
+      query: trimmedQuery,
+      userId: state.userId,
+      traceId,
+      spanId,
+    },
+    'Retrieving documents',
+  );
+
+  try {
+    // Create search service
+    const searchService = SearchService.fromEnv(env);
+
+    // Configure search options with contextual parameters
+    const searchOptions: SearchOptions = {
+      userId: state.userId,
+      query: trimmedQuery,
+      limit: 10, // Default limit
+      minRelevance: 0.5, // Default minimum relevance
+      expandSynonyms: false,
+      includeRelated: false,
+      // Optional parameters that might be set during widening
+      startDate: undefined,
+      endDate: undefined,
+      category: undefined,
+    };
+
+    // Apply any widening parameters if available
+    if (state.tasks?.wideningParams) {
+      Object.assign(searchOptions, {
+        minRelevance: state.tasks.wideningParams.minRelevance || searchOptions.minRelevance,
+        expandSynonyms: state.tasks.wideningParams.expandSynonyms || searchOptions.expandSynonyms,
+        includeRelated: state.tasks.wideningParams.includeRelated || searchOptions.includeRelated,
+      });
+
+      // Apply temporal widening if specified
+      if (state.tasks.wideningParams.startDate) {
+        searchOptions.startDate = state.tasks.wideningParams.startDate as number;
       }
-      
-      // Add document and update token count
-      processedDocs.push(doc);
-      totalTokens += docTokens;
-      
-      // Stop if we've reached document limit
-      if (processedDocs.length >= retrieveConfig.documentLimits.maxDocuments) {
-        break;
+      if (state.tasks.wideningParams.endDate) {
+        searchOptions.endDate = state.tasks.wideningParams.endDate as number;
+      }
+
+      // Apply category widening if specified
+      if (state.tasks.wideningParams.category) {
+        searchOptions.category = state.tasks.wideningParams.category as any;
       }
     }
+
+    // Perform search
+    const documents = await searchService.search(searchOptions);
+
+    // Apply contextual compression to filter and rerank documents
+    const contextualizedDocs = await applyContextualCompression(documents, trimmedQuery);
+
+    // Calculate retrieval quality
+    const retrievalQuality = assessRetrievalQuality(contextualizedDocs);
+
+    // Determine if widening is needed based on retrieval quality
+    const needsWidening = determineIfWideningNeeded(
+      retrievalQuality,
+      state.tasks?.wideningAttempts || 0,
+    );
+
+    logger.info(
+      {
+        documentCount: contextualizedDocs.length,
+        retrievalQuality,
+        needsWidening,
+        wideningAttempts: state.tasks?.wideningAttempts || 0,
+        traceId,
+        spanId,
+      },
+      'Retrieved and processed documents',
+    );
 
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
 
-    // Create updated state with docs and tasks
+    // Create updated state with retrieved documents
     const updatedState = {
       ...state,
-      docs: processedDocs,
+      docs: contextualizedDocs,
       tasks: {
         ...state.tasks,
-        needsWidening: docsCount < 2 && wideningAttempts < 2,
-        wideningAttempts,
+        needsWidening,
       },
     };
-
-    // Add timing and token count information
-    let resultState = updateStateWithTiming(updatedState, 'retrieve', executionTime, spanId);
-    resultState = updateStateWithTokenCount(resultState, 'retrievedDocs', totalTokens);
 
     // End the span
     ObservabilityService.endSpan(
@@ -223,43 +237,204 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       spanId,
       'retrieve',
       state,
-      resultState,
+      updatedState,
       executionTime,
     );
 
-    return resultState;
+    // Log retrieval metrics
+    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_complete', {
+      query: trimmedQuery,
+      documentCount: contextualizedDocs.length,
+      retrievalQuality,
+      needsWidening,
+      executionTimeMs: executionTime,
+      hasDocs: contextualizedDocs.length > 0,
+    });
+
+    return {
+      ...updatedState,
+      metadata: {
+        ...updatedState.metadata,
+        nodeTimings: {
+          ...updatedState.metadata?.nodeTimings,
+          retrieve: executionTime,
+        },
+      },
+    };
   } catch (error) {
+    // Log the error
     logger.error(
       {
-        errorMessage: error instanceof Error ? error.message : String(error),
-        userId,
+        err: error,
+        query: trimmedQuery,
+        traceId,
+        spanId,
       },
-      'Error retrieving context',
+      'Error retrieving documents',
     );
-
-    // Log the error event with minimal info
-    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_error', {
-      userId,
-      errorMessage: error instanceof Error ? error.message : String(error),
-    });
 
     // Update state with timing information
     const endTime = performance.now();
     const executionTime = endTime - startTime;
 
-    // Create error state with empty docs
-    const errorState = updateStateWithTiming(
-      { ...state, docs: [] },
-      'retrieve',
-      executionTime,
+    // End the span with error
+    ObservabilityService.endSpan(
+      env,
+      traceId,
       spanId,
+      'retrieve',
+      state,
+      {
+        ...state,
+        docs: [],
+        tasks: {
+          ...state.tasks,
+          needsWidening: false,
+        },
+      },
+      executionTime,
     );
 
-    // Add error information and return
-    return addErrorToState(
-      errorState,
-      'retrieve',
-      error instanceof Error ? error.message : String(error),
-    );
+    // Log the error event
+    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_error', {
+      error: error instanceof Error ? error.message : String(error),
+      executionTimeMs: executionTime,
+    });
+
+    return {
+      ...state,
+      docs: [],
+      tasks: {
+        ...state.tasks,
+        needsWidening: false,
+      },
+      metadata: {
+        ...state.metadata,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrieve: executionTime,
+        },
+        errors: [
+          ...(state.metadata?.errors || []),
+          {
+            node: 'retrieve',
+            message: error instanceof Error ? error.message : String(error),
+            timestamp: Date.now(),
+          },
+        ],
+      },
+    };
   }
 };
+
+/**
+ * Apply contextual compression to filter and rerank documents based on the query context
+ */
+async function applyContextualCompression(documents: Document[], query: string): Promise<Document[]> {
+  // Ensure query is trimmed and non-empty (defensive programming)
+  const processedQuery = query.trim();
+  if (!processedQuery) {
+    return documents; // Return documents as-is if query is empty
+  }
+  // Sort by relevance first
+  const sortedDocuments = SearchService.rankAndFilterDocuments(documents);
+
+  // Token-aware document filtering
+  // In a production system, this would use more sophisticated embedding-based similarity
+  const queryTokens = new Set(
+    query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(token => token.length > 3),
+  );
+
+  // Apply contextual scoring to adjust relevance
+  return sortedDocuments.map(doc => {
+    const content = doc.body.toLowerCase();
+    let contextRelevance = 0;
+
+    // Count query tokens that appear in the document
+    queryTokens.forEach(token => {
+      if (content.includes(token)) {
+        contextRelevance += 1;
+      }
+    });
+
+    // Normalize the contextual relevance score
+    const normalizedContextScore = queryTokens.size > 0
+      ? contextRelevance / queryTokens.size
+      : 0;
+
+    // Combine base relevance with contextual relevance
+    const baseRelevance = doc.metadata.relevanceScore || 0;
+    const combinedScore = 0.7 * baseRelevance + 0.3 * normalizedContextScore;
+
+    // Return document with updated relevance score
+    return {
+      ...doc,
+      metadata: {
+        ...doc.metadata,
+        relevanceScore: combinedScore,
+        contextual_similarity: normalizedContextScore,
+      },
+    };
+  });
+}
+
+/**
+ * Assess retrieval quality based on document relevance scores and count
+ */
+function assessRetrievalQuality(documents: Document[]): 'high' | 'low' | 'none' {
+  if (documents.length === 0) {
+    return 'none';
+  }
+
+  // Calculate average relevance score
+  const relevanceScores = documents.map(doc => doc.metadata.relevanceScore);
+  const avgRelevance = relevanceScores.reduce((sum, score) => sum + score, 0) / relevanceScores.length;
+
+  // High quality: Good average relevance and sufficient number of documents
+  if (avgRelevance > 0.7 && documents.length >= 3) {
+    return 'high';
+  }
+
+  // Low quality: Some relevant documents but not ideal
+  if (avgRelevance > 0.4 || documents.length >= 2) {
+    return 'low';
+  }
+
+  // No quality: Very few or irrelevant documents
+  return 'none';
+}
+
+/**
+ * Determine if search widening is needed based on retrieval quality and previous attempts
+ */
+function determineIfWideningNeeded(retrievalQuality: 'high' | 'low' | 'none', attempts: number): boolean {
+  // Never widen if we already have high quality results
+  if (retrievalQuality === 'high') {
+    return false;
+  }
+
+  // Always try widening once if results are poor
+  if (retrievalQuality === 'none' && attempts === 0) {
+    return true;
+  }
+
+  // Try widening a second time if results are still low quality
+  if (retrievalQuality === 'low' && attempts === 1) {
+    return true;
+  }
+
+  // Try widening a third time if we still have no results
+  if (retrievalQuality === 'none' && attempts === 1) {
+    return true;
+  }
+
+  // Maximum 3 widening attempts
+  if (attempts >= 2) {
+    return false;
+  }
+
+  return false;
+}

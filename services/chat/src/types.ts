@@ -44,7 +44,57 @@ export type Role = z.infer<typeof roleSchema>;
 export type ResumeChatRequest = z.infer<typeof resumeChatRequestSchema>;
 
 /**
- * Core state interface for the RAG graph
+ * Message interface
+ */
+export interface Message {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp?: number;
+}
+
+/**
+ * Message pair interface for structured chat history
+ */
+export interface MessagePair {
+  user: Message;
+  assistant: Message;
+  timestamp: number;
+  tokenCount?: number;
+}
+
+/**
+ * User task entity interface for multi-task support
+ */
+export interface UserTaskEntity {
+  id: string;
+  definition?: string;
+  originalQuery?: string;
+  rewrittenQuery?: string;
+  requiredTools?: string[];
+  toolResults?: ToolResult[];
+  needsWidening?: boolean;
+  wideningAttempts?: number;
+  toolToRun?: string | null;
+  queryAnalysis?: QueryAnalysis;
+  toolParameters?: Record<string, unknown>;
+  toolError?: string;
+  wideningStrategy?: string;
+  toolSelectionReason?: string;
+  toolSelectionConfidence?: number;
+  wideningParams?: Record<string, unknown>;
+  status?: 'pending' | 'in_progress' | 'completed' | 'failed';
+  createdAt?: number;
+  completedAt?: number;
+  docs?: Document[];
+  completable?: boolean;
+  // Additional fields for compatibility with existing code
+  tool?: string;
+  toolResult?: { output: any };
+  reasonForWidening?: string;
+}
+
+/**
+ * Core state interface for the RAG graph V2
  */
 export interface AgentState {
   // User information
@@ -52,19 +102,10 @@ export interface AgentState {
 
   // Conversation history
   messages: Message[];
+  chatHistory?: MessagePair[];
 
-  // Configuration options
-  options: {
-    enhanceWithContext: boolean;
-    maxContextItems: number;
-    includeSourceInfo: boolean;
-    maxTokens: number;
-    temperature?: number;
-    modelId?: string;
-  };
-
-  // Intermediate processing data
-  tasks?: {
+  // Task information and tracking
+  tasks: {
     originalQuery?: string;
     rewrittenQuery?: string;
     requiredTools?: string[];
@@ -80,15 +121,41 @@ export interface AgentState {
     toolSelectionConfidence?: number;
     wideningParams?: Record<string, unknown>;
   };
+  
+  // Multi-task entities
+  taskEntities?: Record<string, UserTaskEntity>;
+
+  // Configuration options
+  options: {
+    enhanceWithContext: boolean;
+    maxContextItems: number;
+    includeSourceInfo: boolean;
+    maxTokens: number;
+    temperature?: number;
+    modelId?: string;
+  };
 
   // Retrieved documents
   docs?: Document[];
 
+  // Reasoning and instructions
+  reasoning?: string[];
+  instructions?: string;
+  
+  // File management
+  files?: string;
+  
+  // Tool tracking
+  tool?: string;
+
   // Generated content
   generatedText?: string;
 
+  // Filters for document retrieval and processing
+  _filter?: Record<string, any>;
+
   // Metadata for tracking and debugging
-  metadata?: {
+  metadata: {
     startTime?: number;
     nodeTimings?: Record<string, number>;
     tokenCounts?: Record<string, number>;
@@ -102,55 +169,8 @@ export interface AgentState {
     traceId?: string;
     spanId?: string;
     executionTimeMs?: number;
+    route?: string;        // Added for routing control in the graph
   };
-}
-
-/* ------------------------------------------------------------------ */
-/*  1.  Helper reducers                                               */
-/* ------------------------------------------------------------------ */
-
-const concat = <T>() =>
-  Annotation<T[]>({
-    reducer: (prev, next) => prev.concat(next),
-    default: () => [],
-  });
-
-const merge = <T extends object>() =>
-  Annotation<T>({
-    reducer: (prev, next) => ({ ...prev, ...next }),
-    default: () => ({} as T),
-  });
-
-/* ------------------------------------------------------------------ */
-/*  2.  Graph-state definition that matches your AgentState           */
-/* ------------------------------------------------------------------ */
-
-export const GraphStateAnnotation = Annotation.Root({
-  /* ---------- required / scalar ----------------------------------- */
-  userId: Annotation<string>(),
-
-  /* ---------- conversation history -------------------------------- */
-  messages: concat<BaseMessage>(), // append new messages
-
-  /* ---------- static config --------------------------------------- */
-  options: Annotation<AgentState['options']>(), // usually written once
-
-  /* ---------- working area for nodes ------------------------------ */
-  tasks: merge<NonNullable<AgentState['tasks']>>(), // merge nested fields
-  docs: concat<Document>(), // collect retrieved docs
-  generatedText: Annotation<string>(), // last value wins
-
-  /* ---------- meta / tracing -------------------------------------- */
-  metadata: merge<NonNullable<AgentState['metadata']>>(),
-});
-
-/**
- * Message interface
- */
-export interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp?: number;
 }
 
 /**
@@ -159,7 +179,7 @@ export interface Message {
 export type AIMessage = Message;
 
 /**
- * Document interface for retrieved content
+ * Document interface for retrieved content with enhanced relevance scoring
  */
 export interface Document {
   id: string;
@@ -172,6 +192,11 @@ export interface Document {
     tokenCount?: number;
     url?: string | null;
     mimeType?: string;
+    confidence?: number;
+    semantic_similarity?: number;
+    keyword_match?: number;
+    recency_boost?: number;
+    user_preference_score?: number;
   };
 }
 
@@ -243,3 +268,51 @@ export interface RetrievalMetrics {
   avgRelevanceScore?: number;
   wideningAttempts?: number;
 }
+
+/* ------------------------------------------------------------------ */
+/*  1.  Helper reducers                                               */
+/* ------------------------------------------------------------------ */
+
+export const concat = <T>() =>
+  Annotation<T[]>({
+    reducer: (prev: T[], next: T[]) => prev.concat(next),
+    default: () => [],
+  });
+
+export const merge = <T extends object>() =>
+  Annotation<T>({
+    reducer: (prev: T, next: T) => ({ ...prev, ...next }),
+    default: () => ({} as T),
+  });
+
+/* ------------------------------------------------------------------ */
+/*  2.  Graph-state definition that matches your AgentState           */
+/* ------------------------------------------------------------------ */
+
+export const GraphStateAnnotation = Annotation.Root({
+  /* ---------- required / scalar ----------------------------------- */
+  userId: Annotation<string>(),
+  
+  /* ---------- conversation history -------------------------------- */
+  messages: concat<Message>(),
+  chatHistory: Annotation<MessagePair[]>(),
+  
+  /* ---------- static config --------------------------------------- */
+  options: Annotation<AgentState['options']>(),
+  
+  /* ---------- working area for nodes ------------------------------ */
+  tasks: merge<NonNullable<AgentState['tasks']>>(),
+  taskEntities: merge<Record<string, UserTaskEntity>>(),
+  docs: concat<Document>(),
+  reasoning: concat<string>(),
+  instructions: Annotation<string>(),
+  files: Annotation<string>(),
+  generatedText: Annotation<string>(),
+  tool: Annotation<string>(),
+  
+  /* ---------- meta / tracing -------------------------------------- */
+  metadata: merge<NonNullable<AgentState['metadata']>>(),
+  
+  /* ---------- filtering ------------------------------------------- */
+  _filter: merge<Record<string, any>>(),
+});

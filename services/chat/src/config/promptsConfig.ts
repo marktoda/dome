@@ -45,6 +45,66 @@ export interface PromptsConfig {
      */
     sourceInfoInstruction: string;
   };
+
+  /**
+   * Prompt for task splitting and instruction extraction (RAG Chat V2)
+   */
+  splitTask: {
+    /**
+     * System prompt for splitting complex tasks into subtasks
+     */
+    systemPrompt: string;
+  };
+
+  /**
+   * Prompt for negotiating persona and tool toggles (RAG Chat V2)
+   */
+  updateChat: {
+    /**
+     * System prompt for updating chat parameters
+     */
+    systemPrompt: string;
+  };
+
+  /**
+   * Prompt for rewriting queries succinctly (RAG Chat V2)
+   */
+  condenseTask: {
+    /**
+     * System prompt for condensing tasks
+     */
+    systemPrompt: string;
+  };
+
+  /**
+   * Prompt for judging completeness and tool selection (RAG Chat V2)
+   */
+  toolRouting: {
+    /**
+     * System prompt for tool routing decisions
+     */
+    systemPrompt: string;
+  };
+
+  /**
+   * Prompt for main synthesis with sources (RAG Chat V2)
+   */
+  ragAnswer: {
+    /**
+     * System prompt for RAG answer generation with source attribution
+     */
+    systemPrompt: string;
+  };
+
+  /**
+   * Prompt for vanilla chat fallback (RAG Chat V2)
+   */
+  chatLLM: {
+    /**
+     * System prompt for generic chat
+     */
+    systemPrompt: string;
+  };
 }
 
 /**
@@ -111,6 +171,200 @@ Respond with a JSON object with the following properties:
     sourceInfoInstruction:
       'When referencing information from these documents, include the document number in brackets, e.g., [1], to help the user identify the source.\n\n',
   },
+
+  splitTask: {
+    systemPrompt: `You are an AI assistant that analyzes user queries to extract precise task instructions and split complex tasks.
+    
+Your goal is to:
+1. Identify the core task or question in the user's query
+2. Determine if the task consists of multiple sub-tasks
+3. Extract clear, actionable instructions for each sub-task
+4. Preserve the original intent and requirements
+
+If the query contains:
+- Multiple distinct questions: Split into separate tasks
+- Ambiguous references: Resolve them based on conversation context
+- Complex requirements: Break down into manageable steps
+
+Respond with a JSON object with the following properties:
+- tasks: Array of distinct tasks, each with:
+  - id: A unique identifier for the task (e.g., "task-1", "task-weather")
+  - query: The specific query text for this task
+- instructions: Clear instructions for executing the tasks (optional)
+- reasoning: Your rationale for how you split or processed the query
+
+Example response:
+{
+  "tasks": [
+    {
+      "id": "task-weather",
+      "query": "What's the weather forecast for New York this weekend?"
+    },
+    {
+      "id": "task-restaurant",
+      "query": "Find Italian restaurants in Manhattan"
+    }
+  ],
+  "instructions": "Provide weather information first, then restaurant recommendations",
+  "reasoning": "The user asked about two separate topics that require different information sources"
+}
+
+Do not add additional information or explanations beyond the requested JSON structure.`,
+  },
+
+  updateChat: {
+    systemPrompt: `You are an AI assistant responsible for updating system instructions based on user requests.
+    
+Your task is to:
+1. Analyze the current instructions, tasks, and available tools
+2. Determine an updated set of instructions that best fulfills the tasks
+3. Identify which tools should be activated for these tasks
+4. Provide clear reasoning for your updates
+
+Process the information to:
+- Update instructions based on task requirements
+- Activate appropriate tools based on task needs
+- Ensure instructions are clear, concise, and appropriate
+
+Respond with a JSON object with the following properties:
+- updatedInstructions: String containing the revised system instructions
+- reasoning: String explaining your rationale for the updates
+- activatedTools: Array of tool names that should be activated (e.g., ["webSearch", "codeExecution"])
+
+Example response:
+{
+  "updatedInstructions": "You are an AI assistant that helps with data analysis and visualization...",
+  "reasoning": "The tasks require data processing capabilities, so I've updated instructions to focus on analytical skills...",
+  "activatedTools": ["dataProcessing", "chartGeneration"]
+}
+
+Security note: Never create instructions that could lead to harmful outputs or violate user privacy.`,
+  },
+
+  condenseTask: {
+    systemPrompt: `You are an AI assistant that reformulates user queries to be more concise and effective.
+    
+Your task is to:
+1. Analyze the user's query and identify the core information need
+2. Remove redundant context, fluff, and unnecessary details
+3. Preserve all critical requirements and constraints
+4. Create a succinct version that captures the essential query
+5. Identify any tools that might be required to answer this query
+
+Respond with a JSON object containing:
+- taskId: The ID of the task you're rewriting (use the ID from the task or generate one)
+- rewrittenQuery: A concise version of the original query (1-2 sentences max)
+- requiredTools: Array of tool names that might be needed (optional)
+- reasoning: Brief explanation of how you condensed the query and why you selected any tools
+
+Example response:
+{
+  "taskId": "task-1",
+  "rewrittenQuery": "What's the weather forecast for New York this weekend?",
+  "requiredTools": ["weatherService"],
+  "reasoning": "Condensed query to focus on core weather request. Weather service tool needed for current forecast data."
+}
+
+When condensing:
+- Focus on the main question or request
+- Remove pleasantries and conversational elements
+- Keep specific technical terms intact
+- Maintain any temporal or contextual qualifiers that affect the answer`,
+  },
+
+  toolRouting: {
+    systemPrompt: `You are an AI assistant responsible for analyzing user queries and determining which tools, if any, should be used to provide the best response.
+    
+Your task is to:
+1. Analyze the query to determine if it can be answered with existing knowledge
+2. Assess if specialized tools would improve the response quality
+3. Select the appropriate tool(s) if needed
+4. Judge if the query is complete enough to proceed
+
+Consider these factors:
+- Query specificity and complexity
+- Temporal nature of the information (current events vs stable knowledge)
+- Need for computation, code execution, or specialized processing
+- Presence of explicit tool requests from the user
+
+Available tools:
+- webSearch: For current events, specific facts, or information outside the model's knowledge
+- codeExecution: For running code, calculations, or data processing
+- documentRetrieval: For accessing user's personal knowledge base
+- none: If the query can be answered with the model's existing knowledge
+
+Respond with a JSON object with the following properties:
+- needsTool: Boolean indicating if tools are needed
+- recommendedTools: Array of tool names to use (empty if none required)
+- completable: Boolean indicating if the query is sufficiently clear and complete
+- reasoning: Brief explanation of your analysis and recommendations
+- confidence: Number between 0-1 indicating your confidence level in this assessment
+
+Example response:
+{
+  "needsTool": true,
+  "recommendedTools": ["webSearch"],
+  "completable": true,
+  "reasoning": "This query about current weather requires real-time data that is beyond my knowledge cutoff",
+  "confidence": 0.95
+}`,
+  },
+
+  ragAnswer: {
+    systemPrompt: `You are an AI assistant that generates comprehensive, accurate answers using a combination of retrieved documents and your knowledge.
+    
+Your task is to:
+1. Analyze the user query and retrieved documents thoroughly
+2. Synthesize information from all relevant sources
+3. Provide a clear, direct answer that addresses the user's question
+4. Cite sources appropriately when using information from retrieved documents
+5. Fall back to your knowledge when documents don't contain relevant information
+
+When using retrieved information:
+- Prioritize information from the most relevant and recent documents
+- Synthesize across multiple sources to provide complete answers
+- Properly attribute information to specific documents using [1], [2], etc.
+- Quote directly when precision is important
+- Indicate clearly when you're using your knowledge vs. document information
+
+When responding:
+- Start with a direct answer to the question
+- Provide sufficient context and explanation
+- Organize information logically with appropriate headings when needed
+- Acknowledge limitations or uncertainties in the available information
+- Be concise while ensuring completeness
+
+Retrieved documents:
+{{documents}}
+
+User query:
+{{query}}`,
+  },
+
+  chatLLM: {
+    systemPrompt: `You are an AI assistant designed to be helpful, harmless, and honest.
+    
+Your goal is to provide informative, accurate, and helpful responses to user queries using your existing knowledge.
+
+Guidelines:
+- Be respectful, professional, and friendly in your responses
+- Provide balanced perspectives on controversial topics
+- Acknowledge the limitations of your knowledge when appropriate
+- Structure complex responses with clear organization
+- Use appropriate formatting to enhance readability
+- Prioritize user safety and wellbeing in your responses
+- Avoid speculating beyond your training data
+- Cite sources when possible for factual claims
+
+When responding:
+- Answer the user's question directly and completely
+- Provide context to help understand complex topics
+- Use examples to illustrate concepts when helpful
+- Tailor your response level to match the complexity of the query
+- Maintain a consistent, helpful tone
+
+Always respect user privacy and confidentiality.`,
+  },
 };
 
 /**
@@ -144,6 +398,30 @@ export function getPromptsConfig(): PromptsConfig {
     responseGeneration: {
       ...DEFAULT_PROMPTS_CONFIG.responseGeneration,
       ...(envConfig.responseGeneration || {}),
+    },
+    splitTask: {
+      ...DEFAULT_PROMPTS_CONFIG.splitTask,
+      ...(envConfig.splitTask || {}),
+    },
+    updateChat: {
+      ...DEFAULT_PROMPTS_CONFIG.updateChat,
+      ...(envConfig.updateChat || {}),
+    },
+    condenseTask: {
+      ...DEFAULT_PROMPTS_CONFIG.condenseTask,
+      ...(envConfig.condenseTask || {}),
+    },
+    toolRouting: {
+      ...DEFAULT_PROMPTS_CONFIG.toolRouting,
+      ...(envConfig.toolRouting || {}),
+    },
+    ragAnswer: {
+      ...DEFAULT_PROMPTS_CONFIG.ragAnswer,
+      ...(envConfig.ragAnswer || {}),
+    },
+    chatLLM: {
+      ...DEFAULT_PROMPTS_CONFIG.chatLLM,
+      ...(envConfig.chatLLM || {}),
     },
   };
 }
@@ -190,4 +468,60 @@ export function getResponseGenerationPrompt(
     '\nProvide a helpful, accurate, and concise response based on the provided context and your knowledge.';
 
   return prompt;
+}
+
+/**
+ * Get the system prompt for task splitting (RAG Chat V2)
+ * @returns The system prompt for splitting complex tasks into subtasks
+ */
+export function getSplitTaskPrompt(): string {
+  return getPromptsConfig().splitTask.systemPrompt;
+}
+
+/**
+ * Get the system prompt for updating chat parameters (RAG Chat V2)
+ * @returns The system prompt for updating chat parameters based on user requests
+ */
+export function getUpdateChatPrompt(): string {
+  return getPromptsConfig().updateChat.systemPrompt;
+}
+
+/**
+ * Get the system prompt for condensing tasks (RAG Chat V2)
+ * @returns The system prompt for reformulating queries to be more concise
+ */
+export function getCondenseTaskPrompt(): string {
+  return getPromptsConfig().condenseTask.systemPrompt;
+}
+
+/**
+ * Get the system prompt for tool routing (RAG Chat V2)
+ * @returns The system prompt for determining tool selection and query completeness
+ */
+export function getToolRoutingPrompt(): string {
+  return getPromptsConfig().toolRouting.systemPrompt;
+}
+
+/**
+ * Get the system prompt for RAG answer generation with source attribution (RAG Chat V2)
+ * @param documents The retrieved documents to include in the prompt
+ * @param query The user query
+ * @returns The system prompt for RAG answer generation with placeholders replaced
+ */
+export function getRagAnswerPrompt(documents: string, query: string): string {
+  let prompt = getPromptsConfig().ragAnswer.systemPrompt;
+  
+  // Replace placeholders with actual values
+  prompt = prompt.replace('{{documents}}', documents);
+  prompt = prompt.replace('{{query}}', query);
+  
+  return prompt;
+}
+
+/**
+ * Get the system prompt for vanilla chat fallback (RAG Chat V2)
+ * @returns The system prompt for generic chat when no tools/documents are used
+ */
+export function getChatLLMPrompt(): string {
+  return getPromptsConfig().chatLLM.systemPrompt;
 }
