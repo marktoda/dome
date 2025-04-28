@@ -55,7 +55,8 @@ describe('generateChatLLM Node', () => {
         includeSourceInfo: true,
         maxTokens: 1000,
       },
-      tasks: {}, // Adding the required tasks property
+      taskIds: [], // Empty task IDs array
+      taskEntities: {}, // Empty task entities object
       metadata: {
         traceId: 'trace-123',
       }

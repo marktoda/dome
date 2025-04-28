@@ -66,7 +66,7 @@ export interface MessagePair {
  * User task entity interface for multi-task support
  */
 export interface UserTaskEntity {
-  id: string;
+  id: string;  // ID must be required to ensure proper tracking
   definition?: string;
   originalQuery?: string;
   rewrittenQuery?: string;
@@ -104,24 +104,9 @@ export interface AgentState {
   messages: Message[];
   chatHistory?: MessagePair[];
 
-  // Task information and tracking
-  tasks: {
-    originalQuery?: string;
-    rewrittenQuery?: string;
-    requiredTools?: string[];
-    toolResults?: ToolResult[];
-    needsWidening?: boolean;
-    wideningAttempts?: number;
-    toolToRun?: string | null;
-    queryAnalysis?: QueryAnalysis;
-    toolParameters?: Record<string, unknown>;
-    toolError?: string;
-    wideningStrategy?: string;
-    toolSelectionReason?: string;
-    toolSelectionConfidence?: number;
-    wideningParams?: Record<string, unknown>;
-  };
-  
+  // Task ids
+  taskIds?: string[];
+
   // Multi-task entities
   taskEntities?: Record<string, UserTaskEntity>;
 
@@ -141,10 +126,10 @@ export interface AgentState {
   // Reasoning and instructions
   reasoning?: string[];
   instructions?: string;
-  
+
   // File management
   files?: string;
-  
+
   // Tool tracking
   tool?: string;
 
@@ -292,27 +277,27 @@ export const merge = <T extends object>() =>
 export const GraphStateAnnotation = Annotation.Root({
   /* ---------- required / scalar ----------------------------------- */
   userId: Annotation<string>(),
-  
+
   /* ---------- conversation history -------------------------------- */
-  messages: concat<Message>(),
+  messages: Annotation<Message[]>(),  // Changed from concat to simple annotation
   chatHistory: Annotation<MessagePair[]>(),
-  
+
   /* ---------- static config --------------------------------------- */
   options: Annotation<AgentState['options']>(),
-  
+
   /* ---------- working area for nodes ------------------------------ */
-  tasks: merge<NonNullable<AgentState['tasks']>>(),
+  taskIds: Annotation<string[]>(),
   taskEntities: merge<Record<string, UserTaskEntity>>(),
-  docs: concat<Document>(),
-  reasoning: concat<string>(),
+  docs: Annotation<Document[]>(),  // Changed from concat to simple annotation
+  reasoning: Annotation<string[]>(),  // Changed from concat to simple annotation
   instructions: Annotation<string>(),
   files: Annotation<string>(),
   generatedText: Annotation<string>(),
   tool: Annotation<string>(),
-  
+
   /* ---------- meta / tracing -------------------------------------- */
   metadata: merge<NonNullable<AgentState['metadata']>>(),
-  
+
   /* ---------- filtering ------------------------------------------- */
   _filter: merge<Record<string, any>>(),
 });

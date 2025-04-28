@@ -30,7 +30,9 @@ export async function generateAnswer(
 ): Promise<Partial<AgentState>> {
   const t0 = performance.now();
   const logger = getLogger().child({ component: 'generateRAG' });
-  logger.info({ messageCount: state.messages.length, hasTools: !!state.tasks?.toolResults?.length }, "Starting RAG answer generation");
+  // Get all tool results from all task entities
+  const allToolResults = Object.values(state.taskEntities || {}).flatMap(task => task.toolResults || []);
+  logger.info({ messageCount: state.messages.length, hasTools: !!allToolResults.length }, "Starting RAG answer generation");
 
   /* ------------------------------------------------------------------ */
   /*  Trace / logging helpers                                           */
@@ -59,7 +61,7 @@ export async function generateAnswer(
   );
 
   // Format tool results if available
-  const toolFmt = formatToolResults(state.tasks?.toolResults ?? []);
+  const toolFmt = formatToolResults(allToolResults);
 
   // Build the RAG-enhanced system prompt
   const systemPrompt = buildRAGSystemPrompt(docsFmt, toolFmt, includeSources);
@@ -119,7 +121,7 @@ export async function generateAnswer(
     responseLength: response.text.length,
     response: response.text,
     docsUsed: reducedDocs.length,
-    toolsUsed: state.tasks?.toolResults?.length ?? 0
+    toolsUsed: allToolResults.length
   }, "RAG answer generation complete");
 
   return {
@@ -131,7 +133,7 @@ export async function generateAnswer(
       nodeTimings: {
         contextReduction: contextTokens,
         docsCount: reducedDocs.length,
-        toolsCount: state.tasks?.toolResults?.length ?? 0
+        toolsCount: allToolResults.length
       }
     },
   };

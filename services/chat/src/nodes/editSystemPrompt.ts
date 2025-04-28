@@ -118,8 +118,9 @@ export const editSystemPrompt = async (
       ...state,
       instructions: result.updatedInstructions === null ? '' : result.updatedInstructions,
       reasoning: [...(state.reasoning || []), result.reasoning === null ? 'System prompt updated.' : result.reasoning],
-      tasks: {
-        ...state.tasks,
+      // Store required tools in _filter as it accepts flexible properties
+      _filter: {
+        ...(state._filter || {}),
         requiredTools: result.activatedTools === null ? toolsArray : result.activatedTools,
       },
       metadata: {

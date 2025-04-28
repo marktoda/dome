@@ -42,32 +42,72 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
   const traceId = state.metadata?.traceId || '';
   const spanId = ObservabilityService.startSpan(env, traceId, 'dynamicWiden', state);
 
-  // Increment widening attempts
-  const wideningAttempts = (state.tasks?.wideningAttempts || 0) + 1;
+  // Get task information from state
+  const taskIds = state.taskIds || [];
+  const taskEntities = state.taskEntities || {};
+
+  // Track the tasks that need widening
+  const tasksToWiden: string[] = [];
+  
+  // Find tasks that need widening
+  for (const taskId of taskIds) {
+    const task = taskEntities[taskId];
+    if (!task) continue;
+    
+    if (task.needsWidening) {
+      tasksToWiden.push(taskId);
+    }
+  }
+  
+  if (tasksToWiden.length === 0) {
+    logger.info('No tasks need widening, skipping dynamicWiden node');
+    const endTime = performance.now();
+    const executionTime = endTime - startTime;
+    
+    return {
+      ...state,
+      metadata: {
+        ...state.metadata,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          dynamicWiden: executionTime,
+        },
+      },
+    };
+  }
   
   // Set maximum iterations to prevent infinite widening
   const MAX_WIDENING_ATTEMPTS = 3;
   
-  // Check if we've reached maximum attempts
-  if (wideningAttempts > MAX_WIDENING_ATTEMPTS) {
-    logger.warn(
-      {
-        wideningAttempts,
-        maxAttempts: MAX_WIDENING_ATTEMPTS,
-        traceId,
-        spanId,
-      },
-      'Maximum widening attempts reached',
-    );
+  // Create an updated state we'll modify
+  const updatedState = {
+    ...state,
+    taskEntities: { ...taskEntities },
+  };
+  
+  // Process each task that needs widening
+  for (const taskId of tasksToWiden) {
+    const task = taskEntities[taskId];
     
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
+    // Increment widening attempts
+    const wideningAttempts = (task.wideningAttempts || 0) + 1;
     
-    // Return state with no further widening
-    return {
-      ...state,
-      tasks: {
-        ...state.tasks,
+    // Check if we've reached maximum attempts
+    if (wideningAttempts > MAX_WIDENING_ATTEMPTS) {
+      logger.warn(
+        {
+          taskId,
+          wideningAttempts,
+          maxAttempts: MAX_WIDENING_ATTEMPTS,
+          traceId,
+          spanId,
+        },
+        'Maximum widening attempts reached for task',
+      );
+      
+      // Update task with no further widening
+      updatedState.taskEntities[taskId] = {
+        ...updatedState.taskEntities[taskId],
         needsWidening: false,
         wideningAttempts,
         wideningStrategy: WideningStrategy.HYBRID,
@@ -76,182 +116,139 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
           maxIterations: MAX_WIDENING_ATTEMPTS,
           minRelevance: 0.2, // Lower threshold as a final attempt
         },
-      },
-      metadata: {
-        ...state.metadata,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          dynamicWiden: executionTime,
-        },
-      },
-    };
-  }
+      };
+      
+      continue;
+    }
 
-  logger.info(
-    {
-      wideningAttempts,
-      originalQuery: state.tasks?.originalQuery,
-      rewrittenQuery: state.tasks?.rewrittenQuery,
-      previousDocCount: state.docs?.length || 0,
-      traceId,
-      spanId,
-    },
-    'Widening search parameters',
-  );
-
-  try {
-    // Analyze query characteristics, previous results, and retrieval metrics
-    // to determine the optimal widening strategy
-    const wideningParams = await determineWideningStrategy(
-      state,
-      env,
-      wideningAttempts,
-      traceId,
-      spanId,
-    );
-    
-    // Add maximum iterations to widening parameters
-    wideningParams.maxIterations = MAX_WIDENING_ATTEMPTS;
-
-    // Log the selected strategy
     logger.info(
       {
+        taskId,
         wideningAttempts,
-        strategy: wideningParams.strategy,
-        params: wideningParams,
+        originalQuery: task.originalQuery,
+        rewrittenQuery: task.rewrittenQuery,
+        previousDocCount: task.docs?.length || 0,
         traceId,
         spanId,
       },
-      'Selected widening strategy',
+      'Widening search parameters for task',
     );
 
-    // Update state with widening parameters
-    const updatedState = {
-      ...state,
-      tasks: {
-        ...state.tasks,
+    try {
+      // Analyze query characteristics, previous results, and retrieval metrics
+      // to determine the optimal widening strategy
+      const wideningParams = await determineWideningStrategy(
+        task,
+        state.docs || [],
+        env,
+        wideningAttempts,
+        traceId,
+        spanId,
+      );
+      
+      // Add maximum iterations to widening parameters
+      wideningParams.maxIterations = MAX_WIDENING_ATTEMPTS;
+
+      // Log the selected strategy
+      logger.info(
+        {
+          taskId,
+          wideningAttempts,
+          strategy: wideningParams.strategy,
+          params: wideningParams,
+          traceId,
+          spanId,
+        },
+        'Selected widening strategy for task',
+      );
+
+      // Update task with widening parameters
+      updatedState.taskEntities[taskId] = {
+        ...updatedState.taskEntities[taskId],
         wideningAttempts,
         wideningStrategy: wideningParams.strategy,
         wideningParams,
-      },
-    };
-
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // End the span
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'dynamicWiden',
-      state,
-      updatedState,
-      executionTime,
-    );
-
-    // Log the widening event
-    ObservabilityService.logEvent(env, traceId, spanId, 'widening_parameters_adjusted', {
-      wideningAttempts,
-      strategy: wideningParams.strategy,
-      params: wideningParams,
-      executionTimeMs: executionTime,
-    });
-
-    return {
-      ...updatedState,
-      metadata: {
-        ...updatedState.metadata,
-        nodeTimings: {
-          ...updatedState.metadata?.nodeTimings,
-          dynamicWiden: executionTime,
-        },
-      },
-    };
-  } catch (error) {
-    // Log the error
-    logger.error(
-      {
-        err: error,
+      };
+      
+      // Log the widening event
+      ObservabilityService.logEvent(env, traceId, spanId, 'widening_parameters_adjusted', {
+        taskId,
         wideningAttempts,
-        traceId,
-        spanId,
-      },
-      'Error in dynamic widening',
-    );
-
-    // Use default widening parameters on error
-    const defaultParams: WideningParams = {
-      strategy: WideningStrategy.RELEVANCE,
-      minRelevance: Math.max(0.5 - wideningAttempts * 0.1, 0.2),
-      expandSynonyms: wideningAttempts > 1,
-      includeRelated: wideningAttempts > 1,
-    };
-
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // End the span with error
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'dynamicWiden',
-      state,
-      {
-        ...state,
-        tasks: {
-          ...state.tasks,
+        strategy: wideningParams.strategy,
+        params: wideningParams,
+      });
+    } catch (error) {
+      // Log the error
+      logger.error(
+        {
+          err: error,
+          taskId,
           wideningAttempts,
-          wideningStrategy: defaultParams.strategy,
-          wideningParams: defaultParams,
+          traceId,
+          spanId,
         },
-      },
-      executionTime,
-    );
+        'Error determining widening strategy for task',
+      );
 
-    // Log the error event
-    ObservabilityService.logEvent(env, traceId, spanId, 'widening_error', {
-      error: error instanceof Error ? error.message : String(error),
-      wideningAttempts,
-      fallbackStrategy: defaultParams.strategy,
-      executionTimeMs: executionTime,
-    });
+      // Use default widening parameters on error
+      const defaultParams: WideningParams = {
+        strategy: WideningStrategy.RELEVANCE,
+        minRelevance: Math.max(0.5 - wideningAttempts * 0.1, 0.2),
+        expandSynonyms: wideningAttempts > 1,
+        includeRelated: wideningAttempts > 1,
+      };
 
-    return {
-      ...state,
-      tasks: {
-        ...state.tasks,
+      // Update task with default widening parameters
+      updatedState.taskEntities[taskId] = {
+        ...updatedState.taskEntities[taskId],
         wideningAttempts,
         wideningStrategy: defaultParams.strategy,
         wideningParams: defaultParams,
-      },
-      metadata: {
-        ...state.metadata,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          dynamicWiden: executionTime,
-        },
-        errors: [
-          ...(state.metadata?.errors || []),
-          {
-            node: 'dynamicWiden',
-            message: error instanceof Error ? error.message : String(error),
-            timestamp: Date.now(),
-          },
-        ],
-      },
-    };
+      };
+      
+      // Log the error event
+      ObservabilityService.logEvent(env, traceId, spanId, 'widening_error', {
+        taskId,
+        error: error instanceof Error ? error.message : String(error),
+        wideningAttempts,
+        fallbackStrategy: defaultParams.strategy,
+      });
+    }
   }
+
+  // Update state with timing information
+  const endTime = performance.now();
+  const executionTime = endTime - startTime;
+
+  // End the span
+  ObservabilityService.endSpan(
+    env,
+    traceId,
+    spanId,
+    'dynamicWiden',
+    state,
+    updatedState,
+    executionTime,
+  );
+
+  return {
+    ...updatedState,
+    metadata: {
+      ...updatedState.metadata,
+      nodeTimings: {
+        ...updatedState.metadata?.nodeTimings,
+        dynamicWiden: executionTime,
+      },
+    },
+  };
 };
 
 /**
  * Determine the best widening strategy based on query characteristics and previous results
  */
 async function determineWideningStrategy(
-  state: AgentState,
+  task: any,
+  allDocs: Document[],
   env: Env,
   wideningAttempts: number,
   traceId: string,
@@ -259,17 +256,19 @@ async function determineWideningStrategy(
 ): Promise<WideningParams> {
   const logger = getLogger().child({ node: 'dynamicWiden', function: 'determineWideningStrategy' });
 
-  // Get the query and previous results
-  const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
-  const previousDocs = state.docs || [];
-  const queryAnalysis = state.tasks?.queryAnalysis;
+  // Get the query
+  const query = task.rewrittenQuery || task.originalQuery || '';
+  
+  // Get docs related to this task (if available) or use all docs as a fallback
+  const previousDocs = task.docs || allDocs;
+  const queryAnalysis = task.queryAnalysis;
 
   // If we have previous results, analyze them to determine the best strategy
   if (previousDocs.length > 0) {
     // Check if the results are relevant but insufficient
-    const relevanceScores = previousDocs.map(doc => doc.metadata.relevanceScore);
+    const relevanceScores = previousDocs.map((doc: Document) => doc.metadata.relevanceScore);
     const avgRelevance =
-      relevanceScores.reduce((sum, score) => sum + score, 0) / relevanceScores.length;
+      relevanceScores.reduce((sum: number, score: number) => sum + score, 0) / relevanceScores.length;
 
     // If average relevance is high but we don't have enough results, try temporal widening
     if (avgRelevance > 0.7 && previousDocs.length < 3) {

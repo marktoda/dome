@@ -101,7 +101,8 @@ export class ChatController {
     userId,
     messages,
     options,
-    tasks = {},
+    taskIds = [],
+    taskEntities = {},
     docs = [],
     generatedText = '',
     metadata = {},
@@ -116,7 +117,8 @@ export class ChatController {
       userId,
       messages,
       options,
-      tasks,
+      taskIds,
+      taskEntities,
       docs,
       generatedText,
       metadata: { ...metadata, startTime: performance.now(), runId },
@@ -137,7 +139,7 @@ export class ChatController {
 
     const iterator = graph.stream(state, {
       configurable: { thread_id, runId },
-      streamMode: 'messages',
+      streamMode: ['messages', 'updates'],
     });
 
     const enc = new TextEncoder();

@@ -9,27 +9,33 @@ import { ObservabilityService } from '../services/observabilityService';
  * - 'tool' - retrieval indicated tools are needed to fulfill the query
  * - 'answer' - retrieval was good enough to proceed to answer generation
  */
-export const routeAfterRetrieve = (state: AgentState): 'widen' | 'tool' | 'answer' => {
+export const routeAfterRetrieve = async (state: AgentState): Promise<'widen' | 'tool' | 'answer'> => {
   const logger = getLogger().child({ node: 'routeAfterRetrieve' });
   const docs = state.docs || [];
-  const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
-  const wideningAttempts = state.tasks?.wideningAttempts || 0;
-
-  logger.info({
-    docsCount: docs.length,
-    wideningAttempts,
-    query,
-  }, 'Analyzing retrieval results for routing decision');
-
-  // Check if we've explicitly marked the state as needing widening
-  if (state.tasks?.needsWidening) {
+  
+  // Get task information - make taskIds optional
+  const taskIds = state.taskIds || [];
+  const taskEntities = state.taskEntities || {};
+  
+  // If no tasks exist, proceed to answer
+  if (!taskEntities || Object.keys(taskEntities).length === 0) {
+    logger.warn('No task entities found, proceeding to answer generation');
+    return 'answer';
+  }
+  
+  // Check if any task needs widening
+  const needsWidening = taskIds.some(taskId => {
+    const task = taskEntities[taskId];
+    return task && task.needsWidening === true;
+  });
+  
+  if (needsWidening) {
     logger.info(
       {
         docsCount: docs.length,
-        wideningAttempts,
-        reason: 'Explicit widening flag set',
+        reason: 'At least one task has needsWidening flag set',
       },
-      'Routing to widening due to needsWidening flag',
+      'Routing to widening',
     );
     return 'widen';
   }
@@ -37,53 +43,98 @@ export const routeAfterRetrieve = (state: AgentState): 'widen' | 'tool' | 'answe
   // Assess document quality and quantity
   const retrievalQuality = assessRetrievalQuality(docs);
   
-  // If retrieval quality is poor and we haven't tried widening too many times
-  if (retrievalQuality === 'none' && wideningAttempts < 2) {
+  // Determine if any task hasn't had sufficient widening attempts
+  const insufficientWidening = taskIds.some(taskId => {
+    const task = taskEntities[taskId];
+    const wideningAttempts = task?.wideningAttempts || 0;
+    
+    // If retrieval quality is poor and we haven't tried widening too many times
+    if (retrievalQuality === 'none' && wideningAttempts < 2) {
+      return true;
+    }
+    
+    // If retrieval quality is low and we haven't widened yet
+    if (retrievalQuality === 'low' && wideningAttempts === 0) {
+      return true;
+    }
+    
+    return false;
+  });
+  
+  if (insufficientWidening) {
+    // Update all tasks that need widening
+    const updatedTaskEntities = { ...taskEntities };
+    
+    taskIds.forEach(taskId => {
+      const task = taskEntities[taskId];
+      if (!task) return;
+      
+      const wideningAttempts = task.wideningAttempts || 0;
+      
+      if ((retrievalQuality === 'none' && wideningAttempts < 2) || 
+          (retrievalQuality === 'low' && wideningAttempts === 0)) {
+        updatedTaskEntities[taskId] = {
+          ...task,
+          needsWidening: true,
+        };
+      }
+    });
+    
+    // Update state with tasks that need widening
+    state.taskEntities = updatedTaskEntities;
+    
     logger.info(
       {
         docsCount: docs.length,
         retrievalQuality,
-        wideningAttempts,
-        reason: 'No relevant documents found',
+        reason: 'Insufficient widening attempts for retrieval quality',
       },
-      'Routing to widening due to poor retrieval',
-    );
-    return 'widen';
-  }
-  
-  // If retrieval quality is low and we haven't widened yet, try widening
-  if (retrievalQuality === 'low' && wideningAttempts === 0) {
-    logger.info(
-      {
-        docsCount: docs.length,
-        retrievalQuality,
-        wideningAttempts,
-        reason: 'Low quality documents found',
-      },
-      'Routing to widening due to low quality retrieval',
+      'Routing to widening',
     );
     return 'widen';
   }
 
-  // Check if the query likely needs a tool even with good retrieval
-  const toolIntent = detectToolIntent(query, docs);
+  // Check if any task might need a tool
+  let needsTool = false;
+  let toolIntent: { needsTool: boolean; tools: string[] } = { needsTool: false, tools: [] };
   
-  if (toolIntent.needsTool) {
-    logger.info(
-      {
-        toolIntent,
-        query,
-        retrievalQuality,
-      },
-      'Routing to tool due to detected tool intent',
-    );
-
-    // Update state with required tools
-    state.tasks = {
-      ...state.tasks,
-      requiredTools: toolIntent.tools,
-    };
-
+  for (const taskId of taskIds) {
+    const task = taskEntities[taskId];
+    if (!task) continue;
+    
+    const query = task.rewrittenQuery || task.originalQuery || '';
+    
+    // Check if the query likely needs a tool
+    const taskToolIntent = detectToolIntent(query, docs);
+    
+    if (taskToolIntent.needsTool) {
+      needsTool = true;
+      toolIntent = taskToolIntent;
+      
+      // Update the task with required tools
+      const updatedTaskEntities = { ...state.taskEntities };
+      updatedTaskEntities[taskId] = {
+        ...task,
+        requiredTools: taskToolIntent.tools,
+      };
+      
+      // Update state with the task requiring tools
+      state.taskEntities = updatedTaskEntities;
+      
+      logger.info(
+        {
+          taskId,
+          toolIntent,
+          query,
+          retrievalQuality,
+        },
+        'Task requires tools, routing to tool',
+      );
+      break;
+    }
+  }
+  
+  if (needsTool) {
     return 'tool';
   }
 

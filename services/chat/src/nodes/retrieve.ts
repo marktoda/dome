@@ -14,23 +14,21 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   const traceId = state.metadata?.traceId || '';
   const spanId = ObservabilityService.startSpan(env, traceId, 'retrieve', state);
 
-  // Get the query for retrieval
-  getLogger().info({ tasks: state.tasks }, 'Tasks in state');
-  const query = state.tasks?.rewrittenQuery || state.tasks?.originalQuery || '';
-  const trimmedQuery = query.trim();
+  // Get task information from state
+  const taskIds = state.taskIds || [];
+  const taskEntities = state.taskEntities || {};
+  
+  getLogger().info({ taskIds, taskEntities }, 'Tasks in state');
 
-  // Define minimum query length
-  const MIN_QUERY_LENGTH = 3;
-
-  // Validate query to prevent empty or too short query errors
-  if (!trimmedQuery) {
+  // If there are no tasks, skip retrieval
+  if (taskIds.length === 0) {
     logger.warn(
       {
         userId: state.userId,
         traceId,
         spanId,
       },
-      'Empty query detected, skipping vector search',
+      'No tasks found, skipping retrieval',
     );
 
     // Record timing for skipped search
@@ -47,28 +45,13 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
       {
         ...state,
         docs: [],
-        tasks: {
-          ...state.tasks,
-          needsWidening: false,
-        },
       },
       executionTime,
     );
 
-    // Log the empty query event
-    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_skipped', {
-      reason: 'empty_query',
-      executionTimeMs: executionTime,
-    });
-
-    // Return state with empty docs and timing information
     return {
       ...state,
       docs: [],
-      tasks: {
-        ...state.tasks,
-        needsWidening: false,
-      },
       metadata: {
         ...state.metadata,
         nodeTimings: {
@@ -79,252 +62,204 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
     };
   }
 
-  // Check for query length
-  if (trimmedQuery.length < MIN_QUERY_LENGTH) {
-    logger.warn(
-      {
-        userId: state.userId,
-        traceId,
-        spanId,
-        query: trimmedQuery,
-        queryLength: trimmedQuery.length,
-      },
-      'Query too short, skipping vector search',
-    );
+  // Prepare to collect all retrieved documents
+  let allRetrievedDocs: Document[] = [];
+  
+  // Track tasks that need widening
+  const tasksNeedingWidening: Record<string, boolean> = {};
 
-    // Record timing for skipped search
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // End the span early
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'retrieve',
-      state,
-      {
-        ...state,
-        docs: [],
-        tasks: {
-          ...state.tasks,
-          needsWidening: false,
-        },
-      },
-      executionTime,
-    );
-
-    // Log the short query event
-    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_skipped', {
-      reason: 'query_too_short',
-      queryLength: trimmedQuery.length,
-      executionTimeMs: executionTime,
-    });
-
-    // Return state with empty docs and timing information
-    return {
-      ...state,
-      docs: [],
-      tasks: {
-        ...state.tasks,
-        needsWidening: false,
-      },
-      metadata: {
-        ...state.metadata,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          retrieve: executionTime,
-        },
-      },
-    };
-  }
-
-  logger.info(
-    {
-      query: trimmedQuery,
-      userId: state.userId,
-      traceId,
-      spanId,
-    },
-    'Retrieving documents',
-  );
-
-  try {
-    // Create search service
-    const searchService = SearchService.fromEnv(env);
-
-    // Configure search options with contextual parameters
-    const searchOptions: SearchOptions = {
-      userId: state.userId,
-      query: trimmedQuery,
-      limit: 10, // Default limit
-      minRelevance: 0.5, // Default minimum relevance
-      expandSynonyms: false,
-      includeRelated: false,
-      // Optional parameters that might be set during widening
-      startDate: undefined,
-      endDate: undefined,
-      category: undefined,
-    };
-
-    // Apply any widening parameters if available
-    if (state.tasks?.wideningParams) {
-      Object.assign(searchOptions, {
-        minRelevance: state.tasks.wideningParams.minRelevance || searchOptions.minRelevance,
-        expandSynonyms: state.tasks.wideningParams.expandSynonyms || searchOptions.expandSynonyms,
-        includeRelated: state.tasks.wideningParams.includeRelated || searchOptions.includeRelated,
-      });
-
-      // Apply temporal widening if specified
-      if (state.tasks.wideningParams.startDate) {
-        searchOptions.startDate = state.tasks.wideningParams.startDate as number;
-      }
-      if (state.tasks.wideningParams.endDate) {
-        searchOptions.endDate = state.tasks.wideningParams.endDate as number;
-      }
-
-      // Apply category widening if specified
-      if (state.tasks.wideningParams.category) {
-        searchOptions.category = state.tasks.wideningParams.category as any;
-      }
+  // Process each task sequentially
+  for (const taskId of taskIds) {
+    const task = taskEntities[taskId];
+    
+    // Skip invalid tasks
+    if (!task) {
+      logger.warn({ taskId }, 'Task ID not found in taskEntities');
+      continue;
     }
 
-    // Perform search
-    const documents = await searchService.search(searchOptions);
+    // Extract query from task
+    const query = task.rewrittenQuery || task.originalQuery || '';
+    const trimmedQuery = query.trim();
+    
+    // Define minimum query length
+    const MIN_QUERY_LENGTH = 3;
 
-    // Apply contextual compression to filter and rerank documents
-    const contextualizedDocs = await applyContextualCompression(documents, trimmedQuery);
-
-    // Calculate retrieval quality
-    const retrievalQuality = assessRetrievalQuality(contextualizedDocs);
-
-    // Determine if widening is needed based on retrieval quality
-    const needsWidening = determineIfWideningNeeded(
-      retrievalQuality,
-      state.tasks?.wideningAttempts || 0,
-    );
+    // Skip empty or too short queries
+    if (!trimmedQuery || trimmedQuery.length < MIN_QUERY_LENGTH) {
+      logger.warn(
+        {
+          userId: state.userId,
+          traceId,
+          spanId,
+          taskId,
+          query: trimmedQuery,
+          queryLength: trimmedQuery?.length || 0,
+        },
+        trimmedQuery ? 'Query too short, skipping' : 'Empty query, skipping',
+      );
+      
+      // Mark this task as not needing widening
+      tasksNeedingWidening[taskId] = false;
+      continue;
+    }
 
     logger.info(
       {
-        documentCount: contextualizedDocs.length,
-        retrievalQuality,
-        needsWidening,
-        wideningAttempts: state.tasks?.wideningAttempts || 0,
-        traceId,
-        spanId,
-      },
-      'Retrieved and processed documents',
-    );
-
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // Create updated state with retrieved documents
-    const updatedState = {
-      ...state,
-      docs: contextualizedDocs,
-      tasks: {
-        ...state.tasks,
-        needsWidening,
-      },
-    };
-
-    // End the span
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'retrieve',
-      state,
-      updatedState,
-      executionTime,
-    );
-
-    // Log retrieval metrics
-    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_complete', {
-      query: trimmedQuery,
-      documentCount: contextualizedDocs.length,
-      retrievalQuality,
-      needsWidening,
-      executionTimeMs: executionTime,
-      hasDocs: contextualizedDocs.length > 0,
-    });
-
-    return {
-      ...updatedState,
-      metadata: {
-        ...updatedState.metadata,
-        nodeTimings: {
-          ...updatedState.metadata?.nodeTimings,
-          retrieve: executionTime,
-        },
-      },
-    };
-  } catch (error) {
-    // Log the error
-    logger.error(
-      {
-        err: error,
+        taskId,
         query: trimmedQuery,
+        userId: state.userId,
         traceId,
         spanId,
       },
-      'Error retrieving documents',
+      'Retrieving documents for task',
     );
 
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
+    try {
+      // Create search service
+      const searchService = SearchService.fromEnv(env);
 
-    // End the span with error
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'retrieve',
-      state,
-      {
-        ...state,
-        docs: [],
-        tasks: {
-          ...state.tasks,
-          needsWidening: false,
+      // Configure search options with contextual parameters
+      const searchOptions: SearchOptions = {
+        userId: state.userId,
+        query: trimmedQuery,
+        limit: 10, // Default limit
+        minRelevance: 0.5, // Default minimum relevance
+        expandSynonyms: false,
+        includeRelated: false,
+        // Optional parameters that might be set during widening
+        startDate: undefined,
+        endDate: undefined,
+        category: undefined,
+      };
+
+      // Apply any widening parameters if available
+      if (task.wideningParams) {
+        Object.assign(searchOptions, {
+          minRelevance: task.wideningParams.minRelevance || searchOptions.minRelevance,
+          expandSynonyms: task.wideningParams.expandSynonyms || searchOptions.expandSynonyms,
+          includeRelated: task.wideningParams.includeRelated || searchOptions.includeRelated,
+        });
+
+        // Apply temporal widening if specified
+        if (task.wideningParams.startDate) {
+          searchOptions.startDate = task.wideningParams.startDate as number;
+        }
+        if (task.wideningParams.endDate) {
+          searchOptions.endDate = task.wideningParams.endDate as number;
+        }
+
+        // Apply category widening if specified
+        if (task.wideningParams.category) {
+          searchOptions.category = task.wideningParams.category as any;
+        }
+      }
+
+      // Perform search
+      const documents = await searchService.search(searchOptions);
+
+      // Apply contextual compression to filter and rerank documents
+      const contextualizedDocs = await applyContextualCompression(documents, trimmedQuery);
+
+      // Calculate retrieval quality
+      const retrievalQuality = assessRetrievalQuality(contextualizedDocs);
+
+      // Determine if widening is needed based on retrieval quality
+      const needsWidening = determineIfWideningNeeded(
+        retrievalQuality,
+        task.wideningAttempts || 0,
+      );
+
+      // Store widening status for this task
+      tasksNeedingWidening[taskId] = needsWidening;
+
+      // Add this task's docs to the overall collection
+      allRetrievedDocs = [...allRetrievedDocs, ...contextualizedDocs];
+
+      logger.info(
+        {
+          taskId,
+          documentCount: contextualizedDocs.length,
+          retrievalQuality,
+          needsWidening,
+          wideningAttempts: task.wideningAttempts || 0,
+          traceId,
+          spanId,
         },
-      },
-      executionTime,
-    );
+        'Retrieved and processed documents for task',
+      );
 
-    // Log the error event
-    ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_error', {
-      error: error instanceof Error ? error.message : String(error),
-      executionTimeMs: executionTime,
-    });
-
-    return {
-      ...state,
-      docs: [],
-      tasks: {
-        ...state.tasks,
-        needsWidening: false,
-      },
-      metadata: {
-        ...state.metadata,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          retrieve: executionTime,
+    } catch (error) {
+      // Log the error
+      logger.error(
+        {
+          err: error,
+          taskId,
+          query: trimmedQuery,
+          traceId,
+          spanId,
         },
-        errors: [
-          ...(state.metadata?.errors || []),
-          {
-            node: 'retrieve',
-            message: error instanceof Error ? error.message : String(error),
-            timestamp: Date.now(),
-          },
-        ],
-      },
-    };
+        'Error retrieving documents for task',
+      );
+
+      // Mark this task as not needing widening due to error
+      tasksNeedingWidening[taskId] = false;
+    }
   }
+
+  // Update state with timing information
+  const endTime = performance.now();
+  const executionTime = endTime - startTime;
+
+  // Create updated state with retrieved documents
+  const updatedState = {
+    ...state,
+    docs: allRetrievedDocs,
+  };
+
+  // Update widening status for each task
+  if (Object.keys(tasksNeedingWidening).length > 0) {
+    updatedState.taskEntities = { ...taskEntities };
+    
+    for (const [taskId, needsWidening] of Object.entries(tasksNeedingWidening)) {
+      if (updatedState.taskEntities[taskId]) {
+        updatedState.taskEntities[taskId] = {
+          ...updatedState.taskEntities[taskId],
+          needsWidening,
+        };
+      }
+    }
+  }
+
+  // End the span
+  ObservabilityService.endSpan(
+    env,
+    traceId,
+    spanId,
+    'retrieve',
+    state,
+    updatedState,
+    executionTime,
+  );
+
+  // Log retrieval metrics
+  ObservabilityService.logEvent(env, traceId, spanId, 'retrieval_complete', {
+    taskCount: taskIds.length,
+    totalDocumentCount: allRetrievedDocs.length,
+    executionTimeMs: executionTime,
+    hasDocs: allRetrievedDocs.length > 0,
+  });
+
+  return {
+    ...updatedState,
+    metadata: {
+      ...updatedState.metadata,
+      nodeTimings: {
+        ...updatedState.metadata?.nodeTimings,
+        retrieve: executionTime,
+      },
+    },
+  };
 };
 
 /**

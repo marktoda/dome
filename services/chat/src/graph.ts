@@ -19,6 +19,7 @@ import { SecureD1Checkpointer } from "./checkpointer/secureD1Checkpointer";
 import { SecureToolExecutor } from "./tools/secureToolExecutor";
 import * as nodes from "./nodes";
 import { AgentState, GraphStateAnnotation } from "./types";
+import { createStateSummary } from "./utils/loggingHelpers";
 
 export interface IChatGraph {
   stream(i: unknown, o?: Partial<unknown>): Promise<IterableReadableStream<unknown>>;
@@ -115,89 +116,89 @@ function createNodeWrappers(env: Env, tools: SecureToolExecutor) {
   return {
     /* Routing nodes */
     routingSplit: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] routingSplit");
+      log.info({ preState: createStateSummary(state) }, "→ [START] routingSplit");
       const res = await nodes.routingSplit(state, env);
-      log.info({ postState: res }, "→ [END] routingSplit");
+      log.info({ postState: createStateSummary(res) }, "→ [END] routingSplit");
       return res;
     },
 
     /* Query processing nodes */
     editSystemPrompt: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] editSystemPrompt");
+      log.info({ preState: createStateSummary(state) }, "→ [START] editSystemPrompt");
       const res = await nodes.editSystemPrompt(state, env);
-      log.info({ postState: res }, "→ [END] editSystemPrompt");
+      log.info({ postState: createStateSummary(res) }, "→ [END] editSystemPrompt");
       return res;
     },
     filterHistory: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] filterHistory");
+      log.info({ preState: createStateSummary(state) }, "→ [START] filterHistory");
       const res = await nodes.filterHistory(state, env);
-      log.info({ postState: res }, "→ [END] filterHistory");
+      log.info({ postState: createStateSummary(res) }, "→ [END] filterHistory");
       return res;
     },
     rewrite: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] rewrite");
+      log.info({ preState: createStateSummary(state) }, "→ [START] rewrite");
       const res = await nodes.rewrite(state, env);
-      log.info({ postState: res }, "→ [END] rewrite");
+      log.info({ postState: createStateSummary(res) }, "→ [END] rewrite");
       return res;
     },
 
     /* Retrieval and context enhancement nodes */
     retrieve: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] retrieve");
+      log.info({ preState: createStateSummary(state) }, "→ [START] retrieve");
       const res = await nodes.retrieve(state, env);
-      log.info({ postState: res }, "→ [END] retrieve");
+      log.info({ postState: createStateSummary(res) }, "→ [END] retrieve");
       return res;
     },
     dynamicWiden: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] dynamicWiden");
+      log.info({ preState: createStateSummary(state) }, "→ [START] dynamicWiden");
       const res = await nodes.dynamicWiden(state, env);
-      log.info({ postState: res }, "→ [END] dynamicWiden");
+      log.info({ postState: createStateSummary(res) }, "→ [END] dynamicWiden");
       return res;
     },
 
     /* Tool handling nodes */
     toolRouter: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] toolRouter");
+      log.info({ preState: createStateSummary(state) }, "→ [START] toolRouter");
       const res = await nodes.toolRouter(state, env);
-      log.info({ postState: res }, "→ [END] toolRouter");
+      log.info({ postState: createStateSummary(res) }, "→ [END] toolRouter");
       return res;
     },
     runTool: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] runTool");
+      log.info({ preState: createStateSummary(state) }, "→ [START] runTool");
       const res = await nodes.runTool(state, env, tools);
-      log.info({ postState: res }, "→ [END] runTool");
+      log.info({ postState: createStateSummary(res) }, "→ [END] runTool");
       return res;
     },
 
     /* Generation nodes */
     generateAnswer: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
-      log.info({ preState: state }, '→ [START] generateRag');
+      log.info({ preState: createStateSummary(state) }, '→ [START] generateRag');
       const res = await nodes.generateAnswer(state, cfg, env);
-      log.info({ postState: res }, '→ [END] generateRag');
+      log.info({ postState: createStateSummary(res) }, '→ [END] generateRag');
       return res;
     },
     generateChatLLM: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
-      log.info({ preState: state }, '→ [START] generateChatLLM');
+      log.info({ preState: createStateSummary(state) }, '→ [START] generateChatLLM');
       const res = await nodes.generateChatLLM(state, cfg, env);
-      log.info({ postState: res }, '→ [END] generateChatLLM');
+      log.info({ postState: createStateSummary(res) }, '→ [END] generateChatLLM');
       return res;
     },
 
     /* Routing helper functions */
     routeAfterRetrieve: async (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] routeAfterRetrieve");
-      const res = nodes.routeAfterRetrieve(state);
+      log.info({ preState: createStateSummary(state) }, "→ [START] routeAfterRetrieve");
+      const res = await nodes.routeAfterRetrieve(state);
       log.info({ result: res }, "→ [END] routeAfterRetrieve");
       return res;
     },
-    routeAfterTool: (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] routeAfterTool");
-      const res = nodes.routeAfterTool(state);
+    routeAfterTool: async (state: AgentState) => {
+      log.info({ preState: createStateSummary(state) }, "→ [START] routeAfterTool");
+      const res = await nodes.routeAfterTool(state);
       log.info({ result: res }, "→ [END] routeAfterTool");
       return res;
     },
     routeAfterSplit: (state: AgentState) => {
-      log.info({ preState: state }, "→ [START] routeAfterSplit");
+      log.info({ preState: createStateSummary(state) }, "→ [START] routeAfterSplit");
       const res = state.metadata?.route ?? "filter_history";
       log.info({ result: res }, "→ [END] routeAfterSplit");
       return res;

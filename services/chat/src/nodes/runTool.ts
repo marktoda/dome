@@ -19,12 +19,22 @@ export const runTool = async (
   const traceId = state.metadata?.traceId || '';
   const spanId = ObservabilityService.startSpan(env, traceId, 'runTool', state);
 
-  const toolName = state.tasks?.toolToRun;
-  const toolParameters = state.tasks?.toolParameters || {};
-  const query = state.tasks?.originalQuery || state.tasks?.rewrittenQuery || '';
-
-  if (!toolName) {
-    logger.warn({ traceId, spanId }, 'No tool specified but reached run_tool node');
+  // Get task information
+  const taskIds = state.taskIds || [];
+  const taskEntities = state.taskEntities || {};
+  
+  // Find the task with a tool to run
+  let taskToRunTool: string | null = null;
+  for (const taskId of taskIds) {
+    const task = taskEntities[taskId];
+    if (task?.toolToRun) {
+      taskToRunTool = taskId;
+      break;
+    }
+  }
+  
+  if (!taskToRunTool) {
+    logger.warn({ traceId, spanId }, 'No task with tool specified but reached run_tool node');
 
     // End the span
     const endTime = performance.now();
@@ -34,12 +44,19 @@ export const runTool = async (
 
     return state;
   }
+  
+  // Get the task and tool information
+  const task = taskEntities[taskToRunTool];
+  const toolName = task.toolToRun!;
+  const toolParameters = task.toolParameters || {};
+  const query = task.originalQuery || task.rewrittenQuery || '';
 
   logger.info(
     {
+      taskId: taskToRunTool,
       toolName,
       toolParameters,
-      query: state.tasks?.originalQuery,
+      query: task.originalQuery,
       traceId,
       spanId,
     },
@@ -50,7 +67,7 @@ export const runTool = async (
     // Use the secure tool executor if provided
     let toolOutput;
     if (toolExecutor) {
-      const originalQuery = state.tasks?.originalQuery || '';
+      const originalQuery = task.originalQuery || '';
       toolOutput = await toolExecutor.executeTool(toolName, toolParameters, originalQuery, env);
     } else {
       // Otherwise use the legacy approach
@@ -74,6 +91,7 @@ export const runTool = async (
 
     logger.info(
       {
+        taskId: taskToRunTool,
         toolName,
         toolParameters,
         toolOutputPreview:
@@ -102,18 +120,23 @@ export const runTool = async (
     const endTime = performance.now();
     const executionTime = endTime - startTime;
 
-    // End the span
+    // Create updated state with retrieved documents
     const updatedState = {
       ...state,
-      tasks: {
-        ...state.tasks,
-        toolResults: [...(state.tasks?.toolResults || []), toolResult],
-      },
       // Add tool output documents to state
       docs: [
         ...(state.docs || []),
         ...scoredDocuments
       ],
+    };
+
+    // Add tool results to the task
+    updatedState.taskEntities = {
+      ...(taskEntities || {}),
+      [taskToRunTool]: {
+        ...(taskEntities[taskToRunTool] || { id: taskToRunTool }), // Ensure id is always present
+        toolResults: [...(task.toolResults || []), toolResult],
+      },
     };
 
     ObservabilityService.endSpan(
@@ -128,6 +151,7 @@ export const runTool = async (
 
     // Log the tool execution event
     ObservabilityService.logEvent(env, traceId, spanId, 'tool_execution_complete', {
+      taskId: taskToRunTool,
       toolName,
       executionTimeMs: executionTime,
       hasOutput: !!toolOutput,
@@ -147,6 +171,7 @@ export const runTool = async (
     logger.error(
       {
         err: error,
+        taskId: taskToRunTool,
         toolName,
         toolParameters,
         traceId,
@@ -178,12 +203,18 @@ export const runTool = async (
     const endTime = performance.now();
     const executionTime = endTime - startTime;
 
-    // End the span with error
+    // Create updated state with error information
     const updatedState = {
       ...state,
-      tasks: {
-        ...state.tasks,
-        toolResults: [...(state.tasks?.toolResults || []), toolResult],
+    };
+
+    // Add error tool result to the task
+    updatedState.taskEntities = {
+      ...(taskEntities || {}),
+      [taskToRunTool]: {
+        ...(taskEntities[taskToRunTool] || { id: taskToRunTool }), // Ensure id is always present
+        toolResults: [...(task.toolResults || []), toolResult],
+        toolError: error instanceof Error ? error.message : String(error),
       },
     };
 
@@ -199,6 +230,7 @@ export const runTool = async (
 
     // Log the error event
     ObservabilityService.logEvent(env, traceId, spanId, 'tool_execution_error', {
+      taskId: taskToRunTool,
       toolName,
       error: error instanceof Error ? error.message : String(error),
       hasFallbackResult: !!fallbackResult,

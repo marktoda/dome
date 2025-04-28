@@ -106,6 +106,7 @@ export const routingSplit = async (
     /*  6. Create task entities from parsed result                     */
     /* --------------------------------------------------------------- */
     const taskEntities: Record<string, UserTaskEntity> = {};
+    const taskIds: string[] = [];
 
     // Add proper null checks to handle cases where tasks might be undefined
     if (!result?.tasks || !Array.isArray(result.tasks)) {
@@ -119,6 +120,7 @@ export const routingSplit = async (
         status: 'pending',
         createdAt: Date.now(),
       };
+      taskIds.push(defaultTaskId);
     } else {
       // Process tasks normally when they exist
       result.tasks.forEach(task => {
@@ -130,6 +132,7 @@ export const routingSplit = async (
           status: 'pending',
           createdAt: Date.now(),
         };
+        taskIds.push(taskId);
       });
     }
 
@@ -163,6 +166,7 @@ export const routingSplit = async (
     /* --------------------------------------------------------------- */
     return {
       ...state,
+      taskIds,
       taskEntities,
       instructions,
       reasoning: [...(state.reasoning || []), reasoning],
@@ -232,8 +236,12 @@ export const routingSplit = async (
       }
     };
 
+    // Create taskIds array with the default task ID
+    const taskIds = [defaultTaskId];
+
     return {
       ...state,
+      taskIds, // Adding default task ID to maintain ordering
       taskEntities, // Adding default task for error cases
       reasoning: [...(state.reasoning || []), `Error processing query: ${errorMsg}`],
       metadata: {

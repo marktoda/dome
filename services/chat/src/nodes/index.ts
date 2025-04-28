@@ -10,7 +10,6 @@ export { generateAnswer } from './generateAnswer'; // RAG answer generation
 export { generateChatLLM } from './generateChatLLM'; // Simple chat generation
 
 // Query processing nodes
-export { splitRewrite } from './splitRewrite';
 export { routingSplit } from './routingSplit';
 export { editSystemPrompt } from './editSystemPrompt';
 export { filterHistory } from './filterHistory';

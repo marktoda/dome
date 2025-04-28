@@ -81,8 +81,12 @@ describe('generateAnswer Node', () => {
           }
         }
       ],
-      tasks: {
-        toolResults: []
+      taskIds: ['task-1'],
+      taskEntities: {
+        'task-1': {
+          id: 'task-1',
+          toolResults: []
+        }
       },
       metadata: {
         traceId: 'trace-123',

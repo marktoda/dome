@@ -44,37 +44,36 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
   const traceId = state.metadata?.traceId || '';
   const spanId = ObservabilityService.startSpan(env, traceId, 'toolRouter', state);
 
-  const requiredTools = state.tasks?.requiredTools || [];
-
-  if (requiredTools.length === 0) {
-    logger.warn({ traceId, spanId }, 'No tools specified but reached tool router');
+  // Get task information
+  const taskIds = state.taskIds || [];
+  const taskEntities = state.taskEntities || {};
+  
+  // Check if we have any tasks that need tools
+  const tasksWithTools = taskIds.filter(taskId => {
+    const task = taskEntities[taskId];
+    return task && Array.isArray(task.requiredTools) && task.requiredTools.length > 0;
+  });
+  
+  if (tasksWithTools.length === 0) {
+    logger.warn({ traceId, spanId }, 'No tasks with tools specified but reached tool router');
 
     // End the span
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-
+    
+    // Return state unchanged
     ObservabilityService.endSpan(
       env,
       traceId,
       spanId,
       'toolRouter',
       state,
-      {
-        ...state,
-        tasks: {
-          ...state.tasks,
-          toolToRun: null,
-        },
-      },
+      state,
       executionTime,
     );
 
     return {
       ...state,
-      tasks: {
-        ...state.tasks,
-        toolToRun: null,
-      },
       metadata: {
         ...state.metadata,
         nodeTimings: {
@@ -85,15 +84,21 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
     };
   }
 
+  // Process the first task with tools (could be enhanced to handle multiple in the future)
+  const taskId = tasksWithTools[0];
+  const task = taskEntities[taskId];
+  const requiredTools = task.requiredTools || [];
+
   try {
     // Get the query for tool selection
-    const query = state.tasks?.originalQuery || '';
+    const query = task.originalQuery || '';
 
     // Select the most appropriate tool based on query intent
     const toolSelection = await selectBestTool(env, query, requiredTools, traceId, spanId);
 
     logger.info(
       {
+        taskId,
         toolToRun: toolSelection.toolName,
         confidence: toolSelection.confidence,
         reason: toolSelection.reason,
@@ -118,6 +123,21 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
     const endTime = performance.now();
     const executionTime = endTime - startTime;
 
+    // Create updated state with tool information
+    const updatedState = {
+      ...state,
+      taskEntities: {
+        ...(state.taskEntities || {}),
+        [taskId]: {
+          ...(state.taskEntities?.[taskId] || { id: taskId }), // Ensure id is always present
+          toolToRun: toolSelection.toolName,
+          toolParameters,
+          toolSelectionReason: toolSelection.reason,
+          toolSelectionConfidence: toolSelection.confidence,
+        },
+      },
+    };
+
     // End the span
     ObservabilityService.endSpan(
       env,
@@ -125,21 +145,13 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
       spanId,
       'toolRouter',
       state,
-      {
-        ...state,
-        tasks: {
-          ...state.tasks,
-          toolToRun: toolSelection.toolName,
-          toolParameters,
-          toolSelectionReason: toolSelection.reason,
-          toolSelectionConfidence: toolSelection.confidence,
-        },
-      },
+      updatedState,
       executionTime,
     );
 
     // Log the tool selection event
     ObservabilityService.logEvent(env, traceId, spanId, 'tool_selected', {
+      taskId,
       toolName: toolSelection.toolName,
       confidence: toolSelection.confidence,
       reason: toolSelection.reason,
@@ -148,18 +160,11 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
     });
 
     return {
-      ...state,
-      tasks: {
-        ...state.tasks,
-        toolToRun: toolSelection.toolName,
-        toolParameters,
-        toolSelectionReason: toolSelection.reason,
-        toolSelectionConfidence: toolSelection.confidence,
-      },
+      ...updatedState,
       metadata: {
-        ...state.metadata,
+        ...updatedState.metadata,
         nodeTimings: {
-          ...state.metadata?.nodeTimings,
+          ...updatedState.metadata?.nodeTimings,
           toolRouter: executionTime,
         },
       },
@@ -169,6 +174,7 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
     logger.error(
       {
         err: error,
+        taskId,
         requiredTools,
         traceId,
         spanId,
@@ -180,6 +186,22 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
     const endTime = performance.now();
     const executionTime = endTime - startTime;
 
+    // Fall back to the first tool in the list if available
+    const fallbackTool = requiredTools.length > 0 ? requiredTools[0] : null;
+
+    // Create updated state with error information
+    const updatedState = {
+      ...state,
+      taskEntities: {
+        ...(state.taskEntities || {}),
+        [taskId]: {
+          ...(state.taskEntities?.[taskId] || { id: taskId }), // Ensure id is always present
+          toolToRun: fallbackTool,
+          toolError: error instanceof Error ? error.message : String(error),
+        },
+      },
+    };
+
     // End the span with error
     ObservabilityService.endSpan(
       env,
@@ -187,38 +209,24 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
       spanId,
       'toolRouter',
       state,
-      {
-        ...state,
-        tasks: {
-          ...state.tasks,
-          toolToRun: null,
-          toolError: error instanceof Error ? error.message : String(error),
-        },
-      },
+      updatedState,
       executionTime,
     );
 
     // Log the error event
     ObservabilityService.logEvent(env, traceId, spanId, 'tool_selection_error', {
+      taskId,
       error: error instanceof Error ? error.message : String(error),
       requiredTools,
       executionTimeMs: executionTime,
     });
 
-    // Fall back to the first tool in the list if available
-    const fallbackTool = requiredTools.length > 0 ? requiredTools[0] : null;
-
     return {
-      ...state,
-      tasks: {
-        ...state.tasks,
-        toolToRun: fallbackTool,
-        toolError: error instanceof Error ? error.message : String(error),
-      },
+      ...updatedState,
       metadata: {
-        ...state.metadata,
+        ...updatedState.metadata,
         nodeTimings: {
-          ...state.metadata?.nodeTimings,
+          ...updatedState.metadata?.nodeTimings,
           toolRouter: executionTime,
         },
         errors: [
@@ -237,25 +245,34 @@ export const toolRouter = async (state: AgentState, env: Env): Promise<AgentStat
 /**
  * Determine next step after tool routing
  */
-export const routeAfterTool = (state: AgentState): 'run_tool' | 'answer' => {
+export const routeAfterTool = async (state: AgentState): Promise<'run_tool' | 'answer'> => {
   const logger = getLogger().child({ node: 'routeAfterTool' });
   
-  const toolToRun = state.tasks?.toolToRun;
-  const toolResults = state.tasks?.toolResults || [];
+  // Get task information
+  const taskIds = state.taskIds || [];
+  const taskEntities = state.taskEntities || {};
   
-  // If a tool is selected, route to run_tool
-  if (toolToRun) {
-    logger.info({
-      toolToRun,
-      previousToolCount: toolResults.length,
-    }, 'Routing to run_tool');
-    return 'run_tool';
+  // Check if any task has a tool to run
+  for (const taskId of taskIds) {
+    const task = taskEntities[taskId];
+    if (!task) continue;
+    
+    const toolToRun = task.toolToRun;
+    
+    // If a tool is selected, route to run_tool
+    if (toolToRun) {
+      logger.info({
+        taskId,
+        toolToRun,
+        previousToolCount: task.toolResults?.length || 0,
+      }, 'Routing to run_tool');
+      return 'run_tool';
+    }
   }
   
   // Otherwise, route to answer generation
   logger.info({
-    toolToRun,
-    previousToolCount: toolResults.length,
+    taskCount: taskIds.length,
   }, 'Routing directly to answer generation');
   return 'answer';
 };
