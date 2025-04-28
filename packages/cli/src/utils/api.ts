@@ -81,17 +81,26 @@ export type ChatMessageChunk = { type: 'content' | 'thinking' | 'unknown'; conte
 // Extensible chunk‑type detector stack
 interface ChunkDetector { (raw: string, parsed: any): ChatMessageChunk | null; }
 const detectors: ChunkDetector[] = [
-  // LangGraph generate_answer node
+  // LangGraph update node
   (raw, p) => {
-    if (Array.isArray(p) && p[1]?.langgraph_node === 'generate_answer' && p[0]?.kwargs?.content !== undefined) {
-      return { type: 'content', content: p[0].kwargs.content };
+    if (Array.isArray(p) && p[0] === 'updates') {
+      const nodeId: string = Object.keys(p[1])[0];
+      const node = p[1][nodeId];
+
+      return { type: 'thinking', content: node.reasoning[node.reasoning.length - 1] };
     }
     return null;
   },
-  // AIMessageChunk introspection (thinking)
+  // LangGraph messages node
   (raw, p) => {
-    if (Array.isArray(p) && p[0]?.id?.[2] === 'AIMessageChunk' && p[0]?.kwargs?.content !== undefined) {
-      return { type: 'thinking', content: p[0].kwargs.content };
+    if (Array.isArray(p) && p[0] === 'messages') {
+      const details = p[1];
+      const content = details[0];
+      const meta = details[1];
+      const node = meta.langgraph_node;
+      if (node === 'generate_rag') {
+        return { type: 'content', content: content.kwargs.content };
+      }
     }
     return null;
   },

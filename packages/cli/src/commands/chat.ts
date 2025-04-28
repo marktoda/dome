@@ -19,15 +19,9 @@ function fatal(msg: string): never {
 class ThinkingBuffer {
   private buf = '';
 
-  tryPush(fragment: string): Record<string, unknown> | null {
+  tryPush(fragment: string): string {
     this.buf += fragment;
-    try {
-      const json = JSON.parse(this.buf);
-      this.buf = ''; // reset on success
-      return json;
-    } catch {
-      return null; // incomplete – keep buffering
-    }
+    return this.buf
   }
 
   reset(): void {
@@ -54,17 +48,19 @@ async function streamChatResponse(
 
       // structured chunk
       if (chunk.type === 'thinking') {
-        const json = thinking.tryPush(chunk.content);
-        if (json) {
+        const content = thinking.tryPush(chunk.content);
+        if (content) {
           console.log(); // line break before the block
           console.log(chalk.gray('Thinking:'));
-          console.log(chalk.gray(JSON.stringify(json, null, 2)));
+          console.log(chalk.gray(content));
           console.log(); // trailing blank line
         }
+      } else if (chunk.type === 'content') {
+        process.stdout.write(chunk.content);
       } else {
         // any other content chunk
         thinking.reset(); // discard partial thinking on normal output
-        process.stdout.write(chunk.content);
+        // process.stdout.write(chunk.content);
       }
     },
     { retryNonStreaming: true, debug: opts.verbose }
