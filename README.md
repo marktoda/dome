@@ -12,10 +12,11 @@ graph TD
 
     DomeAPI -->|Service Binding| Constellation[Constellation Service]
     DomeAPI -->|Service Binding| Silo[Silo Service]
+    DomeAPI -->|Service Binding| Chat[Chat Service]
     DomeAPI -->|Store/Query| D1[(D1 Database)]
 
     Silo -->|Store Objects| R2[(R2 Storage)]
-    Silo -->|Enqueue Jobs| NEW_CONTENT[NEW_CONTENT Queue]
+    Silo -->|Notify| NEW_CONTENT[NEW_CONTENT Queue]
     R2 -->|Object Events| SILO_CONTENT_UPLOADED[SILO_CONTENT_UPLOADED Queue]
     Silo -->|Process Events| SILO_CONTENT_UPLOADED
 
@@ -24,6 +25,11 @@ graph TD
     Constellation -->|Store/Query Vectors| Vectorize[(Vectorize Index)]
 
     NEW_CONTENT -->|Trigger Embedding| Constellation
+
+    Chat -->|Query| Constellation
+    Chat -->|Checkpoint| D1
+    Chat -->|Generate| WorkersAI
+    Chat -->|Process Graph| RAGGraph[RAG Graph]
 
     Tsunami[Tsunami Service] -->|Pull Content| GitHub[(GitHub Repos)]
     Tsunami -->|Service Binding| Silo
@@ -115,7 +121,58 @@ sequenceDiagram
     Constellation-->>DomeAPI: Search Results
 ```
 
-#### 4. Tsunami Service
+#### 4. Chat Service
+
+A Retrieval-Augmented Generation (RAG) system that enhances AI responses with relevant context from the user's knowledge base.
+
+- Uses a directed graph architecture for flexible processing flow
+- Retrieves relevant context from Constellation service
+- Manages token usage and context prioritization
+- Supports streaming responses and state persistence
+- Implements tools for specialized operations
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant DomeAPI
+    participant ChatService
+    participant RAGGraph
+    participant SearchService
+    participant LLMService
+    participant D1Database
+
+    Client->>DomeAPI: Chat Request
+    DomeAPI->>ChatService: RPC Call
+
+    ChatService->>RAGGraph: Initialize Graph
+    RAGGraph->>D1Database: Create Checkpoint
+
+    RAGGraph->>RAGGraph: Split/Rewrite Query
+    RAGGraph->>SearchService: Retrieve Context
+    SearchService->>RAGGraph: Return Documents
+
+    alt Documents Insufficient
+        RAGGraph->>RAGGraph: Widen Search
+        RAGGraph->>SearchService: Retry with Wider Parameters
+        SearchService->>RAGGraph: Return More Documents
+    end
+
+    alt Tool Required
+        RAGGraph->>RAGGraph: Route to Tool
+        RAGGraph->>RAGGraph: Execute Tool
+    end
+
+    RAGGraph->>LLMService: Generate Response
+    LLMService->>RAGGraph: Return Generated Text
+
+    RAGGraph->>D1Database: Update Checkpoint
+    RAGGraph->>ChatService: Return Final State
+
+    ChatService->>DomeAPI: Return Response
+    DomeAPI->>Client: Return Response
+```
+
+#### 5. Tsunami Service
 
 A specialized service for ingesting content from external sources, particularly code repositories.
 
@@ -142,13 +199,13 @@ sequenceDiagram
     Queue->>Constellation: Process for Embedding
 ```
 
-#### 5. Supporting Services
+#### 6. Supporting Services
 
 - **Dome Cron**: Handles scheduled tasks and periodic operations
 - **Dome Notify**: Manages notifications and alerts
 - **CLI**: Command-line interface for interacting with the platform
 
-#### 6. Infrastructure Components
+#### 7. Infrastructure Components
 
 - **D1 Database**: SQL database for structured data
 - **R2 Storage**: Object storage for content bodies
@@ -161,10 +218,12 @@ sequenceDiagram
 - **Runtime**: Cloudflare Workers (JavaScript/TypeScript)
 - **API Framework**: Hono
 - **Database ORM**: Drizzle
+- **Graph Processing**: LangGraph.js (for RAG workflows)
 - **Package Management**: pnpm workspaces
 - **Type Safety**: TypeScript, Zod
 - **Logging**: Structured logging with @dome/logging
 - **Metrics**: Custom metrics collection and reporting
+- **Infrastructure**: Pulumi for infrastructure as code
 
 ## Repository Structure
 
@@ -174,16 +233,18 @@ dome/
 │   ├── dome-api/           # Main API service
 │   ├── constellation/      # Embedding service
 │   ├── silo/               # Content storage service
+│   ├── chat/               # RAG chat service
 │   ├── tsunami/            # External content ingestion
 │   ├── dome-cron/          # Scheduled tasks
 │   └── dome-notify/        # Notifications
 ├── packages/               # Shared libraries
 │   ├── common/             # Common utilities and types
 │   ├── logging/            # Logging infrastructure
+│   ├── metrics/            # Metrics collection
 │   └── cli/                # Command-line interface
 ├── docs/                   # Documentation
-├── infrastructure/         # Infrastructure as code
-└── templates/              # Templates for new services
+├── infra/                  # Infrastructure as code
+└── scripts/                # Utility scripts
 ```
 
 ## Development Workflow
@@ -214,22 +275,35 @@ const uploadUrl = await env.SILO.createUpload({
   contentType: 'note',
   size: content.length,
 });
+
+// Chat service example
+const chatResponse = await env.CHAT.generateResponse({
+  userId,
+  messages: [{ role: 'user', content: userQuery }],
+  stream: false,
+});
 ```
+
+## Error Handling and Observability
+
+Dome implements comprehensive error handling and observability:
+
+- Structured logging with consistent fields across services
+- Error categorization and propagation
+- Custom metrics collection for performance monitoring
+- Distributed tracing with trace and span IDs
+- Standard error response format for client applications
 
 ## Future Enhancements
 
 - **Hybrid Search**: Combining vector search with traditional text search
 - **Re-ranking**: Implementing re-ranking of search results
+- **Multi-Modal Support**: Handling images and other media types
 - **Summarization**: Adding summarization capabilities
 - **Multi-model Support**: Supporting multiple embedding models
 - **Cross-user Search**: Implementing secure cross-user search
+- **Advanced Tool Integration**: More sophisticated tool execution
 
 ## Getting Started
 
 See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for detailed setup instructions.
-
-# TODO
-
-- make TODO a tool for the langgraph (todo_add, todo_fetch, todo_update)
-
-- include file metadata when ingesting (i.e. filename etc)
