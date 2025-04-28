@@ -2,6 +2,16 @@ import { Widgets } from 'blessed';
 import { BaseMode } from './BaseMode';
 import { chat, ChatMessageChunk } from '../../utils/api';
 
+// Define source info interface for type safety
+interface SourceInfo {
+  id?: string;
+  title?: string;
+  source?: string;
+  url?: string;
+  relevanceScore?: number;
+  snippet?: string;
+}
+
 type Conversation = {
   user: string;
   thinking: string;
@@ -21,6 +31,20 @@ export class ChatMode extends BaseMode {
     '{center}Type a message to chat with Dome AI{/center}',
     '',
   ];
+
+  /** Accumulates stream chunks until a valid JSON object can be parsed. */
+  private thinkingBuffer = new class {
+    private buf = '';
+
+    tryPush(fragment: string): string {
+      this.buf += fragment;
+      return this.buf;
+    }
+
+    reset(): void {
+      this.buf = '';
+    }
+  }();
 
   constructor() {
     super({
@@ -67,15 +91,41 @@ export class ChatMode extends BaseMode {
         convo.reply += chunk;
         startedContent = true;
       } else if (chunk.type === 'thinking' && !startedContent) {
-        try {
-          convo.thinking = JSON.stringify(JSON.parse(chunk.content), null, 2);
-        } catch { convo.thinking = chunk.content; }
+        // Accumulate thinking content
+        convo.thinking = this.thinkingBuffer.tryPush(chunk.content);
+      } else if (chunk.type === 'content') {
+        // Reset thinking buffer when content starts
+        this.thinkingBuffer.reset();
+        convo.reply += chunk.content;
+        startedContent = true;
       } else if (chunk.type === 'final') {
         // Final chunks with sources don't need to add content to the reply
         // The sources will be displayed separately
         startedContent = true;
+      } else if (chunk.type === 'unknown') {
+        // Handle unknown chunks (could be plain text)
+        if (!startedContent && chunk.content.trim()) {
+          // Try to see if it's thinking content
+          try {
+            const parsed = JSON.parse(chunk.content);
+            if (parsed && typeof parsed === 'object') {
+              convo.thinking = JSON.stringify(parsed, null, 2);
+            } else {
+              convo.reply += chunk.content;
+              startedContent = true;
+            }
+          } catch {
+            // Not JSON, treat as regular content
+            convo.reply += chunk.content;
+            startedContent = true;
+          }
+        } else {
+          convo.reply += chunk.content;
+          startedContent = true;
+        }
       } else {
-        convo.reply += chunk.content;
+        // Any other chunk type
+        convo.reply += chunk.content || '';
         startedContent = true;
       }
       rebuild();
@@ -89,8 +139,33 @@ export class ChatMode extends BaseMode {
       const result = await chat(input, onChunk, { debug: verbose });
 
       /* sources ------------------------------------------------------ */
+      // Process sources if available in multiple possible locations
+      let sources: SourceInfo[] = [];
       if (result?.sources?.length) {
-        this.displaySources(result.sources.slice(0, ChatMode.MAX_SOURCES), cw);
+        sources = result.sources;
+      } else if (result?.node?.sources) {
+        // Handle sources from final chunk format
+        sources = Array.isArray(result.node.sources)
+          ? result.node.sources
+          : [result.node.sources];
+      }
+
+      if (sources?.length) {
+        // Filter out metadata entries and other non-displayable sources
+        sources = sources.filter((source: SourceInfo) => {
+          const title = source.title || '';
+          return !title.includes('---DOME-METADATA-START---') &&
+                 !title.match(/^---.*---$/) &&
+                 title.trim() !== '';
+        });
+        
+        // Sort by relevance score (highest first)
+        sources.sort((a: SourceInfo, b: SourceInfo) =>
+          (b.relevanceScore || 0) - (a.relevanceScore || 0)
+        );
+        
+        // Display top sources
+        this.displaySources(sources.slice(0, ChatMode.MAX_SOURCES), cw, sources.length);
         this.scrollToBottom();
       }
     } catch (err) {
@@ -164,15 +239,50 @@ export class ChatMode extends BaseMode {
     return out;
   }
 
-  private displaySources(sources: any[], cw: number): void {
+  private displaySources(sources: SourceInfo[], cw: number, totalCount?: number): void {
     this.container.pushLine('{bold}Sources:{/bold}');
     sources.forEach((s, i) => {
-      const title = s.title?.length > 80 ? s.title.slice(0, 80) + '…' : s.title;
-      if (title) this.container.pushLine(`${i + 1}. {underline}${title}{/underline}`);
-      if (s.snippet) this.wrapText('   ' + s.snippet.slice(0, 100) + (s.snippet.length > 100 ? '…' : ''), cw);
+      // Safely handle potentially undefined title
+      const title = s.title
+        ? (s.title.length > 80 ? s.title.slice(0, 80) + '…' : s.title)
+        : 'Unnamed Source';
+      
+      // Display index and title
+      this.container.pushLine(`${i + 1}. {underline}${title}{/underline}`);
+      
+      // Display source type
+      if (s.source) {
+        this.container.pushLine(`   Source: ${s.source}`);
+      }
+      
+      // Display URL if available
+      if (s.url) {
+        this.container.pushLine(`   URL: {blue-fg}${s.url}{/blue-fg}`);
+      }
+      
+      // Display relevance score with color coding
+      if (s.relevanceScore !== undefined) {
+        const scorePercentage = Math.round(s.relevanceScore * 100);
+        const scoreColor = scorePercentage > 70 ? 'green' : scorePercentage > 40 ? 'yellow' : 'red';
+        this.container.pushLine(`   Relevance: {${scoreColor}-fg}${scorePercentage}%{/${scoreColor}-fg}`);
+      }
+      
+      // Display snippet if available
+      if (s.snippet) {
+        this.wrapText('   ' + s.snippet.slice(0, 100) + (s.snippet.length > 100 ? '…' : ''), cw);
+      }
+      
+      // Add space between sources (except after the last one)
+      if (i < sources.length - 1) {
+        this.container.pushLine('');
+      }
     });
-    if (sources.length > ChatMode.MAX_SOURCES)
-      this.container.pushLine(`{italic}(showing ${ChatMode.MAX_SOURCES} of ${sources.length}){/italic}`);
+    
+    // Show total count info if needed
+    const total = totalCount || sources.length;
+    if (total > sources.length) {
+      this.container.pushLine(`{italic}(showing ${sources.length} of ${total}){/italic}`);
+    }
   }
 
   /* ------------------------------------------------------------------ */

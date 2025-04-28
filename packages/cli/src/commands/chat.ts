@@ -62,10 +62,25 @@ async function streamChatResponse(
           console.log(); // Empty line before sources
           console.log(chalk.bold.yellow('Sources:'));
           
-          const sources = Array.isArray(chunk.node.sources)
+          // Get sources as array and filter out metadata entries
+          let sources = Array.isArray(chunk.node.sources)
             ? chunk.node.sources
             : [chunk.node.sources];
           
+          // Filter out metadata entries and other non-displayable sources
+          sources = sources.filter(source => {
+            const title = source.title || '';
+            return !title.includes('---DOME-METADATA-START---') &&
+                   !title.match(/^---.*---$/) &&
+                   title.trim() !== '';
+          });
+          
+          // Sort sources by relevance score (highest first)
+          sources.sort((a, b) =>
+            (b.relevanceScore || 0) - (a.relevanceScore || 0)
+          );
+          
+          // Display sources with correct numbering
           sources.forEach((source, index) => {
             console.log(chalk.yellow(`[${index + 1}] ${source.title || 'Unnamed Source'}`));
             if (source.source) console.log(chalk.gray(`    Source: ${source.source}`));

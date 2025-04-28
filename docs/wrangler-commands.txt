@@ -13,6 +13,7 @@ wrangler queues create new-content-ai
 wrangler queues create embed-dead-letter
 // silo <> silo
 wrangler queues create ingest-dlq
+wrangler queues create todos
 
 // ai -> silo
 wrangler queues create enriched-content
@@ -25,4 +26,5 @@ wrangler r2 bucket notification create silo-content  --event-type object-create 
 
 wrangler vectorize create dome-notes --dimensions=768 --metric=cosine
 wrangler vectorize create-metadata-index dome-notes --property-name userId  --type string
+
 
