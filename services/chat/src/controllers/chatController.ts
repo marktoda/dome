@@ -147,7 +147,6 @@ export class ChatController {
       async start(ctrl) {
         try {
           for await (const chunk of await iterator) {
-            getLogger().info({ chunk }, 'ChatController runGraphStreaming - chunk');
             ctrl.enqueue(enc.encode(JSON.stringify(chunk) + '\n'));
           }
         } finally {

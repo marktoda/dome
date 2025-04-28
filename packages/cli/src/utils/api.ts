@@ -86,6 +86,7 @@ const detectors: ChunkDetector[] = [
     if (Array.isArray(p) && p[0] === 'updates') {
       const nodeId: string = Object.keys(p[1])[0];
       const node = p[1][nodeId];
+      console.log(nodeId, node);
 
       return { type: 'thinking', content: node.reasoning[node.reasoning.length - 1] };
     }
