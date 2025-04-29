@@ -1,0 +1,48 @@
+name = "todos"
+main = "src/index.ts"
+compatibility_date = "2025-04-15"
+
+# Queue consumer configuration
+[[queues.consumers]]
+queue = "todos-queue"
+binding = "TODOS_QUEUE" # Add explicit binding name to match Env interface
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+
+# D1 database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "todos-db"
+database_id = "48f186ec-5c2b-4f27-91ac-43f368093259"
+
+# Environment variables
+[vars]
+LOG_LEVEL = "info"
+VERSION = "1.0.0"
+ENVIRONMENT = "dev"
+
+# Development environment
+[env.dev]
+workers_dev = true
+[env.dev.vars]
+LOG_LEVEL = "debug"
+ENVIRONMENT = "dev"
+
+# Staging environment
+[env.staging]
+workers_dev = false
+[env.staging.vars]
+LOG_LEVEL = "info"
+ENVIRONMENT = "staging"
+
+# Production environment
+[env.prod]
+workers_dev = false
+[env.prod.vars]
+LOG_LEVEL = "info"
+ENVIRONMENT = "prod"
+
+# Miniflare configuration for local development
+[miniflare]
+durable_objects_persist = true

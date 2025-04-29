@@ -91,8 +91,42 @@ export class ChatMode extends BaseMode {
         convo.reply += chunk;
         startedContent = true;
       } else if (chunk.type === 'thinking' && !startedContent) {
-        // Accumulate thinking content
-        convo.thinking = this.thinkingBuffer.tryPush(chunk.content);
+        // Try to handle the thinking content better
+        const content = this.thinkingBuffer.tryPush(chunk.content);
+        
+        // Only display thinking content if we have a reasonable amount
+        // and suppress raw JSON that's not useful to display
+        try {
+          // Try to parse as JSON
+          const parsed = JSON.parse(content);
+          
+          // If it's an array with one element that's a string, just show that
+          if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
+            convo.thinking = parsed[0];
+          }
+          // If it's an object with a reasoning property, extract that
+          else if (parsed && typeof parsed === 'object' && parsed.reasoning) {
+            if (Array.isArray(parsed.reasoning) && parsed.reasoning.length > 0) {
+              // Take the last reasoning element if it's an array
+              convo.thinking = parsed.reasoning[parsed.reasoning.length - 1];
+            } else if (typeof parsed.reasoning === 'string') {
+              convo.thinking = parsed.reasoning;
+            } else {
+              // Just show a simple thinking indicator
+              convo.thinking = "Thinking...";
+            }
+          } else {
+            // Skip showing large complex JSON objects
+            convo.thinking = "Thinking...";
+          }
+        } catch {
+          // If it's not JSON, take it as is if it's reasonable
+          if (content.length < 300) {
+            convo.thinking = content;
+          } else {
+            convo.thinking = "Thinking...";
+          }
+        }
       } else if (chunk.type === 'content') {
         // Reset thinking buffer when content starts
         this.thinkingBuffer.reset();
@@ -190,8 +224,13 @@ export class ChatMode extends BaseMode {
     ChatMode.HEADER.forEach(l => this.container.pushLine(l));
 
     this.printBlock('{bold}{green-fg}You:{/green-fg}{/bold}', user, cw);
-    if (thinking) this.printBlock('{gray-fg}Thinking:{/gray-fg}', thinking, cw);
-    if (thinking || reply) this.printBlock('{bold}{blue-fg}Dome:{/blue-fg}{/bold}', reply, cw);
+    
+    // Only display thinking if it looks meaningful and it's not just "Thinking..."
+    if (thinking && thinking !== "Thinking..." && thinking.length > 1) {
+      this.printBlock('{gray-fg}Thinking:{/gray-fg}', thinking, cw);
+    }
+    
+    if (reply) this.printBlock('{bold}{blue-fg}Dome:{/blue-fg}{/bold}', reply, cw);
 
     this.scrollToBottom();
   }

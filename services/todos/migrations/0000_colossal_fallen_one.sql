@@ -1,0 +1,21 @@
+CREATE TABLE `todos` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`title` text NOT NULL,
+	`description` text,
+	`status` text NOT NULL,
+	`priority` text NOT NULL,
+	`category` text,
+	`tags` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	`due_date` integer,
+	`completed_at` integer,
+	`source_note_id` text,
+	`source_text` text,
+	`ai_generated` integer NOT NULL,
+	`confidence` real,
+	`estimated_effort` text,
+	`actionable_steps` text,
+	`context` text
+);
