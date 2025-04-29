@@ -5,6 +5,7 @@ import { createLlmService } from './services/llmService';
 import { EnrichedContentMessage, NewContentMessage, SiloContentMetadata } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { z } from 'zod';
+import { sendTodosToQueue } from './todos';
 import {
   getLogger,
   logError,
@@ -520,12 +521,24 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             timestamp: Date.now(),
           };
 
-          // Only send to ENRICHED_CONTENT queue if it exists (it won't exist in dome-api)
           if ('ENRICHED_CONTENT' in this.env) {
             await trackOperation(
               'publish_enriched_message',
               () => (this.env as any).ENRICHED_CONTENT.send(enrichedMessage),
               { id, userId, requestId }
+            );
+          }
+
+          // Send todos to the dedicated todos queue if they exist and the queue binding is available
+          if ('TODOS' in this.env &&
+            enrichedMessage.metadata.todos &&
+            Array.isArray(enrichedMessage.metadata.todos) &&
+            enrichedMessage.metadata.todos.length > 0 &&
+            userId) { // Ensure userId is defined and not null
+
+            await sendTodosToQueue(
+              enrichedMessage,
+              this.env.TODOS
             );
           }
 

@@ -17,6 +17,11 @@ max_retries = 3
 queue = "enriched-content"
 binding = "ENRICHED_CONTENT"
 
+# Queue producer for ENRICHED_CONTENT
+[[queues.producers]]
+queue = "todos"
+binding = "TODOS"
+
 # AI binding for Workers AI
 [ai]
 binding = "AI"
