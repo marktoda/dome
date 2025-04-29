@@ -1,10 +1,11 @@
 name = "todos"
 main = "src/index.ts"
 compatibility_date = "2025-04-15"
+compatibility_flags = ["nodejs_als"]
 
 # Queue consumer configuration
 [[queues.consumers]]
-queue = "todos-queue"
+queue = "todos"
 binding = "TODOS_QUEUE" # Add explicit binding name to match Env interface
 max_batch_size = 10
 max_batch_timeout = 30

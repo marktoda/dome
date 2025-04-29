@@ -1,4 +1,5 @@
 import { Document } from '../types';
+import { getLogger } from '@dome/logging';
 import {
   DEFAULT_MAX_TOTAL_DOC_TOKENS,
   DOC_METADATA_TOKENS,
@@ -24,6 +25,7 @@ export function formatDocsForPrompt(
   // First, format all documents
   const formattedDocs = docs.map((doc, index) => {
     const docNumber = index + 1;
+    getLogger().info(`[${docNumber}] ${doc.title}`);
     let formattedDoc = `[${docNumber}] ${doc.title}\n${doc.body}`;
 
     if (includeSourceInfo && doc.metadata) {

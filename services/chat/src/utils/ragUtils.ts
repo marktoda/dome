@@ -1,4 +1,5 @@
 import { AgentState, Document } from '../types';
+import { getLogger } from '@dome/logging';
 import { getModelConfig } from '../config/modelConfig';
 import { countTokens as baseCountTokens } from './tokenCounter';
 import { DOC_METADATA_TOKENS } from './tokenConstants';
@@ -11,7 +12,7 @@ import { DOC_METADATA_TOKENS } from './tokenConstants';
  */
 export function countTokens(text: string, modelId: string): number {
   if (!text) return 0;
-  
+
   // Get the appropriate model format for tiktoken
   let tikTokenModel = 'gpt-4'; // Default model for tiktoken
 
@@ -45,12 +46,12 @@ export function scoreFilter(docs: Document[], threshold: number): Document[] {
 
   return docs.filter(doc => {
     // Use relevanceScore from metadata, falling back to other similarity scores
-    const score = 
-      doc.metadata.relevanceScore || 
-      doc.metadata.semantic_similarity || 
-      doc.metadata.confidence || 
+    const score =
+      doc.metadata.relevanceScore ||
+      doc.metadata.semantic_similarity ||
+      doc.metadata.confidence ||
       0;
-    
+
     return score >= threshold;
   });
 }
@@ -68,11 +69,11 @@ export function concatListFiles(files: string[], maxLength: number): string {
 
   // Start with a header
   let result = 'Files:\n';
-  
+
   // Add each file to the list with a bullet point
   for (const file of files) {
     const nextLine = `- ${file}\n`;
-    
+
     // Check if adding this file would exceed the max length
     if (result.length + nextLine.length > maxLength) {
       // If we would exceed the length, add a truncation message and stop
@@ -82,10 +83,10 @@ export function concatListFiles(files: string[], maxLength: number): string {
       }
       break;
     }
-    
+
     result += nextLine;
   }
-  
+
   return result.trim();
 }
 
@@ -108,33 +109,40 @@ export function reduceRagContext(
 
   // Sort documents by relevance score (highest first)
   const sortedDocs = [...state.docs].sort((a, b) => {
-    const scoreA = 
-      a.metadata.relevanceScore || 
-      a.metadata.semantic_similarity || 
-      a.metadata.confidence || 
+    const scoreA =
+      a.metadata.relevanceScore ||
+      a.metadata.semantic_similarity ||
+      a.metadata.confidence ||
       0;
-      
-    const scoreB = 
-      b.metadata.relevanceScore || 
-      b.metadata.semantic_similarity || 
-      b.metadata.confidence || 
+
+    const scoreB =
+      b.metadata.relevanceScore ||
+      b.metadata.semantic_similarity ||
+      b.metadata.confidence ||
       0;
-      
+
     return scoreB - scoreA;
   });
 
   const results: Document[] = [];
   let totalTokens = 0;
+  getLogger().info({
+    docs: sortedDocs.map(d => ({
+      title: d.title,
+      relevanceScore: d.metadata.relevanceScore,
+      tokenCount: d.metadata.tokenCount,
+    }))
+  }, 'docs in reduceRagContext')
 
   // Add documents until we hit the token limit
   for (const doc of sortedDocs) {
     // Calculate or use cached token count for this document
     let docTokens = doc.metadata.tokenCount;
-    
+
     if (!docTokens) {
       // Compute token count if not available
       docTokens = countTokens(doc.title + '\n' + doc.body, modelId) + DOC_METADATA_TOKENS;
-      
+
       // Cache the token count in the metadata
       doc.metadata.tokenCount = docTokens;
     }

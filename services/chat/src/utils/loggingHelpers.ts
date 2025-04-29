@@ -6,16 +6,22 @@ import { AgentState, Document } from '../types';
  */
 export function createStateSummary(state: Partial<AgentState>): Record<string, any> {
   if (!state) return {};
-  
+
   // Create a shallow copy of state to modify
   const summary: Record<string, any> = { ...state };
-  
+
   // Summarize docs (often the largest part)
   if (state.docs && state.docs.length > 0) {
-    const docIds = state.docs.slice(0, 3).map(d => d.id);
-    summary.docs = `[${state.docs.length} docs, ids: ${docIds.join(', ')}${state.docs.length > 3 ? '...' : ''}]`;
+    summary.docs = state.docs.map((d, i) => ({
+      idx: i,
+      id: d.id,
+      title: d.title,
+      source: d.metadata.source,
+      url: d.metadata.url,
+      relevanceScore: d.metadata.relevanceScore,
+    }))
   }
-  
+
   // Truncate long messages
   if (state.messages && state.messages.length > 0) {
     summary.messages = state.messages.map(msg => ({
@@ -24,17 +30,17 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
       timestamp: msg.timestamp
     }));
   }
-  
+
   // Summarize reasoning
   if (state.reasoning && state.reasoning.length > 0) {
     summary.reasoning = `[${state.reasoning.length} reasoning items]`;
   }
-  
+
   // Truncate instructions if they're long
   if (state.instructions && state.instructions.length > 100) {
     summary.instructions = `${state.instructions.substring(0, 100)}...`;
   }
-  
+
   // Summarize task entities
   if (state.taskEntities && Object.keys(state.taskEntities).length > 0) {
     const taskKeys = Object.keys(state.taskEntities);
@@ -50,7 +56,7 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
           // Convert back to object if we already summarized it
           summary.taskEntities = { ...state.taskEntities };
         }
-        
+
         if (typeof summary.taskEntities === 'object') {
           summary.taskEntities[taskId] = {
             ...task,
@@ -60,11 +66,11 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
       }
     }
   }
-  
+
   // Summarize generated text if it's long
   if (state.generatedText && state.generatedText.length > 100) {
     summary.generatedText = `${state.generatedText.substring(0, 100)}...`;
   }
-  
+
   return summary;
 }

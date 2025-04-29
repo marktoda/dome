@@ -284,44 +284,8 @@ async function applyContextualCompression(documents: Document[], query: string):
 
   // Token-aware document filtering
   // In a production system, this would use more sophisticated embedding-based similarity
-  const queryTokens = new Set(
-    query
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(token => token.length > 3),
-  );
-
-  // Apply contextual scoring to adjust relevance
-  return sortedDocuments.map(doc => {
-    const content = doc.body.toLowerCase();
-    let contextRelevance = 0;
-
-    // Count query tokens that appear in the document
-    queryTokens.forEach(token => {
-      if (content.includes(token)) {
-        contextRelevance += 1;
-      }
-    });
-
-    // Normalize the contextual relevance score
-    const normalizedContextScore = queryTokens.size > 0
-      ? contextRelevance / queryTokens.size
-      : 0;
-
-    // Combine base relevance with contextual relevance
-    const baseRelevance = doc.metadata.relevanceScore || 0;
-    const combinedScore = 0.7 * baseRelevance + 0.3 * normalizedContextScore;
-
-    // Return document with updated relevance score
-    return {
-      ...doc,
-      metadata: {
-        ...doc.metadata,
-        relevanceScore: combinedScore,
-        contextual_similarity: normalizedContextScore,
-      },
-    };
-  });
+  // TODO: apply embedding based reranking
+  return sortedDocuments;
 }
 
 /**

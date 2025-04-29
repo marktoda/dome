@@ -31,7 +31,7 @@ export interface SearchOptions {
 export class SearchService {
   private readonly logger = getLogger();
 
-  constructor(private constellation: ConstellationClient, private silo: SiloClient) {}
+  constructor(private constellation: ConstellationClient, private silo: SiloClient) { }
 
   static fromEnv(env: Env): SearchService {
     return new SearchService(
@@ -128,10 +128,10 @@ export class SearchService {
           firstResult:
             searchResults.length > 0
               ? {
-                  id: searchResults[0].id,
-                  contentId: searchResults[0].metadata.contentId,
-                  score: searchResults[0].score,
-                }
+                id: searchResults[0].id,
+                contentId: searchResults[0].metadata.contentId,
+                score: searchResults[0].score,
+              }
               : null,
         },
         'Created score map',

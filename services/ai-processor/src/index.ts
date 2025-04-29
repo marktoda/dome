@@ -538,7 +538,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
 
             await sendTodosToQueue(
               enrichedMessage,
-              this.env.TODOS
+              (this.env as any).TODOS
             );
           }
 
