@@ -126,7 +126,6 @@ export async function generateAnswer(
 
   return {
     generatedText: response.text,
-    sources: state.sources,
     metadata: {
       currentNode: "generate_rag",
       isFinalState: true,

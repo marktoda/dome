@@ -1,23 +1,17 @@
 import { getLogger } from '@dome/logging';
 import { z } from 'zod';
-import { AgentState, AIMessage, UserTaskEntity } from '../types';
+import { AgentState, AIMessage, MessagePair } from '../types';
 import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
+import { countTokens } from '../utils';
 import { ObservabilityService } from '../services/observabilityService';
 import { getCondenseTaskPrompt } from '../config/promptsConfig';
+import { DEFAULT_MODEL } from '../config/modelConfig';
 
-/**
- * Zod schema for task rewriting output
- * Used for structured output from LLM
- */
 const rewrittenTaskSchema = z.object({
-  taskId: z.string(),
-  rewrittenQuery: z.union([z.string(), z.null()]),
-  requiredTools: z.union([z.array(z.string()), z.null()]),
-  reasoning: z.union([z.string(), z.null()]),
+  rewrittenQuery: z.string(),
+  reasoning: z.string().nullable(),
 });
-
-// Type inference from the Zod schema
 type RewrittenTask = z.infer<typeof rewrittenTaskSchema>;
 
 /**
@@ -26,7 +20,7 @@ type RewrittenTask = z.infer<typeof rewrittenTaskSchema>;
  * 1. Use CONDENSE_TASK_PROMPT to rewrite queries succinctly
  * 2. Process tasks asynchronously
  * 3. Update task definitions in state
- * 
+ *
  * This node condenses verbose user queries into clearer, more focused task
  * definitions to improve downstream processing.
  */
@@ -51,9 +45,9 @@ export const rewrite = async (
   if (taskCount === 0) {
     logger.info('No tasks to rewrite');
     const elapsed = performance.now() - t0;
-    
+
     ObservabilityService.endSpan(env, traceId, spanId, 'rewrite', state, state, elapsed);
-    
+
     return {
       ...state,
       reasoning: [...(state.reasoning || []), 'No tasks to rewrite.'],
@@ -79,47 +73,16 @@ export const rewrite = async (
     // Schema is already defined with zod above
 
     // Process tasks in parallel
-    const processingPromises = Object.entries(taskEntities).map(async ([taskId, task]) => {
-      // Skip tasks that already have a rewritten query
-      if (task.rewrittenQuery) {
-        logger.debug({ taskId }, 'Task already has a rewritten query, skipping');
-        return {
-          taskId,
-          rewrittenQuery: task.rewrittenQuery,
-          requiredTools: task.requiredTools,
-          reasoning: 'Task already rewritten.'
-        };
-      }
-
+    const tasks = state.taskEntities ?? {};
+    const reasons = await Promise.all(Object.entries(taskEntities).map(async ([taskId, task]) => {
       const originalQuery = task.originalQuery || '';
       if (!originalQuery) {
         logger.warn({ taskId }, 'Task has no original query to rewrite');
-        return {
-          taskId,
-          rewrittenQuery: '',
-          reasoning: 'No original query to rewrite.'
-        };
+        return 'No original query to rewrite.';
       }
 
       // Create messages for the LLM call
-      const messages: AIMessage[] = [
-        { role: 'system', content: getCondenseTaskPrompt() },
-        { role: 'user', content: originalQuery }
-      ];
-
-      // Get context from chat history if available
-      if (state.chatHistory && state.chatHistory.length > 0) {
-        // Get the last few messages for context, with a reasonable limit
-        const recentHistory = state.chatHistory.slice(-3);
-        const historyContext = recentHistory.map(pair => 
-          `User: ${pair.user.content}\nAssistant: ${pair.assistant.content}`
-        ).join('\n\n');
-        
-        messages.push({ 
-          role: 'system', 
-          content: `Recent conversation context:\n${historyContext}` 
-        });
-      }
+      const messages = buildCondensePrompt(originalQuery, state.chatHistory);
 
       // Call LLM with structured output schema
       try {
@@ -128,74 +91,37 @@ export const rewrite = async (
           messages,
           {
             schema: rewrittenTaskSchema,
-            schemaInstructions: 'Rewrite the user query in a concise, clear format and identify required tools.'
+            schemaInstructions: 'Rewrite the user query in a concise, clear format'
           }
         );
 
-        return {
-          ...result,
-          taskId // Ensure we use our taskId, not the LLM-generated one
-        };
+        tasks[taskId].rewrittenQuery = result.rewrittenQuery;
+        tasks[taskId].definition = result.rewrittenQuery;
+        return result.reasoning || 'No reasoning provided';
       } catch (error) {
         logger.error({ err: error, taskId }, 'Error rewriting task');
-        // Return original query if rewriting fails
-        return {
-          taskId,
-          rewrittenQuery: originalQuery,
-          reasoning: `Error during rewriting: ${error instanceof Error ? error.message : 'Unknown error'}`
-        };
+        return `Error during rewriting: ${error instanceof Error ? error.message : 'Unknown error'}`
       }
-    });
-
-    // Wait for all tasks to be processed
-    const results = await Promise.all(processingPromises);
-
-    /* --------------------------------------------------------------- */
-    /*  3. Update task entities with rewritten queries                 */
-    /* --------------------------------------------------------------- */
-    const updatedTaskEntities = { ...taskEntities };
-    const reasons: string[] = [];
-    
-    results.forEach(result => {
-      if (!result.rewrittenQuery) return;
-      
-      const task = updatedTaskEntities[result.taskId];
-      if (task) {
-        updatedTaskEntities[result.taskId] = {
-          ...task,
-          rewrittenQuery: result.rewrittenQuery === null ? '' : result.rewrittenQuery,
-          requiredTools: result.requiredTools === null ? (task.requiredTools || []) : result.requiredTools,
-          definition: result.rewrittenQuery === null ? '' : result.rewrittenQuery // Set definition to the rewritten query
-        };
-        
-        reasons.push(`Task ${result.taskId}: ${result.reasoning === null ? 'Task rewritten successfully.' : result.reasoning}`);
-      }
-    });
+    }));
 
     /* --------------------------------------------------------------- */
     /*  4. Log completion and metrics                                  */
     /* --------------------------------------------------------------- */
     const elapsed = performance.now() - t0;
-    logEvt('rewrite_complete', { 
+    logEvt('rewrite_complete', {
       taskCount,
       processingTimeMs: elapsed,
-      taskRewriteCount: results.length
+      taskRewriteCount: reasons.length
     });
-    
-    ObservabilityService.endSpan(env, traceId, spanId, 'rewrite', state, state, elapsed);
 
-    logger.info({
-      taskCount,
-      taskRewriteCount: results.length,
-      elapsedMs: elapsed
-    }, 'rewrite done');
+    ObservabilityService.endSpan(env, traceId, spanId, 'rewrite', state, state, elapsed);
 
     /* --------------------------------------------------------------- */
     /*  5. Return updated state                                        */
     /* --------------------------------------------------------------- */
     return {
       ...state,
-      taskEntities: updatedTaskEntities,
+      taskEntities: tasks,
       reasoning: [...(state.reasoning || []), ...reasons],
       metadata: {
         ...state.metadata,
@@ -210,11 +136,11 @@ export const rewrite = async (
     };
   } catch (error) {
     logger.error({ err: error }, 'Error in rewrite node');
-    
+
     // Handle error case
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     const elapsed = performance.now() - t0;
-    
+
     // Add error to metadata before ending span
     const stateWithError = {
       ...state,
@@ -230,9 +156,9 @@ export const rewrite = async (
         ],
       },
     };
-    
+
     ObservabilityService.endSpan(env, traceId, spanId, 'rewrite', state, stateWithError, elapsed);
-    
+
     return {
       ...state,
       reasoning: [...(state.reasoning || []), `Error rewriting tasks: ${errorMsg}`],
@@ -257,3 +183,47 @@ export const rewrite = async (
     };
   }
 };
+
+
+/**
+ * Build the prompt for rewriting a single task.
+ *
+ * @param originalQuery  The raw user text
+ * @param chatHistory    Full history [{user, assistant}, …] (can be undefined)
+ */
+export function buildCondensePrompt(
+  originalQuery: string,
+  chatHistory?: MessagePair[],
+): AIMessage[] {
+  const messages: AIMessage[] = [
+    { role: "system", content: getCondenseTaskPrompt() },
+    { role: "user", content: originalQuery },
+  ];
+
+  /* -------- optionally add context -------- */
+  if (chatHistory && chatHistory.length > 0) {
+    // Take last 3 pairs or until token budget is ~70 % max
+    const ctxPairs: string[] = [];
+    let tokCount = 0;
+    for (let i = chatHistory.length - 1; i >= 0; i--) {
+      const pair = chatHistory[i];
+      const chunk =
+        `User: ${pair.user.content}\nAssistant: ${pair.assistant.content}`;
+      const newTokens = countTokens(chunk);
+      if (tokCount + newTokens > DEFAULT_MODEL.maxContextTokens * 0.6) break;
+
+      ctxPairs.unshift(chunk);   // keep chronological order
+      tokCount += newTokens;
+      if (ctxPairs.length >= 3) break;
+    }
+
+    if (ctxPairs.length) {
+      messages.push({
+        role: "system",
+        content: `Recent conversation context:\n${ctxPairs.join("\n\n")}`,
+      });
+    }
+  }
+
+  return messages;
+}

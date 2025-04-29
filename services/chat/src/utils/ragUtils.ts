@@ -10,23 +10,25 @@ import { DOC_METADATA_TOKENS } from './tokenConstants';
  * @param modelId The model ID to use for tokenization
  * @returns The number of tokens
  */
-export function countTokens(text: string, modelId: string): number {
+export function countTokens(text: string, modelId?: string): number {
   if (!text) return 0;
 
   // Get the appropriate model format for tiktoken
   let tikTokenModel = 'gpt-4'; // Default model for tiktoken
 
-  // Map specific model IDs to tiktoken compatible formats
-  if (modelId.includes('gpt-3.5')) {
-    tikTokenModel = 'gpt-3.5-turbo';
-  } else if (modelId.includes('gpt-4')) {
-    tikTokenModel = 'gpt-4';
-  } else if (modelId.includes('claude')) {
-    // Claude models have similar tokenization to GPT-4
-    tikTokenModel = 'gpt-4';
-  } else if (modelId.includes('llama')) {
-    // LLaMA models have similar tokenization to GPT-3.5
-    tikTokenModel = 'gpt-3.5-turbo';
+  if (modelId) {
+    // Map specific model IDs to tiktoken compatible formats
+    if (modelId.includes('gpt-3.5')) {
+      tikTokenModel = 'gpt-3.5-turbo';
+    } else if (modelId.includes('gpt-4')) {
+      tikTokenModel = 'gpt-4';
+    } else if (modelId.includes('claude')) {
+      // Claude models have similar tokenization to GPT-4
+      tikTokenModel = 'gpt-4';
+    } else if (modelId.includes('llama')) {
+      // LLaMA models have similar tokenization to GPT-3.5
+      tikTokenModel = 'gpt-3.5-turbo';
+    }
   }
 
   // Use the base countTokens function with the appropriate model
@@ -126,13 +128,6 @@ export function reduceRagContext(
 
   const results: Document[] = [];
   let totalTokens = 0;
-  getLogger().info({
-    docs: sortedDocs.map(d => ({
-      title: d.title,
-      relevanceScore: d.metadata.relevanceScore,
-      tokenCount: d.metadata.tokenCount,
-    }))
-  }, 'docs in reduceRagContext')
 
   // Add documents until we hit the token limit
   for (const doc of sortedDocs) {

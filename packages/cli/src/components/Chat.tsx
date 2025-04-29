@@ -57,7 +57,7 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
           if (chunk.type === 'thinking') {
             // For thinking content, show in a separate thinking message
             showThinkingMessage(chunk.content);
-          } else if (chunk.type === 'final') {
+          } else if (chunk.type === 'sources') {
             // Final chunks with sources don't have content property
             // Sources are displayed in the CLI version, we don't need to do anything here
           } else {
@@ -177,9 +177,9 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
       try {
         // Check for verbose mode in environment variables or command line
         const isVerbose = process.env.DOME_VERBOSE === 'true' ||
-                        (typeof process !== 'undefined' && process.argv &&
-                        (process.argv.includes('--verbose') || process.argv.includes('-v')));
-        
+          (typeof process !== 'undefined' && process.argv &&
+            (process.argv.includes('--verbose') || process.argv.includes('-v')));
+
         const response = await chat(content, handleChunk, {
           retryNonStreaming: true,
           debug: isVerbose

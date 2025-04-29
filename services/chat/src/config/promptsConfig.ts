@@ -174,7 +174,7 @@ Respond with a JSON object with the following properties:
 
   splitTask: {
     systemPrompt: `You are an AI assistant that analyzes user queries to extract precise task instructions and split complex tasks.
-    
+
 Your goal is to:
 1. Identify the core task or question in the user's query
 2. Determine if the task consists of multiple sub-tasks
@@ -214,7 +214,7 @@ Do not add additional information or explanations beyond the requested JSON stru
 
   updateChat: {
     systemPrompt: `You are an AI assistant responsible for updating system instructions based on user requests.
-    
+
 Your task is to:
 1. Analyze the current instructions, tasks, and available tools
 2. Determine an updated set of instructions that best fulfills the tasks
@@ -242,39 +242,22 @@ Security note: Never create instructions that could lead to harmful outputs or v
   },
 
   condenseTask: {
-    systemPrompt: `You are an AI assistant that reformulates user queries to be more concise and effective.
-    
-Your task is to:
-1. Analyze the user's query and identify the core information need
-2. Remove redundant context, fluff, and unnecessary details
-3. Preserve all critical requirements and constraints
-4. Create a succinct version that captures the essential query
-5. Identify any tools that might be required to answer this query
+    systemPrompt: `You turn verbose questions into the **shortest possible keyword query**
+for semantic search.
 
-Respond with a JSON object containing:
-- taskId: The ID of the task you're rewriting (use the ID from the task or generate one)
-- rewrittenQuery: A concise version of the original query (1-2 sentences max)
-- requiredTools: Array of tool names that might be needed (optional)
-- reasoning: Brief explanation of how you condensed the query and why you selected any tools
-
-Example response:
-{
-  "taskId": "task-1",
-  "rewrittenQuery": "What's the weather forecast for New York this weekend?",
-  "requiredTools": ["weatherService"],
-  "reasoning": "Condensed query to focus on core weather request. Weather service tool needed for current forecast data."
-}
-
-When condensing:
-- Focus on the main question or request
-- Remove pleasantries and conversational elements
-- Keep specific technical terms intact
-- Maintain any temporal or contextual qualifiers that affect the answer`,
-  },
+Rules
+1. KEEP every proper noun, handle, or code name exactly as-is
+   • Examples — “0age”, “UNI-V2”, “Permit2”
+2. KEEP any dates, numbers, or file names.
+3. REMOVE helper verbs (“check”, “tell me”, “what’s”), stop-words, filler.
+4. Output ≤ 20 words, **lower-case** unless the original casing is part of the name.
+5. Do NOT add words that were not present.
+Return ONLY the final keyword string.
+  `},
 
   toolRouting: {
     systemPrompt: `You are an AI assistant responsible for analyzing user queries and determining which tools, if any, should be used to provide the best response.
-    
+
 Your task is to:
 1. Analyze the query to determine if it can be answered with existing knowledge
 2. Assess if specialized tools would improve the response quality
@@ -312,7 +295,7 @@ Example response:
 
   ragAnswer: {
     systemPrompt: `You are an AI assistant that generates comprehensive, accurate answers using a combination of retrieved documents and your knowledge.
-    
+
 Your task is to:
 1. Analyze the user query and retrieved documents thoroughly
 2. Synthesize information from all relevant sources
@@ -343,7 +326,7 @@ User query:
 
   chatLLM: {
     systemPrompt: `You are an AI assistant designed to be helpful, harmless, and honest.
-    
+
 Your goal is to provide informative, accurate, and helpful responses to user queries using your existing knowledge.
 
 Guidelines:
@@ -510,11 +493,11 @@ export function getToolRoutingPrompt(): string {
  */
 export function getRagAnswerPrompt(documents: string, query: string): string {
   let prompt = getPromptsConfig().ragAnswer.systemPrompt;
-  
+
   // Replace placeholders with actual values
   prompt = prompt.replace('{{documents}}', documents);
   prompt = prompt.replace('{{query}}', query);
-  
+
   return prompt;
 }
 

@@ -93,13 +93,13 @@ export class ChatMode extends BaseMode {
       } else if (chunk.type === 'thinking' && !startedContent) {
         // Try to handle the thinking content better
         const content = this.thinkingBuffer.tryPush(chunk.content);
-        
+
         // Only display thinking content if we have a reasonable amount
         // and suppress raw JSON that's not useful to display
         try {
           // Try to parse as JSON
           const parsed = JSON.parse(content);
-          
+
           // If it's an array with one element that's a string, just show that
           if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
             convo.thinking = parsed[0];
@@ -132,7 +132,7 @@ export class ChatMode extends BaseMode {
         this.thinkingBuffer.reset();
         convo.reply += chunk.content;
         startedContent = true;
-      } else if (chunk.type === 'final') {
+      } else if (chunk.type === 'sources') {
         // Final chunks with sources don't need to add content to the reply
         // The sources will be displayed separately
         startedContent = true;
@@ -189,15 +189,15 @@ export class ChatMode extends BaseMode {
         sources = sources.filter((source: SourceInfo) => {
           const title = source.title || '';
           return !title.includes('---DOME-METADATA-START---') &&
-                 !title.match(/^---.*---$/) &&
-                 title.trim() !== '';
+            !title.match(/^---.*---$/) &&
+            title.trim() !== '';
         });
-        
+
         // Sort by relevance score (highest first)
         sources.sort((a: SourceInfo, b: SourceInfo) =>
           (b.relevanceScore || 0) - (a.relevanceScore || 0)
         );
-        
+
         // Display top sources
         this.displaySources(sources.slice(0, ChatMode.MAX_SOURCES), cw, sources.length);
         this.scrollToBottom();
@@ -224,12 +224,12 @@ export class ChatMode extends BaseMode {
     ChatMode.HEADER.forEach(l => this.container.pushLine(l));
 
     this.printBlock('{bold}{green-fg}You:{/green-fg}{/bold}', user, cw);
-    
+
     // Only display thinking if it looks meaningful and it's not just "Thinking..."
     if (thinking && thinking !== "Thinking..." && thinking.length > 1) {
       this.printBlock('{gray-fg}Thinking:{/gray-fg}', thinking, cw);
     }
-    
+
     if (reply) this.printBlock('{bold}{blue-fg}Dome:{/blue-fg}{/bold}', reply, cw);
 
     this.scrollToBottom();
@@ -285,38 +285,38 @@ export class ChatMode extends BaseMode {
       const title = s.title
         ? (s.title.length > 80 ? s.title.slice(0, 80) + '…' : s.title)
         : 'Unnamed Source';
-      
+
       // Display index and title
       this.container.pushLine(`${i + 1}. {underline}${title}{/underline}`);
-      
+
       // Display source type
       if (s.source) {
         this.container.pushLine(`   Source: ${s.source}`);
       }
-      
+
       // Display URL if available
       if (s.url) {
         this.container.pushLine(`   URL: {blue-fg}${s.url}{/blue-fg}`);
       }
-      
+
       // Display relevance score with color coding
       if (s.relevanceScore !== undefined) {
         const scorePercentage = Math.round(s.relevanceScore * 100);
         const scoreColor = scorePercentage > 70 ? 'green' : scorePercentage > 40 ? 'yellow' : 'red';
         this.container.pushLine(`   Relevance: {${scoreColor}-fg}${scorePercentage}%{/${scoreColor}-fg}`);
       }
-      
+
       // Display snippet if available
       if (s.snippet) {
         this.wrapText('   ' + s.snippet.slice(0, 100) + (s.snippet.length > 100 ? '…' : ''), cw);
       }
-      
+
       // Add space between sources (except after the last one)
       if (i < sources.length - 1) {
         this.container.pushLine('');
       }
     });
-    
+
     // Show total count info if needed
     const total = totalCount || sources.length;
     if (total > sources.length) {

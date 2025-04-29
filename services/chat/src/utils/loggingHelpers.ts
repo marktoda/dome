@@ -43,8 +43,7 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
 
   // Summarize task entities
   if (state.taskEntities && Object.keys(state.taskEntities).length > 0) {
-    const taskKeys = Object.keys(state.taskEntities);
-    summary.taskEntities = `[${taskKeys.length} tasks: ${taskKeys.slice(0, 3).join(', ')}${taskKeys.length > 3 ? '...' : ''}]`;
+    summary.taskEntities = state.taskEntities;
   }
 
   // If there are task docs in the task entities, summarize those too

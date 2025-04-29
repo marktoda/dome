@@ -22,7 +22,7 @@ export const runTool = async (
   // Get task information
   const taskIds = state.taskIds || [];
   const taskEntities = state.taskEntities || {};
-  
+
   // Find the task with a tool to run
   let taskToRunTool: string | null = null;
   for (const taskId of taskIds) {
@@ -32,7 +32,7 @@ export const runTool = async (
       break;
     }
   }
-  
+
   if (!taskToRunTool) {
     logger.warn({ traceId, spanId }, 'No task with tool specified but reached run_tool node');
 
@@ -44,7 +44,7 @@ export const runTool = async (
 
     return state;
   }
-  
+
   // Get the task and tool information
   const task = taskEntities[taskToRunTool];
   const toolName = task.toolToRun!;
@@ -104,7 +104,7 @@ export const runTool = async (
 
     // Convert tool output to properly formatted Document objects
     const toolDocuments = await convertToolOutputToDocuments(toolName, toolOutput, query);
-    
+
     // Score the tool documents for relevance
     const scoredDocuments = await scoreToolDocuments(toolDocuments, query);
 
@@ -432,7 +432,7 @@ async function convertToolOutputToDocuments(
   query: string
 ): Promise<Document[]> {
   const logger = getLogger().child({ function: 'convertToolOutputToDocuments' });
-  
+
   try {
     // Handle different output types based on the tool
     if (typeof toolOutput === 'string') {
@@ -471,7 +471,7 @@ async function convertToolOutputToDocuments(
       // Object output - create one document with JSON representation
       // Or split into multiple documents if it has sensible properties
       const documents: Document[] = [];
-      
+
       // Handle objects with specific structures based on tool type
       if (toolOutput.content || toolOutput.data) {
         // Common API response pattern
@@ -507,10 +507,10 @@ async function convertToolOutputToDocuments(
           },
         });
       }
-      
+
       return documents;
     }
-    
+
     // Default case - create a simple document with stringified output
     return [{
       id: `tool-${toolName}-${Date.now()}`,
@@ -534,7 +534,7 @@ async function convertToolOutputToDocuments(
       },
       'Error converting tool output to documents',
     );
-    
+
     // Return a document with error information so the conversation can continue
     return [{
       id: `tool-${toolName}-error-${Date.now()}`,
@@ -557,32 +557,33 @@ async function convertToolOutputToDocuments(
  * Score tool documents for relevance to the query
  */
 async function scoreToolDocuments(documents: Document[], query: string): Promise<Document[]> {
+  // TODO: use real embedding based scoring
   // Calculate relevance based on query terms appearing in the document
   const queryTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 3);
-  
+
   return documents.map(doc => {
     // Start with the base relevance score already in the document
     let baseScore = doc.metadata.relevanceScore || 0.8;
-    
+
     // If we have query terms, adjust the score based on term matches
     if (queryTerms.length > 0) {
       const content = doc.body.toLowerCase();
       let termMatches = 0;
-      
+
       for (const term of queryTerms) {
         if (content.includes(term)) {
           termMatches++;
         }
       }
-      
+
       // Calculate match percentage and use it to adjust the score
       const matchPercentage = termMatches / queryTerms.length;
       const queryBoost = matchPercentage * 0.2; // Max 0.2 boost based on query match
-      
+
       // Combine base score with query boost, keeping within 0-1 range
       baseScore = Math.min(baseScore + queryBoost, 1);
     }
-    
+
     // Return document with updated relevance score
     return {
       ...doc,

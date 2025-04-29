@@ -6,6 +6,7 @@ export { toolRouter, routeAfterTool } from './toolRouter';
 export { runTool } from './runTool';
 
 // Answer generation nodes
+export { docToSources } from './docToSources'; // Mapping docs to sources for streaming
 export { generateAnswer } from './generateAnswer'; // RAG answer generation
 export { generateChatLLM } from './generateChatLLM'; // Simple chat generation
 

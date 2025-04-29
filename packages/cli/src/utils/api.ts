@@ -77,7 +77,7 @@ export const search = async (query: string, limit = 10) => {
 
 // ---------- Streaming / WebSocket chat -----------------------------------------
 export type ChatMessageChunk = { type: 'content' | 'thinking' | 'unknown'; content: string } | {
-  type: 'final'; node: {
+  type: 'sources'; node: {
     sources: {
       id: string;
       title: string;
@@ -95,10 +95,10 @@ const detectors: ChunkDetector[] = [
   (raw, p) => {
     if (Array.isArray(p) && p[0] === 'updates') {
       const nodeId: string = Object.keys(p[1])[0];
-      if (nodeId !== "generate_rag") return null;
+      if (nodeId !== "doc_to_sources") return null;
       const node = p[1][nodeId];
 
-      return { type: 'final', node };
+      return { type: 'sources', node };
     }
     return null;
   },

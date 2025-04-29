@@ -215,14 +215,6 @@ export const retrieve = async (state: AgentState, env: Env): Promise<AgentState>
   const updatedState = {
     ...state,
     docs: allRetrievedDocs,
-    sources: allRetrievedDocs.map(doc => ({
-      id: doc.id,
-      title: doc.title,
-      source: doc.metadata.source,
-      url: doc.metadata.url,
-      relevanceScore: doc.metadata.relevanceScore,
-
-    })),
   };
 
   // Update widening status for each task

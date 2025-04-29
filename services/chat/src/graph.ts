@@ -55,11 +55,11 @@ export async function buildChatGraph(
     .addNode("dynamic_retrieve", fn.dynamicWiden)
     .addNode("tool_routing", fn.toolRouter)
     .addNode("run_tool", fn.runTool)
+    .addNode("doc_to_sources", fn.docToSources)       // Map docs to sources for streaming
     .addNode("generate_rag", fn.generateAnswer)       // RAG-enabled streaming answer
 
     /* Graph connections */
     .addEdge(START, "routing_split")
-    .addEdge("edit_system_prompt", "filter_history")
 
     // Conditional routing after initial split
     .addConditionalEdges(
@@ -71,6 +71,7 @@ export async function buildChatGraph(
       }
     )
 
+    .addEdge("edit_system_prompt", "filter_history")
     .addEdge("filter_history", "rewrite")
     .addEdge("rewrite", "retrieve")
 
@@ -92,11 +93,12 @@ export async function buildChatGraph(
       fn.routeAfterTool,
       {
         run_tool: "run_tool",
-        answer: "generate_rag",
+        answer: "doc_to_sources",
       }
     )
 
-    .addEdge("run_tool", "generate_rag")
+    .addEdge("run_tool", "doc_to_sources")
+    .addEdge("doc_to_sources", "generate_rag")
     .addEdge("generate_rag", END);
 
   // Compile the graph with checkpointing
@@ -167,6 +169,14 @@ function createNodeWrappers(env: Env, tools: SecureToolExecutor) {
       log.info({ preState: createStateSummary(state) }, "→ [START] runTool");
       const res = await nodes.runTool(state, env, tools);
       log.info({ postState: createStateSummary(res) }, "→ [END] runTool");
+      return res;
+    },
+
+    /* Document to Sources mapping node */
+    docToSources: async (state: AgentState) => {
+      log.info({ preState: createStateSummary(state) }, "→ [START] docToSources");
+      const res = await nodes.docToSources(state);
+      log.info({ postState: createStateSummary(res) }, "→ [END] docToSources");
       return res;
     },
 
