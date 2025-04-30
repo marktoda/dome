@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AgentState, AIMessage, MessagePair } from '../types';
 import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
-import { countTokens } from '../utils';
+import { countTokens, buildMessages } from '../utils';
 import { ObservabilityService } from '../services/observabilityService';
 import { getCondenseTaskPrompt } from '../config/promptsConfig';
 import { DEFAULT_MODEL } from '../config/modelConfig';
@@ -82,7 +82,7 @@ export const rewrite = async (
       }
 
       // Create messages for the LLM call
-      const messages = buildCondensePrompt(originalQuery, state.chatHistory);
+      const messages = buildMessages(getCondenseTaskPrompt(), state.chatHistory, originalQuery);
 
       // Call LLM with structured output schema
       try {
@@ -185,45 +185,3 @@ export const rewrite = async (
 };
 
 
-/**
- * Build the prompt for rewriting a single task.
- *
- * @param originalQuery  The raw user text
- * @param chatHistory    Full history [{user, assistant}, …] (can be undefined)
- */
-export function buildCondensePrompt(
-  originalQuery: string,
-  chatHistory?: MessagePair[],
-): AIMessage[] {
-  const messages: AIMessage[] = [
-    { role: "system", content: getCondenseTaskPrompt() },
-    { role: "user", content: originalQuery },
-  ];
-
-  /* -------- optionally add context -------- */
-  if (chatHistory && chatHistory.length > 0) {
-    // Take last 3 pairs or until token budget is ~70 % max
-    const ctxPairs: string[] = [];
-    let tokCount = 0;
-    for (let i = chatHistory.length - 1; i >= 0; i--) {
-      const pair = chatHistory[i];
-      const chunk =
-        `User: ${pair.user.content}\nAssistant: ${pair.assistant.content}`;
-      const newTokens = countTokens(chunk);
-      if (tokCount + newTokens > DEFAULT_MODEL.maxContextTokens * 0.6) break;
-
-      ctxPairs.unshift(chunk);   // keep chronological order
-      tokCount += newTokens;
-      if (ctxPairs.length >= 3) break;
-    }
-
-    if (ctxPairs.length) {
-      messages.push({
-        role: "system",
-        content: `Recent conversation context:\n${ctxPairs.join("\n\n")}`,
-      });
-    }
-  }
-
-  return messages;
-}

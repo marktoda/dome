@@ -16,7 +16,7 @@ import { IterableReadableStream } from "@langchain/core/utils/stream";
 import { getLogger } from "@dome/logging";
 
 import { SecureD1Checkpointer } from "./checkpointer/secureD1Checkpointer";
-import { SecureToolExecutor } from "./tools/secureToolExecutor";
+import { ToolRegistry } from "./tools";
 import * as nodes from "./nodes";
 import { AgentState, GraphStateAnnotation } from "./types";
 import { createStateSummary } from "./utils/loggingHelpers";
@@ -32,14 +32,13 @@ export interface IChatGraph {
 export async function buildChatGraph(
   env: Env,
   cp?: BaseCheckpointSaver,
-  te?: SecureToolExecutor,
 ): Promise<IChatGraph> {
   const log = getLogger().child({ component: "graphBuilder" });
   log.info("⧉ building RAG Chat V2 graph");
 
   // Initialize the checkpointer and tools
   const checkpointer = cp ?? await new SecureD1Checkpointer(env.CHAT_DB, env).initialize().then(r => r ?? cp!);
-  const tools = te ?? new SecureToolExecutor();
+  const tools = ToolRegistry.fromDefault();
 
   // Get the wrapped node functions with proper environment
   const fn = createNodeWrappers(env, tools);
@@ -81,7 +80,8 @@ export async function buildChatGraph(
       fn.routeAfterRetrieve,
       {
         widen: "dynamic_retrieve",
-        answer: "tool_routing",
+        tool: "tool_routing",
+        answer: "generate_rag",
       }
     )
 
@@ -112,7 +112,7 @@ export async function buildChatGraph(
 /* ------------------------------------------------------------------ */
 /*  Node Wrappers                                                     */
 /* ------------------------------------------------------------------ */
-function createNodeWrappers(env: Env, tools: SecureToolExecutor) {
+function createNodeWrappers(env: Env, tools: ToolRegistry) {
   const log = getLogger().child({ component: "nodeWrappers" });
 
   return {
@@ -161,7 +161,7 @@ function createNodeWrappers(env: Env, tools: SecureToolExecutor) {
     /* Tool handling nodes */
     toolRouter: async (state: AgentState) => {
       log.info({ preState: createStateSummary(state) }, "→ [START] toolRouter");
-      const res = await nodes.toolRouter(state, env);
+      const res = await nodes.toolRouter(state, env, tools);
       log.info({ postState: createStateSummary(res) }, "→ [END] toolRouter");
       return res;
     },

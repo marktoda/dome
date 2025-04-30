@@ -5,7 +5,6 @@ import { ObservabilityService } from './observabilityService';
 import { ModelFactory } from './modelFactory';
 import { SecureD1Checkpointer } from '../checkpointer/secureD1Checkpointer';
 import { DataRetentionManager } from '../utils/dataRetentionManager';
-import { initializeToolRegistry } from '../tools/secureToolExecutor';
 
 /**
  * Service container interface
@@ -17,7 +16,6 @@ export interface Services {
   modelFactory: typeof ModelFactory;
   checkpointer: SecureD1Checkpointer;
   dataRetention: DataRetentionManager;
-  toolRegistry: any; // Using any for now, will be properly typed later
 }
 
 /**
@@ -40,14 +38,11 @@ export function createServices(env: Env): Services {
   // Create data retention manager
   const dataRetention = new DataRetentionManager(env.CHAT_DB, checkpointer);
 
-  // Initialize tool registry
-  const toolRegistry = initializeToolRegistry();
-
   // Initialize LLM service with environment configuration
   // This configures the default model and other LLM-related settings
   LlmService.initialize(env);
   const llm = LlmService;
-  
+
   // Create search service
   const search = SearchService.fromEnv(env);
 
@@ -75,6 +70,5 @@ export function createServices(env: Env): Services {
     modelFactory: ModelFactory, // Static class, we export the class itself
     checkpointer,
     dataRetention,
-    toolRegistry,
   };
 }

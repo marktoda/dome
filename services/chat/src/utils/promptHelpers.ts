@@ -1,4 +1,6 @@
 import { Document } from '../types';
+import { AIMessage, MessagePair } from "../types";
+import { DEFAULT_MODEL } from "../config/modelConfig";
 import { getLogger } from '@dome/logging';
 import {
   DEFAULT_MAX_TOTAL_DOC_TOKENS,
@@ -128,4 +130,56 @@ export function truncateDocumentToMaxTokens(doc: Document, maxTokens: number): D
     ...doc,
     body: truncatedBody,
   };
+}
+
+/**
+ * Build a message array for the LLM, preserving role tags on recent turns.
+ *
+ * @param systemPrompt  Final system-role text (no placeholders left).
+ * @param history       Full chat history as [{ user, assistant }, …] (old→new).
+ * @param userPrompt    The new user utterance for this turn.
+ * @param opts.maxPairs Max history pairs to include (tail first).  Default = 3.
+ * @param opts.budget   Hard token budget.  Default = model max context.
+ */
+export function buildMessages(
+  systemPrompt: string,
+  history: MessagePair[] | undefined,
+  userPrompt: string,
+  opts: { maxPairs?: number; budget?: number } = {},
+): AIMessage[] {
+  const maxPairs = opts.maxPairs ?? 3;
+  const budget = opts.budget ?? DEFAULT_MODEL.maxContextTokens;
+
+  /* ── 1 · Always include system + new user message ────────────────── */
+  const messages: AIMessage[] = [
+    { role: "system", content: systemPrompt },
+  ];
+
+  let used = approximateTokenCount(systemPrompt) + approximateTokenCount(userPrompt);
+
+  /* ── 2 · Add history pairs (tail-first, token-aware) ─────────────── */
+  const pairs: AIMessage[] = [];
+  if (history?.length) {
+    for (let i = history.length - 1; i >= 0 && pairs.length / 2 < maxPairs; i--) {
+      const pair = history[i];
+
+      const userMsg = { role: "user" as const, content: pair.user.content };
+      const assistantMsg = { role: "assistant" as const, content: pair.assistant.content };
+
+      const pairTokens =
+        approximateTokenCount(userMsg.content) + approximateTokenCount(assistantMsg.content);
+
+      if (used + pairTokens > budget) break;
+
+      pairs.unshift(assistantMsg);   // keep chronological order
+      pairs.unshift(userMsg);
+      used += pairTokens;
+    }
+  }
+
+  /* ── 3 · Assemble in chronological order + current user turn ─────── */
+  messages.push(...pairs);
+  messages.push({ role: "user", content: userPrompt });
+
+  return messages;
 }

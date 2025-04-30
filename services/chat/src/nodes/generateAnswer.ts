@@ -2,12 +2,12 @@ import { getLogger, logError } from '@dome/logging';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { AgentState, ToolResult, Document } from '../types';
 import { countTokens } from '../utils/tokenCounter';
-import { formatDocsForPrompt } from '../utils/promptFormatter';
+import { formatDocsForPrompt } from '../utils/promptHelpers';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { getModelConfig, calculateTokenLimits } from '../config/modelConfig';
-import { reduceRagContext } from '../utils/ragUtils';
+import { buildMessages, reduceRagContext } from '../utils';
 import { transformToSSE } from '../utils/sseTransformer';
 import { getRagAnswerPrompt } from '../config/promptsConfig';
 
@@ -76,10 +76,12 @@ export async function generateAnswer(
   );
 
   // Prepare chat messages with system prompt
-  const chatMessages = [
-    { role: "system", content: systemPrompt },
-    ...state.messages,
-  ];
+  // const chatMessages = [
+  //   { role: "system", content: systemPrompt },
+  //   ...state.messages,
+  // ];
+  getLogger().info({ messages: state.messages, content: state.messages[0].content }, "building messages in generateRag");
+  const chatMessages = buildMessages(systemPrompt, state.chatHistory, state.messages[0].content);
 
   // Log context statistics for observability
   logEvt("context_stats", {

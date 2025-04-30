@@ -75,8 +75,8 @@ export interface UserTaskEntity {
   needsWidening?: boolean;
   wideningAttempts?: number;
   toolToRun?: string | null;
-  queryAnalysis?: QueryAnalysis;
   toolParameters?: Record<string, unknown>;
+  queryAnalysis?: QueryAnalysis;
   toolError?: string;
   wideningStrategy?: string;
   toolSelectionReason?: string;
@@ -87,10 +87,6 @@ export interface UserTaskEntity {
   completedAt?: number;
   docs?: Document[];
   completable?: boolean;
-  // Additional fields for compatibility with existing code
-  tool?: string;
-  toolResult?: { output: any };
-  reasonForWidening?: string;
 }
 
 /**

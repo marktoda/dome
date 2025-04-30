@@ -1,31 +1,22 @@
-import { getLogger } from '@dome/logging';
-import { AgentState, Document } from '../types';
-import { ToolRegistry } from '../tools/registry';
-import { LlmService } from '../services/llmService';
-import { ObservabilityService } from '../services/observabilityService';
-import { getToolRoutingPrompt } from '../config/promptsConfig';
+// src/nodes/toolRouter.ts
+import { z, ZodObject, ZodTypeAny } from "zod";
+import { getLogger } from "@dome/logging";
+import { ObservabilityService } from "../services/observabilityService";
+import { LlmService } from "../services/llmService";
+import { buildMessages } from '../utils';
+import { getToolRoutingPrompt } from "../config/promptsConfig";
+import { ToolRegistry } from "../tools";
+import { AgentState, UserTaskEntity, Document, AIMessage, MessagePair } from "../types";
 
+type Message = { role: "system" | "user" | "assistant"; content: string };
 
-// Define the Message type to match the expected format
-type Message = {
-  role: 'user' | 'system' | 'assistant';
-  content: string;
-  timestamp?: number;
-};
-
-/**
- * Interface for tool selection result
- */
-interface ToolSelectionResult {
+export interface ToolSelectionResult {
   toolName: string;
   confidence: number;
   reason: string;
 }
 
-/**
- * Interface for task analysis result from LLM
- */
-interface TaskAnalysisResult {
+export interface TaskAnalysisResult {
   needsTool: boolean;
   recommendedTools: string[];
   completable: boolean;
@@ -33,620 +24,147 @@ interface TaskAnalysisResult {
   confidence: number;
 }
 
-/**
- * Route to appropriate tool based on query intent
- */
-export const toolRouter = async (state: AgentState, env: Env): Promise<AgentState> => {
-  const logger = getLogger().child({ node: 'toolRouter' });
-  const startTime = performance.now();
+/* ------------------------------------------------------------------ *
+ * helpers                                                            *
+ * ------------------------------------------------------------------ */
 
-  // Get trace and span IDs for observability
-  const traceId = state.metadata?.traceId || '';
-  const spanId = ObservabilityService.startSpan(env, traceId, 'toolRouter', state);
+/* ------------------------------------------------------------------ *
+ * core node                                                          *
+ * ------------------------------------------------------------------ */
 
-  // Get task information
-  const taskIds = state.taskIds || [];
-  const taskEntities = state.taskEntities || {};
-  
-  // Check if we have any tasks that need tools
-  const tasksWithTools = taskIds.filter(taskId => {
-    const task = taskEntities[taskId];
-    return task && Array.isArray(task.requiredTools) && task.requiredTools.length > 0;
-  });
-  
-  if (tasksWithTools.length === 0) {
-    logger.warn({ traceId, spanId }, 'No tasks with tools specified but reached tool router');
+export async function toolRouter(
+  state: AgentState,
+  env: Env,
+  tools: ToolRegistry,
+): Promise<Partial<AgentState>> {
+  const log = getLogger().child({ node: "toolRouter" });
+  const t0 = performance.now();
+  const traceId = state.metadata?.traceId ?? "";
+  const spanId = ObservabilityService.startSpan(env, traceId, "toolRouter", state);
 
-    // End the span
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-    
-    // Return state unchanged
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'toolRouter',
-      state,
-      state,
-      executionTime,
-    );
+  const taskIds = state.taskIds ?? [];
+  const firstTaskId = taskIds.find(
+    (id) => state.taskEntities?.[id]?.requiredTools?.length,
+  );
 
+  // ───────────────────────────────────────────────────────────────────
+  // Nothing to route – short-circuit.
+  // ───────────────────────────────────────────────────────────────────
+  if (!firstTaskId) {
+    const time = performance.now() - t0;
+    ObservabilityService.endSpan(env, traceId, spanId, "toolRouter", state, state, time);
     return {
       ...state,
       metadata: {
         ...state.metadata,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          toolRouter: executionTime,
-        },
+        nodeTimings: { ...state.metadata?.nodeTimings, toolRouter: time },
       },
     };
   }
 
-  // Process the first task with tools (could be enhanced to handle multiple in the future)
-  const taskId = tasksWithTools[0];
-  const task = taskEntities[taskId];
-  const requiredTools = task.requiredTools || [];
+  // ───────────────────────────────────────────────────────────────────
+  // Prepare context
+  // ───────────────────────────────────────────────────────────────────
+  const task = state.taskEntities![firstTaskId];
+  const query = task.originalQuery ?? "";
+  const availableTools = task.requiredTools!;
+  log.info({ firstTaskId, availableTools, query }, "routing task");
 
-  try {
-    // Get the query for tool selection
-    const query = task.originalQuery || '';
+  // ───────────────────────────────────────────────────────────────────
+  // 1) choose a tool
+  // ───────────────────────────────────────────────────────────────────
+  const taskTool = await routeTask(
+    env,
+    task,
+    tools.subset(availableTools),
+    state.chatHistory,
+  );
+  if (!taskTool) return {};
+  const { toolName, args } = taskTool;
 
-    // Select the most appropriate tool based on query intent
-    const toolSelection = await selectBestTool(env, query, requiredTools, traceId, spanId);
 
-    logger.info(
-      {
-        taskId,
-        toolToRun: toolSelection.toolName,
-        confidence: toolSelection.confidence,
-        reason: toolSelection.reason,
-        allTools: requiredTools,
-        query,
-        traceId,
-        spanId,
+  // ───────────────────────────────────────────────────────────────────
+  // 3) update state & telemetry
+  // ───────────────────────────────────────────────────────────────────
+  const nextState: AgentState = {
+    ...state,
+    taskEntities: {
+      ...state.taskEntities,
+      [firstTaskId]: {
+        ...task,
+        toolToRun: toolName,
+        toolParameters: args,
       },
-      'Selected tool to run',
-    );
+    },
+  };
 
-    // Extract parameters for the selected tool
-    const toolParameters = await extractToolParameters(
-      env,
-      query,
-      toolSelection.toolName,
-      traceId,
-      spanId,
-    );
+  const time = performance.now() - t0;
+  ObservabilityService.endSpan(env, traceId, spanId, "toolRouter", state, nextState, time);
 
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // Create updated state with tool information
-    const updatedState = {
-      ...state,
-      taskEntities: {
-        ...(state.taskEntities || {}),
-        [taskId]: {
-          ...(state.taskEntities?.[taskId] || { id: taskId }), // Ensure id is always present
-          toolToRun: toolSelection.toolName,
-          toolParameters,
-          toolSelectionReason: toolSelection.reason,
-          toolSelectionConfidence: toolSelection.confidence,
-        },
+  return {
+    taskEntities: {
+      ...state.taskEntities,
+      [firstTaskId]: {
+        ...task,
+        toolToRun: toolName,
+        toolParameters: args,
       },
-    };
-
-    // End the span
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'toolRouter',
-      state,
-      updatedState,
-      executionTime,
-    );
-
-    // Log the tool selection event
-    ObservabilityService.logEvent(env, traceId, spanId, 'tool_selected', {
-      taskId,
-      toolName: toolSelection.toolName,
-      confidence: toolSelection.confidence,
-      reason: toolSelection.reason,
-      parameters: toolParameters,
-      executionTimeMs: executionTime,
-    });
-
-    return {
-      ...updatedState,
-      metadata: {
-        ...updatedState.metadata,
-        nodeTimings: {
-          ...updatedState.metadata?.nodeTimings,
-          toolRouter: executionTime,
-        },
-      },
-    };
-  } catch (error) {
-    // Log the error
-    logger.error(
-      {
-        err: error,
-        taskId,
-        requiredTools,
-        traceId,
-        spanId,
-      },
-      'Error selecting tool',
-    );
-
-    // Update state with timing information
-    const endTime = performance.now();
-    const executionTime = endTime - startTime;
-
-    // Fall back to the first tool in the list if available
-    const fallbackTool = requiredTools.length > 0 ? requiredTools[0] : null;
-
-    // Create updated state with error information
-    const updatedState = {
-      ...state,
-      taskEntities: {
-        ...(state.taskEntities || {}),
-        [taskId]: {
-          ...(state.taskEntities?.[taskId] || { id: taskId }), // Ensure id is always present
-          toolToRun: fallbackTool,
-          toolError: error instanceof Error ? error.message : String(error),
-        },
-      },
-    };
-
-    // End the span with error
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'toolRouter',
-      state,
-      updatedState,
-      executionTime,
-    );
-
-    // Log the error event
-    ObservabilityService.logEvent(env, traceId, spanId, 'tool_selection_error', {
-      taskId,
-      error: error instanceof Error ? error.message : String(error),
-      requiredTools,
-      executionTimeMs: executionTime,
-    });
-
-    return {
-      ...updatedState,
-      metadata: {
-        ...updatedState.metadata,
-        nodeTimings: {
-          ...updatedState.metadata?.nodeTimings,
-          toolRouter: executionTime,
-        },
-        errors: [
-          ...(state.metadata?.errors || []),
-          {
-            node: 'toolRouter',
-            message: error instanceof Error ? error.message : String(error),
-            timestamp: Date.now(),
-          },
-        ],
-      },
-    };
-  }
-};
-
-/**
- * Determine next step after tool routing
- */
-export const routeAfterTool = async (state: AgentState): Promise<'run_tool' | 'answer'> => {
-  const logger = getLogger().child({ node: 'routeAfterTool' });
-  
-  // Get task information
-  const taskIds = state.taskIds || [];
-  const taskEntities = state.taskEntities || {};
-  
-  // Check if any task has a tool to run
-  for (const taskId of taskIds) {
-    const task = taskEntities[taskId];
-    if (!task) continue;
-    
-    const toolToRun = task.toolToRun;
-    
-    // If a tool is selected, route to run_tool
-    if (toolToRun) {
-      logger.info({
-        taskId,
-        toolToRun,
-        previousToolCount: task.toolResults?.length || 0,
-      }, 'Routing to run_tool');
-      return 'run_tool';
-    }
-  }
-  
-  // Otherwise, route to answer generation
-  logger.info({
-    taskCount: taskIds.length,
-  }, 'Routing directly to answer generation');
-  return 'answer';
-};
-
-/**
- * Select the best tool based on query intent
- * @param env Environment bindings
- * @param query User query
- * @param availableTools List of available tools
- * @param traceId Trace ID for observability
- * @param spanId Span ID for observability
- * @returns Selected tool name and confidence score
- */
-/**
- * Analyze the task to determine if tools are needed and which ones would be most appropriate
- */
-async function analyzeTaskForTools(
-  env: Env,
-  query: string,
-  retrievedDocs: Document[],
-  availableTools: string[],
-  traceId: string,
-  spanId: string
-): Promise<TaskAnalysisResult> {
-  const logger = getLogger().child({ function: 'analyzeTaskForTools' });
-
-  // If no tools are available, return early
-  if (availableTools.length === 0) {
-    return {
-      needsTool: false,
-      recommendedTools: [],
-      completable: true,
-      reasoning: "No tools available for this task.",
-      confidence: 1.0
-    };
-  }
-
-  try {
-    // Get tool descriptions for context
-    const toolDescriptions = availableTools
-      .map(toolName => {
-        const tool = ToolRegistry.getTool(toolName);
-        if (!tool) {
-          return `${toolName}: No description available`;
-        }
-        return `${toolName}: ${tool.description}`;
-      })
-      .join('\n');
-
-    // Create a summary of the retrieved documents for context
-    const docsSummary = retrievedDocs.length > 0
-      ? retrievedDocs.slice(0, 3).map(doc => `- ${doc.title}: ${doc.body.substring(0, 100)}...`).join('\n')
-      : "No documents retrieved.";
-
-    // Create a prompt for the LLM to analyze if tools are needed
-    const systemPrompt = getToolRoutingPrompt()
-      .replace('{toolDescriptions}', toolDescriptions)
-      .replace('{docsSummary}', docsSummary);
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `User query: "${query}"` },
-    ];
-
-    // Call the LLM to analyze the task
-    // @ts-ignore - Ignoring type errors for now to make progress
-    const response = await LlmService.call(env, messages as Message[], {});
-
-    // Parse the response as JSON
-    try {
-      const result = JSON.parse(response);
-
-      // Validate the result
-      if (typeof result.needsTool !== 'boolean') {
-        throw new Error(`Invalid task analysis: missing needsTool property`);
-      }
-
-      // Normalize the recommended tools to ensure they exist
-      const recommendedTools = Array.isArray(result.recommendedTools)
-        ? result.recommendedTools.filter((tool: string) => availableTools.includes(tool))
-        : [];
-
-      // Ensure confidence is a number between 0 and 1
-      const confidence = typeof result.confidence === 'number'
-        ? Math.max(0, Math.min(1, result.confidence))
-        : 0.5;
-
-      return {
-        needsTool: result.needsTool,
-        recommendedTools,
-        completable: result.completable === false ? false : true, // Default to true if not specified
-        reasoning: result.reasoning || 'No reasoning provided',
-        confidence,
-      };
-    } catch (parseError) {
-      logger.error(
-        {
-          err: parseError,
-          response,
-          traceId,
-          spanId,
-        },
-        'Failed to parse task analysis response'
-      );
-
-      // Fall back to a simple heuristic
-      return {
-        needsTool: availableTools.length > 0,
-        recommendedTools: availableTools,
-        completable: true,
-        reasoning: 'Failed to parse LLM response, using fallback analysis',
-        confidence: 0.5,
-      };
-    }
-  } catch (error) {
-    logger.error(
-      {
-        err: error,
-        query,
-        availableTools,
-        traceId,
-        spanId,
-      },
-      'Error analyzing task for tools'
-    );
-
-    // Fall back to a simple heuristic
-    return {
-      needsTool: availableTools.length > 0,
-      recommendedTools: availableTools,
-      completable: true,
-      reasoning: 'Error during task analysis, using fallback',
-      confidence: 0.5,
-    };
-  }
+    },
+    metadata: {
+      ...nextState.metadata,
+      nodeTimings: { ...nextState.metadata?.nodeTimings, toolRouter: time },
+    },
+  };
 }
 
-/**
- * Select the best tool based on query intent and task analysis
- */
-async function selectBestTool(
+/* ------------------------------------------------------------------ *
+ * downstream helpers                                                 *
+ * ------------------------------------------------------------------ */
+
+/** Single-shot selection + arg extraction */
+async function routeTask(
   env: Env,
-  query: string,
-  availableTools: string[],
-  traceId: string,
-  spanId: string,
-): Promise<ToolSelectionResult> {
-  const logger = getLogger().child({ function: 'selectBestTool' });
-
-  // If only one tool is available, return it
-  if (availableTools.length === 1) {
-    return {
-      toolName: availableTools[0],
-      confidence: 1.0,
-      reason: 'Only one tool available',
-    };
+  task: UserTaskEntity,
+  registry: ToolRegistry,
+  chatHistory?: MessagePair[],
+) {
+  if (!task.definition) {
+    getLogger().error("No task definition found for routing");
+    return;
   }
+  const routerSchema = registry.toolUnionSchema();
 
-  try {
-    // Get tool descriptions for context
-    const toolDescriptions = availableTools
-      .map(toolName => {
-        const tool = ToolRegistry.getTool(toolName);
-        if (!tool) {
-          return `${toolName}: No description available`;
-        }
-        return `${toolName}: ${tool.description}`;
+  const systemPrompt = getToolRoutingPrompt().replace('{{tools}}', `
+${registry.list()
+      .map(n => {
+        const t = registry.get(n.name)!;
+        return `### ${n}\n${t.description}\n`;
       })
-      .join('\n');
+      .join("\n")}
 
-    // Create a prompt for the LLM to select the best tool
-    const systemPrompt = `You are an AI assistant that helps select the most appropriate tool based on a user query.
-Given the following tools and a user query, select the best tool to use.
+`);
 
-Available tools:
-${toolDescriptions}
+  const messages = buildMessages(systemPrompt, chatHistory, task.definition);
 
-Analyze the query carefully and select the tool that best matches the user's intent.
-Respond with a JSON object containing:
-- toolName: the name of the selected tool
-- confidence: a number between 0 and 1 indicating your confidence in the selection
-- reason: a brief explanation of why you selected this tool
+  const { toolName, args } = await LlmService.invokeStructured<z.infer<typeof routerSchema>>(env, messages, {
+    schema: routerSchema,
+    schemaInstructions:
+      "Return an object { toolName: <string>, args: <object> }",
+  });
 
-Only respond with the JSON object, no other text.`;
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `User query: "${query}"` },
-    ];
-
-    // Call the LLM to select the best tool
-    // @ts-ignore - Ignoring type errors for now to make progress
-    const response = await LlmService.call(env, messages as Message[], { traceId, spanId });
-
-    // Parse the response as JSON
-    try {
-      const result = JSON.parse(response);
-
-      // Validate the result
-      if (!result.toolName || !availableTools.includes(result.toolName)) {
-        throw new Error(`Invalid tool selection: ${result.toolName}`);
-      }
-
-      // Ensure confidence is a number between 0 and 1
-      const confidence =
-        typeof result.confidence === 'number' ? Math.max(0, Math.min(1, result.confidence)) : 0.5;
-
-      return {
-        toolName: result.toolName,
-        confidence,
-        reason: result.reason || 'No reason provided',
-      };
-    } catch (parseError) {
-      logger.error(
-        {
-          err: parseError,
-          response,
-          traceId,
-          spanId,
-        },
-        'Failed to parse tool selection response',
-      );
-
-      // Fall back to the first tool
-      return {
-        toolName: availableTools[0],
-        confidence: 0.5,
-        reason: 'Failed to parse LLM response, falling back to first tool',
-      };
-    }
-  } catch (error) {
-    logger.error(
-      {
-        err: error,
-        query,
-        availableTools,
-        traceId,
-        spanId,
-      },
-      'Error selecting tool with LLM',
-    );
-
-    // Fall back to the first tool
-    return {
-      toolName: availableTools[0],
-      confidence: 0.5,
-      reason: 'Error during tool selection, falling back to first tool',
-    };
-  }
+  return { toolName, args }; // already zod-validated
 }
 
-/**
- * Extract parameters for a tool from the query
- * @param env Environment bindings
- * @param query User query
- * @param toolName Tool name
- * @param traceId Trace ID for observability
- * @param spanId Span ID for observability
- * @returns Extracted parameters
- */
-async function extractToolParameters(
-  env: Env,
-  query: string,
-  toolName: string,
-  traceId: string,
-  spanId: string,
-): Promise<Record<string, any>> {
-  const logger = getLogger().child({ function: 'extractToolParameters' });
+/* ------------------------------------------------------------------ *
+ * optional: routeAfterTool (unchanged API)                           *
+ * ------------------------------------------------------------------ */
 
-  // Get the tool definition
-  const tool = ToolRegistry.getTool(toolName);
-
-  if (!tool) {
-    logger.warn(
-      {
-        toolName,
-        traceId,
-        spanId,
-      },
-      'Tool not found in registry',
-    );
-    return {};
+export async function routeAfterTool(
+  state: AgentState,
+): Promise<"run_tool" | "answer"> {
+  const taskIds = state.taskIds ?? [];
+  for (const id of taskIds) {
+    if (state.taskEntities?.[id]?.toolToRun) return "run_tool";
   }
-
-  // If the tool has no parameters, return empty object
-  if (tool.parameters.length === 0) {
-    return {};
-  }
-
-  try {
-    // Create a prompt for the LLM to extract parameters
-    const paramDescriptions = tool.parameters
-      .map(
-        param =>
-          `- ${param.name} (${param.type}${param.required ? ', required' : ''}): ${
-            param.description
-          }`,
-      )
-      .join('\n');
-
-    const systemPrompt = `You are an AI assistant that extracts parameters for tools from user queries.
-Given a user query and a tool with its parameters, extract the parameter values from the query.
-
-Tool: ${tool.name}
-Description: ${tool.description}
-Parameters:
-${paramDescriptions}
-
-Extract the parameter values from the user query and respond with a JSON object where the keys are the parameter names and the values are the extracted values.
-If a parameter is not mentioned in the query and is not required, omit it from the response.
-If a required parameter is not mentioned, make a reasonable guess based on the query context.
-Ensure the parameter types match the expected types.
-
-Only respond with the JSON object, no other text.`;
-
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `User query: "${query}"` },
-    ];
-
-    // Call the LLM to extract parameters
-    // @ts-ignore - Ignoring type errors for now to make progress
-    const response = await LlmService.call(env, messages as Message[], { traceId, spanId });
-
-    // Parse the response as JSON
-    try {
-      const parameters = JSON.parse(response);
-
-      // Apply default values for missing parameters
-      tool.parameters.forEach(param => {
-        if (parameters[param.name] === undefined && param.default !== undefined) {
-          parameters[param.name] = param.default;
-        }
-      });
-
-      return parameters;
-    } catch (parseError) {
-      logger.error(
-        {
-          err: parseError,
-          response,
-          toolName,
-          traceId,
-          spanId,
-        },
-        'Failed to parse parameter extraction response',
-      );
-
-      // Return default parameters
-      return tool.parameters.reduce((params, param) => {
-        if (param.default !== undefined) {
-          params[param.name] = param.default;
-        }
-        return params;
-      }, {} as Record<string, any>);
-    }
-  } catch (error) {
-    logger.error(
-      {
-        err: error,
-        query,
-        toolName,
-        traceId,
-        spanId,
-      },
-      'Error extracting parameters with LLM',
-    );
-
-    // Return default parameters
-    return tool.parameters.reduce((params, param) => {
-      if (param.default !== undefined) {
-        params[param.name] = param.default;
-      }
-      return params;
-    }, {} as Record<string, any>);
-  }
+  return "answer";
 }

@@ -2,6 +2,7 @@ import { getLogger } from '@dome/logging';
 import { z } from 'zod';
 import { AgentState, UserTaskEntity, AIMessage } from '../types';
 import { getUserId } from '../utils/stateUtils';
+import { buildMessages } from '../utils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { getSplitTaskPrompt } from '../config/promptsConfig';
@@ -80,10 +81,7 @@ export const routingSplit = async (
     /*  4. Use LLM to extract tasks and instructions                   */
     /* --------------------------------------------------------------- */
     // Add a system message with instructions for the task extraction
-    const messages: AIMessage[] = [
-      { role: 'system', content: getSplitTaskPrompt() },
-      { role: 'user', content: lastUserMsg.content }
-    ];
+    const messages = buildMessages(getSplitTaskPrompt(), state.chatHistory, lastUserMsg.content);
 
     // Call LLM with structured output schema
     const result: SplittedInput = await LlmService.invokeStructured<SplittedInput>(

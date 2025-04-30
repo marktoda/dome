@@ -130,7 +130,7 @@ export class ChatController {
   /* ---------------------------------------------------------------------- */
   private async runGraphStreaming(state: AgentState, runId: string): Promise<ReadableStream<Uint8Array>> {
     await this.services.checkpointer.initialize();
-    const graph = await buildChatGraph(this.env, this.services.checkpointer, this.services.toolRegistry);
+    const graph = await buildChatGraph(this.env, this.services.checkpointer);
 
     const thread_id = crypto.randomUUID();
     this.logger.info({ thread_id, runId }, 'Starting graph stream');
@@ -158,7 +158,7 @@ export class ChatController {
 
   private async runGraphNonStreaming(state: AgentState, runId: string): Promise<Response> {
     await this.services.checkpointer.initialize();
-    const graph = await buildChatGraph(this.env, this.services.checkpointer, this.services.toolRegistry);
+    const graph = await buildChatGraph(this.env, this.services.checkpointer);
 
     const thread_id = crypto.randomUUID();
     this.logger.info({ thread_id, runId }, 'Starting graph invocation');
