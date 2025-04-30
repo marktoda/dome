@@ -8,7 +8,6 @@ import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { getModelConfig, calculateTokenLimits } from '../config/modelConfig';
 import { buildMessages, reduceRagContext } from '../utils';
-import { transformToSSE } from '../utils/sseTransformer';
 import { getRagAnswerPrompt } from '../config/promptsConfig';
 
 /**
@@ -64,7 +63,7 @@ export async function generateAnswer(
   const toolFmt = formatToolResults(allToolResults);
 
   // Build the RAG-enhanced system prompt
-  const systemPrompt = buildRAGSystemPrompt(docsFmt, toolFmt, includeSources);
+  const systemPrompt = getRagAnswerPrompt(docsFmt, toolFmt);
   const sysTokens = countTokens(systemPrompt);
   const userTokens = state.messages.reduce((t, m) => t + countTokens(m.content), 0);
 
@@ -75,11 +74,6 @@ export async function generateAnswer(
     state.options?.maxTokens
   );
 
-  // Prepare chat messages with system prompt
-  // const chatMessages = [
-  //   { role: "system", content: systemPrompt },
-  //   ...state.messages,
-  // ];
   getLogger().info({ messages: state.messages, content: state.messages[0].content }, "building messages in generateRag");
   const chatMessages = buildMessages(systemPrompt, state.chatHistory, state.messages[0].content);
 
@@ -144,19 +138,6 @@ export async function generateAnswer(
 /* ---------------------------------------------------------------------- */
 /*  Helpers                                                               */
 /* ---------------------------------------------------------------------- */
-
-/**
- * Build the RAG-enhanced system prompt with context and tool outputs
- */
-function buildRAGSystemPrompt(docs: string, tools: string, includeSrc: boolean): string {
-  let p = "You are an AI assistant with access to the user's knowledge base.";
-  if (docs) {
-    p += `\n\nContext:\n${docs}`;
-    if (includeSrc) p += "\nUse bracketed numbers like [1] when citing.";
-  }
-  if (tools) p += `\n\nTool outputs:\n${tools}`;
-  return p + "\n\nGive a concise, helpful answer.";
-}
 
 /**
  * Format tool results for inclusion in the prompt

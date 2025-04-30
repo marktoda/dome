@@ -16,7 +16,6 @@ import {
   getTimeoutConfig,
   getQueryRewritingPrompt,
   getQueryComplexityAnalysisPrompt,
-  getResponseGenerationPrompt,
 } from '../config';
 
 // Default model ID to use - will be properly initialized during service startup
@@ -393,94 +392,6 @@ export class LlmService {
       };
     } catch {
       return { isComplex: false, shouldSplit: false, reason: 'parse_error' };
-    }
-  }
-
-  /** Build + stream final answer */
-  static async *streamAnswer(
-    env: Env,
-    conv: AIMessage[],
-    docs: string,
-    opts: {
-      temperature?: number;
-      maxTokens?: number;
-      includeSourceInfo?: boolean;
-      modelId?: string;
-    } = {},
-  ): AsyncGenerator<MessageContent> {
-    const cfg = getModelConfig(opts.modelId ?? this.MODEL);
-    const ctx = truncateContext(docs, cfg);
-    const sysPrompt = getResponseGenerationPrompt(ctx, opts.includeSourceInfo);
-
-    const inTokens = Math.ceil((sysPrompt.length + conv.reduce((n, m) => n + m.content.length, 0)) / 4);
-    const { maxResponseTokens } = calculateTokenLimits(cfg, inTokens, opts.maxTokens);
-
-    const messages: AIMessage[] = [{ role: 'system', content: sysPrompt }, ...conv];
-    for await (const chunk of this.stream(env, messages, {
-      temperature: opts.temperature ?? cfg.defaultTemperature,
-      maxTokens: maxResponseTokens,
-      modelId: opts.modelId ?? this.MODEL,
-    })) {
-      yield chunk;
-    }
-  }
-
-  /**
-   * Stream answer with tool use capability
-   * @param env Environment variables
-   * @param conv Conversation messages
-   * @param tools Array of tools available for the model to use
-   * @param docs Context documents
-   * @param opts Optional parameters
-   * @returns Async generator of message content
-   */
-  static async *streamAnswerWithTools(
-    env: Env,
-    conv: AIMessage[],
-    tools: Tool[],
-    docs: string,
-    opts: {
-      temperature?: number;
-      maxTokens?: number;
-      includeSourceInfo?: boolean;
-      modelId?: string;
-    } = {},
-  ): AsyncGenerator<MessageContent> {
-    const cfg = getModelConfig(opts.modelId ?? this.MODEL);
-    const ctx = truncateContext(docs, cfg);
-    const sysPrompt = getResponseGenerationPrompt(ctx, opts.includeSourceInfo);
-
-    // Add tool usage instructions to system prompt
-    const toolNames = tools.map(t => t.name).join(", ");
-    const enhancedSysPrompt = `${sysPrompt}\n\nYou have access to the following tools: ${toolNames}. Use them when appropriate to provide the most accurate information.`;
-
-    const inTokens = Math.ceil((enhancedSysPrompt.length + conv.reduce((n, m) => n + m.content.length, 0)) / 4);
-    const { maxResponseTokens } = calculateTokenLimits(cfg, inTokens, opts.maxTokens);
-
-    const messages: AIMessage[] = [{ role: 'system', content: enhancedSysPrompt }, ...conv];
-
-    try {
-      // Create a tool-bound model
-      const model = this.createToolBoundLLM(env, tools, {
-        temperature: opts.temperature ?? cfg.defaultTemperature,
-        maxTokens: maxResponseTokens,
-        modelId: opts.modelId ?? this.MODEL,
-      });
-
-      // Convert messages to LangChain format
-      const langChainMessages = this.convertMessages(messages);
-
-      // Stream the response
-      const stream = await model.stream(langChainMessages);
-
-      for await (const chunk of stream) {
-        if (chunk.content) {
-          yield chunk.content;
-        }
-      }
-    } catch (e) {
-      logger.warn({ err: e }, 'LLM tool-enabled stream failed – sending fallback');
-      yield fallbackResponse;
     }
   }
 }

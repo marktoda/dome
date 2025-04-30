@@ -1,170 +1,147 @@
 // src/nodes/toolRouter.ts
-import { z, ZodObject, ZodTypeAny } from "zod";
-import { getLogger } from "@dome/logging";
+import { z } from "zod";
+import { getLogger, logError } from "@dome/logging";
 import { ObservabilityService } from "../services/observabilityService";
 import { LlmService } from "../services/llmService";
-import { buildMessages } from '../utils';
+import { buildMessages } from "../utils";
 import { getToolRoutingPrompt } from "../config/promptsConfig";
 import { ToolRegistry } from "../tools";
-import { AgentState, UserTaskEntity, Document, AIMessage, MessagePair } from "../types";
-
-type Message = { role: "system" | "user" | "assistant"; content: string };
-
-export interface ToolSelectionResult {
-  toolName: string;
-  confidence: number;
-  reason: string;
-}
-
-export interface TaskAnalysisResult {
-  needsTool: boolean;
-  recommendedTools: string[];
-  completable: boolean;
-  reasoning: string;
-  confidence: number;
-}
+import {
+  AgentState,
+  UserTaskEntity,
+  MessagePair,
+  AIMessage,
+} from "../types";
 
 /* ------------------------------------------------------------------ *
- * helpers                                                            *
+ * main node                                                           *
  * ------------------------------------------------------------------ */
-
-/* ------------------------------------------------------------------ *
- * core node                                                          *
- * ------------------------------------------------------------------ */
-
 export async function toolRouter(
   state: AgentState,
   env: Env,
-  tools: ToolRegistry,
+  registry: ToolRegistry,
 ): Promise<Partial<AgentState>> {
   const log = getLogger().child({ node: "toolRouter" });
-  const t0 = performance.now();
+  const started = performance.now();
   const traceId = state.metadata?.traceId ?? "";
   const spanId = ObservabilityService.startSpan(env, traceId, "toolRouter", state);
-
   const taskIds = state.taskIds ?? [];
-  const firstTaskId = taskIds.find(
-    (id) => state.taskEntities?.[id]?.requiredTools?.length,
+
+  /* ── 2 · build once: schema & prompt template ────────────────────── */
+  const routerSchema = registry.toolUnionSchema();
+
+  const promptTemplate = getToolRoutingPrompt().replace(
+    "{{tools}}",
+    registry
+      .list()
+      .map((t) => `### ${t.name}\n${t.description}\n`)
+      .join("\n"),
   );
 
-  // ───────────────────────────────────────────────────────────────────
-  // Nothing to route – short-circuit.
-  // ───────────────────────────────────────────────────────────────────
-  if (!firstTaskId) {
-    const time = performance.now() - t0;
-    ObservabilityService.endSpan(env, traceId, spanId, "toolRouter", state, state, time);
+  /* ── 3 · route every task in parallel ────────────────────────────── */
+  const routePromises = taskIds.map(async (id) => {
+    const task = state.taskEntities![id];
+    try {
+      const { toolName, args } = await routeTask(
+        env,
+        task,
+        routerSchema,
+        promptTemplate,
+        registry,
+        state.chatHistory,
+      );
+      return { id, toolName, args };
+    } catch (err) {
+      logError(err, `tool routing failed for task ${id}`);
+      return null;
+    }
+  });
+
+  const routed = (await Promise.all(routePromises)).filter(Boolean) as {
+    id: string;
+    toolName: string;
+    args: Record<string, unknown>;
+  }[];
+
+  if (routed.length === 0) {
+    const elapsed = performance.now() - started;
+    ObservabilityService.endSpan(env, traceId, spanId, "toolRouter", state, state, elapsed);
     return {
-      ...state,
       metadata: {
         ...state.metadata,
-        nodeTimings: { ...state.metadata?.nodeTimings, toolRouter: time },
+        nodeTimings: { ...state.metadata?.nodeTimings, toolRouter: elapsed },
       },
     };
   }
 
-  // ───────────────────────────────────────────────────────────────────
-  // Prepare context
-  // ───────────────────────────────────────────────────────────────────
-  const task = state.taskEntities![firstTaskId];
-  const query = task.originalQuery ?? "";
-  const availableTools = task.requiredTools!;
-  log.info({ firstTaskId, availableTools, query }, "routing task");
+  /* ── 4 · merge results into taskEntities ─────────────────────────── */
+  const newEntities = { ...state.taskEntities };
+  for (const { id, toolName, args } of routed) {
+    newEntities[id] = {
+      ...newEntities[id],
+      toolToRun: toolName,
+      toolParameters: args,
+    };
+  }
 
-  // ───────────────────────────────────────────────────────────────────
-  // 1) choose a tool
-  // ───────────────────────────────────────────────────────────────────
-  const taskTool = await routeTask(
-    env,
-    task,
-    tools.subset(availableTools),
-    state.chatHistory,
-  );
-  if (!taskTool) return {};
-  const { toolName, args } = taskTool;
-
-
-  // ───────────────────────────────────────────────────────────────────
-  // 3) update state & telemetry
-  // ───────────────────────────────────────────────────────────────────
-  const nextState: AgentState = {
-    ...state,
-    taskEntities: {
-      ...state.taskEntities,
-      [firstTaskId]: {
-        ...task,
-        toolToRun: toolName,
-        toolParameters: args,
-      },
-    },
-  };
-
-  const time = performance.now() - t0;
-  ObservabilityService.endSpan(env, traceId, spanId, "toolRouter", state, nextState, time);
-
-  return {
-    taskEntities: {
-      ...state.taskEntities,
-      [firstTaskId]: {
-        ...task,
-        toolToRun: toolName,
-        toolParameters: args,
-      },
-    },
+  const nextStateFragment: Partial<AgentState> = {
+    taskEntities: newEntities,
     metadata: {
-      ...nextState.metadata,
-      nodeTimings: { ...nextState.metadata?.nodeTimings, toolRouter: time },
+      ...state.metadata,
+      nodeTimings: {
+        ...state.metadata?.nodeTimings,
+        toolRouter: performance.now() - started,
+      },
     },
   };
+
+  ObservabilityService.endSpan(
+    env,
+    traceId,
+    spanId,
+    "toolRouter",
+    state,
+    { ...state, ...nextStateFragment } as AgentState,
+    performance.now() - started,
+  );
+
+  return nextStateFragment;
 }
 
 /* ------------------------------------------------------------------ *
- * downstream helpers                                                 *
+ * helper: one-shot routing for a single task                          *
  * ------------------------------------------------------------------ */
-
-/** Single-shot selection + arg extraction */
 async function routeTask(
   env: Env,
   task: UserTaskEntity,
+  routerSchema: z.ZodTypeAny,
+  promptTemplate: string,
   registry: ToolRegistry,
   chatHistory?: MessagePair[],
-) {
-  if (!task.definition) {
-    getLogger().error("No task definition found for routing");
-    return;
-  }
-  const routerSchema = registry.toolUnionSchema();
+): Promise<{ toolName: string; args: unknown }> {
+  if (!task.definition) throw new Error("task.definition missing");
 
-  const systemPrompt = getToolRoutingPrompt().replace('{{tools}}', `
-${registry.list()
-      .map(n => {
-        const t = registry.get(n.name)!;
-        return `### ${n}\n${t.description}\n`;
-      })
-      .join("\n")}
-
-`);
+  const systemPrompt = promptTemplate;
 
   const messages = buildMessages(systemPrompt, chatHistory, task.definition);
 
-  const { toolName, args } = await LlmService.invokeStructured<z.infer<typeof routerSchema>>(env, messages, {
+  const { toolName, args } = await LlmService.invokeStructured<
+    z.infer<typeof routerSchema>
+  >(env, messages, {
     schema: routerSchema,
-    schemaInstructions:
-      "Return an object { toolName: <string>, args: <object> }",
+    schemaInstructions: 'Return {"toolName": "...", "args": {...}}',
   });
 
-  return { toolName, args }; // already zod-validated
+  return { toolName, args };
 }
 
 /* ------------------------------------------------------------------ *
- * optional: routeAfterTool (unchanged API)                           *
+ * unchanged: routeAfterTool                                          *
  * ------------------------------------------------------------------ */
-
 export async function routeAfterTool(
   state: AgentState,
 ): Promise<"run_tool" | "answer"> {
-  const taskIds = state.taskIds ?? [];
-  for (const id of taskIds) {
-    if (state.taskEntities?.[id]?.toolToRun) return "run_tool";
-  }
-  return "answer";
+  return (state.taskIds ?? []).some((id) => state.taskEntities?.[id]?.toolToRun)
+    ? "run_tool"
+    : "answer";
 }

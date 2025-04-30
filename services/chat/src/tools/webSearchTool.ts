@@ -1,16 +1,20 @@
 import { z } from 'zod';
+import { getLogger } from '@dome/logging';
 import { LLMTool } from '.';
 /* ------------------------------------------------------------------ */
 /* Schemas                                                            */
 /* ------------------------------------------------------------------ */
 export const webSearchInput = z.object({
   /** Full-text query string */
-  query: z.string().min(3),
+  query: z.string(),
   /** How many items to return (1-20, default 5) */
-  topK: z.number().int().min(1).max(20).default(5),
+  topK: z.number().int().nullable(),
   /** Restrict results to this many recent days (optional) */
-  freshDays: z.number().int().min(1).max(365).optional(),
+  freshDays: z.number().int().nullable().optional(),
 });
+
+const DEFAULT_TOP_K = 5;
+const DEFAULT_FRESH_DAYS = 365;
 
 export const webSearchOutput = z.object({
   results: z.array(
@@ -52,6 +56,7 @@ async function fetchBraveSearch(
   });
   if (!resp.ok) throw new Error(`Search API error • ${resp.status}`);
 
+  // TODO: fetch detailed info from the sites
   const json: any = await resp.json();
   return (
     json?.web?.results?.map((r: any) => ({
@@ -84,7 +89,12 @@ export const webSearchTool: LLMTool<
     if (!apiKey) throw new Error("SEARCH_API_KEY is not configured");
 
     const { query, topK, freshDays } = input;
-    const results = await fetchBraveSearch(query, topK, freshDays, apiKey);
+    getLogger().info({ query, topK, freshDays }, "[webSearchTool]: Searching web");
+    // Handle nullable values with sensible defaults
+    const effectiveTopK = topK ?? DEFAULT_TOP_K;
+    const effectiveFreshDays = freshDays ?? DEFAULT_FRESH_DAYS;
+
+    const results = await fetchBraveSearch(query, effectiveTopK, effectiveFreshDays, apiKey);
     return { results };
   },
 
