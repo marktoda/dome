@@ -94,7 +94,18 @@ export type ChatMessageChunk = { type: 'content' | 'thinking' | 'unknown'; conte
 // Extensible chunk‑type detector stack
 interface ChunkDetector { (raw: string, parsed: any): ChatMessageChunk | null; }
 const detectors: ChunkDetector[] = [
-  // LangGraph update node
+  // Complete response in one go (new format)
+  (raw, p) => {
+    if (Array.isArray(p) && p[0] === 'updates' && typeof p[1] === 'object') {
+      const nodeId: string = Object.keys(p[1])[0];
+      if (nodeId === 'generate_rag' && p[1][nodeId].generatedText) {
+        return { type: 'content', content: p[1][nodeId].generatedText };
+      }
+    }
+    return null;
+  },
+
+  // LangGraph updates - sources
   (raw, p) => {
     if (Array.isArray(p) && p[0] === 'updates') {
       const nodeId: string = Object.keys(p[1])[0];
@@ -106,25 +117,25 @@ const detectors: ChunkDetector[] = [
     return null;
   },
 
-  // LangGraph update node
+  // LangGraph update - thinking
   (raw, p) => {
     if (Array.isArray(p) && p[0] === 'updates') {
       const nodeId: string = Object.keys(p[1])[0];
       const node = p[1][nodeId];
-
-      return { type: 'thinking', content: node.reasoning[node.reasoning.length - 1] };
+      
+      if (node.reasoning && Array.isArray(node.reasoning) && node.reasoning.length > 0) {
+        return { type: 'thinking', content: node.reasoning[node.reasoning.length - 1] };
+      }
     }
     return null;
   },
-  // LangGraph messages node
+  
+  // LangGraph messages node - content chunks
   (raw, p) => {
     if (Array.isArray(p) && p[0] === 'messages') {
       const details = p[1];
-      const content = details[0];
-      const meta = details[1];
-      const node = meta.langgraph_node;
-      if (node === 'generate_rag') {
-        return { type: 'content', content: content.kwargs.content };
+      if (Array.isArray(details) && details.length > 0 && details[0].kwargs?.content) {
+        return { type: 'content', content: details[0].kwargs.content };
       }
     }
     return null;
@@ -148,12 +159,22 @@ export function connectWebSocketChat(
   { debug }: { debug?: boolean } = {}
 ): Promise<any> {
   const cfg = loadConfig();
-  // Include the Bearer token in the websocket URL if available
-  const authToken = cfg.apiKey ? `&authToken=${encodeURIComponent(cfg.apiKey)}` : '';
-  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/chat?apiKey=${encodeURIComponent(cfg.apiKey || '')}&userId=test-user-id${authToken}`;
+  // Use cleaner, more standard websocket URL with no auth in query params
+  // We'll handle auth in the connection headers and message
+  // The correct WebSocket endpoint appears to be at /chat/ws based on the 404 error
+  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/chat/ws`;
 
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
+    // Add proper auth headers to match HTTP request pattern
+    const wsOptions = {
+      headers: {
+        'Authorization': `Bearer ${cfg.apiKey}`,
+        'x-api-key': cfg.apiKey,
+        'x-user-id': 'test-user-id'
+      }
+    };
+    
+    const ws = new WebSocket(wsUrl, wsOptions);
     let full = '';
     const log = (...a: any[]) => debug && console.log('[WS]', ...a);
 
@@ -172,8 +193,37 @@ export function connectWebSocketChat(
 
     ws.on('message', (buffer: Buffer) => {
       const raw = buffer.toString();
+      // Debug: Log raw messages to understand format
+      if (debug) console.log('[WS Debug] Raw message:', raw);
+      
       const chunk = detectChunk(raw);
+      if (debug) console.log('[WS Debug] Detected chunk type:', chunk.type);
+      
       if (chunk.type === 'content') full += chunk.content;
+      
+      // Handle direct text response that might not fit detector patterns
+      if (chunk.type === 'unknown' && chunk.content) {
+        try {
+          // Try to extract direct text content if possible
+          const parsed = JSON.parse(chunk.content);
+          if (parsed && typeof parsed === 'object') {
+            // Check common response formats
+            if (parsed.content) {
+              chunk.type = 'content';
+              chunk.content = parsed.content;
+            } else if (parsed.message) {
+              chunk.type = 'content';
+              chunk.content = parsed.message;
+            } else if (parsed.response) {
+              chunk.type = 'content';
+              chunk.content = parsed.response;
+            }
+          }
+        } catch (e) {
+          // Not JSON or not in expected format, keep as is
+        }
+      }
+      
       onChunk(chunk);
     });
 
@@ -193,18 +243,49 @@ export async function chat(
     try {
       return await connectWebSocketChat(message, chunk => onChunk?.(chunk), opts);
     } catch (e) {
+      if (opts.debug) {
+        if (e instanceof Error) {
+          console.log(`WebSocket error: ${e.message}`);
+          if (e.stack) console.log(e.stack);
+        } else {
+          console.log(`WebSocket error: ${String(e)}`);
+        }
+      } else {
+        console.log(`WebSocket connection failed, using HTTP fallback...`);
+      }
       if (opts.retryNonStreaming !== false) {
-        // Fallback to blocking call
-        const res = await api.post('/chat', {
-          userId: 'test-user-id',
-          messages: [{ role: 'user', content: message, timestamp: Date.now() }],
-          options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
-          stream: false,
-          auth: {
-            token: loadConfig().apiKey
+        // Only show this message in debug mode
+        if (opts.debug) {
+          console.log('Falling back to HTTP request...');
+        }
+        try {
+          // Fallback to blocking call
+          const res = await api.post('/chat', {
+            userId: 'test-user-id',
+            messages: [{ role: 'user', content: message, timestamp: Date.now() }],
+            options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
+            stream: false,
+            auth: {
+              token: loadConfig().apiKey
+            }
+          });
+          
+          // Extract the response text
+          const responseText = getResponseText(res);
+          
+          // Only log in debug mode
+          if (opts.debug) {
+            console.log('HTTP response received');
           }
-        });
-        return { response: getResponseText(res), success: true, note: 'WS failed – HTTP fallback' };
+          
+          // Send the response as a string to the handler - only once
+          onChunk?.(responseText);
+          
+          return { response: responseText, success: true, note: 'WS failed – HTTP fallback' };
+        } catch (httpErr) {
+          console.log(`HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
+          throw httpErr;
+        }
       }
       throw e;
     }

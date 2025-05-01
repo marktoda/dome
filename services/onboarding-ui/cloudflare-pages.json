@@ -1,0 +1,51 @@
+{
+  "build": {
+    "command": "npm run build",
+    "output_directory": ".next/standalone",
+    "root_directory": "services/onboarding-ui"
+  },
+  "compatibility_date": "2023-06-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "env": {
+    "NEXT_PUBLIC_BASE_URL": { "value": "https://onboarding-ui.pages.dev" },
+    "NEXTAUTH_URL": { "value": "https://onboarding-ui.pages.dev" },
+    "NEXTAUTH_SECRET": { "value": "your-production-secret-value-should-be-set-in-environment" }
+  },
+  "routes": [
+    {
+      "pattern": "^/_next/static/.*",
+      "cache": {
+        "browser_ttl": 31536000,
+        "edge_ttl": 31536000
+      }
+    },
+    {
+      "pattern": "^/static/.*",
+      "cache": {
+        "browser_ttl": 31536000,
+        "edge_ttl": 31536000
+      }
+    },
+    {
+      "pattern": "^/favicon.ico",
+      "cache": {
+        "browser_ttl": 86400,
+        "edge_ttl": 86400
+      }
+    },
+    {
+      "pattern": "^/robots.txt",
+      "cache": {
+        "browser_ttl": 86400,
+        "edge_ttl": 86400
+      }
+    },
+    {
+      "pattern": "^/.*",
+      "cache": {
+        "browser_ttl": 0,
+        "edge_ttl": 0
+      }
+    }
+  ]
+}
