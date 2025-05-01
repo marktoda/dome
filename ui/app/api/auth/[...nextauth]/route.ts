@@ -1,4 +1,4 @@
-import { handlers } from "@/auth";
+import { handlers } from "../../../../auth";
 
 // Configure route to use Edge Runtime for Cloudflare Pages compatibility
 export const runtime = "edge";

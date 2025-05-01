@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { auth, signOut } from '@/auth';
+import { signOut } from '@/auth';
 import { useSession } from 'next-auth/react';
 
 export default function DashboardPage() {

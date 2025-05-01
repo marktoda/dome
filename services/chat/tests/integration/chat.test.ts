@@ -33,6 +33,30 @@ vi.mock('../../src/services/searchService', () => ({
   },
 }));
 
+// Mock ModelFactory
+vi.mock('../../src/services/modelFactory', () => ({
+  ModelFactory: {
+    createChatModel: vi.fn().mockReturnValue({
+      invoke: vi.fn().mockResolvedValue({ text: 'This is a test response' }),
+      stream: vi.fn().mockImplementation(async function* () {
+        yield { content: 'This is a test response' };
+      }),
+    }),
+    createStructuredOutputModel: vi.fn().mockReturnValue({
+      withStructuredOutput: vi.fn().mockReturnValue({
+        invoke: vi.fn().mockResolvedValue({
+          isComplex: false,
+          shouldSplit: false,
+          reason: 'Query is simple'
+        }),
+      }),
+    }),
+    createToolBoundModel: vi.fn().mockReturnValue({
+      invoke: vi.fn().mockResolvedValue({ text: 'This is a tool response' }),
+    }),
+  },
+}));
+
 vi.mock('../../src/services/observabilityService', () => ({
   ObservabilityService: {
     initTrace: vi.fn(),
@@ -44,6 +68,10 @@ vi.mock('../../src/services/observabilityService', () => ({
     logRetrieval: vi.fn(),
   },
 }));
+
+// Fix for jest vs vitest issue in some test files
+// @ts-ignore - Explicitly ignoring this TS error for testing purposes
+global.jest = vi;
 
 // Mock logger
 vi.mock('@dome/logging', () => {
@@ -58,11 +86,17 @@ vi.mock('@dome/logging', () => {
       debug: vi.fn(),
       error: vi.fn(),
       warn: vi.fn(),
+      child: vi.fn().mockReturnValue({
+        info: vi.fn(),
+        debug: vi.fn(),
+        error: vi.fn(),
+        warn: vi.fn(),
+      }),
     }),
   };
 
   return {
-    getLogger: vi.fn(() => mockLogger),
+    getLogger: vi.fn().mockReturnValue(mockLogger),
     logError: vi.fn(),
     metrics: {
       increment: vi.fn(),
@@ -84,12 +118,12 @@ vi.mock('@dome/logging', () => {
   };
 });
 
-// Mock D1Checkpointer
-vi.mock('../../src/checkpointer/d1Checkpointer', () => {
+// Mock SecureD1Checkpointer
+vi.mock('../../src/checkpointer/secureD1Checkpointer', () => {
   return {
-    D1Checkpointer: class MockCheckpointer {
+    SecureD1Checkpointer: class MockSecureCheckpointer {
       constructor() {}
-      initialize = vi.fn().mockResolvedValue(undefined);
+      initialize = vi.fn().mockResolvedValue(this);
       getTuple = vi.fn().mockResolvedValue(undefined);
       put = vi.fn().mockResolvedValue(undefined);
       putWrites = vi.fn().mockResolvedValue(undefined);
@@ -99,9 +133,68 @@ vi.mock('../../src/checkpointer/d1Checkpointer', () => {
       });
       readCheckpoint = vi.fn().mockResolvedValue(null);
       writeCheckpoint = vi.fn().mockResolvedValue(undefined);
+      delete = vi.fn().mockResolvedValue(undefined);
+      cleanup = vi.fn().mockResolvedValue(0);
+      getStats = vi.fn().mockResolvedValue({
+        totalCheckpoints: 0,
+        oldestCheckpoint: 0,
+        newestCheckpoint: 0,
+        averageStateSize: 0
+      });
     },
   };
 });
+
+// Add a mock for the EncryptionService inside secureD1Checkpointer
+vi.mock('../../src/checkpointer/d1Checkpointer', () => {
+  return {
+    D1Checkpointer: class MockCheckpointer {
+      constructor() {}
+      initialize = vi.fn().mockResolvedValue(this);
+      getTuple = vi.fn().mockResolvedValue(undefined);
+      put = vi.fn().mockResolvedValue(undefined);
+      putWrites = vi.fn().mockResolvedValue(undefined);
+      list = vi.fn().mockImplementation(async function*() {
+        // Empty generator
+        return;
+      });
+      readCheckpoint = vi.fn().mockResolvedValue(null);
+      writeCheckpoint = vi.fn().mockResolvedValue(undefined);
+      delete = vi.fn().mockResolvedValue(undefined);
+      cleanup = vi.fn().mockResolvedValue(0);
+      getStats = vi.fn().mockResolvedValue({
+        totalCheckpoints: 0,
+        oldestCheckpoint: 0,
+        newestCheckpoint: 0,
+        averageStateSize: 0
+      });
+    },
+  };
+});
+
+// Mock Constellation and SiloClient for SearchService
+vi.mock('@dome/constellation/client', () => ({
+  createConstellationClient: vi.fn().mockReturnValue({
+    query: vi.fn().mockResolvedValue([]),
+  }),
+}));
+
+vi.mock('@dome/silo/client', () => ({
+  SiloClient: vi.fn().mockImplementation(() => ({
+    batchGet: vi.fn().mockResolvedValue({ items: [] }),
+  })),
+}));
+
+// Mock the ToolRegistry (needed for graph building)
+vi.mock('../../src/tools', () => ({
+  ToolRegistry: {
+    fromDefault: vi.fn().mockReturnValue({
+      getAllTools: vi.fn().mockReturnValue([]),
+      getToolByName: vi.fn(),
+      listToolNames: vi.fn().mockReturnValue([]),
+    }),
+  },
+}));
 
 describe('Chat RAG Graph Integration Tests', () => {
   // Mock environment
@@ -116,6 +209,7 @@ describe('Chat RAG Graph Integration Tests', () => {
     VERSION: '0.1.0', // Add required VERSION property
     LOG_LEVEL: 'debug',
     ENVIRONMENT: 'test',
+    CHAT_ENCRYPTION_KEY: 'mock-test-encryption-key-base64-encoded', // Add required encryption key
   } as unknown as Env;
 
   // Mock user ID
