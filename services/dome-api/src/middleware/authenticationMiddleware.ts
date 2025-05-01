@@ -1,7 +1,7 @@
 import { Context, Next } from 'hono';
 import { getLogger } from '@dome/logging';
-import { AuthServiceBinding, AuthResponse } from '../services/auth-client';
 import type { Bindings } from '../types';
+import { createServiceFactory } from '../services/serviceFactory';
 
 // Context with authenticated user
 export interface AuthContext {
@@ -20,7 +20,7 @@ export const authenticationMiddleware = async (
 ) => {
   const logger = getLogger().child({ component: 'AuthMiddleware' });
   const authHeader = c.req.header('Authorization');
-  
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     logger.warn('Missing or invalid Authorization header');
     return c.json(
@@ -37,14 +37,14 @@ export const authenticationMiddleware = async (
 
   try {
     const token = authHeader.slice(7);
-    
-    // Use auth service client
-    const authServiceUrl = c.env.AUTH ? new URL(c.req.url).origin.replace('dome-api', 'auth') : 'https://auth.dome.example.com';
-    const authService = new AuthServiceBinding(authServiceUrl);
-    
+
+    // Use auth service client from service factory
+    const serviceFactory = createServiceFactory();
+    const authService = serviceFactory.getAuthService(c.env);
+
     // Validate token
     const { success, user } = await authService.validateToken(token);
-    
+
     if (!success || !user) {
       logger.warn('Invalid token');
       return c.json(
@@ -58,14 +58,14 @@ export const authenticationMiddleware = async (
         401
       );
     }
-    
+
     // Set user info in context
     c.set('userId', user.id);
     c.set('userRole', user.role);
     c.set('userEmail', user.email);
-    
+
     logger.debug({ userId: user.id }, 'User authenticated');
-    
+
     // Continue to next middleware/handler
     await next();
   } catch (error) {
@@ -94,7 +94,7 @@ export const createRoleMiddleware = (requiredRoles: string[]) => {
   ) => {
     const logger = getLogger().child({ component: 'RoleMiddleware' });
     const userRole = c.get('userRole');
-    
+
     if (!userRole || !requiredRoles.includes(userRole)) {
       logger.warn({ userRole, requiredRoles }, 'Insufficient permissions');
       return c.json(
@@ -108,7 +108,7 @@ export const createRoleMiddleware = (requiredRoles: string[]) => {
         403
       );
     }
-    
+
     await next();
   };
 };

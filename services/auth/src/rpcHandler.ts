@@ -5,25 +5,24 @@ import {
 import { AuthService } from './services/authService';
 import { getLogger } from '@dome/logging';
 import { AuthError } from './utils/errors';
-import { Bindings } from './types';
 
 const logger = getLogger();
 
 /**
  * RPC handler for the Auth service
- * 
+ *
  * Implements the AuthBinding interface to expose auth methods to other services
  */
 export class AuthRPCHandler implements AuthBinding {
   private authService: AuthService;
 
-  constructor(private readonly env: Bindings) {
+  constructor(private readonly env: Env) {
     // Ensure DB binding exists
     if (!env.AUTH_DB) {
       logger.error('Missing AUTH_DB binding in environment');
       throw new Error('Missing AUTH_DB binding. Check wrangler.toml configuration.');
     }
-    
+
     // Initialize service with environment bindings
     this.authService = new AuthService(env);
     logger.info('Auth RPC Handler initialized');
@@ -35,14 +34,14 @@ export class AuthRPCHandler implements AuthBinding {
   async login(email: string, password: string) {
     try {
       logger.debug('RPC: login', { email });
-      
+
       const result = await this.authService.login(email, password);
-      
-      logger.debug('RPC: login completed', { 
-        userId: result.user.id, 
-        email 
+
+      logger.debug('RPC: login completed', {
+        userId: result.user.id,
+        email
       });
-      
+
       return result;
     } catch (error) {
       logger.error('RPC: login failed', { error, email });
@@ -56,14 +55,14 @@ export class AuthRPCHandler implements AuthBinding {
   async register(email: string, password: string, name?: string) {
     try {
       logger.debug('RPC: register', { email });
-      
+
       const user = await this.authService.register(email, password, name);
-      
-      logger.debug('RPC: register completed', { 
-        userId: user.id, 
-        email 
+
+      logger.debug('RPC: register completed', {
+        userId: user.id,
+        email
       });
-      
+
       return {
         success: true,
         user
@@ -80,13 +79,13 @@ export class AuthRPCHandler implements AuthBinding {
   async validateToken(token: string) {
     try {
       logger.debug('RPC: validateToken');
-      
+
       const user = await this.authService.validateToken(token);
-      
-      logger.debug('RPC: validateToken completed', { 
+
+      logger.debug('RPC: validateToken completed', {
         userId: user.id
       });
-      
+
       return {
         success: true,
         user
@@ -110,16 +109,16 @@ export class AuthRPCHandler implements AuthBinding {
       } catch (e) {
         // If token is invalid, just continue with logout
       }
-      
+
       logger.debug('RPC: logout', { userId });
-      
+
       const success = await this.authService.logout(token, userId);
-      
-      logger.debug('RPC: logout completed', { 
+
+      logger.debug('RPC: logout completed', {
         userId,
         success
       });
-      
+
       return { success };
     } catch (error) {
       logger.error('RPC: logout failed', { error });
@@ -164,9 +163,9 @@ export class AuthRPCHandler implements AuthBinding {
           break;
       }
     }
-    
+
     const message = error.message || 'An unknown error occurred';
-    
+
     // Create a standardized error response
     const formattedError = {
       error: {
@@ -175,10 +174,10 @@ export class AuthRPCHandler implements AuthBinding {
         details: error.details
       }
     };
-    
+
     // Convert to a real Error object for proper throwing
     const rpcError = new Error(JSON.stringify(formattedError));
-    
+
     return rpcError;
   }
 }

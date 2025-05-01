@@ -6,6 +6,7 @@ import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client
 import { SearchService } from './searchService';
 import { ChatClient } from '@dome/chat/client';
 import { TsunamiClient, TsunamiBinding } from '@dome/tsunami/client';
+import { createAuthServiceFromBinding, AuthService, AuthWorkerBinding } from '@dome/auth/client';
 
 /**
  * Service factory interface
@@ -18,6 +19,7 @@ export interface ServiceFactory {
   getSiloService(env: Bindings): SiloClient;
   getChatService(env: Bindings): ChatClient;
   getTsunamiService(env: Bindings): TsunamiClient;
+  getAuthService(env: Bindings): AuthService;
 }
 
 /**
@@ -32,6 +34,7 @@ export class DefaultServiceFactory implements ServiceFactory {
   private chatServices: Map<Bindings, ChatClient> = new Map();
   private siloServices: Map<Bindings, SiloClient> = new Map();
   private tsunamiServices: Map<Bindings, TsunamiClient> = new Map();
+  private authServices: Map<Bindings, AuthService> = new Map();
   private logger = getLogger();
 
   constructor() {
@@ -126,6 +129,24 @@ export class DefaultServiceFactory implements ServiceFactory {
       this.logger.debug('Creating new TsunamiClient instance');
       service = new TsunamiClient(env.TSUNAMI);
       this.tsunamiServices.set(env, service);
+    }
+    return service;
+  }
+
+  /**
+   * Get the auth service instance for a specific env
+   * @param env Cloudflare Workers environment bindings
+   * @returns AuthService instance
+   */
+  getAuthService(env: Bindings): AuthService {
+    let service = this.authServices.get(env);
+    if (!service) {
+      this.logger.debug('Creating new AuthService instance');
+      
+      // Cast to the appropriate worker binding type, similar to other services
+      service = createAuthServiceFromBinding(env.AUTH as unknown as AuthWorkerBinding);
+      
+      this.authServices.set(env, service);
     }
     return service;
   }

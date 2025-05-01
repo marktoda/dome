@@ -3,11 +3,6 @@ main = "src/index.ts"
 compatibility_date = "2025-04-15"
 compatibility_flags = ["nodejs_compat"]
 
-# Route configuration
-# routes = [
-#   { pattern = "auth.dome.example.com", custom_domain = true }
-# ]
-
 [vars]
 ENVIRONMENT = "development"
 VERSION = "0.1.0"
@@ -25,3 +20,7 @@ database_id = "6d3180e0-cd8b-434e-9fb1-b1af9c8b3c3c"
 [[kv_namespaces]]
 binding = "AUTH_TOKENS"
 id = "152a516f80b54b17a4f458dddb896fcf"
+
+[observability]
+enabled = true
+head_sampling_rate = 1 # optional. default = 1.

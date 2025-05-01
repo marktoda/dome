@@ -97,7 +97,7 @@ async function streamChatResponse(
       } else {
         // any other content chunk
         thinking.reset(); // discard partial thinking on normal output
-        // process.stdout.write(chunk.content);
+        process.stdout.write(chunk.content); // Uncommented to handle unknown chunk types
       }
     },
     { retryNonStreaming: true, debug: opts.verbose }

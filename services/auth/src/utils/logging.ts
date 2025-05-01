@@ -1,7 +1,6 @@
 import {
   getLogger as getDomeLogger,
   metrics,
-  logError as domeLogError,
   trackOperation as domeTrackOperation,
   logOperationStart,
   logOperationSuccess,
@@ -18,34 +17,6 @@ export const authMetrics = createServiceMetrics('auth');
  */
 export function getLogger(): any {
   return getDomeLogger().child({ service: 'auth' });
-}
-
-/**
- * Specialized error logging with consistent context
- * @param error Error to log
- * @param message Error message
- * @param context Additional context information
- */
-export function logError(error: unknown, message: string, context: Record<string, any> = {}): void {
-  // Convert to AuthError if it's not already
-  const authError = error instanceof AuthError
-    ? error
-    : new AuthError(
-        error instanceof Error ? error.message : String(error),
-        AuthErrorType.INTERNAL_ERROR,
-        500
-      );
-  
-  domeLogError(authError, message, {
-    service: 'auth',
-    ...context
-  });
-  
-  // Track error metrics for monitoring
-  authMetrics.trackOperation('error', false, {
-    errorType: authError.type,
-    operation: context.operation || 'unknown'
-  });
 }
 
 /**
@@ -75,7 +46,7 @@ export async function trackOperation<T>(
 export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
   const sensitiveFields = ['password', 'token', 'secret', 'key', 'apiKey', 'auth'];
   const sanitized = { ...data };
-  
+
   for (const field of Object.keys(sanitized)) {
     if (sensitiveFields.some(sensitive => field.toLowerCase().includes(sensitive))) {
       sanitized[field as keyof T] = '[REDACTED]' as any;
@@ -83,7 +54,7 @@ export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
       sanitized[field as keyof T] = sanitizeForLogging(sanitized[field as keyof T]) as any;
     }
   }
-  
+
   return sanitized;
 }
 

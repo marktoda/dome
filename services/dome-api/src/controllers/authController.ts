@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
-import { AuthServiceBinding } from '../services/auth-client';
+import { createServiceFactory } from '../services/serviceFactory';
 import type { Bindings } from '../types';
 
 /**
@@ -18,9 +18,9 @@ export class AuthController {
       
       this.logger.debug({ email }, 'User registration request');
       
-      // Create auth service client
-      const authServiceUrl = c.env.AUTH ? new URL(c.req.url).origin.replace('dome-api', 'auth') : 'https://auth.dome.example.com';
-      const authService = new AuthServiceBinding(authServiceUrl);
+      // Get auth service client from factory
+      const serviceFactory = createServiceFactory();
+      const authService = serviceFactory.getAuthService(c.env);
       
       // Register user
       const result = await authService.register(email, password, name);
@@ -50,9 +50,9 @@ export class AuthController {
       
       this.logger.debug({ email }, 'User login request');
       
-      // Create auth service client
-      const authServiceUrl = c.env.AUTH ? new URL(c.req.url).origin.replace('dome-api', 'auth') : 'https://auth.dome.example.com';
-      const authService = new AuthServiceBinding(authServiceUrl);
+      // Get auth service client from factory
+      const serviceFactory = createServiceFactory();
+      const authService = serviceFactory.getAuthService(c.env);
       
       // Login user
       const result = await authService.login(email, password);
@@ -98,9 +98,9 @@ export class AuthController {
       
       this.logger.debug('User logout request');
       
-      // Create auth service client
-      const authServiceUrl = c.env.AUTH ? new URL(c.req.url).origin.replace('dome-api', 'auth') : 'https://auth.dome.example.com';
-      const authService = new AuthServiceBinding(authServiceUrl);
+      // Get auth service client from factory
+      const serviceFactory = createServiceFactory();
+      const authService = serviceFactory.getAuthService(c.env);
       
       // Logout user
       const result = await authService.logout(token);
@@ -146,9 +146,9 @@ export class AuthController {
       
       this.logger.debug('Token validation request');
       
-      // Create auth service client
-      const authServiceUrl = c.env.AUTH ? new URL(c.req.url).origin.replace('dome-api', 'auth') : 'https://auth.dome.example.com';
-      const authService = new AuthServiceBinding(authServiceUrl);
+      // Get auth service client from factory
+      const serviceFactory = createServiceFactory();
+      const authService = serviceFactory.getAuthService(c.env);
       
       // Validate token
       const result = await authService.validateToken(token);

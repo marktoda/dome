@@ -3,15 +3,6 @@
  */
 import { D1Database, KVNamespace } from '@cloudflare/workers-types';
 
-/**
- * Environment bindings for the Auth service
- */
-export type Bindings = {
-  AUTH_DB: D1Database;
-  AUTH_TOKENS: KVNamespace;
-  VERSION?: string;
-  ENVIRONMENT?: string;
-};
 
 /**
  * User role enum

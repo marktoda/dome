@@ -1,8 +1,8 @@
 import { getLogger } from '@dome/logging';
 import { AuthClient, createAuthClient } from './client';
-import type { 
-  AuthBinding, 
-  AuthService, 
+import type {
+  AuthBinding,
+  AuthService,
   LoginResponse,
   RegisterResponse,
   ValidateTokenResponse,
@@ -11,6 +11,7 @@ import type {
 } from './types';
 
 export * from './types';
+export * from './client';
 
 /**
  * CloudflareWorker-style binding for the auth service
@@ -26,7 +27,7 @@ export interface AuthWorkerBinding {
 /**
  * Creates an AuthClient from a Cloudflare Worker binding
  * This is the main entry point for other services to consume the auth service
- * 
+ *
  * @param binding The Cloudflare Worker binding to the auth service
  * @returns An AuthService implementation
  */

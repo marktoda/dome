@@ -1,25 +1,26 @@
 import { Command } from 'commander';
-import { isAuthenticated } from '../utils/config';
-import { loginUser, saveAuthToken } from '../utils/auth';
+import { registerUser, saveAuthToken } from '../utils/auth';
 import { success, error, info } from '../utils/ui';
 import readline from 'readline';
+import { isAuthenticated } from '../utils/config';
 
 /**
- * Register the login command
+ * Register the register command
  * @param program The commander program
  */
-export function loginCommand(program: Command): void {
+export function registerCommand(program: Command): void {
   program
-    .command('login')
-    .description('Login to the dome API')
+    .command('register')
+    .description('Register a new user with the dome API')
     .option('-e, --email <email>', 'Email address')
     .option('-p, --password <password>', 'Password')
-    .action(async (options: { email?: string; password?: string }) => {
+    .option('-n, --name <name>', 'Full name')
+    .action(async (options: { email?: string; password?: string; name?: string }) => {
       try {
         // Check if already authenticated
         if (isAuthenticated()) {
           console.log(
-            info('You are already logged in. To use a different API key, run `dome logout` first.'),
+            info('You are already logged in. To register a new account, run `dome logout` first.'),
           );
           return;
         }
@@ -46,6 +47,16 @@ export function loginCommand(program: Command): void {
           password = await new Promise<string>(resolve => {
             // Use stdin with echo off for password input would be better in a real app
             rl.question('Enter your password: ', answer => {
+              resolve(answer.trim());
+            });
+          });
+        }
+
+        // Prompt for name if not provided
+        let name = options.name;
+        if (!name) {
+          name = await new Promise<string>(resolve => {
+            rl.question('Enter your full name: ', answer => {
               rl.close();
               resolve(answer.trim());
             });
@@ -63,30 +74,34 @@ export function loginCommand(program: Command): void {
           console.log(error('Password is required.'));
           process.exit(1);
         }
+        if (!name) {
+          console.log(error('Name is required.'));
+          process.exit(1);
+        }
 
-        // Login the user
-        console.log(info('Logging in...'));
-        const result = await loginUser(email, password);
+        // Register the user
+        console.log(info('Registering user...'));
+        const result = await registerUser(email, password, name);
 
         if (result.success) {
           // Save token and show success message
           saveAuthToken(result);
-          console.log(success('Login successful. You can now use the dome CLI.'));
-          
-          // Show user info if available
+          console.log(success('Registration successful. You are now logged in.'));
+
+          // Show user info
           if (result.user) {
             console.log(info(`User: ${result.user.name} (${result.user.email})`));
           }
         } else {
           // Show error message
           console.log(
-            error(`Login failed: ${result.error?.message || 'Invalid credentials'}`),
+            error(`Registration failed: ${result.error?.message || 'Unknown error'}`),
           );
           process.exit(1);
         }
       } catch (err) {
         console.log(
-          error(`Failed to authenticate: ${err instanceof Error ? err.message : String(err)}`),
+          error(`Registration failed: ${err instanceof Error ? err.message : String(err)}`),
         );
         process.exit(1);
       }

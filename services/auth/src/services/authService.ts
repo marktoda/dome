@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as bcrypt from 'bcryptjs';
 import * as jose from 'jose';
-import { User, UserRole, UserWithPassword, TokenPayload, Bindings, LoginResponse } from '../types';
+import { User, UserRole, UserWithPassword, TokenPayload, LoginResponse } from '../types';
 import { users, tokenBlacklist } from '../db/schema';
 import { AuthError, AuthErrorType } from '../utils/errors';
 
@@ -17,17 +17,17 @@ export class AuthService {
   private kv: KVNamespace;
   private logger = getLogger().child({ component: 'AuthService' });
   private jwtSecret: Uint8Array;
-  
+
   // Default token expiration: 24 hours
   private tokenExpiration = 24 * 60 * 60;
 
   /**
    * Create a new auth service instance
    */
-  constructor(env: Bindings) {
+  constructor(env: Env) {
     this.db = drizzle(env.AUTH_DB);
     this.kv = env.AUTH_TOKENS;
-    
+
     // In production, we'd use a proper secret from KV or environment variable
     // For now, we'll use a static secret for development
     const secretKey = 'dome-auth-secret-key-change-in-production';
@@ -39,7 +39,7 @@ export class AuthService {
    */
   async register(email: string, password: string, name?: string): Promise<User> {
     this.logger.debug({ email }, 'Registering new user');
-    
+
     try {
       // Check if user already exists
       const existingUser = await this.db
@@ -47,18 +47,18 @@ export class AuthService {
         .from(users)
         .where(eq(users.email, email))
         .get();
-      
+
       if (existingUser) {
         throw new AuthError('User with this email already exists', AuthErrorType.USER_EXISTS);
       }
-      
+
       // Hash the password
       const hashedPassword = await bcrypt.hash(password, 10);
-      
+
       // Create the user record
       const timestamp = new Date();
       const userId = uuidv4();
-      
+
       const newUser = {
         id: userId,
         email,
@@ -68,20 +68,20 @@ export class AuthService {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      
+
       // Insert the user
       await this.db.insert(users).values(newUser);
-      
+
       // Return user without password
       const { password: _, ...userWithoutPassword } = newUser;
       return userWithoutPassword as User;
     } catch (error) {
       this.logger.error({ error, email }, 'Failed to register user');
-      
+
       if (error instanceof AuthError) {
         throw error;
       }
-      
+
       throw new AuthError('Failed to register user', AuthErrorType.REGISTRATION_FAILED);
     }
   }
@@ -91,7 +91,7 @@ export class AuthService {
    */
   async login(email: string, password: string): Promise<LoginResponse> {
     this.logger.debug({ email }, 'User login attempt');
-    
+
     try {
       // Find the user
       const user = await this.db
@@ -99,24 +99,24 @@ export class AuthService {
         .from(users)
         .where(eq(users.email, email))
         .get() as UserWithPassword | undefined;
-      
+
       if (!user) {
         throw new AuthError('Invalid email or password', AuthErrorType.INVALID_CREDENTIALS);
       }
-      
+
       // Check password
       const isPasswordValid = await bcrypt.compare(password, user.password);
-      
+
       if (!isPasswordValid) {
         throw new AuthError('Invalid email or password', AuthErrorType.INVALID_CREDENTIALS);
       }
-      
+
       // Generate token
       const token = await this.generateToken(user);
-      
+
       // Return user without password
       const { password: _, ...userWithoutPassword } = user;
-      
+
       return {
         success: true,
         user: userWithoutPassword as User,
@@ -125,11 +125,11 @@ export class AuthService {
       };
     } catch (error) {
       this.logger.error({ error, email }, 'Login failed');
-      
+
       if (error instanceof AuthError) {
         throw error;
       }
-      
+
       throw new AuthError('Login failed', AuthErrorType.LOGIN_FAILED);
     }
   }
@@ -139,34 +139,34 @@ export class AuthService {
    */
   async validateToken(token: string): Promise<User> {
     this.logger.debug('Validating auth token');
-    
+
     try {
       // Check if token is blacklisted
       const blacklisted = await this.isTokenBlacklisted(token);
-      
+
       if (blacklisted) {
         throw new AuthError('Token is invalid or expired', AuthErrorType.INVALID_TOKEN);
       }
-      
+
       // Verify the token
       const { payload } = await jose.jwtVerify(token, this.jwtSecret);
       const tokenPayload = payload as unknown as TokenPayload;
-      
+
       // Get the user
       const user = await this.getUserById(tokenPayload.userId);
-      
+
       if (!user) {
         throw new AuthError('User not found', AuthErrorType.USER_NOT_FOUND);
       }
-      
+
       return user;
     } catch (error) {
       this.logger.error({ error }, 'Token validation failed');
-      
+
       if (error instanceof AuthError) {
         throw error;
       }
-      
+
       throw new AuthError('Token validation failed', AuthErrorType.INVALID_TOKEN);
     }
   }
@@ -176,22 +176,22 @@ export class AuthService {
    */
   async logout(token: string, userId: string): Promise<boolean> {
     this.logger.debug({ userId }, 'Logging out user');
-    
+
     try {
       // Add token to blacklist
       const { payload } = await jose.jwtVerify(token, this.jwtSecret);
       const tokenPayload = payload as unknown as TokenPayload;
-      
+
       const now = new Date();
       const expiresAt = new Date(tokenPayload.exp * 1000);
-      
+
       await this.db.insert(tokenBlacklist).values({
         token,
         expiresAt,
         revokedAt: now,
         userId,
       });
-      
+
       return true;
     } catch (error) {
       this.logger.error({ error, userId }, 'Logout failed');
@@ -204,7 +204,7 @@ export class AuthService {
    */
   async getUserById(userId: string): Promise<User | null> {
     this.logger.debug({ userId }, 'Getting user by ID');
-    
+
     try {
       const user = await this.db
         .select({
@@ -218,7 +218,7 @@ export class AuthService {
         .from(users)
         .where(eq(users.id, userId))
         .get();
-      
+
       return user as User | null;
     } catch (error) {
       this.logger.error({ error, userId }, 'Failed to get user');
@@ -231,7 +231,7 @@ export class AuthService {
    */
   private async generateToken(user: UserWithPassword): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
-    
+
     const payload: TokenPayload = {
       userId: user.id,
       email: user.email,
@@ -239,7 +239,7 @@ export class AuthService {
       iat: now,
       exp: now + this.tokenExpiration,
     };
-    
+
     // Sign the token
     return await new jose.SignJWT(payload as unknown as jose.JWTPayload)
       .setProtectedHeader({ alg: 'HS256' })
@@ -255,7 +255,7 @@ export class AuthService {
       .from(tokenBlacklist)
       .where(eq(tokenBlacklist.token, token))
       .get();
-    
+
     return !!blacklisted;
   }
 }
@@ -263,6 +263,6 @@ export class AuthService {
 /**
  * Create a new auth service instance
  */
-export function createAuthService(env: Bindings): AuthService {
+export function createAuthService(env: Env): AuthService {
   return new AuthService(env);
 }
