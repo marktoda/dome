@@ -194,6 +194,82 @@ export class TsunamiClient implements TsunamiService {
   }
 
   /**
+   * Register a Notion workspace and initialize syncing
+   *
+   * @param workspaceId Notion workspace ID
+   * @param userId Optional user ID to associate with the sync plan
+   * @param cadenceSecs Optional sync frequency in seconds (defaults to 3600 - 1 hour)
+   * @returns Object containing the ID, resourceId, and initialization status
+   */
+  async registerNotionWorkspace(
+    workspaceId: string,
+    userId?: string,
+    cadenceSecs: number = 3600
+  ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
+    const startTime = performance.now();
+    
+    try {
+      this.logger.info({
+        event: 'notion_workspace_registration_start',
+        workspaceId,
+        userId,
+        cadenceSecs
+      }, 'Starting Notion workspace registration');
+
+      const result = await this.binding.registerNotionWorkspace(workspaceId, userId, cadenceSecs);
+
+      metrics.increment(`${this.metricsPrefix}.notion_workspace_registration.success`);
+      metrics.timing(`${this.metricsPrefix}.notion_workspace_registration.latency_ms`, performance.now() - startTime);
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.notion_workspace_registration.errors`);
+      logError(error, 'Error registering Notion workspace');
+      throw error;
+    }
+  }
+
+  /**
+   * Get history for a Notion workspace
+   *
+   * @param workspaceId Notion workspace ID
+   * @param limit Maximum number of history records to return
+   * @returns Workspace history with metadata
+   */
+  async getNotionWorkspaceHistory(workspaceId: string, limit: number = 10): Promise<{
+    workspaceId: string;
+    resourceId: string;
+    history: unknown[];
+  }> {
+    const startTime = performance.now();
+    const resourceId = workspaceId;
+    
+    try {
+      this.logger.info({
+        event: 'get_notion_workspace_history',
+        workspaceId,
+        resourceId,
+        limit
+      }, 'Fetching Notion workspace history');
+
+      const history = await this.binding.getHistoryByResourceId(resourceId, limit);
+      
+      metrics.increment(`${this.metricsPrefix}.get_notion_workspace_history.success`);
+      metrics.timing(`${this.metricsPrefix}.get_notion_workspace_history.latency_ms`, performance.now() - startTime);
+
+      return {
+        workspaceId,
+        resourceId,
+        history
+      };
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.get_notion_workspace_history.errors`);
+      logError(error, 'Error fetching Notion workspace history');
+      throw error;
+    }
+  }
+
+  /**
    * Get sync history for a GitHub repository
    *
    * @param owner GitHub repository owner

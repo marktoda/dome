@@ -54,6 +54,15 @@ export interface TsunamiBinding {
     userId?: string,
     cadenceSecs?: number
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>;
+
+  /**
+   * Register a Notion workspace and initialize syncing
+   */
+  registerNotionWorkspace(
+    workspaceId: string,
+    userId?: string,
+    cadenceSecs?: number
+  ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>;
 }
 
 /**

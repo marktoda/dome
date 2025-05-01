@@ -265,6 +265,97 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
   }
 
   /**
+   * Register and initialize a Notion workspace for syncing
+   *
+   * @param workspaceId - Notion workspace ID
+   * @param userId - Optional user ID to associate with the sync plan
+   * @param cadenceSecs - Optional sync frequency in seconds (defaults to 3600 - 1 hour)
+   * @returns Object containing the ID, resourceId, and initialization status
+   */
+  async registerNotionWorkspace(
+    workspaceId: string,
+    userId?: string,
+    cadenceSecs: number = 3600
+  ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
+    const resourceId = workspaceId;
+    const requestId = crypto.randomUUID();
+
+    logger.info({
+      event: 'notion_workspace_registration_start',
+      workspaceId,
+      resourceId,
+      userId,
+      requestId
+    }, 'Starting Notion workspace registration');
+
+    // Try to create a brand‑new sync‑plan or get existing one
+    let syncPlanId: string;
+    try {
+      // Try to create a brand‑new sync‑plan
+      syncPlanId = await this.createSyncPlan('notion', resourceId, userId);
+      logger.info({
+        event: 'sync_plan_created',
+        syncPlanId,
+        resourceId,
+        requestId
+      }, 'Sync‑plan created successfully');
+    } catch (err) {
+      if (err instanceof ConflictError) {
+        // Plan exists – fetch its id
+        const plan = await this.getSyncPlan(resourceId);
+        syncPlanId = plan.id;
+        logger.info({
+          event: 'sync_plan_exists',
+          syncPlanId,
+          resourceId,
+          requestId
+        }, 'Sync‑plan already exists');
+      } else {
+        throw toDomeError(err, 'Failed to create or retrieve sync plan', {
+          resourceId,
+          userId,
+          requestId
+        });
+      }
+    }
+
+    // Always attach the user if supplied (idempotent if already attached)
+    if (userId) {
+      await this.attachUser(syncPlanId, userId);
+      logger.info({
+        event: 'user_attached',
+        syncPlanId,
+        userId,
+        requestId
+      }, 'User attached to sync‑plan successfully');
+    }
+
+    const created = await this.initializeResource(
+      { resourceId, providerType: 'NOTION', userId },
+      cadenceSecs,
+    );
+
+    logger.info(
+      {
+        event: 'notion_workspace_initialized',
+        syncPlanId,
+        resourceId,
+        created,
+        requestId
+      },
+      'Notion workspace initialised & synced successfully',
+    );
+
+    metrics.trackOperation('notion_workspace_registration', true, { created: String(created) });
+
+    return {
+      id: syncPlanId,
+      resourceId,
+      wasInitialised: created,
+    };
+  }
+
+  /**
    * Fetch handler for HTTP requests - DEPRECATED
    * Note: Direct HTTP requests are now handled by dome-api
    *

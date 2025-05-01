@@ -63,3 +63,5 @@ export interface Provider {
 
 // Export provider implementations
 export { GithubProvider } from './github';
+export { NotionProvider } from './notion';
+

@@ -1,6 +1,18 @@
 # Tsunami Service
 
-This service is responsible for ingesting content from external sources (like GitHub repositories) and storing it in the Silo service for further processing, embedding, and retrieval.
+This service is responsible for ingesting content from external sources (like GitHub repositories and Notion workspaces) and storing it in the Silo service for further processing, embedding, and retrieval.
+
+## Supported Content Sources
+
+Tsunami currently supports the following content sources:
+
+### GitHub Repositories
+
+Ingest code and documentation from GitHub repositories. See the [GitHub Repository Registration](#register-a-github-repository) section for details.
+
+### Notion Workspaces
+
+Ingest documents, databases, and other content from Notion workspaces. The Notion integration supports both API key and OAuth authentication methods. See the [Notion Integration](./docs/NOTION_INTEGRATION.md) documentation for detailed setup instructions and [API_NOTION.md](./docs/API_NOTION.md) for API details.
 
 ## Recent Changes: Multi-User Sync Plans
 
@@ -93,5 +105,52 @@ The Tsunami service uses Durable Objects to manage the state and synchronization
 
 - **ResourceObject**: A Durable Object that manages the state and synchronization of an external content source
 - **SyncPlanService**: A service that manages sync plans and resource objects
-- **Providers**: Implementations of the Provider interface for different content sources (GitHub, Notion, etc.)
+- **Providers**: Implementations of the Provider interface for different content sources:
+  - **GitHub**: Ingests content from GitHub repositories
+  - **Notion**: Ingests content from Notion workspaces
 - **Database**: A D1 database that stores sync plans and their state
+
+## Notion Integration
+
+The Notion integration allows you to ingest content from Notion workspaces into your knowledge base. Key features include:
+
+- Connect to Notion workspaces using API keys or OAuth
+- Automatically sync content on a configurable schedule
+- Filter content based on customizable rules
+- Track sync history and status
+- Convert Notion-specific formatting to standard text
+
+### Registering a Notion Workspace
+
+```http
+POST /resource/notion
+Content-Type: application/json
+
+{
+  "userId": "user123",
+  "workspaceId": "your_workspace_id",
+  "cadence": "PT1H"
+}
+```
+
+This endpoint will:
+
+1. Check if a sync plan already exists for the workspace
+2. If it exists, add the user to the existing sync plan
+3. If it doesn't exist, create a new sync plan
+4. Initialize or sync the workspace
+
+The response will indicate whether the workspace was newly registered or already existed:
+
+```json
+{
+  "success": true,
+  "id": "01H1G2J3K4L5M6N7P8Q9R0S1T2",
+  "resourceId": "your_workspace_id",
+  "message": "Notion workspace registered for syncing"
+}
+```
+
+For detailed documentation on the Notion integration, see:
+- [Notion Integration Guide](./docs/NOTION_INTEGRATION.md)
+- [Notion API Documentation](./docs/API_NOTION.md)
