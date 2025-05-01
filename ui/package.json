@@ -5,9 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "pages:build": "npx @cloudflare/next-on-pages@1",
+    "pages:build": "npx @cloudflare/next-on-pages@1 --experimental-worker-compatibility-date=2024-09-23 --compatibility-flag=nodejs_compat",
     "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static",
-    "pages:watch": "npx @cloudflare/next-on-pages@1 --watch",
+    "pages:watch": "npx @cloudflare/next-on-pages@1 --watch --experimental-worker-compatibility-date=2024-09-23 --compatibility-flag=nodejs_compat",
     "pages:dev": "npx wrangler pages dev .vercel/output/static --compatibility-flag=nodejs_compat",
     "start": "next start",
     "lint": "next lint"
@@ -15,7 +15,7 @@
   "dependencies": {
     "cookies-next": "^4.1.0",
     "next": "^14.0.0",
-    "next-auth": "^4.24.5",
+    "next-auth": "^5.0.0-beta.27",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^3.22.4"

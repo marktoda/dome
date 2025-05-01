@@ -4,7 +4,7 @@
     "output_directory": ".vercel/output/static",
     "root_directory": "ui"
   },
-  "compatibility_date": "2023-06-14",
+  "compatibility_date": "2024-09-23",
   "compatibility_flags": ["nodejs_compat"],
   "env": {
     "NEXT_PUBLIC_BASE_URL": { "value": "https://67143919.dome-8dm.pages.dev" },

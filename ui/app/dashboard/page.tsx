@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { auth, signOut } from '@/auth';
+import { useSession } from 'next-auth/react';
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -47,8 +48,8 @@ export default function DashboardPage() {
               console.error('Error during logout:', error);
             }
             
-            // Then use NextAuth signOut to clear local session
-            signOut({ callbackUrl: '/' });
+            // Then use Auth.js v5 signOut to clear local session
+            signOut({ redirectTo: '/' });
           }}
           className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-md transition-colors"
         >

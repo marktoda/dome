@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { signIn } from 'next-auth/react';
+import { signIn } from '@/auth';
 import { useRouter } from 'next/navigation';
 import { GithubIcon, NotionIcon } from '@/components/icons';
 
@@ -47,7 +47,7 @@ export default function LoginPage() {
   };
 
   const handleOAuthSignIn = (provider: string) => {
-    signIn(provider, { callbackUrl: '/dashboard' });
+    signIn(provider, { redirectTo: '/dashboard' });
   };
 
   return (

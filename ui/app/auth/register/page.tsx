@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GithubIcon, NotionIcon, UserIcon, MailIcon, LockIcon } from '@/components/icons';
-import { signIn } from 'next-auth/react';
+import { signIn } from '@/auth';
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
@@ -56,7 +56,7 @@ export default function RegisterPage() {
   };
 
   const handleOAuthSignIn = (provider: string) => {
-    signIn(provider, { callbackUrl: '/dashboard' });
+    signIn(provider, { redirectTo: '/dashboard' });
   };
 
   return (

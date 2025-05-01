@@ -9,15 +9,25 @@ import { ObservabilityService } from '../../src/services/observabilityService';
 vi.mock('../../src/services/llmService', () => ({
   LlmService: {
     rewriteQuery: vi.fn(),
-    analyzeQueryComplexity: vi.fn(),
-    generateResponse: vi.fn(),
+    analyzeQuery: vi.fn(),
+    call: vi.fn(),
+    stream: vi.fn(),
     MODEL: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   },
 }));
 
+// Create a mock for SearchService
+const mockSearchFn = vi.fn();
+// Create mock class
+class MockSearchService {
+  search = mockSearchFn;
+  constructor() {}
+}
+
+// Mock the SearchService module
 vi.mock('../../src/services/searchService', () => ({
   SearchService: {
-    search: vi.fn(),
+    fromEnv: vi.fn().mockImplementation(() => new MockSearchService()),
     extractSourceMetadata: vi.fn(),
     rankAndFilterDocuments: vi.fn(),
   },
@@ -80,8 +90,15 @@ vi.mock('../../src/checkpointer/d1Checkpointer', () => {
     D1Checkpointer: class MockCheckpointer {
       constructor() {}
       initialize = vi.fn().mockResolvedValue(undefined);
-      get = vi.fn().mockResolvedValue(null);
+      getTuple = vi.fn().mockResolvedValue(undefined);
       put = vi.fn().mockResolvedValue(undefined);
+      putWrites = vi.fn().mockResolvedValue(undefined);
+      list = vi.fn().mockImplementation(async function*() {
+        // Empty generator
+        return;
+      });
+      readCheckpoint = vi.fn().mockResolvedValue(null);
+      writeCheckpoint = vi.fn().mockResolvedValue(undefined);
     },
   };
 });
@@ -137,15 +154,18 @@ describe('Chat RAG Graph Integration Tests', () => {
 
     // Mock LlmService methods
     vi.mocked(LlmService.rewriteQuery).mockResolvedValue('rewritten query');
-    vi.mocked(LlmService.analyzeQueryComplexity).mockResolvedValue({
+    vi.mocked(LlmService.analyzeQuery).mockResolvedValue({
       isComplex: false,
       shouldSplit: false,
       reason: 'Query is simple',
     });
-    vi.mocked(LlmService.generateResponse).mockResolvedValue('This is a test response');
+    vi.mocked(LlmService.call).mockResolvedValue('This is a test response');
+    vi.mocked(LlmService.stream).mockImplementation(async function* () {
+      yield 'This is a test response';
+    });
 
     // Mock SearchService methods
-    vi.mocked(SearchService.search).mockResolvedValue(mockDocs);
+    mockSearchFn.mockResolvedValue(mockDocs);
     vi.mocked(SearchService.extractSourceMetadata).mockReturnValue(
       mockDocs.map(doc => ({
         id: doc.id,
@@ -194,8 +214,7 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    // @ts-ignore - Type issues with LangGraph will be fixed later
-    const result = await graph.invoke(initialState);
+    const result = await graph.invoke(initialState) as AgentState;
 
     // Verify the result
     expect(result).toBeDefined();
@@ -208,17 +227,16 @@ describe('Chat RAG Graph Integration Tests', () => {
     expect(result.metadata?.nodeTimings).toHaveProperty('generateAnswer');
 
     // Verify that the LLM service was called
-    expect(LlmService.analyzeQueryComplexity).toHaveBeenCalledWith(
+    expect(LlmService.analyzeQuery).toHaveBeenCalledWith(
       mockEnv,
       'What is the capital of France?',
       expect.any(Object),
     );
 
-    expect(LlmService.generateResponse).toHaveBeenCalled();
+    expect(LlmService.call).toHaveBeenCalled();
 
     // Verify that the search service was called
-    expect(SearchService.search).toHaveBeenCalledWith(
-      mockEnv,
+    expect(mockSearchFn).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: mockUserId,
         query: 'rewritten query',
@@ -234,11 +252,11 @@ describe('Chat RAG Graph Integration Tests', () => {
 
   it('should handle complex queries that need rewriting', async () => {
     // Mock a complex query analysis
-    vi.mocked(LlmService.analyzeQueryComplexity).mockResolvedValue({
+    vi.mocked(LlmService.analyzeQuery).mockResolvedValue({
       isComplex: true,
       shouldSplit: true,
       reason: 'Query contains multiple questions',
-      suggestedQueries: ['What is the capital of France?', 'What is the population of Paris?'],
+      suggested: ['What is the capital of France?', 'What is the population of Paris?'],
     });
 
     // Create the graph
@@ -264,15 +282,14 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    // @ts-ignore - Type issues with LangGraph will be fixed later
-    const result = await graph.invoke(initialState);
+    const result = await graph.invoke(initialState) as AgentState;
 
     // Verify the result
     expect(result).toBeDefined();
     expect(result.generatedText).toBeDefined();
 
     // Verify that query analysis was performed
-    expect(LlmService.analyzeQueryComplexity).toHaveBeenCalledWith(
+    expect(LlmService.analyzeQuery).toHaveBeenCalledWith(
       mockEnv,
       'What is the capital of France and what is its population?',
       expect.any(Object),
@@ -282,13 +299,14 @@ describe('Chat RAG Graph Integration Tests', () => {
     expect(LlmService.rewriteQuery).toHaveBeenCalled();
 
     // Verify that the query analysis was stored in the state
-    expect(result.tasks?.queryAnalysis).toBeDefined();
-    expect(result.tasks?.queryAnalysis?.isComplex).toBe(true);
+    expect(result.taskEntities && Object.values(result.taskEntities)[0]?.queryAnalysis).toBeDefined();
+    expect(result.taskEntities && Object.values(result.taskEntities)[0]?.queryAnalysis?.isComplex).toBe(true);
   });
 
   it('should handle retrieval widening when few results are found', async () => {
-    // First return empty results, then return results after widening
-    vi.mocked(SearchService.search)
+    // Reset the search mock function and configure it for this test
+    mockSearchFn.mockReset();
+    mockSearchFn
       .mockResolvedValueOnce([]) // First call returns no results
       .mockResolvedValueOnce(mockDocs); // Second call after widening returns results
 
@@ -313,23 +331,22 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    // @ts-ignore - Type issues with LangGraph will be fixed later
-    const result = await graph.invoke(initialState);
+    const result = await graph.invoke(initialState) as AgentState;
 
     // Verify the result
     expect(result).toBeDefined();
     expect(result.generatedText).toBeDefined();
 
     // Verify that search was called twice (initial + widening)
-    expect(SearchService.search).toHaveBeenCalledTimes(2);
+    expect(mockSearchFn).toHaveBeenCalledTimes(2);
 
-    // Verify that widening attempts were tracked
-    expect(result.tasks?.wideningAttempts).toBe(1);
+    // Verify that widening attempts were tracked in the task entity
+    expect(result.taskEntities && Object.values(result.taskEntities)[0]?.wideningAttempts).toBe(1);
   });
 
   it('should handle errors gracefully', async () => {
     // Mock an error in the LLM service
-    vi.mocked(LlmService.generateResponse).mockRejectedValue(new Error('LLM service error'));
+    vi.mocked(LlmService.call).mockRejectedValue(new Error('LLM service error'));
 
     // Create the graph
     const graph = await buildChatGraph(mockEnv);
@@ -352,8 +369,7 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    // @ts-ignore - Type issues with LangGraph will be fixed later
-    const result = await graph.invoke(initialState);
+    const result = await graph.invoke(initialState) as AgentState;
 
     // Verify the result contains an error
     expect(result).toBeDefined();
