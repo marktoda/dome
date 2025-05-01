@@ -1,5 +1,5 @@
 name = "dome"
 compatibility_date = "2025-04-15"
-compatibility_flags = ["nodejs_als"]
+compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
