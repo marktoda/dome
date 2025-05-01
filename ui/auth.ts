@@ -2,8 +2,34 @@ import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
 import Credentials from "next-auth/providers/credentials";
 import { authClient } from "./lib/authClient";
+import type { DefaultSession, NextAuthConfig } from "next-auth";
 
-export const { auth, handlers, signIn, signOut } = NextAuth({
+// Set the runtime to support Edge environments like Cloudflare Pages
+export const runtime = "edge";
+
+// Extend the built-in session types
+declare module "next-auth" {
+  interface Session extends DefaultSession {
+    user: {
+      id?: string;
+      role?: string;
+    } & DefaultSession["user"];
+    provider?: string;
+    token?: string;
+  }
+  interface User {
+    id: string;
+    role?: string;
+    token?: string;
+  }
+}
+
+// Configure NextAuth
+const authConfig: NextAuthConfig = {
+  // For development, trust all hosts
+  trustHost: true,
+  // Add a secret for signing tokens
+  secret: process.env.NEXTAUTH_SECRET || "development-secret-key-change-me-in-production",
   providers: [
     GitHub({
       clientId: process.env.GITHUB_CLIENT_ID || "dummy-github-client-id",
@@ -95,4 +121,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
-});
+};
+
+// Create and export the auth handlers
+export const { auth, handlers, signIn, signOut } = NextAuth(authConfig);

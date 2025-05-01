@@ -5,9 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "pages:build": "npx @cloudflare/next-on-pages@1 --experimental-worker-compatibility-date=2024-09-23 --compatibility-flag=nodejs_compat",
+    "pages:build": "npx @cloudflare/next-on-pages@1",
     "pages:deploy": "npm run pages:build && wrangler pages deploy .vercel/output/static",
-    "pages:watch": "npx @cloudflare/next-on-pages@1 --watch --experimental-worker-compatibility-date=2024-09-23 --compatibility-flag=nodejs_compat",
+    "pages:watch": "npx @cloudflare/next-on-pages@1 --watch",
     "pages:dev": "npx wrangler pages dev .vercel/output/static --compatibility-flag=nodejs_compat",
     "start": "next start",
     "lint": "next lint"

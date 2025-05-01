@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GithubIcon, NotionIcon, UserIcon, MailIcon, LockIcon } from '@/components/icons';
-import { signIn } from '@/auth';
+import { serverSignIn } from '@/app/auth-actions';
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
@@ -27,13 +27,12 @@ export default function RegisterPage() {
     }
 
     try {
-      // Register using NextAuth credentials provider
-      // This will call the NextAuth API endpoint which uses our auth client
-      const result = await signIn('credentials', {
+      // Register using our server action wrapper for credentials provider
+      const result = await serverSignIn('credentials', undefined, {
         redirect: false,
         email,
         password,
-        callbackUrl: '/dashboard',
+        name,
         // We use signIn here which will automatically log the user in
         // The credentials provider handles the registration via the authorize callback
       });
@@ -55,8 +54,14 @@ export default function RegisterPage() {
     }
   };
 
-  const handleOAuthSignIn = (provider: string) => {
-    signIn(provider, { redirectTo: '/dashboard' });
+  const handleOAuthSignIn = async (provider: string) => {
+    try {
+      // Use our server action wrapper which safely handles headers() in edge runtime
+      await serverSignIn(provider, '/dashboard');
+    } catch (error) {
+      console.error(`Error signing in with ${provider}:`, error);
+      setError(`Failed to sign in with ${provider}`);
+    }
   };
 
   return (

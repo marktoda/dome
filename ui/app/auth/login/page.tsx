@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { signIn } from '@/auth';
 import { useRouter } from 'next/navigation';
 import { GithubIcon, NotionIcon } from '@/components/icons';
+import { serverSignIn } from '@/app/auth-actions';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -19,7 +19,8 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const result = await signIn('credentials', {
+      // Use our server action with the appropriate options
+      const result = await serverSignIn('credentials', undefined, {
         redirect: false,
         email,
         password,
@@ -34,20 +35,27 @@ export default function LoginPage() {
         } else {
           setError(result.error);
         }
+        setLoading(false);
         return;
       }
 
+      // If successful, redirect to dashboard
       router.push('/dashboard');
     } catch (error) {
       setError('An error occurred during login');
       console.error(error);
-    } finally {
       setLoading(false);
     }
   };
 
-  const handleOAuthSignIn = (provider: string) => {
-    signIn(provider, { redirectTo: '/dashboard' });
+  const handleOAuthSignIn = async (provider: string) => {
+    try {
+      // Use our server action wrapper which safely handles headers() in edge runtime
+      await serverSignIn(provider, '/dashboard');
+    } catch (error) {
+      console.error(`Error signing in with ${provider}:`, error);
+      setError(`Failed to sign in with ${provider}`);
+    }
   };
 
   return (

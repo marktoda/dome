@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { signOut } from '@/auth';
+import { serverSignOut } from '@/app/auth-actions';
 import { useSession } from 'next-auth/react';
 
 export default function DashboardPage() {
@@ -48,8 +48,8 @@ export default function DashboardPage() {
               console.error('Error during logout:', error);
             }
             
-            // Then use Auth.js v5 signOut to clear local session
-            signOut({ redirectTo: '/' });
+            // Then use our server action wrapper to handle signOut
+            await serverSignOut('/');
           }}
           className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-md transition-colors"
         >
