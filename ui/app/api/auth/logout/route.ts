@@ -3,7 +3,7 @@ import { signOut } from '@/auth';
 import { authClient } from '../../../../lib/authClient';
 
 // Configure route to use Edge Runtime for Cloudflare Pages compatibility
-export const runtime = "edge";
+export const runtime = "experimental-edge";
 
 export async function POST(req: NextRequest) {
   try {

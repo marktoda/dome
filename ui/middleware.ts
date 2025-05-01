@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from './auth';
 
 // Configure explicitly for edge runtime for Cloudflare Pages compatibility
-export const runtime = "edge";
+export const runtime = "experimental-edge";
 
 // Protected routes that require authentication
 const protectedPaths = ['/dashboard'];

@@ -1,10 +1,12 @@
 /**
  * Embedding Service
  *
- * Interfaces with Workers AI to generate embeddings.
+ * Interfaces with Google Generative AI's embedding models using LangChain.
  */
 
 import { getLogger, logError, metrics } from '@dome/logging';
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import { TaskType } from "@google/generative-ai";
 
 /**
  * Configuration for the embedding service
@@ -14,16 +16,19 @@ export interface EmbedderConfig {
   maxBatchSize: number;
   retryAttempts: number;
   retryDelay: number;
+  taskType: TaskType;
+  title?: string;
 }
 
 /**
  * Default configuration values
  */
 export const DEFAULT_EMBEDDER_CONFIG: EmbedderConfig = {
-  model: '@cf/baai/bge-large-en-v1.5',
+  model: 'gemini-embedding-exp-03-07', // Using Gemini's embedding model (3072 dimensions)
   maxBatchSize: 10, // Reduced from 20 to prevent memory issues
   retryAttempts: 3,
   retryDelay: 1000, // ms
+  taskType: TaskType.RETRIEVAL_DOCUMENT
 };
 
 /**
@@ -31,21 +36,22 @@ export const DEFAULT_EMBEDDER_CONFIG: EmbedderConfig = {
  */
 export class Embedder {
   private config: EmbedderConfig;
-  private ai: Ai;
+  private embeddings: GoogleGenerativeAIEmbeddings;
 
-  constructor(ai: Ai, config: Partial<EmbedderConfig> = {}) {
-    this.ai = ai;
+  constructor(apiKey: string, config: Partial<EmbedderConfig> = {}) {
     this.config = {
       ...DEFAULT_EMBEDDER_CONFIG,
       ...config,
     };
+    
+    this.embeddings = new GoogleGenerativeAIEmbeddings({
+      apiKey,
+      model: this.config.model,
+      taskType: this.config.taskType,
+      title: this.config.title
+    });
   }
 
-  /**
-   * Generate embeddings for a batch of text
-   * @param texts Array of text strings to embed
-   * @returns Array of embedding vectors
-   */
   /**
    * Generate embeddings for a batch of text
    * @param texts Array of text strings to embed
@@ -216,12 +222,6 @@ export class Embedder {
    * @returns Array of embedding vectors
    * @private
    */
-  /**
-   * Generate embeddings for a single batch of text (respecting max batch size)
-   * @param texts Array of text strings to embed
-   * @returns Array of embedding vectors
-   * @private
-   */
   private async embedBatch(texts: string[]): Promise<number[][]> {
     let attempt = 0;
     let lastError: Error | null = null;
@@ -285,9 +285,27 @@ export class Embedder {
    * @private
    */
   private async callAiService(texts: string[]): Promise<any> {
-    // Note: Type casting is necessary due to the dynamic nature of AI model names
-    // A more type-safe approach would be to define a union type of supported models
-    return await this.ai.run(this.config.model as any, { text: texts });
+    try {
+      // Process each text individually using the LangChain embeddings interface
+      const embedResults = await Promise.all(
+        texts.map(text => this.embeddings.embedQuery(text))
+      );
+      
+      getLogger().debug(
+        {
+          modelUsed: this.config.model,
+          inputSize: texts.length,
+          dimensions: embedResults[0]?.length || 0
+        },
+        'Generated embeddings using Google Generative AI'
+      );
+      
+      // Format response to match our expected format
+      return { data: embedResults };
+    } catch (error) {
+      getLogger().error({ error, model: this.config.model }, 'Error calling Google Generative AI embedding API');
+      throw error;
+    }
   }
 
   /**
@@ -370,6 +388,7 @@ export class Embedder {
 /**
  * Create a default embedder instance
  */
-export const createEmbedder = (ai: Ai, config?: Partial<EmbedderConfig>): Embedder => {
-  return new Embedder(ai, config);
+export const createEmbedder = (apiKey: string, config?: Partial<EmbedderConfig>): Embedder => {
+  return new Embedder(apiKey, config);
 };
+

@@ -7,6 +7,13 @@ import {
 } from '@dome/common';
 import { z } from 'zod';
 
+// Extend the Cloudflare Env interface to include our API key
+declare global {
+  interface Env extends Cloudflare.Env {
+    GOOGLE_AI_API_KEY: string;
+  }
+}
+
 import { withLogger } from '@dome/logging';
 import {
   getLogger,
@@ -34,9 +41,13 @@ import { SiloClient, SiloBinding } from '@dome/silo/client';
 
 type DeadQueue = Env['EMBED_DEAD'];
 
+/**
+ * Updated to use Google Generative AI for embeddings
+ */
 const buildServices = (env: Env) => ({
   preprocessor: createPreprocessor(),
-  embedder: createEmbedder(env.AI),
+  // Pass the API key from environment variables
+  embedder: createEmbedder(env.GOOGLE_AI_API_KEY || ""),
   vectorize: createVectorizeService(env.VECTORIZE),
   silo: new SiloClient(env.SILO as unknown as SiloBinding),
 });

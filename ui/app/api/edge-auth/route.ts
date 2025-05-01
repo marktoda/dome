@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authClient } from '../../../lib/authClient';
 
 // Configure route to use Edge Runtime for Cloudflare Pages compatibility
-export const runtime = 'edge';
+export const runtime = 'experimental-edge';
 
 // Simple login endpoint that works in Edge Runtime
 export async function POST(req: NextRequest) {

@@ -12,3 +12,4 @@ dist/
 .dev.vars
 .wrangler/
 coverage/
+.vercel/
