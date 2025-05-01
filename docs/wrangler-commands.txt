@@ -21,6 +21,7 @@ wrangler queues create enriched-content
 wrangler d1 create silo
 wrangler d1 create sync-plan
 wrangler d1 create todos-db
+wrangler d1 create auth-db
 
 wrangler r2 bucket create silo-content
 wrangler r2 bucket notification create silo-content  --event-type object-create  --queue silo-content-uploaded

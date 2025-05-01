@@ -49,10 +49,7 @@ export class DomeError extends Error {
         this.cause instanceof Error
           ? this.cause instanceof DomeError
             ? this.cause.toJSON()
-            : {
-              message: this.cause.message,
-              stack: process.env.NODE_ENV !== 'production' ? this.cause.stack : undefined,
-            }
+            : this.cause.message
           : this.cause,
     };
   }
@@ -286,8 +283,8 @@ export function errorHandler(options: ErrorHandlerOptions = {}) {
       logger.error({
         event: 'error_handled',
         error: error.toJSON(),
-        path: c.req.path,
-        method: c.req.method,
+        path: c.req?.path,
+        method: c.req?.method,
       });
 
       // Set response status
@@ -336,6 +333,10 @@ export function toDomeError(
 ): DomeError {
   // Already a DomeError
   if (error instanceof DomeError) {
+    // Merge the provided details with existing details
+    if (Object.keys(defaultDetails).length > 0) {
+      error.withContext(defaultDetails);
+    }
     return error;
   }
 

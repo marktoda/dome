@@ -1,5 +1,6 @@
 import { getLogger } from '@dome/logging';
 import { ChatController } from './chatController';
+import { NotionController } from './notionController';
 import { SearchController } from './searchController';
 import { SiloController } from './siloController';
 import { TsunamiController } from './tsunamiController';
@@ -15,6 +16,7 @@ export class ControllerFactory {
   private searchController: SearchController | null = null;
   private siloController: SiloController | null = null;
   private tsunamiController: TsunamiController | null = null;
+  private notionController: NotionController | null = null;
 
   /**
    * Create a new controller factory
@@ -79,6 +81,20 @@ export class ControllerFactory {
       this.tsunamiController = new TsunamiController(tsunamiService);
     }
     return this.tsunamiController;
+  }
+
+  /**
+   * Get a notion controller instance
+   * @param env Environment bindings
+   * @returns Notion controller instance
+   */
+  getNotionController(env: Bindings): NotionController {
+    if (!this.notionController) {
+      this.logger.debug('Creating new NotionController instance');
+      const tsunamiService = this.serviceFactory.getTsunamiService(env);
+      this.notionController = new NotionController(tsunamiService);
+    }
+    return this.notionController;
   }
 }
 

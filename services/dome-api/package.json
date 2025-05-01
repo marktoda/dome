@@ -18,6 +18,7 @@
     "@dome/constellation": "workspace:*",
     "@dome/chat": "workspace:*",
     "@dome/ai-processor": "workspace:*",
+    "@dome/auth": "workspace:*",
     "@dqbd/tiktoken": "^1.0.7",
     "@graphql-tools/schema": "^10.0.2",
     "@hono/zod-validator": "^0.1.8",

@@ -32,17 +32,60 @@ export class ChatMode extends BaseMode {
     '',
   ];
 
-  /** Accumulates stream chunks until a valid JSON object can be parsed. */
-  private thinkingBuffer = new class {
-    private buf = '';
+  /** Processes thinking content and maintains state between chunks */
+  private thinkingProcessor = new class {
+    private buffer = '';
+    private lastThinking = '';
+    private isJson = false;
 
-    tryPush(fragment: string): string {
-      this.buf += fragment;
-      return this.buf;
+    /** Add a new thinking chunk and return processed thinking content */
+    process(chunk: string): string {
+      this.buffer += chunk;
+      
+      // Try to extract meaningful thinking content
+      try {
+        const parsed = JSON.parse(this.buffer);
+        this.isJson = true;
+        
+        // Extract thinking from various formats
+        if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
+          this.lastThinking = parsed[0];
+        } else if (parsed && typeof parsed === 'object') {
+          if (parsed.reasoning) {
+            if (Array.isArray(parsed.reasoning) && parsed.reasoning.length > 0) {
+              this.lastThinking = parsed.reasoning[parsed.reasoning.length - 1];
+            } else if (typeof parsed.reasoning === 'string') {
+              this.lastThinking = parsed.reasoning;
+            }
+          } else if (parsed.thinking && typeof parsed.thinking === 'string') {
+            this.lastThinking = parsed.thinking;
+          } else if (parsed.thought && typeof parsed.thought === 'string') {
+            this.lastThinking = parsed.thought;
+          } else {
+            // For other object formats, try to extract first string property
+            for (const key in parsed) {
+              if (typeof parsed[key] === 'string' && parsed[key].length > 10) {
+                this.lastThinking = parsed[key];
+                break;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Not JSON, check if thinking content is readable as plain text
+        this.isJson = false;
+        if (this.buffer.length < 500 && !this.buffer.includes('{') && !this.buffer.includes('[')) {
+          this.lastThinking = this.buffer;
+        }
+      }
+      
+      return this.lastThinking || "Thinking...";
     }
 
     reset(): void {
-      this.buf = '';
+      this.buffer = '';
+      this.lastThinking = '';
+      this.isJson = false;
     }
   }();
 
@@ -88,80 +131,51 @@ export class ChatMode extends BaseMode {
     let startedContent = false;
     const onChunk = (chunk: string | ChatMessageChunk) => {
       if (typeof chunk === 'string') {
+        // Handle plain string chunk (typically final response)
         convo.reply += chunk;
         startedContent = true;
       } else if (chunk.type === 'thinking' && !startedContent) {
-        // Try to handle the thinking content better
-        const content = this.thinkingBuffer.tryPush(chunk.content);
-
-        // Only display thinking content if we have a reasonable amount
-        // and suppress raw JSON that's not useful to display
-        try {
-          // Try to parse as JSON
-          const parsed = JSON.parse(content);
-
-          // If it's an array with one element that's a string, just show that
-          if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
-            convo.thinking = parsed[0];
-          }
-          // If it's an object with a reasoning property, extract that
-          else if (parsed && typeof parsed === 'object' && parsed.reasoning) {
-            if (Array.isArray(parsed.reasoning) && parsed.reasoning.length > 0) {
-              // Take the last reasoning element if it's an array
-              convo.thinking = parsed.reasoning[parsed.reasoning.length - 1];
-            } else if (typeof parsed.reasoning === 'string') {
-              convo.thinking = parsed.reasoning;
-            } else {
-              // Just show a simple thinking indicator
-              convo.thinking = "Thinking...";
-            }
-          } else {
-            // Skip showing large complex JSON objects
-            convo.thinking = "Thinking...";
-          }
-        } catch {
-          // If it's not JSON, take it as is if it's reasonable
-          if (content.length < 300) {
-            convo.thinking = content;
-          } else {
-            convo.thinking = "Thinking...";
-          }
-        }
+        // Process thinking chunk and display it properly
+        convo.thinking = this.thinkingProcessor.process(chunk.content);
       } else if (chunk.type === 'content') {
-        // Reset thinking buffer when content starts
-        this.thinkingBuffer.reset();
-        convo.reply += chunk.content;
+        // When content starts, reset thinking processor
+        if (!startedContent) {
+          this.thinkingProcessor.reset();
+        }
+        convo.reply += chunk.content || '';
         startedContent = true;
       } else if (chunk.type === 'sources') {
         // Final chunks with sources don't need to add content to the reply
-        // The sources will be displayed separately
         startedContent = true;
       } else if (chunk.type === 'unknown') {
-        // Handle unknown chunks (could be plain text)
-        if (!startedContent && chunk.content.trim()) {
-          // Try to see if it's thinking content
+        // Handle unknown chunks
+        if (!startedContent) {
+          // Try to determine if it's thinking content
           try {
             const parsed = JSON.parse(chunk.content);
             if (parsed && typeof parsed === 'object') {
-              convo.thinking = JSON.stringify(parsed, null, 2);
+              // Process as thinking
+              convo.thinking = this.thinkingProcessor.process(chunk.content);
             } else {
-              convo.reply += chunk.content;
+              // Treat as reply content
+              convo.reply += chunk.content || '';
               startedContent = true;
             }
           } catch {
-            // Not JSON, treat as regular content
-            convo.reply += chunk.content;
-            startedContent = true;
+            // Not JSON, check if it looks like thinking or regular content
+            if (chunk.content.includes('thinking') || chunk.content.includes('Thinking')) {
+              convo.thinking = chunk.content;
+            } else {
+              convo.reply += chunk.content || '';
+              startedContent = true;
+            }
           }
         } else {
-          convo.reply += chunk.content;
-          startedContent = true;
+          // If content already started, append to reply
+          convo.reply += chunk.content || '';
         }
-      } else {
-        // Any other chunk type
-        convo.reply += chunk.content || '';
-        startedContent = true;
       }
+      
       rebuild();
     };
 
@@ -225,12 +239,20 @@ export class ChatMode extends BaseMode {
 
     this.printBlock('{bold}{green-fg}You:{/green-fg}{/bold}', user, cw);
 
-    // Only display thinking if it looks meaningful and it's not just "Thinking..."
+    // Format and display thinking content if available
     if (thinking && thinking !== "Thinking..." && thinking.length > 1) {
-      this.printBlock('{gray-fg}Thinking:{/gray-fg}', thinking, cw);
+      // Break thinking into paragraphs and format as readable content
+      const formattedThinking = thinking
+        .replace(/\n\n+/g, '\n\n')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      this.printBlock('{bold}{gray-fg}Thinking:{/gray-fg}{/bold}', formattedThinking, cw);
     }
 
-    if (reply) this.printBlock('{bold}{blue-fg}Dome:{/blue-fg}{/bold}', reply, cw);
+    if (reply) {
+      this.printBlock('{bold}{blue-fg}Dome:{/blue-fg}{/bold}', reply, cw);
+    }
 
     this.scrollToBottom();
   }
@@ -308,7 +330,8 @@ export class ChatMode extends BaseMode {
 
       // Display snippet if available
       if (s.snippet) {
-        this.wrapText('   ' + s.snippet.slice(0, 100) + (s.snippet.length > 100 ? '…' : ''), cw);
+        const truncatedSnippet = s.snippet.length > 150 ? s.snippet.slice(0, 150) + '…' : s.snippet;
+        this.wrapText('   ' + truncatedSnippet, cw);
       }
 
       // Add space between sources (except after the last one)

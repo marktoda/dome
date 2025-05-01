@@ -23,6 +23,38 @@ export type Bindings = {
   CHAT: ChatBinding; // Chat service binding
   TSUNAMI: TsunamiBinding; // Tsunami service binding
   AI_PROCESSOR: AiProcessorBinding; // AI processor service binding
+  AUTH?: Fetcher; // Auth service binding
   VERSION?: string; // Version of the service
   ENVIRONMENT?: string; // Environment (development, staging, production)
 };
+
+/**
+ * Types for Notion integration
+ */
+
+// Notion workspace registration request
+export interface NotionWorkspaceRegistration {
+  workspaceId: string;
+  userId?: string;
+  cadence?: string;
+}
+
+// Notion OAuth configuration
+export interface NotionOAuthConfig {
+  code: string;
+  redirectUri: string;
+  userId?: string;
+}
+
+// Notion OAuth URL request
+export interface NotionOAuthUrlRequest {
+  redirectUri: string;
+  state?: string;
+}
+
+// Notion workspace sync history
+export interface NotionSyncHistory {
+  workspaceId: string;
+  resourceId: string;
+  history: unknown[];
+}

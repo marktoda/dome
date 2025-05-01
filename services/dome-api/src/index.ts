@@ -7,11 +7,12 @@ import {
   createRequestContextMiddleware,
   createErrorMiddleware,
   responseHandlerMiddleware,
-  createSimpleAuthMiddleware,
   formatZodError,
   createDetailedLoggerMiddleware,
 } from '@dome/common';
 import { userIdMiddleware, UserIdContext } from './middleware/userIdMiddleware';
+import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
+import { createAuthController } from './controllers/authController';
 import { initLogging, getLogger } from '@dome/logging';
 import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
@@ -49,9 +50,36 @@ initMetrics({
 getLogger().info('Application starting');
 app.use('*', cors());
 app.use('*', createErrorMiddleware(formatZodError));
-app.use('*', createSimpleAuthMiddleware()); // Simple auth middleware for now
+// Replace simple auth with auth routes and protected route middleware
 app.use('*', responseHandlerMiddleware);
 
+// Auth routes (no authentication required)
+const authRouter = new Hono();
+
+authRouter.post('/login', async (c: Context<{ Bindings: Bindings }>) => {
+  const authController = createAuthController();
+  return await authController.login(c);
+});
+
+authRouter.post('/register', async (c: Context<{ Bindings: Bindings }>) => {
+  const authController = createAuthController();
+  return await authController.register(c);
+});
+
+authRouter.post('/validate', async (c: Context<{ Bindings: Bindings }>) => {
+  const authController = createAuthController();
+  return await authController.validateToken(c);
+});
+
+authRouter.post('/logout', async (c: Context<{ Bindings: Bindings }>) => {
+  const authController = createAuthController();
+  return await authController.logout(c);
+});
+
+// Mount auth router
+app.route('/auth', authRouter);
+
+// Public routes (no authentication required)
 // Root route
 app.get('/', c => {
   getLogger().info({ path: '/' }, 'Root endpoint accessed');
@@ -89,10 +117,13 @@ app.get('/health', c => {
   });
 });
 
-// Notes API routes
+// Notes API routes - protected by authentication
 const notesRouter = new Hono();
 
-// Apply user ID middleware to all note routes
+// Apply authentication middleware to all note routes
+notesRouter.use('*', authenticationMiddleware);
+
+// Apply user ID middleware (now gets userId from auth context)
 notesRouter.use('*', userIdMiddleware);
 
 // Ingest endpoint - for adding new notes, files, etc.
@@ -119,8 +150,11 @@ notesRouter.get('/', async (c: Context<{ Bindings: Bindings; Variables: UserIdCo
   return await siloController.listNotes(c);
 });
 
-// Create a dedicated search router
+// Create a dedicated search router - protected by authentication
 const searchRouter = new Hono();
+
+// Apply authentication middleware to all search routes
+searchRouter.use('*', authenticationMiddleware);
 
 // Apply user ID middleware to all search routes
 searchRouter.use('*', userIdMiddleware);
@@ -138,15 +172,22 @@ searchRouter.get(
   },
 );
 
-// Chat API route
-app.post('/chat', async (c: Context<{ Bindings: Bindings }>) => {
+// Chat API routes - protected by authentication
+const chatRouter = new Hono();
+chatRouter.use('*', authenticationMiddleware);
+
+chatRouter.post('/', async (c: Context<{ Bindings: Bindings; Variables: AuthContext }>) => {
   const chatController = controllerFactory.getChatController(c.env);
   return await chatController.chat(c);
 });
 
+// Mount chat router
+app.route('/chat', chatRouter);
 
+
+// WebSocket chat endpoint
 app.get(
-  '/chat',                     // public endpoint -> wss://api.example.com/v1/chat
+  '/chat/ws',                     // WebSocket endpoint
   upgradeWebSocket((c) => {
     // NB: Cloudflare Workers has no `onOpen`; first client frame is where we start
     return {
@@ -170,35 +211,55 @@ app.get(
             jsonData = event.data;
           }
 
-          // Validate against the Zod schema
-          try {
-            // Ensure userId is present
-            if (!jsonData.userId) {
-              jsonData.userId = 'test-user-id'; // Default for CLI
-            }
+          // Simple auth check - we'll improve this later
+          if (!jsonData.userId) {
+            jsonData.userId = 'test-user-id'; // Default for CLI
+          }
 
-            // Parse with Zod schema
-            const validatedRequest = chatRequestSchema.parse(jsonData);
-            getLogger().info({
-              req: validatedRequest,
-              op: 'startChatSession'
-            }, 'ChatController request');
+          // Parse with Zod schema
+          const validatedRequest = chatRequestSchema.parse(jsonData);
+          getLogger().info({
+            req: validatedRequest,
+            op: 'startChatSession'
+          }, 'ChatController request');
 
-            const resp = await chatService.streamResponse(validatedRequest);
+          const resp = await chatService.streamResponse(validatedRequest);
 
-            // Pump the streaming body into the socket
-            const reader = resp.body!.getReader()
-            const td = new TextDecoder()
+          // Pump the streaming body into the socket
+          const reader = resp.body!.getReader()
+          const td = new TextDecoder()
 
-            while (true) {
-              const { value, done } = await reader.read()
-              getLogger().debug({ value }, 'streaming response')
-              if (done) break
-              ws.send(td.decode(value))   // send LangGraph chunk to the client
-            }
-            ws.close()                    // tell the client we're done
-          } catch (zodError) {
-            getLogger().error({ error: zodError }, 'Zod validation error for WebSocket message');
+          while (true) {
+            const { value, done } = await reader.read()
+            getLogger().debug({ value }, 'streaming response')
+            if (done) break
+            ws.send(td.decode(value))   // send LangGraph chunk to the client
+          }
+          ws.close()                    // tell the client we're done
+        } catch (zodError) {
+          getLogger().error({ error: zodError }, 'Zod validation error for WebSocket message');
+          const errorMessage = zodError instanceof Error ?
+            zodError.message :
+            'Unknown validation error';
+          ws.send(`Error: Invalid request format - ${errorMessage}`);
+          ws.close(1007, 'Invalid message format');
+        } catch (error) {
+          getLogger().error({ error }, 'Error processing WebSocket message');
+          ws.send(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          ws.close(1011, 'Internal server error');
+        }
+      },
+
+      onClose() {
+        /* metrics / cleanup */
+      },
+
+      onError(err) {
+        console.error('ws error', err)
+      },
+    }
+  }),
+)
             const errorMessage = zodError instanceof Error ?
               zodError.message :
               'Unknown validation error';
@@ -230,6 +291,7 @@ app.route('/notes', notesRouter);
 app.route('/search', searchRouter);
 
 const contentRouter = new Hono();
+contentRouter.use('*', authenticationMiddleware);
 contentRouter.use('*', userIdMiddleware);
 
 // Register a GitHub repository
@@ -256,11 +318,42 @@ contentRouter.get('/sync/plan/:syncPlanId/history', async (c: Context<{ Bindings
   return await tsunamiController.getSyncPlanHistory(c);
 });
 
+// Notion workspace registration and management
+contentRouter.post('/notion', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.registerNotionWorkspace(c);
+});
+
+// Get Notion workspace history
+contentRouter.get('/notion/:workspaceId/history', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.getNotionWorkspaceHistory(c);
+});
+
+// Trigger Notion workspace sync
+contentRouter.post('/notion/:workspaceId/sync', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.triggerNotionWorkspaceSync(c);
+});
+
+// Notion OAuth configuration
+contentRouter.post('/notion/oauth', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.configureNotionOAuth(c);
+});
+
+// Get Notion OAuth URL
+contentRouter.get('/notion/oauth/url', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.getNotionOAuthUrl(c);
+});
+
 // Mount GitHub router under content path
 app.route('/content', contentRouter);
 
-// AI endpoints
+// AI endpoints - protected by authentication
 const aiRouter = new Hono();
+aiRouter.use('*', authenticationMiddleware);
 aiRouter.use('*', userIdMiddleware);
 
 // Reprocess endpoint - for reprocessing failed AI metadata

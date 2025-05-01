@@ -72,8 +72,9 @@ describe('Error Propagation Across Service Boundaries', () => {
     } catch (error) {
       // Verify the error is propagated correctly
       expect(error).toBeInstanceOf(NotFoundError);
-      expect(error.message).toBe('Resource not found in downstream service');
-      expect(error.details).toEqual({ requestId: 'test-request-id-456' });
+      const domeError = error as DomeError;
+      expect(domeError.message).toBe('Resource not found in downstream service');
+      expect(domeError.details).toEqual({ requestId: 'test-request-id-456' });
     }
   });
 
@@ -104,7 +105,8 @@ describe('Error Propagation Across Service Boundaries', () => {
     } catch (error) {
       // Verify error is enriched while preserving original data
       expect(error).toBeInstanceOf(NotFoundError);
-      expect(error.details).toEqual({
+      const domeError = error as DomeError;
+      expect(domeError.details).toEqual({
         requestId: 'test-request-id-789',
         service: 'upstream',
         operation: 'callDownstreamService',
@@ -174,7 +176,12 @@ describe('End-to-End Error Handling', () => {
       throw new ValidationError('Invalid input data', { requestId });
     };
     
-    const response = await runServiceWithMiddleware(mockCtx, operation);
+    // Use options to exclude stack traces
+    const response = await runServiceWithMiddleware(
+      mockCtx,
+      operation,
+      { includeStack: false, includeCause: false }
+    );
     
     expect(response.status).toBe(400);
     expect(response.body).toEqual({
@@ -200,7 +207,11 @@ describe('End-to-End Error Handling', () => {
       }
     };
     
-    const response = await runServiceWithMiddleware(mockCtx, operation);
+    const response = await runServiceWithMiddleware(
+      mockCtx,
+      operation,
+      { includeStack: false, includeCause: false }
+    );
     
     expect(response.status).toBe(500);
     expect(response.body.error.details).toEqual(
@@ -245,42 +256,44 @@ describe('End-to-End Error Handling', () => {
 
 // Helper function to simulate service call chain
 async function simulateServiceCall(depth: number, requestId: string) {
+  // At the deepest level, always throw an error
+  if (depth === 1) {
+    throw new DomeError('Deep service error', {
+      code: 'DEEP_SERVICE_ERROR',
+      statusCode: 500,
+      details: {
+        serviceHop: depth,
+        requestId
+      }
+    });
+  }
+  
   if (depth <= 0) {
     return { success: true };
   }
   
   try {
+    // Continue the recursive chain
     return await simulateServiceCall(depth - 1, requestId);
   } catch (error) {
     // Add context at each service level
     if (error instanceof DomeError) {
-      error.withContext({ 
+      error.withContext({
         serviceHop: depth,
-        requestId 
+        requestId
       });
     } else {
       throw new DomeError('Service error', {
         code: 'SERVICE_ERROR',
         statusCode: 500,
-        details: { 
+        details: {
           serviceHop: depth,
           requestId,
           originalError: error instanceof Error ? error.message : String(error)
         }
       });
     }
+    // Re-throw the enriched error to continue propagation
     throw error;
-  }
-  
-  // Simulate error at the deepest level
-  if (depth === 1) {
-    throw new DomeError('Deep service error', {
-      code: 'DEEP_SERVICE_ERROR',
-      statusCode: 500,
-      details: { 
-        serviceHop: depth,
-        requestId 
-      }
-    });
   }
 }

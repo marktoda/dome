@@ -33,6 +33,11 @@ binding = "AI_PROCESSOR"
 service = "ai-processor"
 environment = "production"
 
+[[services]]
+binding = "AUTH"
+service = "auth"
+environment = "production"
+
 # For local development
 [dev]
 port = 8787
