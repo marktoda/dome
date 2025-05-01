@@ -94,17 +94,6 @@ export type ChatMessageChunk = { type: 'content' | 'thinking' | 'unknown'; conte
 // Extensible chunk‑type detector stack
 interface ChunkDetector { (raw: string, parsed: any): ChatMessageChunk | null; }
 const detectors: ChunkDetector[] = [
-  // Complete response in one go (new format)
-  (raw, p) => {
-    if (Array.isArray(p) && p[0] === 'updates' && typeof p[1] === 'object') {
-      const nodeId: string = Object.keys(p[1])[0];
-      if (nodeId === 'generate_rag' && p[1][nodeId].generatedText) {
-        return { type: 'content', content: p[1][nodeId].generatedText };
-      }
-    }
-    return null;
-  },
-
   // LangGraph updates - sources
   (raw, p) => {
     if (Array.isArray(p) && p[0] === 'updates') {
@@ -122,20 +111,36 @@ const detectors: ChunkDetector[] = [
     if (Array.isArray(p) && p[0] === 'updates') {
       const nodeId: string = Object.keys(p[1])[0];
       const node = p[1][nodeId];
-      
+
       if (node.reasoning && Array.isArray(node.reasoning) && node.reasoning.length > 0) {
         return { type: 'thinking', content: node.reasoning[node.reasoning.length - 1] };
       }
     }
     return null;
   },
-  
+
   // LangGraph messages node - content chunks
   (raw, p) => {
     if (Array.isArray(p) && p[0] === 'messages') {
       const details = p[1];
       if (Array.isArray(details) && details.length > 0 && details[0].kwargs?.content) {
-        return { type: 'content', content: details[0].kwargs.content };
+        const node = details[1].langgraph_node
+        if (node === 'generate_rag') {
+          return { type: 'content', content: details[0].kwargs.content };
+        }
+      }
+    }
+    return null;
+  },
+
+  // Handle tasks object that contains a task query
+  (raw, p) => {
+    if (typeof p === 'object' && p.tasks && Array.isArray(p.tasks)) {
+      if (p.instructions && typeof p.instructions === 'string') {
+        return { type: 'thinking', content: p.instructions };
+      }
+      if (p.reasoning && typeof p.reasoning === 'string') {
+        return { type: 'thinking', content: p.reasoning };
       }
     }
     return null;
@@ -173,10 +178,10 @@ export function connectWebSocketChat(
         'x-user-id': 'test-user-id'
       }
     };
-    
+
     const ws = new WebSocket(wsUrl, wsOptions);
     let full = '';
-    const log = (...a: any[]) => debug && console.log('[WS]', ...a);
+    const log = (...a: any[]) => debug && console.debug('[WS]', ...a);
 
     ws.on('open', () => {
       log('open');
@@ -193,16 +198,18 @@ export function connectWebSocketChat(
 
     ws.on('message', (buffer: Buffer) => {
       const raw = buffer.toString();
-      // Debug: Log raw messages to understand format
-      if (debug) console.log('[WS Debug] Raw message:', raw);
-      
       const chunk = detectChunk(raw);
-      if (debug) console.log('[WS Debug] Detected chunk type:', chunk.type);
-      
+
       if (chunk.type === 'content') full += chunk.content;
-      
+
       // Handle direct text response that might not fit detector patterns
       if (chunk.type === 'unknown' && chunk.content) {
+        // Skip printing raw JSON for recognized LangGraph message formats
+        if (raw.startsWith('["messages"') || raw.startsWith('["updates"') ||
+          raw.includes('"generatedText"') || raw.includes('"reasoning"')) {
+          if (debug) log('Skipping internal LangGraph format:', raw.substring(0, 50) + '...');
+          return; // Skip this chunk as it's raw LangGraph metadata
+        }
         try {
           // Try to extract direct text content if possible
           const parsed = JSON.parse(chunk.content);
@@ -223,7 +230,7 @@ export function connectWebSocketChat(
           // Not JSON or not in expected format, keep as is
         }
       }
-      
+
       onChunk(chunk);
     });
 
@@ -245,18 +252,18 @@ export async function chat(
     } catch (e) {
       if (opts.debug) {
         if (e instanceof Error) {
-          console.log(`WebSocket error: ${e.message}`);
-          if (e.stack) console.log(e.stack);
+          console.debug(`WebSocket error: ${e.message}`);
+          if (e.stack) console.debug(e.stack);
         } else {
-          console.log(`WebSocket error: ${String(e)}`);
+          console.debug(`WebSocket error: ${String(e)}`);
         }
       } else {
-        console.log(`WebSocket connection failed, using HTTP fallback...`);
+        console.debug(`WebSocket connection failed, using HTTP fallback...`);
       }
       if (opts.retryNonStreaming !== false) {
         // Only show this message in debug mode
         if (opts.debug) {
-          console.log('Falling back to HTTP request...');
+          console.debug('Falling back to HTTP request...');
         }
         try {
           // Fallback to blocking call
@@ -269,21 +276,23 @@ export async function chat(
               token: loadConfig().apiKey
             }
           });
-          
+
           // Extract the response text
           const responseText = getResponseText(res);
-          
+
           // Only log in debug mode
           if (opts.debug) {
-            console.log('HTTP response received');
+            console.debug('HTTP response received');
           }
-          
-          // Send the response as a string to the handler - only once
-          onChunk?.(responseText);
-          
+
+          // Send the response as a content chunk rather than raw string
+          onChunk?.({ type: 'content', content: responseText });
+
           return { response: responseText, success: true, note: 'WS failed – HTTP fallback' };
         } catch (httpErr) {
-          console.log(`HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
+          if (opts.debug) {
+            console.debug(`HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
+          }
           throw httpErr;
         }
       }

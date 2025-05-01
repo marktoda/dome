@@ -41,21 +41,26 @@ async function streamChatResponse(
   await chat(
     userMessage,
     (chunk: ChatMessageChunk | string) => {
+      // Handle non-structured responses (should no longer occur after our fix)
       if (typeof chunk === 'string') {
-        process.stdout.write(chunk);
+        if (opts.verbose) {
+          console.debug('[Debug] Received raw string chunk (unexpected)');
+        }
+        // process.stdout.write(chunk);
         return;
       }
 
       // structured chunk
       if (chunk.type === 'thinking') {
         const content = thinking.tryPush(chunk.content);
-        if (content) {
+        if (content) { // Only show thinking output in verbose mode
           console.log(); // line break before the block
           console.log(chalk.gray('Thinking:'));
           console.log(chalk.gray(content));
           console.log(); // trailing blank line
         }
       } else if (chunk.type === 'content') {
+        // Prevent duplicate content printing
         process.stdout.write(chunk.content);
       } else if (chunk.type === 'sources') {
         if (chunk.node.sources) {
@@ -97,7 +102,7 @@ async function streamChatResponse(
       } else {
         // any other content chunk
         thinking.reset(); // discard partial thinking on normal output
-        process.stdout.write(chunk.content); // Uncommented to handle unknown chunk types
+        // process.stdout.write(chunk.content); // Uncommented to handle unknown chunk types
       }
     },
     { retryNonStreaming: true, debug: opts.verbose }
