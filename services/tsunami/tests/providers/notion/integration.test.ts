@@ -79,6 +79,20 @@ class NotionProvider {
       } catch (error) {
         // Log and continue with next page
         console.error(`Error processing page ${page.id}:`, error);
+        
+        // Add to results as an error for tracking
+        results.push({
+          id: page.id,
+          title: page.title || `Untitled (${page.id})`,
+          error: error instanceof Error ? error.message : String(error),
+          metadata: notionUtils.createNotionMetadata(
+            workspaceId,
+            page.id,
+            page.last_edited_time,
+            page.title || `Untitled (${page.id})`,
+            0
+          )
+        });
       }
     }
     
@@ -277,7 +291,7 @@ describe('Notion Integration', () => {
       expect(client.getPageContent).toHaveBeenCalledWith('page-2');
     });
 
-    it('should continue processing after an error with a specific page', async () => {
+    it('should continue processing after an error with a specific page and track failed pages', async () => {
       const userId = 'user-123';
       const workspaceId = 'workspace-123';
       const mockPages = [
@@ -308,7 +322,11 @@ describe('Notion Integration', () => {
       // Mock getPageContent to fail for page-1
       vi.spyOn(client, 'getPageContent').mockImplementation(async (pageId) => {
         if (pageId === 'page-1') {
-          throw new Error('Failed to get content');
+          throw new ServiceError('Failed to get content', {
+            code: 'NOTION_CONTENT_ERROR',
+            status: 500,
+            context: { pageId }
+          });
         }
         return `Content for ${pageId}`;
       });
@@ -325,12 +343,51 @@ describe('Notion Integration', () => {
       // Restore console.error
       console.error = originalConsoleError;
       
-      // Only page-2 should be processed successfully
-      expect(result.results).toHaveLength(1);
-      expect(result.results[0].id).toBe('page-2');
+      // Both pages should be in results, but one with error
+      expect(result.results).toHaveLength(2);
+      expect(result.results[0].id).toBe('page-1');
+      expect(result.results[0]).toHaveProperty('error');
+      expect(result.results[1].id).toBe('page-2');
+      expect(result.results[1]).not.toHaveProperty('error');
       
       // Error should have been logged
       expect(console.error).toHaveBeenCalled();
+    });
+    
+    it('should handle nullish values in page properties gracefully', async () => {
+      const userId = 'user-123';
+      const workspaceId = 'workspace-123';
+      const mockPages = [
+        {
+          id: 'page-1',
+          title: '', // Empty title (instead of null for type safety)
+          last_edited_time: '2023-04-30T12:00:00Z',
+          url: 'https://notion.so/page-1',
+          parent: { type: 'workspace', workspace: true },
+          properties: {}
+        }
+      ];
+      
+      // Mock getUserToken
+      vi.spyOn(authManager, 'getUserToken').mockResolvedValue('test-access-token');
+      
+      // Mock getUpdatedPages
+      vi.spyOn(client, 'getUpdatedPages').mockResolvedValue(mockPages);
+      
+      // Mock getPageContent
+      vi.spyOn(client, 'getPageContent').mockImplementation(async (pageId) => {
+        return `Content for ${pageId}`;
+      });
+      
+      // Mock shouldIgnorePage
+      vi.spyOn(notionUtils, 'shouldIgnorePage').mockReturnValue(false);
+      
+      const result = await provider.syncWorkspace(userId, workspaceId, null);
+      
+      // Should process the page despite null title
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].id).toBe('page-1');
+      expect(result.results[0].title).toBe(`Untitled (page-1)`);
     });
 
     it('should handle error when no user token is found', async () => {
@@ -342,15 +399,44 @@ describe('Notion Integration', () => {
       
       // We don't expect any further calls
       const getUpdatedPagesSpy = vi.spyOn(client, 'getUpdatedPages');
+      const forUserSpy = vi.spyOn(client, 'forUser');
       
       // Should use the default client
       const result = await provider.syncWorkspace(userId, workspaceId, null);
       
       // Should still call getUpdatedPages with default client
       expect(getUpdatedPagesSpy).toHaveBeenCalled();
+      expect(forUserSpy).toHaveBeenCalledWith(userId, workspaceId);
+      
+      // Verify we're using fallback client
+      expect(forUserSpy.mock.results[0].value).resolves.toBe(client);
+    });
+    
+    it('should log authentication errors and throw ServiceError', async () => {
+      const userId = 'user-123';
+      const workspaceId = 'workspace-123';
+      
+      // Mock getUserToken to throw an error
+      vi.spyOn(authManager, 'getUserToken').mockRejectedValue(
+        new ServiceError('Authentication failed', { code: 'AUTH_ERROR', status: 401 })
+      );
+      
+      // Mock console.error to avoid test noise
+      const originalConsoleError = console.error;
+      console.error = vi.fn();
+      
+      // Should throw ServiceError
+      await expect(provider.syncWorkspace(userId, workspaceId, null))
+        .rejects.toThrow(ServiceError);
+      
+      // Error should be logged
+      expect(console.error).toHaveBeenCalled();
+      
+      // Restore console.error
+      console.error = originalConsoleError;
     });
 
-    it('should handle API error when fetching pages', async () => {
+    it('should handle API error when fetching pages and propagate with context', async () => {
       const userId = 'user-123';
       const workspaceId = 'workspace-123';
       
@@ -358,12 +444,26 @@ describe('Notion Integration', () => {
       vi.spyOn(authManager, 'getUserToken').mockResolvedValue('test-access-token');
       
       // Mock getUpdatedPages to throw error
-      vi.spyOn(client, 'getUpdatedPages').mockRejectedValue(
-        new ServiceError('API error', { context: { workspaceId } })
-      );
+      const apiError = new ServiceError('API error', {
+        code: 'NOTION_API_ERROR',
+        status: 500,
+        details: { workspaceId }
+      });
+      vi.spyOn(client, 'getUpdatedPages').mockRejectedValue(apiError);
       
-      await expect(provider.syncWorkspace(userId, workspaceId, null))
-        .rejects.toThrow(ServiceError);
+      // Should propagate the error
+      try {
+        await provider.syncWorkspace(userId, workspaceId, null);
+        expect(true).toBe(false); // Should not reach here
+      } catch (error) {
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.code).toBeDefined();
+        expect(serviceError).toHaveProperty('statusCode');
+        expect(serviceError).toHaveProperty('details');
+        // Error should include both original error info and new context
+        expect(serviceError.message).toContain('API error');
+      }
     });
 
     it('should return unchanged cursor when no pages are found', async () => {
@@ -381,6 +481,40 @@ describe('Notion Integration', () => {
       
       expect(result.results).toHaveLength(0);
       expect(result.cursor).toBe(initialCursor);
+    });
+    
+    it('should handle null cursor gracefully', async () => {
+      const userId = 'user-123';
+      const workspaceId = 'workspace-123';
+      
+      // Mock getUserToken
+      vi.spyOn(authManager, 'getUserToken').mockResolvedValue('test-access-token');
+      
+      // Mock getUpdatedPages to return empty array
+      vi.spyOn(client, 'getUpdatedPages').mockResolvedValue([]);
+      
+      const result = await provider.syncWorkspace(userId, workspaceId, null);
+      
+      expect(result.results).toHaveLength(0);
+      expect(result.cursor).toBeNull();
+    });
+    
+    it('should handle cursor as empty string gracefully', async () => {
+      const userId = 'user-123';
+      const workspaceId = 'workspace-123';
+      
+      // Mock getUserToken
+      vi.spyOn(authManager, 'getUserToken').mockResolvedValue('test-access-token');
+      
+      // Mock getUpdatedPages to return empty array
+      vi.spyOn(client, 'getUpdatedPages').mockResolvedValue([]);
+      
+      // Use empty string instead of undefined
+      const result = await provider.syncWorkspace(userId, workspaceId, '');
+      
+      expect(result.results).toHaveLength(0);
+      // Should treat empty string similar to null
+      expect(result.cursor).toBe('');
     });
   });
 

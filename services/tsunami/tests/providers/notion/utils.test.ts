@@ -213,6 +213,44 @@ describe('Notion Utils', () => {
 
       const text = blocksToText(blocks);
       expect(text).toBe('Valid block');
+      
+      // Log warning should be called for the invalid block
+      const logger = require('@dome/logging').getLogger();
+      expect(logger.warn).toHaveBeenCalled();
+    });
+    
+    it('should handle empty rich_text arrays', () => {
+      const blocks: NotionBlock[] = [
+        {
+          id: 'block-1',
+          type: 'paragraph',
+          has_children: false,
+          paragraph: {
+            rich_text: [] // Empty array
+          }
+        }
+      ];
+
+      const text = blocksToText(blocks);
+      expect(text).toBe('');
+    });
+    
+    it('should handle undefined blocks gracefully', () => {
+      const blocks: (NotionBlock | undefined)[] = [
+        undefined,
+        {
+          id: 'block-1',
+          type: 'paragraph',
+          has_children: false,
+          paragraph: {
+            rich_text: [{ plain_text: 'Valid block' }]
+          }
+        }
+      ];
+
+      // @ts-ignore - Testing runtime behavior with undefined
+      const text = blocksToText(blocks);
+      expect(text).toBe('Valid block');
     });
   });
 
@@ -413,6 +451,25 @@ describe('Notion Utils', () => {
       };
 
       expect(extractTextFromBlock(malformedBlock)).toBe('');
+      
+      // Also test with null or undefined values
+      expect(extractTextFromBlock(null as any)).toBe('');
+      expect(extractTextFromBlock(undefined as any)).toBe('');
+      
+      // The function should log a warning
+      const logger = require('@dome/logging').getLogger();
+      expect(logger.warn).toHaveBeenCalled();
+    });
+    
+    it('should gracefully handle block with missing rich_text', () => {
+      const blockWithMissingRichText: NotionBlock = {
+        id: 'block-1',
+        type: 'paragraph',
+        has_children: false,
+        paragraph: {} // Missing rich_text property
+      };
+
+      expect(extractTextFromBlock(blockWithMissingRichText)).toBe('');
     });
   });
 
@@ -434,6 +491,17 @@ describe('Notion Utils', () => {
       expect(extractRichText(null as any)).toBe('');
       expect(extractRichText(undefined as any)).toBe('');
       expect(extractRichText({} as any)).toBe('');
+      expect(extractRichText('string' as any)).toBe('');
+      expect(extractRichText(123 as any)).toBe('');
+    });
+    
+    it('should safely handle rich text objects with missing properties', () => {
+      const richText = [
+        { /* missing plain_text */ },
+        { plain_text: 'Text' }
+      ] as any;
+      
+      expect(extractRichText(richText)).toBe('Text');
     });
 
     it('should apply bold formatting', () => {

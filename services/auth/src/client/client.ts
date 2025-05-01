@@ -1,122 +1,144 @@
-import { getLogger } from '@dome/logging';
-import type { User, LoginResponse } from './types';
+/**
+ * Auth Client Implementation
+ *
+ * A client for interacting with the Auth service using WorkerEntrypoint RPC
+ */
+import { getLogger, metrics } from '@dome/logging';
+import {
+  AuthBinding, 
+  AuthService, 
+  LoginResponse,
+  RegisterResponse,
+  ValidateTokenResponse,
+  LogoutResponse,
+  AuthErrorCode
+} from './types';
 
 /**
- * Auth service client
- * Client for interacting with the auth service
+ * Client for interacting with the Auth service
+ * Provides methods for user authentication
  */
-export class AuthClient {
-  private baseUrl: string;
-  private logger = getLogger().child({ component: 'AuthClient' });
+export class AuthClient implements AuthService {
+  private logger = getLogger().child({ service: 'auth-client' });
 
   /**
-   * Create a new auth client
-   * @param baseUrl Base URL of the auth service
+   * Create a new AuthClient
+   * @param binding The Cloudflare Worker binding to the Auth service
+   * @param metricsPrefix Optional prefix for metrics (defaults to 'auth.client')
    */
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  }
+  constructor(
+    private readonly binding: AuthBinding,
+    private readonly metricsPrefix: string = 'auth.client',
+  ) { }
 
   /**
    * Login a user
-   * @param email User email
-   * @param password User password
-   * @returns Login response containing user and token
    */
   async login(email: string, password: string): Promise<LoginResponse> {
-    this.logger.debug({ email }, 'Logging in user');
-    
-    const response = await fetch(`${this.baseUrl}/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      this.logger.error({ error, status: response.status }, 'Login failed');
-      throw new Error(`Login failed: ${response.statusText}`);
+    const startTime = performance.now();
+
+    try {
+      this.logger.info({
+        event: 'login',
+        email
+      }, 'User login');
+
+      const result = await this.binding.login(email, password);
+
+      metrics.gauge(`${this.metricsPrefix}.login.latency_ms`, performance.now() - startTime);
+      metrics.increment(`${this.metricsPrefix}.login.success`);
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.login.error`);
+      this.logger.error({ error, email }, 'Error during login');
+      throw error;
     }
-    
-    return await response.json();
   }
 
   /**
    * Register a new user
-   * @param email User email
-   * @param password User password
-   * @param name Optional user name
-   * @returns Response containing the created user
    */
-  async register(email: string, password: string, name?: string): Promise<{ success: boolean; user: User }> {
-    this.logger.debug({ email }, 'Registering user');
-    
-    const response = await fetch(`${this.baseUrl}/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password, name }),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      this.logger.error({ error, status: response.status }, 'Registration failed');
-      throw new Error(`Registration failed: ${response.statusText}`);
+  async register(email: string, password: string, name?: string): Promise<RegisterResponse> {
+    const startTime = performance.now();
+
+    try {
+      this.logger.info({
+        event: 'register',
+        email
+      }, 'User registration');
+
+      const result = await this.binding.register(email, password, name);
+
+      metrics.gauge(`${this.metricsPrefix}.register.latency_ms`, performance.now() - startTime);
+      metrics.increment(`${this.metricsPrefix}.register.success`);
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.register.error`);
+      this.logger.error({ error, email }, 'Error during registration');
+      throw error;
     }
-    
-    return await response.json();
   }
 
   /**
    * Validate a token
-   * @param token JWT token to validate
-   * @returns Response containing the user if token is valid
    */
-  async validateToken(token: string): Promise<{ success: boolean; user: User }> {
-    this.logger.debug('Validating token');
-    
-    const response = await fetch(`${this.baseUrl}/validate`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      this.logger.error({ error, status: response.status }, 'Token validation failed');
-      throw new Error(`Token validation failed: ${response.statusText}`);
+  async validateToken(token: string): Promise<ValidateTokenResponse> {
+    const startTime = performance.now();
+
+    try {
+      this.logger.info({
+        event: 'validate_token'
+      }, 'Validating auth token');
+
+      const result = await this.binding.validateToken(token);
+
+      metrics.gauge(`${this.metricsPrefix}.validate_token.latency_ms`, performance.now() - startTime);
+      metrics.increment(`${this.metricsPrefix}.validate_token.success`);
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.validate_token.error`);
+      this.logger.error({ error }, 'Error validating token');
+      throw error;
     }
-    
-    return await response.json();
   }
 
   /**
    * Logout a user
-   * @param token JWT token to invalidate
-   * @returns Response indicating success or failure
    */
-  async logout(token: string): Promise<{ success: boolean }> {
-    this.logger.debug('Logging out user');
-    
-    const response = await fetch(`${this.baseUrl}/logout`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      this.logger.error({ error, status: response.status }, 'Logout failed');
-      throw new Error(`Logout failed: ${response.statusText}`);
+  async logout(token: string): Promise<LogoutResponse> {
+    const startTime = performance.now();
+
+    try {
+      this.logger.info({
+        event: 'logout'
+      }, 'User logout');
+
+      const result = await this.binding.logout(token);
+
+      metrics.gauge(`${this.metricsPrefix}.logout.latency_ms`, performance.now() - startTime);
+      metrics.increment(`${this.metricsPrefix}.logout.success`);
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.logout.error`);
+      this.logger.error({ error }, 'Error during logout');
+      throw error;
     }
-    
-    return await response.json();
   }
+}
+
+/**
+ * Create a new AuthClient
+ * @param binding The Cloudflare Worker binding to the Auth service
+ * @param metricsPrefix Optional prefix for metrics (defaults to 'auth.client')
+ * @returns A new AuthClient instance
+ */
+export function createAuthClient(
+  binding: AuthBinding,
+  metricsPrefix?: string,
+): AuthClient {
+  return new AuthClient(binding, metricsPrefix);
 }

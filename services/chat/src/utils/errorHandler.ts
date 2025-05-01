@@ -1,4 +1,5 @@
 import { getLogger, logError, metrics } from '@dome/logging';
+import { toDomeError } from './errors';
 
 /**
  * Higher-order function for consistent error handling in controller methods
@@ -14,11 +15,13 @@ export function withErrorHandling<T, Args extends any[]>(
     try {
       return await fn(...args);
     } catch (error) {
-      logError(error, `Unhandled error in ${operation}`);
+      const domeError = toDomeError(error, `Unhandled error in ${operation}`, { operation });
+      logError(domeError, `Unhandled error in ${operation}`);
       metrics.increment('chat_orchestrator.unhandled_errors', 1, {
         operation,
+        errorCode: domeError.code || 'UNKNOWN'
       });
-      throw error;
+      throw domeError;
     }
   };
 }
@@ -39,15 +42,15 @@ export function withNodeErrorHandling<T, Args extends any[]>(
     try {
       return await fn(...args);
     } catch (error) {
-      logger.error(
-        {
-          errorMessage: error instanceof Error ? error.message : String(error),
-        },
-        `Error in ${nodeName} node`,
-      );
+      const domeError = toDomeError(error, `Error in ${nodeName} node`, {
+        node: nodeName,
+        context: args[0]?.context || {}
+      });
+      
+      logger.error({ error: domeError }, `Error in ${nodeName} node`);
 
-      // Re-throw the error for the caller to handle
-      throw error;
+      // Re-throw the DomeError for the caller to handle
+      throw domeError;
     }
   };
 }

@@ -324,6 +324,9 @@ importers:
       pino:
         specifier: ^9.6.0
         version: 9.6.0
+      uuid:
+        specifier: ^11.1.0
+        version: 11.1.0
       zod:
         specifier: ^3.21.4
         version: 3.24.3

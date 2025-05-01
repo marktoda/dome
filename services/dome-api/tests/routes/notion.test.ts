@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import app from '../../src';
 import { ServiceError } from '@dome/common';
-import { 
+import { z } from 'zod';
+import {
   mockNotionWorkspaceData,
   mockNotionWorkspaceDataNoCadence,
   mockNotionWorkspaceInvalidData,
@@ -133,6 +134,7 @@ describe('Notion API Routes', () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('POST /content/notion', () => {
@@ -157,7 +159,7 @@ describe('Notion API Routes', () => {
       expect(data).toEqual(mockNotionWorkspaceResponse);
     });
 
-    it('should handle validation errors', async () => {
+    it('should handle validation errors properly', async () => {
       // Arrange
       const req = new Request('http://localhost/content/notion', {
         method: 'POST',
@@ -168,20 +170,53 @@ describe('Notion API Routes', () => {
         body: JSON.stringify(mockNotionWorkspaceInvalidData),
       });
 
-      // Mock validation error
-      mockNotionController.registerNotionWorkspace.mockRejectedValue(
-        new Error('Invalid request body')
-      );
+      // Mock validation error with Zod error
+      const zodError = new z.ZodError([
+        {
+          code: 'invalid_type',
+          expected: 'string',
+          received: 'undefined',
+          path: ['workspaceId'],
+          message: 'Required',
+        },
+      ]);
+      
+      mockNotionController.registerNotionWorkspace.mockRejectedValue(zodError);
+
+      // Act
+      const res = await app.fetch(req, {
+        TSUNAMI: {} as any,
+        D1_DATABASE: {} as any,
+        VECTORIZE: {} as any
+      } as any);
+
+      // Assert
+      expect(res.status).toBe(500); // In a real app would be 400, but mocked middleware doesn't handle status codes
+      expect(mockNotionController.registerNotionWorkspace).toHaveBeenCalled();
+      
+      // Verify response contains validation error details
+      const errorData = await res.json();
+      expect(errorData).toHaveProperty('error');
+    });
+    
+    it('should handle missing Content-Type header', async () => {
+      // Arrange - missing Content-Type header
+      const req = new Request('http://localhost/content/notion', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer test-token',
+        },
+        body: JSON.stringify(mockNotionWorkspaceData),
+      });
 
       // Act
       const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
 
-      // Assert
-      expect(res.status).toBe(500); // In a real app, this would be 400, but our mocked error middleware doesn't handle specific status codes
+      // Assert - should still work if content type is properly inferred
       expect(mockNotionController.registerNotionWorkspace).toHaveBeenCalled();
     });
 
-    it('should handle service errors', async () => {
+    it('should handle service errors with detailed error data', async () => {
       // Arrange
       const req = new Request('http://localhost/content/notion', {
         method: 'POST',
@@ -192,20 +227,51 @@ describe('Notion API Routes', () => {
         body: JSON.stringify(mockNotionWorkspaceData),
       });
 
-      // Mock service error
+      // Mock service error with details
       mockNotionController.registerNotionWorkspace.mockRejectedValue(
         new ServiceError('Failed to register workspace', {
           code: 'REGISTRATION_ERROR',
           status: 503,
+          details: {
+            workspaceId: 'workspace-123',
+            reason: 'Upstream service unavailable',
+            requestId: 'test-request-id'
+          }
         })
       );
 
       // Act
-      const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
+      const res = await app.fetch(req, {
+        TSUNAMI: {} as any,
+        D1_DATABASE: {} as any,
+        VECTORIZE: {} as any
+      } as any);
 
       // Assert
-      expect(res.status).toBe(500); // In a real app, this would be 503, but our mocked error middleware doesn't handle specific status codes
+      expect(res.status).toBe(500); // In a real app would be 503, but mocked middleware doesn't handle status codes
       expect(mockNotionController.registerNotionWorkspace).toHaveBeenCalled();
+      
+      // Verify response contains error details
+      const errorData = await res.json();
+      expect(errorData).toHaveProperty('error');
+    });
+    
+    it('should handle malformed JSON in request body', async () => {
+      // Arrange - malformed JSON
+      const req = new Request('http://localhost/content/notion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test-token',
+        },
+        body: '{invalid json}', // Malformed JSON
+      });
+
+      // Act
+      const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
+
+      // Assert - should return error for invalid JSON
+      expect(res.status).not.toBe(200);
     });
   });
 
@@ -229,7 +295,7 @@ describe('Notion API Routes', () => {
       expect(data).toEqual(mockNotionWorkspaceHistory);
     });
 
-    it('should handle service errors', async () => {
+    it('should handle service errors with proper error propagation', async () => {
       // Arrange
       const req = new Request('http://localhost/content/notion/workspace-123/history', {
         method: 'GET',
@@ -238,20 +304,41 @@ describe('Notion API Routes', () => {
         },
       });
 
-      // Mock service error
-      mockNotionController.getNotionWorkspaceHistory.mockRejectedValue(
-        new ServiceError('Failed to get workspace history', {
-          code: 'HISTORY_ERROR',
-          status: 503,
-        })
-      );
+      // Mock service error with mockTsunamiServiceError
+      mockNotionController.getNotionWorkspaceHistory.mockRejectedValue(mockTsunamiServiceError);
+
+      // Act
+      const res = await app.fetch(req, {
+        TSUNAMI: {} as any,
+        D1_DATABASE: {} as any,
+        VECTORIZE: {} as any
+      } as any);
+
+      // Assert
+      expect(res.status).toBe(500); // In a real app would be proper status, but mocked middleware doesn't handle status codes
+      expect(mockNotionController.getNotionWorkspaceHistory).toHaveBeenCalled();
+      
+      // Verify response contains proper error structure
+      const errorData = await res.json() as { error: { code: string; message: string } };
+      expect(errorData).toHaveProperty('error');
+      expect(errorData.error).toHaveProperty('code');
+      expect(errorData.error).toHaveProperty('message');
+    });
+    
+    it('should handle missing workspaceId parameter', async () => {
+      // Arrange - missing workspaceId in URL
+      const req = new Request('http://localhost/content/notion//history', {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer test-token',
+        },
+      });
 
       // Act
       const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
 
-      // Assert
-      expect(res.status).toBe(500); // In a real app, this would be 503, but our mocked error middleware doesn't handle specific status codes
-      expect(mockNotionController.getNotionWorkspaceHistory).toHaveBeenCalled();
+      // Assert - should return error for missing parameter
+      expect(res.status).not.toBe(200);
     });
   });
 
@@ -279,7 +366,7 @@ describe('Notion API Routes', () => {
       });
     });
 
-    it('should handle service errors', async () => {
+    it('should handle service errors during sync with proper error context', async () => {
       // Arrange
       const req = new Request('http://localhost/content/notion/workspace-123/sync', {
         method: 'POST',
@@ -288,20 +375,50 @@ describe('Notion API Routes', () => {
         },
       });
 
-      // Mock service error
+      // Mock service error with context details
       mockNotionController.triggerNotionWorkspaceSync.mockRejectedValue(
         new ServiceError('Failed to trigger sync', {
           code: 'SYNC_ERROR',
           status: 503,
+          details: {
+            workspaceId: 'workspace-123',
+            requestId: 'test-request-id',
+            timestamp: new Date().toISOString()
+          }
         })
       );
 
       // Act
-      const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
+      const res = await app.fetch(req, {
+        TSUNAMI: {} as any,
+        D1_DATABASE: {} as any,
+        VECTORIZE: {} as any
+      } as any);
 
       // Assert
-      expect(res.status).toBe(500); // In a real app, this would be 503, but our mocked error middleware doesn't handle specific status codes
+      expect(res.status).toBe(500); // In a real app would be 503, but mocked middleware doesn't handle status codes
       expect(mockNotionController.triggerNotionWorkspaceSync).toHaveBeenCalled();
+      
+      // Verify the error response includes necessary details
+      const errorData = await res.json() as { error: { code: string } };
+      expect(errorData).toHaveProperty('error');
+      expect(errorData.error).toHaveProperty('code');
+    });
+    
+    it('should handle invalid HTTP methods for sync endpoint', async () => {
+      // Arrange - using GET instead of POST
+      const req = new Request('http://localhost/content/notion/workspace-123/sync', {
+        method: 'GET', // Invalid method for this endpoint
+        headers: {
+          'Authorization': 'Bearer test-token',
+        },
+      });
+
+      // Act
+      const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
+
+      // Assert - should return method not allowed
+      expect(res.status).toBe(404); // Our app returns 404 for unmatched routes including wrong methods
     });
   });
 
@@ -331,7 +448,7 @@ describe('Notion API Routes', () => {
       });
     });
 
-    it('should handle validation errors', async () => {
+    it('should handle validation errors during OAuth configuration', async () => {
       // Arrange
       const req = new Request('http://localhost/content/notion/oauth', {
         method: 'POST',
@@ -343,16 +460,67 @@ describe('Notion API Routes', () => {
       });
 
       // Mock validation error
-      mockNotionController.configureNotionOAuth.mockRejectedValue(
-        new Error('Invalid redirect URI')
-      );
+      const zodError = new z.ZodError([
+        {
+          code: 'invalid_type',
+          expected: 'string',
+          received: 'undefined',
+          path: ['code'],
+          message: 'Required',
+        },
+      ]);
+      
+      mockNotionController.configureNotionOAuth.mockRejectedValue(zodError);
+
+      // Act
+      const res = await app.fetch(req, {
+        TSUNAMI: {} as any,
+        D1_DATABASE: {} as any,
+        VECTORIZE: {} as any
+      } as any);
+
+      // Assert
+      expect(res.status).toBe(500); // In a real app would be 400, but mocked middleware doesn't handle status codes
+      expect(mockNotionController.configureNotionOAuth).toHaveBeenCalled();
+      
+      // Verify error response contains validation information
+      const errorData = await res.json();
+      expect(errorData).toHaveProperty('error');
+    });
+    
+    it('should sanitize inputs properly for OAuth configuration', async () => {
+      // Arrange - with potentially unsafe input that should be sanitized
+      const unsafeData = {
+        code: '<script>alert("XSS")</script>',
+        redirectUri: 'https://example.com/callback?injection=true',
+        userId: 'user-123;drop tables;',
+      };
+      
+      const req = new Request('http://localhost/content/notion/oauth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test-token',
+        },
+        body: JSON.stringify(unsafeData),
+      });
+
+      // Reset mock to verify exact input received
+      mockNotionController.configureNotionOAuth.mockReset();
+      mockNotionController.configureNotionOAuth.mockResolvedValue({
+        json: {
+          success: true,
+          message: 'Notion OAuth configured successfully',
+          userId: 'user-123',
+        },
+      });
 
       // Act
       const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
 
-      // Assert
-      expect(res.status).toBe(500); // In a real app, this would be 400, but our mocked error middleware doesn't handle specific status codes
+      // Assert - input should be passed as-is to controller to handle sanitization
       expect(mockNotionController.configureNotionOAuth).toHaveBeenCalled();
+      expect(res.status).toBe(200); // Should process successfully assuming controller handles sanitization
     });
   });
 
@@ -381,7 +549,7 @@ describe('Notion API Routes', () => {
       });
     });
 
-    it('should handle validation errors', async () => {
+    it('should handle validation errors in OAuth URL requests', async () => {
       // Arrange
       const req = new Request('http://localhost/content/notion/oauth/url', {
         method: 'GET',
@@ -393,21 +561,65 @@ describe('Notion API Routes', () => {
         body: JSON.stringify({}),
       });
 
-      // Mock validation error
+      // Mock validation error with Zod
+      const zodError = new z.ZodError([
+        {
+          code: 'invalid_type',
+          expected: 'string',
+          received: 'undefined',
+          path: ['redirectUri'],
+          message: 'Required',
+        },
+      ]);
+      
+      mockNotionController.getNotionOAuthUrl.mockRejectedValue(zodError);
+
+      // Act
+      const res = await app.fetch(req, {
+        TSUNAMI: {} as any,
+        D1_DATABASE: {} as any,
+        VECTORIZE: {} as any
+      } as any);
+
+      // Assert
+      expect(res.status).toBe(500); // In a real app would be 400, but mocked middleware doesn't handle status codes
+      expect(mockNotionController.getNotionOAuthUrl).toHaveBeenCalled();
+      
+      // Verify error response structure
+      const errorData = await res.json();
+      expect(errorData).toHaveProperty('error');
+    });
+    
+    it('should handle URL generation failures gracefully', async () => {
+      // Arrange
+      const req = new Request('http://localhost/content/notion/oauth/url', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer test-token',
+        },
+        body: JSON.stringify(mockNotionOAuthUrlData),
+      });
+
+      // Mock an unexpected error during URL generation
       mockNotionController.getNotionOAuthUrl.mockRejectedValue(
-        new Error('Invalid request')
+        new Error('Failed to generate OAuth URL')
       );
 
       // Act
       const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
 
       // Assert
-      expect(res.status).toBe(500); // In a real app, this would be 400, but our mocked error middleware doesn't handle specific status codes
+      expect(res.status).toBe(500);
       expect(mockNotionController.getNotionOAuthUrl).toHaveBeenCalled();
+      
+      // Verify error is included in response
+      const errorData = await res.json();
+      expect(errorData).toHaveProperty('error');
     });
   });
 
-  describe('Authentication Requirements', () => {
+  describe('Authentication and Error Handling Requirements', () => {
     it('should require authentication for all routes', async () => {
       // Arrange
       const routes = [
@@ -442,6 +654,84 @@ describe('Notion API Routes', () => {
         // Assert
         // In a real app, this would be 401, but we've mocked the auth middleware
         expect(res.status).not.toBe(401);
+      }
+    });
+    
+    it('should handle network errors gracefully', async () => {
+      // Arrange
+      const req = new Request('http://localhost/content/notion/workspace-123/history', {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer test-token',
+        },
+      });
+
+      // Mock a network error in the controller
+      const networkError = new Error('Network failure');
+      mockNotionController.getNotionWorkspaceHistory.mockRejectedValue(networkError);
+
+      // Act
+      const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
+
+      // Assert
+      expect(res.status).toBe(500);
+      
+      // Verify error response
+      const errorData = await res.json();
+      expect(errorData).toHaveProperty('error');
+    });
+    
+    it('should ensure proper error handling middleware is applied to all routes', async () => {
+      // Arrange - all routes should have error handling middleware
+      const routes = [
+        { method: 'POST', path: '/content/notion', body: mockNotionWorkspaceData },
+        { method: 'GET', path: '/content/notion/workspace-123/history' },
+        { method: 'POST', path: '/content/notion/workspace-123/sync' },
+        { method: 'POST', path: '/content/notion/oauth', body: mockNotionOAuthConfigData },
+        { method: 'GET', path: '/content/notion/oauth/url', body: mockNotionOAuthUrlData },
+      ];
+      
+      // Verify createErrorMiddleware was called during app initialization
+      expect(require('@dome/common').createErrorMiddleware).toHaveBeenCalled();
+      
+      // Test error propagation for each route
+      for (const route of routes) {
+        // Set up route-specific controller mock to throw error
+        const controllerMethod = route.path.includes('history')
+          ? mockNotionController.getNotionWorkspaceHistory
+          : route.path.includes('sync')
+          ? mockNotionController.triggerNotionWorkspaceSync
+          : route.path.includes('oauth/url')
+          ? mockNotionController.getNotionOAuthUrl
+          : route.path.includes('oauth')
+          ? mockNotionController.configureNotionOAuth
+          : mockNotionController.registerNotionWorkspace;
+          
+        // Mock controller to throw error
+        controllerMethod.mockRejectedValueOnce(new Error(`Test error for ${route.path}`));
+        
+        // Create request
+        const reqOptions: RequestInit = {
+          method: route.method,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer test-token',
+          },
+        };
+
+        if (route.body) {
+          reqOptions.body = JSON.stringify(route.body);
+        }
+
+        const req = new Request(`http://localhost${route.path}`, reqOptions);
+
+        // Act
+        const res = await app.fetch(req, { TSUNAMI: {} as any } as any);
+        
+        // Assert - all routes should have consistent error response format
+        expect(res.status).toBe(500);
+        const errorData = await res.json();
+        expect(errorData).toHaveProperty('error');
       }
     });
   });

@@ -118,6 +118,7 @@ export class AuthService {
       const { password: _, ...userWithoutPassword } = user;
       
       return {
+        success: true,
         user: userWithoutPassword as User,
         token,
         expiresIn: this.tokenExpiration,

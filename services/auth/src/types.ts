@@ -55,9 +55,33 @@ export interface TokenPayload {
  * Login response
  */
 export interface LoginResponse {
+  success: boolean;
   user: User;
   token: string;
   expiresIn: number;
+}
+
+/**
+ * Registration response
+ */
+export interface RegisterResponse {
+  success: boolean;
+  user: User;
+}
+
+/**
+ * Token validation response
+ */
+export interface ValidateTokenResponse {
+  success: boolean;
+  user: User;
+}
+
+/**
+ * Logout response
+ */
+export interface LogoutResponse {
+  success: boolean;
 }
 
 /**

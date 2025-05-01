@@ -11,6 +11,7 @@ export enum AuthErrorType {
   INSUFFICIENT_PERMISSIONS = 'insufficient_permissions',
   REGISTRATION_FAILED = 'registration_failed',
   LOGIN_FAILED = 'login_failed',
+  INTERNAL_ERROR = 'internal_error',
 }
 
 /**

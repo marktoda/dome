@@ -1,127 +1,370 @@
+import { WorkerEntrypoint } from 'cloudflare:workers';
+import { getLogger, initLogging, withLogger } from '@dome/logging';
+import { authMetrics, trackOperation, logError } from './utils/logging';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { getLogger, initLogging } from '@dome/logging';
 import {
   createErrorMiddleware,
   createRequestContextMiddleware,
   responseHandlerMiddleware,
   formatZodError,
 } from '@dome/common';
-import { createAuthService } from './services/authService';
-import { createAuthController } from './controllers/authController';
-import { Bindings } from './types';
+import { Bindings, LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse } from './types';
+import { AuthService } from './services/authService';
+import { AuthError, AuthErrorType } from './utils/errors';
+import { StatusCode } from 'hono/utils/http-status';
 
-// Create Hono app
-const app = new Hono<{ Bindings: Bindings }>();
+// Helper function to convert number to Hono StatusCode
+function statusCodeFromNumber(status: number): StatusCode {
+  return status as StatusCode;
+}
 
-// Initialize logging
-initLogging(app, {
-  extraBindings: {
-    name: 'auth-service',
-    version: '0.1.0',
-    environment: 'development',
-  },
-});
-
-// App middleware
-app.use('*', createRequestContextMiddleware());
-app.use('*', cors());
-app.use('*', createErrorMiddleware(formatZodError));
-app.use('*', responseHandlerMiddleware);
-
-// Log application startup
-getLogger().info('Auth service starting');
-
-// Root route
-app.get('/', c => {
-  return c.json({
-    message: 'Auth service API',
-    service: 'dome-auth',
-    version: c.env.VERSION || '0.1.0',
+/**
+ * Run a function with enhanced logging and error handling
+ * @param meta Metadata for logging context
+ * @param fn Function to execute
+ * @returns Result of the function
+ */
+const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
+  withLogger(meta, async () => {
+    try {
+      return await fn();
+    } catch (err) {
+      const requestId = typeof meta.requestId === 'string' ? meta.requestId : undefined;
+      const operation = typeof meta.op === 'string' ? meta.op : 'unknown_operation';
+      
+      const errorContext = {
+        operation,
+        requestId,
+        service: 'auth',
+        timestamp: new Date().toISOString(),
+        ...meta
+      };
+      
+      getLogger().error({ error: err }, `Unhandled error in ${operation}`, errorContext);
+      
+      if (err instanceof AuthError) {
+        throw err;
+      }
+      
+      // Convert unknown errors to AuthError
+      throw new AuthError(
+        err instanceof Error ? err.message : 'Unknown error',
+        AuthErrorType.INTERNAL_ERROR,
+        500
+      );
+    }
   });
-});
 
-// Health check endpoint
-app.get('/health', c => {
-  return c.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    service: 'dome-auth',
-    version: c.env.VERSION || '0.1.0',
-  });
-});
+/**
+ * Auth service implementation
+ * 
+ * This service provides authentication functionality as a WorkerEntrypoint
+ * so it can be consumed by other services via RPC.
+ */
+export default class Auth extends WorkerEntrypoint<Bindings> {
+  /** Auth service instance */
+  private _authService?: AuthService;
+  
+  /** Lazily create the auth service */
+  private get authService() {
+    if (!this._authService) {
+      this._authService = new AuthService(this.env);
+    }
+    return this._authService;
+  }
 
-// Auth routes
-app.post('/register', async c => {
-  const authService = createAuthService(c.env);
-  const authController = createAuthController(authService);
-  return await authController.register(c);
-});
-
-app.post('/login', async c => {
-  const authService = createAuthService(c.env);
-  const authController = createAuthController(authService);
-  return await authController.login(c);
-});
-
-app.post('/validate', async c => {
-  const authService = createAuthService(c.env);
-  const authController = createAuthController(authService);
-  return await authController.validateToken(c);
-});
-
-app.post('/logout', async c => {
-  const authService = createAuthService(c.env);
-  const authController = createAuthController(authService);
-  return await authController.logout(c);
-});
-
-// 404 handler for unknown routes
-app.notFound(c => {
-  getLogger().info(
-    {
-      path: c.req.path,
-      method: c.req.method,
-    },
-    'Route not found',
-  );
-
-  return c.json(
-    {
-      success: false,
-      error: {
-        code: 'NOT_FOUND',
-        message: 'The requested resource was not found',
+  /**
+   * RPC method: Login a user
+   * 
+   * @param email User email
+   * @param password User password
+   * @returns Login result with user and token
+   */
+  public async login(email: string, password: string): Promise<LoginResponse> {
+    const requestId = crypto.randomUUID();
+    
+    return runWithLog(
+      {
+        service: 'auth',
+        op: 'login',
+        email,
+        requestId,
       },
-    },
-    404,
-  );
-});
+      async () => {
+        try {
+          // Validate inputs
+          if (!email || !password) {
+            throw new AuthError('Email and password are required', AuthErrorType.INVALID_CREDENTIALS, 400);
+          }
+          
+          // Track request metrics
+          authMetrics.counter('rpc.login.requests', 1);
+          
+          getLogger().info(
+            { email, requestId, operation: 'login' },
+            'Processing RPC login request'
+          );
+          
+          // Perform login
+          const result = await this.authService.login(email, password);
+          
+          // Track success metrics
+          authMetrics.counter('rpc.login.success', 1);
+          
+          getLogger().info(
+            { userId: result.user.id, email, requestId, operation: 'login' },
+            'Login successful'
+          );
+          
+          return result;
+        } catch (error) {
+          // Track failure metrics
+          authMetrics.counter('rpc.login.errors', 1);
+          
+          getLogger().error(
+            { error, email, requestId, operation: 'login' },
+            'Login failed'
+          );
+          
+          throw error;
+        }
+      }
+    );
+  }
 
-// Error handler
-app.onError((err, c) => {
-  getLogger().error(
-    {
-      err,
-      path: c.req.path,
-      method: c.req.method,
-      errorName: err.name,
-      errorMessage: err.message,
-      stack: err.stack,
-    },
-    'Unhandled error',
-  );
-
-  return c.json(
-    {
-      success: false,
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'An internal server error occurred',
+  /**
+   * RPC method: Register a new user
+   * 
+   * @param email User email
+   * @param password User password
+   * @param name Optional user name
+   * @returns Registration result with user
+   */
+  public async register(email: string, password: string, name?: string): Promise<RegisterResponse> {
+    const requestId = crypto.randomUUID();
+    
+    return runWithLog(
+      {
+        service: 'auth',
+        op: 'register',
+        email,
+        requestId,
       },
-    },
-    500,
-  );
-});
-
-export default app;
+      async () => {
+        try {
+          // Validate inputs
+          if (!email || !password) {
+            throw new AuthError('Email and password are required', AuthErrorType.REGISTRATION_FAILED, 400);
+          }
+          
+          // Track request metrics
+          authMetrics.counter('rpc.register.requests', 1);
+          
+          getLogger().info(
+            { email, hasName: !!name, requestId, operation: 'register' },
+            'Processing RPC register request'
+          );
+          
+          // Perform registration
+          const user = await this.authService.register(email, password, name);
+          
+          // Track success metrics
+          authMetrics.counter('rpc.register.success', 1);
+          
+          getLogger().info(
+            { userId: user.id, email, requestId, operation: 'register' },
+            'Registration successful'
+          );
+          
+          return {
+            success: true,
+            user
+          };
+        } catch (error) {
+          // Track failure metrics
+          authMetrics.counter('rpc.register.errors', 1);
+          
+          getLogger().error(
+            { error, email, requestId, operation: 'register' },
+            'Registration failed'
+          );
+          
+          throw error;
+        }
+      }
+    );
+  }
+  
+  /**
+   * RPC method: Validate a token
+   * 
+   * @param token JWT token to validate
+   * @returns Validation result with user info
+   */
+  public async validateToken(token: string): Promise<ValidateTokenResponse> {
+    const requestId = crypto.randomUUID();
+    
+    return runWithLog(
+      {
+        service: 'auth',
+        op: 'validateToken',
+        requestId,
+      },
+      async () => {
+        try {
+          // Validate inputs
+          if (!token) {
+            throw new AuthError('Token is required', AuthErrorType.MISSING_TOKEN, 401);
+          }
+          
+          // Track request metrics
+          authMetrics.counter('rpc.validateToken.requests', 1);
+          
+          getLogger().info(
+            { requestId, operation: 'validateToken' },
+            'Processing RPC validateToken request'
+          );
+          
+          // Validate token
+          const user = await this.authService.validateToken(token);
+          
+          // Track success metrics
+          authMetrics.counter('rpc.validateToken.success', 1);
+          
+          getLogger().info(
+            { userId: user.id, requestId, operation: 'validateToken' },
+            'Token validation successful'
+          );
+          
+          return {
+            success: true,
+            user
+          };
+        } catch (error) {
+          // Track failure metrics
+          authMetrics.counter('rpc.validateToken.errors', 1);
+          
+          getLogger().error(
+            { error, requestId, operation: 'validateToken' },
+            'Token validation failed'
+          );
+          
+          throw error;
+        }
+      }
+    );
+  }
+  
+  /**
+   * RPC method: Logout a user
+   * 
+   * @param token JWT token to invalidate
+   * @returns Logout result
+   */
+  public async logout(token: string): Promise<LogoutResponse> {
+    const requestId = crypto.randomUUID();
+    
+    return runWithLog(
+      {
+        service: 'auth',
+        op: 'logout',
+        requestId,
+      },
+      async () => {
+        try {
+          // Validate inputs
+          if (!token) {
+            throw new AuthError('Token is required', AuthErrorType.MISSING_TOKEN, 401);
+          }
+          
+          // Track request metrics
+          authMetrics.counter('rpc.logout.requests', 1);
+          
+          // Get user ID for logging before invalidating token
+          let userId: string = 'unknown';
+          try {
+            const user = await this.authService.validateToken(token);
+            userId = user.id;
+          } catch (e) {
+            // Continue with logout even if token is invalid
+          }
+          
+          getLogger().info(
+            { userId, requestId, operation: 'logout' },
+            'Processing RPC logout request'
+          );
+          
+          // Perform logout
+          const success = await this.authService.logout(token, userId);
+          
+          // Track success metrics
+          authMetrics.counter('rpc.logout.success', 1);
+          
+          getLogger().info(
+            { userId, success, requestId, operation: 'logout' },
+            'Logout completed'
+          );
+          
+          return { success };
+        } catch (error) {
+          // Track failure metrics
+          authMetrics.counter('rpc.logout.errors', 1);
+          
+          getLogger().error(
+            { error, requestId, operation: 'logout' },
+            'Logout failed'
+          );
+          
+          throw error;
+        }
+      }
+    );
+  }
+  
+  /** 
+   * Handle HTTP requests for the auth service
+   * WorkerEntrypoint fetch method
+   */
+  fetch(request: Request): Response | Promise<Response> {
+    // Create Hono app for handling HTTP requests
+    const app = new Hono<{ Bindings: Bindings }>();
+    
+    // Initialize logging
+    initLogging(app, {
+      extraBindings: {
+        name: 'auth-service',
+        version: this.env.VERSION || '0.1.0',
+        environment: this.env.ENVIRONMENT || 'development',
+      },
+    });
+    
+    // App middleware
+    app.use('*', createRequestContextMiddleware());
+    app.use('*', cors());
+    app.use('*', createErrorMiddleware(formatZodError));
+    app.use('*', responseHandlerMiddleware);
+    
+    // Root route
+    app.get('/', c => {
+      return c.json({
+        message: 'Auth service API',
+        service: 'dome-auth',
+        version: c.env.VERSION || '0.1.0',
+      });
+    });
+    
+    // Health check endpoint
+    app.get('/health', c => {
+      return c.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        service: 'dome-auth',
+        version: c.env.VERSION || '0.1.0',
+      });
+    });
+    
+    // Handle the request with the Hono app
+    return app.fetch(request, this.env);
+  }
+}

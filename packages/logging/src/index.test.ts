@@ -20,7 +20,10 @@ describe('@dome/logging', () => {
   it('should initialize logging middleware', () => {
     initLogging(mockHono as any);
 
+    // Now expecting 2 calls to use(), one for requestIdMiddleware and one for buildLoggingMiddleware
     expect(mockHono.use).toHaveBeenCalledTimes(2);
+    expect(mockHono.use).toHaveBeenNthCalledWith(1, '*', expect.any(Function)); // requestIdMiddleware
+    expect(mockHono.use).toHaveBeenNthCalledWith(2, '*', expect.any(Function)); // buildLoggingMiddleware
   });
 
   it('should return a logger', () => {

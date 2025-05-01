@@ -1,4 +1,5 @@
 import { getLogger, logError, metrics } from '@dome/logging';
+import { toDomeError } from '../utils/errors';
 import { SiloStatsResponse } from '@dome/common';
 import { MetadataService } from '../services/metadataService';
 
@@ -25,7 +26,7 @@ export class StatsController {
     } catch (error) {
       metrics.increment('silo.rpc.errors', 1, { method: 'stats' });
       logError(error, 'Error in getStats');
-      throw error;
+      throw toDomeError(error, 'Failed to retrieve storage statistics');
     }
   }
 }

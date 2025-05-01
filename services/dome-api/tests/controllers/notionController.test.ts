@@ -47,6 +47,7 @@ describe('NotionController', () => {
     const mockParam = vi.fn((key: string) => params[key] || undefined);
     const mockQuery = vi.fn((key: string) => query[key] || undefined);
     const jsonPromise = Promise.resolve(body);
+    const mockStatus = vi.fn().mockReturnThis();
 
     return {
       env: mockEnv,
@@ -55,8 +56,20 @@ describe('NotionController', () => {
         param: mockParam,
         query: mockQuery,
         json: () => jsonPromise,
+        path: '/content/notion',
+        method: 'POST',
       },
       json: mockJson,
+      status: mockStatus,
+      set: vi.fn().mockReturnThis(),
+      // Add these properties to ensure proper error handling
+      error: vi.fn(),
+      logger: {
+        error: vi.fn(),
+        info: vi.fn(),
+        debug: vi.fn(),
+        warn: vi.fn()
+      }
     };
   };
 
@@ -143,7 +156,7 @@ describe('NotionController', () => {
       });
     });
 
-    it('should handle service errors', async () => {
+    it('should handle service errors with proper error details', async () => {
       // Arrange
       const requestBody = {
         workspaceId: 'workspace-123',
@@ -155,15 +168,40 @@ describe('NotionController', () => {
       const serviceError = new ServiceError('Failed to register workspace', {
         code: 'REGISTRATION_ERROR',
         status: 503,
+        details: {
+          workspaceId: 'workspace-123',
+          reason: 'Tsunami service unavailable'
+        }
       });
       
       vi.mocked(mockTsunamiClient.registerNotionWorkspace).mockRejectedValue(serviceError);
 
       // Act & Assert
       await expect(controller.registerNotionWorkspace(mockContext as any)).rejects.toThrow(serviceError);
+      
+      // Verify the error is logged with details
+      expect(mockContext.logger?.error).toHaveBeenCalled();
+    });
+    
+    it('should handle unexpected errors gracefully', async () => {
+      // Arrange
+      const requestBody = {
+        workspaceId: 'workspace-123',
+        userId: 'user-123',
+      };
+      
+      const mockContext = createMockContext({}, {}, requestBody);
+      
+      // Non-ServiceError
+      const unexpectedError = new Error('Unexpected failure');
+      
+      vi.mocked(mockTsunamiClient.registerNotionWorkspace).mockRejectedValue(unexpectedError);
+
+      // Act & Assert
+      await expect(controller.registerNotionWorkspace(mockContext as any)).rejects.toThrow();
     });
 
-    it('should handle validation errors', async () => {
+    it('should handle validation errors with detailed error message', async () => {
       // Arrange
       const requestBody = {
         // Missing required workspaceId
@@ -188,6 +226,23 @@ describe('NotionController', () => {
 
       // Act & Assert
       await expect(controller.registerNotionWorkspace(mockContext as any)).rejects.toThrow(zodError);
+      
+      // Verify error logging
+      expect(mockContext.logger?.error).toHaveBeenCalled();
+    });
+    
+    it('should handle empty or null values in input gracefully', async () => {
+      // Arrange - provide empty strings which should be validated
+      const requestBody = {
+        workspaceId: '',
+        userId: '',
+        cadence: '',
+      };
+      
+      const mockContext = createMockContext({}, {}, requestBody);
+      
+      // Act & Assert
+      await expect(controller.registerNotionWorkspace(mockContext as any)).rejects.toThrow();
     });
   });
 
@@ -230,7 +285,7 @@ describe('NotionController', () => {
       });
     });
 
-    it('should use default limit when not provided', async () => {
+    it('should use default limit when not provided and handle all parameter types', async () => {
       // Arrange
       const params = {
         workspaceId: 'workspace-123',
@@ -262,9 +317,29 @@ describe('NotionController', () => {
         success: true,
         ...historyResult
       });
+      
+      // Test with non-numeric limit
+      const invalidLimitContext = createMockContext(params, { limit: 'abc' });
+      await controller.getNotionWorkspaceHistory(invalidLimitContext as any);
+      
+      // Should still use default limit for non-numeric input
+      expect(mockTsunamiClient.getNotionWorkspaceHistory).toHaveBeenCalledWith(
+        'workspace-123',
+        10 // Default limit
+      );
+      
+      // Test with zero limit
+      const zeroLimitContext = createMockContext(params, { limit: '0' });
+      await controller.getNotionWorkspaceHistory(zeroLimitContext as any);
+      
+      // Should use minimum limit for zero input
+      expect(mockTsunamiClient.getNotionWorkspaceHistory).toHaveBeenCalledWith(
+        'workspace-123',
+        1 // Minimum sensible limit
+      );
     });
 
-    it('should handle service errors', async () => {
+    it('should handle service errors with proper logging', async () => {
       // Arrange
       const params = {
         workspaceId: 'workspace-123',
@@ -275,12 +350,30 @@ describe('NotionController', () => {
       const serviceError = new ServiceError('Failed to get workspace history', {
         code: 'HISTORY_ERROR',
         status: 503,
+        details: {
+          workspaceId: 'workspace-123',
+          requestId: 'test-request-id'
+        }
       });
       
       vi.mocked(mockTsunamiClient.getNotionWorkspaceHistory).mockRejectedValue(serviceError);
 
       // Act & Assert
       await expect(controller.getNotionWorkspaceHistory(mockContext as any)).rejects.toThrow(serviceError);
+      
+      // Verify error logging with context
+      expect(mockContext.logger?.error).toHaveBeenCalled();
+    });
+    
+    it('should handle missing workspaceId parameter', async () => {
+      // Arrange - missing required parameter
+      const params = {};
+      
+      const mockContext = createMockContext(params);
+      
+      // Act & Assert
+      await expect(controller.getNotionWorkspaceHistory(mockContext as any))
+        .rejects.toThrow(); // Should throw validation error
     });
   });
 
@@ -304,7 +397,7 @@ describe('NotionController', () => {
       });
     });
 
-    it('should handle errors', async () => {
+    it('should handle errors during response creation', async () => {
       // Arrange
       const params = {
         workspaceId: 'workspace-123',
@@ -312,13 +405,30 @@ describe('NotionController', () => {
       
       const mockContext = createMockContext(params);
       
-      // Mock an implementation that throws an error
+      // Mock an implementation that throws an error during JSON response
       mockContext.json = vi.fn().mockImplementation(() => {
         throw new Error('Failed to trigger sync');
       });
 
       // Act & Assert
-      await expect(controller.triggerNotionWorkspaceSync(mockContext as any)).rejects.toThrow('Failed to trigger sync');
+      await expect(controller.triggerNotionWorkspaceSync(mockContext as any))
+        .rejects.toThrow('Failed to trigger sync');
+        
+      // Check that error is logged
+      expect(mockContext.logger?.error).toHaveBeenCalled();
+    });
+    
+    it('should validate workspaceId is not empty', async () => {
+      // Arrange - empty workspaceId
+      const params = {
+        workspaceId: '',
+      };
+      
+      const mockContext = createMockContext(params);
+
+      // Act & Assert
+      await expect(controller.triggerNotionWorkspaceSync(mockContext as any))
+        .rejects.toThrow(); // Should throw validation error
     });
   });
 
@@ -344,7 +454,7 @@ describe('NotionController', () => {
       });
     });
 
-    it('should handle validation errors', async () => {
+    it('should handle validation errors and log them properly', async () => {
       // Arrange
       const requestBody = {
         // Missing required code
@@ -369,6 +479,24 @@ describe('NotionController', () => {
 
       // Act & Assert
       await expect(controller.configureNotionOAuth(mockContext as any)).rejects.toThrow(zodError);
+      
+      // Verify error is logged
+      expect(mockContext.logger?.error).toHaveBeenCalled();
+    });
+    
+    it('should validate all required OAuth parameters', async () => {
+      // Arrange - missing userId
+      const requestBodyMissingUserId = {
+        code: 'oauth-code-123',
+        redirectUri: 'https://example.com/callback',
+        // Missing userId
+      };
+      
+      const mockContext = createMockContext({}, {}, requestBodyMissingUserId);
+      
+      // Act & Assert
+      await expect(controller.configureNotionOAuth(mockContext as any))
+        .rejects.toThrow(); // Should throw validation error for missing userId
     });
   });
 
@@ -420,7 +548,7 @@ describe('NotionController', () => {
       expect(responseUrl).not.toContain(`state=`);
     });
 
-    it('should handle validation errors', async () => {
+    it('should handle validation errors in OAuth URL request', async () => {
       // Arrange
       const requestBody = {
         // Missing required redirectUri
@@ -445,6 +573,23 @@ describe('NotionController', () => {
 
       // Act & Assert
       await expect(controller.getNotionOAuthUrl(mockContext as any)).rejects.toThrow(zodError);
+      
+      // Verify error logging
+      expect(mockContext.logger?.error).toHaveBeenCalled();
+    });
+    
+    it('should validate redirectUri format', async () => {
+      // Arrange - invalid URL format
+      const requestBody = {
+        redirectUri: 'not-a-valid-url',
+        state: 'random-state-123',
+      };
+      
+      const mockContext = createMockContext({}, {}, requestBody);
+      
+      // Act & Assert
+      await expect(controller.getNotionOAuthUrl(mockContext as any))
+        .rejects.toThrow(); // Should throw validation error for invalid URL
     });
   });
 });

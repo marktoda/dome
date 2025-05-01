@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { getLogger } from '@dome/logging';
-import { AuthServiceBinding } from '@dome/auth/client';
+import { AuthServiceBinding } from '../services/auth-client';
 import type { Bindings } from '../types';
 
 /**

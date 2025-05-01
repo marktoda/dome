@@ -2,7 +2,6 @@ name = "auth"
 main = "src/index.ts"
 compatibility_date = "2025-04-15"
 compatibility_flags = ["nodejs_compat"]
-usage_model = "bundled"
 
 # Route configuration
 # routes = [
@@ -25,12 +24,4 @@ database_id = "6d3180e0-cd8b-434e-9fb1-b1af9c8b3c3c"
 # KV namespace for storing tokens (optional blacklisted tokens)
 [[kv_namespaces]]
 binding = "AUTH_TOKENS"
-id = "auth-kv"
-
-# Build configuration
-[build]
-command = "npm run build"
-[build.upload]
-format = "modules"
-dir = "dist"
-main = "index.js"
+id = "152a516f80b54b17a4f458dddb896fcf"

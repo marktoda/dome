@@ -1,4 +1,5 @@
-import { getLogger, logError, metrics, withLogger } from '@dome/logging';
+import { getLogger, metrics, withLogger } from '@dome/logging';
+import { toDomeError, ValidationError } from '../utils/errors';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
 import {
   chatRequestSchema,
@@ -182,15 +183,19 @@ export class ChatController {
     start: number,
     streaming: boolean,
   ) {
-    logError(err, 'ChatController error', {
+    const domeError = toDomeError(err, 'ChatController error', {
       userId,
       runId,
       executionTimeMs: Math.round(performance.now() - start),
-      streaming: String(streaming),
+      streaming: String(streaming)
     });
 
+    // Error is already logged by toDomeError
+    this.logger.error({ error: domeError, userId, runId }, 'ChatController error');
+
     metrics.increment('chat_orchestrator.chat.errors', 1, {
-      errorType: err instanceof Error ? err.constructor.name : 'unknown',
+      errorType: domeError.code || 'UNKNOWN_ERROR',
+      statusCode: String(domeError.statusCode || 500),
       streaming: String(streaming),
     });
   }

@@ -1,4 +1,5 @@
 import { getLogger, logError, metrics } from '@dome/logging';
+import { ValidationError, NotFoundError, UnauthorizedError, toDomeError } from '../utils/errors';
 import { ulid } from 'ulid';
 import { R2Service } from '../services/r2Service';
 import { MetadataService } from '../services/metadataService';
@@ -57,7 +58,7 @@ export class ContentController {
       const size = this.contentSize(input.content);
 
       if (size > SIMPLE_PUT_MAX_SIZE) {
-        throw new Error('Content size exceeds 1 MiB. Use createUpload for larger files.');
+        throw new ValidationError('Content size exceeds 1 MiB. Use createUpload for larger files.');
       }
 
       const category = input.category ?? 'note';
@@ -78,7 +79,7 @@ export class ContentController {
       return { id, category, mimeType, size, createdAt };
     } catch (error) {
       this.handleError('simplePut', error);
-      throw error;
+      throw toDomeError(error);
     } finally {
       metrics.timing('silo.rpc.simplePut.latency_ms', performance.now() - start);
     }
@@ -116,7 +117,7 @@ export class ContentController {
             results[item.id].body = await obj.text();
           } else {
             // TODO: fix
-            throw new Error('Object too large for simple retrieval');
+            throw new ValidationError('Object too large for simple retrieval', { size: item.size });
           }
         }),
       );
@@ -132,21 +133,25 @@ export class ContentController {
       return { items, total, limit, offset };
     } catch (error) {
       this.handleError('batchGet', error);
-      return { items: [], total: 0, limit: params.limit ?? 50, offset: params.offset ?? 0 };
+      throw toDomeError(error);
     }
   }
 
   /** Delete a content item (object + metadata) with ACL checks. */
   async delete({ id, userId = null }: { id: string; userId?: string | null }) {
-    if (!id) throw new Error('Valid id is required');
+    if (!id) throw new ValidationError('Valid id is required');
 
     const meta = await this.metadataService.getMetadataById(id);
-    if (!meta) throw new Error('Content not found');
+    if (!meta) throw new NotFoundError('Content not found', { id });
 
     // ACL check: Allow deletion if the item belongs to the user
     // Public content can only be deleted by admins (not implemented yet)
     if (meta.userId !== userId && meta.userId !== SiloService.PUBLIC_USER_ID) {
-      throw new Error('Unauthorized');
+      throw new UnauthorizedError('You do not have permission to delete this content', {
+        contentId: id,
+        requestUserId: userId,
+        contentUserId: meta.userId
+      });
     }
 
     await this.r2Service.deleteObject(meta.r2Key);
@@ -188,7 +193,7 @@ export class ContentController {
     } catch (error) {
       metrics.increment('silo.enriched_content.errors');
       logError(error, 'Error processing enriched content', { messageId: message.id });
-      throw error;
+      throw toDomeError(error, 'Failed to process enriched content', { contentId: message.id });
     }
   }
 
@@ -228,7 +233,7 @@ export class ContentController {
     } catch (error) {
       metrics.increment('silo.ingest_queue.errors');
       logError(error, 'Error processing ingest queue message', { messageId: message.id });
-      throw error;
+      throw toDomeError(error, 'Failed to process ingest queue message', { contentId: message.id });
     }
   }
 
@@ -291,7 +296,7 @@ export class ContentController {
     } catch (error) {
       metrics.increment('silo.r2.events.errors');
       logError(error, 'Error processing R2 event', { event });
-      throw error;
+      throw toDomeError(error, 'Failed to process R2 event', { objectKey: event.object.key });
     }
   }
 
@@ -398,7 +403,8 @@ export class ContentController {
   }
 
   private handleError(method: string, error: unknown) {
-    logError(error, `Error in ${method}`);
+    const domeError = toDomeError(error, `Error in Silo service during ${method}`);
+    logError(domeError, `Error in ${method}`);
     metrics.increment('silo.rpc.errors', 1, { method });
   }
 
@@ -410,7 +416,7 @@ export class ContentController {
   ): Promise<SiloContentMetadata[]> {
     if (!userId) {
       logger.warn('User ID is required when not providing specific content IDs');
-      throw new Error('User ID is required when not providing specific content IDs');
+      throw new ValidationError('User ID is required when not providing specific content IDs');
     }
 
     logger.info({ userId, contentType }, 'fetching all metadata for user');

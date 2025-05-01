@@ -10,8 +10,8 @@ import readline from 'readline';
 export function loginCommand(program: Command): void {
   program
     .command('login')
-    .description('Authenticate with the dome API')
-    .option('-k, --key <key>', 'API key (if not provided, will prompt for it)')
+    .description('Authenticate with the dome API using a Bearer token')
+    .option('-k, --key <key>', 'Authentication token (if not provided, will prompt for it)')
     .action(async (options: { key?: string }) => {
       try {
         // Check if already authenticated
@@ -32,7 +32,7 @@ export function loginCommand(program: Command): void {
           });
 
           apiKey = await new Promise<string>(resolve => {
-            rl.question('Enter your API key: ', answer => {
+            rl.question('Enter your authentication token: ', answer => {
               rl.close();
               resolve(answer.trim());
             });
@@ -41,14 +41,14 @@ export function loginCommand(program: Command): void {
 
         // Validate API key
         if (!apiKey) {
-          console.log(error('API key is required.'));
+          console.log(error('Authentication token is required.'));
           process.exit(1);
         }
 
         // Save API key
         saveApiKey(apiKey);
 
-        console.log(success('Successfully authenticated. You can now use the dome CLI.'));
+        console.log(success('Successfully authenticated with Bearer token. You can now use the dome CLI.'));
       } catch (err) {
         console.log(
           error(`Failed to authenticate: ${err instanceof Error ? err.message : String(err)}`),

@@ -21,6 +21,9 @@ class ApiClient {
 
     this.axios.interceptors.request.use(cfg => {
       if (isAuthenticated()) {
+        // Add Bearer token authentication for new endpoints
+        cfg.headers['Authorization'] = `Bearer ${this.cfg.apiKey}`;
+        // Keep legacy headers for backward compatibility
         cfg.headers['x-api-key'] = this.cfg.apiKey;
         cfg.headers['x-user-id'] = 'test-user-id';
       }
@@ -145,7 +148,9 @@ export function connectWebSocketChat(
   { debug }: { debug?: boolean } = {}
 ): Promise<any> {
   const cfg = loadConfig();
-  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/chat?apiKey=${encodeURIComponent(cfg.apiKey || '')}&userId=test-user-id`;
+  // Include the Bearer token in the websocket URL if available
+  const authToken = cfg.apiKey ? `&authToken=${encodeURIComponent(cfg.apiKey)}` : '';
+  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/chat?apiKey=${encodeURIComponent(cfg.apiKey || '')}&userId=test-user-id${authToken}`;
 
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
@@ -159,6 +164,9 @@ export function connectWebSocketChat(
         messages: [{ role: 'user', content: message, timestamp: Date.now() }],
         options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
         stream: true,
+        auth: {
+          token: cfg.apiKey
+        }
       }));
     });
 
@@ -192,6 +200,9 @@ export async function chat(
           messages: [{ role: 'user', content: message, timestamp: Date.now() }],
           options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
           stream: false,
+          auth: {
+            token: loadConfig().apiKey
+          }
         });
         return { response: getResponseText(res), success: true, note: 'WS failed – HTTP fallback' };
       }
@@ -204,6 +215,9 @@ export async function chat(
     messages: [{ role: 'user', content: message, timestamp: Date.now() }],
     options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
     stream: false,
+    auth: {
+      token: loadConfig().apiKey
+    }
   });
   return getResponseText(res);
 }

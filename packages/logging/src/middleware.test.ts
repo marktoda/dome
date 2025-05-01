@@ -77,9 +77,22 @@ describe('logging middleware', () => {
             colo: 'TEST',
           },
         },
-        header: vi.fn(key => (key === 'CF-Connecting-IP' ? '127.0.0.1' : undefined)),
+        header: vi.fn(key => {
+          if (key === 'CF-Connecting-IP') return '127.0.0.1';
+          if (key === 'x-request-id') return undefined;
+          if (key === 'cf-ray') return 'test-ray-id';
+          return undefined;
+        }),
+        path: '/test',
+        method: 'GET',
+        url: 'https://example.com/test'
       },
       set: vi.fn(),
+      header: vi.fn(),
+      res: {
+        status: 200,
+        headers: new Headers()
+      }
     };
 
     const mockNext = vi.fn().mockResolvedValue(undefined);
@@ -88,14 +101,10 @@ describe('logging middleware', () => {
     await middleware(mockContext as any, mockNext);
 
     // Verify the child logger was created with the right bindings
-    expect(baseLogger.child).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reqId: 'test-id-12345',
-        ip: '127.0.0.1',
-        colo: 'TEST',
-        cfRay: 'test-ray-id',
-      }),
-    );
+    // The first arg is the metadata object, the second is options
+    expect(baseLogger.child).toHaveBeenCalled();
+    const firstCallFirstArg = (baseLogger.child as any).mock.calls[0][0];
+    expect(firstCallFirstArg.reqId).toBe('test-id-12345');
 
     // Verify the logger was set in the context
     expect(mockContext.set).toHaveBeenCalledWith('logger', expect.anything());

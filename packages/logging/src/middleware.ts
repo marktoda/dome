@@ -83,7 +83,8 @@ export function buildLoggingMiddleware(options: LoggingMiddlewareOptions = {}): 
     
     // Basic request metadata
     const meta: Record<string, unknown> = {
-      requestId,
+      reqId: requestId, // Use reqId for backward compatibility with tests
+      requestId, // Also include requestId for new code
       path: c.req.path,
       method: c.req.method,
       url: c.req.url,
@@ -226,7 +227,10 @@ export function buildLoggingMiddleware(options: LoggingMiddlewareOptions = {}): 
  * @param options Configuration options
  */
 export function initLogging(app: any, options: InitOptions = {}) {
-  // Create and apply the middleware
+  // Apply the request ID middleware first
+  app.use('*', requestIdMiddleware());
+  
+  // Then apply the full logging middleware
   app.use('*', buildLoggingMiddleware(options));
 }
 

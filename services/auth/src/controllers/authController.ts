@@ -1,10 +1,16 @@
 import { Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { StatusCode } from 'hono/utils/http-status';
 import { getLogger } from '@dome/logging';
 import { AuthService } from '../services/authService';
 import { Bindings } from '../types';
 import { AuthError, AuthErrorType } from '../utils/errors';
+
+// Helper function to convert number to Hono StatusCode
+function statusCodeFromNumber(status: number): StatusCode {
+  return status as StatusCode;
+}
 
 // Request validation schemas
 const registerSchema = z.object({
@@ -51,7 +57,8 @@ export class AuthController {
       this.logger.error({ error }, 'Registration failed');
       
       if (error instanceof AuthError) {
-        return c.json(error.toJSON(), error.status);
+        c.status(statusCodeFromNumber(error.status));
+        return c.json(error.toJSON());
       }
       
       return c.json({
@@ -74,15 +81,14 @@ export class AuthController {
       
       const result = await this.authService.login(email, password);
       
-      return c.json({
-        success: true,
-        ...result,
-      });
+      // Result already has 'success: true' from the authService
+      return c.json(result);
     } catch (error) {
       this.logger.error({ error }, 'Login failed');
       
       if (error instanceof AuthError) {
-        return c.json(error.toJSON(), error.status);
+        c.status(statusCodeFromNumber(error.status));
+        return c.json(error.toJSON());
       }
       
       return c.json({
@@ -119,7 +125,8 @@ export class AuthController {
       this.logger.error({ error }, 'Token validation failed');
       
       if (error instanceof AuthError) {
-        return c.json(error.toJSON(), error.status);
+        c.status(statusCodeFromNumber(error.status));
+        return c.json(error.toJSON());
       }
       
       return c.json({
@@ -168,7 +175,8 @@ export class AuthController {
       this.logger.error({ error }, 'Logout failed');
       
       if (error instanceof AuthError) {
-        return c.json(error.toJSON(), error.status);
+        c.status(statusCodeFromNumber(error.status));
+        return c.json(error.toJSON());
       }
       
       return c.json({

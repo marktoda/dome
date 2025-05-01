@@ -88,7 +88,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_sync_plan.errors`);
       logError(error, 'Error getting sync plan');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -115,7 +115,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.attach_user.errors`);
       logError(error, 'Error attaching user to sync plan');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -150,7 +150,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.initialize_resource.errors`);
       logError(error, 'Error initializing resource');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -189,7 +189,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.github_repo_registration.errors`);
       logError(error, 'Error registering GitHub repository');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -225,7 +225,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.notion_workspace_registration.errors`);
       logError(error, 'Error registering Notion workspace');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -265,7 +265,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_notion_workspace_history.errors`);
       logError(error, 'Error fetching Notion workspace history');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -309,7 +309,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_github_repo_history.errors`);
       logError(error, 'Error fetching GitHub repository history');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -345,7 +345,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_user_history.errors`);
       logError(error, 'Error fetching user sync history');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -381,7 +381,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_sync_plan_history.errors`);
       logError(error, 'Error fetching sync plan history');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -411,7 +411,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_history_by_resource_id.errors`);
       logError(error, 'Error getting history by resource ID');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -441,7 +441,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_history_by_user_id.errors`);
       logError(error, 'Error getting history by user ID');
-      throw error;
+      throw toDomeError(error);
     }
   }
 
@@ -471,7 +471,7 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_history_by_sync_plan_id.errors`);
       logError(error, 'Error getting history by sync plan ID');
-      throw error;
+      throw toDomeError(error);
     }
   }
 }

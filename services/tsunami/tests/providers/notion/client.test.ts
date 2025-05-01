@@ -190,7 +190,7 @@ describe('NotionClient', () => {
       expect(results[1].id).toBe('page-2');
     });
 
-    it('should throw ServiceError on API failure', async () => {
+    it('should throw ServiceError on API failure with correct properties', async () => {
       const workspaceId = 'workspace-123';
       
       mockFetch.mockResolvedValueOnce({
@@ -201,17 +201,40 @@ describe('NotionClient', () => {
         headers: new Map(),
       });
       
-      await expect(client.getUpdatedPages(workspaceId, null))
-        .rejects.toThrow(ServiceError);
+      try {
+        await client.getUpdatedPages(workspaceId, null);
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to fetch updated pages');
+        expect(serviceError.code).toBeDefined();
+        // Test specific important properties but don't rely on internal structure
+        expect(serviceError).toHaveProperty('statusCode');
+        expect(serviceError).toHaveProperty('details');
+      }
     });
-
-    it('should throw ServiceError on fetch failure', async () => {
+  
+    it('should throw ServiceError on fetch failure with correct properties', async () => {
       const workspaceId = 'workspace-123';
+      const networkError = new Error('Network error');
       
-      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+      mockFetch.mockRejectedValueOnce(networkError);
       
-      await expect(client.getUpdatedPages(workspaceId, null))
-        .rejects.toThrow(ServiceError);
+      try {
+        await client.getUpdatedPages(workspaceId, null);
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to fetch updated pages');
+        expect(serviceError.code).toBeDefined();
+        // Check that error has details about the workspace
+        expect(serviceError).toHaveProperty('details');
+        expect(serviceError).toHaveProperty('cause');
+      }
     });
   });
 
@@ -292,7 +315,7 @@ describe('NotionClient', () => {
       expect(result.title).toBe(`Untitled Page (${pageId})`);
     });
 
-    it('should throw ServiceError on API failure', async () => {
+    it('should throw ServiceError on API failure with proper error details', async () => {
       const pageId = 'page-123';
       
       mockFetch.mockResolvedValueOnce({
@@ -303,8 +326,39 @@ describe('NotionClient', () => {
         headers: new Map(),
       });
       
-      await expect(client.getPage(pageId))
-        .rejects.toThrow(ServiceError);
+      try {
+        await client.getPage(pageId);
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to fetch page');
+        expect(serviceError.code).toBeDefined();
+        expect(serviceError).toHaveProperty('statusCode');
+        expect(serviceError).toHaveProperty('details');
+      }
+    });
+  
+    it('should handle malformed page response gracefully', async () => {
+      const pageId = 'page-123';
+      const malformedPage = {
+        id: pageId,
+        // Missing properties field
+      };
+      
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => malformedPage,
+        headers: new Map(),
+      });
+      
+      const result = await client.getPage(pageId);
+      
+      // Should still return a result with default values
+      expect(result.id).toBe(pageId);
+      expect(result.title).toBe(`Untitled Page (${pageId})`);
     });
   });
 
@@ -410,7 +464,7 @@ describe('NotionClient', () => {
       );
     });
 
-    it('should throw ServiceError on API failure', async () => {
+    it('should throw ServiceError on API failure with detailed error information', async () => {
       const pageId = 'page-123';
       
       mockFetch.mockResolvedValueOnce({
@@ -421,8 +475,42 @@ describe('NotionClient', () => {
         headers: new Map(),
       });
       
-      await expect(client.getPageContent(pageId))
-        .rejects.toThrow(ServiceError);
+      try {
+        await client.getPageContent(pageId);
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to fetch page content');
+        expect(serviceError.code).toBeDefined();
+        expect(serviceError).toHaveProperty('statusCode');
+        expect(serviceError).toHaveProperty('details');
+      }
+    });
+  
+    it('should handle non-JSON responses for page content gracefully', async () => {
+      const pageId = 'page-123';
+      
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => { throw new Error('Invalid JSON'); },
+        text: async () => 'Not JSON content',
+        headers: new Map(),
+      });
+      
+      try {
+        await client.getPageContent(pageId);
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to parse');
+        expect(serviceError.code).toBeDefined();
+        expect(serviceError).toHaveProperty('details');
+      }
     });
   });
 
@@ -456,7 +544,7 @@ describe('NotionClient', () => {
       );
     });
 
-    it('should throw ServiceError on API failure', async () => {
+    it('should throw ServiceError on API failure with detailed context', async () => {
       const databaseId = 'db-123';
       
       mockFetch.mockResolvedValueOnce({
@@ -467,8 +555,39 @@ describe('NotionClient', () => {
         headers: new Map(),
       });
       
-      await expect(client.getDatabase(databaseId))
-        .rejects.toThrow(ServiceError);
+      try {
+        await client.getDatabase(databaseId);
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to fetch database');
+        expect(serviceError.code).toBeDefined();
+        expect(serviceError).toHaveProperty('statusCode');
+        expect(serviceError).toHaveProperty('details');
+      }
+    });
+  
+    it('should handle malformed database response', async () => {
+      const databaseId = 'db-123';
+      const malformedDatabase = {
+        id: databaseId,
+        // Missing title and properties
+      };
+      
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => malformedDatabase,
+        headers: new Map(),
+      });
+      
+      const result = await client.getDatabase(databaseId);
+      
+      // Should still return a result with default values
+      expect(result.id).toBe(databaseId);
+      expect(result.properties).toEqual({});
     });
   });
 
@@ -508,7 +627,7 @@ describe('NotionClient', () => {
       expect(result).toEqual([]);
     });
 
-    it('should throw ServiceError on API failure', async () => {
+    it('should throw ServiceError on API failure with proper error details', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 401,
@@ -519,6 +638,19 @@ describe('NotionClient', () => {
       
       await expect(client.getWorkspaces())
         .rejects.toThrow(ServiceError);
+      
+      try {
+        await client.getWorkspaces();
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to fetch workspaces');
+        expect(serviceError.code).toBeDefined();
+        expect(serviceError).toHaveProperty('statusCode');
+        expect(serviceError).toHaveProperty('details');
+      }
     });
   });
 
@@ -588,26 +720,54 @@ describe('NotionClient', () => {
       vi.useRealTimers();
     });
 
-    it('should handle fetch errors and throw ServiceError', async () => {
+    it('should handle fetch errors and throw ServiceError with proper context', async () => {
       const pageId = 'page-123';
+      const networkError = new Error('Network error');
       
-      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+      mockFetch.mockRejectedValueOnce(networkError);
       
       await expect(client.getPage(pageId)).rejects.toThrow(ServiceError);
+      
+      try {
+        await client.getPage(pageId);
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to fetch page');
+        expect(serviceError.code).toBeDefined();
+        expect(serviceError).toHaveProperty('details');
+        expect(serviceError).toHaveProperty('cause');
+      }
     });
 
-    it('should handle non-JSON responses and throw ServiceError', async () => {
+    it('should handle non-JSON responses and throw ServiceError with details', async () => {
       const pageId = 'page-123';
+      const jsonError = new Error('Invalid JSON');
       
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => { throw new Error('Invalid JSON'); },
+        json: async () => { throw jsonError; },
         text: async () => 'Not JSON',
         headers: new Map(),
       });
       
       await expect(client.getPage(pageId)).rejects.toThrow(ServiceError);
+      
+      try {
+        await client.getPage(pageId);
+        expect(true).toBe(false); // This will always fail the test if we get here
+      } catch (error) {
+        // Verify it's a ServiceError with expected properties
+        expect(error).toBeInstanceOf(ServiceError);
+        const serviceError = error as ServiceError;
+        expect(serviceError.message).toContain('Failed to parse');
+        expect(serviceError.code).toBeDefined();
+        expect(serviceError).toHaveProperty('details');
+        expect(serviceError).toHaveProperty('cause');
+      }
     });
   });
 });

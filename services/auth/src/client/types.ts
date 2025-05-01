@@ -1,55 +1,55 @@
-import { z } from 'zod';
-import { UserRole } from '../types';
+/**
+ * Type definitions for the Auth client
+ */
+import { User, UserRole, LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse } from '../types';
+
+// Re-export types that are used by the client
+export { User, UserRole, LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse };
 
 /**
- * Auth client types
+ * Error codes for auth operations
  */
-
-/**
- * User interface for the client
- */
-export interface User {
-  id: string;
-  email: string;
-  name?: string;
-  role: UserRole;
-  createdAt: Date;
-  updatedAt: Date;
+export enum AuthErrorCode {
+  INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
+  USER_NOT_FOUND = 'USER_NOT_FOUND',
+  USER_EXISTS = 'USER_EXISTS',
+  INVALID_TOKEN = 'INVALID_TOKEN',
+  TOKEN_EXPIRED = 'TOKEN_EXPIRED',
+  MISSING_TOKEN = 'MISSING_TOKEN',
+  INSUFFICIENT_PERMISSIONS = 'INSUFFICIENT_PERMISSIONS',
+  REGISTRATION_FAILED = 'REGISTRATION_FAILED',
+  LOGIN_FAILED = 'LOGIN_FAILED',
+  INTERNAL_ERROR = 'INTERNAL_ERROR'
 }
 
 /**
- * Login response interface
+ * Interface for Auth service RPC binding
+ * Matches the public methods exposed by the WorkerEntrypoint
  */
-export interface LoginResponse {
-  success: boolean;
-  user: User;
-  token: string;
-  expiresIn: number;
-}
-
-/**
- * Login request schema
- */
-export const loginRequestSchema = z.object({
-  email: z.string().email(),
-  password: z.string(),
-});
-
-/**
- * Register request schema
- */
-export const registerRequestSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  name: z.string().optional(),
-});
-
-/**
- * Authentication service interface for service-to-service communication
- */
-export interface AuthServiceInterface {
+export interface AuthBinding {
+  /**
+   * Login a user
+   */
   login(email: string, password: string): Promise<LoginResponse>;
-  register(email: string, password: string, name?: string): Promise<{ success: boolean; user: User }>;
-  validateToken(token: string): Promise<{ success: boolean; user: User }>;
-  logout(token: string): Promise<{ success: boolean }>;
+  
+  /**
+   * Register a new user
+   */
+  register(email: string, password: string, name?: string): Promise<RegisterResponse>;
+  
+  /**
+   * Validate a token
+   */
+  validateToken(token: string): Promise<ValidateTokenResponse>;
+  
+  /**
+   * Logout a user (invalidate their token)
+   */
+  logout(token: string): Promise<LogoutResponse>;
 }
+
+/**
+ * Interface for the Auth client service
+ * Mirrors the methods available via the binding
+ */
+export interface AuthService extends AuthBinding {}

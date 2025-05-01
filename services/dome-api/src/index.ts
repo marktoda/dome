@@ -236,40 +236,18 @@ app.get(
             ws.send(td.decode(value))   // send LangGraph chunk to the client
           }
           ws.close()                    // tell the client we're done
-        } catch (zodError) {
-          getLogger().error({ error: zodError }, 'Zod validation error for WebSocket message');
-          const errorMessage = zodError instanceof Error ?
-            zodError.message :
-            'Unknown validation error';
-          ws.send(`Error: Invalid request format - ${errorMessage}`);
-          ws.close(1007, 'Invalid message format');
-        } catch (error) {
-          getLogger().error({ error }, 'Error processing WebSocket message');
-          ws.send(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          ws.close(1011, 'Internal server error');
-        }
-      },
-
-      onClose() {
-        /* metrics / cleanup */
-      },
-
-      onError(err) {
-        console.error('ws error', err)
-      },
-    }
-  }),
-)
-            const errorMessage = zodError instanceof Error ?
-              zodError.message :
-              'Unknown validation error';
+        } catch (error: unknown) {
+          // Handle different error types
+          if (error && typeof error === 'object' && 'name' in error && error.name === 'ZodError') {
+            getLogger().error({ error }, 'Zod validation error for WebSocket message');
+            const errorMessage = error instanceof Error ? error.message : 'Unknown validation error';
             ws.send(`Error: Invalid request format - ${errorMessage}`);
             ws.close(1007, 'Invalid message format');
+          } else {
+            getLogger().error({ error }, 'Error processing WebSocket message');
+            ws.send(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            ws.close(1011, 'Internal server error');
           }
-        } catch (error) {
-          getLogger().error({ error }, 'Error processing WebSocket message');
-          ws.send(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          ws.close(1011, 'Internal server error');
         }
       },
 

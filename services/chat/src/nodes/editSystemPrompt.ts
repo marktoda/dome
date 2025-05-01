@@ -1,4 +1,5 @@
 import { getLogger } from '@dome/logging';
+import { NodeError, toDomeError } from '../utils/errors';
 import { z } from 'zod';
 import { AgentState, AIMessage } from '../types';
 import { getUserId } from '../utils/stateUtils';
@@ -135,10 +136,14 @@ export const editSystemPrompt = async (
       },
     };
   } catch (error) {
-    logger.error({ err: error }, 'Error in editSystemPrompt');
+    const domeError = toDomeError(error instanceof Error ? error : new NodeError('Error in editSystemPrompt', {
+      node: 'editSystemPrompt'
+    }));
+    
+    logger.error({ error: domeError }, 'Error in editSystemPrompt');
     
     // Handle error case
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    const errorMsg = domeError.message;
     const elapsed = performance.now() - t0;
     
     // Add error to metadata before ending span

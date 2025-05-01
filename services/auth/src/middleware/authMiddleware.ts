@@ -1,8 +1,14 @@
 import { Context, Next, MiddlewareHandler } from 'hono';
+import { StatusCode } from 'hono/utils/http-status';
 import { getLogger } from '@dome/logging';
 import { AuthService } from '../services/authService';
 import { User, Bindings, AuthContext } from '../types';
 import { AuthError, AuthErrorType } from '../utils/errors';
+
+// Helper function to convert number to Hono StatusCode
+function statusCodeFromNumber(status: number): StatusCode {
+  return status as StatusCode;
+}
 
 /**
  * Authentication middleware factory
@@ -40,7 +46,7 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
         logger.error({ error }, 'Token validation failed');
         
         if (error instanceof AuthError) {
-          c.status(error.status);
+          c.status(statusCodeFromNumber(error.status));
           return c.json(error.toJSON());
         }
         
@@ -57,7 +63,7 @@ export function createAuthMiddleware(authService: AuthService): MiddlewareHandle
       logger.error({ error }, 'Authentication middleware error');
       
       if (error instanceof AuthError) {
-        c.status(error.status);
+        c.status(statusCodeFromNumber(error.status));
         return c.json(error.toJSON());
       }
       
