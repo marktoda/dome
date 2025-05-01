@@ -20,7 +20,15 @@ describe('loggingHelpers', () => {
       const state: Partial<AgentState> = { docs };
       const summary = createStateSummary(state);
       
-      expect(summary.docs).toEqual('[4 docs, ids: doc1, doc2, doc3...]');
+      expect(summary.docs).toHaveLength(4);
+      expect(summary.docs[0]).toEqual({
+        idx: 0,
+        id: 'doc1',
+        title: 'Document 1',
+        source: 'test',
+        url: undefined,
+        relevanceScore: 0.9,
+      });
     });
 
     it('should truncate long messages', () => {

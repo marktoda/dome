@@ -56,7 +56,7 @@ async function streamChatResponse(
         if (content) { // Only show thinking output in verbose mode
           console.log(); // line break before the block
           console.log(chalk.gray('Thinking:'));
-          console.log(chalk.gray(content));
+          console.log(chalk.gray(chunk.content));
           console.log(); // trailing blank line
         }
       } else if (chunk.type === 'content') {

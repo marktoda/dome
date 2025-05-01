@@ -77,11 +77,19 @@ export function concatListFiles(files: string[], maxLength: number): string {
     const nextLine = `- ${file}\n`;
 
     // Check if adding this file would exceed the max length
-    if (result.length + nextLine.length > maxLength) {
+    if (result.length + nextLine.length > maxLength - 25) { // Reserve space for truncation message
       // If we would exceed the length, add a truncation message and stop
       const remainingCount = files.length - result.split('\n').length + 1;
       if (remainingCount > 0) {
-        result += `... and ${remainingCount} more files`;
+        const truncationMessage = `... and ${remainingCount} more files`;
+        // Make sure final string with truncation message doesn't exceed maxLength
+        const availableSpace = maxLength - result.length;
+        if (availableSpace >= truncationMessage.length) {
+          result += truncationMessage;
+        } else {
+          // If not enough space, just add a simpler message
+          result += "...";
+        }
       }
       break;
     }
