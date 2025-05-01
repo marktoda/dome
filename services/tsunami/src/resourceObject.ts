@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { getLogger, logError, metrics } from '@dome/logging';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
-import { ProviderType, GithubProvider, Provider } from './providers';
+import { ProviderType, GithubProvider, NotionProvider, Provider } from './providers';
 import { syncHistoryOperations, syncPlanOperations } from './db/client';
 import { ulid } from 'ulid';
 
@@ -129,6 +129,8 @@ export class ResourceObject extends DurableObject<Env> {
     switch (pt) {
       case ProviderType.GITHUB:
         return new GithubProvider(this.env);
+      case ProviderType.NOTION:
+        return new NotionProvider(this.env);
       default:
         throw new Error(`Provider ${pt} not implemented`);
     }
