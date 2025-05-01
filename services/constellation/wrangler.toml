@@ -49,7 +49,6 @@ local_protocol = "https"
 [vars]
 VERSION = "1.0.0"
 LOG_LEVEL = "debug"
-GOOGLE_AI_API_KEY = ""  # Add your Google Generative AI API key here
 
 [observability]
 enabled = true
