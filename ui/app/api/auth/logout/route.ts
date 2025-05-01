@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { authClient } from '../../../../lib/authClient';
 
+// Configure route to use Edge Runtime for Cloudflare Pages compatibility
+export const runtime = 'edge';
+
 export async function POST(req: NextRequest) {
   try {
     // Get the NextAuth token from the request
@@ -39,3 +42,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

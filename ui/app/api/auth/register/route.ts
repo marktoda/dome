@@ -3,6 +3,9 @@ import { authClient } from '../../../../lib/authClient';
 import { AuthErrorCode } from '../../../../lib/authTypes';
 import { z } from 'zod';
 
+// Configure route to use Edge Runtime for Cloudflare Pages compatibility
+export const runtime = 'edge';
+
 // Registration input validation schema
 const registerSchema = z.object({
   name: z.string().optional(),

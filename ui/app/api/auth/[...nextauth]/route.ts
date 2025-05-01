@@ -3,6 +3,9 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import GithubProvider from 'next-auth/providers/github';
 import { authClient } from '../../../../lib/authClient';
 
+// Configure route to use Edge Runtime for Cloudflare Pages compatibility
+export const runtime = 'edge';
+
 // NextAuth.js handler
 const handler = NextAuth({
   session: {
