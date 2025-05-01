@@ -5,7 +5,7 @@ import { authClient } from "./lib/authClient";
 import type { DefaultSession, NextAuthConfig } from "next-auth";
 
 // Set the runtime to support Edge environments like Cloudflare Pages
-export const runtime = "edge";
+export const runtime = "experimental-edge";
 
 // Extend the built-in session types
 declare module "next-auth" {
