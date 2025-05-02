@@ -23,7 +23,7 @@ export interface RerankerOptions {
 
 /**
  * Creates a reranker function that applies cross-encoder reranking to retrieval results
- * 
+ *
  * @param options Configuration options for the reranker
  * @returns A function that reranks retrieval results
  */
@@ -35,12 +35,12 @@ export function createReranker(options: RerankerOptions) {
     maxResults = 8,
     keepBelowThreshold = false
   } = options;
-  
+
   const logger = getLogger().child({ component: name });
-  
+
   /**
    * Reranks retrieval results using a cross-encoder model from Workers AI
-   * 
+   *
    * @param retrievalResult Initial retrieval results to rerank
    * @param query The query used for retrieval and reranking
    * @param env Environment variables with Workers AI bindings
@@ -88,18 +88,18 @@ export function createReranker(options: RerankerOptions) {
       }
     };
     const rerankerSpanId = ObservabilityService.startSpan(env, traceId, `rerank_${name}`, minimalState);
-    
+
     logger.info({
       query,
       chunkCount: retrievalResult.chunks.length,
       sourceType: retrievalResult.sourceType
     }, `Starting ${name} reranking operation with Workers AI`);
-    
+
     try {
       // Only rerank if we have chunks to process
       if (retrievalResult.chunks.length === 0) {
         logger.info('No chunks to rerank, returning empty result');
-        
+
         // Map sourceType to RetrievalToolType or use sourceType as category with type assertion
         let category: RetrievalToolType;
         switch (retrievalResult.sourceType) {
@@ -121,7 +121,7 @@ export function createReranker(options: RerankerOptions) {
             // Use type assertion for custom source types
             category = retrievalResult.sourceType as unknown as RetrievalToolType;
         }
-        
+
         const emptyResult: RetrievalTask = {
           category: category,
           query: query,
@@ -135,7 +135,7 @@ export function createReranker(options: RerankerOptions) {
             totalCandidates: retrievalResult.metadata.totalCandidates
           }
         };
-        
+
         ObservabilityService.endSpan(
           env,
           traceId,
@@ -145,10 +145,10 @@ export function createReranker(options: RerankerOptions) {
           minimalState,
           0
         );
-        
+
         return emptyResult;
       }
-      
+
       // Use Workers AI reranker to score the chunks
       const rerankedChunks = await rerankWithWorkersAI(
         retrievalResult.chunks,
@@ -156,20 +156,20 @@ export function createReranker(options: RerankerOptions) {
         model,
         env
       );
-      
+
       // Filter by threshold and limit result count
       let filteredChunks = rerankedChunks;
       if (!keepBelowThreshold) {
-        filteredChunks = rerankedChunks.filter(chunk => 
+        filteredChunks = rerankedChunks.filter(chunk =>
           (chunk.metadata.rerankerScore || 0) >= scoreThreshold
         );
       }
-      
+
       // Take top results up to maxResults
       const topResults = filteredChunks.slice(0, maxResults);
-      
+
       const executionTimeMs = performance.now() - startTime;
-      
+
       // Log reranking metrics
       ObservabilityService.logEvent(env, traceId, rerankerSpanId, 'reranking_completed', {
         sourceType: retrievalResult.sourceType,
@@ -178,7 +178,7 @@ export function createReranker(options: RerankerOptions) {
         returnedChunks: topResults.length,
         executionTimeMs
       });
-      
+
       // Map sourceType to RetrievalToolType for the result
       let resultCategory: RetrievalToolType;
       switch (retrievalResult.sourceType) {
@@ -215,20 +215,20 @@ export function createReranker(options: RerankerOptions) {
           totalCandidates: retrievalResult.metadata.totalCandidates
         }
       };
-      
+
       logger.info({
         executionTimeMs,
         inputChunks: retrievalResult.chunks.length,
         filteredChunks: filteredChunks.length,
         returnedChunks: topResults.length
       }, `${name} reranking completed`);
-      
+
       // Create a new state with the retrieval task added
       const updatedState: AgentState = {
         ...minimalState,
         retrievals: [...(minimalState.retrievals || []), result]
       };
-      
+
       ObservabilityService.endSpan(
         env,
         traceId,
@@ -238,7 +238,7 @@ export function createReranker(options: RerankerOptions) {
         updatedState,
         executionTimeMs
       );
-      
+
       return result;
     } catch (error) {
       const domeError = toDomeError(error);
@@ -247,15 +247,15 @@ export function createReranker(options: RerankerOptions) {
         query,
         sourceType: retrievalResult.sourceType
       }, `Error during ${name} reranking`);
-      
+
       ObservabilityService.logEvent(env, traceId, rerankerSpanId, 'reranking_error', {
         sourceType: retrievalResult.sourceType,
         error: domeError.message
       });
-      
+
       // Return original chunks on error, marking that reranking failed
       const executionTimeMs = performance.now() - startTime;
-      
+
       // Map sourceType to RetrievalToolType for the fallback result
       let fallbackCategory: RetrievalToolType;
       switch (retrievalResult.sourceType) {
@@ -277,7 +277,7 @@ export function createReranker(options: RerankerOptions) {
           // Use type assertion for custom source types
           fallbackCategory = retrievalResult.sourceType as unknown as RetrievalToolType;
       }
-      
+
       const fallbackResult: RetrievalTask = {
         category: fallbackCategory,
         query: query,
@@ -293,7 +293,7 @@ export function createReranker(options: RerankerOptions) {
           error: domeError.message
         }
       };
-      
+
       // Create updated state with retrieval task for error case
       const updatedErrorState: AgentState = {
         ...minimalState,
@@ -307,7 +307,7 @@ export function createReranker(options: RerankerOptions) {
           }]
         }
       };
-      
+
       ObservabilityService.endSpan(
         env,
         traceId,
@@ -317,7 +317,7 @@ export function createReranker(options: RerankerOptions) {
         updatedErrorState,
         executionTimeMs
       );
-      
+
       return fallbackResult;
     }
   };
@@ -333,17 +333,18 @@ interface RerankerRequest {
 
 /**
  * Interface for the reranking response from Workers AI
+ * Matches @cf/baai/bge-reranker-base output schema
  */
 interface RerankerResponse {
-  results: Array<{
-    score: number;
-    index: number;
+  response: Array<{
+    id: number;  // Index of the context in the request
+    score: number;  // Score of the context under that index
   }>;
 }
 
 /**
  * Uses Workers AI Reranker to score the document chunks based on relevance to the query
- * 
+ *
  * @param chunks Document chunks to rerank
  * @param query Query to use for relevance comparison
  * @param modelName Name of the Workers AI model to use for reranking
@@ -357,44 +358,38 @@ async function rerankWithWorkersAI(
   env: Env
 ): Promise<DocumentChunk[]> {
   const logger = getLogger().child({ component: 'WorkersAIReranker' });
-  
+
   try {
     logger.info({
       modelName,
       chunkCount: chunks.length,
       query
     }, 'Starting Workers AI reranking');
-    
+
     // Extract text content from chunks for reranking
     const documents = chunks.map(chunk => chunk.content);
-    
-    // Prepare request payload
-    const rerankerInput: RerankerRequest = {
+
+    // Format for BGE reranker needs { query, contexts: [{ text: "doc1" }, ...] }
+    const rerankerInput = {
       query,
-      documents
+      contexts: documents.map(d => ({ text: d }))
     };
-    
+
     // Call Workers AI reranker model
-    // Use the model binding based on the modelName or fallback to '@cf/baai/bge-reranker-base'
     // Use type assertion to handle AI property on Env
     const envWithAI = env as any;
-    const aiModel = envWithAI.AI ?
-      envWithAI.AI[modelName] || envWithAI.AI['@cf/baai/bge-reranker-base']
-      : undefined;
-    
-    if (!aiModel) {
-      throw new Error(`Workers AI model '${modelName}' not available`);
-    }
-    
-    // Run reranking
-    const rerankerOutput = await aiModel.run(rerankerInput) as RerankerResponse;
+    logger.info({ model: modelName }, 'Using Workers AI model for reranking');
+
+    // Call the reranker model
+    const rerankerOutput = await envWithAI.AI.run('@cf/baai/bge-reranker-base', rerankerInput) as RerankerResponse;
     
     // Map scores back to original chunks
     const rerankedChunks = chunks.map((chunk, i) => {
-      // Find the corresponding score from reranker results
-      const result = rerankerOutput.results.find(r => r.index === i);
+      // Find the corresponding score from reranker response
+      // The bge-reranker-base model returns response array with id and score
+      const result = rerankerOutput.response.find(r => r.id === i);
       const score = result ? result.score : 0;
-      
+
       // Create a new chunk with the reranker score
       return {
         ...chunk,
@@ -404,9 +399,9 @@ async function rerankWithWorkersAI(
         }
       };
     });
-    
+
     // Sort by reranker score (highest first)
-    return rerankedChunks.sort((a, b) => 
+    return rerankedChunks.sort((a, b) =>
       (b.metadata.rerankerScore || 0) - (a.metadata.rerankerScore || 0)
     );
   } catch (error) {
@@ -416,7 +411,7 @@ async function rerankWithWorkersAI(
       err: domeError,
       modelName
     }, 'Workers AI reranking failed');
-    
+
     // Fallback to basic scoring if Workers AI fails
     // Return chunks with relevance scores or default scores
     return chunks.map(chunk => ({
@@ -425,7 +420,7 @@ async function rerankWithWorkersAI(
         ...chunk.metadata,
         rerankerScore: chunk.metadata.relevanceScore || 0.5
       }
-    })).sort((a, b) => 
+    })).sort((a, b) =>
       (b.metadata.rerankerScore || 0) - (a.metadata.rerankerScore || 0)
     );
   }

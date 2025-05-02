@@ -10,7 +10,7 @@ export class LlmService {
   private readonly MAX_RETRY_ATTEMPTS = 2;
   private readonly logger = getLogger().child({ component: 'LlmService' });
 
-  constructor(private env: Env) {}
+  constructor(private env: Env) { }
 
   /**
    * Process content with LLM based on content type
@@ -22,9 +22,9 @@ export class LlmService {
     // Validate inputs
     assertValid(!!content, 'Content is required for LLM processing', { contentType });
     assertValid(!!contentType, 'Content type is required for LLM processing');
-    
+
     const requestId = crypto.randomUUID();
-    
+
     return trackOperation(
       'llm_process_content',
       async () => {
@@ -39,7 +39,7 @@ export class LlmService {
             requestId,
             modelName: this.MODEL_NAME
           };
-          
+
           this.logger.debug(
             logContext,
             'Processing content with LLM',
@@ -48,7 +48,7 @@ export class LlmService {
           // Attempt to process with LLM with retry logic
           let lastError = null;
           let attempt = 0;
-          
+
           while (attempt <= this.MAX_RETRY_ATTEMPTS) {
             try {
               // Perform the LLM call
@@ -61,6 +61,7 @@ export class LlmService {
                 throw new LLMProcessingError('Unexpected streaming response', { requestId });
               }
 
+              getLogger().info({ raw }, 'RAW LLM processing response received');
               // Parse and validate the response
               const metadata = this.parseResponse(raw.response || '', requestId);
 
@@ -89,11 +90,11 @@ export class LlmService {
               };
             } catch (error) {
               lastError = error;
-              
+
               // Check if we should retry
               if (attempt < this.MAX_RETRY_ATTEMPTS) {
                 const backoffMs = Math.pow(2, attempt) * 100; // Exponential backoff
-                
+
                 this.logger.warn({
                   ...logContext,
                   attempt: attempt + 1,
@@ -101,7 +102,7 @@ export class LlmService {
                   error: error instanceof Error ? error.message : String(error),
                   backoffMs
                 }, `LLM processing attempt failed, retrying in ${backoffMs}ms`);
-                
+
                 await new Promise(resolve => setTimeout(resolve, backoffMs));
                 attempt++;
               } else {
@@ -109,7 +110,7 @@ export class LlmService {
               }
             }
           }
-          
+
           // All retries failed
           const domeError = toDomeError(
             lastError,
@@ -119,7 +120,7 @@ export class LlmService {
               attemptsMade: attempt + 1
             }
           );
-          
+
           logError(domeError, 'LLM processing failed after all retry attempts');
 
           // Return minimal metadata on error
@@ -141,7 +142,7 @@ export class LlmService {
               requestId
             }
           );
-          
+
           logError(domeError, 'Unexpected error in LLM processing');
 
           // Return minimal metadata on error
@@ -338,7 +339,7 @@ export class LlmService {
               'Parsed response missing valid title field',
               { requestId }
             );
-            
+
             assertValid(
               !!parsed.summary && typeof parsed.summary === 'string',
               'Parsed response missing valid summary field',
@@ -347,7 +348,7 @@ export class LlmService {
 
             // Normalize priority values to lowercase
             if (parsed.todos && Array.isArray(parsed.todos)) {
-              parsed.todos = parsed.todos.map((todo: { priority?: string; [key: string]: any }) => {
+              parsed.todos = parsed.todos.map((todo: { priority?: string;[key: string]: any }) => {
                 if (todo.priority) {
                   todo.priority = todo.priority.toLowerCase();
                 }
@@ -365,7 +366,7 @@ export class LlmService {
               },
               'Standard JSON parsing failed, attempting fallback extraction'
             );
-            
+
             // If standard parsing fails, try a more aggressive approach
             // or fallback to a best-effort manual extraction
             return this.extractStructuredData(jsonString, requestId);
@@ -382,7 +383,7 @@ export class LlmService {
               operation: 'parseResponse'
             }
           );
-          
+
           logError(domeError, 'Failed to parse LLM response');
 
           // Return a minimal valid object
@@ -538,7 +539,7 @@ export class LlmService {
         'Error in fallback structured data extraction',
         { requestId, operation: 'extractStructuredData' }
       );
-      
+
       logError(domeError, 'Failed to extract structured data with fallback method');
       return result;
     }

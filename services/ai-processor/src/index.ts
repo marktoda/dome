@@ -510,6 +510,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             () => this.services.llm.processContent(body, contentType),
             { id, userId, contentType, requestId }
           );
+          getLogger().info({ metadata }, 'LLM processing completed');
 
           // Publish to ENRICHED_CONTENT queue
           const enrichedMessage: EnrichedContentMessage = {

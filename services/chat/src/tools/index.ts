@@ -5,7 +5,7 @@ import { docVectorSearchTool, codeVectorSearchTool, noteVectorSearchTool } from 
 export { webSearchTool } from './webSearchTool';
 export { ToolRegistry } from './registry';
 
-export const DEFAULT_TOOLS = [webSearchTool];
+export const DEFAULT_TOOLS = [];
 export const RETRIEVAL_TOOLS: Record<RetrievalToolType, RetrievalTool> = {
   [RetrievalToolType.DOC]: docVectorSearchTool,
   [RetrievalToolType.CODE]: codeVectorSearchTool,

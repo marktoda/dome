@@ -49,7 +49,7 @@ export const vectorSearchTool: VectorRetrievalTool<
   VectorSearchOutput,
   RawSearchInput
 > = {
-  name: "web_search",
+  name: "vector_search",
   description:
     "Searches the public web and returns the most relevant links with brief snippets.",
 

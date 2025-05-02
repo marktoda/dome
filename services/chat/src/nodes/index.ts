@@ -14,10 +14,9 @@ export { retrievalSelector } from './retrievalSelector';
 
 // Tool selection and classification nodes
 export { toolNecessityClassifier } from './toolNecessityClassifier';
-export { toolRouterLLM } from './toolRouterLLM';
 
 // Context processing and answer generation nodes
-export { combineContextLLM } from './combineContextLLM';
+export { combineContext } from './combineContext';
 export { docToSources } from './docToSources'; // Mapping docs to sources for streaming
 export { generateAnswer } from './generateAnswer'; // RAG answer generation
 export { generateChatLLM } from './generateChatLLM'; // Simple chat generation

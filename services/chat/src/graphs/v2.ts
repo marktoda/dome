@@ -66,17 +66,13 @@ export const V2Chat: ChatBuilder = {
 
       /* Reranking nodes */
       .addNode("unified_reranker", fn.unifiedReranker)
-      .addNode("retrieval_evaluator", fn.retrievalEvaluatorLLM)
-
-      /* Tool handling nodes */
-      .addNode("tool_necessity_classifier", fn.toolNecessityClassifier)
-      .addNode("tool_router_llm", fn.toolRouterLLM)
+      .addNode("tool_router", fn.toolRouter)
       .addNode("run_tool", fn.runTool)
 
       /* Content processing nodes */
-      .addNode("combine_context_llm", fn.combineContextLLM)
+      .addNode("combine_context", fn.combineContext)
       .addNode("generate_answer", fn.generateAnswer)
-      .addNode("output_guardrail", fn.outputGuardrail)
+      .addNode("doc_to_sources", fn.docToSources)       // Map docs to sources for streaming
 
       /* Graph connections - Main flow */
       .addEdge(START, "routing_split")
@@ -87,29 +83,18 @@ export const V2Chat: ChatBuilder = {
       .addEdge("retrieve", "unified_reranker")
 
       /* Connect unified reranker to the evaluator */
-      .addEdge("unified_reranker", "retrieval_evaluator")
 
       /* Connect evaluator to tool necessity classifier */
-      .addEdge("retrieval_evaluator", "tool_necessity_classifier")
-
-      /* Conditional routing for tool usage */
-      .addConditionalEdges(
-        "tool_necessity_classifier",
-        fn.routeBasedOnToolNecessity,
-        {
-          needs_tools: "tool_router_llm",
-          no_tools: "combine_context_llm",
-        }
-      )
+      .addEdge("unified_reranker", "tool_router")
 
       /* Tool execution path */
-      .addEdge("tool_router_llm", "run_tool")
-      .addEdge("run_tool", "combine_context_llm")
+      .addEdge("tool_router", "run_tool")
+      .addEdge("run_tool", "combine_context")
 
       /* Final generation and validation */
-      .addEdge("combine_context_llm", "generate_answer")
-      .addEdge("generate_answer", "output_guardrail")
-      .addEdge("output_guardrail", END);
+      .addEdge("combine_context", "doc_to_sources")
+      .addEdge("doc_to_sources", "generate_answer")
+      .addEdge("generate_answer", END)
 
     // Compile the graph with checkpointing
     // Note: StateGraph API changed - we don't use onStateChange or reducers in this version
@@ -161,11 +146,11 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
     },
 
     unifiedReranker: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
-      log.info({ preState: createStateSummary(state)}, "→ [START] unifiedReranker");
+      log.info({ preState: createStateSummary(state) }, "→ [START] unifiedReranker");
 
       // Use the unified reranker with the appropriate category
       const res = await nodes.reranker(state, cfg, env);
-      log.info({ postState: createStateSummary(res)}, "→ [END] unifiedReranker");
+      log.info({ postState: createStateSummary(res) }, "→ [END] unifiedReranker");
       return res;
     },
 
@@ -184,11 +169,10 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
       return res;
     },
 
-    toolRouterLLM: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
-      log.info({ preState: createStateSummary(state) }, "→ [START] toolRouterLLM");
-      // Using actual toolRouterLLM implementation
-      const res = await nodes.toolRouterLLM(state, cfg, env, tools);
-      log.info({ postState: createStateSummary(res) }, "→ [END] toolRouterLLM");
+    toolRouter: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
+      log.info({ preState: createStateSummary(state) }, "→ [START] toolRouter");
+      const res = await nodes.toolRouter(state, env, tools);
+      log.info({ postState: createStateSummary(res) }, "→ [END] toolRouter");
       return res;
     },
 
@@ -199,11 +183,11 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
       return res;
     },
 
-    combineContextLLM: async (state: AgentState) => {
-      log.info({ preState: createStateSummary(state) }, "→ [START] combineContextLLM");
-      // Using the actual combineContextLLM implementation
-      const res = await nodes.combineContextLLM(state, env);
-      log.info({ postState: createStateSummary(res) }, "→ [END] combineContextLLM");
+    combineContext: async (state: AgentState) => {
+      log.info({ preState: createStateSummary(state) }, "→ [START] combineContext");
+      // Using the actual combineContext implementation
+      const res = await nodes.combineContext(state, env);
+      log.info({ postState: createStateSummary(res) }, "→ [END] combineContext");
       return res;
     },
 
@@ -219,6 +203,14 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
       // Using the actual outputGuardrail implementation
       const res = await nodes.outputGuardrail(state, cfg, env);
       log.info({ postState: createStateSummary(res) }, "→ [END] outputGuardrail");
+      return res;
+    },
+
+    /* Document to Sources mapping node */
+    docToSources: async (state: AgentState) => {
+      log.info({ preState: createStateSummary(state) }, "→ [START] docToSources");
+      const res = await nodes.docToSources(state);
+      log.info({ postState: createStateSummary(res) }, "→ [END] docToSources");
       return res;
     },
 

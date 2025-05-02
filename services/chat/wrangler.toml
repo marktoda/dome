@@ -26,6 +26,10 @@ service = "constellation"
 binding = "SILO"
 service = "silo"
 
+# AI binding for Workers AI
+[ai]
+binding = "AI"
+
 # For local development
 [dev]
 port = 8788

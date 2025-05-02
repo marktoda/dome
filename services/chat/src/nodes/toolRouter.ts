@@ -13,6 +13,8 @@ import {
   AIMessage,
 } from "../types";
 
+const NONE_TOOL_NAME = "none";
+
 /* ------------------------------------------------------------------ *
  * main node                                                           *
  * ------------------------------------------------------------------ */
@@ -29,6 +31,10 @@ export async function toolRouter(
 
   /* ── 2 · build once: schema & prompt template ────────────────────── */
   const routerSchema = registry.toolUnionSchema();
+  if (registry.list().length === 0) {
+    log.info("Tool registry is empty, skipping routing");
+    return {};
+  }
 
   const promptTemplate = getToolRoutingPrompt().replace(
     "{{tools}}",
@@ -50,6 +56,11 @@ export async function toolRouter(
         registry,
         state.chatHistory,
       );
+
+      if (toolName === NONE_TOOL_NAME) {
+        getLogger().info({ toolName, id }, 'No tool explicitly selected');
+        return { id };
+      }
       return { id, toolName, args };
     } catch (err) {
       logError(err, `tool routing failed for task ${id}`);
@@ -119,11 +130,11 @@ async function routeTask(
   registry: ToolRegistry,
   chatHistory?: MessagePair[],
 ): Promise<{ toolName: string; args: unknown }> {
-  if (!task.definition) throw new Error("task.definition missing");
+  if (!task.originalQuery) throw new Error("task.originalQuery missing");
 
   const systemPrompt = promptTemplate;
 
-  const messages = buildMessages(systemPrompt, chatHistory, task.definition);
+  const messages = buildMessages(systemPrompt, chatHistory, task.originalQuery);
 
   const { toolName, args } = await LlmService.invokeStructured<
     z.infer<typeof routerSchema>

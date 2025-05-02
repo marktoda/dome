@@ -27,7 +27,7 @@ export function formatDocsForPrompt(
   // First, format all documents
   const formattedDocs = docs.map((doc, index) => {
     const docNumber = index + 1;
-    let formattedDoc = `[${docNumber}] ${doc.title}\n${doc.body}`;
+    let formattedDoc = `[Source ${docNumber}] ${doc.title}\n${doc.body}`;
 
     if (includeSourceInfo && doc.metadata) {
       formattedDoc += `\nSource: ${doc.metadata.source}`;

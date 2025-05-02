@@ -112,7 +112,7 @@ export async function runTool(
     } catch (err) {
       const domeError = toDomeError(err);
       logError(domeError, `tool ${toolName} failed`, { id, traceId, spanId });
-      
+
       // Add error information to tool results
       const errorResult: ToolResult = {
         toolName,
@@ -121,7 +121,7 @@ export async function runTool(
         executionTimeMs: performance.now() - started,
         error: domeError.message
       };
-      
+
       // Create a document from the error for transparency
       const errorDocs: Document[] = [{
         id: `tool-error-${toolName}-${crypto.randomUUID()}`,
@@ -134,7 +134,7 @@ export async function runTool(
           mimeType: "text/plain"
         }
       }];
-      
+
       // Return the error information for processing
       return { id, docs: errorDocs, result: errorResult, error: domeError };
     }
@@ -149,14 +149,14 @@ export async function runTool(
   if (finished.length === 0) {
     const elapsed = performance.now() - started;
     ObservabilityService.endSpan(env, traceId, spanId, "runTool", state, state, elapsed);
-    
+
     // Format error if no tools completed successfully
     const formattedError = {
       node: "runTool",
       message: "All tool executions failed",
       timestamp: Date.now()
     };
-    
+
     return {
       metadata: {
         currentNode: "runTool",
@@ -197,17 +197,17 @@ export async function runTool(
 
   // Collect all documents from tool executions
   const toolDocs = finished.flatMap(item => item.docs || []);
-  
+
   // Collect all tool results for easier access
   const toolResults = finished.map(item => item.result);
-  
+
   // Log summary of tool executions
   log.info({
     completedTools: finished.map(item => item.result.toolName),
     totalTools: finished.length,
     totalDocs: toolDocs.length
   }, "Tool executions completed");
-  
+
   return {
     taskEntities: entityUpdates,
     // Add all tool-generated documents to the state
@@ -237,7 +237,7 @@ export function toolOutputToDocuments(
     source: "tool",
     sourceType: `tool_${toolName}`,
     createdAt,
-    relevanceScore: 0.9
+    relevanceScore: 0.1
   };
 
   if (typeof output === "string") {

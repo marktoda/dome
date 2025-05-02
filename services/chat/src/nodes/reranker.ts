@@ -13,7 +13,7 @@ export type ContentCategory = 'code' | 'docs' | 'notes';
 /**
  * Model configurations for different content types - now using a single model
  */
-const RERANKER_MODEL = 'bge-reranker-base';
+const RERANKER_MODEL = '@cf/baai/bge-reranker-base';
 
 /**
  * Maximum number of chunks to return after reranking
@@ -80,6 +80,15 @@ export async function reranker(
   // Create a map of tasks keyed by category+query
   const taskMap = new Map<string, RetrievalTask>();
 
+  // Log the incoming retrievals for debugging
+  logger.info({
+    incomingRetrievals: retrievals.map(r => ({
+      category: r.category,
+      query: r.query,
+      chunkCount: r.chunks?.length || 0
+    }))
+  }, 'Incoming retrieval tasks');
+
   // Process each task, merging duplicates
   for (const task of retrievals) {
     const key = `${task.category}:${task.query}`;
@@ -99,8 +108,21 @@ export async function reranker(
           newChunks: newChunks.length
         }, 'Merging duplicate retrieval tasks');
 
-        // Update the existing task with combined chunks
-        existingTask.chunks = [...existingChunks, ...newChunks];
+        // Create a map to deduplicate chunks by ID to prevent duplicates
+        const chunkMap = new Map<string, DocumentChunk>();
+        
+        // Add existing chunks
+        for (const chunk of existingChunks) {
+          chunkMap.set(chunk.id, chunk);
+        }
+        
+        // Add new chunks (will overwrite if ID already exists)
+        for (const chunk of newChunks) {
+          chunkMap.set(chunk.id, chunk);
+        }
+        
+        // Update the existing task with deduplicated chunks
+        existingTask.chunks = Array.from(chunkMap.values());
       }
     } else {
       // New task, add to map
@@ -229,7 +251,7 @@ export async function reranker(
     // Use state with a generic "as any" type for span tracking
     const updatedState = {
       ...state,
-      rerankedRetrievals: rerankedTasks
+      retrievals: rerankedTasks
     };
 
     // Complete the span
@@ -239,11 +261,17 @@ export async function reranker(
       spanId,
       nodeId,
       state,
-      updatedState as any,
+      updatedState,
       elapsed
     );
 
-    // Return updated state with all reranked tasks using type assertion to avoid TS errors
+    // Log the deduplicated and reranked retrievals
+    logger.info({
+      rerankedTaskCount: rerankedTasks.length,
+      totalRerankedChunks: rerankedTasks.reduce((sum, task) => sum + (task.chunks?.length || 0), 0)
+    }, "Completed all reranking operations");
+
+    // Return updated state with all reranked tasks
     return {
       retrievals: rerankedTasks,
       metadata: {
