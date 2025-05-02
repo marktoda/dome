@@ -74,10 +74,10 @@ export async function retrievalEvaluatorLLM(
   const spanId = ObservabilityService.startSpan(env, traceId, "retrievalEvaluatorLLM", state);
   
   try {
-    // Gather all reranked results
-    const rerankedResults = Object.values(state.rerankedResults)
-      .filter(Boolean)
-      .map(result => result!);
+    // Gather all reranked results from the unified reranker approach
+    const rerankedResults = Object.entries(state.rerankedResults)
+      .filter(([_, result]) => Boolean(result))
+      .map(([contentType, result]) => result!);
     
     if (rerankedResults.length === 0) {
       logger.info("No valid reranked results to evaluate");
@@ -99,10 +99,10 @@ export async function retrievalEvaluatorLLM(
       totalChunks: rerankedResults.reduce((sum, result) => sum + result.rerankedChunks.length, 0)
     }, "Starting retrieval evaluation");
     
-    // Prepare the content for evaluation
+    // Prepare the content for evaluation with the unified approach
     const contentToEvaluate = rerankedResults.map(result => {
       const sourceType = result.originalResults.sourceType;
-      const chunks = result.rerankedChunks.map(chunk => 
+      const chunks = result.rerankedChunks.map(chunk =>
         `[${sourceType.toUpperCase()} CHUNK]\n${chunk.content}\n`
       ).join("\n\n");
       

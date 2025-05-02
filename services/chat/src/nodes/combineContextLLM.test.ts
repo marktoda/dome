@@ -158,6 +158,16 @@ describe('combineContextLLM Node', () => {
         includeSourceInfo: true,
         maxTokens: 1000,
       },
+      retrievals: [
+        {
+          category: 'code' as any,
+          query: 'binary search tree implementation'
+        },
+        {
+          category: 'docs' as any,
+          query: 'binary search tree Python'
+        }
+      ],
       rerankedResults: {
         code: mockCodeRerankedResult,
         docs: mockDocsRerankedResult

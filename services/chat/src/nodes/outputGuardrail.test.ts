@@ -65,6 +65,12 @@ describe('outputGuardrail Node', () => {
         includeSourceInfo: true,
         maxTokens: 1000,
       },
+      retrievals: [
+        {
+          category: 'code' as any,
+          query: 'binary search tree implementation python'
+        }
+      ],
       reasoning: [
         `# Binary Search Tree Implementation in Python
 

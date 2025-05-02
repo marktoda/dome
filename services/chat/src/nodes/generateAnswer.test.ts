@@ -55,6 +55,12 @@ describe('generateAnswer Node', () => {
         includeSourceInfo: true,
         maxTokens: 1000,
       },
+      retrievals: [
+        {
+          category: 'docs' as any,
+          query: 'quantum computing'
+        }
+      ],
       docs: [
         {
           id: 'doc1',

@@ -143,6 +143,16 @@ describe('retrievalEvaluatorLLM Node', () => {
         includeSourceInfo: true,
         maxTokens: 1000,
       },
+      retrievals: [
+        {
+          category: 'code' as any,
+          query: 'binary search tree python implementation'
+        },
+        {
+          category: 'docs' as any,
+          query: 'binary search tree data structure'
+        }
+      ],
       rerankedResults: {
         code: mockCodeRerankedResult,
         docs: mockDocsRerankedResult

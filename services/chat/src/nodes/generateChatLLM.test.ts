@@ -53,6 +53,7 @@ describe('generateChatLLM Node', () => {
         includeSourceInfo: true,
         maxTokens: 1000,
       },
+      retrievals: [],
       taskIds: [], // Empty task IDs array
       taskEntities: {}, // Empty task entities object
       metadata: {

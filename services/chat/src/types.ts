@@ -99,7 +99,7 @@ export interface DocumentChunk {
   content: string;
   metadata: {
     source: string;
-    sourceType: 'code' | 'notes' | 'docs' | 'web' | string;
+    sourceType: ContentCategory | 'web' | string;
     url?: string;
     path?: string;
     startLine?: number;
@@ -115,6 +115,20 @@ export interface DocumentChunk {
   };
 }
 
+/**
+ * Interface for retrieval results from vector stores
+ */
+export interface RetrievalResult {
+  query: string;
+  chunks: DocumentChunk[];
+  sourceType: ContentCategory | string;
+  metadata: {
+    executionTimeMs: number;
+    retrievalStrategy: string;
+    totalCandidates: number;
+    [key: string]: any;
+  };
+}
 
 export interface RetrievalTask {
   // input data
@@ -133,7 +147,7 @@ export interface RerankedResult {
   /**
    * Original retrieval results before reranking
    */
-  originalResults: DocumentChunk[];
+  originalResults: RetrievalResult;
 
   /**
    * Reordered and possibly filtered chunks after reranking
@@ -277,7 +291,7 @@ export interface AgentState {
   messages: Message[];
   chatHistory?: MessagePair[];
 
-  retrievals: RetrievalTask[];
+  retrievals?: RetrievalTask[];
 
   // Task ids
   taskIds?: string[];
@@ -295,9 +309,10 @@ export interface AgentState {
     modelId?: string;
   };
 
-  // Retrieved documents
+  // Retrieved documents and results
   docs?: Document[];
   sources?: SourceMetadata[];
+  retrievalResults?: Record<string, RetrievalResult>;
 
   // Reasoning and instructions
   reasoning?: string[];
@@ -317,9 +332,8 @@ export interface AgentState {
 
   // Reranking results
   rerankedResults?: {
-    code?: RerankedResult;
-    notes?: RerankedResult;
-    docs?: RerankedResult;
+    [key in ContentCategory]?: RerankedResult;
+  } & {
     [key: string]: RerankedResult | undefined;
   };
 
@@ -450,6 +464,40 @@ export interface RetrievalMetrics {
   wideningAttempts?: number;
 }
 
+/**
+ * Content categories that can be reranked
+ * This type is used across the retrieval and reranking system
+ * to ensure consistent typing of content categories
+ */
+export type ContentCategory = 'code' | 'docs' | 'notes';
+
+/**
+ * Reranker configuration options
+ * Used to configure the behavior of category-specific rerankers
+ */
+export interface RerankerConfig {
+  /**
+   * Unique name for the reranker (typically matches the content category)
+   */
+  name: string;
+
+  /**
+   * Model identifier to use for reranking
+   */
+  model: string;
+
+  /**
+   * Threshold score (0-1) for filtering chunks
+   * Chunks with scores below this threshold will be filtered out
+   */
+  scoreThreshold: number;
+
+  /**
+   * Maximum number of chunks to return after reranking
+   */
+  maxResults: number;
+}
+
 /* ------------------------------------------------------------------ */
 /*  1.  Helper reducers                                               */
 /* ------------------------------------------------------------------ */
@@ -497,4 +545,9 @@ export const GraphStateAnnotation = Annotation.Root({
 
   /* ---------- filtering ------------------------------------------- */
   _filter: merge<Record<string, any>>(),
+
+  /* ---------- retrieval and reranking ----------------------------- */
+  retrievals: concat<RetrievalTask>(),
+  retrievalResults: merge<Record<string, RetrievalResult>>(),
+  rerankedResults: merge<Record<string, RerankedResult>>(),
 });

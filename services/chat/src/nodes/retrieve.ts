@@ -1,7 +1,7 @@
 import { getLogger } from '@dome/logging';
 import { RetrievalToolType, RETRIEVAL_TOOLS } from '../tools';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
-import { AgentState, RetrievalTask, DocumentChunk } from '../types';
+import { AgentState, RetrievalTask, DocumentChunk, RetrievalResult } from '../types';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
 
@@ -11,6 +11,9 @@ import { toDomeError } from '../utils/errors';
  * Dispatches retrieval operations to appropriate specialized retrievers based on
  * selections made by the retrievalSelector node. Executes retrievals in parallel
  * for efficiency and combines the results.
+ *
+ * Results are formatted in a standard structure for the unified reranker system,
+ * with each category of retrieval stored separately for specialized reranking.
  *
  * @param state Current agent state
  * @param cfg LangGraph runnable configuration
@@ -63,28 +66,60 @@ export async function retrieve(
     /* ------------------------------------------------------------------ */
     // For each task with retrieval selections, execute the retrievals
     const retrievalPromises = state.retrievals.map(async (retrieval) => {
-      const retriever = RETRIEVAL_TOOLS[retrieval.category]
-
+      const retriever = RETRIEVAL_TOOLS[retrieval.category];
+      const startTime = performance.now();
 
       // Log the retrieval operation starting
       logEvt("retrieval_started", {
         query: retrieval.query,
         type: retrieval.category,
       });
+      
+      // Execute the retrieval
       const res = await retriever.retrieve({
         query: retrieval.query,
         userId: state.userId,
       }, env);
+      
+      // Convert to document format
       const docs = retriever.toDocuments(res);
+      
+      // Calculate execution time
+      const execTime = performance.now() - startTime;
+      
+      // Create a standardized retrieval result for the unified reranker
+      const retrievalResult: RetrievalResult = {
+        query: retrieval.query,
+        chunks: docs,
+        sourceType: retrieval.category,
+        metadata: {
+          executionTimeMs: execTime,
+          retrievalStrategy: retriever.name || retrieval.category,
+          totalCandidates: docs.length,
+        }
+      };
+      
+      // Also return the original retrieval task with docs for backward compatibility
       return {
-        ...retrieval,
-        docs,
-      }
+        result: retrievalResult,
+        task: {
+          ...retrieval,
+          docs,
+        }
+      };
     });
 
-
     // Wait for all retrievals to complete
-    const results: RetrievalTask[] = await Promise.all(retrievalPromises);
+    const results = await Promise.all(retrievalPromises);
+
+    // Extract the retrieval tasks and results for the unified format
+    const retrievalTasks: RetrievalTask[] = results.map(r => r.task);
+    
+    // Organize retrieval results by category for the unified reranker
+    const retrievalResults: Record<string, RetrievalResult> = {};
+    results.forEach(r => {
+      retrievalResults[r.result.sourceType] = r.result;
+    });
 
     /* ------------------------------------------------------------------ */
     /*  Finish, log, and return the state update                          */
@@ -94,11 +129,15 @@ export async function retrieve(
 
     logger.info({
       elapsedMs: elapsed,
-      totalChunks: results.length,
+      totalCategories: Object.keys(retrievalResults).length,
+      totalChunks: results.reduce((sum, r) => sum + r.result.chunks.length, 0),
     }, "Retrieval process complete");
 
     return {
-      retrievals: results,
+      // Keep backward compatibility with the old format
+      retrievals: retrievalTasks,
+      // Add the new unified format for the reranker
+      retrievalResults: retrievalResults,
       metadata: {
         currentNode: "retrieve",
         executionTimeMs: elapsed,

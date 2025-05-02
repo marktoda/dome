@@ -78,17 +78,19 @@ export async function retrievalSelector(
     // System prompt for retrieval selection
     const systemPrompt = `You are a retrieval expert that determines which information sources are most relevant for specific questions.
 
-Please evaluate the user's query and determine a concise set of _retrieval tasks_ to help generate the context to best answer the user's question.
+Please evaluate the user's query and determine a set of _retrieval tasks_ to help generate the context to best answer the user's question.
 
 Available retrieval categories:
 ${availableRetrievalTypes}
 
 Guidelines:
-- Select only sources that are TRULY relevant and likely to help answer the user's question
-- You can select multiple sources if needed, or just one if that's sufficient
+- Select sources that are truly relevant and likely to help answer the user's question
+- You may select multiple sources if needed
+- Order sources by likelihood to be helpful in answering the user's question
 - Base your decision on the specific information needs of the task
 - Include a brief reasoning explaining your selection
 `;
+    logger.info({ systemPrompt }, "System prompt for retrieval selection");
 
     // Call LLM to decide which retrievers are appropriate for this task
     const messages: Message[] = [
@@ -101,9 +103,9 @@ Guidelines:
       env,
       messages,
       {
-        temperature: 0.2,
+        temperature: 0.7,
         schema: retrievalTasksSchema,
-        schemaInstructions: 'Return a JSON object with taskId, selectedRetrievers array, and reasoning fields.'
+        schemaInstructions: 'Return a JSON object selected retrievals',
       }
     );
 

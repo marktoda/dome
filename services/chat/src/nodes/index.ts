@@ -6,9 +6,9 @@ export { toolRouter, routeAfterTool } from './toolRouter';
 export { runTool } from './runTool';
 
 // Reranking and evaluation nodes
-export { codeReranker } from './codeReranker';
-export { notesReranker } from './notesReranker';
-export { docsReranker } from './docsReranker';
+export { reranker, createCategoryReranker } from './reranker';
+// These are maintained for backward compatibility
+export { codeReranker, docsReranker, notesReranker } from './reranker';
 export { retrievalEvaluatorLLM } from './retrievalEvaluatorLLM';
 export { retrievalSelector } from './retrievalSelector';
 

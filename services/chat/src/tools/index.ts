@@ -13,10 +13,10 @@ export enum RetrievalToolType {
   NOTE = "note",
 }
 export const RETRIEVAL_TOOLS: Record<RetrievalToolType, RetrievalTool> = {
-  [RetrievalToolType.WEB]: webSearchTool,
   [RetrievalToolType.DOC]: docVectorSearchTool,
   [RetrievalToolType.CODE]: codeVectorSearchTool,
   [RetrievalToolType.NOTE]: noteVectorSearchTool,
+  [RetrievalToolType.WEB]: webSearchTool,
 }
 
 

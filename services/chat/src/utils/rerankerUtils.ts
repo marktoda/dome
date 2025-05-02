@@ -59,6 +59,7 @@ export function createReranker(options: RerankerOptions) {
     const minimalState: AgentState = {
       userId: 'system',
       messages: [],
+      retrievals: [], // Add the required retrievals property
       options: {
         enhanceWithContext: true,
         maxContextItems: 10,

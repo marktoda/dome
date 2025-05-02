@@ -68,6 +68,12 @@ describe('dynamicWiden node', () => {
         includeSourceInfo: true,
         maxTokens: 1000,
       },
+      retrievals: [
+        {
+          category: 'code' as any,
+          query: 'test query'
+        }
+      ],
       taskIds: ['task-1'],
       taskEntities: {
         'task-1': {

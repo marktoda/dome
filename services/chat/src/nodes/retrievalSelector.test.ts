@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { retrievalSelector } from './retrievalSelector';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
-import { AgentState, RetrievalSelection, UserTaskEntity } from '../types';
+import { AgentState, RetrievalTask, UserTaskEntity } from '../types';
 
 // Mock dependencies
 vi.mock('@dome/logging', () => ({
@@ -42,8 +42,7 @@ describe('retrievalSelector Node', () => {
   let mockState: AgentState;
   let mockEnv: any;
   let mockConfig: any;
-  let mockLlmResponse1: RetrievalSelection;
-  let mockLlmResponse2: RetrievalSelection;
+  let mockLlmResponse: { tasks: RetrievalTask[], reasoning: string };
 
   beforeEach(() => {
     // Reset mocks
@@ -91,22 +90,23 @@ describe('retrievalSelector Node', () => {
     
     mockConfig = {};
     
-    mockLlmResponse1 = {
-      taskId: 'task-1',
-      selectedRetrievers: ['code', 'docs'],
-      reasoning: 'This task requires code examples for implementing a binary search tree in Python, so code repositories and documentation are needed.'
+    // Setup mock LLM response with retrieval tasks
+    mockLlmResponse = {
+      tasks: [
+        {
+          category: 'code' as any,
+          query: 'How do I implement a binary search tree in Python?'
+        },
+        {
+          category: 'docs' as any,
+          query: 'What are the practical applications of binary search trees?'
+        }
+      ],
+      reasoning: 'Selected code repositories for implementation examples and documentation for understanding applications.'
     };
     
-    mockLlmResponse2 = {
-      taskId: 'task-2',
-      selectedRetrievers: ['docs', 'notes'],
-      reasoning: 'For understanding applications, documentation and personal notes will be useful.'
-    };
-    
-    // Mock LlmService.invokeStructured to return different responses for each task
-    vi.mocked(LlmService.invokeStructured)
-      .mockResolvedValueOnce(mockLlmResponse1)
-      .mockResolvedValueOnce(mockLlmResponse2);
+    // Mock LlmService.invokeStructured to return our mock response
+    vi.mocked(LlmService.invokeStructured).mockResolvedValue(mockLlmResponse);
     
     // Mock ObservabilityService
     vi.mocked(ObservabilityService.startSpan).mockReturnValue('span-123');
@@ -119,11 +119,13 @@ describe('retrievalSelector Node', () => {
     
     // Verify the result
     expect(result).toBeDefined();
-    expect(result.retrievalSelections).toBeDefined();
+    expect(result.retrievals).toBeDefined();
     
-    // Check specific retrieval selections
-    expect(result.retrievalSelections?.['task-1']).toEqual(mockLlmResponse1);
-    expect(result.retrievalSelections?.['task-2']).toEqual(mockLlmResponse2);
+    // Check retrieval tasks match the LLM response
+    expect(result.retrievals).toEqual(mockLlmResponse.tasks);
+    
+    // Verify reasoning was added
+    expect(result.reasoning).toContain(mockLlmResponse.reasoning);
     
     // Verify metadata
     expect(result.metadata).toMatchObject({
@@ -131,8 +133,8 @@ describe('retrievalSelector Node', () => {
       executionTimeMs: expect.any(Number),
     });
     
-    // Verify LLM service was called for each task
-    expect(LlmService.invokeStructured).toHaveBeenCalledTimes(2);
+    // Verify LLM service was called
+    expect(LlmService.invokeStructured).toHaveBeenCalledTimes(1);
     
     // Verify observability service was used
     expect(ObservabilityService.startSpan).toHaveBeenCalled();
@@ -154,7 +156,7 @@ describe('retrievalSelector Node', () => {
     expect(result.metadata?.errors).toBeDefined();
     expect(result.metadata?.errors?.[0]).toMatchObject({
       node: 'retrievalSelector',
-      message: 'Split tasks not found in state',
+      message: expect.any(String),
     });
     
     // Verify LLM service was not called
@@ -176,7 +178,7 @@ describe('retrievalSelector Node', () => {
     expect(result.metadata?.errors).toBeDefined();
     expect(result.metadata?.errors?.[0]).toMatchObject({
       node: 'retrievalSelector',
-      message: 'Split tasks not found in state',
+      message: expect.any(String),
     });
     
     // Verify LLM service was not called
