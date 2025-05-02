@@ -8,19 +8,6 @@ import { ObservabilityService } from '../services/observabilityService';
 import { getSplitTaskPrompt } from '../config/promptsConfig';
 
 /**
- * Type definition for AIMessageChunk format from LLM
- */
-interface AIMessageChunk {
-  lc: number;
-  type: string;
-  id: string[];
-  kwargs: {
-    content: string;
-    additional_kwargs: Record<string, unknown>;
-  };
-}
-
-/**
  * Zod schema for task extraction
  * Used for structured output from LLM
  */

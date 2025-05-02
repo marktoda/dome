@@ -27,24 +27,49 @@ export default function RegisterPage() {
     }
 
     try {
-      // Register using our server action wrapper for credentials provider
-      const result = await serverSignIn('credentials', undefined, {
+      // First register the user via the registration API
+      const registerResponse = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+        }),
+      });
+
+      const registerData = await registerResponse.json();
+
+      if (!registerData.success) {
+        throw new Error(registerData.message || 'Registration failed');
+      }
+
+      // If registration is successful, log the user in
+      const result = await serverSignIn('credentials', '/dashboard', {
         redirect: false,
         email,
         password,
-        name,
-        // We use signIn here which will automatically log the user in
-        // The credentials provider handles the registration via the authorize callback
       });
 
       if (result?.error) {
         throw new Error(result.error);
       }
 
-      router.push('/dashboard');
+      // Navigate to dashboard
+      if (result.url) {
+        router.push(result.url);
+      } else {
+        router.push('/dashboard');
+      }
     } catch (error) {
       if (error instanceof Error) {
-        setError(error.message);
+        if (error.message.includes('Email already in use')) {
+          setError('This email is already registered');
+        } else {
+          setError(error.message);
+        }
       } else {
         setError('An error occurred during registration');
       }

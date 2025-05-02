@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Annotation } from '@langchain/langgraph';
+import { RetrievalToolType } from './tools';
 import { BaseMessage } from '@langchain/core/messages';
 
 export const roleSchema = z.enum(['user', 'assistant', 'system']);
@@ -90,6 +91,182 @@ export interface UserTaskEntity {
 }
 
 /**
+ * Document Chunk interface used by retrievers
+ * Represents a specific chunk of content retrieved from a data source
+ */
+export interface DocumentChunk {
+  id: string;
+  content: string;
+  metadata: {
+    source: string;
+    sourceType: 'code' | 'notes' | 'docs' | 'web' | string;
+    url?: string;
+    path?: string;
+    startLine?: number;
+    endLine?: number;
+    language?: string;
+    title?: string;
+    author?: string;
+    createdAt?: string;
+    updatedAt?: string;
+    relevanceScore?: number;
+    embeddingScore?: number;
+    rerankerScore?: number;
+  };
+}
+
+
+export interface RetrievalTask {
+  // input data
+  category: RetrievalToolType;
+  query: string;
+
+  // output data
+  docs?: DocumentChunk[];
+}
+
+/**
+ * Reranked result interface
+ * Contains reranked results after applying a reranker to retrieval results
+ */
+export interface RerankedResult {
+  /**
+   * Original retrieval results before reranking
+   */
+  originalResults: DocumentChunk[];
+
+  /**
+   * Reordered and possibly filtered chunks after reranking
+   */
+  rerankedChunks: DocumentChunk[];
+
+  /**
+   * Metadata about the reranking operation
+   */
+  metadata: {
+    /**
+     * Model used for reranking
+     */
+    rerankerModel: string;
+
+    /**
+     * Time taken for reranking in milliseconds
+     */
+    executionTimeMs: number;
+
+    /**
+     * Threshold score used for filtering
+     */
+    scoreThreshold?: number;
+  };
+}
+
+/**
+ * Retrieval evaluation interface
+ * Contains evaluation of retrieval quality by an LLM
+ */
+export interface RetrievalEvaluation {
+  /**
+   * Results being evaluated
+   */
+  results: RerankedResult[];
+
+  /**
+   * Overall relevance score (0-1)
+   */
+  overallScore: number;
+
+  /**
+   * Whether the retrieved information is adequate to answer the query
+   */
+  isAdequate: boolean;
+
+  /**
+   * LLM's reasoning for the evaluation
+   */
+  reasoning: string;
+
+  /**
+   * Suggested next action based on evaluation
+   */
+  suggestedAction?: 'use_tools' | 'refine_query' | 'proceed';
+}
+
+/**
+ * Tool necessity classification interface
+ * Result of LLM classification of whether external tools are needed
+ */
+export interface ToolNecessityClassification {
+  /**
+   * Whether a tool is needed to supplement retrieved information
+   */
+  isToolNeeded: boolean;
+
+  /**
+   * LLM's reasoning for this decision
+   */
+  reasoning: string;
+
+  /**
+   * Confidence level in this decision (0-1)
+   */
+  confidence: number;
+}
+
+/**
+ * Tool routing decision interface
+ * Contains the decision about which tool to use
+ */
+export interface ToolRoutingDecision {
+  /**
+   * Selected tool identifier, or null if no tool selected
+   */
+  selectedTool: string | null;
+
+  /**
+   * Parameters to pass to the selected tool
+   */
+  parameters: Record<string, unknown>;
+
+  /**
+   * LLM's reasoning for this selection
+   */
+  reasoning: string;
+
+  /**
+   * Confidence level in this decision (0-1)
+   */
+  confidence: number;
+}
+
+/**
+ * Combined context interface
+ * Synthesized context from all information sources
+ */
+export interface CombinedContext {
+  /**
+   * Content retrieved from databases/vectors
+   */
+  retrievedContent: DocumentChunk[];
+
+  /**
+   * Results from any tools that were executed
+   */
+  toolResults?: ToolResult[];
+
+  /**
+   * Synthesized context prepared for the LLM
+   */
+  synthesizedContext: string;
+
+  /**
+   * Source attribution information
+   */
+  sources: SourceMetadata[];
+}
+
+
+/**
  * Core state interface for the RAG graph V2
  */
 export interface AgentState {
@@ -99,6 +276,8 @@ export interface AgentState {
   // Conversation history
   messages: Message[];
   chatHistory?: MessagePair[];
+
+  retrievals: RetrievalTask[];
 
   // Task ids
   taskIds?: string[];
@@ -135,6 +314,26 @@ export interface AgentState {
 
   // Filters for document retrieval and processing
   _filter?: Record<string, any>;
+
+  // Reranking results
+  rerankedResults?: {
+    code?: RerankedResult;
+    notes?: RerankedResult;
+    docs?: RerankedResult;
+    [key: string]: RerankedResult | undefined;
+  };
+
+  // Retrieval evaluation results
+  retrievalEvaluation?: RetrievalEvaluation;
+
+  // Tool necessity classification
+  toolNecessityClassification?: ToolNecessityClassification;
+
+  // Tool routing decisions
+  toolRoutingDecision?: ToolRoutingDecision;
+
+  // Combined context
+  combinedContext?: CombinedContext;
 
   // Metadata for tracking and debugging
   metadata: {

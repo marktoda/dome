@@ -19,8 +19,8 @@ export default function LoginPage() {
     setError('');
 
     try {
-      // Use our server action with the appropriate options
-      const result = await serverSignIn('credentials', undefined, {
+      // Use our updated server action with the appropriate options
+      const result = await serverSignIn('credentials', '/dashboard', {
         redirect: false,
         email,
         password,
@@ -30,7 +30,7 @@ export default function LoginPage() {
         // Display appropriate error message based on error
         if (result.error.includes('not found')) {
           setError('User not found');
-        } else if (result.error.includes('credentials')) {
+        } else if (result.error.includes('credentials') || result.error.includes('Authentication failed')) {
           setError('Invalid email or password');
         } else {
           setError(result.error);
@@ -39,8 +39,12 @@ export default function LoginPage() {
         return;
       }
 
-      // If successful, redirect to dashboard
-      router.push('/dashboard');
+      // If successful, use the router to navigate
+      if (result.url) {
+        router.push(result.url);
+      } else {
+        router.push('/dashboard');
+      }
     } catch (error) {
       setError('An error occurred during login');
       console.error(error);

@@ -27,10 +27,8 @@ global.performance = {
   now: vi.fn(() => 123456),
 } as any;
 
-// Mock crypto for UUID generation
-global.crypto = {
-  randomUUID: vi.fn(() => 'mock-uuid-123'),
-} as any;
+// Mock crypto.randomUUID instead of replacing the entire crypto object
+vi.spyOn(crypto, 'randomUUID').mockImplementation(() => '123e4567-e89b-12d3-a456-426614174000');
 
 describe('generateChatLLM Node', () => {
   let mockState: AgentState;
@@ -216,7 +214,7 @@ describe('generateChatLLM Node', () => {
     
     // Verify it's a system message with appropriate content
     expect(systemMessage.role).toBe('system');
-    expect(systemMessage.content).toContain('helpful AI assistant');
+    expect(systemMessage.content).toContain('You are an AI assistant designed to be helpful');
     expect(systemMessage.content).not.toContain('Context from user\'s knowledge base');
   });
 });

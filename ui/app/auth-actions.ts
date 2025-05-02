@@ -12,17 +12,48 @@ type SignInResult = {
 // Server action wrapper for signIn that can be safely called from client components
 export async function serverSignIn(provider: string, callbackUrl?: string, options?: any): Promise<SignInResult> {
   try {
-    // If credentials provider is used with redirect:false, we need to handle it specially
-    if (provider === 'credentials' && options?.redirect === false) {
-      return await signIn('credentials', {
-        ...options,
-        redirect: false
-      }) as SignInResult;
+    // For credentials provider, direct the request to the proper API endpoint
+    if (provider === 'credentials') {
+      // When not using redirect, we need to handle it through the API
+      if (options?.redirect === false) {
+        const response = await fetch('/api/auth/edge-auth', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: options.email,
+            password: options.password,
+          }),
+        });
+
+        const data = await response.json();
+        
+        if (!data.success) {
+          return {
+            error: data.message || 'Authentication failed',
+            ok: false
+          };
+        }
+
+        // On success, use the normal auth flow to set the session
+        await signIn('credentials', {
+          redirect: true,
+          email: options.email,
+          password: options.password,
+          callbackUrl: callbackUrl || '/dashboard'
+        });
+
+        return {
+          ok: true,
+          url: callbackUrl || '/dashboard'
+        };
+      }
     }
     
     // For OAuth providers or when we want to redirect
-    return await signIn(provider, { 
-      redirectTo: callbackUrl,
+    return await signIn(provider, {
+      callbackUrl: callbackUrl || '/dashboard',
       ...options
     }) as SignInResult;
   } catch (error) {

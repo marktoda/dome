@@ -9,7 +9,7 @@ import {
   AgentState,
 } from '../types';
 import { Services } from '../services';
-import { buildChatGraph } from '../graph';
+import { V2Chat } from '../graphs';
 import { secureMessages } from '../utils/securePromptHandler';
 import { validateInitialState } from '../utils/inputValidator';
 
@@ -131,7 +131,7 @@ export class ChatController {
   /* ---------------------------------------------------------------------- */
   private async runGraphStreaming(state: AgentState, runId: string): Promise<ReadableStream<Uint8Array>> {
     await this.services.checkpointer.initialize();
-    const graph = await buildChatGraph(this.env, this.services.checkpointer);
+    const graph = await V2Chat.build(this.env, this.services.checkpointer);
 
     const thread_id = crypto.randomUUID();
     this.logger.info({ thread_id, runId }, 'Starting graph stream');
@@ -159,7 +159,7 @@ export class ChatController {
 
   private async runGraphNonStreaming(state: AgentState, runId: string): Promise<Response> {
     await this.services.checkpointer.initialize();
-    const graph = await buildChatGraph(this.env, this.services.checkpointer);
+    const graph = await V2Chat.build(this.env, this.services.checkpointer);
 
     const thread_id = crypto.randomUUID();
     this.logger.info({ thread_id, runId }, 'Starting graph invocation');
@@ -169,34 +169,6 @@ export class ChatController {
 
     return new Response(JSON.stringify(result), {
       headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /*  Error handling                                                        */
-  /* ---------------------------------------------------------------------- */
-
-  private logAndMetricError(
-    err: unknown,
-    userId: string | undefined,
-    runId: string | undefined,
-    start: number,
-    streaming: boolean,
-  ) {
-    const domeError = toDomeError(err, 'ChatController error', {
-      userId,
-      runId,
-      executionTimeMs: Math.round(performance.now() - start),
-      streaming: String(streaming)
-    });
-
-    // Error is already logged by toDomeError
-    this.logger.error({ error: domeError, userId, runId }, 'ChatController error');
-
-    metrics.increment('chat_orchestrator.chat.errors', 1, {
-      errorType: domeError.code || 'UNKNOWN_ERROR',
-      statusCode: String(domeError.statusCode || 500),
-      streaming: String(streaming),
     });
   }
 }

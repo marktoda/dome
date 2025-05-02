@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getLogger } from '@dome/logging';
-import { LLMTool } from '.';
+import { DocumentChunk } from '../types';
+import { RetrievalTool, RetrievalInput } from '.';
 /* ------------------------------------------------------------------ */
 /* Schemas                                                            */
 /* ------------------------------------------------------------------ */
@@ -72,7 +73,7 @@ async function fetchBraveSearch(
 /* ------------------------------------------------------------------ */
 /* Tool implementation                                                */
 /* ------------------------------------------------------------------ */
-export const webSearchTool: LLMTool<
+export const webSearchTool: RetrievalTool<
   ParsedSearchInput,
   WebSearchOutput,
   RawSearchInput
@@ -84,7 +85,16 @@ export const webSearchTool: LLMTool<
   inputSchema: webSearchInput,
   outputSchema: webSearchOutput,
 
-  async execute(input, env: Env) {
+  async retrieve(input: RetrievalInput, env: Env): Promise<WebSearchOutput> {
+    return this.execute({
+      query: input.query,
+      topK: DEFAULT_TOP_K,
+      freshDays: DEFAULT_FRESH_DAYS,
+    }, env)
+
+  },
+
+  async execute(input, env: Env): Promise<WebSearchOutput> {
     const apiKey = env?.SEARCH_API_KEY;
     if (!apiKey) throw new Error("SEARCH_API_KEY is not configured");
 
@@ -96,6 +106,21 @@ export const webSearchTool: LLMTool<
 
     const results = await fetchBraveSearch(query, effectiveTopK, effectiveFreshDays, apiKey);
     return { results };
+  },
+
+  toDocuments(input: WebSearchOutput): DocumentChunk[] {
+    const results = input.results;
+    return results.map(r => ({
+      id: r.title,
+      content: r.snippet || r.title || '',
+      metadata: {
+        url: r.url,
+        createdAt: r.published,
+        source: r.source || '',
+        sourceType: 'web',
+      }
+    }));
+
   },
 
   examples: [

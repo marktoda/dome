@@ -1,0 +1,261 @@
+import { getLogger } from '@dome/logging';
+import { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { AgentState, RetrievalEvaluation } from '../types';
+import { ObservabilityService } from '../services/observabilityService';
+import { ModelFactory } from '../services/modelFactory';
+import { toDomeError } from '../utils/errors';
+
+/**
+ * Retrieval Evaluator LLM Node
+ * 
+ * Evaluates the relevance and sufficiency of retrieved content post-reranking.
+ * This node analyzes all reranked results to determine if the retrieved content
+ * is adequate for answering the user's query without external tools.
+ * 
+ * The node:
+ * 1. Takes reranked results from the reranker nodes
+ * 2. Uses an LLM to assess content relevance and adequacy
+ * 3. Produces a structured evaluation with a binary adequacy decision
+ * 4. Updates agent state with the evaluation results
+ * 
+ * This evaluation is critical for determining whether to proceed with answering
+ * the query using retrieved content or to invoke external tools.
+ * 
+ * @param state Current agent state
+ * @param cfg LangGraph runnable configuration
+ * @param env Environment bindings
+ * @returns Updated agent state with retrieval evaluation results
+ */
+export async function retrievalEvaluatorLLM(
+  state: AgentState,
+  cfg: LangGraphRunnableConfig,
+  env: Env,
+): Promise<Partial<AgentState>> {
+  const t0 = performance.now();
+  const logger = getLogger().child({ component: 'retrievalEvaluatorLLM' });
+  
+  // Skip if no reranked results available
+  if (!state.rerankedResults) {
+    logger.info("No reranked results found to evaluate");
+    return {
+      metadata: {
+        currentNode: "retrievalEvaluatorLLM",
+        executionTimeMs: 0,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrievalEvaluatorLLM: 0
+        }
+      }
+    };
+  }
+  
+  // Extract last user message to use as query
+  const lastUserMessage = [...state.messages].reverse().find(msg => msg.role === 'user');
+  if (!lastUserMessage) {
+    logger.warn("No user message found for evaluation context");
+    return {
+      metadata: {
+        currentNode: "retrievalEvaluatorLLM",
+        executionTimeMs: 0,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrievalEvaluatorLLM: 0
+        }
+      }
+    };
+  }
+  
+  const query = lastUserMessage.content;
+  
+  /* ------------------------------------------------------------------ */
+  /*  Trace / logging setup                                             */
+  /* ------------------------------------------------------------------ */
+  const traceId = state.metadata?.traceId ?? crypto.randomUUID();
+  const spanId = ObservabilityService.startSpan(env, traceId, "retrievalEvaluatorLLM", state);
+  
+  try {
+    // Gather all reranked results
+    const rerankedResults = Object.values(state.rerankedResults)
+      .filter(Boolean)
+      .map(result => result!);
+    
+    if (rerankedResults.length === 0) {
+      logger.info("No valid reranked results to evaluate");
+      return {
+        metadata: {
+          currentNode: "retrievalEvaluatorLLM",
+          executionTimeMs: 0,
+          nodeTimings: {
+            ...state.metadata?.nodeTimings,
+            retrievalEvaluatorLLM: 0
+          }
+        }
+      };
+    }
+    
+    logger.info({
+      query,
+      resultSources: Object.keys(state.rerankedResults).filter(key => state.rerankedResults![key]),
+      totalChunks: rerankedResults.reduce((sum, result) => sum + result.rerankedChunks.length, 0)
+    }, "Starting retrieval evaluation");
+    
+    // Prepare the content for evaluation
+    const contentToEvaluate = rerankedResults.map(result => {
+      const sourceType = result.originalResults.sourceType;
+      const chunks = result.rerankedChunks.map(chunk => 
+        `[${sourceType.toUpperCase()} CHUNK]\n${chunk.content}\n`
+      ).join("\n\n");
+      
+      return `SOURCE TYPE: ${sourceType}\n${chunks}`;
+    }).join("\n\n");
+    
+    // Build evaluation prompt
+    const systemPrompt = `You are an expert information retrieval evaluator. 
+Your task is to evaluate the relevance and sufficiency of the retrieved content for answering the user's query.
+Consider both the quality and completeness of the information.
+
+QUERY: ${query}
+
+RETRIEVED CONTENT:
+${contentToEvaluate}
+
+Carefully analyze the retrieved content and answer these questions:
+1. How relevant is the retrieved content to the query? (Rate 0-10)
+2. Is the information sufficient to provide a complete answer? (Yes/No)
+3. What key information is present in the retrieved content?
+4. What important information might be missing?
+5. Would external tools or information sources be needed to properly answer this query? Why or why not?
+
+Based on your analysis, you must decide if the information is ADEQUATE or INADEQUATE to answer the query.
+Provide your reasoning and a final decision.`;
+
+    // Call LLM for evaluation
+    const model = ModelFactory.createChatModel(env, {
+      temperature: 0.2,
+      maxTokens: 1000,
+      modelId: 'gpt-4' // Using GPT-4 for better evaluation
+    });
+    
+    const modelResult = await model.invoke([
+      { role: 'system', content: systemPrompt }
+    ]);
+    
+    const evalResult = modelResult.text;
+    
+    // Parse and structure the evaluation
+    const overallScoreMatch = evalResult.match(/relevant.+?(\d+)\s*\/\s*10/i);
+    const isAdequateMatch = evalResult.match(/ADEQUATE|INADEQUATE/i);
+    const suggestedActionMatch = evalResult.match(/external tools.+?(would|wouldn't|would not|will|might)/i);
+    
+    const overallScore = overallScoreMatch ? 
+      Math.min(1, Math.max(0, parseInt(overallScoreMatch[1]) / 10)) : 0.5;
+    
+    const isAdequate = isAdequateMatch ? 
+      isAdequateMatch[0].toUpperCase() === 'ADEQUATE' : false;
+    
+    const suggestedAction = suggestedActionMatch ?
+      (suggestedActionMatch[1].match(/would|will|might/) ? 'use_tools' : 'proceed') : 
+      (isAdequate ? 'proceed' : 'use_tools');
+    
+    // Structure the evaluation
+    const retrievalEvaluation: RetrievalEvaluation = {
+      results: rerankedResults,
+      overallScore,
+      isAdequate,
+      reasoning: evalResult,
+      suggestedAction: suggestedAction as 'use_tools' | 'refine_query' | 'proceed'
+    };
+    
+    // Log results
+    logger.info({
+      overallScore,
+      isAdequate,
+      suggestedAction
+    }, "Retrieval evaluation complete");
+    
+    // Calculate execution time
+    const elapsed = performance.now() - t0;
+    
+    // Record LLM call in observability
+    ObservabilityService.logLlmCall(
+      env,
+      traceId,
+      spanId,
+      "gpt-4", // Assuming model here, ideally would come from config
+      [{ role: 'system', content: systemPrompt }],
+      evalResult,
+      elapsed,
+      { prompt: systemPrompt.length / 4, completion: evalResult.length / 4 } // Rough token estimate
+    );
+    
+    // End span
+    ObservabilityService.endSpan(
+      env,
+      traceId,
+      spanId,
+      "retrievalEvaluatorLLM",
+      state,
+      { ...state, retrievalEvaluation },
+      elapsed
+    );
+    
+    // Update state with evaluation results
+    return {
+      retrievalEvaluation,
+      metadata: {
+        currentNode: "retrievalEvaluatorLLM",
+        executionTimeMs: elapsed,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrievalEvaluatorLLM: elapsed
+        }
+      }
+    };
+  } catch (error) {
+    // Handle errors
+    const domeError = toDomeError(error);
+    logger.error({ err: domeError }, "Error in retrieval evaluator");
+    
+    // Format error
+    const formattedError = {
+      node: "retrievalEvaluatorLLM",
+      message: domeError.message,
+      timestamp: Date.now()
+    };
+    
+    const elapsed = performance.now() - t0;
+    ObservabilityService.endSpan(
+      env, 
+      traceId, 
+      spanId, 
+      "retrievalEvaluatorLLM", 
+      state, 
+      { 
+        ...state, 
+        metadata: { 
+          ...state.metadata, 
+          errors: [
+            ...(state.metadata?.errors || []),
+            formattedError
+          ] 
+        } 
+      }, 
+      elapsed
+    );
+    
+    return {
+      metadata: {
+        currentNode: "retrievalEvaluatorLLM",
+        executionTimeMs: elapsed,
+        errors: [
+          ...(state.metadata?.errors || []),
+          formattedError
+        ],
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrievalEvaluatorLLM: elapsed
+        }
+      }
+    };
+  }
+}

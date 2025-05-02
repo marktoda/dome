@@ -2,6 +2,31 @@ import { getLogger, logError } from "@dome/logging";
 import { ObservabilityService } from "../services/observabilityService";
 import { ToolRegistry } from "../tools";
 import { AgentState, Document, ToolResult } from "../types";
+import { toDomeError } from "../utils/errors";
+
+/**
+ * Run Tool Node
+ *
+ * Executes selected tools and stores clearly labeled results.
+ * This node is responsible for executing the tools selected by the toolRouterLLM
+ * and processing their outputs for use in later stages of the RAG pipeline.
+ *
+ * The node:
+ * 1. Takes tool selection from toolRouterLLM
+ * 2. Executes the selected tools with appropriate parameters
+ * 3. Handles potential errors in tool execution
+ * 4. Stores results with clear labeling of source and content
+ * 5. Updates agent state with tool execution results
+ *
+ * This node bridges between the RAG pipeline decision making and external
+ * information sources, allowing the system to augment retrieved information
+ * with real-time data from tools.
+ *
+ * @param state Current agent state
+ * @param env Environment bindings
+ * @param registry Tool registry containing available tools
+ * @returns Updated agent state with tool execution results
+ */
 
 /* ------------------------------------------------------------------ *
  * main node                                                           *
@@ -22,8 +47,19 @@ export async function runTool(
   );
 
   if (pendingIds.length === 0) {
-    ObservabilityService.endSpan(env, traceId, spanId, "runTool", state, state, 0);
-    return {};
+    const elapsed = performance.now() - started;
+    ObservabilityService.endSpan(env, traceId, spanId, "runTool", state, state, elapsed);
+    log.info("No tools to run, skipping execution");
+    return {
+      metadata: {
+        currentNode: "runTool",
+        executionTimeMs: elapsed,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          runTool: elapsed
+        }
+      }
+    };
   }
 
   /* ── 2 · execute all tools in parallel ───────────────────────────── */
@@ -41,17 +77,66 @@ export async function runTool(
 
       const docs = toolOutputToDocuments(toolName, output);
 
+      // Calculate execution time for this specific tool
+      const toolExecutionTimeMs = performance.now() - started;
+
       const result: ToolResult = {
         toolName,
         input: args,
         output,
-        executionTimeMs: 0,   // ignored in diff; could measure per-tool
+        executionTimeMs: toolExecutionTimeMs,
       };
+
+      // Log successful tool execution
+      log.info({
+        toolName,
+        taskId: id,
+        executionTimeMs: toolExecutionTimeMs
+      }, "Tool execution successful");
+
+      // Log event in observability
+      ObservabilityService.logEvent(
+        env,
+        traceId,
+        spanId,
+        "tool_execution",
+        {
+          toolName,
+          taskId: id,
+          executionTimeMs: toolExecutionTimeMs,
+          outputType: typeof output
+        }
+      );
 
       return { id, docs, result };
     } catch (err) {
-      logError(err, `tool ${toolName} failed`, { id, traceId, spanId });
-      return null; // skip on error; could push fallback docs/results here
+      const domeError = toDomeError(err);
+      logError(domeError, `tool ${toolName} failed`, { id, traceId, spanId });
+      
+      // Add error information to tool results
+      const errorResult: ToolResult = {
+        toolName,
+        input: rawArgs,
+        output: `Error executing tool: ${domeError.message}`,
+        executionTimeMs: performance.now() - started,
+        error: domeError.message
+      };
+      
+      // Create a document from the error for transparency
+      const errorDocs: Document[] = [{
+        id: `tool-error-${toolName}-${crypto.randomUUID()}`,
+        title: `Error executing ${toolName}`,
+        body: `Failed to execute tool ${toolName}: ${domeError.message}`,
+        metadata: {
+          source: "tool_error",
+          createdAt: new Date().toISOString(),
+          relevanceScore: 0.5,
+          mimeType: "text/plain"
+        }
+      }];
+      
+      // Return the error information for processing
+      return { id, docs: errorDocs, result: errorResult, error: domeError };
     }
   });
 
@@ -62,8 +147,30 @@ export async function runTool(
   }[];
 
   if (finished.length === 0) {
-    ObservabilityService.endSpan(env, traceId, spanId, "runTool", state, state, 0);
-    return {};
+    const elapsed = performance.now() - started;
+    ObservabilityService.endSpan(env, traceId, spanId, "runTool", state, state, elapsed);
+    
+    // Format error if no tools completed successfully
+    const formattedError = {
+      node: "runTool",
+      message: "All tool executions failed",
+      timestamp: Date.now()
+    };
+    
+    return {
+      metadata: {
+        currentNode: "runTool",
+        executionTimeMs: elapsed,
+        errors: [
+          ...(state.metadata?.errors || []),
+          formattedError
+        ],
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          runTool: elapsed
+        }
+      }
+    };
   }
 
   /* ── 3 · build diff fragment for LLM graph state  ────────────────── */
@@ -88,24 +195,50 @@ export async function runTool(
     elapsed,
   );
 
+  // Collect all documents from tool executions
+  const toolDocs = finished.flatMap(item => item.docs || []);
+  
+  // Collect all tool results for easier access
+  const toolResults = finished.map(item => item.result);
+  
+  // Log summary of tool executions
+  log.info({
+    completedTools: finished.map(item => item.result.toolName),
+    totalTools: finished.length,
+    totalDocs: toolDocs.length
+  }, "Tool executions completed");
+  
   return {
     taskEntities: entityUpdates,
+    // Add all tool-generated documents to the state
+    docs: [
+      ...(state.docs || []),
+      ...toolDocs
+    ],
+    // Tool results are already stored in taskEntities
     metadata: {
       ...state.metadata,
+      currentNode: "runTool",
+      executionTimeMs: elapsed,
       nodeTimings: { ...state.metadata?.nodeTimings, runTool: elapsed },
     },
   };
 }
 
 /* ------------------------------------------------------------------ *
- * generic output → documents helper (unchanged)                       *
+ * generic output → documents helper                                   *
  * ------------------------------------------------------------------ */
 export function toolOutputToDocuments(
   toolName: string,
   output: unknown,
 ): Document[] {
   const createdAt = new Date().toISOString();
-  const baseMeta = { source: "tool", createdAt, relevanceScore: 0.9 };
+  const baseMeta = {
+    source: "tool",
+    sourceType: `tool_${toolName}`,
+    createdAt,
+    relevanceScore: 0.9
+  };
 
   if (typeof output === "string") {
     return [

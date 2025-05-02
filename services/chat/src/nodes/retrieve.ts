@@ -1,141 +1,141 @@
-import { getLogger } from "@dome/logging";
-import { AgentState, Document } from "../types";
-import { SearchService, SearchOptions } from "../services/searchService";
-import { ObservabilityService } from "../services/observabilityService";
+import { getLogger } from '@dome/logging';
+import { RetrievalToolType, RETRIEVAL_TOOLS } from '../tools';
+import { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { AgentState, RetrievalTask, DocumentChunk } from '../types';
+import { ObservabilityService } from '../services/observabilityService';
+import { toDomeError } from '../utils/errors';
 
 /**
- * Retrieve node: fetches relevant documents for each task in full parallel, applies contextual
- * compression, and flags tasks that may benefit from query widening.
+ * Retrieve Node - Unified Retrieval Dispatcher
+ *
+ * Dispatches retrieval operations to appropriate specialized retrievers based on
+ * selections made by the retrievalSelector node. Executes retrievals in parallel
+ * for efficiency and combines the results.
+ *
+ * @param state Current agent state
+ * @param cfg LangGraph runnable configuration
+ * @param env Environment variables
+ * @returns Updated agent state with retrieval results
  */
-export const retrieve = async (state: AgentState, env: Env): Promise<AgentState> => {
-  const logger = getLogger().child({ node: "retrieve" });
-  const startMs = performance.now();
+export async function retrieve(
+  state: AgentState,
+  cfg: LangGraphRunnableConfig,
+  env: Env,
+): Promise<Partial<AgentState>> {
+  const t0 = performance.now();
+  const logger = getLogger().child({ component: 'retrieve' });
 
-  // ──────────────────────────────────────────────────────────────
-  // Observability
-  // ──────────────────────────────────────────────────────────────
-  const traceId = state.metadata?.traceId ?? "";
-  const spanId = ObservabilityService.startSpan(env, traceId, "retrieve", state);
-
-  const taskIds = state.taskIds ?? [];
-  const taskEntities = state.taskEntities ?? {};
-
-  if (taskIds.length === 0) {
-    return finish(state, env, traceId, spanId, startMs, [], {});
+  // Verify that retrievalSelections and tasks are available
+  if (!state.retrievals) {
+    logger.warn("Retrieval selections or tasks not found in state");
+    return {
+      metadata: {
+        currentNode: "retrieve",
+        executionTimeMs: 0,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrieve: 0
+        },
+        errors: [{
+          node: "retrieve",
+          message: "Retrieval selections or split tasks not found in state",
+          timestamp: Date.now()
+        }]
+      }
+    };
   }
 
-  const searchService = SearchService.fromEnv(env);
-  const MIN_QUERY_LENGTH = 3;
+  logger.info({
+    selectionCount: state.retrievals.length
+  }, "Starting retrieval process");
 
-  // ---------------------------------------------------------------------------
-  // Launch searches in parallel (Promise.all) – no concurrency limiter needed
-  // ---------------------------------------------------------------------------
-  const results = await Promise.all(taskIds.map(async taskId => {
-    const task = taskEntities[taskId];
-    if (!task) return emptyTaskResult(taskId);
+  /* ------------------------------------------------------------------ */
+  /*  Trace / logging setup                                             */
+  /* ------------------------------------------------------------------ */
+  const traceId = state.metadata?.traceId ?? crypto.randomUUID();
+  const spanId = ObservabilityService.startSpan(env, traceId, "retrieve", state);
+  const logEvt = (e: string, p: Record<string, unknown>) =>
+    ObservabilityService.logEvent(env, traceId, spanId, e, p);
 
-    const query = (task.rewrittenQuery || task.originalQuery || "").trim();
-    if (query.length < MIN_QUERY_LENGTH) {
-      logger.warn({ taskId, query }, "Query too short – skipping");
-      return emptyTaskResult(taskId);
-    }
+  try {
+    /* ------------------------------------------------------------------ */
+    /*  Process each retrieval in parallel                                */
+    /* ------------------------------------------------------------------ */
+    // For each task with retrieval selections, execute the retrievals
+    const retrievalPromises = state.retrievals.map(async (retrieval) => {
+      const retriever = RETRIEVAL_TOOLS[retrieval.category]
 
-    try {
-      const options = buildSearchOptions(state.userId, query, task);
-      const docs = await searchService.search(options);
-      const contextual = await applyContextualCompression(docs, query);
-      const quality = assessRetrievalQuality(contextual);
-      const needsWide = determineIfWideningNeeded(quality, task.wideningAttempts ?? 0);
-      return { taskId, docs: contextual, needsWidening: needsWide } as TaskResult;
-    } catch (err) {
-      logger.error({ err, taskId, query }, "Search failed");
-      return emptyTaskResult(taskId);
-    }
-  }));
 
-  // Aggregate docs & widening flags
-  const docs = results.flatMap(r => r.docs);
-  const wideningFlags = Object.fromEntries(results.map(r => [r.taskId, r.needsWidening]));
-  const updatedTaskEntities = applyWideningFlags(taskEntities, wideningFlags);
+      // Log the retrieval operation starting
+      logEvt("retrieval_started", {
+        query: retrieval.query,
+        type: retrieval.category,
+      });
+      const res = await retriever.retrieve({
+        query: retrieval.query,
+        userId: state.userId,
+      }, env);
+      const docs = retriever.toDocuments(res);
+      return {
+        ...retrieval,
+        docs,
+      }
+    });
 
-  const newState: AgentState = { ...state, docs, taskEntities: updatedTaskEntities };
-  return finish(newState, env, traceId, spanId, startMs, docs, wideningFlags);
-};
 
-// ──────────────────────────────────────────────────────────────
-// Helper types & functions
-// ──────────────────────────────────────────────────────────────
-interface TaskResult { taskId: string; docs: Document[]; needsWidening: boolean; }
-const emptyTaskResult = (taskId: string): TaskResult => ({ taskId, docs: [], needsWidening: false });
+    // Wait for all retrievals to complete
+    const results: RetrievalTask[] = await Promise.all(retrievalPromises);
 
-function buildSearchOptions(userId: string, query: string, task: any): SearchOptions {
-  const base: SearchOptions = {
-    userId,
-    query,
-    limit: 10,
-    minRelevance: 0.5,
-    expandSynonyms: false,
-    includeRelated: false,
-  };
-  if (!task.wideningParams) return base;
+    /* ------------------------------------------------------------------ */
+    /*  Finish, log, and return the state update                          */
+    /* ------------------------------------------------------------------ */
+    const elapsed = performance.now() - t0;
+    ObservabilityService.endSpan(env, traceId, spanId, "retrieve", state, state, elapsed);
 
-  const { minRelevance, expandSynonyms, includeRelated, startDate, endDate, category } = task.wideningParams;
-  return {
-    ...base,
-    minRelevance: minRelevance ?? base.minRelevance,
-    expandSynonyms: expandSynonyms ?? base.expandSynonyms,
-    includeRelated: includeRelated ?? base.includeRelated,
-    startDate,
-    endDate,
-    category,
-  };
-}
+    logger.info({
+      elapsedMs: elapsed,
+      totalChunks: results.length,
+    }, "Retrieval process complete");
 
-function applyWideningFlags(entities: Record<string, any>, flags: Record<string, boolean>) {
-  const out = { ...entities };
-  for (const [id, flag] of Object.entries(flags)) if (out[id]) out[id] = { ...out[id], needsWidening: flag };
-  return out;
-}
+    return {
+      retrievals: results,
+      metadata: {
+        currentNode: "retrieve",
+        executionTimeMs: elapsed,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrieve: elapsed
+        }
+      }
+    };
+  } catch (error) {
+    // Handle errors
+    const domeError = toDomeError(error);
+    logger.error({ err: domeError }, "Error in retrieve node");
 
-async function applyContextualCompression(docs: Document[], _query: string): Promise<Document[]> {
-  return SearchService.rankAndFilterDocuments(docs);
-}
+    // Format error with required properties
+    const formattedError = {
+      node: "retrieve",
+      message: domeError.message || "Error in retrieve node",
+      timestamp: Date.now()
+    };
 
-function assessRetrievalQuality(docs: Document[]): "high" | "low" | "none" {
-  if (docs.length === 0) return "none";
-  const avg = docs.reduce((s, d) => s + d.metadata.relevanceScore, 0) / docs.length;
-  if (avg > 0.7 && docs.length >= 3) return "high";
-  if (avg > 0.4 || docs.length >= 2) return "low";
-  return "none";
-}
+    const elapsed = performance.now() - t0;
+    ObservabilityService.endSpan(env, traceId, spanId, "retrieve", state,
+      { ...state, metadata: { ...state.metadata, errors: [formattedError] } },
+      elapsed
+    );
 
-function determineIfWideningNeeded(quality: "high" | "low" | "none", attempts: number): boolean {
-  if (quality === "high" || attempts >= 2) return false;
-  if (quality === "none" && attempts === 0) return true;
-  if (quality === "low" && attempts === 1) return true;
-  if (quality === "none" && attempts === 1) return true; // second try when still none
-  return false;
-}
-
-function finish(
-  state: AgentState,
-  env: Env,
-  traceId: string,
-  spanId: string,
-  start: number,
-  docs: Document[],
-  widening: Record<string, boolean>,
-): AgentState {
-  const ms = performance.now() - start;
-  ObservabilityService.endSpan(env, traceId, spanId, "retrieve", state, state, ms);
-  ObservabilityService.logEvent(env, traceId, spanId, "retrieval_complete", {
-    taskCount: Object.keys(widening).length,
-    totalDocumentCount: docs.length,
-    executionTimeMs: ms,
-    hasDocs: docs.length > 0,
-  });
-  return {
-    ...state,
-    metadata: { ...state.metadata, nodeTimings: { ...(state.metadata?.nodeTimings ?? {}), retrieve: ms } },
-  };
+    return {
+      metadata: {
+        currentNode: "retrieve",
+        executionTimeMs: elapsed,
+        errors: [formattedError],
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrieve: elapsed
+        }
+      }
+    };
+  }
 }

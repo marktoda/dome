@@ -5,10 +5,23 @@ export { routeAfterRetrieve } from './routeAfterRetrieve';
 export { toolRouter, routeAfterTool } from './toolRouter';
 export { runTool } from './runTool';
 
-// Answer generation nodes
+// Reranking and evaluation nodes
+export { codeReranker } from './codeReranker';
+export { notesReranker } from './notesReranker';
+export { docsReranker } from './docsReranker';
+export { retrievalEvaluatorLLM } from './retrievalEvaluatorLLM';
+export { retrievalSelector } from './retrievalSelector';
+
+// Tool selection and classification nodes
+export { toolNecessityClassifier } from './toolNecessityClassifier';
+export { toolRouterLLM } from './toolRouterLLM';
+
+// Context processing and answer generation nodes
+export { combineContextLLM } from './combineContextLLM';
 export { docToSources } from './docToSources'; // Mapping docs to sources for streaming
 export { generateAnswer } from './generateAnswer'; // RAG answer generation
 export { generateChatLLM } from './generateChatLLM'; // Simple chat generation
+export { outputGuardrail } from './outputGuardrail'; // Validate final outputs
 
 // Query processing nodes
 export { routingSplit } from './routingSplit';
