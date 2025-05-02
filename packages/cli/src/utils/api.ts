@@ -25,7 +25,7 @@ class ApiClient {
         cfg.headers['Authorization'] = `Bearer ${this.cfg.apiKey}`;
         // Keep legacy headers for backward compatibility
         cfg.headers['x-api-key'] = this.cfg.apiKey;
-        cfg.headers['x-user-id'] = 'test-user-id';
+        // Remove hardcoded user ID to let the server resolve it from the token
       }
       return cfg;
     });
@@ -72,10 +72,20 @@ export const listNotes = (f?: string) => listItems('notes', f);
 export const listTasks = (f?: string) => listItems('tasks', f);
 export const showItem = (id: string) => api.get(`/notes/${id}`).then(r => r.note ?? r);
 
-export const search = async (query: string, limit = 10) => {
-  const res = await api.get('/search', { params: { q: query, limit, fields: 'title,summary,body,tags,contentType,createdAt' } });
+export const search = async (query: string, limit = 10, category?: string) => {
+  const params: Record<string, any> = {
+    q: query,
+    limit,
+    fields: 'title,summary,body,tags,contentType,createdAt'
+  };
+  
+  if (category) {
+    params.category = category;
+  }
+  
+  const res = await api.get('/search', { params });
   const results = (res.results ?? []).map((r: any) => ({ ...r, score: +r.score || 0 }));
-  return { results, pagination: res.pagination ?? { total: 0, limit, offset: 0, hasMore: false }, query };
+  return { results, pagination: res.pagination ?? { total: 0, limit, offset: 0, hasMore: false }, query, category };
 };
 
 // ---------- Streaming / WebSocket chat -----------------------------------------
@@ -125,7 +135,7 @@ const detectors: ChunkDetector[] = [
       const details = p[1];
       if (Array.isArray(details) && details.length > 0 && details[0].kwargs?.content) {
         const node = details[1].langgraph_node
-        if (node === 'generate_rag') {
+        if (node === 'generate_answer') {
           return { type: 'content', content: details[0].kwargs.content };
         }
       }
@@ -174,8 +184,8 @@ export function connectWebSocketChat(
     const wsOptions = {
       headers: {
         'Authorization': `Bearer ${cfg.apiKey}`,
-        'x-api-key': cfg.apiKey,
-        'x-user-id': 'test-user-id'
+        'x-api-key': cfg.apiKey
+        // Remove hardcoded user ID to let the server resolve it from the token
       }
     };
 
@@ -186,10 +196,12 @@ export function connectWebSocketChat(
     ws.on('open', () => {
       log('open');
       ws.send(JSON.stringify({
-        userId: 'test-user-id',
+        // Remove hardcoded user ID to let the server resolve it from the token
         messages: [{ role: 'user', content: message, timestamp: Date.now() }],
         options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
         stream: true,
+        token: cfg.apiKey, // Add token at top level for API authentication
+        // Keep auth object for backward compatibility with existing servers
         auth: {
           token: cfg.apiKey
         }
@@ -268,10 +280,12 @@ export async function chat(
         try {
           // Fallback to blocking call
           const res = await api.post('/chat', {
-            userId: 'test-user-id',
+            // Remove hardcoded user ID to let the server resolve it
             messages: [{ role: 'user', content: message, timestamp: Date.now() }],
             options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
             stream: false,
+            token: loadConfig().apiKey, // Add token at top level for API authentication
+            // Keep auth object for backward compatibility
             auth: {
               token: loadConfig().apiKey
             }
@@ -301,10 +315,12 @@ export async function chat(
   }
   // non‑streaming path
   const res = await api.post('/chat', {
-    userId: 'test-user-id',
+    // Remove hardcoded user ID to let the server resolve it
     messages: [{ role: 'user', content: message, timestamp: Date.now() }],
     options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
     stream: false,
+    token: loadConfig().apiKey, // Add token at top level for API authentication
+    // Keep auth object for backward compatibility
     auth: {
       token: loadConfig().apiKey
     }

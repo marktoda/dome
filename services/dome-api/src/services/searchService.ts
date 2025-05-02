@@ -117,8 +117,33 @@ export class SearchService {
         return cachedResults;
       }
 
-      // Perform semantic search using Constellation
+      // Build a comprehensive filter for Constellation
       const filter: Partial<VectorMeta> = { userId };
+      
+      // Add category filter if specified and valid
+      if (category && ['note', 'code', 'document', 'article', 'other'].includes(category)) {
+        // Cast to ContentCategory since we've validated it's one of the allowed values
+        filter.category = category as VectorMeta['category'];
+      }
+      
+      // Add mimeType filter if specified
+      if (mimeType) {
+        // Cast to MimeType
+        filter.mimeType = mimeType as VectorMeta['mimeType'];
+      }
+      
+      this.logger.info(
+        {
+          filter,
+          query,
+          limit,
+          offset,
+          originalFilters: { category, mimeType, startDate, endDate }
+        },
+        'Sending filter to Constellation'
+      );
+      
+      // Perform semantic search using Constellation with all filters
       const searchResults = await this.constellation.query(query, filter);
 
       if (searchResults.length === 0) {
@@ -174,16 +199,17 @@ export class SearchService {
           firstResult:
             searchResults.length > 0
               ? {
-                  id: searchResults[0].id,
-                  contentId: searchResults[0].metadata.contentId,
-                  score: searchResults[0].score,
-                }
+                id: searchResults[0].id,
+                contentId: searchResults[0].metadata.contentId,
+                score: searchResults[0].score,
+              }
               : null,
         },
         'Created score map',
       );
 
-      // Filter and transform results
+      // Transform results without redundant filtering
+      // (category and mimeType already filtered by Constellation)
       let filteredResults = contents.items
         .filter((note: any) => {
           // Skip notes with missing required fields
@@ -192,19 +218,7 @@ export class SearchService {
             return false;
           }
 
-          // Apply category filter if specified
-          if (category && note.category !== category) {
-            getLogger().info({ note }, 'Skipping note with incorrect category');
-            return false;
-          }
-
-          // Apply MIME type filter if specified
-          if (mimeType && note.mimeType !== mimeType) {
-            getLogger().info({ note }, 'Skipping note with incorrect mime type');
-            return false;
-          }
-
-          // Apply date range filter if specified
+          // Apply date range filter if specified (not yet supported by Constellation)
           const createdAt = note.createdAt || 0;
           if (startDate && createdAt < startDate) {
             getLogger().info({ note }, 'Skipping note outside date range');
@@ -326,9 +340,8 @@ export class SearchService {
       startDate,
       endDate,
     } = options;
-    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${
-      startDate || ''
-    }:${endDate || ''}`;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''
+      }:${endDate || ''}`;
   }
 
   /**

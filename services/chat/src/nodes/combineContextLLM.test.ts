@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { combineContextLLM } from './combineContextLLM';
 import { ModelFactory } from '../services/modelFactory';
 import { ObservabilityService } from '../services/observabilityService';
-import { AgentState, Document, RerankedResult, DocumentChunk, ToolResult } from '../types';
+import { AgentState, Document, DocumentChunk, ToolResult, RetrievalTask } from '../types';
 import * as tokenCounter from '../utils/tokenCounter';
 import * as promptHelpers from '../utils/promptHelpers';
 
@@ -47,8 +47,8 @@ describe('combineContextLLM Node', () => {
   let mockEnv: any;
   let mockCodeChunks: DocumentChunk[];
   let mockDocsChunks: DocumentChunk[];
-  let mockCodeRerankedResult: RerankedResult;
-  let mockDocsRerankedResult: RerankedResult;
+  let mockCodeRetrievalTask: RetrievalTask;
+  let mockDocsRetrievalTask: RetrievalTask;
   let mockToolResults: ToolResult[];
   let mockLlmResponse: any;
 
@@ -99,41 +99,33 @@ describe('combineContextLLM Node', () => {
       }
     ];
     
-    // Create reranked results
-    mockCodeRerankedResult = {
-      originalResults: {
-        query: 'How do I implement a binary search tree in Python?',
-        chunks: mockCodeChunks,
-        sourceType: 'code',
-        metadata: {
-          executionTimeMs: 100,
-          retrievalStrategy: 'vector',
-          totalCandidates: 5
-        }
-      },
-      rerankedChunks: mockCodeChunks,
+    // Create retrieval tasks with chunks
+    mockCodeRetrievalTask = {
+      category: 'code' as any,
+      query: 'binary search tree python implementation',
+      chunks: mockCodeChunks,
+      sourceType: 'code',
       metadata: {
+        executionTimeMs: 100,
+        retrievalStrategy: 'vector',
+        totalCandidates: 5,
         rerankerModel: 'bge-reranker-code',
-        executionTimeMs: 50,
+        rerankerExecutionTimeMs: 50,
         scoreThreshold: 0.25
       }
     };
     
-    mockDocsRerankedResult = {
-      originalResults: {
-        query: 'How do I implement a binary search tree in Python?',
-        chunks: mockDocsChunks,
-        sourceType: 'docs',
-        metadata: {
-          executionTimeMs: 90,
-          retrievalStrategy: 'vector',
-          totalCandidates: 3
-        }
-      },
-      rerankedChunks: mockDocsChunks,
+    mockDocsRetrievalTask = {
+      category: 'docs' as any,
+      query: 'binary search tree data structure',
+      chunks: mockDocsChunks,
+      sourceType: 'docs',
       metadata: {
+        executionTimeMs: 90,
+        retrievalStrategy: 'vector',
+        totalCandidates: 3,
         rerankerModel: 'bge-reranker-docs',
-        executionTimeMs: 45,
+        rerankerExecutionTimeMs: 45,
         scoreThreshold: 0.25
       }
     };
@@ -159,19 +151,9 @@ describe('combineContextLLM Node', () => {
         maxTokens: 1000,
       },
       retrievals: [
-        {
-          category: 'code' as any,
-          query: 'binary search tree implementation'
-        },
-        {
-          category: 'docs' as any,
-          query: 'binary search tree Python'
-        }
+        mockCodeRetrievalTask,
+        mockDocsRetrievalTask
       ],
-      rerankedResults: {
-        code: mockCodeRerankedResult,
-        docs: mockDocsRerankedResult
-      },
       taskIds: ['task-1'],
       taskEntities: {
         'task-1': {

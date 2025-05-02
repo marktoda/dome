@@ -1,8 +1,8 @@
 import { getLogger } from '@dome/logging';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ContentCategory, ContentCategoryEnum } from '@dome/common';
-import { RetrievalToolType, RETRIEVAL_TOOLS } from '../tools';
-import { AgentState, Message } from '../types';
+import { RETRIEVAL_TOOLS } from '../tools';
+import { RetrievalToolType, AgentState, Message } from '../types';
 import { LlmService, } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';

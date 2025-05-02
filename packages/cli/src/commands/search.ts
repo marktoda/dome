@@ -14,7 +14,8 @@ export function searchCommand(program: Command): void {
     .description('Search across all stored content types')
     .argument('<query>', 'Search query')
     .option('-l, --limit <limit>', 'Maximum number of results to return', '10')
-    .action(async (query: string, options: { limit: string }) => {
+    .option('-c, --category <category>', 'Filter results by content type (e.g., code, docs, notes)')
+    .action(async (query: string, options: { limit: string; category?: string }) => {
       // Check if user is authenticated
       if (!isAuthenticated()) {
         console.log(error('You need to login first. Run `dome login` to authenticate.'));
@@ -23,11 +24,16 @@ export function searchCommand(program: Command): void {
 
       try {
         const limit = parseInt(options.limit, 10);
+        const category = options.category;
 
-        const spinner = createSpinner(`Searching for: ${query}`);
+        const searchMessage = category
+          ? `Searching for: "${query}" in category: ${category}`
+          : `Searching for: "${query}"`;
+        
+        const spinner = createSpinner(searchMessage);
         spinner.start();
 
-        const results = await search(query);
+        const results = await search(query, limit, category);
 
         spinner.stop();
 
@@ -36,7 +42,11 @@ export function searchCommand(program: Command): void {
           return;
         }
 
-        console.log(heading(`Search Results for: "${query}"`));
+        const headerText = category
+          ? `Search Results for: "${query}" (Category: ${category})`
+          : `Search Results for: "${query}"`;
+        
+        console.log(heading(headerText));
         console.log(`Found ${results.results.length} results.\n`);
 
         // Display results

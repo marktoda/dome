@@ -1,6 +1,6 @@
 import { getLogger } from '@dome/logging';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
-import { AgentState, DocumentChunk, RetrievalResult } from '../types';
+import { AgentState, DocumentChunk, RetrievalResult, RetrievalTask } from '../types';
 import { createReranker } from '../utils/rerankerUtils';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
@@ -11,81 +11,59 @@ import { toDomeError } from '../utils/errors';
 export type ContentCategory = 'code' | 'docs' | 'notes';
 
 /**
- * Model configurations for different content types
+ * Model configurations for different content types - now using a single model
  */
-const RERANKER_MODELS = {
-  code: 'bge-reranker-code',
-  docs: 'bge-reranker-docs',
-  notes: 'bge-reranker-notes'
-};
+const RERANKER_MODEL = 'bge-reranker-base';
 
 /**
- * Maximum number of chunks to return after reranking for each content type
+ * Maximum number of chunks to return after reranking
  */
-const MAX_CHUNKS = {
-  code: 8,
-  docs: 8,
-  notes: 8
-};
+const MAX_CHUNKS = 10;
 
 /**
- * Threshold scores for filtering chunks (0-1) for each content type
+ * Threshold score for filtering chunks (0-1)
  * Chunks with scores below the threshold will be filtered out
  */
-const SCORE_THRESHOLDS = {
-  code: 0.25,
-  docs: 0.22,
-  notes: 0.2
-};
+const SCORE_THRESHOLD = 0.2;
 
 /**
  * Unified Reranker Node
  *
- * This is the central, unified implementation for reranking content across all categories.
- * It replaces the previously separate implementations (codeReranker, docsReranker, notesReranker)
- * with a single, configurable reranker that adapts to different content types.
+ * This updated implementation groups results by retrieval query and type,
+ * then reranks each group independently.
  *
  * Features:
- * - Single, unified implementation for all content types
- * - Category-specific configurations (models, thresholds, result limits)
- * - Consistent typing and interfaces across all reranking operations
- * - Improved maintainability through centralized code
+ * - Processes each retrieval task independently
+ * - Uses a single reranker configuration across all retrieval types
+ * - Returns all reranked results in the response
  *
  * The node:
- * 1. Takes initial retrieval results from the `retrieve` node for the specified category
- * 2. Applies a content-specific cross-encoder reranking model based on category settings
- * 3. Selects the top N most relevant chunks based on category-specific thresholds and limits
- * 4. Updates agent state with the reranked results for the specified category
- *
- * Usage:
- * ```
- * // To use the reranker directly with a category
- * await reranker(state, 'code', cfg, env);
- *
- * // Or to create a specialized reranker function for a category
- * const codeRerankerFn = createCategoryReranker('code');
- * await codeRerankerFn(state, cfg, env);
- * ```
+ * 1. Takes retrieval tasks from state.retrievals (array of RetrievalTask objects)
+ * 2. Processes each retrieval task separately
+ * 3. Applies reranking to each task's chunks
+ * 4. Returns all reranked results in the response
  *
  * @param state Current agent state
- * @param category Content category to rerank ('code', 'docs', 'notes')
  * @param cfg LangGraph runnable configuration
  * @param env Environment bindings
- * @returns Updated agent state with reranked results for the specified category
+ * @returns Updated agent state with reranked results
  */
 export async function reranker(
   state: AgentState,
-  category: ContentCategory,
   cfg: LangGraphRunnableConfig,
   env: Env,
 ): Promise<Partial<AgentState>> {
   const t0 = performance.now();
-  const logger = getLogger().child({ component: `${category}Reranker` });
-  const nodeId = `${category}Reranker`;
-  
-  // Skip if no retrieval results or category-specific results
-  if (!(state as any).retrievalResults || !(state as any).retrievalResults[category]) {
-    logger.info(`No ${category} retrieval results found to rerank`);
+  const logger = getLogger().child({ component: 'UnifiedReranker' });
+  const nodeId = 'unified_reranker';
+
+  // Get retrieval tasks from state
+  // retrievals is an array of RetrievalTask objects
+  const retrievals = (state as any).retrievals || [];
+
+  // Skip if no retrieval tasks found
+  if (!Array.isArray(retrievals) || retrievals.length === 0) {
+    logger.info('No retrieval tasks found to rerank');
     return {
       metadata: {
         currentNode: nodeId,
@@ -97,9 +75,50 @@ export async function reranker(
       }
     };
   }
-  
-  // Extract last user message to use as query
-  const lastUserMessage = [...state.messages].reverse().find(msg => msg.role === 'user');
+
+  // Detect and handle duplicate tasks with the same category and query
+  // Create a map of tasks keyed by category+query
+  const taskMap = new Map<string, RetrievalTask>();
+
+  // Process each task, merging duplicates
+  for (const task of retrievals) {
+    const key = `${task.category}:${task.query}`;
+
+    if (taskMap.has(key)) {
+      // Found a duplicate task, merge chunks
+      const existingTask = taskMap.get(key)!;
+      const existingChunks = existingTask.chunks || [];
+      const newChunks = task.chunks || [];
+
+      // Only merge if the new task has chunks
+      if (newChunks.length > 0) {
+        logger.info({
+          category: task.category,
+          query: task.query,
+          existingChunks: existingChunks.length,
+          newChunks: newChunks.length
+        }, 'Merging duplicate retrieval tasks');
+
+        // Update the existing task with combined chunks
+        existingTask.chunks = [...existingChunks, ...newChunks];
+      }
+    } else {
+      // New task, add to map
+      taskMap.set(key, { ...task });
+    }
+  }
+
+  // Convert the map back to an array of tasks
+  const mergedTasks = Array.from(taskMap.values());
+
+  logger.info({
+    originalTaskCount: retrievals.length,
+    mergedTaskCount: mergedTasks.length,
+    hasChunks: mergedTasks.filter(task => task.chunks && task.chunks.length > 0).length
+  }, 'Merged duplicate retrieval tasks');
+
+  // Extract last user message to use as fallback query
+  const lastUserMessage = [...(state.messages || [])].reverse().find(msg => msg.role === 'user');
   if (!lastUserMessage) {
     logger.warn("No user message found for reranking context");
     return {
@@ -113,56 +132,120 @@ export async function reranker(
       }
     };
   }
-  
-  const query = lastUserMessage.content;
-  
+
+  const defaultQuery = lastUserMessage.content;
+
   /* ------------------------------------------------------------------ */
   /*  Trace / logging setup                                             */
   /* ------------------------------------------------------------------ */
   const traceId = state.metadata?.traceId ?? crypto.randomUUID();
   const spanId = ObservabilityService.startSpan(env, traceId, nodeId, state);
-  
+
   try {
-    logger.info({
-      query,
-      category,
-      chunkCount: (state as any).retrievalResults[category].chunks.length,
-    }, `Starting ${category} reranking`);
-    
-    // Create reranker instance with category-specific configuration
-    const reranker = createReranker({
-      name: category,
-      model: RERANKER_MODELS[category],
-      scoreThreshold: SCORE_THRESHOLDS[category],
-      maxResults: MAX_CHUNKS[category]
-    });
-    
-    // Perform reranking
-    const rerankedResults = await reranker(
-      (state as any).retrievalResults[category],
-      query,
-      env,
-      traceId,
-      spanId
-    );
-    
-    // Log results
-    logger.info({
-      category,
-      originalChunks: (state as any).retrievalResults[category].chunks.length,
-      rerankedChunks: rerankedResults.rerankedChunks.length,
-      executionTimeMs: rerankedResults.metadata.executionTimeMs
-    }, `${category} reranking complete`);
-    
+    // Array to store all reranked tasks
+    const rerankedTasks: RetrievalTask[] = [];
+
+    // Create a base reranker that doesn't depend on categories
+    const baseRerankerConfig = {
+      name: 'unified',
+      model: RERANKER_MODEL,
+      scoreThreshold: SCORE_THRESHOLD,
+      maxResults: MAX_CHUNKS
+    };
+
+    // Process each merged retrieval task separately
+    for (const task of mergedTasks) {
+      // Skip if no chunks or empty chunks
+      if (!task.chunks || task.chunks.length === 0) {
+        logger.info({
+          category: task.category,
+          query: task.query
+        }, 'Skipping retrieval task with no chunks');
+        continue;
+      }
+
+      logger.info({
+        category: task.category,
+        query: task.query,
+        chunkCount: task.chunks.length,
+        sourceType: task.sourceType || task.category
+      }, `Reranking chunks for ${task.category}`);
+
+      // Create a reranker instance
+      const reranker = createReranker(baseRerankerConfig);
+
+      // Create a properly typed RetrievalResult for the reranker
+      const retrievalResult: RetrievalResult = {
+        query: task.query || defaultQuery,
+        chunks: task.chunks,
+        sourceType: task.sourceType || task.category,
+        metadata: task.metadata || {
+          executionTimeMs: 0,
+          retrievalStrategy: 'unknown',
+          totalCandidates: task.chunks.length
+        }
+      };
+
+      // Perform reranking for this task
+      const rerankedResult = await reranker(
+        retrievalResult,
+        task.query || defaultQuery,
+        env,
+        traceId,
+        spanId
+      );
+
+      // Create a new task with the reranked chunks
+      // Ensure all required metadata fields have default values
+      const rerankedTask: RetrievalTask = {
+        ...task,
+        chunks: rerankedResult.chunks || [],
+        metadata: {
+          ...(task.metadata || {}),
+          executionTimeMs: rerankedResult.metadata?.executionTimeMs || 0,
+          rerankerModel: RERANKER_MODEL,
+          originalChunkCount: task.chunks?.length || 0,
+          rerankedChunkCount: rerankedResult.chunks?.length || 0,
+          // Ensure required metadata properties always have values
+          retrievalStrategy: (task.metadata?.retrievalStrategy || "unified-retrieval"),
+          totalCandidates: (task.metadata?.totalCandidates || task.chunks?.length || 0)
+        }
+      };
+
+      // Add to the reranked tasks array
+      rerankedTasks.push(rerankedTask);
+
+      logger.info({
+        category: task.category,
+        originalChunks: task.chunks?.length || 0,
+        rerankedChunks: rerankedResult.chunks?.length || 0,
+        executionTimeMs: rerankedResult.metadata?.executionTimeMs || 0
+      }, `Completed reranking for ${task.category}`);
+    }
+
     // Calculate execution time
     const elapsed = performance.now() - t0;
-    
-    // Update state with reranked results for the specific category
+
+    // Use state with a generic "as any" type for span tracking
+    const updatedState = {
+      ...state,
+      rerankedRetrievals: rerankedTasks
+    };
+
+    // Complete the span
+    ObservabilityService.endSpan(
+      env,
+      traceId,
+      spanId,
+      nodeId,
+      state,
+      updatedState as any,
+      elapsed
+    );
+
+    // Return updated state with all reranked tasks using type assertion to avoid TS errors
     return {
-      rerankedResults: {
-        ...state.rerankedResults,
-        [category]: rerankedResults
-      },
+      retrievals: rerankedTasks,
       metadata: {
         currentNode: nodeId,
         executionTimeMs: elapsed,
@@ -175,35 +258,37 @@ export async function reranker(
   } catch (error) {
     // Handle errors
     const domeError = toDomeError(error);
-    logger.error({ err: domeError }, `Error in ${category} reranker`);
-    
+    logger.error({ err: domeError }, 'Error in unified reranker');
+
     // Format error
     const formattedError = {
       node: nodeId,
       message: domeError.message,
       timestamp: Date.now()
     };
-    
+
+    // Complete the span with error
     const elapsed = performance.now() - t0;
     ObservabilityService.endSpan(
-      env, 
-      traceId, 
-      spanId, 
-      nodeId, 
-      state, 
-      { 
-        ...state, 
-        metadata: { 
-          ...state.metadata, 
+      env,
+      traceId,
+      spanId,
+      nodeId,
+      state,
+      {
+        ...state,
+        metadata: {
+          ...state.metadata,
           errors: [
             ...(state.metadata?.errors || []),
             formattedError
-          ] 
-        } 
-      }, 
+          ]
+        }
+      },
       elapsed
     );
-    
+
+    // Return error state
     return {
       metadata: {
         currentNode: nodeId,
@@ -222,17 +307,17 @@ export async function reranker(
 }
 
 /**
- * Helper function to create a specialized reranker for a specific content category
- * 
- * @param category Content category to rerank ('code', 'docs', 'notes')
- * @returns A reranker function specialized for the given content category
+ * Helper function to create a reranker function
+ * (No longer category-specific)
+ *
+ * @returns A reranker function
  */
-export function createCategoryReranker(category: ContentCategory) {
-  return (state: AgentState, cfg: LangGraphRunnableConfig, env: Env) => 
-    reranker(state, category, cfg, env);
+export function createCategoryReranker() {
+  return (state: AgentState, cfg: LangGraphRunnableConfig, env: Env) =>
+    reranker(state, cfg, env);
 }
 
-// Pre-configured rerankers for backwards compatibility
-export const codeReranker = createCategoryReranker('code');
-export const docsReranker = createCategoryReranker('docs');
-export const notesReranker = createCategoryReranker('notes');
+// For backward compatibility
+export const codeReranker = createCategoryReranker();
+export const docsReranker = createCategoryReranker();
+export const notesReranker = createCategoryReranker();

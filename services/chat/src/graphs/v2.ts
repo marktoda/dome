@@ -85,7 +85,7 @@ export const V2Chat: ChatBuilder = {
 
       /* Reranking connections */
       .addEdge("retrieve", "unified_reranker")
-      
+
       /* Connect unified reranker to the evaluator */
       .addEdge("unified_reranker", "retrieval_evaluator")
 
@@ -161,19 +161,16 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
     },
 
     unifiedReranker: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
-      // Determine which category to use for reranking
-      const category = determineContentCategory(state);
-      log.info({ preState: createStateSummary(state), category }, "→ [START] unifiedReranker");
-      
+      log.info({ preState: createStateSummary(state)}, "→ [START] unifiedReranker");
+
       // Use the unified reranker with the appropriate category
-      const res = await nodes.reranker(state, category, cfg, env);
-      log.info({ postState: createStateSummary(res), category }, "→ [END] unifiedReranker");
+      const res = await nodes.reranker(state, cfg, env);
+      log.info({ postState: createStateSummary(res)}, "→ [END] unifiedReranker");
       return res;
     },
 
     retrievalEvaluatorLLM: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
       log.info({ preState: createStateSummary(state) }, "→ [START] retrievalEvaluatorLLM");
-      // Using the actual retrievalEvaluatorLLM implementation
       const res = await nodes.retrievalEvaluatorLLM(state, cfg, env);
       log.info({ postState: createStateSummary(res) }, "→ [END] retrievalEvaluatorLLM");
       return res;
@@ -230,10 +227,10 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
     routeBasedOnToolNecessity: async (state: any, config: LangGraphRunnableConfig) => {
       // We need to use 'any' type here to accommodate the LangGraph type system
       // The actual classification results would be in state based on tool_necessity_classifier node
-      
+
       // Check if tools are needed by examining various possible state structures
       let needsTools = false;
-      
+
       // Check various possible locations where tool necessity might be stored
       if (state.toolNecessityResult && typeof state.toolNecessityResult === 'object') {
         needsTools = !!state.toolNecessityResult.needsTools;
@@ -243,99 +240,10 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
         // In case the classifier outputs a string decision
         needsTools = state.classifierOutput.includes('tools');
       }
-      
+
       log.info({ needsTools }, "Routing based on tool necessity");
 
       return needsTools ? "needs_tools" : "no_tools";
     }
   };
-}
-
-/**
- * Helper function to compare states for debugging purposes
- * This is used in the logs to show what changed between state transitions
- */
-/**
- * Helper function to compare states for debugging purposes
- * This is used in the logs to show what changed between state transitions
- */
-function getStateDiff(oldState: AgentState, newState: AgentState): Record<string, any> {
-  return createStateSummary(newState);
-}
-
-/**
- * Determines the content category for reranking based on document content analysis.
- * This function analyzes the content in the retrieved documents to identify
- * whether they belong to code, docs, or notes categories.
- *
- * @param state Current agent state with retrieval results
- * @returns The determined content category ('code', 'docs', or 'notes')
- */
-function determineContentCategory(state: AgentState): 'code' | 'docs' | 'notes' {
-  // If there are no docs, default to docs category
-  if (!state.docs || state.docs.length === 0) {
-    return 'docs';
-  }
-  
-  // Check if we can infer the content type from retrieval results
-  const retrievalResults = (state as any).retrievalResults || {};
-  
-  // Check if we have specific category results already
-  if (retrievalResults.code?.chunks?.length > 0) {
-    return 'code';
-  } else if (retrievalResults.notes?.chunks?.length > 0) {
-    return 'notes';
-  } else if (retrievalResults.docs?.chunks?.length > 0) {
-    return 'docs';
-  }
-  
-  // Analyze document content to determine category
-  let codePatterns = 0;
-  let docsPatterns = 0;
-  let notesPatterns = 0;
-  
-  for (const doc of state.docs) {
-    const content = doc.body || '';
-    const metadata = doc.metadata || {};
-    
-    // Check metadata source field for hints
-    const source = metadata.source?.toLowerCase() || '';
-    if (source.includes('code') || source.includes('github') || source.includes('.js') ||
-        source.includes('.ts') || source.includes('.py')) {
-      codePatterns += 2;
-    } else if (source.includes('notes') || source.includes('todo') || source.includes('ideas')) {
-      notesPatterns += 2;
-    } else if (source.includes('docs') || source.includes('documentation') || source.includes('article')) {
-      docsPatterns += 2;
-    }
-    
-    // Check content for code-like patterns
-    if (content.includes('```') || content.includes('function ') ||
-        content.includes('class ') || content.includes('import ') ||
-        content.includes('export ') || /\{\s*[\w\d]+:/.test(content)) {
-      codePatterns++;
-    }
-    
-    // Check for documentation patterns
-    if (content.includes('## ') || content.includes('# ') ||
-        content.includes('**') || content.includes('> ') ||
-        /\[.*\]\(.*\)/.test(content)) {
-      docsPatterns++;
-    }
-    
-    // Check for note-like patterns
-    if (content.includes('- [ ]') || content.includes('TODO:') ||
-        content.includes('NOTE:') || content.includes('IDEA:')) {
-      notesPatterns++;
-    }
-  }
-  
-  // Return the category with the highest pattern match count
-  if (codePatterns > docsPatterns && codePatterns > notesPatterns) {
-    return 'code';
-  } else if (notesPatterns > docsPatterns && notesPatterns > codePatterns) {
-    return 'notes';
-  } else {
-    return 'docs'; // Default to docs if tied or if docs has highest count
-  }
 }

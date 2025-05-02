@@ -28,5 +28,4 @@ wrangler r2 bucket notification create silo-content  --event-type object-create 
 
 wrangler vectorize create dome-notes --dimensions=768 --metric=cosine
 wrangler vectorize create-metadata-index dome-notes --property-name userId  --type string
-
-
+wrangler vectorize create-metadata-index dome-notes --property-name category  --type string

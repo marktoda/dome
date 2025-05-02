@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { Annotation } from '@langchain/langgraph';
-import { RetrievalToolType } from './tools';
 import { BaseMessage } from '@langchain/core/messages';
 
 export const roleSchema = z.enum(['user', 'assistant', 'system']);
@@ -43,6 +42,13 @@ export const resumeChatRequestSchema = z.object({
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 export type Role = z.infer<typeof roleSchema>;
 export type ResumeChatRequest = z.infer<typeof resumeChatRequestSchema>;
+
+export enum RetrievalToolType {
+  WEB = "web",
+  DOC = "doc",
+  CODE = "code",
+  NOTE = "note",
+}
 
 /**
  * Message interface
@@ -136,55 +142,22 @@ export interface RetrievalTask {
   query: string;
 
   // output data
-  docs?: DocumentChunk[];
-}
-
-/**
- * Reranked result interface
- * Contains reranked results after applying a reranker to retrieval results
- */
-export interface RerankedResult {
-  /**
-   * Original retrieval results before reranking
-   */
-  originalResults: RetrievalResult;
-
-  /**
-   * Reordered and possibly filtered chunks after reranking
-   */
-  rerankedChunks: DocumentChunk[];
-
-  /**
-   * Metadata about the reranking operation
-   */
-  metadata: {
-    /**
-     * Model used for reranking
-     */
-    rerankerModel: string;
-
-    /**
-     * Time taken for reranking in milliseconds
-     */
+  chunks?: DocumentChunk[];
+  sourceType?: ContentCategory | string;
+  metadata?: {
     executionTimeMs: number;
-
-    /**
-     * Threshold score used for filtering
-     */
-    scoreThreshold?: number;
+    retrievalStrategy: string;
+    totalCandidates: number;
+    [key: string]: any;
   };
 }
+
 
 /**
  * Retrieval evaluation interface
  * Contains evaluation of retrieval quality by an LLM
  */
 export interface RetrievalEvaluation {
-  /**
-   * Results being evaluated
-   */
-  results: RerankedResult[];
-
   /**
    * Overall relevance score (0-1)
    */
@@ -312,7 +285,6 @@ export interface AgentState {
   // Retrieved documents and results
   docs?: Document[];
   sources?: SourceMetadata[];
-  retrievalResults?: Record<string, RetrievalResult>;
 
   // Reasoning and instructions
   reasoning?: string[];
@@ -329,14 +301,6 @@ export interface AgentState {
 
   // Filters for document retrieval and processing
   _filter?: Record<string, any>;
-
-  // Reranking results
-  rerankedResults?: {
-    [key in ContentCategory]?: RerankedResult;
-  } & {
-    [key: string]: RerankedResult | undefined;
-  };
-
   // Retrieval evaluation results
   retrievalEvaluation?: RetrievalEvaluation;
 
@@ -547,7 +511,8 @@ export const GraphStateAnnotation = Annotation.Root({
   _filter: merge<Record<string, any>>(),
 
   /* ---------- retrieval and reranking ----------------------------- */
-  retrievals: concat<RetrievalTask>(),
-  retrievalResults: merge<Record<string, RetrievalResult>>(),
-  rerankedResults: merge<Record<string, RerankedResult>>(),
+  retrievals: Annotation<RetrievalTask[]>({
+    reducer: (prev: RetrievalTask[], next: RetrievalTask[]) => [...prev, ...next],
+    default: () => [],
+  }),
 });

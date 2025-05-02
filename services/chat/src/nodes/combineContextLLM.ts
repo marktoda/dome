@@ -38,16 +38,18 @@ export async function combineContextLLM(
 
   try {
     /* ── 1 · gather all documents and tool results ──────────────── */
-    // Get reranked retrieval results
+    // Get retrieval results
     const rerankedDocs: Document[] = [];
     const sourceMetadata: SourceMetadata[] = [];
     
-    // Collect all reranked documents from different retrievers
-    if (state.rerankedResults) {
-      for (const [sourceType, result] of Object.entries(state.rerankedResults)) {
-        if (result && result.rerankedChunks) {
+    // Collect all retrieved documents from the retrievals array
+    if (state.retrievals && state.retrievals.length > 0) {
+      for (const retrieval of state.retrievals) {
+        const sourceType = retrieval.sourceType || retrieval.category;
+        
+        if (retrieval.chunks && retrieval.chunks.length > 0) {
           // Convert document chunks to standard document format
-          const docs = result.rerankedChunks.map(chunk => ({
+          const docs = retrieval.chunks.map(chunk => ({
             id: chunk.id,
             title: chunk.metadata.title || `${sourceType} result`,
             body: chunk.content,

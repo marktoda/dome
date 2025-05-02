@@ -1,6 +1,6 @@
 import { getLogger } from '@dome/logging';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
-import { AgentState, RetrievalEvaluation } from '../types';
+import { AgentState, DocumentChunk, RetrievalEvaluation, RetrievalTask } from '../types';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { toDomeError } from '../utils/errors';
@@ -9,11 +9,11 @@ import { toDomeError } from '../utils/errors';
  * Retrieval Evaluator LLM Node
  * 
  * Evaluates the relevance and sufficiency of retrieved content post-reranking.
- * This node analyzes all reranked results to determine if the retrieved content
+ * This node analyzes all retrievals to determine if the retrieved content
  * is adequate for answering the user's query without external tools.
  * 
  * The node:
- * 1. Takes reranked results from the reranker nodes
+ * 1. Takes retrievals from state (already processed by the reranker)
  * 2. Uses an LLM to assess content relevance and adequacy
  * 3. Produces a structured evaluation with a binary adequacy decision
  * 4. Updates agent state with the evaluation results
@@ -34,9 +34,29 @@ export async function retrievalEvaluatorLLM(
   const t0 = performance.now();
   const logger = getLogger().child({ component: 'retrievalEvaluatorLLM' });
   
-  // Skip if no reranked results available
-  if (!state.rerankedResults) {
-    logger.info("No reranked results found to evaluate");
+  // Access retrievals from state with type assertion
+  const retrievals = (state as any).retrievals || [];
+  
+  // Skip if no retrievals available
+  if (!Array.isArray(retrievals) || retrievals.length === 0) {
+    logger.info("No retrieval tasks found to evaluate");
+    return {
+      metadata: {
+        currentNode: "retrievalEvaluatorLLM",
+        executionTimeMs: 0,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrievalEvaluatorLLM: 0
+        }
+      }
+    };
+  }
+  
+  // Filter for retrieval tasks that have chunks (these are the reranked ones)
+  const retrievalTasks = retrievals.filter(task => task.chunks && task.chunks.length > 0);
+  
+  if (retrievalTasks.length === 0) {
+    logger.info("No retrieval tasks with chunks found");
     return {
       metadata: {
         currentNode: "retrievalEvaluatorLLM",
@@ -50,7 +70,7 @@ export async function retrievalEvaluatorLLM(
   }
   
   // Extract last user message to use as query
-  const lastUserMessage = [...state.messages].reverse().find(msg => msg.role === 'user');
+  const lastUserMessage = [...(state.messages || [])].reverse().find(msg => msg.role === 'user');
   if (!lastUserMessage) {
     logger.warn("No user message found for evaluation context");
     return {
@@ -74,35 +94,17 @@ export async function retrievalEvaluatorLLM(
   const spanId = ObservabilityService.startSpan(env, traceId, "retrievalEvaluatorLLM", state);
   
   try {
-    // Gather all reranked results from the unified reranker approach
-    const rerankedResults = Object.entries(state.rerankedResults)
-      .filter(([_, result]) => Boolean(result))
-      .map(([contentType, result]) => result!);
-    
-    if (rerankedResults.length === 0) {
-      logger.info("No valid reranked results to evaluate");
-      return {
-        metadata: {
-          currentNode: "retrievalEvaluatorLLM",
-          executionTimeMs: 0,
-          nodeTimings: {
-            ...state.metadata?.nodeTimings,
-            retrievalEvaluatorLLM: 0
-          }
-        }
-      };
-    }
-    
     logger.info({
       query,
-      resultSources: Object.keys(state.rerankedResults).filter(key => state.rerankedResults![key]),
-      totalChunks: rerankedResults.reduce((sum, result) => sum + result.rerankedChunks.length, 0)
+      taskCount: retrievalTasks.length,
+      totalChunks: retrievalTasks.reduce((sum, task) => sum + (task.chunks?.length || 0), 0),
+      categories: retrievalTasks.map(task => task.category)
     }, "Starting retrieval evaluation");
     
-    // Prepare the content for evaluation with the unified approach
-    const contentToEvaluate = rerankedResults.map(result => {
-      const sourceType = result.originalResults.sourceType;
-      const chunks = result.rerankedChunks.map(chunk =>
+    // Prepare the content for evaluation using the retrieval tasks
+    const contentToEvaluate = retrievalTasks.map(task => {
+      const sourceType = task.sourceType || task.category;
+      const chunks = (task.chunks || []).map((chunk: DocumentChunk) =>
         `[${sourceType.toUpperCase()} CHUNK]\n${chunk.content}\n`
       ).join("\n\n");
       
@@ -128,7 +130,7 @@ Carefully analyze the retrieved content and answer these questions:
 
 Based on your analysis, you must decide if the information is ADEQUATE or INADEQUATE to answer the query.
 Provide your reasoning and a final decision.`;
-
+    
     // Call LLM for evaluation
     const model = ModelFactory.createChatModel(env, {
       temperature: 0.2,
@@ -157,9 +159,8 @@ Provide your reasoning and a final decision.`;
       (suggestedActionMatch[1].match(/would|will|might/) ? 'use_tools' : 'proceed') : 
       (isAdequate ? 'proceed' : 'use_tools');
     
-    // Structure the evaluation
+    // Structure the evaluation based on the RetrievalEvaluation interface
     const retrievalEvaluation: RetrievalEvaluation = {
-      results: rerankedResults,
       overallScore,
       isAdequate,
       reasoning: evalResult,
@@ -188,14 +189,19 @@ Provide your reasoning and a final decision.`;
       { prompt: systemPrompt.length / 4, completion: evalResult.length / 4 } // Rough token estimate
     );
     
-    // End span
+    // End span with updated state
+    const updatedState = {
+      ...state,
+      retrievalEvaluation
+    };
+    
     ObservabilityService.endSpan(
       env,
       traceId,
       spanId,
       "retrievalEvaluatorLLM",
       state,
-      { ...state, retrievalEvaluation },
+      updatedState as any,
       elapsed
     );
     

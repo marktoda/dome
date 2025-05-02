@@ -51,7 +51,7 @@ export const V1Chat: ChatBuilder = {
       .addNode("tool_routing", fn.toolRouter)
       .addNode("run_tool", fn.runTool)
       .addNode("doc_to_sources", fn.docToSources)       // Map docs to sources for streaming
-      .addNode("generate_rag", fn.generateAnswer)       // RAG-enabled streaming answer
+      .addNode("generate_answer", fn.generateAnswer)       // RAG-enabled streaming answer
 
       /* Graph connections */
       .addEdge(START, "routing_split")
@@ -77,7 +77,7 @@ export const V1Chat: ChatBuilder = {
         {
           widen: "dynamic_retrieve",
           tool: "tool_routing",
-          answer: "generate_rag",
+          answer: "generate_answer",
         }
       )
 
@@ -94,8 +94,8 @@ export const V1Chat: ChatBuilder = {
       )
 
       .addEdge("run_tool", "doc_to_sources")
-      .addEdge("doc_to_sources", "generate_rag")
-      .addEdge("generate_rag", END);
+      .addEdge("doc_to_sources", "generate_answer")
+      .addEdge("generate_answer", END);
 
     // Compile the graph with checkpointing
     return graph.compile({

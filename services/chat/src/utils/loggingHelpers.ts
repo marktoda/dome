@@ -47,6 +47,21 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
   }
 
   // If there are task docs in the task entities, summarize those too
+  if (state.retrievals) {
+    summary.retrievals = state.retrievals.map(r => ({
+      query: r.query,
+      category: r.category,
+      chunks: (r.chunks ?? []).map(c => ({
+        id: c.id,
+        source: c.metadata.source,
+        title: c.metadata.title,
+        url: c.metadata.url,
+
+      }))
+    }))
+  }
+
+  // If there are task docs in the task entities, summarize those too
   if (state.taskEntities) {
     for (const taskId in state.taskEntities) {
       const task = state.taskEntities[taskId];

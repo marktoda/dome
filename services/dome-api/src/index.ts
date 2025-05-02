@@ -192,17 +192,23 @@ app.get(
     // NB: Cloudflare Workers has no `onOpen`; first client frame is where we start
     return {
       async onMessage(event, ws) {
+        const logger = getLogger().child({
+          component: 'WebSocketChatHandler',
+          requestId: Math.random().toString(36).substring(2, 12)
+        });
+        
         try {
           const chatService = serviceFactory.getChatService(c.env);
+          const authService = serviceFactory.getAuthService(c.env);
 
           // Parse the incoming data as JSON if it's a string
           let jsonData;
           if (typeof event.data === 'string') {
             try {
               jsonData = JSON.parse(event.data);
-              getLogger().debug('Successfully parsed WebSocket message as JSON');
+              logger.debug('Successfully parsed WebSocket message as JSON');
             } catch (parseError) {
-              getLogger().error({ error: parseError }, 'Failed to parse WebSocket message as JSON');
+              logger.error({ error: parseError }, 'Failed to parse WebSocket message as JSON');
               ws.send('Error: Invalid JSON payload');
               ws.close(1008, 'Invalid JSON payload');
               return;
@@ -210,18 +216,68 @@ app.get(
           } else {
             jsonData = event.data;
           }
-
-          // Simple auth check - we'll improve this later
-          if (!jsonData.userId) {
-            jsonData.userId = 'test-user-id'; // Default for CLI
+          
+          logger.debug({ jsonData }, 'Received WebSocket message');
+          
+          // Validate authentication
+          let authenticatedUserId;
+          
+          // Get token from various possible locations
+          const token = jsonData.token ||
+                       (jsonData.auth && jsonData.auth.token ? jsonData.auth.token : null);
+          
+          logger.debug({
+            hasToken: !!token,
+            hasAuthObject: !!jsonData.auth,
+            hasAuthToken: jsonData.auth && !!jsonData.auth.token,
+            providedUserId: jsonData.userId || '[none]'
+          }, 'WebSocket auth details');
+          
+          if (token) {
+            // If token is provided, validate it
+            const authResult = await authService.validateToken(token);
+            logger.info({ authResult }, 'WebSocket auth validation result');
+            
+            if (authResult.success && authResult.user) {
+              authenticatedUserId = authResult.user.id;
+              logger.info({ authenticatedUserId }, 'Successfully authenticated WebSocket connection');
+            } else {
+              logger.warn('Invalid auth token in WebSocket connection');
+              ws.send('Error: Authentication failed - invalid token');
+              ws.close(1008, 'Authentication failed');
+              return;
+            }
+          } else {
+            // For compatibility with older clients, allow CLI testing with a specific user ID
+            // ONLY IN DEVELOPMENT ENVIRONMENT
+            const isDevelopment = c.env.ENVIRONMENT === 'development';
+            
+            if (isDevelopment && jsonData.userId === 'test-user-id') {
+              logger.warn('Using test user ID in development environment');
+              authenticatedUserId = 'test-user-id';
+            } else {
+              logger.warn('Missing authentication token in WebSocket connection');
+              ws.send('Error: Authentication required');
+              ws.close(1008, 'Authentication required');
+              return;
+            }
           }
+          
+          // Override any user ID in the request with the authenticated one
+          jsonData.userId = authenticatedUserId;
 
           // Parse with Zod schema
           const validatedRequest = chatRequestSchema.parse(jsonData);
-          getLogger().info({
-            req: validatedRequest,
+          logger.info({
+            userId: authenticatedUserId,
+            req: {
+              ...validatedRequest,
+              // Don't log potential sensitive content
+              messages: validatedRequest.messages ?
+                `${validatedRequest.messages.length} messages` : 'none'
+            },
             op: 'startChatSession'
-          }, 'ChatController request');
+          }, 'ChatController WebSocket request');
 
           const resp = await chatService.streamResponse(validatedRequest);
 

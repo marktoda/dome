@@ -54,7 +54,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     } catch (err) {
       const requestId = typeof meta.requestId === 'string' ? meta.requestId : undefined;
       const operation = typeof meta.op === 'string' ? meta.op : 'unknown_operation';
-      
+
       const errorContext = {
         operation,
         requestId,
@@ -62,9 +62,9 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
         timestamp: new Date().toISOString(),
         ...meta
       };
-      
+
       logError(err, `Unhandled error in ${operation}`, errorContext);
-      
+
       // Convert to a proper DomeError before rethrowing
       throw toDomeError(err, `Error in ${operation}`, errorContext);
     }
@@ -97,7 +97,7 @@ const sendToDeadLetter = async (
     );
     return;
   }
-  
+
   return trackOperation(
     'send_to_dlq',
     async () => {
@@ -111,7 +111,7 @@ const sendToDeadLetter = async (
           },
           'Sending message to dead letter queue'
         );
-        
+
         await queue.send({
           ...payload,
           _meta: {
@@ -120,9 +120,9 @@ const sendToDeadLetter = async (
             service: 'constellation'
           }
         });
-        
+
         metrics.counter('dlq.messages_sent', 1);
-        
+
         getLogger().info(
           { requestId, operation: 'sendToDeadLetter' },
           'Successfully sent message to dead letter queue'
@@ -133,7 +133,7 @@ const sendToDeadLetter = async (
           operation: 'sendToDeadLetter',
           payloadType: typeof payload
         });
-        
+
         logError(domeError, 'Error sending message to dead letter queue');
         metrics.counter('dlq.errors', 1);
       }
@@ -171,14 +171,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
       'embed_batch',
       async () => {
         assertValid(Array.isArray(jobs), 'Jobs array is required', { batchRequestId });
-        
+
         // Constants for processing limits
         const MAX_CHUNKS_PER_BATCH = 50; // Limit chunks processed at once
         const MAX_TEXT_LENGTH = 100000; // Limit text size to prevent memory issues
-        
+
         let processed = 0;
         const startTime = Date.now();
-        
+
         // Log batch processing start
         getLogger().info(
           {
@@ -188,7 +188,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           },
           `Starting embedding batch with ${jobs.length} jobs`
         );
-        
+
         // Process jobs one at a time to avoid memory issues
         for (const job of jobs) {
           const jobRequestId = `${batchRequestId}-${job.id}`;
@@ -199,7 +199,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             category: job.category,
             operation: 'embedBatch'
           };
-          
+
           if (job.body === undefined) {
             getLogger().error(
               { ...jobContext, contentSize: 0 },
@@ -210,13 +210,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
           // Track individual job processing
           const timer = metrics.startTimer('process_job');
-          
+
           try {
             await trackOperation(
               'process_content_job',
               async () => {
                 const { preprocessor, embedder, vectorize } = this.services;
-                
+
                 // Validate the job data
                 assertValid(!!job.id, 'Job ID is required', jobContext);
                 assertValid(!!job.userId, 'User ID is required', jobContext);
@@ -237,14 +237,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     },
                     'Text truncated to prevent memory issues',
                   );
-                  
+
                   metrics.counter('content.truncated', 1);
                 }
 
                 // Process the text into chunks
                 try {
                   const chunks = preprocessor.process(truncatedText);
-                  
+
                   if (chunks.length === 0) {
                     getLogger().warn(
                       { ...jobContext, textLength: truncatedText.length },
@@ -253,7 +253,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     metrics.counter('preprocessing.empty_result', 1);
                     return;
                   }
-                  
+
                   getLogger().info(
                     {
                       ...jobContext,
@@ -262,7 +262,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     },
                     `Successfully preprocessed content into ${chunks.length} chunks`,
                   );
-                  
+
                   metrics.counter('preprocessing.success', 1);
                   metrics.gauge('preprocessing.chunk_count', chunks.length);
 
@@ -301,7 +301,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                       }));
 
                       allVectors = allVectors.concat(batchVectors);
-                      
+
                       getLogger().debug(
                         {
                           ...jobContext,
@@ -310,7 +310,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                         },
                         `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`
                       );
-                      
+
                       metrics.counter('embedding.batch_success', 1);
                       metrics.counter('embedding.vectors_created', batchVectors.length);
 
@@ -332,10 +332,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                         },
                         err instanceof Error ? err : undefined
                       );
-                      
+
                       logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
                       metrics.counter('embedding.batch_errors', 1);
-                      
+
                       throw domeError;
                     }
                   }
@@ -346,7 +346,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     const upsertBatch = allVectors.slice(i, i + UPSERT_BATCH_SIZE);
                     const upsertBatchIndex = Math.floor(i / UPSERT_BATCH_SIZE) + 1;
                     const totalUpsertBatches = Math.ceil(allVectors.length / UPSERT_BATCH_SIZE);
-                    
+
                     getLogger().debug(
                       {
                         ...jobContext,
@@ -356,10 +356,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                       },
                       `Upserting vector batch ${upsertBatchIndex}/${totalUpsertBatches}`,
                     );
-                    
+
                     try {
                       await vectorize.upsert(upsertBatch);
-                      
+
                       getLogger().debug(
                         {
                           ...jobContext,
@@ -368,7 +368,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                         },
                         `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`
                       );
-                      
+
                       metrics.counter('vectorize.batch_success', 1);
                     } catch (err) {
                       const domeError = new VectorizeError(
@@ -380,10 +380,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                         },
                         err instanceof Error ? err : undefined
                       );
-                      
+
                       logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
                       metrics.counter('vectorize.batch_errors', 1);
-                      
+
                       throw domeError;
                     }
                   }
@@ -397,7 +397,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     },
                     `Successfully upserted ${allVectors.length} vectors for content`,
                   );
-                  
+
                   metrics.trackOperation('content_embedding', true, {
                     requestId: jobRequestId,
                     vectorCount: String(allVectors.length)
@@ -414,10 +414,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     { ...jobContext, textLength: truncatedText.length },
                     err instanceof Error ? err : undefined
                   );
-                  
+
                   logError(domeError, 'Content preprocessing failed');
                   metrics.counter('preprocessing.errors', 1);
-                  
+
                   throw domeError;
                 }
               },
@@ -430,13 +430,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               `Failed to embed content ID: ${job.id}`,
               { ...jobContext }
             );
-            
+
             logError(domeError, `Content embedding failed for ID: ${job.id}`);
             metrics.trackOperation('content_embedding', false, {
               requestId: jobRequestId,
               errorType: domeError.code
             });
-            
+
             // Send to dead letter queue with enhanced context
             await sendToDeadLetter(
               deadQueue,
@@ -457,7 +457,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             await new Promise(resolve => setTimeout(resolve, 100));
           }
         }
-        
+
         // Log batch completion statistics
         const duration = Date.now() - startTime;
         getLogger().info(
@@ -471,7 +471,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           },
           `Completed embedding batch: ${processed}/${jobs.length} jobs successful`
         );
-        
+
         // Track batch metrics
         metrics.gauge('batch.success_rate', processed / jobs.length);
         metrics.timing('batch.duration_ms', duration);
@@ -491,7 +491,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
    */
   async queue(batch: MessageBatch<Record<string, unknown>>) {
     const batchRequestId = crypto.randomUUID();
-    
+
     await runWithLog(
       {
         service: 'constellation',
@@ -505,7 +505,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         const startTime = Date.now();
         metrics.gauge('queue.batch_size', batch.messages.length);
         metrics.counter('queue.batches_received', 1);
-        
+
         getLogger().info(
           {
             batchRequestId,
@@ -526,7 +526,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             embedItems.push(item);
           } catch (err) {
             parseErrors++;
-            
+
             const domeError = toDomeError(
               err,
               'Failed to parse queue message',
@@ -536,10 +536,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                 operation: 'parseMessage'
               }
             );
-            
+
             logError(domeError, 'Error parsing queue message');
             metrics.counter('queue.parse_errors', 1);
-            
+
             await sendToDeadLetter(
               this.env.EMBED_DEAD,
               {
@@ -551,11 +551,11 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               `${batchRequestId}-${msg.id}`
             );
           }
-          
+
           // Always acknowledge the message to remove from queue
           msg.ack();
         }
-        
+
         // Log parsing results
         getLogger().info(
           {
@@ -578,10 +578,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             },
             `Processing ${embedItems.length} embed jobs`
           );
-          
+
           const processed = await this.embedBatch(embedItems, this.env.EMBED_DEAD, batchRequestId);
           metrics.counter('queue.jobs_processed', processed);
-          
+
           getLogger().info(
             {
               batchRequestId,
@@ -601,7 +601,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             'No valid messages to process after parsing'
           );
         }
-        
+
         // Log batch completion
         const duration = Date.now() - startTime;
         getLogger().info(
@@ -616,7 +616,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           },
           'Queue batch processing complete'
         );
-        
+
         // Track timing metrics
         metrics.timing('queue.batch_processing_time', duration);
         metrics.counter('queue.batches_completed', 1);
@@ -642,7 +642,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           requestId,
           operation: 'parseMessage'
         };
-        
+
         // Validate message has a body
         if (!msg.body) {
           throw new ValidationError('Message body is empty', messageContext);
@@ -654,7 +654,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           const issues = validation.error.issues
             .map(i => `${i.path.join('.')}: ${i.message}`)
             .join(', ');
-            
+
           getLogger().warn(
             {
               ...messageContext,
@@ -663,7 +663,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             },
             'Invalid message format'
           );
-          
+
           throw new ValidationError(`Message validation failed: ${issues}`, {
             ...messageContext,
             issues
@@ -680,20 +680,20 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             },
             'Fetching content from Silo'
           );
-          
+
           // At this point, we know the message body conforms to NewContentMessage schema
           const content = await this.services.silo.get(
             validation.data.id,
             validation.data.userId
           );
-          
+
           // Verify content was retrieved
           assertExists(content, `Content not found in Silo for ID: ${validation.data.id}`, {
             ...messageContext,
             contentId: validation.data.id,
             userId: validation.data.userId
           });
-          
+
           getLogger().debug(
             {
               ...messageContext,
@@ -703,7 +703,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             },
             'Successfully fetched content from Silo'
           );
-          
+
           return content;
         } catch (err) {
           const domeError = toDomeError(
@@ -715,7 +715,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               userId: validation.data.userId
             }
           );
-          
+
           logError(domeError, 'Silo content retrieval failed');
           throw domeError;
         }
@@ -732,7 +732,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
    */
   public async embed(job: SiloContentItem) {
     const requestId = crypto.randomUUID();
-    
+
     await runWithLog(
       {
         service: 'constellation',
@@ -750,10 +750,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             requestId,
             operation: 'embed'
           });
-          
+
           // Track request metrics
           metrics.counter('rpc.embed.requests', 1);
-          
+
           getLogger().info(
             {
               contentId: job.id,
@@ -764,17 +764,17 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             },
             'Processing RPC embed request'
           );
-          
+
           // Embed the content
           const processed = await this.embedBatch([job], undefined, requestId);
-          
+
           // Track success metrics
           metrics.counter('rpc.embed.success', 1);
           metrics.trackOperation('rpc_embed', true, {
             requestId,
             contentId: job.id
           });
-          
+
           getLogger().info(
             {
               contentId: job.id,
@@ -788,7 +788,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         } catch (error) {
           // Track failure metrics
           metrics.counter('rpc.embed.errors', 1);
-          
+
           const domeError = toDomeError(
             error,
             `Failed to embed content ID: ${job.id}`,
@@ -799,15 +799,15 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               operation: 'embed'
             }
           );
-          
+
           logError(domeError, 'RPC embed request failed');
-          
+
           metrics.trackOperation('rpc_embed', false, {
             requestId,
             contentId: job.id,
             errorType: domeError.code
           });
-          
+
           throw domeError;
         }
       },
@@ -829,7 +829,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
     topK = 10,
   ): Promise<VectorSearchResult[] | { error: unknown }> {
     const requestId = crypto.randomUUID();
-    
+
     return runWithLog(
       {
         service: 'constellation',
@@ -848,14 +848,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             requestId,
             providedTopK: topK
           });
-          
+
           // Track query metrics
           metrics.counter('rpc.query.requests', 1);
           metrics.gauge('rpc.query.text_length', text.length);
-          
+
           getLogger().info(
             {
-              queryLength: text.length,
+              query: text,
               filterKeys: Object.keys(filter),
               topK,
               requestId,
@@ -863,22 +863,22 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             },
             'Processing vector search query'
           );
-          
+
           const { preprocessor, embedder, vectorize } = this.services;
 
           // Preprocess the query
           const norm = preprocessor.normalize(text);
-          
+
           if (!norm) {
             getLogger().warn(
               { requestId, operation: 'query' },
               'Normalization produced empty text, returning empty results'
             );
-            
+
             metrics.counter('rpc.query.empty_norm', 1);
             return [];
           }
-          
+
           getLogger().debug(
             {
               requestId,
@@ -891,7 +891,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
           // Generate embedding
           const [queryVec] = await embedder.embed([norm]);
-          
+
           getLogger().debug(
             {
               requestId,
@@ -900,10 +900,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             },
             'Generated embedding vector for query'
           );
-          
+
           // Query for similar vectors
           const results = await vectorize.query(queryVec, filter, topK);
-          
+
           // Log summarized results
           getLogger().info(
             {
@@ -922,12 +922,12 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             requestId,
             resultCount: String(results.length)
           });
-          
+
           return results;
         } catch (error) {
           // Track error metrics
           metrics.counter('rpc.query.errors', 1);
-          
+
           const domeError = toDomeError(
             error,
             'Vector query failed',
@@ -938,14 +938,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               filterKeys: Object.keys(filter || {})
             }
           );
-          
+
           logError(domeError, 'Vector query operation failed');
-          
+
           metrics.trackOperation('vector_query', false, {
             requestId,
             errorType: domeError.code
           });
-          
+
           // Return structured error object for RPC
           return {
             error: {
@@ -967,7 +967,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
    */
   public async stats() {
     const requestId = crypto.randomUUID();
-    
+
     return runWithLog(
       {
         service: 'constellation',
@@ -979,18 +979,18 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         try {
           // Track stats request
           metrics.counter('rpc.stats.requests', 1);
-          
+
           getLogger().info(
             { requestId, operation: 'stats' },
             'Fetching vector index statistics'
           );
-          
+
           // Get stats from vectorize service
           const stats = await this.services.vectorize.getStats();
-          
+
           // Track success
           metrics.counter('rpc.stats.success', 1);
-          
+
           getLogger().info(
             {
               requestId,
@@ -1000,12 +1000,12 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             },
             'Successfully retrieved vector index statistics'
           );
-          
+
           return stats;
         } catch (error) {
           // Track error
           metrics.counter('rpc.stats.errors', 1);
-          
+
           const domeError = toDomeError(
             error,
             'Failed to retrieve vector index statistics',
@@ -1014,9 +1014,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               operation: 'stats'
             }
           );
-          
+
           logError(domeError, 'Error getting vector index stats');
-          
+
           // Return structured error for RPC
           return {
             error: {

@@ -1,17 +1,11 @@
 import { z } from "zod";
-import { DocumentChunk } from "../types";
+import { DocumentChunk, RetrievalToolType } from "../types";
 import { webSearchTool } from "./webSearchTool";
 import { docVectorSearchTool, codeVectorSearchTool, noteVectorSearchTool } from "./vectorSearch";
 export { webSearchTool } from './webSearchTool';
 export { ToolRegistry } from './registry';
 
 export const DEFAULT_TOOLS = [webSearchTool];
-export enum RetrievalToolType {
-  WEB = "web",
-  DOC = "doc",
-  CODE = "code",
-  NOTE = "note",
-}
 export const RETRIEVAL_TOOLS: Record<RetrievalToolType, RetrievalTool> = {
   [RetrievalToolType.DOC]: docVectorSearchTool,
   [RetrievalToolType.CODE]: codeVectorSearchTool,

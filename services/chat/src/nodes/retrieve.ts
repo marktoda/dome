@@ -1,7 +1,7 @@
 import { getLogger } from '@dome/logging';
-import { RetrievalToolType, RETRIEVAL_TOOLS } from '../tools';
+import { RETRIEVAL_TOOLS } from '../tools';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
-import { AgentState, RetrievalTask, DocumentChunk, RetrievalResult } from '../types';
+import { RetrievalToolType, AgentState, RetrievalTask, DocumentChunk, RetrievalResult } from '../types';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
 
@@ -74,19 +74,19 @@ export async function retrieve(
         query: retrieval.query,
         type: retrieval.category,
       });
-      
+
       // Execute the retrieval
       const res = await retriever.retrieve({
         query: retrieval.query,
         userId: state.userId,
       }, env);
-      
+
       // Convert to document format
       const docs = retriever.toDocuments(res);
-      
+
       // Calculate execution time
       const execTime = performance.now() - startTime;
-      
+
       // Create a standardized retrieval result for the unified reranker
       const retrievalResult: RetrievalResult = {
         query: retrieval.query,
@@ -98,13 +98,19 @@ export async function retrieve(
           totalCandidates: docs.length,
         }
       };
-      
-      // Also return the original retrieval task with docs for backward compatibility
+
+      // Return the enhanced retrieval task with all result information
       return {
         result: retrievalResult,
         task: {
           ...retrieval,
-          docs,
+          chunks: docs,
+          sourceType: retrieval.category,
+          metadata: {
+            executionTimeMs: execTime,
+            retrievalStrategy: retriever.name || retrieval.category,
+            totalCandidates: docs.length,
+          }
         }
       };
     });
@@ -114,12 +120,6 @@ export async function retrieve(
 
     // Extract the retrieval tasks and results for the unified format
     const retrievalTasks: RetrievalTask[] = results.map(r => r.task);
-    
-    // Organize retrieval results by category for the unified reranker
-    const retrievalResults: Record<string, RetrievalResult> = {};
-    results.forEach(r => {
-      retrievalResults[r.result.sourceType] = r.result;
-    });
 
     /* ------------------------------------------------------------------ */
     /*  Finish, log, and return the state update                          */
@@ -129,15 +129,12 @@ export async function retrieve(
 
     logger.info({
       elapsedMs: elapsed,
-      totalCategories: Object.keys(retrievalResults).length,
+      totalCategories: results.length,
       totalChunks: results.reduce((sum, r) => sum + r.result.chunks.length, 0),
     }, "Retrieval process complete");
 
     return {
-      // Keep backward compatibility with the old format
       retrievals: retrievalTasks,
-      // Add the new unified format for the reranker
-      retrievalResults: retrievalResults,
       metadata: {
         currentNode: "retrieve",
         executionTimeMs: elapsed,

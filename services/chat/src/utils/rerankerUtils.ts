@@ -1,5 +1,5 @@
 import { getLogger } from '@dome/logging';
-import { DocumentChunk, RetrievalResult, RerankedResult, AgentState } from '../types';
+import { DocumentChunk, RetrievalResult, AgentState, RetrievalTask, RetrievalToolType } from '../types';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from './errors';
 
@@ -11,7 +11,7 @@ import { toDomeError } from './errors';
 export interface RerankerOptions {
   /** The name of the reranker for logging and observability */
   name: string;
-  /** The model to use for reranking (e.g., 'bge-reranker', 'cohere-rerank') */
+  /** The model to use for reranking (e.g., 'bge-reranker-base') */
   model: string;
   /** Threshold score for filtering results (0-1) */
   scoreThreshold?: number;
@@ -39,22 +39,37 @@ export function createReranker(options: RerankerOptions) {
   const logger = getLogger().child({ component: name });
   
   /**
-   * Reranks retrieval results using a cross-encoder model
+   * Reranks retrieval results using a cross-encoder model from Workers AI
    * 
    * @param retrievalResult Initial retrieval results to rerank
    * @param query The query used for retrieval and reranking
-   * @param env Environment variables
+   * @param env Environment variables with Workers AI bindings
    * @param traceId Trace ID for observability
    * @param spanId Parent span ID for observability
    * @returns Reranked results with improved relevance scores
    */
+  /**
+   * Interface for processed reranker results, used internally
+   * by the reranker but not exposed outside
+   */
+  interface RerankerProcessedResult {
+    originalResults: RetrievalResult;
+    rerankedChunks: DocumentChunk[];
+    metadata: {
+      rerankerModel: string;
+      executionTimeMs: number;
+      scoreThreshold: number;
+      error?: string;
+    };
+  }
+
   return async function rerank(
     retrievalResult: RetrievalResult,
     query: string,
     env: Env,
     traceId: string,
     spanId: string
-  ): Promise<RerankedResult> {
+  ): Promise<RetrievalTask> {
     const startTime = performance.now();
     const minimalState: AgentState = {
       userId: 'system',
@@ -78,20 +93,46 @@ export function createReranker(options: RerankerOptions) {
       query,
       chunkCount: retrievalResult.chunks.length,
       sourceType: retrievalResult.sourceType
-    }, `Starting ${name} reranking operation`);
+    }, `Starting ${name} reranking operation with Workers AI`);
     
     try {
       // Only rerank if we have chunks to process
       if (retrievalResult.chunks.length === 0) {
         logger.info('No chunks to rerank, returning empty result');
         
-        const emptyResult: RerankedResult = {
-          originalResults: retrievalResult,
-          rerankedChunks: [],
+        // Map sourceType to RetrievalToolType or use sourceType as category with type assertion
+        let category: RetrievalToolType;
+        switch (retrievalResult.sourceType) {
+          case 'code':
+            category = RetrievalToolType.CODE;
+            break;
+          case 'doc':
+          case 'docs':
+            category = RetrievalToolType.DOC;
+            break;
+          case 'note':
+          case 'notes':
+            category = RetrievalToolType.NOTE;
+            break;
+          case 'web':
+            category = RetrievalToolType.WEB;
+            break;
+          default:
+            // Use type assertion for custom source types
+            category = retrievalResult.sourceType as unknown as RetrievalToolType;
+        }
+        
+        const emptyResult: RetrievalTask = {
+          category: category,
+          query: query,
+          chunks: [],
+          sourceType: retrievalResult.sourceType,
           metadata: {
             rerankerModel: model,
             executionTimeMs: 0,
-            scoreThreshold
+            scoreThreshold,
+            retrievalStrategy: retrievalResult.metadata.retrievalStrategy,
+            totalCandidates: retrievalResult.metadata.totalCandidates
           }
         };
         
@@ -108,13 +149,12 @@ export function createReranker(options: RerankerOptions) {
         return emptyResult;
       }
       
-      // In a real implementation, this would call an actual reranker model API
-      // Here we're simulating the reranking process
-      const rerankedChunks = await simulateReranking(
+      // Use Workers AI reranker to score the chunks
+      const rerankedChunks = await rerankWithWorkersAI(
         retrievalResult.chunks,
         query,
-        retrievalResult.sourceType,
-        model
+        model,
+        env
       );
       
       // Filter by threshold and limit result count
@@ -139,14 +179,40 @@ export function createReranker(options: RerankerOptions) {
         executionTimeMs
       });
       
-      // Create result
-      const result: RerankedResult = {
-        originalResults: retrievalResult,
-        rerankedChunks: topResults,
+      // Map sourceType to RetrievalToolType for the result
+      let resultCategory: RetrievalToolType;
+      switch (retrievalResult.sourceType) {
+        case 'code':
+          resultCategory = RetrievalToolType.CODE;
+          break;
+        case 'doc':
+        case 'docs':
+          resultCategory = RetrievalToolType.DOC;
+          break;
+        case 'note':
+        case 'notes':
+          resultCategory = RetrievalToolType.NOTE;
+          break;
+        case 'web':
+          resultCategory = RetrievalToolType.WEB;
+          break;
+        default:
+          // Use type assertion for custom source types
+          resultCategory = retrievalResult.sourceType as unknown as RetrievalToolType;
+      }
+
+      // Create result as RetrievalTask
+      const result: RetrievalTask = {
+        category: resultCategory,
+        query: query,
+        chunks: topResults,
+        sourceType: retrievalResult.sourceType,
         metadata: {
           rerankerModel: model,
           executionTimeMs,
-          scoreThreshold
+          scoreThreshold,
+          retrievalStrategy: retrievalResult.metadata.retrievalStrategy,
+          totalCandidates: retrievalResult.metadata.totalCandidates
         }
       };
       
@@ -157,16 +223,19 @@ export function createReranker(options: RerankerOptions) {
         returnedChunks: topResults.length
       }, `${name} reranking completed`);
       
+      // Create a new state with the retrieval task added
+      const updatedState: AgentState = {
+        ...minimalState,
+        retrievals: [...(minimalState.retrievals || []), result]
+      };
+      
       ObservabilityService.endSpan(
         env,
         traceId,
         rerankerSpanId,
         `rerank_${name}`,
         minimalState,
-        {
-          ...minimalState,
-          rerankedResults: { [retrievalResult.sourceType]: result }
-        },
+        updatedState,
         executionTimeMs
       );
       
@@ -186,16 +255,57 @@ export function createReranker(options: RerankerOptions) {
       
       // Return original chunks on error, marking that reranking failed
       const executionTimeMs = performance.now() - startTime;
-      const fallbackResult: RerankedResult = {
-        originalResults: retrievalResult,
-        rerankedChunks: retrievalResult.chunks.slice(0, maxResults),
+      
+      // Map sourceType to RetrievalToolType for the fallback result
+      let fallbackCategory: RetrievalToolType;
+      switch (retrievalResult.sourceType) {
+        case 'code':
+          fallbackCategory = RetrievalToolType.CODE;
+          break;
+        case 'doc':
+        case 'docs':
+          fallbackCategory = RetrievalToolType.DOC;
+          break;
+        case 'note':
+        case 'notes':
+          fallbackCategory = RetrievalToolType.NOTE;
+          break;
+        case 'web':
+          fallbackCategory = RetrievalToolType.WEB;
+          break;
+        default:
+          // Use type assertion for custom source types
+          fallbackCategory = retrievalResult.sourceType as unknown as RetrievalToolType;
+      }
+      
+      const fallbackResult: RetrievalTask = {
+        category: fallbackCategory,
+        query: query,
+        chunks: retrievalResult.chunks.slice(0, maxResults),
+        sourceType: retrievalResult.sourceType,
         metadata: {
           rerankerModel: model,
           executionTimeMs,
           scoreThreshold,
+          retrievalStrategy: retrievalResult.metadata.retrievalStrategy,
+          totalCandidates: retrievalResult.metadata.totalCandidates,
           // Using type assertion to allow error property
           error: domeError.message
-        } as any
+        }
+      };
+      
+      // Create updated state with retrieval task for error case
+      const updatedErrorState: AgentState = {
+        ...minimalState,
+        retrievals: [...(minimalState.retrievals || []), fallbackResult],
+        metadata: {
+          ...minimalState.metadata,
+          errors: [{
+            node: `rerank_${name}`,
+            message: domeError.message,
+            timestamp: Date.now()
+          }]
+        }
       };
       
       ObservabilityService.endSpan(
@@ -204,16 +314,7 @@ export function createReranker(options: RerankerOptions) {
         rerankerSpanId,
         `rerank_${name}`,
         minimalState,
-        {
-          ...minimalState,
-          metadata: {
-            errors: [{
-              node: `rerank_${name}`,
-              message: domeError.message,
-              timestamp: Date.now()
-            }]
-          }
-        },
+        updatedErrorState,
         executionTimeMs
       );
       
@@ -223,109 +324,109 @@ export function createReranker(options: RerankerOptions) {
 }
 
 /**
- * Simulates the reranking process with a cross-encoder model
- * 
- * In a real implementation, this would call an external reranking API or library.
- * This implementation simulates the reranking process by:
- * 1. Calculating synthetic scores based on content features relevant to the source type
- * 2. Sorting chunks based on the calculated scores
- * 3. Adding rerankerScore to chunk metadata
+ * Interface for the reranking request to Workers AI
+ */
+interface RerankerRequest {
+  query: string;
+  documents: string[];
+}
+
+/**
+ * Interface for the reranking response from Workers AI
+ */
+interface RerankerResponse {
+  results: Array<{
+    score: number;
+    index: number;
+  }>;
+}
+
+/**
+ * Uses Workers AI Reranker to score the document chunks based on relevance to the query
  * 
  * @param chunks Document chunks to rerank
  * @param query Query to use for relevance comparison
- * @param sourceType Type of source being reranked (code, notes, docs)
- * @param model Model name to simulate
+ * @param modelName Name of the Workers AI model to use for reranking
+ * @param env Environment with Workers AI bindings
  * @returns Reranked document chunks with updated rerankerScore
  */
-async function simulateReranking(
+async function rerankWithWorkersAI(
   chunks: DocumentChunk[],
   query: string,
-  sourceType: string,
-  model: string
+  modelName: string,
+  env: Env
 ): Promise<DocumentChunk[]> {
-  // Normalize query for comparison
-  const normalizedQuery = query.toLowerCase();
-  const queryTerms = new Set(normalizedQuery.split(/\s+/).filter(term => term.length > 2));
+  const logger = getLogger().child({ component: 'WorkersAIReranker' });
   
-  // Create a copy of chunks to avoid mutating the original
-  const rerankedChunks = [...chunks].map(chunk => {
-    const content = chunk.content.toLowerCase();
-    let score = chunk.metadata.relevanceScore || 0.5; // Start with base score
+  try {
+    logger.info({
+      modelName,
+      chunkCount: chunks.length,
+      query
+    }, 'Starting Workers AI reranking');
     
-    // Common scoring factors (for all source types)
-    // Term frequency
-    const termMatches = Array.from(queryTerms).filter(term => content.includes(term)).length;
-    const termMatchScore = queryTerms.size > 0 ? termMatches / queryTerms.size : 0;
+    // Extract text content from chunks for reranking
+    const documents = chunks.map(chunk => chunk.content);
     
-    // Exact phrase matching (higher weight)
-    const exactPhraseBoost = content.includes(normalizedQuery) ? 0.2 : 0;
+    // Prepare request payload
+    const rerankerInput: RerankerRequest = {
+      query,
+      documents
+    };
     
-    // Source-specific scoring adjustments
-    let sourceSpecificScore = 0;
+    // Call Workers AI reranker model
+    // Use the model binding based on the modelName or fallback to '@cf/baai/bge-reranker-base'
+    // Use type assertion to handle AI property on Env
+    const envWithAI = env as any;
+    const aiModel = envWithAI.AI ?
+      envWithAI.AI[modelName] || envWithAI.AI['@cf/baai/bge-reranker-base']
+      : undefined;
     
-    if (sourceType === 'code') {
-      // For code, boost if content includes function definitions, classes, or code patterns
-      if (/function\s+|class\s+|def\s+|import\s+|export\s+/.test(content)) {
-        sourceSpecificScore += 0.15;
-      }
-      // Boost documentation comments
-      if (/\/\*\*|\*\/|\/\/\/|#\s+|"""/.test(content)) {
-        sourceSpecificScore += 0.1;
-      }
-    } else if (sourceType === 'notes') {
-      // For notes, boost if content includes headers, bullet points, or important markers
-      if (/^#|^\*|^\-|^>\s|important|note:|remember|key point/i.test(content)) {
-        sourceSpecificScore += 0.15;
-      }
-      // Boost for recent notes (if timestamp available)
-      if (chunk.metadata.createdAt) {
-        const createdDate = new Date(chunk.metadata.createdAt);
-        const now = new Date();
-        const daysSince = (now.getTime() - createdDate.getTime()) / (1000 * 3600 * 24);
-        if (daysSince < 7) {
-          sourceSpecificScore += 0.1;
-        }
-      }
-    } else if (sourceType === 'docs') {
-      // For docs, boost if content includes headers, definitions, or key terms
-      if (/^#|definition:|is defined as|refers to|means|overview|summary/i.test(content)) {
-        sourceSpecificScore += 0.15;
-      }
-      // Boost for docs with titles that match query terms
-      if (chunk.metadata.title) {
-        const titleTerms = chunk.metadata.title.toLowerCase().split(/\s+/);
-        const titleMatchCount = Array.from(queryTerms).filter(term => 
-          titleTerms.some(titleTerm => titleTerm.includes(term))
-        ).length;
-        if (titleMatchCount > 0) {
-          sourceSpecificScore += 0.1 * (titleMatchCount / queryTerms.size);
-        }
-      }
+    if (!aiModel) {
+      throw new Error(`Workers AI model '${modelName}' not available`);
     }
     
-    // Calculate final reranker score
-    // Combine embedding score (initial retrieval), term matching, and source-specific boosts
-    const embeddingScore = chunk.metadata.embeddingScore || score;
-    const rerankerScore = Math.min(
-      0.95, // Cap at 0.95 to avoid perfect 1.0 scores
-      0.3 * embeddingScore + 0.4 * termMatchScore + 0.2 * exactPhraseBoost + 0.1 * sourceSpecificScore
+    // Run reranking
+    const rerankerOutput = await aiModel.run(rerankerInput) as RerankerResponse;
+    
+    // Map scores back to original chunks
+    const rerankedChunks = chunks.map((chunk, i) => {
+      // Find the corresponding score from reranker results
+      const result = rerankerOutput.results.find(r => r.index === i);
+      const score = result ? result.score : 0;
+      
+      // Create a new chunk with the reranker score
+      return {
+        ...chunk,
+        metadata: {
+          ...chunk.metadata,
+          rerankerScore: score
+        }
+      };
+    });
+    
+    // Sort by reranker score (highest first)
+    return rerankedChunks.sort((a, b) => 
+      (b.metadata.rerankerScore || 0) - (a.metadata.rerankerScore || 0)
     );
+  } catch (error) {
+    // Log error details
+    const domeError = toDomeError(error);
+    logger.error({
+      err: domeError,
+      modelName
+    }, 'Workers AI reranking failed');
     
-    // Add small random variation to avoid ties (0.02 max)
-    const finalScore = Math.max(0, Math.min(0.95, rerankerScore + (Math.random() * 0.02)));
-    
-    // Return new chunk with updated score
-    return {
+    // Fallback to basic scoring if Workers AI fails
+    // Return chunks with relevance scores or default scores
+    return chunks.map(chunk => ({
       ...chunk,
       metadata: {
         ...chunk.metadata,
-        rerankerScore: Number(finalScore.toFixed(4))
+        rerankerScore: chunk.metadata.relevanceScore || 0.5
       }
-    };
-  });
-  
-  // Sort by reranker score (highest first)
-  return rerankedChunks.sort((a, b) => 
-    (b.metadata.rerankerScore || 0) - (a.metadata.rerankerScore || 0)
-  );
+    })).sort((a, b) => 
+      (b.metadata.rerankerScore || 0) - (a.metadata.rerankerScore || 0)
+    );
+  }
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { retrievalEvaluatorLLM } from './retrievalEvaluatorLLM';
 import { ModelFactory } from '../services/modelFactory';
 import { ObservabilityService } from '../services/observabilityService';
-import { AgentState, RerankedResult, DocumentChunk } from '../types';
+import { AgentState, DocumentChunk, RetrievalTask } from '../types';
 
 // Mock dependencies
 vi.mock('@dome/logging', () => ({
@@ -43,8 +43,8 @@ describe('retrievalEvaluatorLLM Node', () => {
   let mockEnv: any;
   let mockConfig: any;
   let mockLlmResponse: any;
-  let mockCodeRerankedResult: RerankedResult;
-  let mockDocsRerankedResult: RerankedResult;
+  let mockCodeRetrievalTask: RetrievalTask;
+  let mockDocsRetrievalTask: RetrievalTask;
 
   beforeEach(() => {
     // Reset mocks
@@ -93,41 +93,33 @@ describe('retrievalEvaluatorLLM Node', () => {
       }
     ];
     
-    // Create reranked results
-    mockCodeRerankedResult = {
-      originalResults: {
-        query: 'How do I implement a binary search tree in Python?',
-        chunks: mockCodeChunks,
-        sourceType: 'code',
-        metadata: {
-          executionTimeMs: 100,
-          retrievalStrategy: 'vector',
-          totalCandidates: 5
-        }
-      },
-      rerankedChunks: mockCodeChunks,
+    // Create retrieval tasks
+    mockCodeRetrievalTask = {
+      category: 'code' as any,
+      query: 'binary search tree python implementation',
+      chunks: mockCodeChunks,
+      sourceType: 'code',
       metadata: {
+        executionTimeMs: 100,
+        retrievalStrategy: 'vector',
+        totalCandidates: 5,
         rerankerModel: 'bge-reranker-code',
-        executionTimeMs: 50,
+        rerankerExecutionTimeMs: 50,
         scoreThreshold: 0.25
       }
     };
     
-    mockDocsRerankedResult = {
-      originalResults: {
-        query: 'How do I implement a binary search tree in Python?',
-        chunks: mockDocsChunks,
-        sourceType: 'docs',
-        metadata: {
-          executionTimeMs: 90,
-          retrievalStrategy: 'vector',
-          totalCandidates: 3
-        }
-      },
-      rerankedChunks: mockDocsChunks,
+    mockDocsRetrievalTask = {
+      category: 'docs' as any,
+      query: 'binary search tree data structure',
+      chunks: mockDocsChunks,
+      sourceType: 'docs',
       metadata: {
+        executionTimeMs: 90,
+        retrievalStrategy: 'vector',
+        totalCandidates: 3,
         rerankerModel: 'bge-reranker-docs',
-        executionTimeMs: 45,
+        rerankerExecutionTimeMs: 45,
         scoreThreshold: 0.25
       }
     };
@@ -144,19 +136,9 @@ describe('retrievalEvaluatorLLM Node', () => {
         maxTokens: 1000,
       },
       retrievals: [
-        {
-          category: 'code' as any,
-          query: 'binary search tree python implementation'
-        },
-        {
-          category: 'docs' as any,
-          query: 'binary search tree data structure'
-        }
+        mockCodeRetrievalTask,
+        mockDocsRetrievalTask
       ],
-      rerankedResults: {
-        code: mockCodeRerankedResult,
-        docs: mockDocsRerankedResult
-      },
       metadata: {
         traceId: 'trace-123',
       }
@@ -260,11 +242,11 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
     });
   });
 
-  it('should handle state with no reranked results', async () => {
-    // Setup state with no reranked results
+  it('should handle state with no retrievals', async () => {
+    // Setup state with no retrievals
     const stateWithoutResults = {
       ...mockState,
-      rerankedResults: undefined
+      retrievals: undefined
     };
     
     // Execute the node
@@ -281,11 +263,11 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
     });
   });
 
-  it('should handle state with empty reranked results object', async () => {
-    // Setup state with empty reranked results
+  it('should handle state with empty retrievals array', async () => {
+    // Setup state with empty retrievals
     const stateWithEmptyResults = {
       ...mockState,
-      rerankedResults: {}
+      retrievals: []
     };
     
     // Execute the node
