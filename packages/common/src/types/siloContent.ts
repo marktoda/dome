@@ -183,6 +183,8 @@ export interface SiloContentItem {
   body?: string;
   /** Pre-signed URL for downloading large items (> 1MB), only included for large items */
   url?: string;
+  /** Custom metadata stored with the content in R2 */
+  customMetadata?: Record<string, any>;
 }
 
 /**

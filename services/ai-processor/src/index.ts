@@ -505,12 +505,24 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           }
 
           // Process with LLM - track as a sub-operation
-          const metadata = await trackOperation(
+          const rawMetadata = await trackOperation(
             'llm_process_content',
             () => this.services.llm.processContent(body, contentType),
             { id, userId, contentType, requestId }
           );
-          getLogger().info({ metadata }, 'LLM processing completed');
+          getLogger().info({ rawMetadata }, 'LLM processing completed');
+
+          // Ensure metadata conforms to EnrichedMetadataSchema
+          const metadata = {
+            title: typeof rawMetadata.title === 'string' ? rawMetadata.title : 'Untitled Content',
+            summary: typeof rawMetadata.summary === 'string' ? rawMetadata.summary : undefined,
+            todos: Array.isArray(rawMetadata.todos) ? rawMetadata.todos : undefined,
+            reminders: Array.isArray(rawMetadata.reminders) ? rawMetadata.reminders : undefined,
+            topics: Array.isArray(rawMetadata.topics) ? rawMetadata.topics : undefined,
+            processingVersion: typeof rawMetadata.processingVersion === 'number' ? rawMetadata.processingVersion : 2,
+            modelUsed: typeof rawMetadata.modelUsed === 'string' ? rawMetadata.modelUsed : '@cf/google/gemma-7b-it-lora',
+            error: typeof rawMetadata.error === 'string' ? rawMetadata.error : undefined
+          };
 
           // Publish to ENRICHED_CONTENT queue
           const enrichedMessage: EnrichedContentMessage = {
@@ -532,9 +544,9 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
 
           // Send todos to the dedicated todos queue if they exist and the queue binding is available
           if ('TODOS' in this.env &&
-            enrichedMessage.metadata.todos &&
-            Array.isArray(enrichedMessage.metadata.todos) &&
-            enrichedMessage.metadata.todos.length > 0 &&
+            metadata.todos &&
+            Array.isArray(metadata.todos) &&
+            metadata.todos.length > 0 &&
             userId) { // Ensure userId is defined and not null
 
             await sendTodosToQueue(
@@ -548,10 +560,10 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             id,
             hasSummary: !!metadata.summary,
             summaryLength: metadata.summary ? metadata.summary.length : 0,
-            hasTodos: Array.isArray(metadata.todos) && metadata.todos.length > 0,
-            todoCount: Array.isArray(metadata.todos) ? metadata.todos.length : 0,
-            hasTopics: Array.isArray(metadata.topics) && metadata.topics.length > 0,
-            topicCount: Array.isArray(metadata.topics) ? metadata.topics.length : 0,
+            hasTodos: !!metadata.todos && metadata.todos.length > 0,
+            todoCount: metadata.todos ? metadata.todos.length : 0,
+            hasTopics: !!metadata.topics && metadata.topics.length > 0,
+            topicCount: metadata.topics ? metadata.topics.length : 0,
           });
 
           getLogger().info(
@@ -567,7 +579,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           aiProcessorMetrics.counter('messages.processed', 1, {
             contentType,
             hasSummary: !!metadata.summary ? 'true' : 'false',
-            hasTodos: Array.isArray(metadata.todos) && metadata.todos.length > 0 ? 'true' : 'false'
+            hasTodos: !!metadata.todos && metadata.todos.length > 0 ? 'true' : 'false'
           });
 
           aiProcessorMetrics.trackOperation('process_message', true, {

@@ -1,6 +1,7 @@
 import { getLogger, logError } from '@dome/logging';
 import { toDomeError } from '../utils/errors';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { formatDocsForPrompt } from '../utils/promptHelpers';
 import { AgentState } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { ObservabilityService } from '../services/observabilityService';
@@ -53,7 +54,14 @@ export async function generateAnswer(
     const userQuery = state.messages[0].content;
 
     // Get the synthesized context from previous node (fallback to empty if missing)
-    const synthesizedContext = state.reasoning?.[0] || "No context available.";
+    let synthesizedContext;
+    if (state.synthesizedContext) {
+      synthesizedContext = state.synthesizedContext;
+    } else if (state.docs) {
+      synthesizedContext = formatDocsForPrompt(state.docs);
+    } else {
+      throw new Error("No synthesized context or documents found in state");
+    }
 
     // Configure model parameters
     const modelId = state.options?.modelId ?? "gpt-4-turbo"; // Use latest model

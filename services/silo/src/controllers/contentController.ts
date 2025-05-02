@@ -85,7 +85,7 @@ export class ContentController {
     }
   }
 
-  /** Retrieve multiple items by id or list a user’s content with pagination. */
+  /** Retrieve multiple items by id or list a user's content with pagination. */
   async batchGet(params: {
     ids?: string[];
     userId?: string | null;
@@ -113,11 +113,22 @@ export class ContentController {
           results[item.id] = item;
 
           const obj = await this.r2Service.getObject(item.r2Key);
-          if (obj && item.size <= SIMPLE_PUT_MAX_SIZE) {
-            results[item.id].body = await obj.text();
-          } else {
-            // TODO: fix
-            throw new ValidationError('Object too large for simple retrieval', { size: item.size });
+          if (obj) {
+            // Extract custom metadata from R2 object
+            if (obj.customMetadata) {
+              const { metadata: customMetadata } = this.parseCustomMetadata(obj.customMetadata);
+              if (customMetadata) {
+                results[item.id].customMetadata = customMetadata;
+              }
+            }
+            
+            // Get the content body for small objects
+            if (item.size <= SIMPLE_PUT_MAX_SIZE) {
+              results[item.id].body = await obj.text();
+            } else {
+              // TODO: fix
+              throw new ValidationError('Object too large for simple retrieval', { size: item.size });
+            }
           }
         }),
       );

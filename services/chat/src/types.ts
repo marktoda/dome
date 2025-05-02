@@ -285,6 +285,7 @@ export interface AgentState {
   // Retrieved documents and results
   docs?: Document[];
   sources?: SourceMetadata[];
+  synthesizedContext?: string;
 
   // Reasoning and instructions
   reasoning?: string[];
@@ -515,4 +516,5 @@ export const GraphStateAnnotation = Annotation.Root({
     reducer: (prev: RetrievalTask[], next: RetrievalTask[]) => [...prev, ...next],
     default: () => [],
   }),
+  synthesizedContext: Annotation<string>(),
 });

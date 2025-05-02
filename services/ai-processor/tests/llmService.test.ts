@@ -1,5 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LlmService } from '../src/services/llmService';
+import * as schemas from '../src/schemas';
+
+// Mock the schema modules
+vi.mock('../src/schemas', async () => {
+  const actualSchemas = await vi.importActual('../src/schemas');
+  return {
+    ...actualSchemas,
+    getSchemaForContentType: vi.fn().mockImplementation((contentType) => {
+      // Return a mock schema that validates our test data
+      return {
+        parse: vi.fn().mockImplementation((data) => data),
+      };
+    }),
+    getSchemaInstructions: vi.fn().mockImplementation((contentType) => {
+      return `Mock instructions for ${contentType}`;
+    }),
+  };
+});
 
 // Mock the AI binding
 const mockAi = {
@@ -71,7 +89,7 @@ describe('LlmService', () => {
       expect(result.todos[0]).toHaveProperty('priority', 'high');
       expect(result).toHaveProperty('topics');
       expect(result.topics).toEqual(['test', 'example']);
-      expect(result).toHaveProperty('processingVersion', 1);
+      expect(result).toHaveProperty('processingVersion', 2);
       expect(result).toHaveProperty('modelUsed', '@cf/google/gemma-7b-it-lora');
     });
 
@@ -110,7 +128,7 @@ describe('LlmService', () => {
       expect(result).toHaveProperty('components', ['test()']);
       expect(result).toHaveProperty('language', 'JavaScript');
       expect(result).toHaveProperty('topics', ['testing', 'functions']);
-      expect(result).toHaveProperty('processingVersion', 1);
+      expect(result).toHaveProperty('processingVersion', 2);
     });
 
     it('should process article content correctly', async () => {
@@ -159,7 +177,7 @@ describe('LlmService', () => {
       expect(result).toHaveProperty('title');
       expect(result).toHaveProperty('summary', 'Content processing failed');
       expect(result).toHaveProperty('error', 'AI processing failed');
-      expect(result).toHaveProperty('processingVersion', 1);
+      expect(result).toHaveProperty('processingVersion', 2);
     });
 
     it('should handle parsing errors gracefully', async () => {
@@ -214,19 +232,20 @@ describe('LlmService', () => {
       // Check that the content was truncated in the prompt
       const aiCallArgs = mockAi.run.mock.calls[0][1];
       expect(aiCallArgs.messages[0].content.length).toBeLessThan(10000);
-      expect(aiCallArgs.messages[0].content).toContain('[Content truncated');
+      expect(aiCallArgs.messages[0].content).toContain('[content truncated]');
     });
 
-    it('should use default prompt for unknown content types', async () => {
+    it('should use default schema for unknown content types', async () => {
+      // Spy on schema getter functions
+      const spyGetSchema = vi.spyOn(schemas, 'getSchemaForContentType');
+      const spyGetInstructions = vi.spyOn(schemas, 'getSchemaInstructions');
+      
       const content = 'This is some content with unknown type.';
       await llmService.processContent(content, 'unknown-type');
 
-      // Check that the default prompt was used
-      const prompt = mockAi.run.mock.calls[0][1].messages[0].content;
-      expect(prompt).toContain('Analyze the following content');
-      expect(prompt).not.toContain('Analyze the following note');
-      expect(prompt).not.toContain('Analyze the following code');
-      expect(prompt).not.toContain('Analyze the following article');
+      // Check that the default schema was requested
+      expect(spyGetSchema).toHaveBeenCalledWith('unknown-type');
+      expect(spyGetInstructions).toHaveBeenCalledWith('unknown-type');
     });
 
     it('should generate a fallback title from the first line', async () => {
@@ -395,41 +414,35 @@ describe('LlmService', () => {
     });
   });
 
-  describe('sanitizeJsonString', () => {
-    it('should fix trailing commas', () => {
-      const malformed = '{"name": "test", "values": [1, 2, 3,], }';
-      const result = (llmService as any).sanitizeJsonString(malformed);
-
-      // Should remove trailing commas
-      expect(result).not.toContain('3,]');
-      expect(result).not.toContain('], }');
-
-      // Should be valid JSON
-      expect(() => JSON.parse(result)).not.toThrow();
+  describe('helperMethods', () => {
+    it('should generate fallback title from first line', () => {
+      const title = (llmService as any).generateFallbackTitle("First line\nSecond line");
+      expect(title).toBe("First line");
     });
-
-    it('should fix unquoted property names', () => {
-      const malformed = '{name: "test", values: [1, 2, 3]}';
-      const result = (llmService as any).sanitizeJsonString(malformed);
-
-      // Should quote property names
-      expect(result).toContain('"name"');
-      expect(result).toContain('"values"');
-
-      // Should be valid JSON
-      expect(() => JSON.parse(result)).not.toThrow();
+    
+    it('should truncate long titles', () => {
+      const longLine = "A".repeat(100);
+      const title = (llmService as any).generateFallbackTitle(longLine);
+      expect(title.length).toBeLessThan(longLine.length);
+      expect(title).toContain("...");
     });
-
-    it('should fix single quotes', () => {
-      const malformed = "{'name': 'test', 'values': [1, 2, 3]}";
-      const result = (llmService as any).sanitizeJsonString(malformed);
-
-      // Should replace single quotes with double quotes
-      expect(result).toContain('"name"');
-      expect(result).toContain('"test"');
-
-      // Should be valid JSON
-      expect(() => JSON.parse(result)).not.toThrow();
+    
+    it('should handle empty content for title generation', () => {
+      const title = (llmService as any).generateFallbackTitle("");
+      expect(title).toBe("Untitled Content");
+    });
+    
+    it('should truncate content properly', () => {
+      const content = "A".repeat(10000);
+      const truncated = (llmService as any).truncateContent(content, 5000);
+      expect(truncated.length).toBeLessThanOrEqual(5000 + 25); // Allow for truncation message
+      expect(truncated).toContain("... [content truncated]");
+    });
+    
+    it('should not truncate content under the limit', () => {
+      const content = "A".repeat(100);
+      const truncated = (llmService as any).truncateContent(content, 200);
+      expect(truncated).toBe(content);
     });
   });
 });

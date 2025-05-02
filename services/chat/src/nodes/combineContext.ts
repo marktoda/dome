@@ -50,7 +50,7 @@ export async function combineContext(
           // Convert document chunks to standard document format
           const docs = retrieval.chunks.map(chunk => ({
             id: chunk.id,
-            title: chunk.metadata.title || `${sourceType} result`,
+            title: generateBetterTitle(chunk, sourceType),
             body: chunk.content,
             metadata: {
               source: chunk.metadata.source,
@@ -186,7 +186,7 @@ SYNTHESIZED CONTEXT OUTPUT:
     return {
       docs: selectedDocs,
       // Store synthesized context for the next node to use
-      reasoning: [synthesizedContext],
+      synthesizedContext,
       metadata: {
         currentNode: "combineContext",
         executionTimeMs: elapsed,
@@ -261,4 +261,113 @@ function formatToolResults(results: ToolResult[]): string {
       return `[Tool ${i + 1}] ${r.toolName}\nInput: ${JSON.stringify(r.input, null, 2)}\nOutput: ${out}`;
     })
     .join("\n\n");
+}
+
+/**
+ * Generate a better title for document chunks based on available metadata
+ * @param chunk The document chunk
+ * @param sourceType The source type (code, docs, etc.)
+ * @returns A descriptive title
+ */
+function generateBetterTitle(chunk: any, sourceType: string): string {
+  // If there's already a title, use it
+  if (chunk.metadata.title) {
+    return chunk.metadata.title;
+  }
+
+  // For code sources, create a more descriptive title
+  if (sourceType === 'code') {
+    const path = chunk.metadata.path;
+    const language = chunk.metadata.language;
+    const startLine = chunk.metadata.startLine;
+    const endLine = chunk.metadata.endLine;
+    
+    let title = 'Code';
+    
+    // Add file path if available
+    if (path) {
+      // Extract filename from path
+      const filename = path.split('/').pop();
+      title = filename || path;
+    }
+    
+    // Add language if available
+    if (language) {
+      title = `${title} (${language})`;
+    }
+    
+    // Add line numbers if available
+    if (startLine !== undefined && endLine !== undefined) {
+      title = `${title} [Lines ${startLine}-${endLine}]`;
+    } else if (startLine !== undefined) {
+      title = `${title} [Line ${startLine}]`;
+    }
+    
+    return title;
+  }
+  
+  // Helper function to generate content preview
+  function generateContentPreview(content: string, maxLength: number = 60): string {
+    // Extract the first characters up to maxLength
+    const previewText = content.trim().substring(0, maxLength);
+    
+    // Find a reasonable stopping point (end of word or sentence)
+    let endIndex = previewText.length;
+    if (previewText.length === maxLength) {
+      // Find the last space to avoid cutting words in half
+      const lastSpace = previewText.lastIndexOf(' ');
+      if (lastSpace > maxLength/2) { // Only use if we have a decent preview length
+        endIndex = lastSpace;
+      }
+      
+      // Or find the last sentence break for an even better cutoff point
+      const lastPeriod = previewText.lastIndexOf('.');
+      if (lastPeriod > maxLength/2) {
+        endIndex = lastPeriod + 1;
+      }
+    }
+    
+    const title = previewText.substring(0, endIndex).trim();
+    return title + (endIndex < content.trim().length ? '...' : '');
+  }
+
+  // For note sources, extract the first few words from content
+  if (sourceType === 'note' || sourceType === 'notes') {
+    if (chunk.content) {
+      return generateContentPreview(chunk.content);
+    }
+  }
+  
+  // For doc/docs sources, create a more descriptive title
+  if (sourceType === 'doc' || sourceType === 'docs') {
+    // First try to use the document name if available
+    if (chunk.metadata.documentName) {
+      return chunk.metadata.documentName;
+    }
+    
+    // Otherwise create a preview from content
+    if (chunk.content) {
+      return generateContentPreview(chunk.content);
+    }
+  }
+  
+  // For web sources, use the URL or domain
+  if (sourceType === 'web') {
+    if (chunk.metadata.url) {
+      try {
+        const url = new URL(chunk.metadata.url);
+        return url.hostname || chunk.metadata.url;
+      } catch {
+        return chunk.metadata.url;
+      }
+    }
+  }
+
+  // For other source types, try to create a meaningful title
+  if (chunk.metadata.source) {
+    return `${chunk.metadata.source}`;
+  }
+
+  // Fallback to generic title with source type
+  return `${sourceType} result`;
 }
