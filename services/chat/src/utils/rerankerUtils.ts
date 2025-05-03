@@ -31,7 +31,7 @@ export function createReranker(options: RerankerOptions) {
   const {
     name,
     model,
-    scoreThreshold = 0.2,
+    scoreThreshold = 0.0,
     maxResults = 8,
     keepBelowThreshold = false
   } = options;
@@ -382,7 +382,8 @@ async function rerankWithWorkersAI(
 
     // Call the reranker model
     const rerankerOutput = await envWithAI.AI.run('@cf/baai/bge-reranker-base', rerankerInput) as RerankerResponse;
-    
+
+
     // Map scores back to original chunks
     const rerankedChunks = chunks.map((chunk, i) => {
       // Find the corresponding score from reranker response
@@ -399,6 +400,13 @@ async function rerankWithWorkersAI(
         }
       };
     });
+    getLogger().info({
+      chunks: rerankedChunks.length, ranked: rerankedChunks.map((c) => ({
+        id: c.id,
+        rerankedScore: c.metadata.rerankerScore,
+        preScore: c.metadata.relevanceScore
+      }))
+    }, 'Workers AI reranked');
 
     // Sort by reranker score (highest first)
     return rerankedChunks.sort((a, b) =>

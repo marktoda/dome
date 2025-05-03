@@ -297,6 +297,33 @@ export class SiloClient {
   }
 
   /**
+   * Reprocess content items by IDs to re-publish to constellation and ai-processor services
+   * @param contentIds Array of content IDs to reprocess
+   * @returns Promise resolving to the reprocess response with count of reprocessed items
+   */
+  async reprocessContent(contentIds: string[]): Promise<{ reprocessed: number }> {
+    const startTime = performance.now();
+    try {
+      getLogger().info(
+        { contentIds, count: contentIds.length },
+        'Reprocessing content items'
+      );
+
+      const result = await this.binding.reprocessContent(contentIds);
+
+      metrics.increment(`${this.metricsPrefix}.reprocessContent.success`);
+      metrics.timing(`${this.metricsPrefix}.reprocessContent.latency_ms`, performance.now() - startTime);
+      metrics.gauge(`${this.metricsPrefix}.reprocessContent.count`, result.reprocessed);
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.reprocessContent.errors`);
+      logError(error, 'Error reprocessing content items', { contentCount: contentIds.length });
+      throw error;
+    }
+  }
+
+  /**
    * Normalize a user ID
    * @param userId The user ID to normalize
    * @returns The normalized user ID

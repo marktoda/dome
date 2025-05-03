@@ -6,7 +6,7 @@
  */
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/logging';
 import { DEFAULT_FILTER_CONFIG } from '../config/filterConfig';
 import { IgnorePatternProcessor } from '../utils/ignorePatternProcessor';
 import { RobotsChecker } from './website/robotsChecker';
@@ -68,16 +68,16 @@ export class WebsiteProvider implements Provider {
 
   async pull({ userId, resourceId, cursor }: PullOpts): Promise<PullResult> {
     const t0 = Date.now();
-    
+
     try {
       // Parse resourceId as a JSON string to get the website configuration
       let config: WebsiteConfig;
       try {
         config = JSON.parse(resourceId);
-      } catch (error) {
+      } catch (error: any) {
         throw new Error(`Invalid resourceId for website provider: ${error.message}`);
       }
-      
+
       if (!config.url) {
         throw new Error('Website configuration must include a URL');
       }
@@ -92,12 +92,12 @@ export class WebsiteProvider implements Provider {
       const includeScripts = config.includeScripts === true; // Default to false
       const includeStyles = config.includeStyles === true; // Default to false
       const followExternalLinks = config.followExternalLinks === true; // Default to false
-      
+
       // Check robots.txt if enabled
       if (respectRobotsTxt) {
         const baseUrl = new URL(config.url).origin;
         await this.robotsChecker.initialize(baseUrl);
-        
+
         if (!this.robotsChecker.isAllowed(config.url)) {
           this.log.warn({ url: config.url }, 'website: blocked by robots.txt');
           return { contents: [], newCursor: cursor };
@@ -120,7 +120,7 @@ export class WebsiteProvider implements Provider {
       // Determine what URLs we need to crawl based on the cursor
       let startUrls: string[] = [config.url];
       let changedSinceDate: Date | null = null;
-      
+
       if (cursor) {
         try {
           // Parse cursor as an ISO date string or as a JSON object with more detailed info
@@ -138,12 +138,12 @@ export class WebsiteProvider implements Provider {
 
       // Crawl the website
       const crawledPages = await this.crawler.crawl(startUrls, changedSinceDate);
-      
+
       if (!crawledPages.length) {
         this.log.info({ url: config.url }, 'website: no updates found');
-        return { 
-          contents: [], 
-          newCursor: this.createCursor(cursor, crawledPages, []) 
+        return {
+          contents: [],
+          newCursor: this.createCursor(cursor, crawledPages, [])
         };
       }
 
@@ -156,12 +156,12 @@ export class WebsiteProvider implements Provider {
       for (const page of crawledPages) {
         // Track URLs we've successfully crawled
         crawledUrls.push(page.url);
-        
+
         // Extract and clean content if it's an HTML page
         let content = page.content;
         let category: ContentCategory = 'document';
         let mimeType: MimeType = 'text/html';
-        
+
         if (page.contentType.includes('text/html')) {
           content = this.extractor.extract(page.content, page.url);
           category = 'document';
@@ -229,10 +229,10 @@ export class WebsiteProvider implements Provider {
       }
 
       this.log.info(
-        { 
-          url: config.url, 
-          pages: puts.length, 
-          filtered: filteredPages, 
+        {
+          url: config.url,
+          pages: puts.length,
+          filtered: filteredPages,
           crawled: crawledUrls.length,
           pending: pendingUrls.length
         },
@@ -241,29 +241,26 @@ export class WebsiteProvider implements Provider {
 
       return { contents: puts, newCursor };
     } catch (error) {
-      this.log.error({ 
-        error: error.message, 
-        stack: error.stack 
-      }, 'website: pull failed');
-      
+      logError(error, 'website: pull failed');
+
       metrics.increment('website.pull.errors');
       throw error;
     }
   }
 
   private createCursor(
-    currentCursor: string | null, 
-    crawledPages: WebsitePage[], 
+    currentCursor: string | null,
+    crawledPages: WebsitePage[],
     pendingUrls: string[]
   ): string {
     // Create a cursor that contains:
     // 1. The timestamp of this crawl
     // 2. The URLs that were successfully crawled
     // 3. The URLs that are pending for the next crawl
-    
+
     // Parse existing cursor if available
     let existingCrawledUrls: string[] = [];
-    
+
     if (currentCursor) {
       try {
         const parsed = JSON.parse(currentCursor);
@@ -274,17 +271,17 @@ export class WebsiteProvider implements Provider {
         // If not valid JSON, start fresh
       }
     }
-    
+
     // Combine existing and new crawled URLs
     const newCrawledUrls = crawledPages.map(page => page.url);
     const allCrawledUrls = [...new Set([...existingCrawledUrls, ...newCrawledUrls])];
-    
+
     const cursor = {
       lastCrawl: new Date().toISOString(),
       crawledUrls: allCrawledUrls,
       pendingUrls: pendingUrls.length > 0 ? pendingUrls : null,
     };
-    
+
     return JSON.stringify(cursor);
   }
 }

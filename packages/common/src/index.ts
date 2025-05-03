@@ -19,6 +19,3 @@ export * from './services';
 
 // Export all constants
 export * from './constants/publicContent';
-
-// Export identity context module
-export * from './identity';
