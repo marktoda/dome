@@ -1,0 +1,2 @@
+# Classify markdown files as documentation instead of code
+*.md linguist-documentation

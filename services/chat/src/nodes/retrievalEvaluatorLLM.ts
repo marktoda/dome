@@ -4,6 +4,7 @@ import { AgentState, DocumentChunk, RetrievalEvaluation, RetrievalTask } from '.
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { toDomeError } from '../utils/errors';
+import { getRetrievalEvaluationPrompt } from '../config/promptsConfig';
 
 /**
  * Retrieval Evaluator LLM Node
@@ -111,25 +112,8 @@ export async function retrievalEvaluatorLLM(
       return `SOURCE TYPE: ${sourceType}\n${chunks}`;
     }).join("\n\n");
     
-    // Build evaluation prompt
-    const systemPrompt = `You are an expert information retrieval evaluator. 
-Your task is to evaluate the relevance and sufficiency of the retrieved content for answering the user's query.
-Consider both the quality and completeness of the information.
-
-QUERY: ${query}
-
-RETRIEVED CONTENT:
-${contentToEvaluate}
-
-Carefully analyze the retrieved content and answer these questions:
-1. How relevant is the retrieved content to the query? (Rate 0-10)
-2. Is the information sufficient to provide a complete answer? (Yes/No)
-3. What key information is present in the retrieved content?
-4. What important information might be missing?
-5. Would external tools or information sources be needed to properly answer this query? Why or why not?
-
-Based on your analysis, you must decide if the information is ADEQUATE or INADEQUATE to answer the query.
-Provide your reasoning and a final decision.`;
+    // Build evaluation prompt using the centralized config
+    const systemPrompt = getRetrievalEvaluationPrompt(query, contentToEvaluate);
     
     // Call LLM for evaluation
     const model = ModelFactory.createChatModel(env, {
@@ -265,3 +249,4 @@ Provide your reasoning and a final decision.`;
     };
   }
 }
+

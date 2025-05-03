@@ -3,3 +3,4 @@ export { formatDocsForPrompt, truncateToMaxTokens, buildMessages } from './promp
 export { transformToSSE } from './sseTransformer';
 export { countTokens, scoreFilter, concatListFiles, reduceRagContext } from './ragUtils';
 export { createStateSummary } from './loggingHelpers';
+export { injectSituationalContext, UserContextData } from './contextInjector';

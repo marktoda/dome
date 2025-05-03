@@ -8,6 +8,7 @@ import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { getModelConfig, calculateTokenLimits } from '../config/modelConfig';
 import { buildMessages } from '../utils';
+import { getGenerateAnswerPrompt } from '../config/promptsConfig';
 
 /**
  * Generate Answer Node
@@ -78,23 +79,10 @@ export async function generateAnswer(
       state.options?.maxTokens
     );
 
-    // Build the system prompt for answer generation
-    const systemPrompt = `
-You are an expert AI assistant with access to retrieved context information.
-
-USER QUERY: ${userQuery}
-
-RETRIEVED CONTEXT:
-${synthesizedContext}
-
-YOUR TASK:
-- Generate a comprehensive, accurate answer based EXCLUSIVELY on the provided context
-- Do NOT include information that isn't supported by the context
-- DO cite sources when referencing specific information using [<idx>] notation (i.e. [2] for document #2, and [T3] for tool output #3)
-- Organize your answer logically with clear sections and formatting when appropriate
-- If the context is insufficient to answer the query fully, acknowledge the limitations
-- Focus on delivering accurate, helpful information rather than being conversational
-`;
+    // Build the system prompt for answer generation using the central configuration
+    // Pass user context if available, but we don't have specific user info in this state
+    // In a real implementation, you might extract this from request context or session
+    const systemPrompt = getGenerateAnswerPrompt(userQuery, synthesizedContext);
 
     // Build the messages for the LLM
     const chatMessages = buildMessages(systemPrompt, state.chatHistory, userQuery);
@@ -228,3 +216,4 @@ YOUR TASK:
     };
   }
 }
+

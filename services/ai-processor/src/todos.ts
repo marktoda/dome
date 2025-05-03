@@ -55,6 +55,7 @@ export async function sendTodosToQueue(
           contentId,
           userId,
           todoCount: todoItems.length
+          todoItems,
         }, 'Sending todos to queue');
 
         // Send each todo to the queue
