@@ -13,7 +13,7 @@
 
 import { createServer, Server, IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 const logger = getLogger();
 const PORT = 9876;

@@ -14,7 +14,7 @@ import {
   logError,
   trackOperation,
   getRequestId
-} from '@dome/logging';
+} from '@dome/common';
 import {
   toDomeError,
   handleDatabaseError,

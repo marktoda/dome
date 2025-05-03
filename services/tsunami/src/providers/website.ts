@@ -6,7 +6,7 @@
  */
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { DEFAULT_FILTER_CONFIG } from '../config/filterConfig';
 import { IgnorePatternProcessor } from '../utils/ignorePatternProcessor';
 import { RobotsChecker } from './website/robotsChecker';

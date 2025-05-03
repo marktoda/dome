@@ -12,9 +12,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@dome/logging": "workspace:*",
     "hono": "^4.0.0",
-    "pino": "^8.0.0",
+    "pino": "^9.6.0",
     "pino-http": "^8.0.0",
     "zod": "^3.0.0"
   },

@@ -8,7 +8,7 @@
  * @module services/ignoreFileService
  */
 
-import { getLogger, trackedFetch, trackOperation, getRequestId } from '@dome/logging';
+import { getLogger, trackedFetch, trackOperation, getRequestId } from '@dome/common';
 import {
   ValidationError,
   NotFoundError,

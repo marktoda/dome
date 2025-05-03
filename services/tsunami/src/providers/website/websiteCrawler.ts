@@ -4,7 +4,7 @@
  * This class is responsible for crawling websites and fetching pages.
  * It handles rate limiting, depth control, and URL filtering.
  */
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { RobotsChecker } from './robotsChecker';
 
 export class WebsiteCrawler {

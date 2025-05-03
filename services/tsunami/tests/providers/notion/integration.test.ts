@@ -5,7 +5,7 @@ import * as notionUtils from '../../../src/providers/notion/utils';
 import { ServiceError } from '@dome/common/src/errors';
 
 // Mock external dependencies
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),

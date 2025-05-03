@@ -8,7 +8,7 @@
  * @module services/metadataHeaderService
  */
 
-import { getLogger, getRequestId } from '@dome/logging';
+import { getLogger, getRequestId } from '@dome/common';
 import { ValidationError } from '@dome/errors';
 import { assertValid } from '../utils/errors';
 import { DomeMetadata } from '../types/metadata';

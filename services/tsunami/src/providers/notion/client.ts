@@ -4,7 +4,7 @@
  * This client handles communication with the Notion API, including authentication,
  * rate limiting, and error handling.
  */
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
 import { ServiceError } from '@dome/common/src/errors';
 import { NotionAuthManager } from './auth';
 

@@ -1,8 +1,8 @@
-import { als as loggerAls, baseLogger } from '@dome/logging/runtime';
 import type { Logger } from 'pino';
+import { baseLogger } from '../logging';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-export const als = new AsyncLocalStorage<Map<string, unknown>>();
+export const ctx = new AsyncLocalStorage<RequestContext>();
 
 export type Identity = {
   uid: string;
@@ -11,22 +11,36 @@ export type Identity = {
   name?: string;
 }
 
-// Create a type for the metadata that includes optional identity
-type ContextMeta = Record<string, unknown> & {
-  level?: string;
-  identity?: Identity;
-};
-
 
 export interface RequestContext {
   logger: Logger;
   /** may be undefined for anonymous calls */
   identity?: Identity;
+  requestId?: string;
 }
 
 export const ctxStore = new AsyncLocalStorage<RequestContext>();
 
-/* Convenience accessors so you never touch ALS outside this file */
-export const getLogger = () => ctxStore.getStore()?.logger;
-export const getIdentity = () => ctxStore.getStore()?.identity;
+export const getIdentity: () => Identity | undefined = () => ctxStore.getStore()?.identity;
+export const getLogger: () => Logger = () => ctxStore.getStore()?.logger ?? baseLogger;
+export const getRequestId: () => string | undefined = () => ctxStore.getStore()?.requestId;
 
+
+type Meta = Record<string, unknown> & {
+  level?: string;
+  identity?: Identity;
+};
+
+export async function withContext<T>(
+  meta: Meta,
+  fn: (log: Logger) => Promise<T> | T,
+): Promise<T> {
+  /* 1 - derive a child logger from the metadata */
+  const child = baseLogger.child(meta, { level: meta.level });
+
+  /* 2 - build the context payload */
+  const payload: RequestContext = { logger: child, identity: meta.identity };
+
+  /* 3 - run the user callback inside the ALS scope */
+  return ctx.run(payload, () => fn(child));
+}

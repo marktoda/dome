@@ -21,7 +21,7 @@ vi.mock('cloudflare:workers', () => {
   };
 });
 
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   const mockLogger = {
     debug: vi.fn(),
     info: vi.fn(),

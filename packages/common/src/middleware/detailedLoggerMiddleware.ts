@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import { getLogger, logError } from '@dome/logging';
+import { getLogger } from '../context';
+import { logError } from '../logging';
 import { getPath } from 'hono/utils/url';
 
 /**
@@ -96,10 +97,10 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
           error:
             error instanceof Error
               ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
               : String(error),
           request: {
             method,

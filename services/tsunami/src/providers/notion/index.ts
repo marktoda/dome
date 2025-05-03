@@ -6,7 +6,7 @@
  */
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '..';
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
 import {
   createNotionMetadata,
   determineCategory,

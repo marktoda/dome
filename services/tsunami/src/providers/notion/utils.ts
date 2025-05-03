@@ -4,7 +4,7 @@
  * This module contains utility functions for transforming Notion-specific
  * data structures into the standard format expected by tsunami.
  */
-import { getLogger, getRequestId } from '@dome/logging';
+import { getLogger, getRequestId } from '@dome/common';
 import { ValidationError } from '@dome/common/src/errors';
 import { assertValid } from '../../utils/errors';
 import { DomeMetadata } from '../../types/metadata';

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ContentExtractor } from '../../../src/providers/website/contentExtractor';
 
 // Mock logger
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),

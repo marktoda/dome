@@ -4,7 +4,7 @@
  * This class is responsible for extracting meaningful content from HTML pages
  * by removing boilerplate content, navigation, headers, footers, etc.
  */
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 export class ContentExtractor {
   private log = getLogger();

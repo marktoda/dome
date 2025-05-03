@@ -5,7 +5,7 @@ import {
   metrics,
   trackOperation,
   getRequestId
-} from '@dome/logging';
+} from '@dome/common';
 import {
   NotFoundError,
   ConflictError,

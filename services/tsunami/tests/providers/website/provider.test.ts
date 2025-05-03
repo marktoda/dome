@@ -5,7 +5,7 @@ import { WebsiteCrawler } from '../../../src/providers/website/websiteCrawler';
 import { ContentExtractor } from '../../../src/providers/website/contentExtractor';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),

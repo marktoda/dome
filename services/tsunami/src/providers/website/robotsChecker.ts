@@ -4,7 +4,7 @@
  * This class is responsible for checking robots.txt files and determining
  * if a URL is allowed to be crawled according to the robots.txt rules.
  */
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 export class RobotsChecker {
   private log = getLogger();

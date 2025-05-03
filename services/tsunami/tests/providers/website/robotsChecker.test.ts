@@ -6,7 +6,7 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 // Mock logger
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),

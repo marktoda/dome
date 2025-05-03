@@ -2,13 +2,14 @@
  * Tsunami Service – using WorkerEntrypoint pattern
  */
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { ServiceInfo, formatZodError } from '@dome/common';
 import {
   getLogger,
+  ServiceInfo,
+  formatZodError,
   logError,
   trackOperation,
   createServiceMetrics
-} from '@dome/logging';
+} from '@dome/common';
 import {
   toDomeError,
   ConflictError,

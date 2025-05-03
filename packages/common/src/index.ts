@@ -4,6 +4,8 @@
 
 // Export all types
 export * from './types';
+export * from './logging';
+export * from './context';
 
 // Export all errors
 export * from './errors';

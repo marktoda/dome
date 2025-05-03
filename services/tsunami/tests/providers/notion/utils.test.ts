@@ -14,7 +14,7 @@ import { NotionBlock, NotionPage } from '../../../src/providers/notion/client';
 import { ValidationError } from '@dome/common/src/errors';
 
 // Mock logger and request ID
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -215,7 +215,7 @@ describe('Notion Utils', () => {
       expect(text).toBe('Valid block');
       
       // Log warning should be called for the invalid block
-      const logger = require('@dome/logging').getLogger();
+      const logger = require('@dome/common').getLogger();
       expect(logger.warn).toHaveBeenCalled();
     });
     
@@ -457,7 +457,7 @@ describe('Notion Utils', () => {
       expect(extractTextFromBlock(undefined as any)).toBe('');
       
       // The function should log a warning
-      const logger = require('@dome/logging').getLogger();
+      const logger = require('@dome/common').getLogger();
       expect(logger.warn).toHaveBeenCalled();
     });
     

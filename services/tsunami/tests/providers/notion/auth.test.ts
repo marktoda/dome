@@ -10,7 +10,7 @@ global.fetch = mockFetch;
 global.btoa = vi.fn((str) => Buffer.from(str).toString('base64'));
 
 // Mock the logger
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),

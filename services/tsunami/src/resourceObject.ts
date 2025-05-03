@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { ProviderType, GithubProvider, NotionProvider, WebsiteProvider, Provider } from './providers';
 import { syncHistoryOperations, syncPlanOperations } from './db/client';

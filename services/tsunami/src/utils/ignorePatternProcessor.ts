@@ -7,7 +7,7 @@
  * @module utils/ignorePatternProcessor
  */
 
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 /**
  * Class for processing and matching ignore patterns against file paths

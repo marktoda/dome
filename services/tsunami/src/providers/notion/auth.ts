@@ -4,7 +4,7 @@
  * This module handles API keys and OAuth integration with Notion,
  * including token exchange and secure storage.
  */
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
 import { ServiceError } from '@dome/common/src/errors';
 
 /**

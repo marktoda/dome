@@ -11,7 +11,7 @@ global.fetch = mockFetch;
 global.atob = vi.fn(str => Buffer.from(str, 'base64').toString('binary'));
 
 // Mock the logger
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
