@@ -118,10 +118,10 @@ vi.mock('@dome/logging', () => {
   };
 });
 
-// Mock SecureD1Checkpointer
-vi.mock('../../src/checkpointer/secureD1Checkpointer', () => {
+// Mock D1Checkpointer
+vi.mock('../../src/checkpointer/d1Checkpointer', () => {
   return {
-    SecureD1Checkpointer: class MockSecureCheckpointer {
+    D1Checkpointer: class MockSecureCheckpointer {
       constructor() {}
       initialize = vi.fn().mockResolvedValue(this);
       getTuple = vi.fn().mockResolvedValue(undefined);
@@ -145,7 +145,7 @@ vi.mock('../../src/checkpointer/secureD1Checkpointer', () => {
   };
 });
 
-// Add a mock for the EncryptionService inside secureD1Checkpointer
+// Add a mock for the EncryptionService inside d1Checkpointer
 vi.mock('../../src/checkpointer/d1Checkpointer', () => {
   return {
     D1Checkpointer: class MockCheckpointer {

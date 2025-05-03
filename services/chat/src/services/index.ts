@@ -3,7 +3,7 @@ import { LlmService } from './llmService';
 import { SearchService } from './searchService';
 import { ObservabilityService } from './observabilityService';
 import { ModelFactory } from './modelFactory';
-import { SecureD1Checkpointer } from '../checkpointer/secureD1Checkpointer';
+import { D1Checkpointer } from '../checkpointer/d1Checkpointer';
 import { DataRetentionManager } from '../utils/dataRetentionManager';
 
 /**
@@ -14,7 +14,7 @@ export interface Services {
   search: SearchService;
   observability: ObservabilityService;
   modelFactory: typeof ModelFactory;
-  checkpointer: SecureD1Checkpointer;
+  checkpointer: D1Checkpointer;
   dataRetention: DataRetentionManager;
 }
 
@@ -28,7 +28,7 @@ export function createServices(env: Env): Services {
   logger.info('Initializing chat orchestrator services');
 
   // Create the checkpointer
-  const checkpointer = new SecureD1Checkpointer(
+  const checkpointer = new D1Checkpointer(
     env.CHAT_DB,
     env,
     undefined, // No Hono context in RPC

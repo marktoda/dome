@@ -46,8 +46,8 @@ vi.mock('@dome/logging', () => {
   };
 });
 
-vi.mock('../../src/checkpointer/secureD1Checkpointer', () => ({
-  SecureD1Checkpointer: vi.fn().mockImplementation(() => ({
+vi.mock('../../src/checkpointer/d1Checkpointer', () => ({
+  D1Checkpointer: vi.fn().mockImplementation(() => ({
     initialize: vi.fn(),
     getState: vi.fn(),
     setState: vi.fn(),

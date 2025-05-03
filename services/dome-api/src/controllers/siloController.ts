@@ -30,6 +30,10 @@ const reprocessSchema = z.object({
   id: z.string().optional(),
 });
 
+const bulkReprocessSchema = z.object({
+  contentIds: z.array(z.string()).min(1, 'At least one content ID is required'),
+});
+
 const updateNoteSchema = z.object({
   title: z.string().optional(),
   body: z.string().optional(),
@@ -481,6 +485,80 @@ export class SiloController {
           },
         },
         500,
+      );
+    }
+  }
+
+  /**
+   * POST /notes/bulk-reprocess
+   * Reprocess multiple content items by their IDs
+   */
+  async bulkReprocess(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+    try {
+      const startTime = performance.now();
+      this.logger.info({ path: c.req.path, method: c.req.method }, 'Bulk reprocess request received');
+
+      // Parse request body
+      const body = await c.req.json();
+      
+      // Validate request body
+      const validatedData = bulkReprocessSchema.parse(body);
+      this.logger.info({ 
+        bulkReprocessRequest: { 
+          contentCount: validatedData.contentIds.length,
+          contentIds: validatedData.contentIds
+        }
+      }, 'Validated bulk reprocess request data');
+
+      // Call the silo service to reprocess the content
+      const result = await this.silo.reprocessContent(validatedData.contentIds);
+
+      // Track metrics
+      metrics.timing('api.bulk_reprocess.latency_ms', performance.now() - startTime);
+      metrics.increment('api.bulk_reprocess.success', 1);
+      metrics.gauge('api.bulk_reprocess.content_count', result.reprocessed);
+
+      return c.json({
+        success: true,
+        result,
+      });
+    } catch (error) {
+      this.logger.error(
+        {
+          err: error,
+          path: c.req.path,
+          method: c.req.method,
+        },
+        'Error in bulk reprocess controller'
+      );
+
+      metrics.increment('api.bulk_reprocess.errors', 1);
+
+      if (error instanceof z.ZodError) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid request data',
+              details: error.errors,
+            },
+          },
+          400
+        );
+      }
+
+      // Handle errors from the silo service
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'BULK_REPROCESS_ERROR',
+            message: 'Failed to reprocess content items',
+            details: error instanceof Error ? error.message : String(error),
+          },
+        },
+        500
       );
     }
   }

@@ -399,6 +399,15 @@ aiRouter.post(
   },
 );
 
+// Bulk reprocess endpoint - for reprocessing multiple content items by IDs
+aiRouter.post(
+  '/bulk-reprocess',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const siloController = controllerFactory.getSiloController(c.env);
+    return await siloController.bulkReprocess(c);
+  },
+);
+
 // Mount AI router
 app.route('/ai', aiRouter);
 

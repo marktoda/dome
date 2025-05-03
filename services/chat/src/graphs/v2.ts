@@ -14,7 +14,7 @@ import {
 } from "@langchain/langgraph";
 import { getLogger } from "@dome/logging";
 
-import { SecureD1Checkpointer } from "../checkpointer/secureD1Checkpointer";
+import { D1Checkpointer } from "../checkpointer/d1Checkpointer";
 import { ToolRegistry } from "../tools";
 import * as nodes from "../nodes";
 import { AgentState, GraphStateAnnotation } from "../types";
@@ -49,7 +49,7 @@ export const V2Chat: ChatBuilder = {
     log.info("⧉ building comprehensive RAG graph");
 
     // Initialize the checkpointer and tools
-    const checkpointer = cp ?? await new SecureD1Checkpointer(env.CHAT_DB, env).initialize().then(r => r ?? cp!);
+    const checkpointer = cp ?? await new D1Checkpointer(env.CHAT_DB, env).initialize().then(r => r ?? cp!);
     const tools = ToolRegistry.fromDefault();
 
     // Get the wrapped node functions with proper environment

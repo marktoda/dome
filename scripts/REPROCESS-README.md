@@ -12,6 +12,63 @@ npm install node-fetch@2
 
 Note: We're using node-fetch v2 as it supports CommonJS modules without additional configuration.
 
+## Authentication
+
+**Important**: The API endpoint requires authentication. You must provide a valid authentication token when running the script:
+
+```bash
+node reprocess-content.js --token=your-jwt-token
+```
+
+The script will:
+1. Check for the presence of a token (and fail with a clear error if none is provided)
+2. Format the token correctly (adding 'Bearer ' prefix if needed)
+3. Include the token in each API request
+
+### Obtaining an Authentication Token
+
+I've created a helper script to obtain an authentication token:
+
+```bash
+# Install required dependency if you haven't already
+npm install node-fetch@2
+
+# Run the authentication script
+node scripts/get-auth-token.js --api-url=https://your-api-url --username=your-username --password=your-password
+```
+
+#### Secure Authentication Options
+
+For better security, the script supports several authentication methods:
+
+1. **Environment Variables**:
+   ```bash
+   export DOME_API_URL=https://your-api-url
+   export DOME_USERNAME=your-username
+   export DOME_PASSWORD=your-password
+   node scripts/get-auth-token.js
+   ```
+
+2. **.env File**:
+   Create a .env file in the root directory:
+   ```
+   DOME_API_URL=https://your-api-url
+   DOME_USERNAME=your-username
+   DOME_PASSWORD=your-password
+   ```
+   Then run:
+   ```bash
+   node scripts/get-auth-token.js
+   ```
+
+3. **Using the Generated Token File**:
+   The script saves the token to a .token file in the scripts directory. You can use it directly:
+   ```bash
+   node scripts/reprocess-content.js --file=scripts/contents.json --token=$(cat scripts/.token)
+   ```
+
+The script will authenticate with the Dome API and print your JWT token, which you can use with the reprocess-content.js script. It will also show you the full command to run with the token included.
+
 ## Usage
 
 ```bash

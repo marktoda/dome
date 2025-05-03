@@ -1,5 +1,5 @@
 import { getLogger } from '@dome/logging';
-import { SecureD1Checkpointer } from '../checkpointer/secureD1Checkpointer';
+import { D1Checkpointer } from '../checkpointer/d1Checkpointer';
 import { getUserInfo, UserRole } from '@dome/common/src/middleware/enhancedAuthMiddleware';
 import { Context } from 'hono';
 import { ForbiddenError } from '@dome/common/src/errors/ServiceError';
@@ -85,7 +85,7 @@ export class DataRetentionManager {
   private logger = getLogger().child({ component: 'dataRetentionManager' });
   private policy: DataRetentionPolicy;
   private db: D1Database;
-  private checkpointer: SecureD1Checkpointer;
+  private checkpointer: D1Checkpointer;
 
   /**
    * Create a new data retention manager
@@ -95,7 +95,7 @@ export class DataRetentionManager {
    */
   constructor(
     db: D1Database,
-    checkpointer: SecureD1Checkpointer,
+    checkpointer: D1Checkpointer,
     policy: DataRetentionPolicy = DEFAULT_RETENTION_POLICY,
   ) {
     this.db = db;

@@ -18,7 +18,7 @@ const fetch = require('node-fetch');
 const DEFAULT_CONFIG = {
   batchSize: 50,
   filePath: path.join(__dirname, 'contents.json'),
-  apiUrl: 'http://localhost:8787',
+  apiUrl: 'https://dome-api.chatter-9999.workers.dev',
   endpoint: '/ai/bulk-reprocess',
   token: null,
 };
@@ -64,8 +64,6 @@ function readJsonFile(filePath) {
 
 // Extract content IDs from the JSON file
 function extractContentIds(jsonData) {
-  // Handle different possible formats of the JSON file
-  
   // Handle the specific format from the provided contents.json:
   // Array with items containing 'results' array of content objects
   if (Array.isArray(jsonData) && jsonData.length > 0 && jsonData[0].results && Array.isArray(jsonData[0].results)) {
@@ -112,20 +110,33 @@ function createBatches(items, batchSize) {
   return batches;
 }
 
+// Validate and format the authentication token
+function prepareAuthToken(token) {
+  if (!token) {
+    console.error('ERROR: No authentication token provided. API calls will fail.');
+    console.error('Please provide a token with --token=your-auth-token');
+    process.exit(1);
+  }
+  
+  // Format token correctly (add Bearer prefix if it's not already there)
+  if (!token.startsWith('Bearer ')) {
+    return `Bearer ${token}`;
+  }
+  
+  return token;
+}
+
 // Call the API endpoint with a batch of content IDs
 async function callBulkReprocessEndpoint(apiUrl, endpoint, batch, token) {
   try {
     const url = `${apiUrl}${endpoint}`;
     const headers = {
       'Content-Type': 'application/json',
+      'Authorization': prepareAuthToken(token)
     };
     
-    // Add Authorization header if token is provided
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
     console.log(`Calling ${url} with ${batch.length} content IDs...`);
+    console.log(`Using authentication token: ${headers.Authorization.substring(0, 15)}...`);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -151,9 +162,11 @@ async function main() {
   const config = parseArgs();
   console.log('Configuration:', config);
 
-  // Check if token is provided
+  // Validate authentication token
   if (!config.token) {
-    console.warn('Warning: No authentication token provided. Authentication might fail.');
+    console.error('ERROR: No authentication token provided.');
+    console.error('Please provide a token with --token=your-auth-token');
+    process.exit(1);
   }
 
   // Check if file exists
