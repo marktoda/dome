@@ -18,15 +18,7 @@ export { createDetailedLoggerMiddleware } from './detailedLoggerMiddleware';
 // Rate limit middleware
 export { createRateLimitMiddleware } from './rateLimitMiddleware';
 
-// Authentication middleware
-export { createAuthMiddleware, createSimpleAuthMiddleware } from './authMiddleware';
+// Identity propagation middleware
+export { createIdentityPropagationMiddleware, getRequestIdentity, withIdentityFromRPC, addIdentityBaggageHeader } from './identityPropagationMiddleware';
 
-// Enhanced authentication middleware
-export {
-  createEnhancedAuthMiddleware,
-  getUserInfo,
-  requirePermissions,
-  requireRole,
-  requireOwnership,
-  UserRole,
-} from './enhancedAuthMiddleware';
+// Common middleware exports
