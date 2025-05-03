@@ -90,4 +90,5 @@ export interface SiloBinding {
   stats(params: {}): Promise<SiloStatsResponse>;
   findContentWithFailedSummary(): Promise<SiloContentMetadata[]>;
   getMetadataById(id: string): Promise<SiloContentMetadata | null>;
+  reprocessContent(contentIds: string[]): Promise<{ reprocessed: number }>;
 }

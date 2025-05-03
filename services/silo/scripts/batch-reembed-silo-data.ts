@@ -84,7 +84,7 @@ if (args.help) {
 async function createTempFile(prefix: string, content: string): Promise<string> {
   // Generate a unique temporary file path
   const tempFilePath = path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`);
-  
+
   try {
     // Write content to the temporary file
     await fs.writeFile(tempFilePath, content);
@@ -114,153 +114,110 @@ async function main() {
   logger.info(`Batch size: ${args.batchSize}`);
   logger.info(`Using temporary directory: ${os.tmpdir()}`);
 
-  try {
-    // Use wrangler CLI commands instead of importing wrangler
-    logger.info('Querying content from Silo database...');
 
-    // Create a temporary SQL file
-    let sqlFile: string | null = null;
-    let stdout: string;
-    
-    try {
-      // First, check if the contents table exists
-      sqlFile = await createTempFile('silo-query', "SELECT name FROM sqlite_master WHERE type='table' AND name='contents';");
-      logger.debug(`Created temporary SQL file to check table existence at ${sqlFile}`);
-      
-      // Check if the table exists
-      const tableCheckResult = await execAsync(`npx wrangler d1 execute silo --file=${sqlFile} --json`);
-      const tableCheckData = JSON.parse(tableCheckResult.stdout);
-      
-      // If no tables found or contents table not found
-      if (!tableCheckData[0]?.results?.length) {
-        logger.error('The "contents" table does not exist in the database. Migrations may not have been applied.');
-        logger.info('Try running: npx wrangler d1 migrations apply silo');
-        return;
-      }
-      
-      // Clean up the check file
-      await safelyDeleteFile(sqlFile);
-      
-      // Now create the actual query file
-      sqlFile = await createTempFile('silo-query', 'SELECT * FROM contents;');
-      logger.debug(`Created temporary SQL file at ${sqlFile}`);
-      
-      // Execute the query using wrangler CLI
-      const result = await execAsync(`npx wrangler d1 execute silo --file=${sqlFile} --json`);
-      stdout = result.stdout;
-    } finally {
-      // Clean up the temporary file
-      if (sqlFile) {
-        await safelyDeleteFile(sqlFile);
-      }
-    }
+  const contents = await fs.readFile('./scripts/contents.json', 'utf-8');
+  // Parse the results
+  const results = JSON.parse(contents);
+  const contentItems = results[0].results || [];
 
-    // Parse the results
-    const results = JSON.parse(stdout);
-    const contentItems = results[0].results || [];
+  if (!contentItems || contentItems.length === 0) {
+    logger.warn('No content found in Silo database.');
+    return;
+  }
 
-    if (!contentItems || contentItems.length === 0) {
-      logger.warn('No content found in Silo database.');
-      return;
-    }
+  logger.info(`Found ${contentItems.length} content items to process`);
 
-    logger.info(`Found ${contentItems.length} content items to process`);
+  // Process in batches
+  const totalBatches = Math.ceil(contentItems.length / args.batchSize);
+  let processedCount = 0;
+  let successCount = 0;
+  let failureCount = 0;
 
-    // Process in batches
-    const totalBatches = Math.ceil(contentItems.length / args.batchSize);
-    let processedCount = 0;
-    let successCount = 0;
-    let failureCount = 0;
+  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    const start = batchIndex * args.batchSize;
+    const end = Math.min(start + args.batchSize, contentItems.length);
+    const batch = contentItems.slice(start, end);
 
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      const start = batchIndex * args.batchSize;
-      const end = Math.min(start + args.batchSize, contentItems.length);
-      const batch = contentItems.slice(start, end);
+    logger.info(`Processing batch ${batchIndex + 1}/${totalBatches} (items ${start + 1}-${end})`);
 
-      logger.info(`Processing batch ${batchIndex + 1}/${totalBatches} (items ${start + 1}-${end})`);
+    for (const item of batch) {
+      try {
+        const message: NewContentMessage = {
+          id: item.id,
+          userId: item.userId,
+          category: item.contentType || 'note',
+        };
 
-      for (const item of batch) {
-        try {
-          const message: NewContentMessage = {
-            id: item.id,
-            userId: item.userId,
-            category: item.contentType || 'note',
-          };
+        if (!args.dryRun) {
+          // Use wrangler CLI to send messages to queues
+          logger.info(`Sending message for content ID: ${item.id}`);
 
-          if (!args.dryRun) {
-            // Use wrangler CLI to send messages to queues
-            logger.info(`Sending message for content ID: ${item.id}`);
+          // Create temporary message file
+          let tempMessageFile: string | null = null;
 
-            // Create temporary message file
-            let tempMessageFile: string | null = null;
-            
+          try {
+            // Create temporary message files
+            const messageJson = JSON.stringify(message);
+            tempMessageFile = await createTempFile('silo-message', messageJson);
+            logger.debug(`Created temporary message file at ${tempMessageFile}`);
+
+            // Send to both queues
             try {
-              // Create temporary message files
-              const messageJson = JSON.stringify(message);
-              tempMessageFile = await createTempFile('silo-message', messageJson);
-              logger.debug(`Created temporary message file at ${tempMessageFile}`);
+              await execAsync(`wrangler queues publish new-content-constellation ${tempMessageFile}`);
+              logger.debug(`Sent message to constellation queue for ID: ${item.id}`);
+            } catch (queueError) {
+              logger.error({ error: queueError }, `Failed to send to constellation queue for ID: ${item.id}`);
+            }
 
-              // Send to both queues
-              try {
-                await execAsync(`npx wrangler queues publish new-content-constellation ${tempMessageFile}`);
-                logger.debug(`Sent message to constellation queue for ID: ${item.id}`);
-              } catch (queueError) {
-                logger.error({ error: queueError }, `Failed to send to constellation queue for ID: ${item.id}`);
-              }
-
-              try {
-                await execAsync(`npx wrangler queues publish new-content-ai ${tempMessageFile}`);
-                logger.debug(`Sent message to AI queue for ID: ${item.id}`);
-              } catch (queueError) {
-                logger.error({ error: queueError }, `Failed to send to AI queue for ID: ${item.id}`);
-              }
-            } finally {
-              // Clean up
-              if (tempMessageFile) {
-                await safelyDeleteFile(tempMessageFile);
-              }
+            try {
+              await execAsync(`wrangler queues publish new-content-ai ${tempMessageFile}`);
+              logger.debug(`Sent message to AI queue for ID: ${item.id}`);
+            } catch (queueError) {
+              logger.error({ error: queueError }, `Failed to send to AI queue for ID: ${item.id}`);
+            }
+          } finally {
+            // Clean up
+            if (tempMessageFile) {
+              await safelyDeleteFile(tempMessageFile);
             }
           }
-
-          logger.debug(`Sent message for content ID: ${item.id}`);
-          successCount++;
-        } catch (error) {
-          logger.error(
-            { error, contentId: item.id },
-            `Failed to send message for content ID: ${item.id}`
-          );
-          failureCount++;
         }
 
-        processedCount++;
-
-        // Log progress every 10% of total
-        if (processedCount % Math.max(1, Math.floor(contentItems.length / 10)) === 0) {
-          const percentComplete = ((processedCount / contentItems.length) * 100).toFixed(1);
-          logger.info(`Progress: ${percentComplete}% (${processedCount}/${contentItems.length})`);
-        }
+        logger.debug(`Sent message for content ID: ${item.id}`);
+        successCount++;
+      } catch (error) {
+        logger.error(
+          { error, contentId: item.id },
+          `Failed to send message for content ID: ${item.id}`
+        );
+        failureCount++;
       }
 
-      logger.info(`Completed batch ${batchIndex + 1}/${totalBatches}`);
+      processedCount++;
 
-      // Small delay between batches to avoid overwhelming the system
-      if (batchIndex < totalBatches - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // Log progress every 10% of total
+      if (processedCount % Math.max(1, Math.floor(contentItems.length / 10)) === 0) {
+        const percentComplete = ((processedCount / contentItems.length) * 100).toFixed(1);
+        logger.info(`Progress: ${percentComplete}% (${processedCount}/${contentItems.length})`);
       }
     }
 
-    // Log final summary
-    logger.info('===== Batch Re-Embedding Summary =====');
-    logger.info(`Total content items: ${contentItems.length}`);
-    logger.info(`Successfully processed: ${successCount}`);
-    logger.info(`Failed to process: ${failureCount}`);
-    logger.info(`${args.dryRun ? '[DRY RUN] No actual messages were sent' : 'All messages sent successfully'}`);
-    logger.info('======================================');
+    logger.info(`Completed batch ${batchIndex + 1}/${totalBatches}`);
 
-  } catch (error) {
-    logger.error({ error }, 'Failed to complete batch re-embedding process');
-    process.exit(1);
+    // Small delay between batches to avoid overwhelming the system
+    if (batchIndex < totalBatches - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   }
+
+  // Log final summary
+  logger.info('===== Batch Re-Embedding Summary =====');
+  logger.info(`Total content items: ${contentItems.length}`);
+  logger.info(`Successfully processed: ${successCount}`);
+  logger.info(`Failed to process: ${failureCount}`);
+  logger.info(`${args.dryRun ? '[DRY RUN] No actual messages were sent' : 'All messages sent successfully'}`);
+  logger.info('======================================');
+
 }
 
 // Execute main function
