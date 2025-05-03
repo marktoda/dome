@@ -13,12 +13,18 @@
  * Contains details about where the content originated from
  */
 export interface SourceMetadata {
-  /** The type of source (e.g., 'github') */
+  /** The type of source (e.g., 'github', 'notion', 'website') */
   type: string;
-  /** The repository identifier (owner/repo) */
-  repository: string;
-  /** The file path within the repository */
-  path: string;
+  /** The repository identifier (owner/repo) - for GitHub */
+  repository?: string;
+  /** The file path within the repository - for GitHub */
+  path?: string;
+  /** The base URL of the website - for Website */
+  base_url?: string;
+  /** The specific page URL - for Website */
+  page_url?: string;
+  /** The title of the page - for Website */
+  title?: string;
   /** The timestamp when the content was last updated */
   updated_at: string;
 }

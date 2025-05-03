@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { getLogger, logError, metrics } from '@dome/logging';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
-import { ProviderType, GithubProvider, NotionProvider, Provider } from './providers';
+import { ProviderType, GithubProvider, NotionProvider, WebsiteProvider, Provider } from './providers';
 import { syncHistoryOperations, syncPlanOperations } from './db/client';
 import { ulid } from 'ulid';
 
@@ -122,6 +122,26 @@ export class ResourceObject extends DurableObject<Env> {
       const [owner, repo] = cfg.resourceId.split('/');
       if (!owner || !repo)
         throw new Error(`Invalid resourceId "${cfg.resourceId}" – use "owner/repo"`);
+    } else if (cfg.providerType === ProviderType.NOTION) {
+      if (!cfg.resourceId) throw new Error('Notion provider requires resourceId');
+      // Notion workspaceId should be a UUID-like string (typically 32 chars with hyphens)
+      const uuidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+      if (!uuidPattern.test(cfg.resourceId)) {
+        throw new Error(`Invalid Notion resourceId "${cfg.resourceId}" – must be a valid workspace ID`);
+      }
+    } else if (cfg.providerType === ProviderType.WEBSITE) {
+      if (!cfg.resourceId) throw new Error('Website provider requires resourceId');
+      try {
+        const websiteConfig = JSON.parse(cfg.resourceId);
+        if (!websiteConfig.url) {
+          throw new Error('Website configuration must include a URL property');
+        }
+      } catch (error) {
+        if (error instanceof Error) {
+          throw new Error(`Invalid website configuration: ${error.message}`);
+        }
+        throw new Error('Invalid website configuration: Unable to parse JSON');
+      }
     }
   }
 
@@ -131,6 +151,8 @@ export class ResourceObject extends DurableObject<Env> {
         return new GithubProvider(this.env);
       case ProviderType.NOTION:
         return new NotionProvider(this.env);
+      case ProviderType.WEBSITE:
+        return new WebsiteProvider(this.env);
       default:
         throw new Error(`Provider ${pt} not implemented`);
     }

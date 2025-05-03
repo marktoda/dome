@@ -307,7 +307,3 @@ Dome implements comprehensive error handling and observability:
 ## Getting Started
 
 See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for detailed setup instructions.
-
-## TODOs
-
-- Better query routing: filter by personal notes vs code vs web needed etc

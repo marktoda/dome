@@ -5,8 +5,8 @@
  */
 import { getLogger, logError, metrics } from '@dome/logging';
 import { toDomeError } from '../utils/errors';
-import { TsunamiBinding, TsunamiService } from './types';
-export { TsunamiBinding, TsunamiService } from './types';
+import { TsunamiBinding, TsunamiService, WebsiteRegistrationConfig } from './types';
+export { TsunamiBinding, TsunamiService, WebsiteRegistrationConfig } from './types';
 
 /**
  * Client for interacting with the Tsunami service
@@ -225,6 +225,87 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.notion_workspace_registration.errors`);
       logError(error, 'Error registering Notion workspace');
+      throw toDomeError(error);
+    }
+  }
+
+  /**
+   * Register a website and initialize syncing
+   *
+   * @param websiteConfig Website configuration object with URL and crawl options
+   * @param userId Optional user ID to associate with the sync plan
+   * @param cadenceSecs Optional sync frequency in seconds (defaults to 3600 - 1 hour)
+   * @returns Object containing the ID, resourceId, and initialization status
+   */
+  async registerWebsite(
+    websiteConfig: WebsiteRegistrationConfig,
+    userId?: string,
+    cadenceSecs: number = 3600
+  ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
+    const startTime = performance.now();
+    
+    try {
+      this.logger.info({
+        event: 'website_registration_start',
+        websiteUrl: websiteConfig.url,
+        userId,
+        cadenceSecs
+      }, 'Starting website registration');
+
+      const result = await this.binding.registerWebsite(websiteConfig, userId, cadenceSecs);
+
+      metrics.increment(`${this.metricsPrefix}.website_registration.success`);
+      metrics.timing(`${this.metricsPrefix}.website_registration.latency_ms`, performance.now() - startTime);
+
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.website_registration.errors`);
+      logError(error, 'Error registering website');
+      throw toDomeError(error);
+    }
+  }
+
+  /**
+   * Get history for a website
+   *
+   * @param websiteUrl Website URL
+   * @param limit Maximum number of history records to return
+   * @returns Website history with metadata
+   */
+  async getWebsiteHistory(websiteUrl: string, limit: number = 10): Promise<{
+    websiteUrl: string;
+    resourceId: string;
+    history: unknown[];
+  }> {
+    const startTime = performance.now();
+    
+    try {
+      // For websites, the resourceId is a JSON string with the configuration
+      // We need to find the resourceId by looking up the website URL
+      // For simplicity, we'll construct a basic config matching search string
+      const baseConfig = { url: websiteUrl };
+      const resourceId = JSON.stringify(baseConfig);
+      
+      this.logger.info({
+        event: 'get_website_history',
+        websiteUrl,
+        resourceId,
+        limit
+      }, 'Fetching website history');
+
+      const history = await this.binding.getHistoryByResourceId(resourceId, limit);
+      
+      metrics.increment(`${this.metricsPrefix}.get_website_history.success`);
+      metrics.timing(`${this.metricsPrefix}.get_website_history.latency_ms`, performance.now() - startTime);
+
+      return {
+        websiteUrl,
+        resourceId,
+        history
+      };
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.get_website_history.errors`);
+      logError(error, 'Error fetching website history');
       throw toDomeError(error);
     }
   }

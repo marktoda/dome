@@ -1,15 +1,14 @@
-#!/usr/bin/env tsx
 /**
  * Batch Re-Embedding Script for Silo Data
- * 
+ *
  * This script triggers re-embedding and re-AI processing of all content in Silo.
  * It queries all content from the D1 database, then sends messages to the NEW_CONTENT queues
  * to trigger re-embedding by Constellation and AI services.
- * 
+ *
  * Usage:
  *   cd /home/toda/dev/dome
  *   npx tsx scripts/batch-reembed-silo-data.ts [--batchSize=100] [--dryRun] [--help]
- * 
+ *
  * Options:
  *   --batchSize=<number>  Number of items to process in each batch (default: 100)
  *   --dryRun              Run without actually sending messages to queues
@@ -20,7 +19,9 @@ import { NewContentMessage } from '@dome/common';
 import { getLogger } from '@dome/logging';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
 
 // Initialize logger
 const logger = getLogger();
@@ -42,7 +43,7 @@ function parseArgs(): CommandLineArgs {
     dryRun: false,
     help: false
   };
-  
+
   process.argv.slice(2).forEach(arg => {
     if (arg.startsWith('--batchSize=')) {
       args.batchSize = parseInt(arg.split('=')[1], 10);
@@ -52,7 +53,7 @@ function parseArgs(): CommandLineArgs {
       args.help = true;
     }
   });
-  
+
   return args;
 }
 
@@ -62,13 +63,13 @@ const args = parseArgs();
 if (args.help) {
   console.log(`
   Batch Re-Embedding Script for Silo Data
-  
+
   This script triggers re-embedding and re-AI processing of all content in Silo.
-  
+
   Usage:
     cd /home/toda/dev/dome
     npx tsx scripts/batch-reembed-silo-data.ts [--batchSize=100] [--dryRun] [--help]
-  
+
   Options:
     --batchSize=<number>  Number of items to process in each batch (default: 100)
     --dryRun              Run without actually sending messages to queues
@@ -77,28 +78,87 @@ if (args.help) {
   process.exit(0);
 }
 
+/**
+ * Creates a temporary file with the given content and returns its path
+ */
+async function createTempFile(prefix: string, content: string): Promise<string> {
+  // Generate a unique temporary file path
+  const tempFilePath = path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`);
+  
+  try {
+    // Write content to the temporary file
+    await fs.writeFile(tempFilePath, content);
+    return tempFilePath;
+  } catch (error) {
+    logger.error({ error, path: tempFilePath }, `Failed to create temporary file`);
+    throw error;
+  }
+}
+
+/**
+ * Safely deletes a file if it exists
+ */
+async function safelyDeleteFile(filePath: string): Promise<void> {
+  try {
+    await fs.unlink(filePath);
+  } catch (error) {
+    // Only log but don't throw if the error is that the file doesn't exist
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code !== 'ENOENT') {
+      logger.warn({ error, path: filePath }, `Failed to delete temporary file`);
+    }
+  }
+}
+
 async function main() {
   logger.info(`Starting batch re-embedding process${args.dryRun ? ' (DRY RUN)' : ''}`);
   logger.info(`Batch size: ${args.batchSize}`);
+  logger.info(`Using temporary directory: ${os.tmpdir()}`);
 
   try {
     // Use wrangler CLI commands instead of importing wrangler
     logger.info('Querying content from Silo database...');
-    
+
     // Create a temporary SQL file
-    const sqlFile = './temp-query-silo-contents.sql';
-    fs.writeFileSync(sqlFile, 'SELECT * FROM contents;');
+    let sqlFile: string | null = null;
+    let stdout: string;
     
-    // Execute the query using wrangler CLI
-    const { stdout } = await execAsync('npx wrangler d1 execute silo --file=./temp-query-silo-contents.sql --json');
-    
-    // Clean up the temporary file
-    fs.unlinkSync(sqlFile);
-    
+    try {
+      // First, check if the contents table exists
+      sqlFile = await createTempFile('silo-query', "SELECT name FROM sqlite_master WHERE type='table' AND name='contents';");
+      logger.debug(`Created temporary SQL file to check table existence at ${sqlFile}`);
+      
+      // Check if the table exists
+      const tableCheckResult = await execAsync(`npx wrangler d1 execute silo --file=${sqlFile} --json`);
+      const tableCheckData = JSON.parse(tableCheckResult.stdout);
+      
+      // If no tables found or contents table not found
+      if (!tableCheckData[0]?.results?.length) {
+        logger.error('The "contents" table does not exist in the database. Migrations may not have been applied.');
+        logger.info('Try running: npx wrangler d1 migrations apply silo');
+        return;
+      }
+      
+      // Clean up the check file
+      await safelyDeleteFile(sqlFile);
+      
+      // Now create the actual query file
+      sqlFile = await createTempFile('silo-query', 'SELECT * FROM contents;');
+      logger.debug(`Created temporary SQL file at ${sqlFile}`);
+      
+      // Execute the query using wrangler CLI
+      const result = await execAsync(`npx wrangler d1 execute silo --file=${sqlFile} --json`);
+      stdout = result.stdout;
+    } finally {
+      // Clean up the temporary file
+      if (sqlFile) {
+        await safelyDeleteFile(sqlFile);
+      }
+    }
+
     // Parse the results
     const results = JSON.parse(stdout);
     const contentItems = results[0].results || [];
-    
+
     if (!contentItems || contentItems.length === 0) {
       logger.warn('No content found in Silo database.');
       return;
@@ -116,9 +176,9 @@ async function main() {
       const start = batchIndex * args.batchSize;
       const end = Math.min(start + args.batchSize, contentItems.length);
       const batch = contentItems.slice(start, end);
-      
+
       logger.info(`Processing batch ${batchIndex + 1}/${totalBatches} (items ${start + 1}-${end})`);
-      
+
       for (const item of batch) {
         try {
           const message: NewContentMessage = {
@@ -130,19 +190,38 @@ async function main() {
           if (!args.dryRun) {
             // Use wrangler CLI to send messages to queues
             logger.info(`Sending message for content ID: ${item.id}`);
+
+            // Create temporary message file
+            let tempMessageFile: string | null = null;
             
-            // Create temporary message files
-            const messageJson = JSON.stringify(message);
-            fs.writeFileSync('./temp-message.json', messageJson);
-            
-            // Send to both queues
-            await execAsync('npx wrangler queues publish new-content-constellation ./temp-message.json');
-            await execAsync('npx wrangler queues publish new-content-ai ./temp-message.json');
-            
-            // Clean up
-            fs.unlinkSync('./temp-message.json');
+            try {
+              // Create temporary message files
+              const messageJson = JSON.stringify(message);
+              tempMessageFile = await createTempFile('silo-message', messageJson);
+              logger.debug(`Created temporary message file at ${tempMessageFile}`);
+
+              // Send to both queues
+              try {
+                await execAsync(`npx wrangler queues publish new-content-constellation ${tempMessageFile}`);
+                logger.debug(`Sent message to constellation queue for ID: ${item.id}`);
+              } catch (queueError) {
+                logger.error({ error: queueError }, `Failed to send to constellation queue for ID: ${item.id}`);
+              }
+
+              try {
+                await execAsync(`npx wrangler queues publish new-content-ai ${tempMessageFile}`);
+                logger.debug(`Sent message to AI queue for ID: ${item.id}`);
+              } catch (queueError) {
+                logger.error({ error: queueError }, `Failed to send to AI queue for ID: ${item.id}`);
+              }
+            } finally {
+              // Clean up
+              if (tempMessageFile) {
+                await safelyDeleteFile(tempMessageFile);
+              }
+            }
           }
-          
+
           logger.debug(`Sent message for content ID: ${item.id}`);
           successCount++;
         } catch (error) {
@@ -152,18 +231,18 @@ async function main() {
           );
           failureCount++;
         }
-        
+
         processedCount++;
-        
+
         // Log progress every 10% of total
         if (processedCount % Math.max(1, Math.floor(contentItems.length / 10)) === 0) {
           const percentComplete = ((processedCount / contentItems.length) * 100).toFixed(1);
           logger.info(`Progress: ${percentComplete}% (${processedCount}/${contentItems.length})`);
         }
       }
-      
+
       logger.info(`Completed batch ${batchIndex + 1}/${totalBatches}`);
-      
+
       // Small delay between batches to avoid overwhelming the system
       if (batchIndex < totalBatches - 1) {
         await new Promise(resolve => setTimeout(resolve, 1000));

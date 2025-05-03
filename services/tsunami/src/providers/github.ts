@@ -139,9 +139,12 @@ export class GithubProvider implements Provider {
         // Inject metadata header into content
         const contentWithMetadata = injectMetadataHeader(content, metadata);
 
+        // Determine the content category - Markdown files should be 'document', others are 'code'
+        const category = f.filename.endsWith('.md') ? 'document' : 'code';
+        
         puts.push({
           content: contentWithMetadata,
-          category: 'code' as ContentCategory,
+          category: category as ContentCategory,
           mimeType: mimeFor(f.filename),
           userId,
           metadata: {

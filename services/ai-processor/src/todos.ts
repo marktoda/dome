@@ -54,7 +54,7 @@ export async function sendTodosToQueue(
         logger.info({
           contentId,
           userId,
-          todoCount: todoItems.length
+          todoCount: todoItems.length,
           todoItems,
         }, 'Sending todos to queue');
 

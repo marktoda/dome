@@ -17,8 +17,10 @@ import { SiloSimplePutInput } from '@dome/common';
 export enum ProviderType {
   /** GitHub repository provider */
   GITHUB = 'GITHUB',
-  /** Notion document provider (not implemented yet) */
+  /** Notion document provider */
   NOTION = 'NOTION',
+  /** Website provider */
+  WEBSITE = 'WEBSITE',
 }
 
 /**
@@ -64,4 +66,4 @@ export interface Provider {
 // Export provider implementations
 export { GithubProvider } from './github';
 export { NotionProvider } from './notion';
-
+export { WebsiteProvider } from './website';

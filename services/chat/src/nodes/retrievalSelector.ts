@@ -7,6 +7,7 @@ import { LlmService, } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
 import { z } from 'zod';
+import { getRetrievalSelectionPrompt } from '../config/promptsConfig';
 
 /**
  * Zod schema for task extraction
@@ -75,21 +76,8 @@ export async function retrievalSelector(
     /* ------------------------------------------------------------------ */
     /*  LLM-based retrieval selection                                     */
     /* ------------------------------------------------------------------ */
-    // System prompt for retrieval selection
-    const systemPrompt = `You are a retrieval expert that determines which information sources are most relevant for specific questions.
-
-Please evaluate the user's query and determine a set of _retrieval tasks_ to help generate the context to best answer the user's question.
-
-Available retrieval categories:
-${availableRetrievalTypes}
-
-Guidelines:
-- Select sources that are truly relevant and likely to help answer the user's question
-- You may select multiple sources if needed
-- Order sources by likelihood to be helpful in answering the user's question
-- Base your decision on the specific information needs of the task
-- Include a brief reasoning explaining your selection
-`;
+    // Get system prompt from centralized config
+    const systemPrompt = getRetrievalSelectionPrompt(availableRetrievalTypes);
     logger.info({ systemPrompt }, "System prompt for retrieval selection");
 
     // Call LLM to decide which retrievers are appropriate for this task
@@ -121,12 +109,23 @@ Guidelines:
     const elapsed = performance.now() - t0;
     ObservabilityService.endSpan(env, traceId, spanId, "retrievalSelector", state, state, elapsed);
 
+    // Deduplicate tasks by category and query
+    const uniqueTasks = new Map();
+    for (const task of result.tasks) {
+      const key = `${task.category}:${task.query}`;
+      uniqueTasks.set(key, task);
+    }
+
+    const deduplicatedTasks = Array.from(uniqueTasks.values());
     logger.info({
       elapsedMs: elapsed,
-    }, "Retrieval selection complete");
+      originalTaskCount: result.tasks.length,
+      deduplicatedTaskCount: deduplicatedTasks.length,
+      duplicatesRemoved: result.tasks.length - deduplicatedTasks.length
+    }, "Retrieval selection complete (with deduplication)");
 
     return {
-      retrievals: result.tasks,
+      retrievals: deduplicatedTasks,
       reasoning: [...(state.reasoning || []), result.reasoning],
       metadata: {
         currentNode: "retrievalSelector",

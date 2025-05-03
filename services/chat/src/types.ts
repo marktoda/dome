@@ -512,9 +512,6 @@ export const GraphStateAnnotation = Annotation.Root({
   _filter: merge<Record<string, any>>(),
 
   /* ---------- retrieval and reranking ----------------------------- */
-  retrievals: Annotation<RetrievalTask[]>({
-    reducer: (prev: RetrievalTask[], next: RetrievalTask[]) => [...prev, ...next],
-    default: () => [],
-  }),
+  retrievals: Annotation<RetrievalTask[]>(),
   synthesizedContext: Annotation<string>(),
 });

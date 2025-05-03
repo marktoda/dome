@@ -268,10 +268,11 @@ export function validateInitialState(state: unknown): any {
     const validatedState = InitialStateSchema.parse(state);
 
     // Additional validation and sanitization for messages
-    validatedState.messages = validateAndSanitizeMessages(validatedState.messages, {
-      maxMessageLength: 4000,
-      maxMessagesCount: 100,
-    });
+    // TODO: make less intense validation
+    // validatedState.messages = validateAndSanitizeMessages(validatedState.messages, {
+    //   maxMessageLength: 4000,
+    //   maxMessagesCount: 100,
+    // });
 
     return validatedState;
   } catch (error) {

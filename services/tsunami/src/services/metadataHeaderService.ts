@@ -226,3 +226,84 @@ export function getLanguageFromPath(path: string): string {
   
   return language;
 }
+
+/**
+ * Creates a metadata object for Website content
+ *
+ * @param baseUrl - The base URL of the website
+ * @param pageUrl - The specific page URL
+ * @param updatedAt - The timestamp when the content was last updated
+ * @param title - The page title
+ * @param sizeBytes - The size of the content in bytes
+ * @returns A complete metadata object
+ */
+export function createWebsiteMetadata(
+  baseUrl: string,
+  pageUrl: string,
+  updatedAt: string,
+  title: string,
+  sizeBytes: number,
+): DomeMetadata {
+  const requestId = getRequestId();
+  
+  // Validate inputs
+  assertValid(baseUrl && baseUrl.trim().length > 0, 'BaseUrl cannot be empty', {
+    operation: 'createWebsiteMetadata',
+    requestId
+  });
+  
+  assertValid(pageUrl && pageUrl.trim().length > 0, 'PageUrl cannot be empty', {
+    operation: 'createWebsiteMetadata',
+    baseUrl,
+    requestId
+  });
+  
+  assertValid(updatedAt && updatedAt.trim().length > 0, 'UpdatedAt cannot be empty', {
+    operation: 'createWebsiteMetadata',
+    baseUrl,
+    pageUrl,
+    requestId
+  });
+  
+  assertValid(sizeBytes >= 0, 'Size must be a non-negative number', {
+    operation: 'createWebsiteMetadata',
+    baseUrl,
+    pageUrl,
+    sizeBytes,
+    requestId
+  });
+  
+  // Determine content type - default to document
+  const contentType = 'document';
+  
+  const metadata = {
+    source: {
+      type: 'website',
+      base_url: baseUrl,
+      page_url: pageUrl,
+      title: title || pageUrl,
+      updated_at: updatedAt,
+    },
+    content: {
+      type: contentType,
+      language: 'html',
+      size_bytes: sizeBytes,
+    },
+    ingestion: {
+      timestamp: new Date().toISOString(),
+      version: METADATA_VERSION,
+      request_id: requestId || 'unknown',
+    },
+  };
+  
+  logger.debug({
+    event: 'website_metadata_created',
+    baseUrl,
+    pageUrl,
+    title,
+    sizeBytes,
+    requestId
+  }, 'Created Website metadata object');
+  
+  return metadata;
+}

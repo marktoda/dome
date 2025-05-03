@@ -33,7 +33,6 @@ export interface PromptsConfig {
     systemPrompt: string;
   };
 
-
   /**
    * Prompt for task splitting and instruction extraction (RAG Chat V2)
    */
@@ -113,6 +112,16 @@ export interface PromptsConfig {
      */
     systemPrompt: string;
   };
+
+  /**
+   * Prompt for selecting appropriate retrieval sources
+   */
+  retrievalSelection: {
+    /**
+     * System prompt for determining which information sources to query
+     */
+    systemPrompt: string;
+  };
 }
 
 /**
@@ -129,11 +138,11 @@ const ENVIRONMENT_CONFIGS: Record<string, Partial<PromptsConfig>> = {
 
   test: {
     // Test environment can have simplified prompts
-    queryRewriting: {
-      systemPrompt: `Rewrite the query to make it more effective for retrieval.`,
+    splitTask: {
+      systemPrompt: `Split this task into subtasks if needed.`,
     },
-    queryComplexityAnalysis: {
-      systemPrompt: `Analyze if this query is complex and should be split.`,
+    condenseTask: {
+      systemPrompt: `Condense this query to keywords.`,
     },
   },
 };
@@ -169,7 +178,6 @@ Respond with a JSON object with the following properties:
 - reason: brief explanation of your decision
 - suggestedQueries: array of simpler queries if shouldSplit is true (max 3)`,
   },
-
 
   splitTask: {
     systemPrompt: `You are an AI assistant that analyzes user queries to extract precise task instructions and split complex tasks.
@@ -276,9 +284,10 @@ Available tools
 `
   },
 
+
   ragAnswer: {
     systemPrompt: `
-You are a knowledgeable AI assistant.  Write a concise, accurate answer for the user.
+You are a knowledgeable AI assistant. Write a concise, accurate answer for the user.
 
 Context
 -------
@@ -371,6 +380,23 @@ Carefully analyze the retrieved content and answer these questions:
 Based on your analysis, you must decide if the information is ADEQUATE or INADEQUATE to answer the query.
 Provide your reasoning and a final decision.`,
   },
+
+  retrievalSelection: {
+    systemPrompt: `You are a retrieval expert that determines which information sources are most relevant for specific questions.
+
+Please evaluate the user's query and determine a set of _retrieval tasks_ to help generate the context to best answer the user's question.
+
+Available retrieval categories:
+{{availableRetrievalTypes}}
+
+Guidelines:
+- Select sources that are truly relevant and likely to help answer the user's question
+- You may select multiple sources if needed
+- Order sources by likelihood to be helpful in answering the user's question
+- Base your decision on the specific information needs of the task
+- Include a brief reasoning explaining your selection
+`,
+  },
 };
 
 /**
@@ -433,8 +459,13 @@ export function getPromptsConfig(): PromptsConfig {
       ...DEFAULT_PROMPTS_CONFIG.retrievalEvaluation,
       ...(envConfig.retrievalEvaluation || {}),
     },
+    retrievalSelection: {
+      ...DEFAULT_PROMPTS_CONFIG.retrievalSelection,
+      ...(envConfig.retrievalSelection || {}),
+    },
   };
 }
+
 
 /**
  * Get the system prompt for query rewriting
@@ -552,3 +583,20 @@ export function getRetrievalEvaluationPrompt(query: string, contentToEvaluate: s
   // Add situational context
   return injectSituationalContext(prompt, userData);
 }
+
+/**
+ * Get the system prompt for retrieval source selection
+ * @param availableRetrievalTypes The available retrieval types to include in the prompt
+ * @param userData Optional user context data
+ * @returns The system prompt for retrieval selection with placeholders replaced and situational context
+ */
+export function getRetrievalSelectionPrompt(availableRetrievalTypes: string, userData?: UserContextData): string {
+  let prompt = getPromptsConfig().retrievalSelection.systemPrompt;
+
+  // Replace placeholders with actual values
+  prompt = prompt.replace('{{availableRetrievalTypes}}', availableRetrievalTypes);
+
+  // Add situational context
+  return injectSituationalContext(prompt, userData);
+}
+

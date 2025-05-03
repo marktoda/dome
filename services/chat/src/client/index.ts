@@ -18,6 +18,12 @@ import {
   WebSocketOptions,
   createWebSocketClient
 } from './websocketClient';
+import {
+  ThinkingEventHandler,
+  EventType,
+  createThinkingEventHandler,
+  SSEEvent
+} from './thinkingEventHandler';
 import { ChatRequest } from '../types';
 
 export {
@@ -30,7 +36,11 @@ export {
   WebSocketClient,
   WebSocketCallbacks,
   WebSocketOptions,
-  createWebSocketClient
+  createWebSocketClient,
+  ThinkingEventHandler,
+  EventType,
+  createThinkingEventHandler,
+  SSEEvent
 };
 
 export * from '../types';

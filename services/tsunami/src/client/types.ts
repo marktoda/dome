@@ -63,6 +63,30 @@ export interface TsunamiBinding {
     userId?: string,
     cadenceSecs?: number
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>;
+  
+  /**
+   * Register a website URL and initialize syncing
+   */
+  registerWebsite(
+    websiteConfig: WebsiteRegistrationConfig,
+    userId?: string,
+    cadenceSecs?: number
+  ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>;
+}
+
+/**
+ * Configuration for website registration
+ */
+export interface WebsiteRegistrationConfig {
+  url: string;
+  crawlDepth?: number;
+  respectRobotsTxt?: boolean;
+  delayMs?: number;
+  includeImages?: boolean;
+  includeScripts?: boolean;
+  includeStyles?: boolean;
+  followExternalLinks?: boolean;
+  urlPatterns?: string[];
 }
 
 /**

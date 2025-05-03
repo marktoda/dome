@@ -1,5 +1,6 @@
 import { getLogger, logError } from '@dome/logging';
 import { AgentState } from '../types';
+import { processThinkingContent } from './thinkingHandler';
 
 /**
  * Transform graph output to SSE events
@@ -45,21 +46,34 @@ export function transformToSSE(stream: any, startTime: number): ReadableStream {
               // Extract the token chunk
               const chunk = event.data?.chunk;
               if (chunk && chunk.content) {
-                // Add this chunk to our accumulated text
-                accumulatedText += chunk.content;
+                // Check if this might be thinking content
+                const isThinking = chunk.content.includes('<thinking>') ||
+                                   accumulatedText.includes('<thinking>');
+                
+                // Process the content appropriately
+                const processedContent = processThinkingContent(chunk.content);
+                accumulatedText += processedContent;
                 
                 // Send the updated text to the client
                 logger.debug({
                   chunkLength: chunk.content.length,
-                  chunkContent: chunk.content,
+                  isThinking,
                   totalLength: accumulatedText.length
                 }, '[SSETransformer] Sending token chunk');
                 
-                // Send as a text event
-                const textEvent = `event: text\ndata: ${JSON.stringify({
-                  text: accumulatedText
-                })}\n\n`;
-                controller.enqueue(encoder.encode(textEvent));
+                // If it's thinking content, send as a thinking event
+                if (isThinking) {
+                  const thinkingEvent = `event: thinking\ndata: ${JSON.stringify({
+                    thinking: accumulatedText
+                  })}\n\n`;
+                  controller.enqueue(encoder.encode(thinkingEvent));
+                } else {
+                  // Otherwise send as regular text event
+                  const textEvent = `event: text\ndata: ${JSON.stringify({
+                    text: accumulatedText
+                  })}\n\n`;
+                  controller.enqueue(encoder.encode(textEvent));
+                }
               }
             } catch (e) {
               logger.warn({
@@ -132,11 +146,21 @@ export function transformToSSE(stream: any, startTime: number): ReadableStream {
         
         // As a final fallback, ensure we've sent the complete text
         if (accumulatedText.length > 0) {
+          // Check if accumulated text appears to be thinking content
+          const isThinking = accumulatedText.includes('<thinking>');
+          
           // Send the final text one more time to ensure client has complete response
-          const finalTextEvent = `event: text\ndata: ${JSON.stringify({
-            text: accumulatedText
-          })}\n\n`;
-          controller.enqueue(encoder.encode(finalTextEvent));
+          if (isThinking) {
+            const finalThinkingEvent = `event: thinking\ndata: ${JSON.stringify({
+              thinking: processThinkingContent(accumulatedText)
+            })}\n\n`;
+            controller.enqueue(encoder.encode(finalThinkingEvent));
+          } else {
+            const finalTextEvent = `event: text\ndata: ${JSON.stringify({
+              text: accumulatedText
+            })}\n\n`;
+            controller.enqueue(encoder.encode(finalTextEvent));
+          }
         }
         
         // Send end event
