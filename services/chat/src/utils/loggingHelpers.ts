@@ -56,6 +56,8 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
         source: c.metadata.source,
         title: c.metadata.title,
         url: c.metadata.url,
+        score: c.metadata.relevanceScore,
+        rerankerScore: c.metadata.rerankerScore,
       })),
     }));
   }

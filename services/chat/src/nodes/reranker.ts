@@ -1,12 +1,13 @@
-// Reranker utilities and node – simplified, readable & easily extensible
+// Reranker utilities and node – global‑aware, easily extensible
 // =============================================================================
-// This single file keeps the public surface identical while dramatically
-// reducing duplication.  Add or swap reranker back‑ends by implementing the
-// BaseReranker abstract class.
+// A single file that:
+//   • provides drop‑in Cohere / Workers‑AI back‑ends
+//   • **globally** reranks all chunks so scores are comparable across sources
+//   • writes the globally‑normalised scores back into each task
 // =============================================================================
 
 /* -------------------------------------------------------------------------- */
-/*  Shared types & helpers                                                     */
+/*  Shared imports & types                                                     */
 /* -------------------------------------------------------------------------- */
 
 import { getLogger } from '@dome/common';
@@ -21,40 +22,41 @@ import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
 import { CohereRerank } from '@langchain/cohere';
 import { Document } from '@langchain/core/documents';
-import { LangGraphRunnableConfig } from '@langchain/langgraph';
+import type { LangGraphRunnableConfig } from '@langchain/langgraph';
 
-/* -------------------------------- Config ---------------------------------- */
+/* -------------------------------------------------------------------------- */
+/*  Configuration                                                              */
+/* -------------------------------------------------------------------------- */
 
 type Impl = 'cohere' | 'workers-ai';
 
-export type RerankerOptions = WorkersAiRerankerOptions | CohereRerankerOptions;
+export type RerankerOptions = WorkersAiOpts | CohereOpts;
 
-interface WorkersAiRerankerOptions extends BaseRerankerOptions {
-  implementation: 'workers-ai',
-  model: keyof AiModels,
-}
-
-interface CohereRerankerOptions extends BaseRerankerOptions {
-  implementation: 'cohere',
-  model: string,
-}
-
-interface BaseRerankerOptions {
+interface BaseOpts {
   name: string;
-  // model?: string;
   scoreThreshold?: number;
-  maxResults?: number;
+  maxResults?: number; // per‑rerank call
   keepBelowThreshold?: boolean;
-  implementation?: Impl;
+}
+
+interface WorkersAiOpts extends BaseOpts {
+  implementation: 'workers-ai';
+  model: '@cf/baai/bge-reranker-base';
+}
+
+interface CohereOpts extends BaseOpts {
+  implementation: 'cohere';
+  model: 'rerank-english-v2.0' | 'rerank-multilingual-v2.0' | string;
   cohereApiKey?: string;
 }
 
-const DEFAULTS: RerankerOptions = {
-  name: 'default',
-  scoreThreshold: 0.2,
-  maxResults: 20,
-  model: '@cf/baai/bge-reranker-base',
+const DEFAULTS: WorkersAiOpts = {
+  name: 'global',
   implementation: 'workers-ai',
+  model: '@cf/baai/bge-reranker-base',
+  scoreThreshold: 0.2,
+  maxResults: 50,
+  keepBelowThreshold: false,
 };
 
 const SOURCE_THRESHOLDS: Record<string, number> = {
@@ -75,9 +77,7 @@ export function createReranker(opts: RerankerOptions) {
   const cfg = { ...DEFAULTS, ...opts } as Required<RerankerOptions>;
 
   const runner =
-    cfg.implementation === 'workers-ai'
-      ? new WorkersAIReranker(cfg)
-      : new CohereReranker(cfg);
+    cfg.implementation === 'workers-ai' ? new WorkersAIReranker(cfg) : new CohereReranker(cfg);
 
   return (
     retrieval: RetrievalResult,
@@ -109,9 +109,7 @@ function mapSourceType(src: string): RetrievalToolType {
   }
 }
 
-function logistic(x: number) {
-  return 1 / (1 + Math.exp(-x));
-}
+const logistic = (x: number) => 1 / (1 + Math.exp(-x));
 
 function thresholdFor(chunk: DocumentChunk, fallback: number) {
   return SOURCE_THRESHOLDS[chunk.metadata.sourceType as string] ?? fallback;
@@ -119,7 +117,7 @@ function thresholdFor(chunk: DocumentChunk, fallback: number) {
 
 function filterAndLimit(
   chunks: DocumentChunk[],
-  cfg: Required<Pick<RerankerOptions, 'scoreThreshold' | 'keepBelowThreshold' | 'maxResults'>>,
+  cfg: Partial<BaseOpts>,
 ): DocumentChunk[] {
   const filtered = cfg.keepBelowThreshold
     ? chunks
@@ -129,9 +127,8 @@ function filterAndLimit(
         c.metadata.rerankerScore ??
         c.metadata.relevanceScore ??
         0;
-      return score >= thresholdFor(c, cfg.scoreThreshold);
+      return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
     });
-
   return filtered.slice(0, cfg.maxResults);
 }
 
@@ -143,40 +140,35 @@ abstract class BaseReranker {
   constructor(protected readonly cfg: Required<RerankerOptions>) { }
 
   async rerank(
-    result: RetrievalResult,
+    res: RetrievalResult,
     query: string,
     env: Env,
     traceId: string,
     spanId: string,
   ): Promise<RetrievalTask> {
     const t0 = performance.now();
-
-    if (result.chunks.length === 0) {
-      return this.emptyTask(result, query);
-    }
+    if (!res.chunks.length) return this.emptyTask(res, query);
 
     let ranked: DocumentChunk[];
     try {
-      ranked = await this.rank(result.chunks, query, env);
+      ranked = await this.rank(res.chunks, query, env);
     } catch (err) {
-      log.error({ err }, 'Reranking failed – falling back to vector score');
-      ranked = this.fallbackToVector(result.chunks);
+      log.error({ err }, 'Reranking failed – fallback to vector scores');
+      ranked = this.fallback(res.chunks);
     }
-
-    const top = filterAndLimit(ranked, this.cfg);
 
     const elapsed = performance.now() - t0;
     return {
-      category: mapSourceType(result.sourceType),
+      category: mapSourceType(res.sourceType),
       query,
-      chunks: top,
-      sourceType: result.sourceType,
+      chunks: filterAndLimit(ranked, this.cfg),
+      sourceType: res.sourceType,
       metadata: {
-        rerankerModel: this.cfg.model!,
+        rerankerModel: this.cfg.model,
         executionTimeMs: elapsed,
-        scoreThreshold: this.cfg.scoreThreshold!,
-        retrievalStrategy: result.metadata.retrievalStrategy,
-        totalCandidates: result.metadata.totalCandidates,
+        scoreThreshold: this.cfg.scoreThreshold,
+        retrievalStrategy: res.metadata.retrievalStrategy,
+        totalCandidates: res.metadata.totalCandidates,
       },
     };
   }
@@ -188,16 +180,16 @@ abstract class BaseReranker {
       chunks: [],
       sourceType: res.sourceType,
       metadata: {
-        rerankerModel: this.cfg.model!,
+        rerankerModel: this.cfg.model,
         executionTimeMs: 0,
-        scoreThreshold: this.cfg.scoreThreshold!,
+        scoreThreshold: this.cfg.scoreThreshold,
         retrievalStrategy: res.metadata.retrievalStrategy,
         totalCandidates: res.metadata.totalCandidates,
       },
     };
   }
 
-  protected fallbackToVector(chunks: DocumentChunk[]): DocumentChunk[] {
+  protected fallback(chunks: DocumentChunk[]): DocumentChunk[] {
     return chunks
       .map(c => ({
         ...c,
@@ -207,7 +199,7 @@ abstract class BaseReranker {
           hybridScore: c.metadata.relevanceScore,
         },
       }))
-      .sort((a, b) => (b.metadata.relevanceScore ?? 0) - (a.metadata.relevanceScore ?? 0));
+      .sort((a, b) => (b.metadata.hybridScore ?? 0) - (a.metadata.hybridScore ?? 0));
   }
 
   protected abstract rank(
@@ -223,38 +215,29 @@ abstract class BaseReranker {
 
 class CohereReranker extends BaseReranker {
   private readonly reranker: CohereRerank;
-
   constructor(cfg: Required<RerankerOptions>) {
     super(cfg);
-    this.reranker = new CohereRerank({ apiKey: cfg.cohereApiKey, model: cfg.model! });
+    this.reranker = new CohereRerank({ apiKey: (cfg as any).cohereApiKey, model: cfg.model });
   }
 
   protected async rank(chunks: DocumentChunk[], query: string): Promise<DocumentChunk[]> {
-    const docs = chunks.map(
-      c =>
-        new Document({
-          pageContent: c.content,
-          metadata: { id: c.id },
-        }),
-    );
-
-    const res = await this.reranker.rerank(docs, query);
-
-    return res
+    const docs = chunks.map(c => new Document({ pageContent: c.content, metadata: { id: c.id } }));
+    const out = await this.reranker.rerank(docs, query);
+    return out
       .map(r => {
         const chunk = chunks[r.index];
-        const vectorScore = chunk.metadata.relevanceScore ?? 0.5;
-        const rerankerScore = r.relevanceScore;
+        const vector = chunk.metadata.relevanceScore ?? 0.5;
+        const rer = r.relevanceScore;
         return {
           ...chunk,
           metadata: {
             ...chunk.metadata,
-            rerankerScore,
-            hybridScore: 0.7 * rerankerScore + 0.3 * vectorScore,
+            rerankerScore: rer,
+            hybridScore: 0.7 * rer + 0.3 * vector,
           },
         };
       })
-      .sort((a, b) => (b.metadata as any).hybridScore - (a.metadata as any).hybridScore);
+      .sort((a, b) => (b.metadata.hybridScore ?? 0) - (a.metadata.hybridScore ?? 0));
   }
 }
 
@@ -263,10 +246,6 @@ class CohereReranker extends BaseReranker {
 /* -------------------------------------------------------------------------- */
 
 class WorkersAIReranker extends BaseReranker {
-  constructor(protected readonly cfg: Required<WorkersAiRerankerOptions>) {
-    super(cfg);
-  }
-
   protected async rank(chunks: DocumentChunk[], query: string, env: Env): Promise<DocumentChunk[]> {
     const clean = (s: string) =>
       s.replace(/```[\s\S]*?```/g, '<code>').replace(/<[^>]+>/g, '').slice(0, 1500);
@@ -276,7 +255,7 @@ class WorkersAIReranker extends BaseReranker {
       contexts: chunks.map(c => ({ text: clean(c.content) })),
     };
 
-    const out = (await env.AI.run(this.cfg.model, input)) as {
+    const out = (await (env as any).AI.run(this.cfg.model, input)) as {
       response: { id: number; score: number }[];
     };
 
@@ -287,8 +266,8 @@ class WorkersAIReranker extends BaseReranker {
         const r = out.response.find(x => x.id === i);
         const raw = r?.score ?? -5;
         const norm = logistic(raw);
-        const vectorScore = c.metadata.relevanceScore ?? 0.5;
-        const hybrid = allLow ? vectorScore : 0.7 * norm + 0.3 * vectorScore;
+        const vector = c.metadata.relevanceScore ?? 0.5;
+        const hybrid = allLow ? vector : 0.7 * norm + 0.3 * vector;
         return {
           ...c,
           metadata: {
@@ -299,15 +278,13 @@ class WorkersAIReranker extends BaseReranker {
           },
         };
       })
-      .sort((a, b) => (b.metadata as any).hybridScore - (a.metadata as any).hybridScore);
+      .sort((a, b) => (b.metadata.hybridScore ?? 0) - (a.metadata.hybridScore ?? 0));
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Reranker node                                                             */
+/*  Global‑aware reranker node                                                 */
 /* -------------------------------------------------------------------------- */
-
-// The node bundles retrieval deduplication + per‑task reranking in ~80 lines.
 
 export async function reranker(
   state: AgentState,
@@ -315,50 +292,60 @@ export async function reranker(
   env: Env,
 ): Promise<Partial<AgentState>> {
   const t0 = performance.now();
-  const nodeId = 'reranker_node';
+  const nodeId = 'reranker';
   const traceId = state.metadata?.traceId ?? crypto.randomUUID();
   const spanId = ObservabilityService.startSpan(env, traceId, nodeId, state);
 
   try {
-    const tasks = mergeTasks((state.retrievals ?? []) as RetrievalTask[]);
+    const tasks = mergeTasks(state.retrievals as RetrievalTask[] | undefined);
     if (!tasks.length) return finish(state, nodeId, spanId, traceId, t0, env);
 
-    const lastUserMsg = [...(state.messages ?? [])]
-      .reverse()
-      .find(m => m.role === 'user')?.content;
-
-    const reranked: RetrievalTask[] = [];
-
-    for (const task of tasks) {
-      if (!task.chunks?.length) continue;
-
-      const rerank = createReranker({
-        ...DEFAULTS,
-        name: `reranker-${task.category}`,
+    // ---------------- Global collection ----------------
+    const allChunks: DocumentChunk[] = [];
+    const idToTask = new Map<string, RetrievalTask>();
+    tasks.forEach(t => {
+      t.chunks?.forEach(c => {
+        allChunks.push(c);
+        idToTask.set(c.id, t);
       });
+    });
 
-      const res = await rerank(
-        {
-          query: task.query ?? lastUserMsg ?? '',
-          chunks: task.chunks,
-          sourceType: task.sourceType ?? '',
-          metadata: task.metadata ?? {
-            executionTimeMs: 0,
-            retrievalStrategy: '0',
-            totalCandidates: 0,
+    if (!allChunks.length) return finish(state, nodeId, spanId, traceId, t0, env);
 
-          },
-        },
-        task.query ?? lastUserMsg ?? '',
-        env,
-        traceId,
-        spanId,
-      );
+    // Select one global model (simple heuristic)
+    const query = [...(state.messages ?? [])].reverse().find(m => m.role === 'user')?.content ?? '';
+    const modelOpts = pickGlobalModel(allChunks, query, env);
 
-      reranked.push({ ...task, chunks: res.chunks, metadata: res.metadata });
+    const globalRerank = createReranker({ ...DEFAULTS, ...modelOpts, name: 'global' });
+    const res = await globalRerank(
+      {
+        query,
+        chunks: allChunks,
+        sourceType: 'mixed',
+        metadata: { executionTimeMs: 0, retrievalStrategy: 'merged', totalCandidates: allChunks.length },
+      },
+      query,
+      env,
+      traceId,
+      spanId,
+    );
+
+    if (!res || !res.chunks) {
+      throw new Error('Reranker returned no chunks');
     }
 
-    return finish({ ...state, retrievals: reranked }, nodeId, spanId, traceId, t0, env);
+    // ---------------- Write scores back into tasks ----------------
+    const chunkMap = new Map(res.chunks.map(c => [c.id, c] as const));
+
+    const updatedTasks = tasks.map(t => {
+      const scoredChunks = (t.chunks ?? []).map(c => chunkMap.get(c.id) ?? c);
+      return {
+        ...t,
+        chunks: filterAndLimit(scoredChunks, DEFAULTS),
+      } as RetrievalTask;
+    });
+
+    return finish({ ...state, retrievals: updatedTasks }, nodeId, spanId, traceId, t0, env);
   } catch (e) {
     const err = toDomeError(e);
     log.error({ err }, 'Reranker node failed');
@@ -373,31 +360,27 @@ export async function reranker(
   }
 }
 
-/* ------------------------ node‑level helpers ------------------------------ */
+/* -------------------------------------------------------------------------- */
+/*  Helper functions                                                           */
+/* -------------------------------------------------------------------------- */
 
-function mergeTasks(tasks: RetrievalTask[]): RetrievalTask[] {
+function mergeTasks(tasks: RetrievalTask[] | undefined): RetrievalTask[] {
+  if (!tasks) return [];
   const map = new Map<string, RetrievalTask>();
-  for (const t of tasks) {
+  tasks.forEach(t => {
     const key = `${t.category}:${t.query}`;
-    map.set(key, {
-      ...t,
-      chunks: [...(map.get(key)?.chunks ?? []), ...(t.chunks ?? [])],
-    });
-  }
+    map.set(key, { ...t, chunks: [...(map.get(key)?.chunks ?? []), ...(t.chunks ?? [])] });
+  });
   return [...map.values()];
 }
 
-function selectModel(task: RetrievalTask, env: Env) {
-  const query = (task.query ?? '').toLowerCase();
+function pickGlobalModel(allChunks: DocumentChunk[], query: string, env: Env): RerankerOptions {
   const multilingual = /[^\x00-\x7F]/.test(query);
-  const isCode = task.sourceType === 'code' || query.includes('code');
-
+  const isCode = allChunks.some(c => c.metadata.sourceType === 'code') || query.toLowerCase().includes('code');
   if ((env as any).COHERE_API_KEY) {
-    return multilingual ? 'rerank-multilingual-v2.0' : 'rerank-english-v2.0';
+    return { implementation: 'cohere', model: multilingual ? 'rerank-multilingual-v2.0' : 'rerank-english-v2.0' } as CohereOpts;
   }
-
-  if (isCode) return '@cf/baai/bge-reranker-large';
-  return multilingual ? '@cf/baai/bge-reranker-m3' : '@cf/baai/bge-reranker-base';
+  return { implementation: 'workers-ai', model: '@cf/baai/bge-reranker-base' } as WorkersAiOpts;
 }
 
 function finish(
@@ -407,7 +390,7 @@ function finish(
   traceId: string,
   t0: number,
   env: Env,
-) {
+): Partial<AgentState> {
   const elapsed = performance.now() - t0;
   ObservabilityService.endSpan(env, traceId, spanId, nodeId, newState, newState, elapsed);
   return {
@@ -417,5 +400,6 @@ function finish(
       nodeTimings: { ...newState.metadata?.nodeTimings, [nodeId]: elapsed },
       currentNode: nodeId,
     },
-  } as Partial<AgentState>;
+  };
 }
+
