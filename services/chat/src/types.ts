@@ -4,7 +4,7 @@ import { BaseMessage } from '@langchain/core/messages';
 
 export const roleSchema = z.enum(['user', 'assistant', 'system']);
 
-export type ChatTokenStream = AsyncIterable<string>
+export type ChatTokenStream = AsyncIterable<string>;
 
 // Define schemas for request validation
 export const chatRequestSchema = z.object({
@@ -44,10 +44,10 @@ export type Role = z.infer<typeof roleSchema>;
 export type ResumeChatRequest = z.infer<typeof resumeChatRequestSchema>;
 
 export enum RetrievalToolType {
-  WEB = "web",
-  DOC = "doc",
-  CODE = "code",
-  NOTE = "note",
+  WEB = 'web',
+  DOC = 'doc',
+  CODE = 'code',
+  NOTE = 'note',
 }
 
 /**
@@ -73,7 +73,7 @@ export interface MessagePair {
  * User task entity interface for multi-task support
  */
 export interface UserTaskEntity {
-  id: string;  // ID must be required to ensure proper tracking
+  id: string; // ID must be required to ensure proper tracking
   definition?: string;
   originalQuery?: string;
   rewrittenQuery?: string;
@@ -152,7 +152,6 @@ export interface RetrievalTask {
     [key: string]: any;
   };
 }
-
 
 /**
  * Retrieval evaluation interface
@@ -253,7 +252,6 @@ export interface CombinedContext {
   sources: SourceMetadata[];
 }
 
-
 /**
  * Core state interface for the RAG graph V2
  */
@@ -330,7 +328,7 @@ export interface AgentState {
     traceId?: string;
     spanId?: string;
     executionTimeMs?: number;
-    route?: string;        // Added for routing control in the graph
+    route?: string; // Added for routing control in the graph
   };
 }
 
@@ -490,7 +488,7 @@ export const GraphStateAnnotation = Annotation.Root({
   userId: Annotation<string>(),
 
   /* ---------- conversation history -------------------------------- */
-  messages: Annotation<Message[]>(),  // Changed from concat to simple annotation
+  messages: Annotation<Message[]>(), // Changed from concat to simple annotation
   chatHistory: Annotation<MessagePair[]>(),
 
   /* ---------- static config --------------------------------------- */
@@ -499,9 +497,9 @@ export const GraphStateAnnotation = Annotation.Root({
   /* ---------- working area for nodes ------------------------------ */
   taskIds: Annotation<string[]>(),
   taskEntities: merge<Record<string, UserTaskEntity>>(),
-  docs: Annotation<Document[]>(),  // Changed from concat to simple annotation
-  sources: Annotation<SourceMetadata[]>(),  // Changed from concat to simple annotation
-  reasoning: Annotation<string[]>(),  // Changed from concat to simple annotation
+  docs: Annotation<Document[]>(), // Changed from concat to simple annotation
+  sources: Annotation<SourceMetadata[]>(), // Changed from concat to simple annotation
+  reasoning: Annotation<string[]>(), // Changed from concat to simple annotation
   instructions: Annotation<string>(),
   files: Annotation<string>(),
   generatedText: Annotation<string>(),

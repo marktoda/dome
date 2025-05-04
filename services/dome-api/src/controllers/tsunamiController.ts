@@ -31,14 +31,11 @@ export class TsunamiController {
         owner: z.string().min(1),
         repo: z.string().min(1),
         userId: z.string().optional(),
-        cadence: z.string().default('PT1H')
+        cadence: z.string().default('PT1H'),
       });
 
       const { owner, repo, userId, cadence } = await c.req.json<z.infer<typeof schema>>();
-      this.logger.info(
-        { owner, repo, userId, cadence },
-        'Registering GitHub repository'
-      );
+      this.logger.info({ owner, repo, userId, cadence }, 'Registering GitHub repository');
 
       // Convert cadence string (e.g., "PT1H") to seconds if provided
       let cadenceSecs = 3600; // Default 1 hour
@@ -59,12 +56,12 @@ export class TsunamiController {
 
       this.logger.info(
         { id: result.id, resourceId: result.resourceId, wasInitialised: result.wasInitialised },
-        'GitHub repository registered successfully'
+        'GitHub repository registered successfully',
       );
 
       return c.json({
         success: true,
-        ...result
+        ...result,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error registering GitHub repository');
@@ -83,21 +80,18 @@ export class TsunamiController {
       const { owner, repo } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '10', 10);
 
-      this.logger.info(
-        { owner, repo, limit },
-        'Getting GitHub repository history'
-      );
+      this.logger.info({ owner, repo, limit }, 'Getting GitHub repository history');
 
       const result = await this.tsunamiService.getGithubRepoHistory(owner, repo, limit);
 
       this.logger.info(
         { owner, repo, historyCount: result.history.length },
-        'GitHub repository history retrieved successfully'
+        'GitHub repository history retrieved successfully',
       );
 
       return c.json({
         success: true,
-        ...result
+        ...result,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error retrieving GitHub repository history');
@@ -116,21 +110,18 @@ export class TsunamiController {
       const { userId } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '10', 10);
 
-      this.logger.info(
-        { userId, limit },
-        'Getting user sync history'
-      );
+      this.logger.info({ userId, limit }, 'Getting user sync history');
 
       const result = await this.tsunamiService.getUserHistory(userId, limit);
 
       this.logger.info(
         { userId, historyCount: result.history.length },
-        'User sync history retrieved successfully'
+        'User sync history retrieved successfully',
       );
 
       return c.json({
         success: true,
-        ...result
+        ...result,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error retrieving user sync history');
@@ -149,21 +140,18 @@ export class TsunamiController {
       const { syncPlanId } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '10', 10);
 
-      this.logger.info(
-        { syncPlanId, limit },
-        'Getting sync plan history'
-      );
+      this.logger.info({ syncPlanId, limit }, 'Getting sync plan history');
 
       const result = await this.tsunamiService.getSyncPlanHistory(syncPlanId, limit);
 
       this.logger.info(
         { syncPlanId, historyCount: result.history.length },
-        'Sync plan history retrieved successfully'
+        'Sync plan history retrieved successfully',
       );
 
       return c.json({
         success: true,
-        ...result
+        ...result,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error retrieving sync plan history');

@@ -20,15 +20,12 @@ type DomeError = {
 export function createServiceWrapper(serviceName: string) {
   // Import at runtime to avoid circular dependencies
   const { toDomeError } = require('@dome/errors');
-  
-  return async function wrap<T>(
-    meta: Record<string, unknown>, 
-    fn: () => Promise<T>
-  ): Promise<T> {
+
+  return async function wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
     // Extract operation name if present for better error context
     const operation = meta.operation || meta.op || 'unknown_operation';
-    
-    return withContext(Object.assign({}, meta, { service: serviceName }), async (logger) => {
+
+    return withContext(Object.assign({}, meta, { service: serviceName }), async logger => {
       try {
         // If this is a named operation with no specific tracking, use trackOperation
         if (typeof operation === 'string' && !meta.skipTracking) {
@@ -38,34 +35,34 @@ export function createServiceWrapper(serviceName: string) {
             // Filter out operation from context to avoid duplication
             Object.entries(meta)
               .filter(([key]) => key !== 'operation' && key !== 'op')
-              .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {})
+              .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {}),
           );
         }
-        
+
         // Otherwise just run the function
         return await fn();
       } catch (err) {
         // Get toDomeError at runtime
         const { toDomeError } = require('@dome/errors');
-        
+
         // Convert to DomeError for consistent handling
-        const domeError = err && typeof err === 'object' &&
-                         'code' in err && 'message' in err
-          ? err
-          : toDomeError(
-              err,
-              `Error in ${serviceName} service${operation ? ` during ${operation}` : ''}`,
-              // Include original metadata as error context
-              meta as Record<string, any>
-            );
-        
+        const domeError =
+          err && typeof err === 'object' && 'code' in err && 'message' in err
+            ? err
+            : toDomeError(
+                err,
+                `Error in ${serviceName} service${operation ? ` during ${operation}` : ''}`,
+                // Include original metadata as error context
+                meta as Record<string, any>,
+              );
+
         // Log the error with structured format
         logError(
           domeError,
           `${serviceName} service error${operation ? ` during ${operation}` : ''}`,
-          meta as Record<string, any>
+          meta as Record<string, any>,
         );
-        
+
         // Rethrow the converted error
         throw domeError;
       }
@@ -76,7 +73,7 @@ export function createServiceWrapper(serviceName: string) {
 /**
  * Break down a complex input-output function into smaller parts
  * with proper error handling and logging.
- * 
+ *
  * @param options Configuration options
  * @param options.serviceName The name of the service
  * @param options.operation The operation name for logging
@@ -94,25 +91,25 @@ export function createProcessChain<TInput, TOutput>(options: {
 }) {
   const { serviceName, operation, inputValidation, process, outputValidation } = options;
   const wrapper = createServiceWrapper(serviceName);
-  
+
   return async function processWithLogging(input: TInput): Promise<TOutput> {
     // Create metadata for logging
     const meta = { operation, input: typeof input === 'object' ? { ...input } : input };
-    
+
     return wrapper(meta, async () => {
       // Step 1: Validate input if validation function provided
       if (inputValidation) {
         inputValidation(input);
       }
-      
+
       // Step 2: Process the input
       const output = await process(input);
-      
+
       // Step 3: Validate output if validation function provided
       if (outputValidation) {
         outputValidation(output);
       }
-      
+
       return output;
     });
   };

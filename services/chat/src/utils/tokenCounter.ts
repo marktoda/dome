@@ -13,7 +13,7 @@ function isCloudflareWorkersEnvironment(): boolean {
   return (
     // Standard check for Cloudflare Workers
     (typeof globalThis.WorkerGlobalScope !== 'undefined' &&
-     globalThis instanceof WorkerGlobalScope) ||
+      globalThis instanceof WorkerGlobalScope) ||
     // Check for Cloudflare Workers specific globals
     typeof globalThis.caches !== 'undefined' ||
     // WebAssembly support check - another indicator we might be in a restricted environment
@@ -50,7 +50,10 @@ export function countTokens(text: string, model = 'gpt-4'): number {
     if (!hasLoggedTokenizerError) {
       // Use warning level instead of error since we have a fallback
       const logger = getLogger();
-      logger.warn({ error }, 'WebAssembly tokenizer failed, using approximate token count fallback');
+      logger.warn(
+        { error },
+        'WebAssembly tokenizer failed, using approximate token count fallback',
+      );
       hasLoggedTokenizerError = true;
     }
     // Fallback to approximate count

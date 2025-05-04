@@ -19,9 +19,7 @@ export * from './client';
 /**
  * Chat Orchestrator service main class
  */
-export default class Chat
-  extends WorkerEntrypoint<Env>
-  implements ChatBinding {
+export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
   private services;
   private controllers;
   private app: Hono;
@@ -37,23 +35,23 @@ export default class Chat
     // Create Hono app instance
     this.app = new Hono();
 
-    this.app.post('/stream', async (c) => {
+    this.app.post('/stream', async c => {
       // Parse once, Hono does *not* auto-parse JSON for you
-      const body = await c.req.json<ChatRequest>()
+      const body = await c.req.json<ChatRequest>();
 
       // Ask the controller for the stream
-      const stream = await this.controllers.chat.startChatSession(body)
+      const stream = await this.controllers.chat.startChatSession(body);
 
       // Standard SSE headers; change Content-Type if you use ND-JSON, etc.
-      c.header('Content-Type', 'text/event-stream')
-      c.header('Cache-Control', 'no-cache')
-      c.status(200)
+      c.header('Content-Type', 'text/event-stream');
+      c.header('Cache-Control', 'no-cache');
+      c.status(200);
 
       // Done.  c.body() also works, but returning Response is simplest.
-      return new Response(stream)
-    })
+      return new Response(stream);
+    });
 
-    this.app.get('/healthz', () => new Response('ok'))
+    this.app.get('/healthz', () => new Response('ok'));
 
     this.logger.info('Chat Orchestrator service initialized');
   }
@@ -61,9 +59,8 @@ export default class Chat
   // ⭐ Central fetch: hand *all* HTTP traffic to Hono,
   // let WorkerEntrypoint take care of RPC calls (service bindings).
   async fetch(req: Request) {
-
     // Otherwise treat it as a normal HTTP request
-    return this.app.fetch(req)
+    return this.app.fetch(req);
   }
 
   /**

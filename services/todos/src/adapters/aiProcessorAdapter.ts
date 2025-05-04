@@ -17,7 +17,7 @@ export interface AiExtractedTodo {
 export class AiProcessorAdapter {
   /**
    * Transform raw todos from AI Processor into TodoJob objects for internal processing
-   * 
+   *
    * @param rawTodos Array of todos extracted by AI
    * @param sourceNoteId ID of the source note
    * @param userId ID of the user
@@ -26,7 +26,7 @@ export class AiProcessorAdapter {
   static transformTodos(
     rawTodos: Array<AiExtractedTodo>,
     sourceNoteId: string,
-    userId: string
+    userId: string,
   ): TodoJob[] {
     if (!Array.isArray(rawTodos) || rawTodos.length === 0) {
       return [];
@@ -77,7 +77,7 @@ export class AiProcessorAdapter {
         aiSuggestions: {
           priority,
           dueDate: dueDateTimestamp,
-        }
+        },
       };
     });
   }
@@ -85,7 +85,7 @@ export class AiProcessorAdapter {
   /**
    * Transform raw todos directly into TodoQueueItem format
    * for sending to the queue by the AI Processor
-   * 
+   *
    * @param rawTodos Array of todos extracted by AI
    * @param sourceNoteId ID of the source note
    * @param userId ID of the user
@@ -94,7 +94,7 @@ export class AiProcessorAdapter {
   static transformToQueueItems(
     rawTodos: Array<AiExtractedTodo>,
     sourceNoteId: string,
-    userId: string
+    userId: string,
   ): TodoQueueItem[] {
     if (!Array.isArray(rawTodos) || rawTodos.length === 0) {
       return [];
@@ -132,14 +132,14 @@ export class AiProcessorAdapter {
         title: todo.text.slice(0, Math.min(todo.text.length, 100)), // Use the text as title, truncated if needed
         priority,
         dueDate: todo.dueDate,
-        created: Date.now()
+        created: Date.now(),
       };
     });
   }
 
   /**
    * Transform a TodoQueueItem into a TodoJob
-   * 
+   *
    * @param item The queue item from the queue
    * @returns A TodoJob object
    */
@@ -199,8 +199,8 @@ export class AiProcessorAdapter {
         dueDate,
         estimatedEffort: item.estimatedEffort,
         actionableSteps: item.actionableSteps,
-        category: item.category
-      }
+        category: item.category,
+      },
     };
   }
 }

@@ -8,7 +8,7 @@ import {
   extractRichText,
   databaseToText,
   extractPropertyValue,
-  shouldIgnorePage
+  shouldIgnorePage,
 } from '../../../src/providers/notion/utils';
 import { NotionBlock, NotionPage } from '../../../src/providers/notion/client';
 import { ValidationError } from '@dome/common/src/errors';
@@ -33,13 +33,7 @@ describe('Notion Utils', () => {
       const title = 'Test Document';
       const sizeBytes = 1024;
 
-      const metadata = createNotionMetadata(
-        workspaceId,
-        pageId,
-        updatedAt,
-        title,
-        sizeBytes
-      );
+      const metadata = createNotionMetadata(workspaceId, pageId, updatedAt, title, sizeBytes);
 
       expect(metadata).toEqual({
         source: {
@@ -89,7 +83,7 @@ describe('Notion Utils', () => {
         'page-456',
         '2023-04-30T12:00:00Z',
         '',
-        100
+        100,
       );
 
       expect(metadata).toBeDefined();
@@ -105,9 +99,9 @@ describe('Notion Utils', () => {
         last_edited_time: '2023-04-30T12:00:00Z',
         parent: {
           type: 'database_id',
-          database_id: 'db-123'
+          database_id: 'db-123',
         },
-        properties: {}
+        properties: {},
       };
 
       expect(determineCategory(databasePage)).toBe('database');
@@ -121,9 +115,9 @@ describe('Notion Utils', () => {
         last_edited_time: '2023-04-30T12:00:00Z',
         parent: {
           type: 'page_id',
-          page_id: 'parent-123'
+          page_id: 'parent-123',
         },
-        properties: {}
+        properties: {},
       };
 
       expect(determineCategory(documentPage)).toBe('document');
@@ -137,9 +131,9 @@ describe('Notion Utils', () => {
         last_edited_time: '2023-04-30T12:00:00Z',
         parent: {
           type: 'workspace',
-          workspace: true
+          workspace: true,
         },
-        properties: {}
+        properties: {},
       };
 
       expect(determineCategory(rootPage)).toBe('document');
@@ -155,9 +149,9 @@ describe('Notion Utils', () => {
         last_edited_time: '2023-04-30T12:00:00Z',
         parent: {
           type: 'workspace',
-          workspace: true
+          workspace: true,
         },
-        properties: {}
+        properties: {},
       };
 
       expect(determineMimeType(page)).toBe('text/markdown');
@@ -172,17 +166,17 @@ describe('Notion Utils', () => {
           type: 'paragraph',
           has_children: false,
           paragraph: {
-            rich_text: [{ plain_text: 'This is a paragraph.' }]
-          }
+            rich_text: [{ plain_text: 'This is a paragraph.' }],
+          },
         },
         {
           id: 'block-2',
           type: 'heading_1',
           has_children: false,
           heading_1: {
-            rich_text: [{ plain_text: 'This is a heading' }]
-          }
-        }
+            rich_text: [{ plain_text: 'This is a heading' }],
+          },
+        },
       ];
 
       const text = blocksToText(blocks);
@@ -201,24 +195,24 @@ describe('Notion Utils', () => {
           type: 'paragraph',
           has_children: false,
           paragraph: {
-            rich_text: [{ plain_text: 'Valid block' }]
-          }
+            rich_text: [{ plain_text: 'Valid block' }],
+          },
         },
         {
           id: 'block-2',
           type: 'invalid_type', // This will cause an error
-          has_children: false
-        } as any
+          has_children: false,
+        } as any,
       ];
 
       const text = blocksToText(blocks);
       expect(text).toBe('Valid block');
-      
+
       // Log warning should be called for the invalid block
       const logger = require('@dome/common').getLogger();
       expect(logger.warn).toHaveBeenCalled();
     });
-    
+
     it('should handle empty rich_text arrays', () => {
       const blocks: NotionBlock[] = [
         {
@@ -226,15 +220,15 @@ describe('Notion Utils', () => {
           type: 'paragraph',
           has_children: false,
           paragraph: {
-            rich_text: [] // Empty array
-          }
-        }
+            rich_text: [], // Empty array
+          },
+        },
       ];
 
       const text = blocksToText(blocks);
       expect(text).toBe('');
     });
-    
+
     it('should handle undefined blocks gracefully', () => {
       const blocks: (NotionBlock | undefined)[] = [
         undefined,
@@ -243,9 +237,9 @@ describe('Notion Utils', () => {
           type: 'paragraph',
           has_children: false,
           paragraph: {
-            rich_text: [{ plain_text: 'Valid block' }]
-          }
-        }
+            rich_text: [{ plain_text: 'Valid block' }],
+          },
+        },
       ];
 
       // @ts-ignore - Testing runtime behavior with undefined
@@ -261,8 +255,8 @@ describe('Notion Utils', () => {
         type: 'paragraph',
         has_children: false,
         paragraph: {
-          rich_text: [{ plain_text: 'This is a paragraph.' }]
-        }
+          rich_text: [{ plain_text: 'This is a paragraph.' }],
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('This is a paragraph.');
@@ -274,8 +268,8 @@ describe('Notion Utils', () => {
         type: 'heading_1',
         has_children: false,
         heading_1: {
-          rich_text: [{ plain_text: 'This is a heading' }]
-        }
+          rich_text: [{ plain_text: 'This is a heading' }],
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('# This is a heading');
@@ -287,8 +281,8 @@ describe('Notion Utils', () => {
         type: 'heading_2',
         has_children: false,
         heading_2: {
-          rich_text: [{ plain_text: 'This is a subheading' }]
-        }
+          rich_text: [{ plain_text: 'This is a subheading' }],
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('## This is a subheading');
@@ -300,8 +294,8 @@ describe('Notion Utils', () => {
         type: 'heading_3',
         has_children: false,
         heading_3: {
-          rich_text: [{ plain_text: 'This is a sub-subheading' }]
-        }
+          rich_text: [{ plain_text: 'This is a sub-subheading' }],
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('### This is a sub-subheading');
@@ -313,8 +307,8 @@ describe('Notion Utils', () => {
         type: 'bulleted_list_item',
         has_children: false,
         bulleted_list_item: {
-          rich_text: [{ plain_text: 'Bullet point' }]
-        }
+          rich_text: [{ plain_text: 'Bullet point' }],
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('• Bullet point');
@@ -326,8 +320,8 @@ describe('Notion Utils', () => {
         type: 'numbered_list_item',
         has_children: false,
         numbered_list_item: {
-          rich_text: [{ plain_text: 'Numbered point' }]
-        }
+          rich_text: [{ plain_text: 'Numbered point' }],
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('1. Numbered point');
@@ -340,8 +334,8 @@ describe('Notion Utils', () => {
         has_children: false,
         to_do: {
           rich_text: [{ plain_text: 'Task to do' }],
-          checked: false
-        }
+          checked: false,
+        },
       };
 
       const checkedBlock: NotionBlock = {
@@ -350,8 +344,8 @@ describe('Notion Utils', () => {
         has_children: false,
         to_do: {
           rich_text: [{ plain_text: 'Completed task' }],
-          checked: true
-        }
+          checked: true,
+        },
       };
 
       expect(extractTextFromBlock(uncheckedBlock)).toBe('[ ] Task to do');
@@ -364,8 +358,8 @@ describe('Notion Utils', () => {
         type: 'toggle',
         has_children: true,
         toggle: {
-          rich_text: [{ plain_text: 'Toggle content' }]
-        }
+          rich_text: [{ plain_text: 'Toggle content' }],
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('▶ Toggle content');
@@ -378,8 +372,8 @@ describe('Notion Utils', () => {
         has_children: false,
         code: {
           rich_text: [{ plain_text: 'const x = 1;' }],
-          language: 'javascript'
-        }
+          language: 'javascript',
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('```javascript\nconst x = 1;\n```');
@@ -391,8 +385,8 @@ describe('Notion Utils', () => {
         type: 'quote',
         has_children: false,
         quote: {
-          rich_text: [{ plain_text: 'This is a quote' }]
-        }
+          rich_text: [{ plain_text: 'This is a quote' }],
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('> This is a quote');
@@ -405,8 +399,8 @@ describe('Notion Utils', () => {
         has_children: false,
         callout: {
           rich_text: [{ plain_text: 'Callout text' }],
-          icon: { emoji: '💡' }
-        }
+          icon: { emoji: '💡' },
+        },
       };
 
       expect(extractTextFromBlock(block)).toBe('💡 Callout text');
@@ -416,7 +410,7 @@ describe('Notion Utils', () => {
       const block: NotionBlock = {
         id: 'block-1',
         type: 'divider',
-        has_children: false
+        has_children: false,
       };
 
       expect(extractTextFromBlock(block)).toBe('---');
@@ -426,7 +420,7 @@ describe('Notion Utils', () => {
       const block: NotionBlock = {
         id: 'block-1',
         type: 'table',
-        has_children: true
+        has_children: true,
       };
 
       expect(extractTextFromBlock(block)).toBe('[Table]');
@@ -436,7 +430,7 @@ describe('Notion Utils', () => {
       const block: NotionBlock = {
         id: 'block-1',
         type: 'unsupported',
-        has_children: false
+        has_children: false,
       };
 
       expect(extractTextFromBlock(block)).toBe('');
@@ -446,27 +440,27 @@ describe('Notion Utils', () => {
       const malformedBlock: NotionBlock = {
         id: 'block-1',
         type: 'paragraph',
-        has_children: false
+        has_children: false,
         // Missing paragraph property
       };
 
       expect(extractTextFromBlock(malformedBlock)).toBe('');
-      
+
       // Also test with null or undefined values
       expect(extractTextFromBlock(null as any)).toBe('');
       expect(extractTextFromBlock(undefined as any)).toBe('');
-      
+
       // The function should log a warning
       const logger = require('@dome/common').getLogger();
       expect(logger.warn).toHaveBeenCalled();
     });
-    
+
     it('should gracefully handle block with missing rich_text', () => {
       const blockWithMissingRichText: NotionBlock = {
         id: 'block-1',
         type: 'paragraph',
         has_children: false,
-        paragraph: {} // Missing rich_text property
+        paragraph: {}, // Missing rich_text property
       };
 
       expect(extractTextFromBlock(blockWithMissingRichText)).toBe('');
@@ -475,10 +469,7 @@ describe('Notion Utils', () => {
 
   describe('extractRichText', () => {
     it('should combine plain text from multiple rich text objects', () => {
-      const richText = [
-        { plain_text: 'Hello ' },
-        { plain_text: 'World' }
-      ];
+      const richText = [{ plain_text: 'Hello ' }, { plain_text: 'World' }];
 
       expect(extractRichText(richText)).toBe('Hello World');
     });
@@ -494,54 +485,48 @@ describe('Notion Utils', () => {
       expect(extractRichText('string' as any)).toBe('');
       expect(extractRichText(123 as any)).toBe('');
     });
-    
+
     it('should safely handle rich text objects with missing properties', () => {
       const richText = [
-        { /* missing plain_text */ },
-        { plain_text: 'Text' }
+        {
+          /* missing plain_text */
+        },
+        { plain_text: 'Text' },
       ] as any;
-      
+
       expect(extractRichText(richText)).toBe('Text');
     });
 
     it('should apply bold formatting', () => {
-      const richText = [
-        { plain_text: 'Bold', annotations: { bold: true } }
-      ];
+      const richText = [{ plain_text: 'Bold', annotations: { bold: true } }];
 
       expect(extractRichText(richText)).toBe('**Bold**');
     });
 
     it('should apply italic formatting', () => {
-      const richText = [
-        { plain_text: 'Italic', annotations: { italic: true } }
-      ];
+      const richText = [{ plain_text: 'Italic', annotations: { italic: true } }];
 
       expect(extractRichText(richText)).toBe('*Italic*');
     });
 
     it('should apply strikethrough formatting', () => {
-      const richText = [
-        { plain_text: 'Strikethrough', annotations: { strikethrough: true } }
-      ];
+      const richText = [{ plain_text: 'Strikethrough', annotations: { strikethrough: true } }];
 
       expect(extractRichText(richText)).toBe('~~Strikethrough~~');
     });
 
     it('should apply code formatting', () => {
-      const richText = [
-        { plain_text: 'Code', annotations: { code: true } }
-      ];
+      const richText = [{ plain_text: 'Code', annotations: { code: true } }];
 
       expect(extractRichText(richText)).toBe('`Code`');
     });
 
     it('should handle hyperlinks', () => {
       const richText = [
-        { 
+        {
           plain_text: 'Link',
-          href: 'https://example.com'
-        }
+          href: 'https://example.com',
+        },
       ];
 
       expect(extractRichText(richText)).toBe('[Link](https://example.com)');
@@ -549,13 +534,13 @@ describe('Notion Utils', () => {
 
     it('should apply multiple formatting options', () => {
       const richText = [
-        { 
+        {
           plain_text: 'Text',
-          annotations: { 
+          annotations: {
             bold: true,
-            italic: true
-          }
-        }
+            italic: true,
+          },
+        },
       ];
 
       expect(extractRichText(richText)).toBe('***Text***');
@@ -570,8 +555,8 @@ describe('Notion Utils', () => {
         properties: {
           Name: { type: 'title' },
           Age: { type: 'number' },
-          Status: { type: 'select' }
-        }
+          Status: { type: 'select' },
+        },
       };
 
       const rows = [
@@ -579,27 +564,27 @@ describe('Notion Utils', () => {
           properties: {
             Name: { type: 'title', title: [{ plain_text: 'John' }] },
             Age: { type: 'number', number: 30 },
-            Status: { type: 'select', select: { name: 'Active' } }
-          }
+            Status: { type: 'select', select: { name: 'Active' } },
+          },
         },
         {
           properties: {
             Name: { type: 'title', title: [{ plain_text: 'Jane' }] },
             Age: { type: 'number', number: 25 },
-            Status: { type: 'select', select: { name: 'Inactive' } }
-          }
-        }
+            Status: { type: 'select', select: { name: 'Inactive' } },
+          },
+        },
       ];
 
       const result = databaseToText(database, rows);
-      
+
       // Should include title
       expect(result).toContain('# Test Database');
-      
+
       // Should have headers
       expect(result).toContain('| Name | Age | Status |');
       expect(result).toContain('| --- | --- | --- |');
-      
+
       // Should include data rows
       expect(result).toContain('| John | 30 | Active |');
       expect(result).toContain('| Jane | 25 | Inactive |');
@@ -609,9 +594,9 @@ describe('Notion Utils', () => {
       const database = {
         id: 'db-123',
         title: 'Empty Database',
-        properties: {}
+        properties: {},
       };
-      
+
       const rows: any[] = [];
 
       const result = databaseToText(database, rows);
@@ -625,10 +610,10 @@ describe('Notion Utils', () => {
         title: 'Database With No Rows',
         properties: {
           Name: { type: 'title' },
-          Age: { type: 'number' }
-        }
+          Age: { type: 'number' },
+        },
       };
-      
+
       const rows: any[] = [];
 
       const result = databaseToText(database, rows);
@@ -640,12 +625,10 @@ describe('Notion Utils', () => {
       const malformedDatabase = {
         id: 'db-123',
         // Missing title
-        properties: null // Will cause error
+        properties: null, // Will cause error
       };
-      
-      const rows = [
-        { properties: { Name: { type: 'title', title: [{ plain_text: 'John' }] } } }
-      ];
+
+      const rows = [{ properties: { Name: { type: 'title', title: [{ plain_text: 'John' }] } } }];
 
       const result = databaseToText(malformedDatabase, rows);
       expect(result).toContain('# Untitled Database');
@@ -657,10 +640,7 @@ describe('Notion Utils', () => {
     it('should extract title property', () => {
       const property = {
         type: 'title',
-        title: [
-          { plain_text: 'Title ' },
-          { plain_text: 'Text' }
-        ]
+        title: [{ plain_text: 'Title ' }, { plain_text: 'Text' }],
       };
 
       expect(extractPropertyValue(property)).toBe('Title Text');
@@ -669,10 +649,7 @@ describe('Notion Utils', () => {
     it('should extract rich_text property', () => {
       const property = {
         type: 'rich_text',
-        rich_text: [
-          { plain_text: 'Rich ' },
-          { plain_text: 'Text' }
-        ]
+        rich_text: [{ plain_text: 'Rich ' }, { plain_text: 'Text' }],
       };
 
       expect(extractPropertyValue(property)).toBe('Rich Text');
@@ -681,7 +658,7 @@ describe('Notion Utils', () => {
     it('should extract number property', () => {
       const property = {
         type: 'number',
-        number: 42
+        number: 42,
       };
 
       expect(extractPropertyValue(property)).toBe('42');
@@ -691,8 +668,8 @@ describe('Notion Utils', () => {
       const property = {
         type: 'select',
         select: {
-          name: 'Option 1'
-        }
+          name: 'Option 1',
+        },
       };
 
       expect(extractPropertyValue(property)).toBe('Option 1');
@@ -701,10 +678,7 @@ describe('Notion Utils', () => {
     it('should extract multi_select property', () => {
       const property = {
         type: 'multi_select',
-        multi_select: [
-          { name: 'Tag 1' },
-          { name: 'Tag 2' }
-        ]
+        multi_select: [{ name: 'Tag 1' }, { name: 'Tag 2' }],
       };
 
       expect(extractPropertyValue(property)).toBe('Tag 1, Tag 2');
@@ -714,8 +688,8 @@ describe('Notion Utils', () => {
       const property = {
         type: 'date',
         date: {
-          start: '2023-01-01'
-        }
+          start: '2023-01-01',
+        },
       };
 
       expect(extractPropertyValue(property)).toBe('2023-01-01');
@@ -726,8 +700,8 @@ describe('Notion Utils', () => {
         type: 'date',
         date: {
           start: '2023-01-01',
-          end: '2023-01-31'
-        }
+          end: '2023-01-31',
+        },
       };
 
       expect(extractPropertyValue(property)).toBe('2023-01-01 - 2023-01-31');
@@ -738,8 +712,8 @@ describe('Notion Utils', () => {
         type: 'people',
         people: [
           { name: 'John', id: 'user-1' },
-          { id: 'user-2' } // Missing name
-        ]
+          { id: 'user-2' }, // Missing name
+        ],
       };
 
       expect(extractPropertyValue(property)).toBe('John, user-2');
@@ -748,12 +722,12 @@ describe('Notion Utils', () => {
     it('should extract checkbox property', () => {
       const checkedProperty = {
         type: 'checkbox',
-        checkbox: true
+        checkbox: true,
       };
 
       const uncheckedProperty = {
         type: 'checkbox',
-        checkbox: false
+        checkbox: false,
       };
 
       expect(extractPropertyValue(checkedProperty)).toBe('✓');
@@ -763,7 +737,7 @@ describe('Notion Utils', () => {
     it('should extract url property', () => {
       const property = {
         type: 'url',
-        url: 'https://example.com'
+        url: 'https://example.com',
       };
 
       expect(extractPropertyValue(property)).toBe('https://example.com');
@@ -772,7 +746,7 @@ describe('Notion Utils', () => {
     it('should extract email property', () => {
       const property = {
         type: 'email',
-        email: 'test@example.com'
+        email: 'test@example.com',
       };
 
       expect(extractPropertyValue(property)).toBe('test@example.com');
@@ -781,7 +755,7 @@ describe('Notion Utils', () => {
     it('should extract phone_number property', () => {
       const property = {
         type: 'phone_number',
-        phone_number: '+1234567890'
+        phone_number: '+1234567890',
       };
 
       expect(extractPropertyValue(property)).toBe('+1234567890');
@@ -791,8 +765,8 @@ describe('Notion Utils', () => {
       const property = {
         type: 'formula',
         formula: {
-          string: 'Calculated Value'
-        }
+          string: 'Calculated Value',
+        },
       };
 
       expect(extractPropertyValue(property)).toBe('Calculated Value');
@@ -802,8 +776,8 @@ describe('Notion Utils', () => {
       const property = {
         type: 'formula',
         formula: {
-          number: 42
-        }
+          number: 42,
+        },
       };
 
       expect(extractPropertyValue(property)).toBe('42');
@@ -813,8 +787,8 @@ describe('Notion Utils', () => {
       const property = {
         type: 'formula',
         formula: {
-          boolean: true
-        }
+          boolean: true,
+        },
       };
 
       expect(extractPropertyValue(property)).toBe('true');
@@ -822,7 +796,7 @@ describe('Notion Utils', () => {
 
     it('should handle unsupported property types', () => {
       const property = {
-        type: 'unsupported_type'
+        type: 'unsupported_type',
       };
 
       expect(extractPropertyValue(property)).toBe('[Unsupported Property]');
@@ -852,10 +826,10 @@ describe('Notion Utils', () => {
         last_edited_time: '2023-04-30T12:00:00Z',
         parent: {
           type: 'workspace',
-          workspace: true
+          workspace: true,
         },
         properties: {},
-        archived: true
+        archived: true,
       } as NotionPage & { archived: boolean };
 
       expect(shouldIgnorePage(archivedPage)).toBe(true);
@@ -869,10 +843,10 @@ describe('Notion Utils', () => {
         last_edited_time: '2023-04-30T12:00:00Z',
         parent: {
           type: 'workspace',
-          workspace: true
+          workspace: true,
         },
         properties: {},
-        archived: false
+        archived: false,
       } as NotionPage & { archived: boolean };
 
       expect(shouldIgnorePage(activePage)).toBe(false);
@@ -886,9 +860,9 @@ describe('Notion Utils', () => {
         last_edited_time: '2023-04-30T12:00:00Z',
         parent: {
           type: 'workspace',
-          workspace: true
+          workspace: true,
         },
-        properties: {}
+        properties: {},
       };
 
       expect(shouldIgnorePage(page)).toBe(false);

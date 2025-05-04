@@ -21,7 +21,7 @@ export class ChatController {
     private readonly env: Env,
     private readonly services: Services,
     private readonly ctx: ExecutionContext,
-  ) { }
+  ) {}
 
   /* ---------------------------------------------------------------------- */
   /*  Public API                                                            */
@@ -40,9 +40,7 @@ export class ChatController {
   }
 
   /** Resume an existing chat run in streaming mode */
-  async resumeChatSession(
-    req: ResumeChatRequest,
-  ): Promise<IterableReadableStream<unknown>> {
+  async resumeChatSession(req: ResumeChatRequest): Promise<IterableReadableStream<unknown>> {
     const { runId, newMessage } = resumeChatRequestSchema.parse(req);
 
     return withContext(
@@ -130,7 +128,10 @@ export class ChatController {
   /* ---------------------------------------------------------------------- */
   /*  Graph execution                                                       */
   /* ---------------------------------------------------------------------- */
-  private async runGraphStreaming(state: AgentState, runId: string): Promise<ReadableStream<Uint8Array>> {
+  private async runGraphStreaming(
+    state: AgentState,
+    runId: string,
+  ): Promise<ReadableStream<Uint8Array>> {
     await this.services.checkpointer.initialize();
     const graph = await V2Chat.build(this.env, this.services.checkpointer);
 

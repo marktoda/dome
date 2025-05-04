@@ -1,3 +1,10 @@
+/**
+ * Silo Service entrypoint
+ *
+ * This is the main entry point for the Silo service, implementing a WorkerEntrypoint
+ * class that handles both RPC methods and queue processing.
+ */
+
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withContext } from '@dome/common';
 import { metrics } from '@dome/common';
@@ -12,14 +19,14 @@ import {
   logError,
   trackOperation,
   sanitizeForLogging,
-  aiProcessorMetrics
+  aiProcessorMetrics,
 } from './utils/logging';
 import {
   assertValid,
   assertExists,
   LLMProcessingError,
   ContentProcessingError,
-  QueueError
+  QueueError,
 } from './utils/errors';
 
 /**
@@ -39,7 +46,7 @@ const buildServices = (env: Env) => ({
  * @returns Result of the function
  */
 const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
-  withContext(meta, async (logger) => {
+  withContext(meta, async logger => {
     try {
       return await fn();
     } catch (err) {
@@ -51,7 +58,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
         requestId,
         service: 'ai-processor',
         timestamp: new Date().toISOString(),
-        ...meta
+        ...meta,
       };
 
       logError(err, `Unhandled error in ${operation}`, errorContext);
@@ -115,26 +122,32 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
 
           if (id) {
             // Reprocess specific content by ID
-            getLogger().info({
-              requestId,
-              id,
-              operation: 'reprocess_content'
-            }, 'Reprocessing specific content by ID');
+            getLogger().info(
+              {
+                requestId,
+                id,
+                operation: 'reprocess_content',
+              },
+              'Reprocessing specific content by ID',
+            );
 
             const result = await this.reprocessById(id, requestId);
 
             aiProcessorMetrics.trackOperation('reprocess', true, {
               type: 'by_id',
-              requestId
+              requestId,
             });
 
             return { success: true, reprocessed: result };
           } else {
             // Reprocess all content with null or "Content processing failed" summary
-            getLogger().info({
-              requestId,
-              operation: 'reprocess_content_batch'
-            }, 'Reprocessing all content with null or failed summary');
+            getLogger().info(
+              {
+                requestId,
+                operation: 'reprocess_content_batch',
+              },
+              'Reprocessing all content with null or failed summary',
+            );
 
             const result = await this.reprocessFailedContent(requestId);
 
@@ -142,7 +155,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
               type: 'all_failed',
               requestId,
               totalItems: String(result.total),
-              successfulItems: String(result.successful)
+              successfulItems: String(result.successful),
             });
 
             return { success: true, reprocessed: result };
@@ -152,20 +165,20 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             service: 'ai-processor',
             operation: 'reprocess',
             id: data.id,
-            requestId
+            requestId,
           });
 
           logError(domeError, 'Failed to reprocess content');
 
           aiProcessorMetrics.trackOperation('reprocess', false, {
             errorType: domeError.code,
-            requestId
+            requestId,
           });
 
           throw domeError;
         }
       },
-      { requestId, id: data.id }
+      { requestId, id: data.id },
     );
   }
 
@@ -180,7 +193,10 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
    * @param requestId Request ID for correlation
    * @returns Result of reprocessing
    */
-  private async reprocessById(id: string, requestId: string): Promise<{ id: string; success: boolean }> {
+  private async reprocessById(
+    id: string,
+    requestId: string,
+  ): Promise<{ id: string; success: boolean }> {
     return trackOperation(
       'reprocess_by_id',
       async () => {
@@ -192,7 +208,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           assertExists(metadata, `Content with ID ${id} not found`, {
             id,
             operation: 'reprocessById',
-            requestId
+            requestId,
           });
 
           // Create a new content message and process it
@@ -210,7 +226,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           aiProcessorMetrics.trackOperation('reprocess_by_id', true, {
             id,
             requestId,
-            contentType: metadata!.category || metadata!.mimeType || 'unknown'
+            contentType: metadata!.category || metadata!.mimeType || 'unknown',
           });
 
           return { id, success: true };
@@ -218,7 +234,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           const domeError = toDomeError(error, `Error reprocessing content with ID ${id}`, {
             id,
             operation: 'reprocessById',
-            requestId
+            requestId,
           });
 
           logError(domeError, `Failed to reprocess content ID: ${id}`);
@@ -226,13 +242,13 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           aiProcessorMetrics.trackOperation('reprocess_by_id', false, {
             id,
             requestId,
-            errorType: domeError.code
+            errorType: domeError.code,
           });
 
           return { id, success: false };
         }
       },
-      { id, requestId }
+      { id, requestId },
     );
   }
 
@@ -245,7 +261,9 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
    * @param requestId Request ID for correlation
    * @returns Result statistics
    */
-  private async reprocessFailedContent(requestId: string): Promise<{ total: number; successful: number }> {
+  private async reprocessFailedContent(
+    requestId: string,
+  ): Promise<{ total: number; successful: number }> {
     return trackOperation(
       'reprocess_failed_content',
       async () => {
@@ -253,11 +271,14 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           // Get all content with null or "Content processing failed" summary
           const failedContent = await this.services.silo.findContentWithFailedSummary();
 
-          getLogger().info({
-            count: failedContent.length,
-            requestId,
-            operation: 'reprocessFailedContent'
-          }, 'Found content with failed summaries');
+          getLogger().info(
+            {
+              count: failedContent.length,
+              requestId,
+              operation: 'reprocessFailedContent',
+            },
+            'Found content with failed summaries',
+          );
 
           let successful = 0;
           let errors = 0;
@@ -277,19 +298,22 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
 
               // Log progress periodically for long-running batch operations
               if (successful % 10 === 0) {
-                getLogger().info({
-                  requestId,
-                  progress: `${successful}/${failedContent.length}`,
-                  percentComplete: Math.round((successful / failedContent.length) * 100),
-                  operation: 'reprocessFailedContent'
-                }, 'Batch reprocessing progress');
+                getLogger().info(
+                  {
+                    requestId,
+                    progress: `${successful}/${failedContent.length}`,
+                    percentComplete: Math.round((successful / failedContent.length) * 100),
+                    operation: 'reprocessFailedContent',
+                  },
+                  'Batch reprocessing progress',
+                );
               }
             } catch (error) {
               errors++;
               const domeError = toDomeError(error, `Error reprocessing content ID: ${content.id}`, {
                 id: content.id,
                 requestId,
-                operation: 'reprocessFailedContent'
+                operation: 'reprocessFailedContent',
               });
 
               logError(domeError, `Failed to reprocess content during batch operation`);
@@ -300,46 +324,45 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             totalItems: String(failedContent.length),
             successfulItems: String(successful),
             failedItems: String(errors),
-            requestId
+            requestId,
           });
 
-          getLogger().info({
-            total: failedContent.length,
-            successful,
-            errors,
-            requestId,
-            successRate: failedContent.length > 0
-              ? Math.round((successful / failedContent.length) * 100)
-              : 0,
-            operation: 'reprocessFailedContent'
-          }, 'Completed batch reprocessing of failed content');
+          getLogger().info(
+            {
+              total: failedContent.length,
+              successful,
+              errors,
+              requestId,
+              successRate:
+                failedContent.length > 0
+                  ? Math.round((successful / failedContent.length) * 100)
+                  : 0,
+              operation: 'reprocessFailedContent',
+            },
+            'Completed batch reprocessing of failed content',
+          );
 
           return { total: failedContent.length, successful };
         } catch (error) {
           const domeError = toDomeError(error, 'Error reprocessing failed content batch', {
             requestId,
-            operation: 'reprocessFailedContent'
+            operation: 'reprocessFailedContent',
           });
 
           logError(domeError, 'Failed to reprocess content batch');
 
           aiProcessorMetrics.trackOperation('reprocess_batch', false, {
             errorType: domeError.code,
-            requestId
+            requestId,
           });
 
           return { total: 0, successful: 0 };
         }
       },
-      { requestId }
+      { requestId },
     );
   }
 
-  /**
-   * Queue handler for processing messages
-   * @param batch Batch of messages from the queue
-   * @param env Environment bindings
-   */
   /**
    * Queue handler for processing rate-limited content requests
    * This handler processes messages from the rate limit DLQ with special handling
@@ -348,86 +371,87 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
    */
   async ratelimitQueue(batch: MessageBatch<any>) {
     const batchId = crypto.randomUUID();
-    
+
     await trackOperation(
       'process_rate_limit_queue',
       async () => {
         const startTime = Date.now();
-        
+        const queueName = 'rate-limit-dlq';
+
         getLogger().info(
           {
-            queueName: 'rate-limit-dlq',
+            queueName,
             batchId,
             messageCount: batch.messages.length,
-            operation: 'ratelimitQueue'
+            operation: 'ratelimitQueue',
           },
           'Processing rate limit DLQ batch',
         );
-        
+
         // Track metrics for the batch
         aiProcessorMetrics.counter('ratelimit_dlq.batch.received', 1);
         aiProcessorMetrics.counter('ratelimit_dlq.messages.received', batch.messages.length);
-        
+
         let successCount = 0;
         let errorCount = 0;
-        
-        // Process each message with a longer delay between attempts
+
+        // Process each message in the batch
         for (const message of batch.messages) {
           const messageRequestId = `${batchId}-${message.id}`;
-          
+
           try {
             // Check if the message is valid
             if (!message.body || !message.body.contentType || !message.body.content) {
               getLogger().warn(
                 { messageId: message.id, requestId: messageRequestId },
-                'Invalid message in rate limit queue, acknowledging'
+                'Invalid message in rate limit queue, acknowledging',
               );
               message.ack();
               continue;
             }
-            
+
             // Extract message content
             const { contentType, content, retryCount = 0 } = message.body;
-            
-            // Check if the AI service still has capacity issues
-            let hasCapacity = true;
-            try {
-              // Make a tiny test request to check capacity
-              await this.env.AI.run('@cf/google/gemma-7b-it-lora', {
-                messages: [{ role: 'user', content: 'test capacity' }],
-                stream: false,
-              });
-            } catch (error) {
-              if (error instanceof Error &&
-                  (error.message.includes("Capacity temporarily exceeded") ||
-                   error.message.includes("3040"))) {
-                hasCapacity = false;
-              }
-            }
-            
-            if (!hasCapacity) {
-              // System is still busy, use exponential backoff based on retry count
-              const backoffMinutes = Math.min(Math.pow(2, retryCount), 60); // Max 60 minute backoff
-              
-              getLogger().info(
-                {
-                  messageId: message.id,
-                  requestId: messageRequestId,
-                  retryCount,
-                  backoffMinutes,
-                  operation: 'ratelimitQueue'
-                },
-                `System still at capacity, not acknowledging to allow retry in ~${backoffMinutes} minutes`
-              );
-              
-              // Don't acknowledge so it will retry according to the queue config
-              continue;
-            }
-            
-            // System has capacity, attempt to process the content
+
+            // Log the retry attempt
+            getLogger().info(
+              {
+                messageId: message.id,
+                requestId: messageRequestId,
+                retryCount,
+                contentType,
+                operation: 'ratelimitQueue',
+              },
+              'Processing previously rate-limited content',
+            );
+
+            // Process the content directly with LLM service
+            // This allows us to bypass fetching from Silo again
             const result = await this.services.llm.processContent(content, contentType);
-            
-            // If we get here, processing succeeded
+
+            // If processing succeeded, manually create and send the enriched message
+            const enrichedMessage: EnrichedContentMessage = {
+              id: message.body.originalId || messageRequestId,
+              userId: message.body.originalUserId || null,
+              category: contentType as any,
+              mimeType: contentType as any,
+              metadata: {
+                title: typeof result.title === 'string' ? result.title : 'Untitled Content',
+                summary: typeof result.summary === 'string' ? result.summary : undefined,
+                todos: Array.isArray(result.todos) ? result.todos : undefined,
+                reminders: Array.isArray(result.reminders) ? result.reminders : undefined,
+                topics: Array.isArray(result.topics) ? result.topics : undefined,
+                processingVersion: 2,
+                modelUsed: '@cf/google/gemma-7b-it-lora',
+              },
+              timestamp: Date.now(),
+            };
+
+            // Send to enriched content queue
+            if ('ENRICHED_CONTENT' in this.env) {
+              await (this.env as any).ENRICHED_CONTENT.send(enrichedMessage);
+            }
+
             getLogger().info(
               {
                 messageId: message.id,
@@ -435,15 +459,15 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
                 contentType,
                 operation: 'ratelimitQueue',
                 hasTitle: !!result.title,
-                hasSummary: !!result.summary
+                hasSummary: !!result.summary,
               },
-              'Successfully processed previously rate-limited content'
+              'Successfully processed previously rate-limited content',
             );
-            
+
             // Acknowledge the message
             message.ack();
             successCount++;
-            
+
             // Track successful processing
             aiProcessorMetrics.counter('ratelimit_dlq.messages.processed', 1);
           } catch (error) {
@@ -451,23 +475,30 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             const domeError = toDomeError(error, 'Failed to process rate-limited content', {
               messageId: message.id,
               requestId: messageRequestId,
-              batchId
+              batchId,
             });
-            
+
             logError(domeError, 'Failed to process message from rate limit queue');
-            
-            // If it's still a rate limit error, don't acknowledge
-            if (error instanceof Error &&
-                (error.message.includes("Capacity temporarily exceeded") ||
-                 error.message.includes("3040"))) {
+
+            // Check if it's still a rate limit error
+            const isRateLimit =
+              error instanceof Error &&
+              (error.message.includes('Capacity temporarily exceeded') ||
+                error.message.includes('3040'));
+
+            if (isRateLimit) {
               getLogger().warn(
                 {
                   messageId: message.id,
                   requestId: messageRequestId,
-                  error: error instanceof Error ? error.message : String(error)
+                  error: error instanceof Error ? error.message : String(error),
                 },
-                'Still rate limited, not acknowledging to allow retry'
+                'Still rate limited, not acknowledging to allow retry',
               );
+
+              // If it's a rate limit error, we shouldn't process any more messages
+              // in this batch as they'll likely fail too
+              break;
             } else {
               // For other errors, acknowledge to prevent infinite retries
               message.ack();
@@ -475,27 +506,27 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             }
           }
         }
-        
+
         // Log batch completion
         const duration = Date.now() - startTime;
         getLogger().info(
           {
-            queueName: 'rate-limit-dlq',
+            queueName,
             batchId,
             messageCount: batch.messages.length,
             successCount,
             errorCount,
             durationMs: duration,
-            operation: 'ratelimitQueue'
+            operation: 'ratelimitQueue',
           },
           'Completed processing rate limit queue batch',
         );
-        
+
         // Track batch metrics
         aiProcessorMetrics.timing('ratelimit_dlq.batch.duration_ms', duration);
         aiProcessorMetrics.counter('ratelimit_dlq.batch.completed', 1);
       },
-      { batchId, queueName: 'rate-limit-dlq', messageCount: batch.messages.length }
+      { batchId, queueName: 'rate-limit-dlq', messageCount: batch.messages.length },
     );
   }
 
@@ -518,7 +549,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             batchId,
             messageCount: batch.messages.length,
             firstMessageId: batch.messages[0]?.id,
-            operation: 'queue'
+            operation: 'queue',
           },
           'Processing queue batch',
         );
@@ -536,7 +567,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           try {
             assertValid(!!message.body, 'Message body is empty or invalid', {
               messageId: message.id,
-              batchId
+              batchId,
             });
 
             await this.processMessage(message.body, messageRequestId);
@@ -547,13 +578,13 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
               messageId: message.id,
               contentId: message.body?.id,
               batchId,
-              requestId: messageRequestId
+              requestId: messageRequestId,
             });
 
             logError(domeError, 'Failed to process message from queue');
             aiProcessorMetrics.counter('messages.errors', 1, {
               queueName,
-              errorType: domeError.code
+              errorType: domeError.code,
             });
           }
         }
@@ -570,7 +601,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             successRate: Math.round((successCount / batch.messages.length) * 100),
             durationMs: duration,
             avgProcessingTimeMs: Math.round(duration / batch.messages.length),
-            operation: 'queue'
+            operation: 'queue',
           },
           'Completed processing queue batch',
         );
@@ -579,19 +610,14 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
         aiProcessorMetrics.timing('batch.duration_ms', duration, { queueName });
         aiProcessorMetrics.counter('batch.completed', 1, { queueName });
         aiProcessorMetrics.counter('messages.processed', successCount, { queueName });
-        aiProcessorMetrics.gauge('batch.success_rate', successCount / batch.messages.length, { queueName });
+        aiProcessorMetrics.gauge('batch.success_rate', successCount / batch.messages.length, {
+          queueName,
+        });
       },
-      { batchId, queueName: batch.queue, messageCount: batch.messages.length }
+      { batchId, queueName: batch.queue, messageCount: batch.messages.length },
     );
   }
 
-  /**
-   * Process a single message from the queue
-   * @param message Message from the queue
-   * @param env Environment bindings
-   * @param llmService LLM service for processing content
-   * @param siloService Silo service for fetching content
-   */
   /**
    * Process a single content message
    * @param message The message to process
@@ -608,12 +634,15 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
 
         // Skip deleted content
         if (deleted) {
-          getLogger().info({
-            id,
-            userId,
-            requestId,
-            operation: 'processMessage'
-          }, 'Skipping deleted content');
+          getLogger().info(
+            {
+              id,
+              userId,
+              requestId,
+              operation: 'processMessage',
+            },
+            'Skipping deleted content',
+          );
           return;
         }
 
@@ -627,7 +656,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
               category,
               mimeType,
               requestId,
-              operation: 'processMessage'
+              operation: 'processMessage',
             },
             'Skipping non-processable content type',
           );
@@ -635,32 +664,38 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
         }
 
         try {
-          getLogger().info({
-            id,
-            userId,
-            contentType,
-            requestId,
-            operation: 'processMessage'
-          }, 'Processing content');
+          getLogger().info(
+            {
+              id,
+              userId,
+              contentType,
+              requestId,
+              operation: 'processMessage',
+            },
+            'Processing content',
+          );
 
           // Fetch content from Silo
           const content = await this.services.silo.get(id, userId);
           assertExists(content, `Content not found for ID: ${id}`, {
             id,
             userId,
-            requestId
+            requestId,
           });
 
           const { body } = content;
 
           // Skip empty content
           if (!body || body.trim().length === 0) {
-            getLogger().info({
-              id,
-              userId,
-              requestId,
-              operation: 'processMessage'
-            }, 'Skipping empty content');
+            getLogger().info(
+              {
+                id,
+                userId,
+                requestId,
+                operation: 'processMessage',
+              },
+              'Skipping empty content',
+            );
             return;
           }
 
@@ -668,7 +703,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           const rawMetadata = await trackOperation(
             'llm_process_content',
             () => this.services.llm.processContent(body, contentType),
-            { id, userId, contentType, requestId }
+            { id, userId, contentType, requestId, originalMessage: message },
           );
           getLogger().info({ rawMetadata }, 'LLM processing completed');
 
@@ -679,9 +714,13 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             todos: Array.isArray(rawMetadata.todos) ? rawMetadata.todos : undefined,
             reminders: Array.isArray(rawMetadata.reminders) ? rawMetadata.reminders : undefined,
             topics: Array.isArray(rawMetadata.topics) ? rawMetadata.topics : undefined,
-            processingVersion: typeof rawMetadata.processingVersion === 'number' ? rawMetadata.processingVersion : 2,
-            modelUsed: typeof rawMetadata.modelUsed === 'string' ? rawMetadata.modelUsed : '@cf/google/gemma-7b-it-lora',
-            error: typeof rawMetadata.error === 'string' ? rawMetadata.error : undefined
+            processingVersion:
+              typeof rawMetadata.processingVersion === 'number' ? rawMetadata.processingVersion : 2,
+            modelUsed:
+              typeof rawMetadata.modelUsed === 'string'
+                ? rawMetadata.modelUsed
+                : '@cf/google/gemma-7b-it-lora',
+            error: typeof rawMetadata.error === 'string' ? rawMetadata.error : undefined,
           };
 
           // Publish to ENRICHED_CONTENT queue
@@ -698,21 +737,21 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             await trackOperation(
               'publish_enriched_message',
               () => (this.env as any).ENRICHED_CONTENT.send(enrichedMessage),
-              { id, userId, requestId }
+              { id, userId, requestId },
             );
           }
 
           // Send todos to the dedicated todos queue if they exist and the queue binding is available
-          if ('TODOS' in this.env &&
+          if (
+            'TODOS' in this.env &&
             metadata.todos &&
             Array.isArray(metadata.todos) &&
             metadata.todos.length > 0 &&
-            userId) { // Ensure userId is defined and not null
+            userId
+          ) {
+            // Ensure userId is defined and not null
 
-            await sendTodosToQueue(
-              enrichedMessage,
-              (this.env as any).TODOS
-            );
+            await sendTodosToQueue(enrichedMessage, (this.env as any).TODOS);
           }
 
           // Log successful processing with sanitized data
@@ -730,7 +769,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             {
               ...sanitizedMessage,
               requestId,
-              operation: 'processMessage'
+              operation: 'processMessage',
             },
             'Successfully processed and published enriched content',
           );
@@ -739,14 +778,78 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           aiProcessorMetrics.counter('messages.processed', 1, {
             contentType,
             hasSummary: !!metadata.summary ? 'true' : 'false',
-            hasTodos: !!metadata.todos && metadata.todos.length > 0 ? 'true' : 'false'
+            hasTodos: !!metadata.todos && metadata.todos.length > 0 ? 'true' : 'false',
           });
 
           aiProcessorMetrics.trackOperation('process_message', true, {
             contentType,
-            requestId
+            requestId,
           });
         } catch (error) {
+          // Check if it's a rate limit error that we should send to the dedicated DLQ
+          const isRateLimit =
+            error instanceof Error &&
+            (error.message.includes('Capacity temporarily exceeded') ||
+              error.message.includes('3040'));
+
+          if (isRateLimit && 'RATE_LIMIT_DLQ' in this.env) {
+            // Get the content if we don't already have it
+            try {
+              getLogger().info(
+                {
+                  id,
+                  operation: 'processMessage',
+                  errorType: 'rate_limit',
+                  requestId,
+                },
+                'Encountered rate limit, sending to dedicated DLQ',
+              );
+
+              // Fetch content from Silo if we don't already have it
+              const content = await this.services.silo.get(id, userId);
+              if (!content || !content.body) {
+                throw new Error('Could not fetch content for rate limit DLQ');
+              }
+
+              // Create a message for the rate limit DLQ
+              const dlqMessage = {
+                contentType,
+                content: content.body,
+                requestId,
+                timestamp: Date.now(),
+                error: error instanceof Error ? error.message : String(error),
+                retryCount: 0,
+                originalId: id,
+                originalUserId: userId,
+              };
+
+              // Send to rate limit DLQ
+              await (this.env as any).RATE_LIMIT_DLQ.send(dlqMessage);
+
+              getLogger().info(
+                {
+                  id,
+                  requestId,
+                  queueName: 'RATE_LIMIT_DLQ',
+                },
+                'Rate-limited content queued for later processing',
+              );
+
+              return;
+            } catch (dlqError) {
+              // If DLQ fails, continue with normal error handling
+              getLogger().error(
+                {
+                  originalError: error instanceof Error ? error.message : String(error),
+                  dlqError: dlqError instanceof Error ? dlqError.message : String(dlqError),
+                  id,
+                  requestId,
+                },
+                'Failed to send to rate limit DLQ, continuing with normal error handling',
+              );
+            }
+          }
+
           // Convert to appropriate domain error
           const errorContext = {
             id,
@@ -756,14 +859,22 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             contentType,
             operation: 'processMessage',
             requestId,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
           };
 
           let domeError;
           if (error instanceof Error && error.message.includes('LLM')) {
-            domeError = new LLMProcessingError(`LLM processing failed for content ID: ${id}`, errorContext, error);
+            domeError = new LLMProcessingError(
+              `LLM processing failed for content ID: ${id}`,
+              errorContext,
+              error,
+            );
           } else if (error instanceof Error && error.message.includes('Silo')) {
-            domeError = new ContentProcessingError(`Content retrieval failed for ID: ${id}`, errorContext, error);
+            domeError = new ContentProcessingError(
+              `Content retrieval failed for ID: ${id}`,
+              errorContext,
+              error,
+            );
           } else {
             domeError = toDomeError(error, `Error processing content ID: ${id}`, errorContext);
           }
@@ -773,20 +884,20 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           // Track specific error types for monitoring
           aiProcessorMetrics.counter('messages.errors', 1, {
             errorType: domeError.code,
-            contentType
+            contentType,
           });
 
           aiProcessorMetrics.trackOperation('process_message', false, {
             contentType,
             errorType: domeError.code,
-            requestId
+            requestId,
           });
 
           // Re-throw to allow queue retry mechanism to work
           throw domeError;
         }
       },
-      { id: message.id, userId: message.userId, requestId }
+      { id: message.id, userId: message.userId, requestId },
     );
   }
 }

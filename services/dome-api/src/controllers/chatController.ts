@@ -19,7 +19,7 @@ export class ChatController {
    * Create a new chat controller
    * @param chatService Chat service instance
    */
-  constructor(private chatService: ChatClient) { }
+  constructor(private chatService: ChatClient) {}
 
   /**
    * Handle chat requests
@@ -69,7 +69,7 @@ export class ChatController {
             hasSourceInfo: response.sources && response.sources.length > 0,
             response,
           },
-          'Generated non-streaming chat response'
+          'Generated non-streaming chat response',
         );
 
         return successResponse(c, { response });

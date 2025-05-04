@@ -2,9 +2,9 @@
  * Type definitions for the Todos client
  */
 
-import { 
-  TodoItem, 
-  CreateTodoInput, 
+import {
+  TodoItem,
+  CreateTodoInput,
   CreateTodoResult,
   UpdateTodoInput,
   UpdateTodoResult,
@@ -14,7 +14,7 @@ import {
   ListTodosResult,
   BatchUpdateInput,
   BatchUpdateResult,
-  TodoStats
+  TodoStats,
 } from '../types';
 
 /**
@@ -26,32 +26,32 @@ export interface TodosBinding {
    * Create a new todo item
    */
   createTodo(todo: CreateTodoInput): Promise<CreateTodoResult>;
-  
+
   /**
    * Get a todo by ID
    */
   getTodo(id: string): Promise<TodoItem | null>;
-  
+
   /**
    * List todos with filtering and pagination
    */
   listTodos(filter: TodoFilter, pagination?: Pagination): Promise<ListTodosResult>;
-  
+
   /**
    * Update a todo
    */
   updateTodo(id: string, updates: UpdateTodoInput): Promise<UpdateTodoResult>;
-  
+
   /**
    * Delete a todo
    */
   deleteTodo(id: string): Promise<DeleteTodoResult>;
-  
+
   /**
    * Batch update multiple todos
    */
   batchUpdateTodos(ids: string[], updates: BatchUpdateInput): Promise<BatchUpdateResult>;
-  
+
   /**
    * Get todo statistics for a user
    */

@@ -5,13 +5,13 @@
  */
 import { getLogger, metrics } from '@dome/common';
 import {
-  AuthBinding, 
-  AuthService, 
+  AuthBinding,
+  AuthService,
   LoginResponse,
   RegisterResponse,
   ValidateTokenResponse,
   LogoutResponse,
-  AuthErrorCode
+  AuthErrorCode,
 } from './types';
 
 /**
@@ -29,7 +29,7 @@ export class AuthClient implements AuthService {
   constructor(
     private readonly binding: AuthBinding,
     private readonly metricsPrefix: string = 'auth.client',
-  ) { }
+  ) {}
 
   /**
    * Login a user
@@ -38,10 +38,13 @@ export class AuthClient implements AuthService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'login',
-        email
-      }, 'User login');
+      this.logger.info(
+        {
+          event: 'login',
+          email,
+        },
+        'User login',
+      );
 
       const result = await this.binding.login(email, password);
 
@@ -63,10 +66,13 @@ export class AuthClient implements AuthService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'register',
-        email
-      }, 'User registration');
+      this.logger.info(
+        {
+          event: 'register',
+          email,
+        },
+        'User registration',
+      );
 
       const result = await this.binding.register(email, password, name);
 
@@ -88,13 +94,19 @@ export class AuthClient implements AuthService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'validate_token'
-      }, 'Validating auth token');
+      this.logger.info(
+        {
+          event: 'validate_token',
+        },
+        'Validating auth token',
+      );
 
       const result = await this.binding.validateToken(token);
 
-      metrics.gauge(`${this.metricsPrefix}.validate_token.latency_ms`, performance.now() - startTime);
+      metrics.gauge(
+        `${this.metricsPrefix}.validate_token.latency_ms`,
+        performance.now() - startTime,
+      );
       metrics.increment(`${this.metricsPrefix}.validate_token.success`);
 
       return result;
@@ -112,9 +124,12 @@ export class AuthClient implements AuthService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'logout'
-      }, 'User logout');
+      this.logger.info(
+        {
+          event: 'logout',
+        },
+        'User logout',
+      );
 
       const result = await this.binding.logout(token);
 
@@ -136,9 +151,6 @@ export class AuthClient implements AuthService {
  * @param metricsPrefix Optional prefix for metrics (defaults to 'auth.client')
  * @returns A new AuthClient instance
  */
-export function createAuthClient(
-  binding: AuthBinding,
-  metricsPrefix?: string,
-): AuthClient {
+export function createAuthClient(binding: AuthBinding, metricsPrefix?: string): AuthClient {
   return new AuthClient(binding, metricsPrefix);
 }

@@ -1,8 +1,4 @@
-import type {
-  LoginResponse,
-  RegisterResponse,
-  ValidateTokenResponse
-} from './authTypes';
+import type { LoginResponse, RegisterResponse, ValidateTokenResponse } from './authTypes';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://dome-api.chatter-9999.workers.dev';
 
@@ -17,9 +13,9 @@ export const authClient = {
     const response = await fetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password }),
     });
 
     if (!response.ok) {
@@ -37,9 +33,9 @@ export const authClient = {
     const response = await fetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email, password, name })
+      body: JSON.stringify({ email, password, name }),
     });
 
     if (!response.ok) {
@@ -58,8 +54,8 @@ export const authClient = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
+        Authorization: `Bearer ${token}`,
+      },
     });
 
     if (!response.ok) {
@@ -78,8 +74,8 @@ export const authClient = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
+        Authorization: `Bearer ${token}`,
+      },
     });
 
     if (!response.ok) {
@@ -88,5 +84,5 @@ export const authClient = {
     }
 
     return response.json();
-  }
+  },
 };

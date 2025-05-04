@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createServiceErrorHandler, createEnhancedAssertValid, createServiceErrorMiddleware } from '../../src/errors/errorUtils';
+import {
+  createServiceErrorHandler,
+  createEnhancedAssertValid,
+  createServiceErrorMiddleware,
+} from '../../src/errors/errorUtils';
 
 // Mock dependencies
 vi.mock('@dome/errors', () => ({
@@ -112,14 +116,12 @@ describe('Error Utilities', () => {
     it('should include details in error when validation fails', () => {
       const { assertValid: originalAssertValid } = require('@dome/errors');
       const assertValid = createEnhancedAssertValid();
-      
+
       assertValid(false, 'Validation failed', { field: 'test' });
-      
-      expect(originalAssertValid).toHaveBeenCalledWith(
-        false,
-        'Validation failed',
-        { field: 'test' }
-      );
+
+      expect(originalAssertValid).toHaveBeenCalledWith(false, 'Validation failed', {
+        field: 'test',
+      });
     });
   });
 
@@ -132,7 +134,7 @@ describe('Error Utilities', () => {
     it('should handle errors and return appropriate response', async () => {
       const createErrorMiddleware = createServiceErrorMiddleware('test-service');
       const middleware = createErrorMiddleware();
-      
+
       const mockContext = {
         status: vi.fn(),
         json: vi.fn().mockReturnValue('json-response'),
@@ -141,11 +143,11 @@ describe('Error Utilities', () => {
           method: 'GET',
         },
       };
-      
+
       const mockNext = vi.fn().mockRejectedValue(new Error('Test error'));
-      
+
       const result = await middleware(mockContext, mockNext);
-      
+
       expect(mockNext).toHaveBeenCalled();
       expect(mockContext.status).toHaveBeenCalledWith(500);
       expect(mockContext.json).toHaveBeenCalledWith({
@@ -166,10 +168,10 @@ describe('Error Utilities', () => {
         details: { custom: true },
         statusCode: 418,
       });
-      
+
       const createErrorMiddleware = createServiceErrorMiddleware('test-service');
       const middleware = createErrorMiddleware({ errorMapper });
-      
+
       const mockContext = {
         status: vi.fn(),
         json: vi.fn().mockReturnValue('json-response'),
@@ -178,11 +180,11 @@ describe('Error Utilities', () => {
           method: 'GET',
         },
       };
-      
+
       const mockNext = vi.fn().mockRejectedValue(new Error('Test error'));
-      
+
       await middleware(mockContext, mockNext);
-      
+
       expect(errorMapper).toHaveBeenCalledWith(expect.any(Error));
       expect(mockContext.status).toHaveBeenCalledWith(418);
       expect(mockContext.json).toHaveBeenCalledWith({

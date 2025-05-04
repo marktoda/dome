@@ -39,7 +39,7 @@ vi.mock('async_hooks', () => ({
 
 describe('Logger Context Propagation Integration Tests', () => {
   const { getLogger } = require('@dome/common');
-  
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -69,7 +69,7 @@ describe('Logger Context Propagation Integration Tests', () => {
       { requestId: 'test-123', userId: 'user-456', operation: 'test-operation' },
       async () => {
         return outerFunction();
-      }
+      },
     );
 
     // Verify result
@@ -77,10 +77,10 @@ describe('Logger Context Propagation Integration Tests', () => {
 
     // Verify context was propagated to all logger calls
     const mockLogger = getLogger();
-    
+
     // All log calls should have been made with the same context
     expect(mockLogger.info).toHaveBeenCalledTimes(3);
-    
+
     // Check that the context was passed to each call
     const contextCaptor = mockAsyncLocalStorage.run.mock.calls[0][0];
     expect(contextCaptor).toEqual(
@@ -88,27 +88,21 @@ describe('Logger Context Propagation Integration Tests', () => {
         requestId: 'test-123',
         userId: 'user-456',
         operation: 'test-operation',
-      })
+      }),
     );
   });
 
   it('should merge contexts when nested withContext calls are made', async () => {
     // Run with nested contexts
-    await withContext(
-      { requestId: 'test-123', service: 'service1' },
-      async () => {
-        const logger1 = getLogger();
-        logger1.info('Log from outer context');
+    await withContext({ requestId: 'test-123', service: 'service1' }, async () => {
+      const logger1 = getLogger();
+      logger1.info('Log from outer context');
 
-        await withContext(
-          { operation: 'nested-op', component: 'component1' },
-          async () => {
-            const logger2 = getLogger();
-            logger2.info('Log from inner context');
-          }
-        );
-      }
-    );
+      await withContext({ operation: 'nested-op', component: 'component1' }, async () => {
+        const logger2 = getLogger();
+        logger2.info('Log from inner context');
+      });
+    });
 
     // Verify outer context
     const outerContextCaptor = mockAsyncLocalStorage.run.mock.calls[0][0];
@@ -116,7 +110,7 @@ describe('Logger Context Propagation Integration Tests', () => {
       expect.objectContaining({
         requestId: 'test-123',
         service: 'service1',
-      })
+      }),
     );
 
     // Verify inner context (merged)
@@ -127,7 +121,7 @@ describe('Logger Context Propagation Integration Tests', () => {
         service: 'service1',
         operation: 'nested-op',
         component: 'component1',
-      })
+      }),
     );
   });
 
@@ -149,11 +143,8 @@ describe('Logger Context Propagation Integration Tests', () => {
     const results = await withContext(
       { requestId: 'test-123', operation: 'parallel-ops' },
       async () => {
-        return Promise.all([
-          asyncOperation1(),
-          asyncOperation2(),
-        ]);
-      }
+        return Promise.all([asyncOperation1(), asyncOperation2()]);
+      },
     );
 
     // Verify results
@@ -162,18 +153,18 @@ describe('Logger Context Propagation Integration Tests', () => {
     // Verify context was maintained in both async operations
     expect(asyncOperation1).toHaveBeenCalled();
     expect(asyncOperation2).toHaveBeenCalled();
-    
+
     // Both operations should have logged with the same context
     const mockLogger = getLogger();
     expect(mockLogger.info).toHaveBeenCalledTimes(2);
-    
+
     // Check that the context was passed to each call
     const contextCaptor = mockAsyncLocalStorage.run.mock.calls[0][0];
     expect(contextCaptor).toEqual(
       expect.objectContaining({
         requestId: 'test-123',
         operation: 'parallel-ops',
-      })
+      }),
     );
   });
 
@@ -187,28 +178,25 @@ describe('Logger Context Propagation Integration Tests', () => {
 
     // Run with context and catch the error
     try {
-      await withContext(
-        { requestId: 'test-123', operation: 'error-op' },
-        async () => {
-          return throwingFunction();
-        }
-      );
+      await withContext({ requestId: 'test-123', operation: 'error-op' }, async () => {
+        return throwingFunction();
+      });
       // Should not reach here
       expect(true).toBe(false);
     } catch (error: any) {
       expect(error.message).toBe('Test error');
-      
+
       // Verify the log was made with context before the error
       const mockLogger = getLogger();
       expect(mockLogger.info).toHaveBeenCalledWith('About to throw');
-      
+
       // Check that the context was passed to the log call
       const contextCaptor = mockAsyncLocalStorage.run.mock.calls[0][0];
       expect(contextCaptor).toEqual(
         expect.objectContaining({
           requestId: 'test-123',
           operation: 'error-op',
-        })
+        }),
       );
     }
   });

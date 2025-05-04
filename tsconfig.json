@@ -31,7 +31,7 @@
       "@dome/ai-processor": ["services/ai-processor/src"],
       "@dome/ai-processor/*": ["services/ai-processor/src/*"],
       "@dome/cli": ["packages/cli/src"],
-      "@dome/cli/*": ["packages/cli/src/*"],
+      "@dome/cli/*": ["packages/cli/src/*"]
     }
   },
   "exclude": ["node_modules", "dist"]

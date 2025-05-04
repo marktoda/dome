@@ -63,7 +63,7 @@ describe('Error Propagation Integration Tests', () => {
     // Create service-specific error handlers
     const toDomeErrorService1 = createServiceErrorHandler('service1');
     const toDomeErrorService2 = createServiceErrorHandler('service2');
-    
+
     // Create service wrappers
     const wrapService1 = createServiceWrapper('service1');
     const wrapService2 = createServiceWrapper('service2');
@@ -86,11 +86,9 @@ describe('Error Propagation Integration Tests', () => {
           return { success: true, result };
         } catch (error) {
           // Convert error with service2 context
-          const enhancedError = toDomeErrorService2(
-            error,
-            'Error processing request',
-            { requestId: 'test-123' }
-          );
+          const enhancedError = toDomeErrorService2(error, 'Error processing request', {
+            requestId: 'test-123',
+          });
           throw enhancedError;
         }
       });
@@ -108,7 +106,7 @@ describe('Error Propagation Integration Tests', () => {
       expect(error.details).toHaveProperty('field', 'id');
       expect(error.details).toHaveProperty('service', 'service2');
       expect(error.details).toHaveProperty('requestId', 'test-123');
-      
+
       // Verify error was logged
       expect(logError).toHaveBeenCalled();
     }
@@ -117,7 +115,7 @@ describe('Error Propagation Integration Tests', () => {
   it('should maintain error types when propagating across services', async () => {
     // Import the mocked errors
     const { ValidationError, ServiceError } = require('@dome/errors');
-    
+
     // Create service wrappers
     const wrapService1 = createServiceWrapper('service1');
     const wrapService2 = createServiceWrapper('service2');

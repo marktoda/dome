@@ -22,17 +22,17 @@ pnpm add @dome/errors
 ### Error Hierarchy
 
 ```typescript
-import { 
-  DomeError,             // Base error class (500)
-  ValidationError,       // Input validation errors (400)
-  NotFoundError,         // Resource not found (404)
-  UnauthorizedError,     // Authentication required (401)
-  ForbiddenError,        // Permission denied (403)
-  BadRequestError,       // Malformed request (400)
-  InternalError,         // Server error (500)
-  ConflictError,         // Resource conflict (409)
-  RateLimitError,        // Rate limit exceeded (429)
-  ServiceUnavailableError // Service unavailable (503)
+import {
+  DomeError, // Base error class (500)
+  ValidationError, // Input validation errors (400)
+  NotFoundError, // Resource not found (404)
+  UnauthorizedError, // Authentication required (401)
+  ForbiddenError, // Permission denied (403)
+  BadRequestError, // Malformed request (400)
+  InternalError, // Server error (500)
+  ConflictError, // Resource conflict (409)
+  RateLimitError, // Rate limit exceeded (429)
+  ServiceUnavailableError, // Service unavailable (503)
 } from '@dome/errors';
 ```
 
@@ -43,7 +43,7 @@ import {
 throw new DomeError('Something went wrong', {
   code: 'CUSTOM_ERROR',
   statusCode: 500,
-  details: { operationId: '123' }
+  details: { operationId: '123' },
 });
 
 // Specific error types
@@ -58,11 +58,7 @@ throw new ForbiddenError('Admin access required', { requiredRole: 'admin' });
 try {
   await db.query('SELECT * FROM users');
 } catch (dbError) {
-  throw new InternalError(
-    'Database query failed', 
-    { operation: 'fetchUsers' }, 
-    dbError
-  );
+  throw new InternalError('Database query failed', { operation: 'fetchUsers' }, dbError);
 }
 ```
 
@@ -70,10 +66,10 @@ try {
 
 ```typescript
 // Add context when creating the error
-throw new ValidationError('Invalid input', { 
+throw new ValidationError('Invalid input', {
   field: 'email',
-  value: input.email, 
-  validationRule: 'email'
+  value: input.email,
+  validationRule: 'email',
 });
 
 // Or add context to an existing error
@@ -99,24 +95,31 @@ const app = new Hono();
 app.use('*', errorHandler());
 
 // Advanced configuration
-app.use('*', errorHandler({
-  includeStack: true, // Include stack traces in non-production
-  includeCause: true, // Include cause in non-production
-  // Custom error mapper
-  errorMapper: (err) => {
-    if (err instanceof CustomDBError) {
-      return new InternalError('Database error', { 
-        dbErrorCode: err.code 
-      }, err);
-    }
-    // Default mapping for other errors
-    return err instanceof DomeError 
-      ? err 
-      : new InternalError('Unexpected error', {}, err instanceof Error ? err : undefined);
-  },
-  // Custom logger retrieval
-  getContextLogger: (c) => c.get('customLogger')
-}));
+app.use(
+  '*',
+  errorHandler({
+    includeStack: true, // Include stack traces in non-production
+    includeCause: true, // Include cause in non-production
+    // Custom error mapper
+    errorMapper: err => {
+      if (err instanceof CustomDBError) {
+        return new InternalError(
+          'Database error',
+          {
+            dbErrorCode: err.code,
+          },
+          err,
+        );
+      }
+      // Default mapping for other errors
+      return err instanceof DomeError
+        ? err
+        : new InternalError('Unexpected error', {}, err instanceof Error ? err : undefined);
+    },
+    // Custom logger retrieval
+    getContextLogger: c => c.get('customLogger'),
+  }),
+);
 ```
 
 ### Error Utilities
@@ -133,9 +136,9 @@ try {
   const domeError = toDomeError(
     error,
     'Operation failed', // Default message
-    { operation: 'processData' } // Default details
+    { operation: 'processData' }, // Default details
   );
-  
+
   // Now it's a properly typed DomeError
   console.log(domeError.statusCode); // 400, 404, 500, etc.
   console.log(domeError.code); // "VALIDATION_ERROR", "NOT_FOUND", etc.
@@ -150,9 +153,9 @@ import { assertValid, assertExists } from '@dome/errors';
 function processUser(userId?: string) {
   // Throws ValidationError if false
   assertValid(userId && userId.length > 0, 'User ID is required');
-  
+
   const user = userRepository.findById(userId);
-  
+
   // Throws NotFoundError if null or undefined
   return assertExists(user, `User with ID ${userId} not found`);
 }
@@ -190,25 +193,20 @@ function validateUser(user) {
   if (!user.email) {
     throw userErrors.validation('Email is required', { field: 'email' });
   }
-  
+
   // Domain-specific not found error
   const dbUser = findUserByEmail(user.email);
   if (!dbUser) {
     throw userErrors.notFound(`User with email ${user.email} not found`);
   }
-  
+
   // Domain-specific assertion
-  userErrors.assertValid(user.password.length >= 8, 
-    'Password must be at least 8 characters',
-    { field: 'password' }
-  );
-  
+  userErrors.assertValid(user.password.length >= 8, 'Password must be at least 8 characters', {
+    field: 'password',
+  });
+
   // Domain-specific error wrapper
-  return userErrors.wrap(
-    () => updateUser(user),
-    'Failed to update user',
-    { userId: user.id }
-  );
+  return userErrors.wrap(() => updateUser(user), 'Failed to update user', { userId: user.id });
 }
 ```
 
@@ -265,14 +263,11 @@ All API errors are returned in a consistent format:
 
 ```typescript
 // Good
-throw new ValidationError(
-  'Invalid date range', 
-  { 
-    startDate: request.startDate,
-    endDate: request.endDate,
-    rule: 'start_date_before_end_date'
-  }
-);
+throw new ValidationError('Invalid date range', {
+  startDate: request.startDate,
+  endDate: request.endDate,
+  rule: 'start_date_before_end_date',
+});
 
 // Avoid
 throw new Error('Invalid dates');
@@ -290,12 +285,12 @@ try {
   return await userService.createUser(userData);
 } catch (error) {
   logger.error({ error, userData }, 'User creation failed');
-  
+
   if (error instanceof ValidationError) {
     // Pass validation errors through to API
     throw error;
   }
-  
+
   // Hide internal errors from users
   throw new InternalError('Unable to create user at this time');
 }

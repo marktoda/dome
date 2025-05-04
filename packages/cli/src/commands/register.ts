@@ -94,9 +94,7 @@ export function registerCommand(program: Command): void {
           }
         } else {
           // Show error message
-          console.log(
-            error(`Registration failed: ${result.error?.message || 'Unknown error'}`),
-          );
+          console.log(error(`Registration failed: ${result.error?.message || 'Unknown error'}`));
           process.exit(1);
         }
       } catch (err) {

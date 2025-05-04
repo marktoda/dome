@@ -99,10 +99,10 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
           error:
             error instanceof Error
               ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-              }
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
               : String(error),
           request: {
             method,
@@ -374,7 +374,7 @@ export function buildLoggingMiddleware(options: LoggingMiddlewareOptions = {}): 
     }
 
     // Create logger with all the metadata
-    return withContext(meta, async (logger) => {
+    return withContext(meta, async logger => {
       // Store logger and requestId in context
       c.set('logger', logger);
       c.set('requestId', requestId);
@@ -385,9 +385,11 @@ export function buildLoggingMiddleware(options: LoggingMiddlewareOptions = {}): 
       if (logRequests) {
         // Attempt to log request body for applicable requests
         let body: string | undefined;
-        if (includeRequestBody &&
+        if (
+          includeRequestBody &&
           c.req.header('content-type')?.includes('application/json') &&
-          ['POST', 'PUT', 'PATCH'].includes(c.req.method)) {
+          ['POST', 'PUT', 'PATCH'].includes(c.req.method)
+        ) {
           try {
             // Clone the request to avoid consuming it
             const clonedReq = c.req.raw.clone();
@@ -408,7 +410,7 @@ export function buildLoggingMiddleware(options: LoggingMiddlewareOptions = {}): 
 
         logger.info(
           body ? { event: 'request_start', body } : { event: 'request_start' },
-          `${c.req.method} ${c.req.path}`
+          `${c.req.method} ${c.req.path}`,
         );
       }
 
@@ -421,7 +423,7 @@ export function buildLoggingMiddleware(options: LoggingMiddlewareOptions = {}): 
         // Log error and rethrow
         logger.error(
           { event: 'request_error', error, path: c.req.path, method: c.req.method },
-          `Error handling ${c.req.method} ${c.req.path}`
+          `Error handling ${c.req.method} ${c.req.path}`,
         );
         throw error;
       } finally {
@@ -443,7 +445,7 @@ export function buildLoggingMiddleware(options: LoggingMiddlewareOptions = {}): 
               responseSize: responseSize ? parseInt(responseSize, 10) : undefined,
               contentType,
             },
-            `${c.req.method} ${c.req.path} ${status} in ${duration.toFixed(2)}ms`
+            `${c.req.method} ${c.req.path} ${status} in ${duration.toFixed(2)}ms`,
           );
         }
       }

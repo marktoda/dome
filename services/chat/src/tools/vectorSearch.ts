@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ContentCategory, ContentCategoryEnum } from '@dome/common';
-import { SearchService, SearchOptions } from "../services/searchService";
+import { SearchService, SearchOptions } from '../services/searchService';
 import { getLogger } from '@dome/common';
 import { Document, DocumentChunk } from '../types';
 import { RetrievalTool, RetrievalInput } from '.';
@@ -30,13 +30,13 @@ export const vectorSearchOutput = z.array(
       relevanceScore: z.number(),
       url: z.string().url().nullable().optional(),
       mimeType: z.string().nullable().optional(), // ISO 8601
-    })
+    }),
   }),
 );
 
-type RawSearchInput = z.input<typeof vectorSearchInput>;   // topK?: number
-type ParsedSearchInput = z.output<typeof vectorSearchInput>;  // topK:  number
-type VectorSearchOutput = z.output<typeof vectorSearchOutput>;  // topK:  number
+type RawSearchInput = z.input<typeof vectorSearchInput>; // topK?: number
+type ParsedSearchInput = z.output<typeof vectorSearchInput>; // topK:  number
+type VectorSearchOutput = z.output<typeof vectorSearchOutput>; // topK:  number
 
 interface VectorRetrievalTool<I = unknown, O = unknown, Raw = I> extends RetrievalTool<I, O, Raw> {
   category: ContentCategory | undefined;
@@ -50,27 +50,28 @@ export const vectorSearchTool: VectorRetrievalTool<
   VectorSearchOutput,
   RawSearchInput
 > = {
-  name: "vector_search",
-  description:
-    "Searches the public web and returns the most relevant links with brief snippets.",
+  name: 'vector_search',
+  description: 'Searches the public web and returns the most relevant links with brief snippets.',
 
   inputSchema: vectorSearchInput,
   outputSchema: vectorSearchOutput,
   category: undefined,
 
   async retrieve(input: RetrievalInput, env: Env): Promise<VectorSearchOutput> {
-    return this.execute({
-      query: input.query,
-      topK: DEFAULT_TOP_K,
-      userId: input.userId,
-    }, env);
-
+    return this.execute(
+      {
+        query: input.query,
+        topK: DEFAULT_TOP_K,
+        userId: input.userId,
+      },
+      env,
+    );
   },
 
   async execute(input, env: Env): Promise<VectorSearchOutput> {
     const searchService = SearchService.fromEnv(env);
     const options = buildSearchOptions(input, this.category);
-    getLogger().info({ options }, "[VectorSearchTool]: Searching Vectorize");
+    getLogger().info({ options }, '[VectorSearchTool]: Searching Vectorize');
     let docs = await searchService.search(options);
     docs = SearchService.rankAndFilterDocuments(docs);
 
@@ -90,16 +91,15 @@ export const vectorSearchTool: VectorRetrievalTool<
         mimeType: r.metadata.mimeType,
         source: r.metadata.source || '',
         sourceType: 'vector',
-      }
+      },
     }));
-
   },
 
   examples: [
     {
-      input: { userId: 'test-user', query: "latest GPU trends", topK: 3 },
+      input: { userId: 'test-user', query: 'latest GPU trends', topK: 3 },
       output: [],
-      description: "Shows news articles about current GPU market trends",
+      description: 'Shows news articles about current GPU market trends',
     },
   ],
 };
@@ -123,8 +123,8 @@ export const docVectorSearchTool: VectorRetrievalTool<
   RawSearchInput
 > = {
   ...vectorSearchTool,
-  name: "doc_search",
-  description: "Searches official documentation, knowledge base articles, structured content",
+  name: 'doc_search',
+  description: 'Searches official documentation, knowledge base articles, structured content',
   category: ContentCategoryEnum.enum.document,
 };
 
@@ -133,9 +133,9 @@ export const codeVectorSearchTool: VectorRetrievalTool<
   VectorSearchOutput,
   RawSearchInput
 > = {
-  ...vectorSearchTool,                  // copy everything
-  name: "code_search",
-  description: "Searches source code repositories, API documentation, implementation details",
+  ...vectorSearchTool, // copy everything
+  name: 'code_search',
+  description: 'Searches source code repositories, API documentation, implementation details',
   category: ContentCategoryEnum.enum.code,
 };
 
@@ -144,8 +144,8 @@ export const noteVectorSearchTool: VectorRetrievalTool<
   VectorSearchOutput,
   RawSearchInput
 > = {
-  ...vectorSearchTool,                  // copy everything
-  name: "note_search",
-  description: "Personal notes, meeting summaries, informal documentation",
+  ...vectorSearchTool, // copy everything
+  name: 'note_search',
+  description: 'Personal notes, meeting summaries, informal documentation',
   category: ContentCategoryEnum.enum.note,
 };

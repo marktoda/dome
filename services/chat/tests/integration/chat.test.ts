@@ -47,7 +47,7 @@ vi.mock('../../src/services/modelFactory', () => ({
         invoke: vi.fn().mockResolvedValue({
           isComplex: false,
           shouldSplit: false,
-          reason: 'Query is simple'
+          reason: 'Query is simple',
         }),
       }),
     }),
@@ -127,7 +127,7 @@ vi.mock('../../src/checkpointer/d1Checkpointer', () => {
       getTuple = vi.fn().mockResolvedValue(undefined);
       put = vi.fn().mockResolvedValue(undefined);
       putWrites = vi.fn().mockResolvedValue(undefined);
-      list = vi.fn().mockImplementation(async function*() {
+      list = vi.fn().mockImplementation(async function* () {
         // Empty generator
         return;
       });
@@ -139,7 +139,7 @@ vi.mock('../../src/checkpointer/d1Checkpointer', () => {
         totalCheckpoints: 0,
         oldestCheckpoint: 0,
         newestCheckpoint: 0,
-        averageStateSize: 0
+        averageStateSize: 0,
       });
     },
   };
@@ -154,7 +154,7 @@ vi.mock('../../src/checkpointer/d1Checkpointer', () => {
       getTuple = vi.fn().mockResolvedValue(undefined);
       put = vi.fn().mockResolvedValue(undefined);
       putWrites = vi.fn().mockResolvedValue(undefined);
-      list = vi.fn().mockImplementation(async function*() {
+      list = vi.fn().mockImplementation(async function* () {
         // Empty generator
         return;
       });
@@ -166,7 +166,7 @@ vi.mock('../../src/checkpointer/d1Checkpointer', () => {
         totalCheckpoints: 0,
         oldestCheckpoint: 0,
         newestCheckpoint: 0,
-        averageStateSize: 0
+        averageStateSize: 0,
       });
     },
   };
@@ -308,7 +308,7 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    const result = await graph.invoke(initialState) as AgentState;
+    const result = (await graph.invoke(initialState)) as AgentState;
 
     // Verify the result
     expect(result).toBeDefined();
@@ -376,7 +376,7 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    const result = await graph.invoke(initialState) as AgentState;
+    const result = (await graph.invoke(initialState)) as AgentState;
 
     // Verify the result
     expect(result).toBeDefined();
@@ -393,8 +393,12 @@ describe('Chat RAG Graph Integration Tests', () => {
     expect(LlmService.rewriteQuery).toHaveBeenCalled();
 
     // Verify that the query analysis was stored in the state
-    expect(result.taskEntities && Object.values(result.taskEntities)[0]?.queryAnalysis).toBeDefined();
-    expect(result.taskEntities && Object.values(result.taskEntities)[0]?.queryAnalysis?.isComplex).toBe(true);
+    expect(
+      result.taskEntities && Object.values(result.taskEntities)[0]?.queryAnalysis,
+    ).toBeDefined();
+    expect(
+      result.taskEntities && Object.values(result.taskEntities)[0]?.queryAnalysis?.isComplex,
+    ).toBe(true);
   });
 
   it('should handle retrieval widening when few results are found', async () => {
@@ -425,7 +429,7 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    const result = await graph.invoke(initialState) as AgentState;
+    const result = (await graph.invoke(initialState)) as AgentState;
 
     // Verify the result
     expect(result).toBeDefined();
@@ -463,7 +467,7 @@ describe('Chat RAG Graph Integration Tests', () => {
     };
 
     // Execute the graph
-    const result = await graph.invoke(initialState) as AgentState;
+    const result = (await graph.invoke(initialState)) as AgentState;
 
     // Verify the result contains an error
     expect(result).toBeDefined();

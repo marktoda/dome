@@ -37,18 +37,18 @@ describe('Structured Invocation', () => {
     // Case 1: Clean JSON response
     mockAi.run.mockResolvedValueOnce({
       response: JSON.stringify({
-        title: "Meeting Notes",
-        summary: "Team meeting discussing Q3 goals.",
+        title: 'Meeting Notes',
+        summary: 'Team meeting discussing Q3 goals.',
         todos: [
-          { text: "Send follow-up email", priority: "high" },
-          { text: "Update roadmap", priority: "medium" }
+          { text: 'Send follow-up email', priority: 'high' },
+          { text: 'Update roadmap', priority: 'medium' },
         ],
-        topics: ["planning", "roadmap", "goals"]
-      })
+        topics: ['planning', 'roadmap', 'goals'],
+      }),
     });
 
-    const result = await llmService.processContent("Meeting notes content", "note");
-    
+    const result = await llmService.processContent('Meeting notes content', 'note');
+
     expect(result).toHaveProperty('title', 'Meeting Notes');
     expect(result).toHaveProperty('summary', 'Team meeting discussing Q3 goals.');
     expect(result.todos).toHaveLength(2);
@@ -72,11 +72,11 @@ describe('Structured Invocation', () => {
   "topics": ["authentication", "frontend"]
 }
 \`\`\`
-`
+`,
     });
 
-    const result = await llmService.processContent("function handleSubmit() {...}", "code");
-    
+    const result = await llmService.processContent('function handleSubmit() {...}', 'code');
+
     expect(result).toHaveProperty('title', 'User Authentication Component');
     expect(result).toHaveProperty('language', 'JavaScript');
     expect(result.frameworks).toContain('React');
@@ -89,11 +89,11 @@ describe('Structured Invocation', () => {
     });
 
     mockAi.run.mockResolvedValueOnce({
-      response: `{"title": "Invalid Response"}`
+      response: `{"title": "Invalid Response"}`,
     });
 
-    const result = await llmService.processContent("Some content", "note");
-    
+    const result = await llmService.processContent('Some content', 'note');
+
     // Should fall back gracefully
     expect(result).toHaveProperty('title');
     expect(result).toHaveProperty('summary', 'Content processing failed');
@@ -105,8 +105,8 @@ describe('Structured Invocation', () => {
     // Simulate LLM API error
     mockAi.run.mockRejectedValueOnce(new Error('LLM service unavailable'));
 
-    const result = await llmService.processContent("Some content", "note");
-    
+    const result = await llmService.processContent('Some content', 'note');
+
     expect(result).toHaveProperty('title');
     expect(result).toHaveProperty('summary', 'Content processing failed');
     expect(result).toHaveProperty('error', 'LLM service unavailable');
@@ -116,9 +116,9 @@ describe('Structured Invocation', () => {
     // Test the fallback title generation
     mockAi.run.mockRejectedValueOnce(new Error('API error'));
 
-    const content = "First line as title\nSecond line content";
-    const result = await llmService.processContent(content, "note");
-    
+    const content = 'First line as title\nSecond line content';
+    const result = await llmService.processContent(content, 'note');
+
     expect(result).toHaveProperty('title', 'First line as title');
   });
 });

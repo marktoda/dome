@@ -141,7 +141,7 @@ export class GithubProvider implements Provider {
 
         // Determine the content category - Markdown files should be 'document', others are 'code'
         const category = f.filename.endsWith('.md') ? 'document' : 'code';
-        
+
         puts.push({
           content: contentWithMetadata,
           category: category as ContentCategory,

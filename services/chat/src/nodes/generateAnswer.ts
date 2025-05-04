@@ -1,6 +1,6 @@
 import { getLogger, logError } from '@dome/common';
 import { toDomeError } from '../utils/errors';
-import { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { formatDocsForPrompt } from '../utils/promptHelpers';
 import { AgentState } from '../types';
 import { countTokens } from '../utils/tokenCounter';
@@ -39,13 +39,13 @@ export async function generateAnswer(
 ): Promise<Partial<AgentState>> {
   const t0 = performance.now();
   const logger = getLogger().child({ node: 'generateAnswer' });
-  logger.info({ messageCount: state.messages.length }, "Starting answer generation");
+  logger.info({ messageCount: state.messages.length }, 'Starting answer generation');
 
   /* ------------------------------------------------------------------ */
   /*  Initialize tracing and observability                              */
   /* ------------------------------------------------------------------ */
   const traceId = state.metadata?.traceId ?? crypto.randomUUID();
-  const spanId = ObservabilityService.startSpan(env, traceId, "generateAnswer", state);
+  const spanId = ObservabilityService.startSpan(env, traceId, 'generateAnswer', state);
 
   try {
     /* ------------------------------------------------------------------ */
@@ -61,11 +61,11 @@ export async function generateAnswer(
     } else if (state.docs) {
       synthesizedContext = formatDocsForPrompt(state.docs);
     } else {
-      throw new Error("No synthesized context or documents found in state");
+      throw new Error('No synthesized context or documents found in state');
     }
 
     // Configure model parameters
-    const modelId = state.options?.modelId ?? "gpt-4-turbo"; // Use latest model
+    const modelId = state.options?.modelId ?? 'gpt-4-turbo'; // Use latest model
     const modelConfig = getModelConfig(modelId);
 
     // Calculate token usage and limits
@@ -76,7 +76,7 @@ export async function generateAnswer(
     const { maxResponseTokens } = calculateTokenLimits(
       modelConfig,
       contextTokens + userQueryTokens + 500, // Add buffer for system prompt
-      state.options?.maxTokens
+      state.options?.maxTokens,
     );
 
     // Build the system prompt for answer generation using the central configuration
@@ -88,11 +88,11 @@ export async function generateAnswer(
     const chatMessages = buildMessages(systemPrompt, state.chatHistory, userQuery);
 
     // Log context statistics for observability
-    ObservabilityService.logEvent(env, traceId, spanId, "context_stats", {
+    ObservabilityService.logEvent(env, traceId, spanId, 'context_stats', {
       contextTokens,
       userQueryTokens,
       maxResponseTokens,
-      totalPromptTokens: contextTokens + userQueryTokens + 500 // Approximate
+      totalPromptTokens: contextTokens + userQueryTokens + 500, // Approximate
     });
 
     /* ------------------------------------------------------------------ */
@@ -111,10 +111,12 @@ export async function generateAnswer(
     // Handle streaming if configured
     if (cfg.configurable?.stream?.handleChunk) {
       // Stream generation with chunk handling
-      const stream = await model.stream(chatMessages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })));
+      const stream = await model.stream(
+        chatMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+      );
 
       // Accumulate the streamed response
       let accumulatedResponse = '';
@@ -131,8 +133,8 @@ export async function generateAnswer(
           metadata: {
             langgraph_node: 'generateAnswer',
             traceId,
-            spanId
-          }
+            spanId,
+          },
         });
       }
 
@@ -140,10 +142,12 @@ export async function generateAnswer(
       responseText = accumulatedResponse;
     } else {
       // Non-streaming generation
-      const response = await model.invoke(chatMessages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })));
+      const response = await model.invoke(
+        chatMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+      );
       responseText = response.text;
     }
 
@@ -153,26 +157,29 @@ export async function generateAnswer(
     const elapsed = performance.now() - t0;
 
     // Log completion
-    logger.info({
-      elapsedMs: elapsed,
-      responseLength: responseText.length,
-      responsePreview: responseText.substring(0, 100)
-    }, "Answer generation complete");
+    logger.info(
+      {
+        elapsedMs: elapsed,
+        responseLength: responseText.length,
+        responsePreview: responseText.substring(0, 100),
+      },
+      'Answer generation complete',
+    );
 
     // End observability
-    ObservabilityService.endSpan(env, traceId, spanId, "generateAnswer", state, state, elapsed);
+    ObservabilityService.endSpan(env, traceId, spanId, 'generateAnswer', state, state, elapsed);
 
     // Return state updates
     return {
       generatedText: responseText,
       metadata: {
-        currentNode: "generateAnswer",
+        currentNode: 'generateAnswer',
         executionTimeMs: elapsed,
         isFinalState: true,
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          generateAnswer: elapsed
-        }
+          generateAnswer: elapsed,
+        },
       },
     };
   } catch (err) {
@@ -181,39 +188,36 @@ export async function generateAnswer(
     const elapsed = performance.now() - t0;
 
     // Log the error
-    logError(domeError, "Error in generateAnswer", { traceId, spanId });
+    logError(domeError, 'Error in generateAnswer', { traceId, spanId });
 
     // End span with error
-    ObservabilityService.endSpan(env, traceId, spanId, "generateAnswer", state, state, elapsed);
+    ObservabilityService.endSpan(env, traceId, spanId, 'generateAnswer', state, state, elapsed);
 
     // Format error for state
     const formattedError = {
-      node: "generateAnswer",
+      node: 'generateAnswer',
       message: domeError.message,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     // Provide a fallback message for the user
-    const fallbackResponse = "I apologize, but I encountered an issue while generating an answer to your query. " +
-      "The system team has been notified of this error.";
+    const fallbackResponse =
+      'I apologize, but I encountered an issue while generating an answer to your query. ' +
+      'The system team has been notified of this error.';
 
     // Return error state update with fallback response
     return {
       generatedText: fallbackResponse,
       metadata: {
-        currentNode: "generateAnswer",
+        currentNode: 'generateAnswer',
         executionTimeMs: elapsed,
         isFinalState: true,
-        errors: [
-          ...(state.metadata?.errors || []),
-          formattedError
-        ],
+        errors: [...(state.metadata?.errors || []), formattedError],
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          generateAnswer: elapsed
-        }
-      }
+          generateAnswer: elapsed,
+        },
+      },
     };
   }
 }
-

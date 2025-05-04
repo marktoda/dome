@@ -39,7 +39,7 @@ describe('contextInjector', () => {
   test('should include user name when provided', () => {
     const prompt = 'This is a test prompt';
     const userData: UserContextData = {
-      name: 'Test User'
+      name: 'Test User',
     };
 
     const result = injectSituationalContext(prompt, userData);
@@ -52,7 +52,7 @@ describe('contextInjector', () => {
     const prompt = 'This is a test prompt';
     const userData: UserContextData = {
       name: 'Test User',
-      location: 'New York, NY'
+      location: 'New York, NY',
     };
 
     const result = injectSituationalContext(prompt, userData);

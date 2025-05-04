@@ -272,8 +272,8 @@ export function errorHandler(options: ErrorHandlerOptions = {}) {
       const error = errorMapper
         ? errorMapper(err)
         : err instanceof DomeError
-          ? err
-          : new InternalError(
+        ? err
+        : new InternalError(
             'An unexpected error occurred',
             {},
             err instanceof Error ? err : undefined,
@@ -305,9 +305,8 @@ export function errorHandler(options: ErrorHandlerOptions = {}) {
       }
 
       if (includeCause && error.cause) {
-        responseBody.error.cause = error.cause instanceof Error
-          ? error.cause.message
-          : String(error.cause);
+        responseBody.error.cause =
+          error.cause instanceof Error ? error.cause.message : String(error.cause);
 
         if (includeStack && error.cause instanceof Error) {
           responseBody.error.causeStack = error.cause.stack;
@@ -329,7 +328,7 @@ export function errorHandler(options: ErrorHandlerOptions = {}) {
 export function toDomeError(
   error: unknown,
   defaultMessage = 'An unexpected error occurred',
-  defaultDetails: Record<string, any> = {}
+  defaultDetails: Record<string, any> = {},
 ): DomeError {
   // Already a DomeError
   if (error instanceof DomeError) {
@@ -390,12 +389,12 @@ export function toDomeError(
  */
 export function createErrorWrapper(
   defaultMessage: string,
-  defaultDetails: Record<string, any> = {}
+  defaultDetails: Record<string, any> = {},
 ) {
   return async function wrapWithErrorHandling<T>(
     fn: () => Promise<T>,
     message = defaultMessage,
-    details: Record<string, any> = {}
+    details: Record<string, any> = {},
   ): Promise<T> {
     try {
       return await fn();
@@ -414,7 +413,7 @@ export function createErrorWrapper(
 export function assertValid(
   condition: boolean,
   message: string,
-  details: Record<string, any> = {}
+  details: Record<string, any> = {},
 ): void {
   if (!condition) {
     throw new ValidationError(message, details);
@@ -431,7 +430,7 @@ export function assertValid(
 export function assertExists<T>(
   value: T | null | undefined,
   message: string,
-  details: Record<string, any> = {}
+  details: Record<string, any> = {},
 ): T {
   if (value === null || value === undefined) {
     throw new NotFoundError(message, details);
@@ -449,7 +448,7 @@ export function assertExists<T>(
 export function handleDatabaseError(
   error: unknown,
   operation: string,
-  details: Record<string, any> = {}
+  details: Record<string, any> = {},
 ): DomeError {
   const errorObj = error as any;
 
@@ -463,7 +462,11 @@ export function handleDatabaseError(
   }
 
   if (errorObj?.code === 'P2003' || errorObj?.message?.includes('foreign key constraint')) {
-    return new ValidationError(`Foreign key constraint failed during ${operation}`, details, error as Error);
+    return new ValidationError(
+      `Foreign key constraint failed during ${operation}`,
+      details,
+      error as Error,
+    );
   }
 
   return new InternalError(`Database error during ${operation}`, details, error as Error);
@@ -499,7 +502,11 @@ export function createErrorFactory(domain: string, defaultDetails: Record<string
       new ConflictError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
 
     serviceUnavailable: (message: string, details?: Record<string, any>, cause?: Error) =>
-      new ServiceUnavailableError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
+      new ServiceUnavailableError(
+        `[${domain}] ${message}`,
+        { ...defaultDetails, ...details },
+        cause,
+      ),
 
     rateLimit: (message: string, details?: Record<string, any>, cause?: Error) =>
       new RateLimitError(`[${domain}] ${message}`, { ...defaultDetails, ...details }, cause),
@@ -509,8 +516,11 @@ export function createErrorFactory(domain: string, defaultDetails: Record<string
     assertValid: (condition: boolean, message: string, details: Record<string, any> = {}) =>
       assertValid(condition, `[${domain}] ${message}`, { ...defaultDetails, ...details }),
 
-    assertExists: <T>(value: T | null | undefined, message: string, details: Record<string, any> = {}) =>
-      assertExists(value, `[${domain}] ${message}`, { ...defaultDetails, ...details }),
+    assertExists: <T>(
+      value: T | null | undefined,
+      message: string,
+      details: Record<string, any> = {},
+    ) => assertExists(value, `[${domain}] ${message}`, { ...defaultDetails, ...details }),
 
     handleDatabaseError: (error: unknown, operation: string, details: Record<string, any> = {}) =>
       handleDatabaseError(error, `${domain}.${operation}`, { ...defaultDetails, ...details }),

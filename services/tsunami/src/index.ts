@@ -8,16 +8,10 @@ import {
   formatZodError,
   logError,
   trackOperation,
-  createServiceMetrics
+  createServiceMetrics,
 } from '@dome/common';
-import {
-  toDomeError,
-  ConflictError,
-  ValidationError,
-} from './utils/errors';
-import {
-  createSyncPlanService,
-} from './services/syncPlanService';
+import { toDomeError, ConflictError, ValidationError } from './utils/errors';
+import { createSyncPlanService } from './services/syncPlanService';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { syncHistoryOperations } from './db/client';
 import { ProviderType } from './providers';
@@ -39,13 +33,16 @@ const buildServices = (env: Env) => ({
 const serviceInfo: ServiceInfo = {
   name: 'tsunami',
   version: '0.1.0',
-  environment: 'development'
+  environment: 'development',
 };
 
-logger.info({
-  event: 'service_start',
-  ...serviceInfo
-}, 'Starting Tsunami service');
+logger.info(
+  {
+    event: 'service_start',
+    ...serviceInfo,
+  },
+  'Starting Tsunami service',
+);
 
 /**
  * Tsunami Service WorkerEntrypoint implementation
@@ -74,7 +71,7 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
     return await trackOperation(
       'create_sync_plan',
       () => this.services.syncPlan.createSyncPlan(providerType, resourceId, userId),
-      { resourceId, userId, requestId }
+      { resourceId, userId, requestId },
     );
   }
 
@@ -90,7 +87,7 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
     return await trackOperation(
       'get_sync_plan',
       () => this.services.syncPlan.getSyncPlan(resourceId),
-      { resourceId, requestId }
+      { resourceId, requestId },
     );
   }
 
@@ -106,7 +103,7 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
     await trackOperation(
       'attach_user_to_plan',
       () => this.services.syncPlan.attachUser(syncPlanId, userId),
-      { syncPlanId, userId, requestId }
+      { syncPlanId, userId, requestId },
     );
   }
 
@@ -118,23 +115,26 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
    * @returns Boolean indicating if the resource was newly created
    */
   async initializeResource(
-    params: { resourceId: string, providerType: string, userId?: string },
-    cadenceSecs: number
+    params: { resourceId: string; providerType: string; userId?: string },
+    cadenceSecs: number,
   ): Promise<boolean> {
     const requestId = crypto.randomUUID();
 
     // Convert string provider type to enum
-    const providerTypeEnum = params.providerType.toUpperCase() === 'GITHUB'
-      ? ProviderType.GITHUB
-      : ProviderType.NOTION;
+    const providerTypeEnum =
+      params.providerType.toUpperCase() === 'GITHUB' ? ProviderType.GITHUB : ProviderType.NOTION;
 
     return await trackOperation(
       'initialize_resource',
-      () => this.services.syncPlan.initializeResource({
-        ...params,
-        providerType: providerTypeEnum
-      }, cadenceSecs),
-      { resourceId: params.resourceId, userId: params.userId, requestId }
+      () =>
+        this.services.syncPlan.initializeResource(
+          {
+            ...params,
+            providerType: providerTypeEnum,
+          },
+          cadenceSecs,
+        ),
+      { resourceId: params.resourceId, userId: params.userId, requestId },
     );
   }
 
@@ -184,47 +184,56 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
     owner: string,
     repo: string,
     userId?: string,
-    cadenceSecs: number = 3600
+    cadenceSecs: number = 3600,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
     const resourceId = `${owner}/${repo}`;
     const requestId = crypto.randomUUID();
 
-    logger.info({
-      event: 'github_repo_registration_start',
-      owner,
-      repo,
-      resourceId,
-      userId,
-      requestId
-    }, 'Starting GitHub repository registration');
+    logger.info(
+      {
+        event: 'github_repo_registration_start',
+        owner,
+        repo,
+        resourceId,
+        userId,
+        requestId,
+      },
+      'Starting GitHub repository registration',
+    );
 
     // Try to create a brand‑new sync‑plan or get existing one
     let syncPlanId: string;
     try {
       // Try to create a brand‑new sync‑plan
       syncPlanId = await this.createSyncPlan('github', resourceId, userId);
-      logger.info({
-        event: 'sync_plan_created',
-        syncPlanId,
-        resourceId,
-        requestId
-      }, 'Sync‑plan created successfully');
+      logger.info(
+        {
+          event: 'sync_plan_created',
+          syncPlanId,
+          resourceId,
+          requestId,
+        },
+        'Sync‑plan created successfully',
+      );
     } catch (err) {
       if (err instanceof ConflictError) {
         // Plan exists – fetch its id
         const plan = await this.getSyncPlan(resourceId);
         syncPlanId = plan.id;
-        logger.info({
-          event: 'sync_plan_exists',
-          syncPlanId,
-          resourceId,
-          requestId
-        }, 'Sync‑plan already exists');
+        logger.info(
+          {
+            event: 'sync_plan_exists',
+            syncPlanId,
+            resourceId,
+            requestId,
+          },
+          'Sync‑plan already exists',
+        );
       } else {
         throw toDomeError(err, 'Failed to create or retrieve sync plan', {
           resourceId,
           userId,
-          requestId
+          requestId,
         });
       }
     }
@@ -232,12 +241,15 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
     // Always attach the user if supplied (idempotent if already attached)
     if (userId) {
       await this.attachUser(syncPlanId, userId);
-      logger.info({
-        event: 'user_attached',
-        syncPlanId,
-        userId,
-        requestId
-      }, 'User attached to sync‑plan successfully');
+      logger.info(
+        {
+          event: 'user_attached',
+          syncPlanId,
+          userId,
+          requestId,
+        },
+        'User attached to sync‑plan successfully',
+      );
     }
 
     const created = await this.initializeResource(
@@ -251,7 +263,7 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
         syncPlanId,
         resourceId,
         created,
-        requestId
+        requestId,
       },
       'GitHub repository initialised & synced successfully',
     );
@@ -276,46 +288,55 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
   async registerNotionWorkspace(
     workspaceId: string,
     userId?: string,
-    cadenceSecs: number = 3600
+    cadenceSecs: number = 3600,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
     const resourceId = workspaceId;
     const requestId = crypto.randomUUID();
 
-    logger.info({
-      event: 'notion_workspace_registration_start',
-      workspaceId,
-      resourceId,
-      userId,
-      requestId
-    }, 'Starting Notion workspace registration');
+    logger.info(
+      {
+        event: 'notion_workspace_registration_start',
+        workspaceId,
+        resourceId,
+        userId,
+        requestId,
+      },
+      'Starting Notion workspace registration',
+    );
 
     // Try to create a brand‑new sync‑plan or get existing one
     let syncPlanId: string;
     try {
       // Try to create a brand‑new sync‑plan
       syncPlanId = await this.createSyncPlan('notion', resourceId, userId);
-      logger.info({
-        event: 'sync_plan_created',
-        syncPlanId,
-        resourceId,
-        requestId
-      }, 'Sync‑plan created successfully');
+      logger.info(
+        {
+          event: 'sync_plan_created',
+          syncPlanId,
+          resourceId,
+          requestId,
+        },
+        'Sync‑plan created successfully',
+      );
     } catch (err) {
       if (err instanceof ConflictError) {
         // Plan exists – fetch its id
         const plan = await this.getSyncPlan(resourceId);
         syncPlanId = plan.id;
-        logger.info({
-          event: 'sync_plan_exists',
-          syncPlanId,
-          resourceId,
-          requestId
-        }, 'Sync‑plan already exists');
+        logger.info(
+          {
+            event: 'sync_plan_exists',
+            syncPlanId,
+            resourceId,
+            requestId,
+          },
+          'Sync‑plan already exists',
+        );
       } else {
         throw toDomeError(err, 'Failed to create or retrieve sync plan', {
           resourceId,
           userId,
-          requestId
+          requestId,
         });
       }
     }
@@ -323,12 +344,15 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
     // Always attach the user if supplied (idempotent if already attached)
     if (userId) {
       await this.attachUser(syncPlanId, userId);
-      logger.info({
-        event: 'user_attached',
-        syncPlanId,
-        userId,
-        requestId
-      }, 'User attached to sync‑plan successfully');
+      logger.info(
+        {
+          event: 'user_attached',
+          syncPlanId,
+          userId,
+          requestId,
+        },
+        'User attached to sync‑plan successfully',
+      );
     }
 
     const created = await this.initializeResource(
@@ -342,7 +366,7 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
         syncPlanId,
         resourceId,
         created,
-        requestId
+        requestId,
       },
       'Notion workspace initialised & synced successfully',
     );
@@ -368,8 +392,8 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
       status: 301,
       headers: {
         'Content-Type': 'text/plain',
-        'Location': 'https://api.dome.dev'
-      }
+        Location: 'https://api.dome.dev',
+      },
     });
   }
 }

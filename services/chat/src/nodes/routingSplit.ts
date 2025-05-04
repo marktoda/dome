@@ -12,10 +12,14 @@ import { getSplitTaskPrompt } from '../config/promptsConfig';
  * Used for structured output from LLM
  */
 const splitInputSchema = z.object({
-  tasks: z.array(z.object({
-    id: z.string(),
-    query: z.string(),
-  })).nullable(),
+  tasks: z
+    .array(
+      z.object({
+        id: z.string(),
+        query: z.string(),
+      }),
+    )
+    .nullable(),
   instructions: z.string().nullable(),
   reasoning: z.string().nullable(),
 });
@@ -30,10 +34,7 @@ type SplittedInput = z.infer<typeof splitInputSchema>;
  * 2. Create UserTaskEntity objects for each identified task
  * 3. Return enriched state with reasoning and task entities
  */
-export const routingSplit = async (
-  state: AgentState,
-  env: Env,
-): Promise<AgentState> => {
+export const routingSplit = async (state: AgentState, env: Env): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'routingSplit' });
   const t0 = performance.now();
 
@@ -59,7 +60,8 @@ export const routingSplit = async (
   const userId = getUserId(state);
   const traceId = state.metadata?.traceId ?? ObservabilityService.initTrace(env, userId, state);
   const spanId = ObservabilityService.startSpan(env, traceId, 'routingSplit', state);
-  const logEvt = (e: string, p: Record<string, unknown>) => ObservabilityService.logEvent(env, traceId, spanId, e, p);
+  const logEvt = (e: string, p: Record<string, unknown>) =>
+    ObservabilityService.logEvent(env, traceId, spanId, e, p);
 
   logEvt('routing_split_start', { userMessage: lastUserMsg.content });
 
@@ -71,14 +73,10 @@ export const routingSplit = async (
     const messages = buildMessages(getSplitTaskPrompt(), state.chatHistory, lastUserMsg.content);
 
     // Call LLM with structured output schema
-    const result: SplittedInput = await LlmService.invokeStructured<SplittedInput>(
-      env,
-      messages,
-      {
-        schema: splitInputSchema,
-        schemaInstructions: 'Extract tasks from the user query and provide reasoning',
-      }
-    );
+    const result: SplittedInput = await LlmService.invokeStructured<SplittedInput>(env, messages, {
+      schema: splitInputSchema,
+      schemaInstructions: 'Extract tasks from the user query and provide reasoning',
+    });
 
     /* --------------------------------------------------------------- */
     /*  5. Parse the result, handling both direct structured           */
@@ -95,10 +93,15 @@ export const routingSplit = async (
 
     // Add proper null checks to handle cases where tasks might be undefined
     if (!result?.tasks || !Array.isArray(result.tasks)) {
-      logger.warn({ result }, 'LLM response missing tasks array or invalid format, creating default task');
+      logger.warn(
+        { result },
+        'LLM response missing tasks array or invalid format, creating default task',
+      );
 
       // Create a default task as fallback
-      const defaultTaskId = `default-task-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const defaultTaskId = `default-task-${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
       taskEntities[defaultTaskId] = {
         id: defaultTaskId,
         originalQuery: lastUserMsg.content, // Use the original user message
@@ -110,7 +113,8 @@ export const routingSplit = async (
       // Process tasks normally when they exist
       result.tasks.forEach(task => {
         // Generate a simple timestamp-based ID if one isn't provided
-        const taskId = task.id || `task-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        const taskId =
+          task.id || `task-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
         taskEntities[taskId] = {
           id: taskId,
           originalQuery: task.query || lastUserMsg.content, // Fallback to original message if query is missing
@@ -122,8 +126,11 @@ export const routingSplit = async (
     }
 
     // Safely access properties with fallbacks, handling null values explicitly
-    const instructions = result?.instructions === null ? '' : (result?.instructions || '');
-    const reasoning = result?.reasoning === null ? 'Processed user query and extracted tasks.' : (result?.reasoning || 'Processed user query and extracted tasks.');
+    const instructions = result?.instructions === null ? '' : result?.instructions || '';
+    const reasoning =
+      result?.reasoning === null
+        ? 'Processed user query and extracted tasks.'
+        : result?.reasoning || 'Processed user query and extracted tasks.';
 
     /* --------------------------------------------------------------- */
     /*  7. Log completion and metrics                                  */
@@ -134,17 +141,20 @@ export const routingSplit = async (
       instructions: instructions,
       reasoning: reasoning,
       responseFormat: responseFormat,
-      elapsedMs: elapsed
+      elapsedMs: elapsed,
     });
 
     ObservabilityService.endSpan(env, traceId, spanId, 'routingSplit', state, state, elapsed);
 
-    logger.info({
-      taskCount: result?.tasks && Array.isArray(result.tasks) ? result.tasks.length : 1,
-      instructions: instructions,
-      responseFormat: responseFormat,
-      elapsedMs: elapsed
-    }, 'routingSplit done');
+    logger.info(
+      {
+        taskCount: result?.tasks && Array.isArray(result.tasks) ? result.tasks.length : 1,
+        instructions: instructions,
+        responseFormat: responseFormat,
+        elapsedMs: elapsed,
+      },
+      'routingSplit done',
+    );
 
     /* --------------------------------------------------------------- */
     /*  8. Return updated state                                        */
@@ -169,18 +179,27 @@ export const routingSplit = async (
   } catch (error) {
     // Create more specific error logging
     if (error instanceof z.ZodError) {
-      logger.error({
-        err: error,
-        zodErrors: error.errors
-      }, 'Schema validation error in routingSplit - malformed LLM response');
+      logger.error(
+        {
+          err: error,
+          zodErrors: error.errors,
+        },
+        'Schema validation error in routingSplit - malformed LLM response',
+      );
     } else if (error instanceof SyntaxError && error.message.includes('JSON')) {
-      logger.error({
-        err: error
-      }, 'JSON parsing error in routingSplit - invalid JSON in AIMessageChunk content');
+      logger.error(
+        {
+          err: error,
+        },
+        'JSON parsing error in routingSplit - invalid JSON in AIMessageChunk content',
+      );
     } else if (error instanceof TypeError && error.message.includes('undefined')) {
-      logger.error({
-        err: error
-      }, 'Null/undefined property access error in routingSplit - likely malformed LLM response');
+      logger.error(
+        {
+          err: error,
+        },
+        'Null/undefined property access error in routingSplit - likely malformed LLM response',
+      );
     } else {
       logger.error({ err: error }, 'Unexpected error in routingSplit');
     }
@@ -208,17 +227,27 @@ export const routingSplit = async (
       },
     };
 
-    ObservabilityService.endSpan(env, traceId, spanId, 'routingSplit', state, stateWithError, elapsed);
+    ObservabilityService.endSpan(
+      env,
+      traceId,
+      spanId,
+      'routingSplit',
+      state,
+      stateWithError,
+      elapsed,
+    );
 
     // Create a default task as fallback
-    const defaultTaskId = `default-task-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const defaultTaskId = `default-task-${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 9)}`;
     const taskEntities: Record<string, UserTaskEntity> = {
       [defaultTaskId]: {
         id: defaultTaskId,
         originalQuery: lastUserMsg.content,
         status: 'pending',
         createdAt: Date.now(),
-      }
+      },
     };
 
     // Create taskIds array with the default task ID

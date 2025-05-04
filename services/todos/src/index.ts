@@ -3,15 +3,18 @@
  */
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { ServiceInfo } from '@dome/common';
-import {
-  getLogger,
-  logError,
-  trackOperation,
-  createServiceMetrics
-} from '@dome/common';
+import { getLogger, logError, trackOperation, createServiceMetrics } from '@dome/common';
 import { processTodoQueue } from './queueConsumer';
 import { TodosService } from './services/todosService';
-import { Env, TodoQueueItem, CreateTodoInput, UpdateTodoInput, TodoFilter, Pagination, BatchUpdateInput } from './types';
+import {
+  Env,
+  TodoQueueItem,
+  CreateTodoInput,
+  UpdateTodoInput,
+  TodoFilter,
+  Pagination,
+  BatchUpdateInput,
+} from './types';
 
 /* ─────────── shared utils ─────────── */
 
@@ -19,7 +22,7 @@ const logger = getLogger();
 const metrics = createServiceMetrics('todos');
 
 const buildServices = (env: Env) => ({
-  todos: new TodosService(env.DB)
+  todos: new TodosService(env.DB),
 });
 
 /* ─────────── service bootstrap ─────────── */
@@ -27,13 +30,16 @@ const buildServices = (env: Env) => ({
 const serviceInfo: ServiceInfo = {
   name: 'todos',
   version: '0.1.0',
-  environment: 'development'
+  environment: 'development',
 };
 
-logger.info({
-  event: 'service_start',
-  ...serviceInfo
-}, 'Starting Todos service');
+logger.info(
+  {
+    event: 'service_start',
+    ...serviceInfo,
+  },
+  'Starting Todos service',
+);
 
 /**
  * Todos Service WorkerEntrypoint implementation
@@ -54,11 +60,10 @@ export default class Todos extends WorkerEntrypoint<Env> {
   async createTodo(todo: CreateTodoInput) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'create_todo',
-      () => this.services.todos.createTodo(todo),
-      { userId: todo.userId, requestId }
-    );
+    return await trackOperation('create_todo', () => this.services.todos.createTodo(todo), {
+      userId: todo.userId,
+      requestId,
+    });
   }
 
   /**
@@ -67,11 +72,10 @@ export default class Todos extends WorkerEntrypoint<Env> {
   async getTodo(id: string) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'get_todo',
-      () => this.services.todos.getTodo(id),
-      { todoId: id, requestId }
-    );
+    return await trackOperation('get_todo', () => this.services.todos.getTodo(id), {
+      todoId: id,
+      requestId,
+    });
   }
 
   /**
@@ -83,7 +87,7 @@ export default class Todos extends WorkerEntrypoint<Env> {
     return await trackOperation(
       'list_todos',
       () => this.services.todos.listTodos(filter, pagination),
-      { userId: filter.userId, requestId }
+      { userId: filter.userId, requestId },
     );
   }
 
@@ -93,11 +97,10 @@ export default class Todos extends WorkerEntrypoint<Env> {
   async updateTodo(id: string, updates: UpdateTodoInput) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'update_todo',
-      () => this.services.todos.updateTodo(id, updates),
-      { todoId: id, requestId }
-    );
+    return await trackOperation('update_todo', () => this.services.todos.updateTodo(id, updates), {
+      todoId: id,
+      requestId,
+    });
   }
 
   /**
@@ -106,11 +109,10 @@ export default class Todos extends WorkerEntrypoint<Env> {
   async deleteTodo(id: string) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'delete_todo',
-      () => this.services.todos.deleteTodo(id),
-      { todoId: id, requestId }
-    );
+    return await trackOperation('delete_todo', () => this.services.todos.deleteTodo(id), {
+      todoId: id,
+      requestId,
+    });
   }
 
   /**
@@ -122,7 +124,7 @@ export default class Todos extends WorkerEntrypoint<Env> {
     return await trackOperation(
       'batch_update_todos',
       () => this.services.todos.batchUpdateTodos(ids, updates),
-      { todoCount: ids.length, requestId }
+      { todoCount: ids.length, requestId },
     );
   }
 
@@ -132,11 +134,10 @@ export default class Todos extends WorkerEntrypoint<Env> {
   async stats(userId: string) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'get_todo_stats',
-      () => this.services.todos.getTodoStats(userId),
-      { userId, requestId }
-    );
+    return await trackOperation('get_todo_stats', () => this.services.todos.getTodoStats(userId), {
+      userId,
+      requestId,
+    });
   }
 
   /**
@@ -151,20 +152,20 @@ export default class Todos extends WorkerEntrypoint<Env> {
       await processTodoQueue(batch, this.env);
 
       metrics.counter('todos.queue.processed_batches', 1, {
-        queueName: batch.queue || 'unknown'
+        queueName: batch.queue || 'unknown',
       });
       metrics.counter('todos.queue.received_messages', batch.messages.length, {
-        queueName: batch.queue || 'unknown'
+        queueName: batch.queue || 'unknown',
       });
     } catch (error) {
       logger.error('Error in queue consumer:', {
         error,
         queueName: batch.queue,
-        messageCount: batch.messages.length
+        messageCount: batch.messages.length,
       });
 
       metrics.counter('todos.queue.errors', 1, {
-        queueName: batch.queue || 'unknown'
+        queueName: batch.queue || 'unknown',
       });
     }
   }

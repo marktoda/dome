@@ -21,6 +21,7 @@ node reprocess-content.js --token=your-jwt-token
 ```
 
 The script will:
+
 1. Check for the presence of a token (and fail with a clear error if none is provided)
 2. Format the token correctly (adding 'Bearer ' prefix if needed)
 3. Include the token in each API request
@@ -42,6 +43,7 @@ node scripts/get-auth-token.js --api-url=https://your-api-url --username=your-us
 For better security, the script supports several authentication methods:
 
 1. **Environment Variables**:
+
    ```bash
    export DOME_API_URL=https://your-api-url
    export DOME_USERNAME=your-username
@@ -51,12 +53,15 @@ For better security, the script supports several authentication methods:
 
 2. **.env File**:
    Create a .env file in the root directory:
+
    ```
    DOME_API_URL=https://your-api-url
    DOME_USERNAME=your-username
    DOME_PASSWORD=your-password
    ```
+
    Then run:
+
    ```bash
    node scripts/get-auth-token.js
    ```
@@ -93,6 +98,7 @@ node reprocess-content.js --file=./export-contents.json --api-url=https://api.do
 The script supports several formats for the input JSON file:
 
 1. The default format from `scripts/contents.json`:
+
 ```json
 [
   {
@@ -105,7 +111,7 @@ The script supports several formats for the input JSON file:
         "size": 5881,
         "r2_key": "content/01JSFZR292P3G7DYAX1DP396SS",
         "sha256": null
-      },
+      }
       // More items...
     ]
   }
@@ -113,6 +119,7 @@ The script supports several formats for the input JSON file:
 ```
 
 2. An array of content objects with `id` property:
+
 ```json
 [
   { "id": "content-id-1", "title": "Document 1" },
@@ -121,11 +128,13 @@ The script supports several formats for the input JSON file:
 ```
 
 3. An array of content IDs:
+
 ```json
 ["content-id-1", "content-id-2", "content-id-3"]
 ```
 
 4. An object with an `items` property containing content objects:
+
 ```json
 {
   "items": [
@@ -136,6 +145,7 @@ The script supports several formats for the input JSON file:
 ```
 
 5. An object with a `contentIds` property containing an array of IDs:
+
 ```json
 {
   "contentIds": ["content-id-1", "content-id-2", "content-id-3"]
@@ -143,6 +153,7 @@ The script supports several formats for the input JSON file:
 ```
 
 6. An object with content IDs as keys:
+
 ```json
 {
   "content-id-1": { "title": "Document 1" },

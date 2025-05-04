@@ -55,7 +55,7 @@ Replaced category-specific models and thresholds, and integrated with Workers AI
 const RERANKER_MODELS = {
   code: 'bge-reranker-code',
   docs: 'bge-reranker-docs',
-  notes: 'bge-reranker-notes'
+  notes: 'bge-reranker-notes',
 };
 const SCORE_THRESHOLDS = { code: 0.25, docs: 0.22, notes: 0.2 };
 const MAX_CHUNKS = { code: 8, docs: 8, notes: 8 };
@@ -78,19 +78,15 @@ const rerankedChunks = await simulateReranking(
   retrievalResult.chunks,
   query,
   retrievalResult.sourceType,
-  model
+  model,
 );
 
 // New approach - actual Workers AI reranking
-const rerankedChunks = await rerankWithWorkersAI(
-  retrievalResult.chunks,
-  query,
-  model,
-  env
-);
+const rerankedChunks = await rerankWithWorkersAI(retrievalResult.chunks, query, model, env);
 ```
 
 The new implementation:
+
 - Makes a proper call to Workers AI reranking model
 - Uses the `@cf/baai/bge-reranker-base` model for high quality relevance assessment
 - Processes document chunks in batches with the query
@@ -103,15 +99,15 @@ The reranker now returns results in a consistent format that preserves the struc
 
 ```typescript
 return {
-  rerankedResults: allRerankedResults,  // Organized by the same keys as input
+  rerankedResults: allRerankedResults, // Organized by the same keys as input
   metadata: {
     currentNode: nodeId,
     executionTimeMs: elapsed,
     nodeTimings: {
       ...state.metadata?.nodeTimings,
-      [nodeId]: elapsed
-    }
-  }
+      [nodeId]: elapsed,
+    },
+  },
 };
 ```
 
@@ -146,6 +142,7 @@ retrievals: [
 ```
 
 The reranker:
+
 - Identifies duplicate tasks based on category+query
 - Merges their chunks into a single task
 - Logs detailed information about the merge process

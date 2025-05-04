@@ -1,6 +1,6 @@
 import { getLogger, logError } from '@dome/common';
 import { toDomeError } from '../utils/errors';
-import { LangGraphRunnableConfig } from "@langchain/langgraph";
+import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { AgentState } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { ObservabilityService } from '../services/observabilityService';
@@ -35,49 +35,49 @@ export async function outputGuardrail(
 ): Promise<Partial<AgentState>> {
   const t0 = performance.now();
   const logger = getLogger().child({ node: 'outputGuardrail' });
-  logger.info("Starting answer validation");
+  logger.info('Starting answer validation');
 
   /* ------------------------------------------------------------------ */
   /*  Initialize tracing and observability                              */
   /* ------------------------------------------------------------------ */
   const traceId = state.metadata?.traceId ?? crypto.randomUUID();
-  const spanId = ObservabilityService.startSpan(env, traceId, "outputGuardrail", state);
-  
+  const spanId = ObservabilityService.startSpan(env, traceId, 'outputGuardrail', state);
+
   try {
     /* ------------------------------------------------------------------ */
     /*  Gather inputs for validation                                      */
     /* ------------------------------------------------------------------ */
     // Get the original user query
     const userQuery = state.messages[0].content;
-    
+
     // Get the generated answer to validate
     const generatedAnswer = state.generatedText;
     if (!generatedAnswer) {
-      throw new Error("No generated answer found to validate");
+      throw new Error('No generated answer found to validate');
     }
-    
+
     // Get the synthesized context used to generate the answer
-    const synthesizedContext = state.reasoning?.[0] || "";
-    
+    const synthesizedContext = state.reasoning?.[0] || '';
+
     /* ------------------------------------------------------------------ */
     /*  Configure the validation model                                    */
     /* ------------------------------------------------------------------ */
     // Use a model with strong reasoning capabilities for validation
-    const modelId = state.options?.modelId ?? "gpt-4-turbo";
+    const modelId = state.options?.modelId ?? 'gpt-4-turbo';
     const modelConfig = getModelConfig(modelId);
-    
+
     // Calculate token usage and limits
     const answerTokens = countTokens(generatedAnswer);
     const contextTokens = countTokens(synthesizedContext);
     const queryTokens = countTokens(userQuery);
-    
+
     // Calculate token limits for validation response
     const { maxResponseTokens } = calculateTokenLimits(
       modelConfig,
       answerTokens + contextTokens + queryTokens + 1000, // Add buffer for system prompt
-      state.options?.maxTokens
+      state.options?.maxTokens,
     );
-    
+
     /* ------------------------------------------------------------------ */
     /*  Build validation prompt                                           */
     /* ------------------------------------------------------------------ */
@@ -114,128 +114,135 @@ Then, if needed, provide a CORRECTED VERSION of the answer that:
 
 If the original answer is accurate and well-supported, simply write "ORIGINAL ANSWER VALIDATED" without any corrections.
 `;
-    
+
     // Create the validation model
     const model = ModelFactory.createChatModel(env, {
       modelId,
       temperature: 0.2, // Lower temperature for consistent validation
       maxTokens: maxResponseTokens,
     });
-    
+
     // Execute validation
-    const validationResponse = await model.invoke([{
-      role: 'user',
-      content: validationPrompt,
-    }]);
-    
+    const validationResponse = await model.invoke([
+      {
+        role: 'user',
+        content: validationPrompt,
+      },
+    ]);
+
     const validationResult = validationResponse.text;
-    
+
     /* ------------------------------------------------------------------ */
     /*  Process validation result                                         */
     /* ------------------------------------------------------------------ */
     // Determine if corrections were made
-    const hasCorrections = !validationResult.includes("ORIGINAL ANSWER VALIDATED");
-    
+    const hasCorrections = !validationResult.includes('ORIGINAL ANSWER VALIDATED');
+
     // Extract the corrected answer if present
     let finalAnswer = generatedAnswer;
-    let validationAssessment = "";
-    
+    let validationAssessment = '';
+
     if (hasCorrections) {
       // Look for a corrected version marker
-      const correctedVersionRegex = /CORRECTED VERSION[:\s]+(.+?)(?=$|VALIDATION ASSESSMENT)/si;
+      const correctedVersionRegex = /CORRECTED VERSION[:\s]+(.+?)(?=$|VALIDATION ASSESSMENT)/is;
       const correctedMatch = validationResult.match(correctedVersionRegex);
-      
+
       if (correctedMatch && correctedMatch[1]) {
         finalAnswer = correctedMatch[1].trim();
       } else {
         // If no explicit corrected version, use the entire validation result
         // This is a fallback
         finalAnswer = generatedAnswer;
-        logger.warn("Validation indicated corrections needed but no corrected version found");
+        logger.warn('Validation indicated corrections needed but no corrected version found');
       }
-      
+
       // Extract the validation assessment part
-      const assessmentRegex = /(?:VALIDATION ASSESSMENT|ASSESSMENT):[:\s]+(.+?)(?=CORRECTED VERSION|$)/si;
+      const assessmentRegex =
+        /(?:VALIDATION ASSESSMENT|ASSESSMENT):[:\s]+(.+?)(?=CORRECTED VERSION|$)/is;
       const assessmentMatch = validationResult.match(assessmentRegex);
-      
+
       if (assessmentMatch && assessmentMatch[1]) {
         validationAssessment = assessmentMatch[1].trim();
       }
     }
-    
+
     /* ------------------------------------------------------------------ */
     /*  Finish, log, and return the state update                          */
     /* ------------------------------------------------------------------ */
     const elapsed = performance.now() - t0;
-    
+
     // Log completion
-    logger.info({
-      elapsedMs: elapsed,
-      wasModified: hasCorrections,
-      assessmentLength: validationAssessment.length,
-      finalAnswerLength: finalAnswer.length
-    }, "Answer validation complete");
-    
+    logger.info(
+      {
+        elapsedMs: elapsed,
+        wasModified: hasCorrections,
+        assessmentLength: validationAssessment.length,
+        finalAnswerLength: finalAnswer.length,
+      },
+      'Answer validation complete',
+    );
+
     // End observability
-    ObservabilityService.endSpan(env, traceId, spanId, "outputGuardrail", state, state, elapsed);
+    ObservabilityService.endSpan(env, traceId, spanId, 'outputGuardrail', state, state, elapsed);
     ObservabilityService.endTrace(env, traceId, state, elapsed);
-    
+
     // Return state updates
     return {
       generatedText: finalAnswer, // Replace with validated/corrected answer
       metadata: {
-        currentNode: "outputGuardrail",
-        isFinalState: true,  // Mark this as the final node in the pipeline
+        currentNode: 'outputGuardrail',
+        isFinalState: true, // Mark this as the final node in the pipeline
         executionTimeMs: elapsed,
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          outputGuardrail: elapsed
-        }
+          outputGuardrail: elapsed,
+        },
       },
       // Store the validation assessment in reasoning array
       reasoning: [
         ...(state.reasoning || []),
-        hasCorrections ? `VALIDATION: Answer was corrected. ${validationAssessment}` : "VALIDATION: Original answer validated."
-      ]
+        hasCorrections
+          ? `VALIDATION: Answer was corrected. ${validationAssessment}`
+          : 'VALIDATION: Original answer validated.',
+      ],
     };
   } catch (err) {
     // Handle errors gracefully
     const domeError = toDomeError(err);
     const elapsed = performance.now() - t0;
-    
+
     // Log the error
-    logError(domeError, "Error in outputGuardrail", { traceId, spanId });
-    
+    logError(domeError, 'Error in outputGuardrail', { traceId, spanId });
+
     // End span with error
-    ObservabilityService.endSpan(env, traceId, spanId, "outputGuardrail", state, state, elapsed);
+    ObservabilityService.endSpan(env, traceId, spanId, 'outputGuardrail', state, state, elapsed);
     ObservabilityService.endTrace(env, traceId, state, elapsed);
-    
+
     // Format error for state
     const formattedError = {
-      node: "outputGuardrail",
+      node: 'outputGuardrail',
       message: domeError.message,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
-    
+
     // In case of error, use the original unvalidated answer as fallback
-    const finalAnswer = state.generatedText || "I'm sorry, but I encountered an issue validating the response to your query.";
-    
+    const finalAnswer =
+      state.generatedText ||
+      "I'm sorry, but I encountered an issue validating the response to your query.";
+
     // Return error state update with original answer as fallback
     return {
       generatedText: finalAnswer,
       metadata: {
-        currentNode: "outputGuardrail",
+        currentNode: 'outputGuardrail',
         isFinalState: true,
         executionTimeMs: elapsed,
-        errors: [
-          ...(state.metadata?.errors || []),
-          formattedError
-        ],
+        errors: [...(state.metadata?.errors || []), formattedError],
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          outputGuardrail: elapsed
-        }
-      }
+          outputGuardrail: elapsed,
+        },
+      },
     };
   }
 }

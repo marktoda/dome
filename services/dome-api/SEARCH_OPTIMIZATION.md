@@ -6,16 +6,19 @@ The dome-api search endpoint was not properly utilizing Constellation's filter c
 
 ## Changes Implemented
 
-1. **Proper Type Safety**: 
+1. **Proper Type Safety**:
+
    - Added proper type validation and casting for the category and mimeType filters
    - Ensured the values match the expected enum types in VectorMeta
 
 2. **Direct Constellation Filtering**:
+
    - Now properly passing category and mimeType filters directly to Constellation
    - Validated that category values match the allowed ContentCategory enum values
    - Removed redundant post-filtering for these attributes
 
 3. **Retained Date Range Filtering**:
+
    - Kept post-filtering for date ranges as Constellation doesn't directly support these filters yet
    - Date filtering will still happen in the application code for now
 
@@ -39,17 +42,20 @@ The dome-api search endpoint was not properly utilizing Constellation's filter c
 ## Technical Notes
 
 The VectorMeta interface defines the following filter fields:
+
 ```typescript
 export interface VectorMeta {
   userId: string;
   contentId: string;
   category: ContentCategory; // Enum: 'note' | 'code' | 'document' | 'article' | 'other'
-  mimeType: MimeType;        // Various MIME types
+  mimeType: MimeType; // Various MIME types
   createdAt: number;
   version: number;
 }
 ```
 
 Constellation query method signature:
+
 ```typescript
 query(text: string, filter?: Partial<VectorMeta>, topK?: number): Promise<VectorSearchResult[]>
+```

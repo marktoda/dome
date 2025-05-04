@@ -10,9 +10,9 @@ export enum EventType {
   Thinking = 'thinking',
   Sources = 'sources',
   WorkflowStep = 'workflow_step',
-  Final = 'final', 
+  Final = 'final',
   End = 'end',
-  Error = 'error'
+  Error = 'error',
 }
 
 /**
@@ -41,10 +41,13 @@ export class ThinkingEventHandler {
     }
 
     // Log the event type for debugging
-    logger.debug({ 
-      eventType: event.type,
-      hasData: !!event.data 
-    }, 'Processing SSE event');
+    logger.debug(
+      {
+        eventType: event.type,
+        hasData: !!event.data,
+      },
+      'Processing SSE event',
+    );
 
     // If this is a thinking event, handle it specially
     if (event.type === EventType.Thinking) {
@@ -78,10 +81,13 @@ export class ThinkingEventHandler {
       // Format thinking content for safe display
       // This is where we ensure thinking content is displayed properly
       // without triggering content filters
-      
-      logger.debug({
-        thinkingLength: data.thinking.length
-      }, 'Processed thinking content');
+
+      logger.debug(
+        {
+          thinkingLength: data.thinking.length,
+        },
+        'Processed thinking content',
+      );
     } catch (error) {
       logger.warn({ error }, 'Error handling thinking event');
     }
@@ -97,10 +103,10 @@ export class ThinkingEventHandler {
     if (!this.eventListeners.has(type)) {
       this.eventListeners.set(type, []);
     }
-    
+
     const listeners = this.eventListeners.get(type)!;
     listeners.push(callback);
-    
+
     // Return a function to remove this listener
     return () => {
       const index = listeners.indexOf(callback);
@@ -119,7 +125,7 @@ export class ThinkingEventHandler {
   static parseSSEMessage(eventName: string, data: string): SSEEvent | null {
     try {
       let eventType: EventType;
-      
+
       // Convert the event name to an event type
       switch (eventName) {
         case 'text':
@@ -147,13 +153,13 @@ export class ThinkingEventHandler {
           logger.warn({ eventName }, 'Unknown SSE event type');
           return null;
       }
-      
+
       // Parse the data as JSON
       const parsedData = data ? JSON.parse(data) : {};
-      
+
       return {
         type: eventType,
-        data: parsedData
+        data: parsedData,
       };
     } catch (error) {
       logger.warn({ error, eventName, data }, 'Error parsing SSE message');

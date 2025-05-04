@@ -3,7 +3,6 @@ import { metrics } from './metrics';
 export { baseLogger } from './base';
 export * from './metrics';
 
-
 /**
  * Helper function to properly extract detailed error information for logging
  * @param error The error object to extract information from
@@ -85,14 +84,14 @@ export function logError(
  */
 export function sanitizeForLogging<T extends Record<string, any>>(
   obj: T,
-  sensitiveKeys: string[] = ['password', 'token', 'secret', 'key', 'credentials', 'auth']
+  sensitiveKeys: string[] = ['password', 'token', 'secret', 'key', 'credentials', 'auth'],
 ): T {
   const result = { ...obj };
 
   Object.keys(result).forEach(key => {
     // Check if this key should be sanitized
-    const shouldSanitize = sensitiveKeys.some(
-      sensitiveKey => key.toLowerCase().includes(sensitiveKey.toLowerCase())
+    const shouldSanitize = sensitiveKeys.some(sensitiveKey =>
+      key.toLowerCase().includes(sensitiveKey.toLowerCase()),
     );
 
     if (shouldSanitize) {
@@ -136,7 +135,7 @@ export function createErrorLogger(context: Record<string, unknown>) {
 export function tryWithErrorLogging<T>(
   fn: () => T,
   errorMessage: string,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
 ): T | undefined {
   try {
     return fn();
@@ -156,7 +155,7 @@ export function tryWithErrorLogging<T>(
 export async function tryWithErrorLoggingAsync<T>(
   fn: () => Promise<T>,
   errorMessage: string,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
 ): Promise<T | undefined> {
   try {
     return await fn();
@@ -172,10 +171,13 @@ export async function tryWithErrorLoggingAsync<T>(
  * @param context Additional context for the operation
  */
 export function logOperationStart(operationName: string, context: Record<string, any> = {}) {
-  getLogger().info({
-    event: `${operationName}_start`,
-    ...context
-  }, `Started ${operationName}`);
+  getLogger().info(
+    {
+      event: `${operationName}_start`,
+      ...context,
+    },
+    `Started ${operationName}`,
+  );
 }
 
 /**
@@ -184,12 +186,19 @@ export function logOperationStart(operationName: string, context: Record<string,
  * @param duration Duration of the operation in milliseconds
  * @param context Additional context for the operation
  */
-export function logOperationSuccess(operationName: string, duration: number, context: Record<string, any> = {}) {
-  getLogger().info({
-    event: `${operationName}_success`,
-    duration,
-    ...context
-  }, `Successfully completed ${operationName} in ${duration.toFixed(2)}ms`);
+export function logOperationSuccess(
+  operationName: string,
+  duration: number,
+  context: Record<string, any> = {},
+) {
+  getLogger().info(
+    {
+      event: `${operationName}_success`,
+      duration,
+      ...context,
+    },
+    `Successfully completed ${operationName} in ${duration.toFixed(2)}ms`,
+  );
 }
 
 /**
@@ -198,14 +207,21 @@ export function logOperationSuccess(operationName: string, duration: number, con
  * @param error The error that caused the failure
  * @param context Additional context for the operation
  */
-export function logOperationFailure(operationName: string, error: unknown, context: Record<string, any> = {}) {
+export function logOperationFailure(
+  operationName: string,
+  error: unknown,
+  context: Record<string, any> = {},
+) {
   const { errorMessage } = extractErrorInfo(error);
-  getLogger().error({
-    event: `${operationName}_failure`,
-    error,
-    errorMessage,
-    ...context
-  }, `Failed to complete ${operationName}: ${errorMessage}`);
+  getLogger().error(
+    {
+      event: `${operationName}_failure`,
+      error,
+      errorMessage,
+      ...context,
+    },
+    `Failed to complete ${operationName}: ${errorMessage}`,
+  );
 }
 
 /**
@@ -218,7 +234,7 @@ export function logOperationFailure(operationName: string, error: unknown, conte
 export async function trackOperation<T>(
   operationName: string,
   fn: () => Promise<T>,
-  context: Record<string, any> = {}
+  context: Record<string, any> = {},
 ): Promise<T> {
   logOperationStart(operationName, context);
   const startTime = performance.now();
@@ -234,7 +250,6 @@ export async function trackOperation<T>(
     throw error;
   }
 }
-
 
 // Standardized metrics collection
 export interface ServiceMetrics {
@@ -280,21 +295,24 @@ export function logExternalCall(
   method: string,
   status: number,
   duration: number,
-  context: Record<string, any> = {}
+  context: Record<string, any> = {},
 ) {
   const isSuccess = status >= 200 && status < 300;
   const logLevel = isSuccess ? 'info' : 'error';
   const logger = getLogger();
 
-  logger[logLevel]({
-    event: 'external_call',
-    url,
-    method,
-    status,
-    duration,
-    success: isSuccess,
-    ...context
-  }, `External ${method} call to ${url} completed with status ${status} in ${duration.toFixed(2)}ms`);
+  logger[logLevel](
+    {
+      event: 'external_call',
+      url,
+      method,
+      status,
+      duration,
+      success: isSuccess,
+      ...context,
+    },
+    `External ${method} call to ${url} completed with status ${status} in ${duration.toFixed(2)}ms`,
+  );
 }
 
 /**
@@ -307,7 +325,7 @@ export function logExternalCall(
 export async function trackedFetch(
   url: string,
   options: RequestInit = {},
-  context: Record<string, any> = {}
+  context: Record<string, any> = {},
 ): Promise<Response> {
   const method = options.method || 'GET';
   const requestId = context.requestId || getRequestId();
@@ -325,13 +343,7 @@ export async function trackedFetch(
     response = await fetch(url, { ...options, headers });
     const duration = performance.now() - startTime;
 
-    logExternalCall(
-      url,
-      method,
-      response.status,
-      duration,
-      context
-    );
+    logExternalCall(url, method, response.status, duration, context);
 
     return response;
   } catch (error) {
@@ -340,7 +352,7 @@ export async function trackedFetch(
       url,
       method,
       duration,
-      ...context
+      ...context,
     });
     throw error;
   }

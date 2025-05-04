@@ -5,6 +5,7 @@
 The Notion integration for Tsunami allows you to ingest content from Notion workspaces into your knowledge base. This integration supports both API key authentication and OAuth, enabling you to connect to Notion workspaces and automatically sync their content.
 
 Key features:
+
 - Connect to Notion workspaces using API keys or OAuth
 - Automatically sync content on a configurable schedule
 - Filter content based on customizable rules
@@ -112,6 +113,7 @@ Content-Type: application/json
 ```
 
 The `cadence` parameter specifies how often to sync the workspace using ISO 8601 duration format:
+
 - `PT1H`: Every hour
 - `PT30M`: Every 30 minutes
 - `P1D`: Every day
@@ -127,7 +129,7 @@ const tsunami = createTsunamiClient(env.TSUNAMI);
 const result = await tsunami.registerNotionWorkspace(
   'your_workspace_id',
   'user123',
-  3600 // Sync every hour (in seconds)
+  3600, // Sync every hour (in seconds)
 );
 
 console.log(`Workspace registered with ID: ${result.id}`);
@@ -140,6 +142,7 @@ You can control which Notion content gets ingested using filtering rules.
 ### Default Filtering
 
 By default, the Notion integration:
+
 - Skips archived pages
 - Processes all non-archived pages in the workspace
 
@@ -171,7 +174,7 @@ You can view the sync history for a Notion workspace:
 // Get sync history for a Notion workspace
 const history = await tsunami.getNotionWorkspaceHistory(
   'your_workspace_id',
-  10 // Limit to 10 most recent entries
+  10, // Limit to 10 most recent entries
 );
 
 console.log(history);
@@ -184,6 +187,7 @@ console.log(history);
 **Issue**: "Failed to authenticate with Notion API"
 
 **Solutions**:
+
 - Verify your API key or OAuth credentials are correct
 - Check that the environment variables are properly set
 - Ensure your integration has the necessary capabilities enabled
@@ -193,6 +197,7 @@ console.log(history);
 **Issue**: "Access denied to Notion resource"
 
 **Solutions**:
+
 - Verify you've shared the page/database with your integration
 - Check that your integration has the correct permissions
 - For OAuth integrations, ensure the user has granted the necessary permissions
@@ -202,6 +207,7 @@ console.log(history);
 **Issue**: "Notion API rate limit exceeded"
 
 **Solutions**:
+
 - Reduce the sync frequency (increase the cadence value)
 - Implement more specific filtering to reduce the number of API calls
 - Contact Notion to request increased rate limits for your integration
@@ -211,6 +217,7 @@ console.log(history);
 **Issue**: Content is not appearing in search results after syncing
 
 **Solutions**:
+
 - Check the sync history to ensure the sync completed successfully
 - Verify the content isn't being filtered out by your filtering rules
 - Ensure the content has been properly processed and indexed by the Silo service
@@ -219,13 +226,13 @@ console.log(history);
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NOTION_API_KEY` | API key for direct integration | None |
-| `NOTION_CLIENT_ID` | OAuth client ID | None |
-| `NOTION_CLIENT_SECRET` | OAuth client secret | None |
-| `NOTION_REDIRECT_URI` | OAuth redirect URI | None |
-| `NOTION_VERSION` | Notion API version | `2022-06-28` |
+| Variable               | Description                    | Default      |
+| ---------------------- | ------------------------------ | ------------ |
+| `NOTION_API_KEY`       | API key for direct integration | None         |
+| `NOTION_CLIENT_ID`     | OAuth client ID                | None         |
+| `NOTION_CLIENT_SECRET` | OAuth client secret            | None         |
+| `NOTION_REDIRECT_URI`  | OAuth redirect URI             | None         |
+| `NOTION_VERSION`       | Notion API version             | `2022-06-28` |
 
 ### Customizing Content Processing
 

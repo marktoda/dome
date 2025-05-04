@@ -8,9 +8,7 @@ import { isAuthenticated } from '../utils/config';
  * @param program The commander program
  */
 export function contentCommand(program: Command): void {
-  const contentCmd = program
-    .command('content')
-    .description('Manage content in Dome');
+  const contentCmd = program.command('content').description('Manage content in Dome');
 
   // Add a GitHub repository
   contentCmd
@@ -40,12 +38,14 @@ export function contentCommand(program: Command): void {
             console.log(info(`Sync cadence: ${options.cadence}`));
 
             const result = await registerGithubRepo(owner, repo, options.cadence);
-            
+
             if (result.success) {
               console.log(success(`Repository ${owner}/${repo} registered successfully!`));
               console.log(info(`Sync plan ID: ${result.id}`));
               console.log(info(`Resource ID: ${result.resourceId}`));
-              console.log(info(`Repository ${result.wasInitialised ? 'was' : 'was not'} newly initialized.`));
+              console.log(
+                info(`Repository ${result.wasInitialised ? 'was' : 'was not'} newly initialized.`),
+              );
             } else {
               console.log(error('Failed to register repository.'));
               console.log(error(JSON.stringify(result, null, 2)));
@@ -55,6 +55,6 @@ export function contentCommand(program: Command): void {
             console.log(error(err instanceof Error ? err.message : String(err)));
             process.exit(1);
           }
-        })
+        }),
     );
 }

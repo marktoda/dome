@@ -1,6 +1,6 @@
 /**
  * RobotsChecker
- * 
+ *
  * This class is responsible for checking robots.txt files and determining
  * if a URL is allowed to be crawled according to the robots.txt rules.
  */
@@ -28,15 +28,15 @@ export class RobotsChecker {
   async initialize(baseUrl: string): Promise<void> {
     this.baseUrl = baseUrl;
     const robotsUrl = new URL('/robots.txt', baseUrl).toString();
-    
+
     try {
       this.log.info({ robotsUrl }, 'Fetching robots.txt');
       const response = await fetch(robotsUrl, {
         headers: {
-          'User-Agent': this.userAgent
-        }
+          'User-Agent': this.userAgent,
+        },
       });
-      
+
       if (!response.ok) {
         if (response.status === 404) {
           // No robots.txt - assume everything is allowed
@@ -44,20 +44,23 @@ export class RobotsChecker {
           this.loaded = true;
           return;
         }
-        
+
         throw new Error(`Failed to fetch robots.txt: ${response.status} ${response.statusText}`);
       }
-      
+
       const content = await response.text();
       this.parseRobotsTxt(content);
       this.loaded = true;
       this.log.info({ robotsUrl, ruleCount: this.countRules() }, 'Robots.txt parsed successfully');
     } catch (error) {
-      this.log.warn({ 
-        robotsUrl,
-        error: error instanceof Error ? error.message : String(error) 
-      }, 'Error loading robots.txt, defaulting to allow all');
-      
+      this.log.warn(
+        {
+          robotsUrl,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Error loading robots.txt, defaulting to allow all',
+      );
+
       // Default to allowing everything on error
       this.loaded = true;
     }
@@ -73,26 +76,26 @@ export class RobotsChecker {
       this.log.warn({ url }, 'Robots checker not initialized, defaulting to allow');
       return true;
     }
-    
+
     // Normalize URL for comparison
     const parsedUrl = new URL(url);
     const path = parsedUrl.pathname + parsedUrl.search;
-    
+
     // Find rules that apply to this user agent
     // Check in this order: specific user agent, * (all user agents)
     const ourUserAgent = this.extractUserAgentName(this.userAgent);
-    
+
     for (const agentName of [ourUserAgent, '*']) {
       const agentRules = this.rules.get(agentName);
       if (!agentRules) continue;
-      
+
       for (const rule of agentRules) {
         if (this.pathMatches(path, rule.path)) {
           return rule.allow;
         }
       }
     }
-    
+
     // Default to allowed if no rules match
     return true;
   }
@@ -103,20 +106,21 @@ export class RobotsChecker {
    */
   private parseRobotsTxt(content: string): void {
     this.rules = new Map();
-    
+
     const lines = content.split('\n');
     let currentAgent: string | null = null;
-    
+
     for (let line of lines) {
       // Remove comments and trim whitespace
       line = line.split('#')[0].trim();
       if (!line) continue;
-      
+
       // Parse directive and value
       const colonIndex = line.indexOf(':');
-      const directive = colonIndex > 0 ? line.slice(0, colonIndex).trim().toLowerCase() : line.toLowerCase();
+      const directive =
+        colonIndex > 0 ? line.slice(0, colonIndex).trim().toLowerCase() : line.toLowerCase();
       const value = colonIndex > 0 ? line.slice(colonIndex + 1).trim() : '';
-      
+
       if (directive === 'user-agent') {
         currentAgent = value.toLowerCase();
         if (!this.rules.has(currentAgent)) {
@@ -157,17 +161,17 @@ export class RobotsChecker {
   private pathMatches(path: string, pattern: string): boolean {
     // Convert robots.txt pattern to a regex pattern
     let regexPattern = pattern
-      .replace(/\./g, '\\.')    // Escape dots
-      .replace(/\?/g, '\\?')    // Escape question marks
-      .replace(/\*/g, '.*');    // Convert * to .*
-      
+      .replace(/\./g, '\\.') // Escape dots
+      .replace(/\?/g, '\\?') // Escape question marks
+      .replace(/\*/g, '.*'); // Convert * to .*
+
     // If pattern ends with $, it must match the end of the path
     if (regexPattern.endsWith('$')) {
       regexPattern = `^${regexPattern}`;
     } else {
       regexPattern = `^${regexPattern}`;
     }
-    
+
     const regex = new RegExp(regexPattern);
     return regex.test(path);
   }

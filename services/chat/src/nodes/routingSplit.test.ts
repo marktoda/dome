@@ -8,8 +8,8 @@ import { AgentState } from '../types';
 // Mock dependencies
 vi.mock('../services/llmService', () => ({
   LlmService: {
-    invokeStructured: vi.fn()
-  }
+    invokeStructured: vi.fn(),
+  },
 }));
 
 vi.mock('../services/observabilityService', () => ({
@@ -17,8 +17,8 @@ vi.mock('../services/observabilityService', () => ({
     initTrace: vi.fn().mockReturnValue('mock-trace-id'),
     startSpan: vi.fn().mockReturnValue('mock-span-id'),
     logEvent: vi.fn(),
-    endSpan: vi.fn()
-  }
+    endSpan: vi.fn(),
+  },
 }));
 
 vi.mock('@dome/common', () => ({
@@ -26,8 +26,8 @@ vi.mock('@dome/common', () => ({
     child: vi.fn(() => ({
       info: vi.fn(),
       warn: vi.fn(),
-      error: vi.fn()
-    }))
+      error: vi.fn(),
+    })),
   })),
   logError: vi.fn(),
 }));
@@ -45,33 +45,38 @@ describe('routingSplit node', () => {
 
     // Mock environment
     mockEnv = {
-      ENVIRONMENT: 'test'
+      ENVIRONMENT: 'test',
     } as Cloudflare.Env;
 
     // Mock initial state
     mockState = {
       userId: 'test-user',
       messages: [
-        { role: 'user', content: 'How do I bake a cake and also check the weather?', timestamp: Date.now() }
+        {
+          role: 'user',
+          content: 'How do I bake a cake and also check the weather?',
+          timestamp: Date.now(),
+        },
       ],
       options: {
         enhanceWithContext: true,
         maxContextItems: 5,
         includeSourceInfo: true,
-        maxTokens: 1000
+        maxTokens: 1000,
       },
       metadata: {},
-      tasks: {}
+      tasks: {},
     } as AgentState;
 
     // Mock LLM response
     vi.mocked(LlmService.invokeStructured).mockResolvedValue({
       tasks: [
         { id: 'task-1', query: 'How do I bake a cake?' },
-        { id: 'task-2', query: 'What is the current weather?' }
+        { id: 'task-2', query: 'What is the current weather?' },
       ],
       instructions: 'Respond to both culinary and weather questions.',
-      reasoning: 'User asked about cake recipes and weather information. Split into separate tasks for better handling.'
+      reasoning:
+        'User asked about cake recipes and weather information. Split into separate tasks for better handling.',
     });
   });
 
@@ -83,22 +88,26 @@ describe('routingSplit node', () => {
     expect(LlmService.invokeStructured).toHaveBeenCalledWith(
       mockEnv,
       expect.any(Array),
-      expect.any(Object)
+      expect.any(Object),
     );
 
     // Verify task entities were created
     expect(result.taskEntities).toBeDefined();
     expect(Object.keys(result.taskEntities || {})).toHaveLength(2);
-    expect(result.taskEntities?.['task-1']).toEqual(expect.objectContaining({
-      id: 'task-1',
-      originalQuery: 'How do I bake a cake?',
-      status: 'pending'
-    }));
-    expect(result.taskEntities?.['task-2']).toEqual(expect.objectContaining({
-      id: 'task-2',
-      originalQuery: 'What is the current weather?',
-      status: 'pending'
-    }));
+    expect(result.taskEntities?.['task-1']).toEqual(
+      expect.objectContaining({
+        id: 'task-1',
+        originalQuery: 'How do I bake a cake?',
+        status: 'pending',
+      }),
+    );
+    expect(result.taskEntities?.['task-2']).toEqual(
+      expect.objectContaining({
+        id: 'task-2',
+        originalQuery: 'What is the current weather?',
+        status: 'pending',
+      }),
+    );
 
     // Verify instructions and reasoning were added
     expect(result.instructions).toBe('Respond to both culinary and weather questions.');
@@ -106,10 +115,10 @@ describe('routingSplit node', () => {
     // Check if reasoning array includes the LLM's reasoning string
     expect(result.reasoning).toEqual(
       expect.arrayContaining([
-        'User asked about cake recipes and weather information. Split into separate tasks for better handling.'
-      ])
+        'User asked about cake recipes and weather information. Split into separate tasks for better handling.',
+      ]),
     );
-    
+
     // Verify observability calls
     expect(ObservabilityService.initTrace).toHaveBeenCalled();
     expect(ObservabilityService.startSpan).toHaveBeenCalled();
@@ -136,7 +145,7 @@ describe('routingSplit node', () => {
     // Create state with no messages
     const emptyState = {
       ...mockState,
-      messages: []
+      messages: [],
     };
 
     // Execute node

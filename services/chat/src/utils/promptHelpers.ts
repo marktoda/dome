@@ -1,6 +1,6 @@
 import { Document } from '../types';
-import { AIMessage, MessagePair } from "../types";
-import { DEFAULT_MODEL } from "../config/modelConfig";
+import { AIMessage, MessagePair } from '../types';
+import { DEFAULT_MODEL } from '../config/modelConfig';
 import { getLogger } from '@dome/common';
 import {
   DEFAULT_MAX_TOTAL_DOC_TOKENS,
@@ -151,9 +151,7 @@ export function buildMessages(
   const budget = opts.budget ?? DEFAULT_MODEL.maxContextTokens;
 
   /* ── 1 · Always include system + new user message ────────────────── */
-  const messages: AIMessage[] = [
-    { role: "system", content: systemPrompt },
-  ];
+  const messages: AIMessage[] = [{ role: 'system', content: systemPrompt }];
 
   let used = approximateTokenCount(systemPrompt) + approximateTokenCount(userPrompt);
 
@@ -163,15 +161,15 @@ export function buildMessages(
     for (let i = history.length - 1; i >= 0 && pairs.length / 2 < maxPairs; i--) {
       const pair = history[i];
 
-      const userMsg = { role: "user" as const, content: pair.user.content };
-      const assistantMsg = { role: "assistant" as const, content: pair.assistant.content };
+      const userMsg = { role: 'user' as const, content: pair.user.content };
+      const assistantMsg = { role: 'assistant' as const, content: pair.assistant.content };
 
       const pairTokens =
         approximateTokenCount(userMsg.content) + approximateTokenCount(assistantMsg.content);
 
       if (used + pairTokens > budget) break;
 
-      pairs.unshift(assistantMsg);   // keep chronological order
+      pairs.unshift(assistantMsg); // keep chronological order
       pairs.unshift(userMsg);
       used += pairTokens;
     }
@@ -179,7 +177,7 @@ export function buildMessages(
 
   /* ── 3 · Assemble in chronological order + current user turn ─────── */
   messages.push(...pairs);
-  messages.push({ role: "user", content: userPrompt });
+  messages.push({ role: 'user', content: userPrompt });
 
   return messages;
 }

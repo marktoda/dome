@@ -6,6 +6,5 @@
  * @module types
  */
 
-
 // Export metadata types
 export * from './metadata';

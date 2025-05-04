@@ -15,11 +15,10 @@ export default defineConfig({
     // Using process.env is one of the reliable ways to increase Node.js heap size
     environmentOptions: {
       env: {
-        NODE_OPTIONS: '--max-old-space-size=4096'
-      }
+        NODE_OPTIONS: '--max-old-space-size=4096',
+      },
     },
     // Allow garbage collector to run between tests
     teardownTimeout: 5000,
   },
 });
-

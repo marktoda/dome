@@ -19,11 +19,13 @@ We've created a comprehensive verification script that:
 - Generates a detailed report in the `docs/LOGGING_VERIFICATION.md` file
 
 The script provides:
+
 - Service-by-service overview of compliance
 - Detailed lists of files with issues
 - Technical debt tracking for future cleanup
 
 **Usage:**
+
 ```bash
 node scripts/verify-logging-errors.js
 ```
@@ -82,26 +84,26 @@ The test suite covers the following key areas:
 
 ### 3.1 Error Handling Coverage
 
-| Feature | Coverage | Tests |
-|---------|----------|-------|
-| Error class hierarchy | ✅ Complete | error-handling.test.ts |
-| Error conversion | ✅ Complete | error-handling.test.ts |
-| Error middleware | ✅ Complete | error-handling.test.ts |
+| Feature                   | Coverage    | Tests                     |
+| ------------------------- | ----------- | ------------------------- |
+| Error class hierarchy     | ✅ Complete | error-handling.test.ts    |
+| Error conversion          | ✅ Complete | error-handling.test.ts    |
+| Error middleware          | ✅ Complete | error-handling.test.ts    |
 | Error context propagation | ✅ Complete | error-propagation.test.ts |
-| Database error handling | ✅ Complete | error-handling.test.ts |
-| Error factory | ✅ Complete | error-handling.test.ts |
+| Database error handling   | ✅ Complete | error-handling.test.ts    |
+| Error factory             | ✅ Complete | error-handling.test.ts    |
 
 ### 3.2 Logging Coverage
 
-| Feature | Coverage | Tests |
-|---------|----------|-------|
-| Logger creation | ✅ Complete | logging-functionality.test.ts |
-| Log level usage | ✅ Complete | logging-functionality.test.ts |
-| Operation tracking | ✅ Complete | logging-functionality.test.ts, middleware-integration.test.ts |
-| Request ID propagation | ✅ Complete | middleware-integration.test.ts |
-| Middleware integration | ✅ Complete | middleware-integration.test.ts |
-| External API logging | ✅ Complete | logging-functionality.test.ts |
-| Metrics collection | ✅ Complete | logging-functionality.test.ts |
+| Feature                | Coverage    | Tests                                                         |
+| ---------------------- | ----------- | ------------------------------------------------------------- |
+| Logger creation        | ✅ Complete | logging-functionality.test.ts                                 |
+| Log level usage        | ✅ Complete | logging-functionality.test.ts                                 |
+| Operation tracking     | ✅ Complete | logging-functionality.test.ts, middleware-integration.test.ts |
+| Request ID propagation | ✅ Complete | middleware-integration.test.ts                                |
+| Middleware integration | ✅ Complete | middleware-integration.test.ts                                |
+| External API logging   | ✅ Complete | logging-functionality.test.ts                                 |
+| Metrics collection     | ✅ Complete | logging-functionality.test.ts                                 |
 
 ## 4. Integration Verification
 
@@ -118,6 +120,7 @@ The integration tests specifically verify:
 ### 4.2 End-to-End Test Scenarios
 
 1. **Happy Path Flow**
+
    - Request flows through multiple services
    - Request ID is properly propagated
    - Operations are tracked with timing and context
@@ -133,17 +136,18 @@ The integration tests specifically verify:
 
 As of the latest verification run, service compliance status is:
 
-| Service | @dome/logging | @dome/errors | Request ID Propagation | Console.log Free |
-|---------|---------------|--------------|------------------------|------------------|
-| ai-processor | 🟢 | 🟢 | 🟢 | 🟢 |
-| chat | 🟢 | 🟢 | 🟢 | 🟡 |
-| constellation | 🟢 | 🟢 | 🟢 | 🟢 |
-| dome-api | 🟢 | 🟢 | 🟢 | 🟢 |
-| dome-notify | 🟢 | 🟢 | 🟢 | 🟢 |
-| silo | 🟢 | 🟢 | 🟢 | 🟢 |
-| tsunami | 🟡 | 🟡 | 🔴 | 🔴 |
+| Service       | @dome/logging | @dome/errors | Request ID Propagation | Console.log Free |
+| ------------- | ------------- | ------------ | ---------------------- | ---------------- |
+| ai-processor  | 🟢            | 🟢           | 🟢                     | 🟢               |
+| chat          | 🟢            | 🟢           | 🟢                     | 🟡               |
+| constellation | 🟢            | 🟢           | 🟢                     | 🟢               |
+| dome-api      | 🟢            | 🟢           | 🟢                     | 🟢               |
+| dome-notify   | 🟢            | 🟢           | 🟢                     | 🟢               |
+| silo          | 🟢            | 🟢           | 🟢                     | 🟢               |
+| tsunami       | 🟡            | 🟡           | 🔴                     | 🔴               |
 
 Legend:
+
 - 🟢 Fully compliant
 - 🟡 Partially compliant (some issues)
 - 🔴 Non-compliant (significant issues)
@@ -174,14 +178,17 @@ The following items have been identified as technical debt that should be addres
 ## 7. Next Steps
 
 1. **Run Verification Script in CI/CD Pipeline**
+
    - Add the verification script to the CI/CD pipeline
    - Fail builds when new violations are introduced
 
 2. **Address Technical Debt**
+
    - Prioritize fixing the `tsunami` service
    - Remove all remaining `console.log` statements
 
 3. **Enhance Monitoring**
+
    - Set up alerts based on error rates
    - Create dashboards for monitoring error patterns
 

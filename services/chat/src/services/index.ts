@@ -53,11 +53,10 @@ export function createServices(env: Env): Services {
     {
       modelId: LlmService.MODEL,
       // Get provider information from the configured model
-      modelProvider: 'DEFAULT_MODEL_ID' in env ?
-        String(env.DEFAULT_MODEL_ID) :
-        'default (GPT_4_TURBO)'
+      modelProvider:
+        'DEFAULT_MODEL_ID' in env ? String(env.DEFAULT_MODEL_ID) : 'default (GPT_4_TURBO)',
     },
-    'Chat service using initialized LLM model'
+    'Chat service using initialized LLM model',
   );
 
   // Return the services container

@@ -88,13 +88,13 @@ export function createQueues(): Record<string, cloudflare.WorkersQueue> {
       Producer: 'constellation',
       Consumer: 'none',
     });
-    
+
     // Rate Limit DLQ
     queues.rateLimitDlq = new cloudflare.WorkersQueue('rate-limit-dlq', {
       name: resourceName('rate-limit-dlq'),
       // Add tags when Cloudflare provider supports them
     });
-    
+
     // Apply tags
     tagResource(queues.rateLimitDlq, 'queue', 'rate-limit-dlq', {
       Purpose: 'rate-limited-ai-jobs',

@@ -1,6 +1,6 @@
 /**
  * Metrics Utilities
- * 
+ *
  * Provides metrics tracking capabilities for the Constellation service.
  */
 
@@ -33,7 +33,7 @@ class EfficientMetricsService {
     const currentValue = this.getCounter(name);
     const newValue = currentValue + value;
     this.counters.set(name, newValue);
-    
+
     logMetric(name, newValue, { type: 'counter', ...tags });
   }
 
@@ -44,7 +44,7 @@ class EfficientMetricsService {
     const currentValue = this.getCounter(name);
     const newValue = Math.max(0, currentValue - value);
     this.counters.set(name, newValue);
-    
+
     logMetric(name, newValue, { type: 'counter', ...tags });
   }
 
@@ -53,7 +53,7 @@ class EfficientMetricsService {
    */
   gauge(name: string, value: number, tags: Record<string, string | number> = {}): void {
     this.gauges.set(name, value);
-    
+
     logMetric(name, value, { type: 'gauge', ...tags });
   }
 
@@ -69,7 +69,7 @@ class EfficientMetricsService {
    */
   startTimer(operationName: string): { stop: (tags?: Record<string, string | number>) => number } {
     const startTime = Date.now();
-    
+
     return {
       stop: (tags = {}) => {
         const duration = Date.now() - startTime;

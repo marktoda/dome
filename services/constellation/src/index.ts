@@ -12,7 +12,7 @@ import {
   getLogger,
   logError,
   trackOperation,
-  constellationMetrics as metrics
+  constellationMetrics as metrics,
 } from './utils/logging';
 import {
   toDomeError,
@@ -21,7 +21,7 @@ import {
   ValidationError,
   VectorizeError,
   EmbeddingError,
-  PreprocessingError
+  PreprocessingError,
 } from './utils/errors';
 import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
@@ -48,7 +48,7 @@ const buildServices = (env: Env) => ({
  * @returns Result of the function
  */
 const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
-  withContext(meta, async (logger) => {
+  withContext(meta, async logger => {
     try {
       return await fn();
     } catch (err) {
@@ -60,7 +60,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
         requestId,
         service: 'constellation',
         timestamp: new Date().toISOString(),
-        ...meta
+        ...meta,
       };
 
       logError(err, `Unhandled error in ${operation}`, errorContext);
@@ -84,16 +84,16 @@ type DeadLetterPayload =
 const sendToDeadLetter = async (
   queue: DeadQueue | undefined,
   payload: DeadLetterPayload,
-  requestId: string = crypto.randomUUID()
+  requestId: string = crypto.randomUUID(),
 ) => {
   if (!queue) {
     getLogger().warn(
       {
         requestId,
         operation: 'sendToDeadLetter',
-        payloadType: typeof payload
+        payloadType: typeof payload,
       },
-      'Dead letter queue not available, skipping DLQ send'
+      'Dead letter queue not available, skipping DLQ send',
     );
     return;
   }
@@ -107,9 +107,9 @@ const sendToDeadLetter = async (
             requestId,
             operation: 'sendToDeadLetter',
             hasError: 'error' in payload,
-            contentId: ('job' in payload && payload.job.id) || undefined
+            contentId: ('job' in payload && payload.job.id) || undefined,
           },
-          'Sending message to dead letter queue'
+          'Sending message to dead letter queue',
         );
 
         await queue.send({
@@ -117,28 +117,28 @@ const sendToDeadLetter = async (
           _meta: {
             timestamp: Date.now(),
             requestId,
-            service: 'constellation'
-          }
+            service: 'constellation',
+          },
         });
 
         metrics.counter('dlq.messages_sent', 1);
 
         getLogger().info(
           { requestId, operation: 'sendToDeadLetter' },
-          'Successfully sent message to dead letter queue'
+          'Successfully sent message to dead letter queue',
         );
       } catch (err) {
         const domeError = toDomeError(err, 'Failed to send to dead letter queue', {
           requestId,
           operation: 'sendToDeadLetter',
-          payloadType: typeof payload
+          payloadType: typeof payload,
         });
 
         logError(domeError, 'Error sending message to dead letter queue');
         metrics.counter('dlq.errors', 1);
       }
     },
-    { requestId }
+    { requestId },
   );
 };
 
@@ -165,7 +165,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
   private async embedBatch(
     jobs: SiloContentItem[],
     deadQueue?: DeadQueue,
-    batchRequestId: string = crypto.randomUUID()
+    batchRequestId: string = crypto.randomUUID(),
   ): Promise<number> {
     return trackOperation(
       'embed_batch',
@@ -184,9 +184,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           {
             batchRequestId,
             jobCount: jobs.length,
-            operation: 'embedBatch'
+            operation: 'embedBatch',
           },
-          `Starting embedding batch with ${jobs.length} jobs`
+          `Starting embedding batch with ${jobs.length} jobs`,
         );
 
         // Process jobs one at a time to avoid memory issues
@@ -197,13 +197,13 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             contentId: job.id,
             userId: job.userId,
             category: job.category,
-            operation: 'embedBatch'
+            operation: 'embedBatch',
           };
 
           if (job.body === undefined) {
             getLogger().error(
               { ...jobContext, contentSize: 0 },
-              'Empty job body, skipping embedding'
+              'Empty job body, skipping embedding',
             );
             continue;
           }
@@ -226,7 +226,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                 // Ensure job.body is a string (not undefined)
                 const jobText = job.body || '';
                 const truncatedText =
-                  jobText.length > MAX_TEXT_LENGTH ? jobText.substring(0, MAX_TEXT_LENGTH) : jobText;
+                  jobText.length > MAX_TEXT_LENGTH
+                    ? jobText.substring(0, MAX_TEXT_LENGTH)
+                    : jobText;
 
                 if (truncatedText.length < jobText.length) {
                   getLogger().warn(
@@ -248,7 +250,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                   if (chunks.length === 0) {
                     getLogger().warn(
                       { ...jobContext, textLength: truncatedText.length },
-                      'No processable text found in content'
+                      'No processable text found in content',
                     );
                     metrics.counter('preprocessing.empty_result', 1);
                     return;
@@ -308,7 +310,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                           chunkBatchIndex,
                           vectorCount: batchVectors.length,
                         },
-                        `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`
+                        `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
                       );
 
                       metrics.counter('embedding.batch_success', 1);
@@ -328,9 +330,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                           ...jobContext,
                           chunkBatchIndex,
                           totalChunkBatches,
-                          batchSize: batchChunks.length
+                          batchSize: batchChunks.length,
                         },
-                        err instanceof Error ? err : undefined
+                        err instanceof Error ? err : undefined,
                       );
 
                       logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
@@ -364,9 +366,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                         {
                           ...jobContext,
                           upsertBatchIndex,
-                          totalUpsertBatches
+                          totalUpsertBatches,
                         },
-                        `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`
+                        `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
                       );
 
                       metrics.counter('vectorize.batch_success', 1);
@@ -376,9 +378,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                         {
                           ...jobContext,
                           upsertBatchIndex,
-                          totalUpsertBatches
+                          totalUpsertBatches,
                         },
-                        err instanceof Error ? err : undefined
+                        err instanceof Error ? err : undefined,
                       );
 
                       logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
@@ -393,14 +395,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                       ...jobContext,
                       vectorCount: allVectors.length,
                       textLength: truncatedText.length,
-                      duration: Date.now() - startTime
+                      duration: Date.now() - startTime,
                     },
                     `Successfully upserted ${allVectors.length} vectors for content`,
                   );
 
                   metrics.trackOperation('content_embedding', true, {
                     requestId: jobRequestId,
-                    vectorCount: String(allVectors.length)
+                    vectorCount: String(allVectors.length),
                   });
 
                   processed += 1;
@@ -412,7 +414,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                   const domeError = new PreprocessingError(
                     'Failed to preprocess content',
                     { ...jobContext, textLength: truncatedText.length },
-                    err instanceof Error ? err : undefined
+                    err instanceof Error ? err : undefined,
                   );
 
                   logError(domeError, 'Content preprocessing failed');
@@ -421,20 +423,18 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                   throw domeError;
                 }
               },
-              jobContext
+              jobContext,
             );
           } catch (err) {
             // Convert to domain error
-            const domeError = toDomeError(
-              err,
-              `Failed to embed content ID: ${job.id}`,
-              { ...jobContext }
-            );
+            const domeError = toDomeError(err, `Failed to embed content ID: ${job.id}`, {
+              ...jobContext,
+            });
 
             logError(domeError, `Content embedding failed for ID: ${job.id}`);
             metrics.trackOperation('content_embedding', false, {
               requestId: jobRequestId,
-              errorType: domeError.code
+              errorType: domeError.code,
             });
 
             // Send to dead letter queue with enhanced context
@@ -444,9 +444,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                 err: domeError.message,
                 errorCode: domeError.code,
                 job,
-                timestamp: Date.now()
+                timestamp: Date.now(),
               },
-              jobRequestId
+              jobRequestId,
             );
           } finally {
             timer.stop();
@@ -467,9 +467,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             processedCount: processed,
             successRate: Math.round((processed / jobs.length) * 100),
             duration,
-            operation: 'embedBatch'
+            operation: 'embedBatch',
           },
-          `Completed embedding batch: ${processed}/${jobs.length} jobs successful`
+          `Completed embedding batch: ${processed}/${jobs.length} jobs successful`,
         );
 
         // Track batch metrics
@@ -479,7 +479,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         return processed;
       },
-      { jobCount: jobs.length, batchRequestId }
+      { jobCount: jobs.length, batchRequestId },
     );
   }
 
@@ -498,7 +498,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         op: 'queue',
         size: batch.messages.length,
         batchRequestId,
-        ...this.env
+        ...this.env,
       },
       async () => {
         // Start tracking queue processing
@@ -511,9 +511,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             batchRequestId,
             messageCount: batch.messages.length,
             queueName: batch.queue,
-            operation: 'queue'
+            operation: 'queue',
           },
-          `Processing queue batch with ${batch.messages.length} messages`
+          `Processing queue batch with ${batch.messages.length} messages`,
         );
 
         const embedItems: SiloContentItem[] = [];
@@ -527,15 +527,11 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           } catch (err) {
             parseErrors++;
 
-            const domeError = toDomeError(
-              err,
-              'Failed to parse queue message',
-              {
-                messageId: msg.id,
-                batchRequestId,
-                operation: 'parseMessage'
-              }
-            );
+            const domeError = toDomeError(err, 'Failed to parse queue message', {
+              messageId: msg.id,
+              batchRequestId,
+              operation: 'parseMessage',
+            });
 
             logError(domeError, 'Error parsing queue message');
             metrics.counter('queue.parse_errors', 1);
@@ -546,9 +542,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                 error: domeError.message,
                 errorCode: domeError.code,
                 originalMessage: msg.body,
-                timestamp: Date.now()
+                timestamp: Date.now(),
               },
-              `${batchRequestId}-${msg.id}`
+              `${batchRequestId}-${msg.id}`,
             );
           }
 
@@ -563,9 +559,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             validMessages: embedItems.length,
             parseErrors,
             parseSuccessRate: Math.round((embedItems.length / batch.messages.length) * 100),
-            operation: 'queue'
+            operation: 'queue',
           },
-          `Message parsing complete: ${embedItems.length}/${batch.messages.length} valid`
+          `Message parsing complete: ${embedItems.length}/${batch.messages.length} valid`,
         );
 
         // Process valid messages
@@ -574,9 +570,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             {
               batchRequestId,
               count: embedItems.length,
-              operation: 'queue'
+              operation: 'queue',
             },
-            `Processing ${embedItems.length} embed jobs`
+            `Processing ${embedItems.length} embed jobs`,
           );
 
           const processed = await this.embedBatch(embedItems, this.env.EMBED_DEAD, batchRequestId);
@@ -588,17 +584,17 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               processed,
               total: embedItems.length,
               successRate: Math.round((processed / embedItems.length) * 100),
-              operation: 'queue'
+              operation: 'queue',
             },
-            `Processed ${processed}/${embedItems.length} embed jobs successfully`
+            `Processed ${processed}/${embedItems.length} embed jobs successfully`,
           );
         } else {
           getLogger().warn(
             {
               batchRequestId,
-              operation: 'queue'
+              operation: 'queue',
             },
-            'No valid messages to process after parsing'
+            'No valid messages to process after parsing',
           );
         }
 
@@ -609,12 +605,11 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             batchRequestId,
             messageCount: batch.messages.length,
             processedCount: embedItems.length,
-            successCount: embedItems.length > 0 ?
-              Math.min(embedItems.length, 100) : 0, // Use fixed capacity instead of trying to read gauge value
+            successCount: embedItems.length > 0 ? Math.min(embedItems.length, 100) : 0, // Use fixed capacity instead of trying to read gauge value
             duration,
-            operation: 'queue'
+            operation: 'queue',
           },
-          'Queue batch processing complete'
+          'Queue batch processing complete',
         );
 
         // Track timing metrics
@@ -632,7 +627,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
    */
   private async parseMessage(
     msg: Message<Record<string, unknown>>,
-    requestId: string = crypto.randomUUID()
+    requestId: string = crypto.randomUUID(),
   ): Promise<SiloContentItem> {
     return trackOperation(
       'parse_message',
@@ -640,7 +635,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         const messageContext = {
           messageId: msg.id,
           requestId,
-          operation: 'parseMessage'
+          operation: 'parseMessage',
         };
 
         // Validate message has a body
@@ -659,14 +654,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             {
               ...messageContext,
               issues,
-              messageBody: JSON.stringify(msg.body).substring(0, 200)
+              messageBody: JSON.stringify(msg.body).substring(0, 200),
             },
-            'Invalid message format'
+            'Invalid message format',
           );
 
           throw new ValidationError(`Message validation failed: ${issues}`, {
             ...messageContext,
-            issues
+            issues,
           });
         }
 
@@ -676,22 +671,19 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             {
               ...messageContext,
               contentId: validation.data.id,
-              userId: validation.data.userId
+              userId: validation.data.userId,
             },
-            'Fetching content from Silo'
+            'Fetching content from Silo',
           );
 
           // At this point, we know the message body conforms to NewContentMessage schema
-          const content = await this.services.silo.get(
-            validation.data.id,
-            validation.data.userId
-          );
+          const content = await this.services.silo.get(validation.data.id, validation.data.userId);
 
           // Verify content was retrieved
           assertExists(content, `Content not found in Silo for ID: ${validation.data.id}`, {
             ...messageContext,
             contentId: validation.data.id,
-            userId: validation.data.userId
+            userId: validation.data.userId,
           });
 
           getLogger().debug(
@@ -699,28 +691,24 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               ...messageContext,
               contentId: content.id,
               contentSize: content.body?.length || 0,
-              contentType: content.mimeType || content.category || 'unknown'
+              contentType: content.mimeType || content.category || 'unknown',
             },
-            'Successfully fetched content from Silo'
+            'Successfully fetched content from Silo',
           );
 
           return content;
         } catch (err) {
-          const domeError = toDomeError(
-            err,
-            'Error fetching content from Silo',
-            {
-              ...messageContext,
-              contentId: validation.data.id,
-              userId: validation.data.userId
-            }
-          );
+          const domeError = toDomeError(err, 'Error fetching content from Silo', {
+            ...messageContext,
+            contentId: validation.data.id,
+            userId: validation.data.userId,
+          });
 
           logError(domeError, 'Silo content retrieval failed');
           throw domeError;
         }
       },
-      { messageId: msg.id, requestId }
+      { messageId: msg.id, requestId },
     );
   }
 
@@ -748,7 +736,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           assertValid(!!job, 'Content item is required', { requestId });
           assertValid(!!job.id, 'Content ID is required', {
             requestId,
-            operation: 'embed'
+            operation: 'embed',
           });
 
           // Track request metrics
@@ -760,9 +748,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               userId: job.userId,
               contentType: job.category || job.mimeType || 'unknown',
               requestId,
-              operation: 'embed'
+              operation: 'embed',
             },
-            'Processing RPC embed request'
+            'Processing RPC embed request',
           );
 
           // Embed the content
@@ -772,7 +760,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           metrics.counter('rpc.embed.success', 1);
           metrics.trackOperation('rpc_embed', true, {
             requestId,
-            contentId: job.id
+            contentId: job.id,
           });
 
           getLogger().info(
@@ -781,31 +769,27 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               processed,
               success: processed === 1,
               requestId,
-              operation: 'embed'
+              operation: 'embed',
             },
-            `RPC embed request ${processed === 1 ? 'succeeded' : 'failed'}`
+            `RPC embed request ${processed === 1 ? 'succeeded' : 'failed'}`,
           );
         } catch (error) {
           // Track failure metrics
           metrics.counter('rpc.embed.errors', 1);
 
-          const domeError = toDomeError(
-            error,
-            `Failed to embed content ID: ${job.id}`,
-            {
-              contentId: job.id,
-              userId: job.userId,
-              requestId,
-              operation: 'embed'
-            }
-          );
+          const domeError = toDomeError(error, `Failed to embed content ID: ${job.id}`, {
+            contentId: job.id,
+            userId: job.userId,
+            requestId,
+            operation: 'embed',
+          });
 
           logError(domeError, 'RPC embed request failed');
 
           metrics.trackOperation('rpc_embed', false, {
             requestId,
             contentId: job.id,
-            errorType: domeError.code
+            errorType: domeError.code,
           });
 
           throw domeError;
@@ -837,7 +821,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         filter,
         topK,
         requestId,
-        ...this.env
+        ...this.env,
       },
       async () => {
         try {
@@ -846,7 +830,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           assertValid(text.trim().length > 0, 'Query text cannot be empty', { requestId });
           assertValid(topK > 0 && topK <= 1000, 'topK must be between 1 and 1000', {
             requestId,
-            providedTopK: topK
+            providedTopK: topK,
           });
 
           // Track query metrics
@@ -859,9 +843,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               filterKeys: Object.keys(filter),
               topK,
               requestId,
-              operation: 'query'
+              operation: 'query',
             },
-            'Processing vector search query'
+            'Processing vector search query',
           );
 
           const { preprocessor, embedder, vectorize } = this.services;
@@ -872,7 +856,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           if (!norm) {
             getLogger().warn(
               { requestId, operation: 'query' },
-              'Normalization produced empty text, returning empty results'
+              'Normalization produced empty text, returning empty results',
             );
 
             metrics.counter('rpc.query.empty_norm', 1);
@@ -884,9 +868,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               requestId,
               originalLength: text.length,
               normalizedLength: norm.length,
-              operation: 'query'
+              operation: 'query',
             },
-            'Successfully normalized query text'
+            'Successfully normalized query text',
           );
 
           // Generate embedding
@@ -896,9 +880,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             {
               requestId,
               vectorLength: queryVec.length,
-              operation: 'query'
+              operation: 'query',
             },
-            'Generated embedding vector for query'
+            'Generated embedding vector for query',
           );
 
           // Query for similar vectors
@@ -910,9 +894,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               requestId,
               resultCount: results.length,
               topScore: results.length > 0 ? results[0].score : 0,
-              operation: 'query'
+              operation: 'query',
             },
-            `Query returned ${results.length} results`
+            `Query returned ${results.length} results`,
           );
 
           // Track success metrics
@@ -920,7 +904,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           metrics.gauge('rpc.query.results', results.length);
           metrics.trackOperation('vector_query', true, {
             requestId,
-            resultCount: String(results.length)
+            resultCount: String(results.length),
           });
 
           return results;
@@ -928,22 +912,18 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           // Track error metrics
           metrics.counter('rpc.query.errors', 1);
 
-          const domeError = toDomeError(
-            error,
-            'Vector query failed',
-            {
-              requestId,
-              operation: 'query',
-              textLength: text?.length,
-              filterKeys: Object.keys(filter || {})
-            }
-          );
+          const domeError = toDomeError(error, 'Vector query failed', {
+            requestId,
+            operation: 'query',
+            textLength: text?.length,
+            filterKeys: Object.keys(filter || {}),
+          });
 
           logError(domeError, 'Vector query operation failed');
 
           metrics.trackOperation('vector_query', false, {
             requestId,
-            errorType: domeError.code
+            errorType: domeError.code,
           });
 
           // Return structured error object for RPC
@@ -951,8 +931,8 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             error: {
               message: domeError.message,
               code: domeError.code,
-              status: domeError.statusCode
-            }
+              status: domeError.statusCode,
+            },
           };
         }
       },
@@ -973,17 +953,14 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         service: 'constellation',
         op: 'stats',
         requestId,
-        ...this.env
+        ...this.env,
       },
       async () => {
         try {
           // Track stats request
           metrics.counter('rpc.stats.requests', 1);
 
-          getLogger().info(
-            { requestId, operation: 'stats' },
-            'Fetching vector index statistics'
-          );
+          getLogger().info({ requestId, operation: 'stats' }, 'Fetching vector index statistics');
 
           // Get stats from vectorize service
           const stats = await this.services.vectorize.getStats();
@@ -996,9 +973,9 @@ export default class Constellation extends WorkerEntrypoint<Env> {
               requestId,
               vectors: stats.vectors,
               dimension: stats.dimension,
-              operation: 'stats'
+              operation: 'stats',
             },
-            'Successfully retrieved vector index statistics'
+            'Successfully retrieved vector index statistics',
           );
 
           return stats;
@@ -1006,14 +983,10 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           // Track error
           metrics.counter('rpc.stats.errors', 1);
 
-          const domeError = toDomeError(
-            error,
-            'Failed to retrieve vector index statistics',
-            {
-              requestId,
-              operation: 'stats'
-            }
-          );
+          const domeError = toDomeError(error, 'Failed to retrieve vector index statistics', {
+            requestId,
+            operation: 'stats',
+          });
 
           logError(domeError, 'Error getting vector index stats');
 
@@ -1022,11 +995,11 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             error: {
               message: domeError.message,
               code: domeError.code,
-              status: domeError.statusCode
-            }
+              status: domeError.statusCode,
+            },
           };
         }
-      }
+      },
     );
   }
 }

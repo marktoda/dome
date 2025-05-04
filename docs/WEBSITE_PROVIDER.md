@@ -17,17 +17,17 @@ The WebsiteProvider handles:
 
 The WebsiteProvider accepts the following configuration options:
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `url` | string | (required) | The base URL to crawl. This is the starting point for the crawler. |
-| `crawlDepth` | number | 2 | Maximum depth of links to follow from the base URL. A depth of 0 means only the base URL is crawled, 1 includes direct links from the base URL, etc. |
-| `respectRobotsTxt` | boolean | true | Whether to respect robots.txt directives. When enabled, the crawler will check robots.txt rules before crawling pages. |
-| `delayMs` | number | 1000 | Delay between requests in milliseconds. This helps prevent overwhelming the target server. |
-| `includeImages` | boolean | false | Whether to include image files in the crawl results. |
-| `includeScripts` | boolean | false | Whether to include JavaScript files in the crawl results. |
-| `includeStyles` | boolean | false | Whether to include CSS files in the crawl results. |
-| `followExternalLinks` | boolean | false | Whether to follow links to external domains. When disabled, only links within the same domain as the base URL are crawled. |
-| `urlPatterns` | string[] | [] | Array of regex patterns to match URLs to crawl. Only URLs matching at least one pattern will be crawled. If empty, all URLs are considered. |
+| Option                | Type     | Default    | Description                                                                                                                                          |
+| --------------------- | -------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                 | string   | (required) | The base URL to crawl. This is the starting point for the crawler.                                                                                   |
+| `crawlDepth`          | number   | 2          | Maximum depth of links to follow from the base URL. A depth of 0 means only the base URL is crawled, 1 includes direct links from the base URL, etc. |
+| `respectRobotsTxt`    | boolean  | true       | Whether to respect robots.txt directives. When enabled, the crawler will check robots.txt rules before crawling pages.                               |
+| `delayMs`             | number   | 1000       | Delay between requests in milliseconds. This helps prevent overwhelming the target server.                                                           |
+| `includeImages`       | boolean  | false      | Whether to include image files in the crawl results.                                                                                                 |
+| `includeScripts`      | boolean  | false      | Whether to include JavaScript files in the crawl results.                                                                                            |
+| `includeStyles`       | boolean  | false      | Whether to include CSS files in the crawl results.                                                                                                   |
+| `followExternalLinks` | boolean  | false      | Whether to follow links to external domains. When disabled, only links within the same domain as the base URL are crawled.                           |
+| `urlPatterns`         | string[] | []         | Array of regex patterns to match URLs to crawl. Only URLs matching at least one pattern will be crawled. If empty, all URLs are considered.          |
 
 ## Usage Examples
 
@@ -38,14 +38,14 @@ To register a website for basic ingestion:
 ```typescript
 // Register a website with default settings
 const resourceId = JSON.stringify({
-  url: "https://example.com/blog"
+  url: 'https://example.com/blog',
 });
 
 // Add the resource to Tsunami
 await tsunamiClient.addResource({
   resourceId,
-  providerType: "website",
-  syncFrequency: "daily"
+  providerType: 'website',
+  syncFrequency: 'daily',
 });
 ```
 
@@ -56,7 +56,7 @@ For more control over the crawling process:
 ```typescript
 // Register a website with advanced configuration
 const resourceId = JSON.stringify({
-  url: "https://example.com/docs",
+  url: 'https://example.com/docs',
   crawlDepth: 3,
   delayMs: 2000,
   respectRobotsTxt: true,
@@ -64,17 +64,14 @@ const resourceId = JSON.stringify({
   includeScripts: false,
   includeStyles: false,
   followExternalLinks: false,
-  urlPatterns: [
-    "^https://example\\.com/docs/v2/.*",
-    "^https://example\\.com/docs/tutorials/.*"
-  ]
+  urlPatterns: ['^https://example\\.com/docs/v2/.*', '^https://example\\.com/docs/tutorials/.*'],
 });
 
 // Add the resource to Tsunami
 await tsunamiClient.addResource({
   resourceId,
-  providerType: "website",
-  syncFrequency: "weekly"
+  providerType: 'website',
+  syncFrequency: 'weekly',
 });
 ```
 
@@ -86,8 +83,8 @@ The WebsiteProvider maintains state between crawls to support incremental update
 // The provider automatically tracks crawled URLs and pending URLs
 // It will only process new or updated content in subsequent crawls
 await tsunamiClient.syncResource({
-  resourceId: JSON.stringify({ url: "https://example.com/blog" }),
-  providerType: "website"
+  resourceId: JSON.stringify({ url: 'https://example.com/blog' }),
+  providerType: 'website',
 });
 ```
 
@@ -99,14 +96,14 @@ WordPress sites typically organize content in a predictable structure:
 
 ```typescript
 const wordpressConfig = {
-  url: "https://wordpress-example.com",
+  url: 'https://wordpress-example.com',
   urlPatterns: [
     // Focus on post content, avoid admin pages, etc.
-    "^https://wordpress-example\\.com/\\d{4}/\\d{2}/.*", // Post permalinks
-    "^https://wordpress-example\\.com/category/.*",      // Category pages
-    "^https://wordpress-example\\.com/tag/.*"            // Tag pages
+    '^https://wordpress-example\\.com/\\d{4}/\\d{2}/.*', // Post permalinks
+    '^https://wordpress-example\\.com/category/.*', // Category pages
+    '^https://wordpress-example\\.com/tag/.*', // Tag pages
   ],
-  crawlDepth: 3
+  crawlDepth: 3,
 };
 ```
 
@@ -116,12 +113,12 @@ Medium has a specific structure that can be targeted:
 
 ```typescript
 const mediumConfig = {
-  url: "https://medium.com/publication-name",
+  url: 'https://medium.com/publication-name',
   urlPatterns: [
     // Target article pages, avoid profile pages, etc.
-    "^https://medium\\.com/publication-name/[\\w-]+-[a-f0-9]{12}$" // Article pages
+    '^https://medium\\.com/publication-name/[\\w-]+-[a-f0-9]{12}$', // Article pages
   ],
-  crawlDepth: 2
+  crawlDepth: 2,
 };
 ```
 
@@ -131,12 +128,12 @@ Ghost blog platforms can be configured as follows:
 
 ```typescript
 const ghostConfig = {
-  url: "https://ghost-example.com",
+  url: 'https://ghost-example.com',
   urlPatterns: [
     // Focus on post content
-    "^https://ghost-example\\.com/[\\w-]+/$" // Post pages
+    '^https://ghost-example\\.com/[\\w-]+/$', // Post pages
   ],
-  crawlDepth: 2
+  crawlDepth: 2,
 };
 ```
 
@@ -146,15 +143,15 @@ For documentation sites like ReadTheDocs, Docusaurus, or GitBook:
 
 ```typescript
 const docsConfig = {
-  url: "https://docs-example.com",
+  url: 'https://docs-example.com',
   crawlDepth: 4, // Documentation often has deeper hierarchies
   delayMs: 1500,
   urlPatterns: [
     // Focus on documentation pages, avoid search, API, etc.
-    "^https://docs-example\\.com/guide/.*",
-    "^https://docs-example\\.com/api/.*",
-    "^https://docs-example\\.com/tutorials/.*"
-  ]
+    '^https://docs-example\\.com/guide/.*',
+    '^https://docs-example\\.com/api/.*',
+    '^https://docs-example\\.com/tutorials/.*',
+  ],
 };
 ```
 

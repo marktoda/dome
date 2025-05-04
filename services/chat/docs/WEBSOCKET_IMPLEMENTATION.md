@@ -35,7 +35,7 @@ enum MessageType {
   WORKFLOW_STEP = 'workflow_step',
   FINAL = 'final',
   ERROR = 'error',
-  END = 'end'
+  END = 'end',
 }
 ```
 
@@ -50,25 +50,25 @@ private handleWebSocketUpgrade(request: Request, env: Env, ctx: ExecutionContext
   // Get URL query parameters
   const url = new URL(request.url);
   const requestType = url.searchParams.get('type') || 'new_chat';
-  
+
   // Create WebSocket pair
   const { 0: client, 1: server } = new WebSocketPair();
-  
+
   // Accept the WebSocket connection
   server.accept();
-  
+
   // Set up message handler
   server.addEventListener('message', (event) => {
     // Parse the message as JSON
     const message = JSON.parse(event.data as string);
-    
+
     // Handle the message based on type
     if (message.type === 'new_chat' || message.type === 'resume_chat') {
       // Handle the chat request
       handleWebSocketConnection(env, this.services, server, message);
     }
   });
-  
+
   // Return the client end of the WebSocket
   return new Response(null, {
     status: 101,
@@ -83,9 +83,9 @@ The WebSocket transformer converts LangGraph stream data into WebSocket messages
 
 ```typescript
 export async function transformToWebSocket(
-  stream: any, 
+  stream: any,
   startTime: number,
-  webSocket: WebSocket
+  webSocket: WebSocket,
 ): Promise<void> {
   // Process each event from the LangGraph stream
   for await (const event of stream) {
@@ -95,15 +95,15 @@ export async function transformToWebSocket(
       const chunk = event.data?.chunk;
       if (chunk && chunk.content) {
         accumulatedText += chunk.content;
-        
+
         const message: WebSocketMessage = {
           type: MessageType.TEXT,
-          data: { text: accumulatedText }
+          data: { text: accumulatedText },
         };
-        
+
         webSocket.send(JSON.stringify(message));
       }
-    } 
+    }
     // Handle other event types...
   }
 }
@@ -115,10 +115,7 @@ The WebSocket client provides a simple interface with robust connection handling
 
 ```typescript
 export class WebSocketClient {
-  async generateChatResponse(
-    request: ChatRequest,
-    callbacks: WebSocketCallbacks
-  ): Promise<void> {
+  async generateChatResponse(request: ChatRequest, callbacks: WebSocketCallbacks): Promise<void> {
     // Validate request
     const validatedRequest = chatRequestSchema.parse(request);
 
@@ -131,18 +128,18 @@ export class WebSocketClient {
     // Send the initial message
     this.sendMessage({
       type: 'new_chat',
-      ...validatedRequest
+      ...validatedRequest,
     });
   }
-  
+
   // Reconnection logic with exponential backoff
   private attemptReconnect(wsUrl: string): void {
     // Calculate backoff delay with jitter
     const baseDelay = Math.min(
       this.options.reconnectDelayMs * Math.pow(1.5, this.reconnectAttempts - 1),
-      this.options.maxReconnectDelayMs
+      this.options.maxReconnectDelayMs,
     );
-    
+
     const jitter = baseDelay * 0.3 * (Math.random() - 0.5);
     const delay = Math.floor(baseDelay + jitter);
 
@@ -172,34 +169,37 @@ const wsClient = createWebSocketClient('https://api.example.com');
 
 // Define callback handlers
 const callbacks: WebSocketCallbacks = {
-  onText: (text) => {
+  onText: text => {
     console.log('Received text:', text);
     // Update UI with text
   },
-  onSources: (sources) => {
+  onSources: sources => {
     console.log('Received sources:', sources);
     // Display sources in UI
   },
-  onWorkflowStep: (step) => {
+  onWorkflowStep: step => {
     console.log('Current workflow step:', step);
     // Update progress indicator
   },
-  onError: (error) => {
+  onError: error => {
     console.error('Error:', error);
     // Display error message
   },
   onEnd: () => {
     console.log('Chat session ended');
     // Clean up UI
-  }
+  },
 };
 
 // Start a chat session
-await wsClient.generateChatResponse({
-  userId: 'user123',
-  messages: [{ role: 'user', content: 'Hello, how can you help me?' }],
-  options: { enhanceWithContext: true }
-}, callbacks);
+await wsClient.generateChatResponse(
+  {
+    userId: 'user123',
+    messages: [{ role: 'user', content: 'Hello, how can you help me?' }],
+    options: { enhanceWithContext: true },
+  },
+  callbacks,
+);
 
 // Close the connection when done
 wsClient.close();

@@ -49,15 +49,15 @@ describe('Function Wrapper Integration Tests', () => {
       // Import mocked dependencies
       const { ValidationError } = require('@dome/errors');
       const { logError, trackOperation } = require('@dome/common');
-      
+
       // Create service wrappers for different services
       const wrapUserService = createServiceWrapper('user-service');
       const wrapAuthService = createServiceWrapper('auth-service');
       const wrapPaymentService = createServiceWrapper('payment-service');
-      
+
       // Mock database operations
       const mockDb = {
-        findUser: vi.fn().mockImplementation((id) => {
+        findUser: vi.fn().mockImplementation(id => {
           if (id === 'valid-user') {
             return Promise.resolve({ id, name: 'Test User', email: 'test@example.com' });
           }
@@ -76,7 +76,7 @@ describe('Function Wrapper Integration Tests', () => {
           return Promise.resolve({ id: 'payment-123', status: 'success' });
         }),
       };
-      
+
       // Create service functions
       const getUserById = async (userId: string) => {
         return wrapUserService({ operation: 'getUserById', userId }, async () => {
@@ -87,7 +87,7 @@ describe('Function Wrapper Integration Tests', () => {
           return user;
         });
       };
-      
+
       const authenticateUser = async (email: string, password: string) => {
         return wrapAuthService({ operation: 'authenticateUser', email }, async () => {
           const isValid = await mockDb.validateCredentials(email, password);
@@ -97,19 +97,19 @@ describe('Function Wrapper Integration Tests', () => {
           return { authenticated: true };
         });
       };
-      
+
       const processUserPayment = async (userId: string, amount: number) => {
         return wrapPaymentService({ operation: 'processPayment', userId, amount }, async () => {
           // First verify the user exists
           const user = await getUserById(userId);
-          
+
           // Then process the payment
           const payment = await mockDb.processPayment(userId, amount);
-          
+
           return { success: true, payment, user };
         });
       };
-      
+
       // Test successful flow
       const successResult = await processUserPayment('valid-user', 100);
       expect(successResult).toEqual({
@@ -117,14 +117,14 @@ describe('Function Wrapper Integration Tests', () => {
         payment: { id: 'payment-123', status: 'success' },
         user: { id: 'valid-user', name: 'Test User', email: 'test@example.com' },
       });
-      
+
       // Verify tracking was called for each service
       expect(trackOperation).toHaveBeenCalledWith(
         'payment-service.processPayment',
         expect.any(Function),
-        expect.objectContaining({ userId: 'valid-user', amount: 100 })
+        expect.objectContaining({ userId: 'valid-user', amount: 100 }),
       );
-      
+
       // Test error flow - invalid user
       try {
         await processUserPayment('invalid-user', 100);
@@ -134,11 +134,11 @@ describe('Function Wrapper Integration Tests', () => {
         expect(error.code).toBe('VALIDATION_ERROR');
         expect(error.message).toContain('User not found');
         expect(error.details).toHaveProperty('userId', 'invalid-user');
-        
+
         // Verify error was logged
         expect(logError).toHaveBeenCalled();
       }
-      
+
       // Test error flow - invalid amount
       try {
         await processUserPayment('valid-user', -10);
@@ -146,7 +146,7 @@ describe('Function Wrapper Integration Tests', () => {
         expect(true).toBe(false);
       } catch (error: any) {
         expect(error.message).toContain('Invalid payment amount');
-        
+
         // Verify error was logged
         expect(logError).toHaveBeenCalled();
       }
@@ -157,28 +157,31 @@ describe('Function Wrapper Integration Tests', () => {
     it('should handle multi-step processes with validation', async () => {
       // Import mocked dependencies
       const { ValidationError } = require('@dome/errors');
-      
+
       // Create validators
       const validateOrderInput = (input: any) => {
         if (!input.userId) throw new ValidationError('User ID is required');
         if (!input.items || !input.items.length) throw new ValidationError('Order must have items');
         if (!input.shippingAddress) throw new ValidationError('Shipping address is required');
       };
-      
+
       const validateOrderOutput = (output: any) => {
         if (!output.orderId) throw new ValidationError('Order ID is missing in output');
         if (!output.status) throw new ValidationError('Order status is missing in output');
       };
-      
+
       // Create process function
       const processOrder = async (input: any) => {
         // Calculate total
-        const total = input.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
-        
+        const total = input.items.reduce(
+          (sum: number, item: any) => sum + item.price * item.quantity,
+          0,
+        );
+
         // Apply discount if applicable
         const discount = input.discountCode ? 0.1 : 0;
         const finalTotal = total * (1 - discount);
-        
+
         // Create order
         return {
           orderId: 'order-' + Date.now(),
@@ -191,7 +194,7 @@ describe('Function Wrapper Integration Tests', () => {
           createdAt: new Date().toISOString(),
         };
       };
-      
+
       // Create process chain
       const createOrder = createProcessChain({
         serviceName: 'order-service',
@@ -200,7 +203,7 @@ describe('Function Wrapper Integration Tests', () => {
         process: processOrder,
         outputValidation: validateOrderOutput,
       });
-      
+
       // Test valid input
       const validInput = {
         userId: 'user-123',
@@ -211,20 +214,20 @@ describe('Function Wrapper Integration Tests', () => {
         shippingAddress: '123 Main St, City, Country',
         discountCode: 'DISCOUNT10',
       };
-      
+
       const result = await createOrder(validInput);
-      
+
       expect(result).toHaveProperty('orderId');
       expect(result).toHaveProperty('userId', 'user-123');
       expect(result).toHaveProperty('total', 31.5); // (10*2 + 15*1) * 0.9
       expect(result).toHaveProperty('status', 'created');
-      
+
       // Test invalid input - missing userId
       const invalidInput1 = {
         items: [{ id: 'item-1', name: 'Product 1', price: 10, quantity: 2 }],
         shippingAddress: '123 Main St, City, Country',
       };
-      
+
       try {
         await createOrder(invalidInput1);
         // Should not reach here
@@ -233,14 +236,14 @@ describe('Function Wrapper Integration Tests', () => {
         expect(error.code).toBe('VALIDATION_ERROR');
         expect(error.message).toContain('User ID is required');
       }
-      
+
       // Test invalid input - no items
       const invalidInput2 = {
         userId: 'user-123',
         items: [],
         shippingAddress: '123 Main St, City, Country',
       };
-      
+
       try {
         await createOrder(invalidInput2);
         // Should not reach here
@@ -256,33 +259,31 @@ describe('Function Wrapper Integration Tests', () => {
     it('should handle high volume of operations efficiently', async () => {
       // Create a simple wrapper
       const wrap = createServiceWrapper('test-service');
-      
+
       // Create a test function
       const testFunction = async (id: number) => {
         return wrap({ operation: 'testOp', id }, async () => {
           return { id, result: id * 2 };
         });
       };
-      
+
       // Run multiple operations in parallel
       const startTime = Date.now();
-      
-      const results = await Promise.all(
-        Array.from({ length: 100 }, (_, i) => testFunction(i))
-      );
-      
+
+      const results = await Promise.all(Array.from({ length: 100 }, (_, i) => testFunction(i)));
+
       const endTime = Date.now();
       const duration = endTime - startTime;
-      
+
       // Verify results
       expect(results).toHaveLength(100);
       expect(results[0]).toEqual({ id: 0, result: 0 });
       expect(results[99]).toEqual({ id: 99, result: 198 });
-      
+
       // This is a loose performance test - mainly checking that the wrapper
       // doesn't add significant overhead
       console.log(`Processed 100 operations in ${duration}ms`);
-      
+
       // In a real test environment, we might have a more specific threshold
       // but for this test we're just ensuring it completes in a reasonable time
       expect(duration).toBeLessThan(5000); // Very generous threshold

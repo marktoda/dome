@@ -31,12 +31,12 @@ vi.mock('@dome/logging', () => {
       warn: vi.fn(),
       error: vi.fn(),
       child: vi.fn().mockReturnThis(),
-    })
+    }),
   };
-  
+
   // Make sure child also returns the same structure
   mockLogger.child.mockReturnValue(mockLogger);
-  
+
   return {
     getLogger: vi.fn().mockReturnValue(mockLogger),
     withLogger: vi.fn((_, fn) => fn()),
@@ -65,7 +65,7 @@ vi.mock('jose', () => {
         role: 'user',
         exp: Math.floor(Date.now() / 1000) + 3600,
         iat: Math.floor(Date.now() / 1000),
-      }
+      },
     }),
   };
 });

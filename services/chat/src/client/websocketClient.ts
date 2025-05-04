@@ -56,14 +56,14 @@ export class WebSocketClient {
   constructor(
     private readonly url: string,
     private readonly metricsPrefix: string = 'chat_orchestrator.ws_client',
-    options: WebSocketOptions = {}
+    options: WebSocketOptions = {},
   ) {
     // Set default options
     this.options = {
       autoReconnect: options.autoReconnect ?? true,
       maxReconnectAttempts: options.maxReconnectAttempts ?? 5,
       reconnectDelayMs: options.reconnectDelayMs ?? 1000,
-      maxReconnectDelayMs: options.maxReconnectDelayMs ?? 30000
+      maxReconnectDelayMs: options.maxReconnectDelayMs ?? 30000,
     };
   }
 
@@ -73,10 +73,7 @@ export class WebSocketClient {
    * @param callbacks Callback handlers for WebSocket events
    * @returns Promise that resolves when the connection is established
    */
-  async generateChatResponse(
-    request: ChatRequest,
-    callbacks: WebSocketCallbacks
-  ): Promise<void> {
+  async generateChatResponse(request: ChatRequest, callbacks: WebSocketCallbacks): Promise<void> {
     const startTime = performance.now();
 
     try {
@@ -96,15 +93,12 @@ export class WebSocketClient {
       // Send the initial message
       this.sendMessage({
         type: 'new_chat',
-        ...validatedRequest
+        ...validatedRequest,
       });
 
       // Track metrics
       metrics.increment(`${this.metricsPrefix}.connect.success`, 1);
-      metrics.timing(
-        `${this.metricsPrefix}.connect.latency_ms`,
-        performance.now() - startTime
-      );
+      metrics.timing(`${this.metricsPrefix}.connect.latency_ms`, performance.now() - startTime);
     } catch (error) {
       logError(error, 'Error establishing WebSocket chat connection', {
         userId: request.userId,
@@ -132,7 +126,7 @@ export class WebSocketClient {
    */
   async resumeChatSession(
     request: ResumeChatRequest,
-    callbacks: WebSocketCallbacks
+    callbacks: WebSocketCallbacks,
   ): Promise<void> {
     const startTime = performance.now();
 
@@ -150,15 +144,12 @@ export class WebSocketClient {
       // Send the initial message
       this.sendMessage({
         type: 'resume_chat',
-        ...request
+        ...request,
       });
 
       // Track metrics
       metrics.increment(`${this.metricsPrefix}.resume.success`, 1);
-      metrics.timing(
-        `${this.metricsPrefix}.resume.latency_ms`,
-        performance.now() - startTime
-      );
+      metrics.timing(`${this.metricsPrefix}.resume.latency_ms`, performance.now() - startTime);
     } catch (error) {
       logError(error, 'Error resuming WebSocket chat session', {
         runId: request.runId,
@@ -222,12 +213,12 @@ export class WebSocketClient {
 
         this.webSocket.addEventListener('error', (event: WebSocketEventMap['error']) => {
           this.logger.error('WebSocket error occurred');
-          
+
           // Only reject the promise if we haven't connected yet
           if (this.webSocket?.readyState !== WebSocket.OPEN) {
             reject(new Error('WebSocket connection error'));
           }
-          
+
           // Invoke error callback if provided
           if (this.callbackHandlers.onError) {
             this.callbackHandlers.onError('WebSocket connection error');
@@ -235,11 +226,14 @@ export class WebSocketClient {
         });
 
         this.webSocket.addEventListener('close', (event: WebSocketEventMap['close']) => {
-          this.logger.info({
-            code: event.code,
-            reason: event.reason
-          }, 'WebSocket closed');
-          
+          this.logger.info(
+            {
+              code: event.code,
+              reason: event.reason,
+            },
+            'WebSocket closed',
+          );
+
           this.webSocket = null;
 
           // Don't attempt to reconnect if this was an intentional close
@@ -248,7 +242,7 @@ export class WebSocketClient {
           } else {
             // If this was intended, reset the flag
             this.isClosingIntentionally = false;
-            
+
             // Call the end callback if provided
             if (this.callbackHandlers.onEnd) {
               this.callbackHandlers.onEnd();
@@ -273,10 +267,10 @@ export class WebSocketClient {
       this.logger.debug({ messageType: message.type }, 'Sent WebSocket message');
     } else {
       this.logger.warn(
-        { readyState: this.webSocket?.readyState }, 
-        'Cannot send message, WebSocket not open'
+        { readyState: this.webSocket?.readyState },
+        'Cannot send message, WebSocket not open',
       );
-      
+
       if (this.callbackHandlers.onError) {
         this.callbackHandlers.onError('WebSocket not connected');
       }
@@ -290,16 +284,20 @@ export class WebSocketClient {
   private handleMessage(event: WebSocketEventMap['message']): void {
     try {
       // Cloudflare WebSocket's data property can be string or ArrayBuffer
-      const data = typeof event.data === 'string'
-        ? event.data
-        : new TextDecoder().decode(event.data as ArrayBuffer);
-      
+      const data =
+        typeof event.data === 'string'
+          ? event.data
+          : new TextDecoder().decode(event.data as ArrayBuffer);
+
       const message = JSON.parse(data) as WebSocketMessage;
-      
-      this.logger.debug({
-        messageType: message.type,
-        dataKeys: Object.keys(message.data)
-      }, 'Received WebSocket message');
+
+      this.logger.debug(
+        {
+          messageType: message.type,
+          dataKeys: Object.keys(message.data),
+        },
+        'Received WebSocket message',
+      );
 
       // Dispatch to the appropriate handler
       switch (message.type) {
@@ -308,45 +306,45 @@ export class WebSocketClient {
             this.callbackHandlers.onText(message.data.text);
           }
           break;
-          
+
         case MessageType.SOURCES:
           if (this.callbackHandlers.onSources && message.data.sources) {
             this.callbackHandlers.onSources(message.data.sources);
           }
           break;
-          
+
         case MessageType.WORKFLOW_STEP:
           if (this.callbackHandlers.onWorkflowStep && message.data.step) {
             this.callbackHandlers.onWorkflowStep(message.data.step);
           }
           break;
-          
+
         case MessageType.FINAL:
           if (this.callbackHandlers.onFinal && message.data.executionTimeMs) {
-            this.callbackHandlers.onFinal({ 
-              executionTimeMs: message.data.executionTimeMs 
+            this.callbackHandlers.onFinal({
+              executionTimeMs: message.data.executionTimeMs,
             });
           }
           break;
-          
+
         case MessageType.ERROR:
           if (this.callbackHandlers.onError && message.data.message) {
             this.callbackHandlers.onError(message.data.message);
           }
           break;
-          
+
         case MessageType.END:
           if (this.callbackHandlers.onEnd) {
             this.callbackHandlers.onEnd();
           }
           break;
-          
+
         default:
           this.logger.warn({ type: message.type }, 'Unknown message type received');
       }
     } catch (error) {
       this.logger.error({ error, data: event.data }, 'Error parsing WebSocket message');
-      
+
       if (this.callbackHandlers.onError) {
         this.callbackHandlers.onError('Error parsing message from server');
       }
@@ -366,14 +364,14 @@ export class WebSocketClient {
     // Check if we've exceeded the max reconnect attempts
     if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
       this.logger.warn(
-        { attempts: this.reconnectAttempts }, 
-        'Max reconnect attempts reached, giving up'
+        { attempts: this.reconnectAttempts },
+        'Max reconnect attempts reached, giving up',
       );
-      
+
       if (this.callbackHandlers.onError) {
         this.callbackHandlers.onError('Connection lost. Max reconnection attempts reached.');
       }
-      
+
       return;
     }
 
@@ -383,26 +381,26 @@ export class WebSocketClient {
     // Calculate backoff delay (exponential backoff with jitter)
     const baseDelay = Math.min(
       this.options.reconnectDelayMs * Math.pow(1.5, this.reconnectAttempts - 1),
-      this.options.maxReconnectDelayMs
+      this.options.maxReconnectDelayMs,
     );
-    
+
     // Add jitter (±15%)
     const jitter = baseDelay * 0.3 * (Math.random() - 0.5);
     const delay = Math.floor(baseDelay + jitter);
 
     this.logger.info(
-      { 
-        attempt: this.reconnectAttempts, 
+      {
+        attempt: this.reconnectAttempts,
         maxAttempts: this.options.maxReconnectAttempts,
-        delayMs: delay 
+        delayMs: delay,
       },
-      'Scheduling WebSocket reconnection attempt'
+      'Scheduling WebSocket reconnection attempt',
     );
 
     // Schedule reconnection
     this.reconnectTimeout = setTimeout(() => {
       this.logger.info({ attempt: this.reconnectAttempts }, 'Attempting to reconnect WebSocket');
-      
+
       this.connect(wsUrl).catch(error => {
         this.logger.error({ error, attempt: this.reconnectAttempts }, 'Reconnection failed');
       });
@@ -431,7 +429,7 @@ export class WebSocketClient {
 export function createWebSocketClient(
   url: string,
   metricsPrefix?: string,
-  options?: WebSocketOptions
+  options?: WebSocketOptions,
 ): WebSocketClient {
   return new WebSocketClient(url, metricsPrefix, options);
 }

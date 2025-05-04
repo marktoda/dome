@@ -10,19 +10,19 @@ import {
   ChatServerResponse,
   ResponseMetadata,
   ServerResponseMetadata,
-  createChatClient
+  createChatClient,
 } from './client';
 import {
   WebSocketClient,
   WebSocketCallbacks,
   WebSocketOptions,
-  createWebSocketClient
+  createWebSocketClient,
 } from './websocketClient';
 import {
   ThinkingEventHandler,
   EventType,
   createThinkingEventHandler,
-  SSEEvent
+  SSEEvent,
 } from './thinkingEventHandler';
 import { ChatRequest } from '../types';
 
@@ -40,7 +40,7 @@ export {
   ThinkingEventHandler,
   EventType,
   createThinkingEventHandler,
-  SSEEvent
+  SSEEvent,
 };
 
 export * from '../types';

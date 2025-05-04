@@ -189,7 +189,10 @@ export const MODELS = {
 /**
  * Type for model identifiers
  */
-export type ModelId = keyof typeof MODELS.OPENAI | keyof typeof MODELS.CLOUDFLARE | keyof typeof MODELS.ANTHROPIC;
+export type ModelId =
+  | keyof typeof MODELS.OPENAI
+  | keyof typeof MODELS.CLOUDFLARE
+  | keyof typeof MODELS.ANTHROPIC;
 
 /**
  * Get the default model configuration based on environment or settings
@@ -253,9 +256,7 @@ export function getAllModels(productionOnly = false): ModelConfig[] {
     ...Object.values(MODELS.ANTHROPIC),
   ];
 
-  return productionOnly
-    ? allModels.filter(model => model.productionReady)
-    : allModels;
+  return productionOnly ? allModels.filter(model => model.productionReady) : allModels;
 }
 
 /**

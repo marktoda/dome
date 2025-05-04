@@ -9,8 +9,7 @@ export type Identity = {
   email?: string;
   role?: string;
   name?: string;
-}
-
+};
 
 export interface RequestContext {
   logger: Logger;
@@ -25,16 +24,12 @@ export const getIdentity: () => Identity | undefined = () => ctxStore.getStore()
 export const getLogger: () => Logger = () => ctxStore.getStore()?.logger ?? baseLogger;
 export const getRequestId: () => string | undefined = () => ctxStore.getStore()?.requestId;
 
-
 type Meta = Record<string, unknown> & {
   level?: string;
   identity?: Identity;
 };
 
-export async function withContext<T>(
-  meta: Meta,
-  fn: (log: Logger) => Promise<T> | T,
-): Promise<T> {
+export async function withContext<T>(meta: Meta, fn: (log: Logger) => Promise<T> | T): Promise<T> {
   /* 1 - derive a child logger from the metadata */
   const child = baseLogger.child(meta, { level: meta.level });
 

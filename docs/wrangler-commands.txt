@@ -8,6 +8,7 @@ wrangler queues create silo-content-uploaded
 wrangler queues create new-content-constellation
 // silo -> ai
 wrangler queues create new-content-ai
+wrangler queues create ai-processor-rate-limit-dlq
 
 // constellation <> constellation
 wrangler queues create embed-dead-letter

@@ -23,10 +23,10 @@ const servicesDir = path.resolve(__dirname, '../services');
 async function scanDirectory(dir) {
   console.log(`Scanning directory: ${dir}`);
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  
+
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    
+
     if (entry.isDirectory()) {
       // Look for wrangler.toml in this directory
       const wranglerPath = path.join(fullPath, 'wrangler.toml');
@@ -44,56 +44,60 @@ async function scanDirectory(dir) {
 
 async function processWranglerFile(filePath) {
   console.log(`Processing: ${filePath}`);
-  
+
   try {
     // Read the file
     const content = await fs.readFile(filePath, 'utf8');
-    
+
     // Parse the TOML
     const config = parse(content);
-    
+
     // Check if compatibility_flags exists and contains nodejs_compat or nodejs_als
     let modified = false;
-    
+
     if (!config.compatibility_flags) {
       // No compatibility_flags array exists
-      config.compatibility_flags = ["nodejs_compat"];
+      config.compatibility_flags = ['nodejs_compat'];
       modified = true;
     } else if (Array.isArray(config.compatibility_flags)) {
       // Check if nodejs_compat or nodejs_als already exists
-      const hasNodeJsCompat = config.compatibility_flags.includes("nodejs_compat");
-      const hasNodeJsAls = config.compatibility_flags.includes("nodejs_als");
-      
+      const hasNodeJsCompat = config.compatibility_flags.includes('nodejs_compat');
+      const hasNodeJsAls = config.compatibility_flags.includes('nodejs_als');
+
       if (!hasNodeJsCompat && !hasNodeJsAls) {
         // Add nodejs_compat to the array
-        config.compatibility_flags.push("nodejs_compat");
+        config.compatibility_flags.push('nodejs_compat');
         modified = true;
       } else if (hasNodeJsAls && !hasNodeJsCompat) {
         // Replace nodejs_als with nodejs_compat as per task requirement
-        const index = config.compatibility_flags.indexOf("nodejs_als");
-        config.compatibility_flags[index] = "nodejs_compat";
+        const index = config.compatibility_flags.indexOf('nodejs_als');
+        config.compatibility_flags[index] = 'nodejs_compat';
         modified = true;
       }
     } else {
       // compatibility_flags exists but is not an array
-      config.compatibility_flags = ["nodejs_compat"];
+      config.compatibility_flags = ['nodejs_compat'];
       modified = true;
     }
-    
+
     if (modified) {
       // Add a comment explaining the AsyncLocalStorage requirement
       // Unfortunately, TOML libraries don't handle comments well, so we'll
       // need to do some string manipulation
       const serialized = stringify(config);
-      
+
       // Find the compatibility_flags line
       const lines = serialized.split('\n');
       const flagsIndex = lines.findIndex(line => line.startsWith('compatibility_flags'));
-      
+
       if (flagsIndex !== -1) {
         // Add a comment after the line
-        lines.splice(flagsIndex + 1, 0, '# Required for AsyncLocalStorage in auth propagation system');
-        
+        lines.splice(
+          flagsIndex + 1,
+          0,
+          '# Required for AsyncLocalStorage in auth propagation system',
+        );
+
         // Write the file back
         await fs.writeFile(filePath, lines.join('\n'), 'utf8');
         console.log(`Updated ${filePath} - added nodejs_compat flag`);
@@ -105,7 +109,6 @@ async function processWranglerFile(filePath) {
     } else {
       console.log(`No changes needed for ${filePath}`);
     }
-    
   } catch (error) {
     console.error(`Error processing ${filePath}:`, error);
   }
@@ -114,8 +117,10 @@ async function processWranglerFile(filePath) {
 async function main() {
   try {
     // Add a package.json check to remind users to install @iarna/toml
-    console.log('Note: This script requires @iarna/toml package. Install with: npm install -g @iarna/toml');
-    
+    console.log(
+      'Note: This script requires @iarna/toml package. Install with: npm install -g @iarna/toml',
+    );
+
     console.log('Starting to scan services directory for wrangler.toml files...');
     await scanDirectory(servicesDir);
     console.log('Completed scanning all services.');

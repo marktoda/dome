@@ -24,15 +24,14 @@ export const webSearchOutput = z.object({
       url: z.string().url(),
       snippet: z.string().optional(),
       published: z.string().optional(), // ISO 8601
-      source: z.string().optional(),    // domain / provider
+      source: z.string().optional(), // domain / provider
     }),
   ),
 });
 
-export type RawSearchInput = z.input<typeof webSearchInput>;   // topK?: number
-export type ParsedSearchInput = z.output<typeof webSearchInput>;  // topK:  number
-export type WebSearchOutput = z.output<typeof webSearchOutput>;  // topK:  number
-
+export type RawSearchInput = z.input<typeof webSearchInput>; // topK?: number
+export type ParsedSearchInput = z.output<typeof webSearchInput>; // topK:  number
+export type WebSearchOutput = z.output<typeof webSearchOutput>; // topK:  number
 
 /* ------------------------------------------------------------------ */
 /* Helper that actually hits the search API.                          */
@@ -44,15 +43,15 @@ async function fetchBraveSearch(
   freshDays: number | undefined,
   apiKey: string,
 ) {
-  const url = new URL("https://api.search.brave.com/res/v1/web/search");
-  url.searchParams.set("q", q);
-  url.searchParams.set("count", String(k));
-  if (freshDays) url.searchParams.set("freshness", `${freshDays}d`);
+  const url = new URL('https://api.search.brave.com/res/v1/web/search');
+  url.searchParams.set('q', q);
+  url.searchParams.set('count', String(k));
+  if (freshDays) url.searchParams.set('freshness', `${freshDays}d`);
 
   const resp = await fetch(url.toString(), {
     headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": apiKey,
+      Accept: 'application/json',
+      'X-Subscription-Token': apiKey,
     },
   });
   if (!resp.ok) throw new Error(`Search API error • ${resp.status}`);
@@ -73,33 +72,30 @@ async function fetchBraveSearch(
 /* ------------------------------------------------------------------ */
 /* Tool implementation                                                */
 /* ------------------------------------------------------------------ */
-export const webSearchTool: RetrievalTool<
-  ParsedSearchInput,
-  WebSearchOutput,
-  RawSearchInput
-> = {
-  name: "web_search",
-  description:
-    "Searches the public web and returns the most relevant links with brief snippets.",
+export const webSearchTool: RetrievalTool<ParsedSearchInput, WebSearchOutput, RawSearchInput> = {
+  name: 'web_search',
+  description: 'Searches the public web and returns the most relevant links with brief snippets.',
 
   inputSchema: webSearchInput,
   outputSchema: webSearchOutput,
 
   async retrieve(input: RetrievalInput, env: Env): Promise<WebSearchOutput> {
-    return this.execute({
-      query: input.query,
-      topK: DEFAULT_TOP_K,
-      freshDays: DEFAULT_FRESH_DAYS,
-    }, env)
-
+    return this.execute(
+      {
+        query: input.query,
+        topK: DEFAULT_TOP_K,
+        freshDays: DEFAULT_FRESH_DAYS,
+      },
+      env,
+    );
   },
 
   async execute(input, env: Env): Promise<WebSearchOutput> {
     const apiKey = env?.SEARCH_API_KEY;
-    if (!apiKey) throw new Error("SEARCH_API_KEY is not configured");
+    if (!apiKey) throw new Error('SEARCH_API_KEY is not configured');
 
     const { query, topK, freshDays } = input;
-    getLogger().info({ query, topK, freshDays }, "[webSearchTool]: Searching web");
+    getLogger().info({ query, topK, freshDays }, '[webSearchTool]: Searching web');
     // Handle nullable values with sensible defaults
     const effectiveTopK = topK ?? DEFAULT_TOP_K;
     const effectiveFreshDays = freshDays ?? DEFAULT_FRESH_DAYS;
@@ -118,16 +114,15 @@ export const webSearchTool: RetrievalTool<
         createdAt: r.published,
         source: r.source || '',
         sourceType: 'web',
-      }
+      },
     }));
-
   },
 
   examples: [
     {
-      input: { query: "latest GPU trends", topK: 3 },
+      input: { query: 'latest GPU trends', topK: 3 },
       output: { results: [] },
-      description: "Shows news articles about current GPU market trends",
+      description: 'Shows news articles about current GPU market trends',
     },
   ],
 };

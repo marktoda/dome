@@ -25,14 +25,15 @@ export const TsunamiErrors = createErrorFactory('tsunami', {
 export function assertValid(
   condition: string | boolean | undefined | null,
   message: string,
-  details: Record<string, any> = {}
+  details: Record<string, any> = {},
 ): void {
   // Explicitly convert string expressions to boolean
-  const boolCondition = condition !== null && 
-                       condition !== undefined && 
-                       condition !== '' && 
-                       (typeof condition === 'boolean' ? condition : true);
-  
+  const boolCondition =
+    condition !== null &&
+    condition !== undefined &&
+    condition !== '' &&
+    (typeof condition === 'boolean' ? condition : true);
+
   originalAssertValid(!!boolCondition, message, details);
 }
 
@@ -44,13 +45,13 @@ export function assertValid(
  * @returns A DomeError instance
  */
 export function toDomeError(
-  error: unknown, 
+  error: unknown,
   defaultMessage = 'An unexpected error occurred in Tsunami service',
-  defaultDetails: Record<string, any> = {}
+  defaultDetails: Record<string, any> = {},
 ) {
   return baseToDomeError(error, defaultMessage, {
     service: 'tsunami',
-    ...defaultDetails
+    ...defaultDetails,
   });
 }
 
@@ -58,9 +59,11 @@ export function toDomeError(
 /**
  * Create error middleware for Hono that's compatible with the Tsunami service
  */
-export function createErrorMiddleware(options: {
-  errorMapper?: (err: unknown) => any;
-} = {}) {
+export function createErrorMiddleware(
+  options: {
+    errorMapper?: (err: unknown) => any;
+  } = {},
+) {
   return async (c: any, next: any) => {
     try {
       await next();
@@ -90,8 +93,8 @@ export function createErrorMiddleware(options: {
         error: {
           code: error.code || 'INTERNAL_ERROR',
           message: error.message || 'An unexpected error occurred',
-          details: error.details
-        }
+          details: error.details,
+        },
       });
     }
   };
@@ -103,5 +106,5 @@ export {
   ConflictError,
   ServiceUnavailableError,
   originalAssertExists as assertExists,
-  createErrorFactory
+  createErrorFactory,
 };

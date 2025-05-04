@@ -17,7 +17,7 @@
  *           type: string
  *           default: "PT1H"
  *           description: ISO8601 duration string for sync frequency (e.g., PT1H for 1 hour)
- *     
+ *
  *     NotionOAuthConfiguration:
  *       type: object
  *       required:
@@ -34,7 +34,7 @@
  *         userId:
  *           type: string
  *           description: Optional user ID to associate with the OAuth token
- *     
+ *
  *     NotionOAuthUrlRequest:
  *       type: object
  *       required:
@@ -72,7 +72,7 @@
  *         description: Invalid request
  *       500:
  *         description: Server error
- * 
+ *
  * /content/notion/{workspaceId}/history:
  *   get:
  *     summary: Get Notion workspace sync history
@@ -102,7 +102,7 @@
  *         description: Workspace not found
  *       500:
  *         description: Server error
- * 
+ *
  * /content/notion/{workspaceId}/sync:
  *   post:
  *     summary: Trigger Notion workspace sync
@@ -125,7 +125,7 @@
  *         description: Workspace not found
  *       500:
  *         description: Server error
- * 
+ *
  * /content/notion/oauth:
  *   post:
  *     summary: Configure Notion OAuth
@@ -147,7 +147,7 @@
  *         description: Invalid request
  *       500:
  *         description: Server error
- * 
+ *
  * /content/notion/oauth/url:
  *   get:
  *     summary: Get Notion OAuth URL

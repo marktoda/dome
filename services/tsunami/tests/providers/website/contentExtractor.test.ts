@@ -34,9 +34,9 @@ describe('ContentExtractor', () => {
           </body>
         </html>
       `;
-      
+
       const result = extractor.extract(html, 'https://example.com');
-      
+
       expect(result).toContain('Main Content');
       expect(result).toContain('This is the main content.');
       expect(result).not.toContain('Header content');
@@ -57,9 +57,9 @@ describe('ContentExtractor', () => {
           </body>
         </html>
       `;
-      
+
       const result = extractor.extract(html, 'https://example.com');
-      
+
       expect(result).toContain('Article Content');
       expect(result).toContain('This is the article content.');
       expect(result).not.toContain('Header content');
@@ -80,9 +80,9 @@ describe('ContentExtractor', () => {
           </body>
         </html>
       `;
-      
+
       const result = extractor.extract(html, 'https://example.com');
-      
+
       expect(result).toContain('Content Div');
       expect(result).toContain('This is the content div.');
       expect(result).not.toContain('Header content');
@@ -99,9 +99,9 @@ describe('ContentExtractor', () => {
           </body>
         </html>
       `;
-      
+
       const result = extractor.extract(html, 'https://example.com');
-      
+
       expect(result).toContain('Body Content');
       expect(result).toContain('This is the body content.');
     });
@@ -126,9 +126,9 @@ describe('ContentExtractor', () => {
           </body>
         </html>
       `;
-      
+
       const result = extractor.extract(html, 'https://example.com');
-      
+
       expect(result).toContain('Content');
       expect(result).toContain('This is the content.');
       expect(result).not.toContain('console.log');
@@ -153,9 +153,9 @@ describe('ContentExtractor', () => {
           </body>
         </html>
       `;
-      
+
       const result = extractor.extract(html, 'https://example.com');
-      
+
       expect(result).toContain('Content');
       expect(result).toContain('This is the content.');
       expect(result).not.toContain('Advertisement');
@@ -172,9 +172,9 @@ describe('ContentExtractor', () => {
           <p>Copyright &copy; 2025</p>
         </div>
       `;
-      
+
       const result = extractor.extract(html, 'https://example.com');
-      
+
       expect(result).toContain('This & that');
       expect(result).toContain('Less than < greater than >');
       expect(result).toContain('Quote "test" and apostrophe\'s');
@@ -192,9 +192,9 @@ describe('ContentExtractor', () => {
           </body>
         </html>
       `;
-      
+
       const result = extractor.extract(malformedHtml, 'https://example.com');
-      
+
       // Should still extract something meaningful
       expect(result).toContain('Malformed HTML');
       expect(result).toContain('Missing closing tags');
@@ -206,13 +206,13 @@ describe('ContentExtractor', () => {
       extractSpy.mockImplementationOnce(() => {
         throw new Error('Extraction error');
       });
-      
+
       const html = '<html><body><p>Original content</p></body></html>';
-      
+
       const result = extractor.extract(html, 'https://example.com');
-      
+
       expect(result).toBe(html);
-      
+
       // Restore the original implementation
       extractSpy.mockRestore();
     });

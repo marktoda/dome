@@ -44,7 +44,7 @@ vi.mock('@dome/logging', () => {
     error: vi.fn(),
     debug: vi.fn(),
   };
-  
+
   const mockLogger = {
     info: vi.fn(),
     warn: vi.fn(),

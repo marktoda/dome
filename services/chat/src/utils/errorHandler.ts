@@ -19,7 +19,7 @@ export function withErrorHandling<T, Args extends any[]>(
       logError(domeError, `Unhandled error in ${operation}`);
       metrics.increment('chat_orchestrator.unhandled_errors', 1, {
         operation,
-        errorCode: domeError.code || 'UNKNOWN'
+        errorCode: domeError.code || 'UNKNOWN',
       });
       throw domeError;
     }
@@ -44,9 +44,9 @@ export function withNodeErrorHandling<T, Args extends any[]>(
     } catch (error) {
       const domeError = toDomeError(error, `Error in ${nodeName} node`, {
         node: nodeName,
-        context: args[0]?.context || {}
+        context: args[0]?.context || {},
       });
-      
+
       logger.error({ error: domeError }, `Error in ${nodeName} node`);
 
       // Re-throw the DomeError for the caller to handle

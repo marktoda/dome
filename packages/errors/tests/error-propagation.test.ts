@@ -1,12 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Context } from 'hono';
-import {
-  DomeError,
-  ValidationError,
-  NotFoundError,
-  errorHandler,
-  toDomeError
-} from '../src';
+import { DomeError, ValidationError, NotFoundError, errorHandler, toDomeError } from '../src';
 
 // Mock Hono Response
 class MockResponse {
@@ -27,7 +21,7 @@ describe('Error Propagation Across Service Boundaries', () => {
     async callDownstreamService(requestId: string) {
       // Simulate calling another service
       return await downstreamService.performOperation(requestId);
-    }
+    },
   };
 
   const downstreamService = {
@@ -36,7 +30,7 @@ describe('Error Propagation Across Service Boundaries', () => {
         throw new NotFoundError('Resource not found in downstream service', { requestId });
       }
       return { success: true, requestId };
-    }
+    },
   };
 
   // Spy on service methods
@@ -52,19 +46,19 @@ describe('Error Propagation Across Service Boundaries', () => {
   it('should propagate request ID through service calls', async () => {
     const requestId = 'test-request-id-123';
     const result = await upstreamService.callDownstreamService(requestId);
-    
+
     expect(result).toEqual({ success: true, requestId: 'test-request-id-123' });
     expect(downstreamService.performOperation).toHaveBeenCalledWith(requestId);
   });
 
   it('should preserve error context when propagating errors', async () => {
     const requestId = 'test-request-id-456';
-    
+
     // Mock downstream service to throw an error
-    downstreamService.performOperation = vi.fn().mockImplementation((reqId) => {
+    downstreamService.performOperation = vi.fn().mockImplementation(reqId => {
       throw new NotFoundError('Resource not found in downstream service', { requestId: reqId });
     });
-    
+
     try {
       await upstreamService.callDownstreamService(requestId);
       // Should not reach here
@@ -80,24 +74,24 @@ describe('Error Propagation Across Service Boundaries', () => {
 
   it('should enrich errors with additional context when re-throwing', async () => {
     const requestId = 'test-request-id-789';
-    
+
     // Mock upstream service to catch and enrich errors
-    upstreamService.callDownstreamService = vi.fn().mockImplementation(async (reqId) => {
+    upstreamService.callDownstreamService = vi.fn().mockImplementation(async reqId => {
       try {
         return await downstreamService.performOperation(reqId, true);
       } catch (error) {
         // Enrich the error with additional context
         if (error instanceof DomeError) {
-          error.withContext({ 
+          error.withContext({
             service: 'upstream',
             operation: 'callDownstreamService',
-            timestamp: expect.any(String)
+            timestamp: expect.any(String),
           });
         }
         throw error;
       }
     });
-    
+
     try {
       await upstreamService.callDownstreamService(requestId);
       // Should not reach here
@@ -110,7 +104,7 @@ describe('Error Propagation Across Service Boundaries', () => {
         requestId: 'test-request-id-789',
         service: 'upstream',
         operation: 'callDownstreamService',
-        timestamp: expect.any(String)
+        timestamp: expect.any(String),
       });
     }
   });
@@ -123,24 +117,24 @@ describe('End-to-End Error Handling', () => {
       req: {
         path: '/test/api',
         method: 'GET',
-        header: (name: string) => name === 'x-request-id' ? requestId : null
+        header: (name: string) => (name === 'x-request-id' ? requestId : null),
       },
       res: new MockResponse(),
       set: vi.fn(),
-      get: vi.fn().mockImplementation((key) => {
+      get: vi.fn().mockImplementation(key => {
         if (key === 'logger') {
           return { error: vi.fn() };
         }
         return undefined;
       }),
-      status: function(code: number) {
+      status: function (code: number) {
         this.res.status = code;
         return this;
       },
-      json: function(data: any) {
+      json: function (data: any) {
         this.res.body = data;
         return this;
-      }
+      },
     };
   }
 
@@ -148,10 +142,10 @@ describe('End-to-End Error Handling', () => {
   async function runServiceWithMiddleware(
     context: any,
     operation: () => Promise<any>,
-    options = {}
+    options = {},
   ) {
     const handler = errorHandler(options);
-    
+
     try {
       await handler(context, async () => {
         return await operation();
@@ -161,42 +155,41 @@ describe('End-to-End Error Handling', () => {
       console.error('Unexpected error escaped middleware:', error);
       throw error;
     }
-    
+
     return {
       status: context.res.status,
-      body: context.res.body
+      body: context.res.body,
     };
   }
 
   it('should handle errors with request ID propagation', async () => {
     const requestId = 'end-to-end-req-id-123';
     const mockCtx = createMockContext(requestId);
-    
+
     const operation = async () => {
       throw new ValidationError('Invalid input data', { requestId });
     };
-    
+
     // Use options to exclude stack traces
-    const response = await runServiceWithMiddleware(
-      mockCtx,
-      operation,
-      { includeStack: false, includeCause: false }
-    );
-    
+    const response = await runServiceWithMiddleware(mockCtx, operation, {
+      includeStack: false,
+      includeCause: false,
+    });
+
     expect(response.status).toBe(400);
     expect(response.body).toEqual({
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Invalid input data',
-        details: { requestId }
-      }
+        details: { requestId },
+      },
     });
   });
 
   it('should convert and standardize errors across multiple services', async () => {
     const requestId = 'end-to-end-req-id-456';
     const mockCtx = createMockContext(requestId);
-    
+
     // Simulate multiple service hops with error conversion
     const operation = async () => {
       try {
@@ -206,27 +199,26 @@ describe('End-to-End Error Handling', () => {
         throw toDomeError(error, 'Error in API Gateway', { layer: 'api-gateway' });
       }
     };
-    
-    const response = await runServiceWithMiddleware(
-      mockCtx,
-      operation,
-      { includeStack: false, includeCause: false }
-    );
-    
+
+    const response = await runServiceWithMiddleware(mockCtx, operation, {
+      includeStack: false,
+      includeCause: false,
+    });
+
     expect(response.status).toBe(500);
     expect(response.body.error.details).toEqual(
       expect.objectContaining({
         requestId,
         layer: 'api-gateway',
-        serviceHop: 3
-      })
+        serviceHop: 3,
+      }),
     );
   });
 
   it('should include request context in errors', async () => {
     const requestId = 'end-to-end-req-id-789';
     const mockCtx = createMockContext(requestId);
-    
+
     // Custom error mapping to include request context
     const errorMapper = (err: unknown) => {
       const domeError = toDomeError(err);
@@ -234,22 +226,22 @@ describe('End-to-End Error Handling', () => {
       domeError.withContext({
         path: mockCtx.req.path,
         method: mockCtx.req.method,
-        requestId
+        requestId,
       });
       return domeError;
     };
-    
+
     const operation = async () => {
       throw new Error('Generic error');
     };
-    
+
     const response = await runServiceWithMiddleware(mockCtx, operation, { errorMapper });
-    
+
     expect(response.status).toBe(500);
     expect(response.body.error.details).toEqual({
       path: '/test/api',
       method: 'GET',
-      requestId: 'end-to-end-req-id-789'
+      requestId: 'end-to-end-req-id-789',
     });
   });
 });
@@ -263,15 +255,15 @@ async function simulateServiceCall(depth: number, requestId: string) {
       statusCode: 500,
       details: {
         serviceHop: depth,
-        requestId
-      }
+        requestId,
+      },
     });
   }
-  
+
   if (depth <= 0) {
     return { success: true };
   }
-  
+
   try {
     // Continue the recursive chain
     return await simulateServiceCall(depth - 1, requestId);
@@ -280,7 +272,7 @@ async function simulateServiceCall(depth: number, requestId: string) {
     if (error instanceof DomeError) {
       error.withContext({
         serviceHop: depth,
-        requestId
+        requestId,
       });
     } else {
       throw new DomeError('Service error', {
@@ -289,8 +281,8 @@ async function simulateServiceCall(depth: number, requestId: string) {
         details: {
           serviceHop: depth,
           requestId,
-          originalError: error instanceof Error ? error.message : String(error)
-        }
+          originalError: error instanceof Error ? error.message : String(error),
+        },
       });
     }
     // Re-throw the enriched error to continue propagation

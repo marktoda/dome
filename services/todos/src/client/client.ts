@@ -17,7 +17,7 @@ import {
   BatchUpdateInput,
   BatchUpdateResult,
   TodoStats,
-  TodosErrorCode
+  TodosErrorCode,
 } from '../types';
 import { TodosBinding, TodosService } from './types';
 export { TodosBinding, TodosService } from './types';
@@ -37,7 +37,7 @@ export class TodosClient implements TodosService {
   constructor(
     private readonly binding: TodosBinding,
     private readonly metricsPrefix: string = 'todos.client',
-  ) { }
+  ) {}
 
   /**
    * Create a new todo item
@@ -46,11 +46,14 @@ export class TodosClient implements TodosService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'create_todo',
-        userId: todo.userId,
-        title: todo.title
-      }, 'Creating todo');
+      this.logger.info(
+        {
+          event: 'create_todo',
+          userId: todo.userId,
+          title: todo.title,
+        },
+        'Creating todo',
+      );
 
       const result = await this.binding.createTodo(todo);
 
@@ -72,10 +75,13 @@ export class TodosClient implements TodosService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'get_todo',
-        todoId: id
-      }, 'Getting todo');
+      this.logger.info(
+        {
+          event: 'get_todo',
+          todoId: id,
+        },
+        'Getting todo',
+      );
 
       const result = await this.binding.getTodo(id);
 
@@ -97,11 +103,14 @@ export class TodosClient implements TodosService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'list_todos',
-        userId: filter.userId,
-        filter
-      }, 'Listing todos');
+      this.logger.info(
+        {
+          event: 'list_todos',
+          userId: filter.userId,
+          filter,
+        },
+        'Listing todos',
+      );
 
       const result = await this.binding.listTodos(filter, pagination);
 
@@ -123,11 +132,14 @@ export class TodosClient implements TodosService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'update_todo',
-        todoId: id,
-        updates
-      }, 'Updating todo');
+      this.logger.info(
+        {
+          event: 'update_todo',
+          todoId: id,
+          updates,
+        },
+        'Updating todo',
+      );
 
       const result = await this.binding.updateTodo(id, updates);
 
@@ -149,10 +161,13 @@ export class TodosClient implements TodosService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'delete_todo',
-        todoId: id
-      }, 'Deleting todo');
+      this.logger.info(
+        {
+          event: 'delete_todo',
+          todoId: id,
+        },
+        'Deleting todo',
+      );
 
       const result = await this.binding.deleteTodo(id);
 
@@ -174,16 +189,22 @@ export class TodosClient implements TodosService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'batch_update_todos',
-        todoIds: ids,
-        updates
-      }, 'Batch updating todos');
+      this.logger.info(
+        {
+          event: 'batch_update_todos',
+          todoIds: ids,
+          updates,
+        },
+        'Batch updating todos',
+      );
 
       const result = await this.binding.batchUpdateTodos(ids, updates);
 
       metrics.increment(`${this.metricsPrefix}.batch_update_todos.success`);
-      metrics.timing(`${this.metricsPrefix}.batch_update_todos.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.batch_update_todos.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -200,10 +221,13 @@ export class TodosClient implements TodosService {
     const startTime = performance.now();
 
     try {
-      this.logger.info({
-        event: 'get_todo_stats',
-        userId
-      }, 'Getting todo statistics');
+      this.logger.info(
+        {
+          event: 'get_todo_stats',
+          userId,
+        },
+        'Getting todo statistics',
+      );
 
       const result = await this.binding.stats(userId);
 
@@ -225,9 +249,6 @@ export class TodosClient implements TodosService {
  * @param metricsPrefix Optional prefix for metrics (defaults to 'todos.client')
  * @returns A new TodosClient instance
  */
-export function createTodosClient(
-  binding: TodosBinding,
-  metricsPrefix?: string,
-): TodosClient {
+export function createTodosClient(binding: TodosBinding, metricsPrefix?: string): TodosClient {
   return new TodosClient(binding, metricsPrefix);
 }

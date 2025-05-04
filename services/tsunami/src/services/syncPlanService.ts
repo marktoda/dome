@@ -1,18 +1,12 @@
 import { ulid } from 'ulid';
-import {
-  getLogger,
-  logError,
-  metrics,
-  trackOperation,
-  getRequestId
-} from '@dome/common';
+import { getLogger, logError, metrics, trackOperation, getRequestId } from '@dome/common';
 import {
   NotFoundError,
   ConflictError,
   ValidationError,
   InternalError,
   toDomeError,
-  assertExists
+  assertExists,
 } from '@dome/errors';
 import { assertValid } from '../utils/errors';
 import { syncPlanOperations } from '../db/client';
@@ -29,71 +23,106 @@ export class SyncPlanService {
   private logger = getLogger();
   private domain = 'tsunami.syncPlanService';
 
-  constructor(private env: Env) { }
+  constructor(private env: Env) {}
 
   /* ─────────── Sync‑plan CRUD ─────────── */
 
   async getSyncPlan(resourceId: string) {
-    return trackOperation('getSyncPlan', async () => {
-      assertValid(resourceId && resourceId.trim().length > 0, 'ResourceId cannot be empty', { resourceId });
+    return trackOperation(
+      'getSyncPlan',
+      async () => {
+        assertValid(resourceId && resourceId.trim().length > 0, 'ResourceId cannot be empty', {
+          resourceId,
+        });
 
-      const plan = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
-      return assertExists(plan, `Sync‑plan for "${resourceId}" not found`, { resourceId, operation: 'getSyncPlan' });
-    }, { resourceId, requestId: getRequestId() });
+        const plan = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
+        return assertExists(plan, `Sync‑plan for "${resourceId}" not found`, {
+          resourceId,
+          operation: 'getSyncPlan',
+        });
+      },
+      { resourceId, requestId: getRequestId() },
+    );
   }
 
   async createSyncPlan(provider: string, resourceId: string, userId?: string) {
-    return trackOperation('createSyncPlan', async () => {
-      assertValid(provider && provider.trim().length > 0, 'Provider cannot be empty', { provider, resourceId });
-      assertValid(resourceId && resourceId.trim().length > 0, 'ResourceId cannot be empty', { provider, resourceId });
-
-      const exists = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
-      if (exists) {
-        throw new ConflictError(`Sync‑plan for "${resourceId}" already exists`, {
+    return trackOperation(
+      'createSyncPlan',
+      async () => {
+        assertValid(provider && provider.trim().length > 0, 'Provider cannot be empty', {
+          provider,
           resourceId,
-          operation: 'createSyncPlan',
-          existingPlanId: exists.id
         });
-      }
+        assertValid(resourceId && resourceId.trim().length > 0, 'ResourceId cannot be empty', {
+          provider,
+          resourceId,
+        });
 
-      const id = ulid();
-      await syncPlanOperations.create(this.env.SYNC_PLAN, { id, provider, resourceId, userId });
+        const exists = await syncPlanOperations.findByResourceId(this.env.SYNC_PLAN, resourceId);
+        if (exists) {
+          throw new ConflictError(`Sync‑plan for "${resourceId}" already exists`, {
+            resourceId,
+            operation: 'createSyncPlan',
+            existingPlanId: exists.id,
+          });
+        }
 
-      this.logger.info({
-        event: 'sync_plan_created',
-        id,
-        provider,
-        resourceId,
-        userId,
-        requestId: getRequestId()
-      }, `Created new sync plan for ${resourceId}`);
+        const id = ulid();
+        await syncPlanOperations.create(this.env.SYNC_PLAN, { id, provider, resourceId, userId });
 
-      return id;
-    }, { provider, resourceId, userId, requestId: getRequestId() });
+        this.logger.info(
+          {
+            event: 'sync_plan_created',
+            id,
+            provider,
+            resourceId,
+            userId,
+            requestId: getRequestId(),
+          },
+          `Created new sync plan for ${resourceId}`,
+        );
+
+        return id;
+      },
+      { provider, resourceId, userId, requestId: getRequestId() },
+    );
   }
 
   async attachUser(syncPlanId: string, userId: string) {
-    return trackOperation('attachUser', async () => {
-      assertValid(syncPlanId && syncPlanId.trim().length > 0, 'SyncPlanId cannot be empty', { syncPlanId, userId });
-      assertValid(userId && userId.trim().length > 0, 'UserId cannot be empty', { syncPlanId, userId });
-
-      try {
-        await syncPlanOperations.addUserToSyncPlan(this.env.SYNC_PLAN, syncPlanId, userId);
-
-        this.logger.info({
-          event: 'user_attached_to_plan',
+    return trackOperation(
+      'attachUser',
+      async () => {
+        assertValid(syncPlanId && syncPlanId.trim().length > 0, 'SyncPlanId cannot be empty', {
           syncPlanId,
           userId,
-          requestId: getRequestId()
-        }, `User ${userId} attached to sync plan ${syncPlanId}`);
-      } catch (error) {
-        throw toDomeError(error, `Failed to attach user ${userId} to sync plan ${syncPlanId}`, {
-          syncPlanId,
-          userId,
-          operation: 'attachUser'
         });
-      }
-    }, { syncPlanId, userId, requestId: getRequestId() });
+        assertValid(userId && userId.trim().length > 0, 'UserId cannot be empty', {
+          syncPlanId,
+          userId,
+        });
+
+        try {
+          await syncPlanOperations.addUserToSyncPlan(this.env.SYNC_PLAN, syncPlanId, userId);
+
+          this.logger.info(
+            {
+              event: 'user_attached_to_plan',
+              syncPlanId,
+              userId,
+              requestId: getRequestId(),
+            },
+            `User ${userId} attached to sync plan ${syncPlanId}`,
+          );
+        } catch (error) {
+          throw toDomeError(error, `Failed to attach user ${userId} to sync plan ${syncPlanId}`, {
+            syncPlanId,
+            userId,
+            operation: 'attachUser',
+          });
+        }
+      },
+      { syncPlanId, userId, requestId: getRequestId() },
+    );
   }
 
   /* ─────────── Resource lifecycle ─────────── */
@@ -106,96 +135,121 @@ export class SyncPlanService {
   ): Promise<boolean> {
     this.validateResourceId(providerType, resourceId);
 
-    return trackOperation('initializeResource', async () => {
-      const obj = this.getDurableObject(resourceId);
+    return trackOperation(
+      'initializeResource',
+      async () => {
+        const obj = this.getDurableObject(resourceId);
 
-      try {
-        // If `info()` succeeds we assume the object already exists.
-        const { resourceId: configResourceId } = obj.info();
-        this.logger.info({
-          event: 'initialize_resource_check',
+        try {
+          // If `info()` succeeds we assume the object already exists.
+          const { resourceId: configResourceId } = obj.info();
+          this.logger.info(
+            {
+              event: 'initialize_resource_check',
+              resourceId,
+              configResourceId,
+              requestId: getRequestId(),
+            },
+            'Checking if resource already exists',
+          );
+
+          if (resourceId === configResourceId) {
+            throw new ConflictError(`Resource already exists: ${resourceId}`, {
+              resourceId,
+              configResourceId,
+              operation: 'initializeResource',
+            });
+          }
+        } catch (error) {
+          // If the error is not our ConflictError, it means the resource doesn't exist yet
+          if (!(error instanceof ConflictError)) {
+            this.logger.info(
+              {
+                event: 'resource_not_exists',
+                resourceId,
+                requestId: getRequestId(),
+              },
+              `Resource ${resourceId} doesn't exist yet, will initialize`,
+            );
+          } else {
+            throw error;
+          }
+        }
+
+        this.logger.info(
+          {
+            event: 'initializing_resource',
+            resourceId,
+            providerType,
+            userId,
+            cadenceSecs,
+            requestId: getRequestId(),
+          },
+          `Initializing new resource object ${resourceId}`,
+        );
+
+        await obj.initialize({
+          userIds: userId ? [userId] : [],
+          providerType,
           resourceId,
-          configResourceId,
-          requestId: getRequestId()
-        }, 'Checking if resource already exists');
+          cadenceSecs,
+        });
 
-        if (resourceId === configResourceId) {
-          throw new ConflictError(`Resource already exists: ${resourceId}`, {
-            resourceId,
-            configResourceId,
-            operation: 'initializeResource'
-          });
-        }
-      } catch (error) {
-        // If the error is not our ConflictError, it means the resource doesn't exist yet
-        if (!(error instanceof ConflictError)) {
-          this.logger.info({
-            event: 'resource_not_exists',
-            resourceId,
-            requestId: getRequestId()
-          }, `Resource ${resourceId} doesn't exist yet, will initialize`);
-        } else {
-          throw error;
-        }
-      }
-
-      this.logger.info({
-        event: 'initializing_resource',
-        resourceId,
-        providerType,
-        userId,
-        cadenceSecs,
-        requestId: getRequestId()
-      }, `Initializing new resource object ${resourceId}`);
-
-      await obj.initialize({
-        userIds: userId ? [userId] : [],
-        providerType,
-        resourceId,
-        cadenceSecs,
-      });
-
-      return true;
-    }, { resourceId, providerType, userId, cadenceSecs, requestId: getRequestId() });
+        return true;
+      },
+      { resourceId, providerType, userId, cadenceSecs, requestId: getRequestId() },
+    );
   }
 
   /** Sync a resource that is already initialised. */
   async syncResource(resourceId: string, providerType: ProviderType, userId?: string) {
     this.validateResourceId(providerType, resourceId);
 
-    return trackOperation('syncResource', async () => {
-      const obj = this.getDurableObject(resourceId);
+    return trackOperation(
+      'syncResource',
+      async () => {
+        const obj = this.getDurableObject(resourceId);
 
-      if (userId) {
-        this.logger.info({
-          event: 'adding_user_to_resource',
-          resourceId,
-          userId,
-          requestId: getRequestId()
-        }, `Adding user ${userId} to resource ${resourceId}`);
+        if (userId) {
+          this.logger.info(
+            {
+              event: 'adding_user_to_resource',
+              resourceId,
+              userId,
+              requestId: getRequestId(),
+            },
+            `Adding user ${userId} to resource ${resourceId}`,
+          );
 
-        await obj.addUser(userId);
-      }
+          await obj.addUser(userId);
+        }
 
-      this.logger.info({
-        event: 'sync_resource_start',
-        resourceId,
-        providerType,
-        userId,
-        requestId: getRequestId()
-      }, `Starting sync for resource ${resourceId}`);
+        this.logger.info(
+          {
+            event: 'sync_resource_start',
+            resourceId,
+            providerType,
+            userId,
+            requestId: getRequestId(),
+          },
+          `Starting sync for resource ${resourceId}`,
+        );
 
-      await obj.sync();
+        await obj.sync();
 
-      this.logger.info({
-        event: 'sync_resource_complete',
-        resourceId,
-        providerType,
-        userId,
-        requestId: getRequestId()
-      }, `Completed sync for resource ${resourceId}`);
-
-    }, { resourceId, providerType, userId, requestId: getRequestId() });
+        this.logger.info(
+          {
+            event: 'sync_resource_complete',
+            resourceId,
+            providerType,
+            userId,
+            requestId: getRequestId(),
+          },
+          `Completed sync for resource ${resourceId}`,
+        );
+      },
+      { resourceId, providerType, userId, requestId: getRequestId() },
+    );
   }
 
   /* ─────────── internals ─────────── */
@@ -208,17 +262,19 @@ export class SyncPlanService {
   private validateResourceId(pt: ProviderType, id: string) {
     assertValid(id && id.trim().length > 0, 'ResourceId cannot be empty', {
       providerType: pt,
-      operation: 'validateResourceId'
+      operation: 'validateResourceId',
     });
 
     if (pt === ProviderType.GITHUB) {
-      assertValid(/^[^/]+\/[^/]+$/.test(id),
-        `Invalid GitHub resourceId "${id}" (owner/repo required)`, {
-        providerType: pt,
-        resourceId: id,
-        operation: 'validateResourceId',
-        pattern: 'owner/repo'
-      }
+      assertValid(
+        /^[^/]+\/[^/]+$/.test(id),
+        `Invalid GitHub resourceId "${id}" (owner/repo required)`,
+        {
+          providerType: pt,
+          resourceId: id,
+          operation: 'validateResourceId',
+          pattern: 'owner/repo',
+        },
       );
     }
   }
@@ -231,7 +287,7 @@ export class SyncPlanService {
         operation: op,
         service: 'SyncPlanService',
         domain: this.domain,
-        requestId: getRequestId()
+        requestId: getRequestId(),
       });
 
       logError(domeError, `SyncPlanService.${op} operation failed`);

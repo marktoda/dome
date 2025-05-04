@@ -72,16 +72,14 @@ export function loginCommand(program: Command): void {
           // Save token and show success message
           saveAuthToken(result);
           console.log(success('Login successful. You can now use the dome CLI.'));
-          
+
           // Show user info if available
           if (result.user) {
             console.log(info(`User: ${result.user.name} (${result.user.email})`));
           }
         } else {
           // Show error message
-          console.log(
-            error(`Login failed: ${result.error?.message || 'Invalid credentials'}`),
-          );
+          console.log(error(`Login failed: ${result.error?.message || 'Invalid credentials'}`));
           process.exit(1);
         }
       } catch (err) {

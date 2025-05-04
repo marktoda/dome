@@ -5,7 +5,7 @@ import { ServiceError } from '@dome/common/src/errors';
 
 // Mock performance.now
 vi.stubGlobal('performance', {
-  now: vi.fn(() => 1000)
+  now: vi.fn(() => 1000),
 });
 
 // Mock the global fetch function
@@ -31,7 +31,7 @@ describe('NotionClient', () => {
   const mockApiKey = 'test-api-key';
   let client: NotionClient;
   let mockAuthManager: NotionAuthManager;
-  
+
   beforeEach(() => {
     // Create a mock auth manager
     mockAuthManager = {
@@ -40,10 +40,10 @@ describe('NotionClient', () => {
       getAuthUrl: vi.fn(),
       exchangeCodeForToken: vi.fn(),
     } as unknown as NotionAuthManager;
-    
+
     client = new NotionClient(mockApiKey, mockAuthManager);
     vi.clearAllMocks();
-    
+
     // Default successful response mock
     mockFetch.mockResolvedValue({
       ok: true,
@@ -61,7 +61,7 @@ describe('NotionClient', () => {
     it('should create a new client with the provided token', () => {
       const newToken = 'new-token';
       const newClient = client.withToken(newToken);
-      
+
       // Should be a new instance
       expect(newClient).not.toBe(client);
       // Should have the new token
@@ -74,11 +74,11 @@ describe('NotionClient', () => {
       const userId = 'user-123';
       const workspaceId = 'workspace-456';
       const mockToken = 'user-token';
-      
+
       (mockAuthManager.getUserToken as Mock).mockResolvedValue(mockToken);
-      
+
       const result = await client.getTokenForUser(userId, workspaceId);
-      
+
       expect(mockAuthManager.getUserToken).toHaveBeenCalledWith(userId, workspaceId);
       expect(result).toBe(mockToken);
     });
@@ -86,7 +86,7 @@ describe('NotionClient', () => {
     it('should return null when auth manager is not available', async () => {
       const clientWithoutAuth = new NotionClient(mockApiKey);
       const result = await clientWithoutAuth.getTokenForUser('user-123', 'workspace-456');
-      
+
       expect(result).toBeNull();
     });
 
@@ -94,11 +94,11 @@ describe('NotionClient', () => {
       const userId = 'user-123';
       const workspaceId = 'workspace-456';
       const mockToken = 'user-token';
-      
+
       (mockAuthManager.getUserToken as Mock).mockResolvedValue(mockToken);
-      
+
       const userClient = await client.forUser(userId, workspaceId);
-      
+
       expect(mockAuthManager.getUserToken).toHaveBeenCalledWith(userId, workspaceId);
       expect(userClient).not.toBe(client);
       expect((userClient as any).apiKey).toBe(mockToken);
@@ -107,11 +107,11 @@ describe('NotionClient', () => {
     it('should return the same client when no user token is found', async () => {
       const userId = 'user-123';
       const workspaceId = 'workspace-456';
-      
+
       (mockAuthManager.getUserToken as Mock).mockResolvedValue(null);
-      
+
       const userClient = await client.forUser(userId, workspaceId);
-      
+
       expect(mockAuthManager.getUserToken).toHaveBeenCalledWith(userId, workspaceId);
       expect(userClient).toBe(client);
     });
@@ -126,21 +126,21 @@ describe('NotionClient', () => {
         { id: 'page-2', last_edited_time: '2023-01-01T12:00:00Z' },
         { id: 'page-3', last_edited_time: '2022-12-31T00:00:00Z' }, // Before cursor
       ];
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => ({ results: mockPages }),
         headers: new Map(),
       });
-      
+
       const results = await client.getUpdatedPages(workspaceId, cursor);
-      
+
       // Only pages after cursor should be returned
       expect(results).toHaveLength(2);
       expect(results[0].id).toBe('page-1');
       expect(results[1].id).toBe('page-2');
-      
+
       // Verify correct API call was made
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.notion.com/v1/search',
@@ -151,21 +151,21 @@ describe('NotionClient', () => {
             'Notion-Version': '2022-06-28',
           }),
           body: expect.any(String),
-        })
+        }),
       );
-      
+
       // Verify request body
       const requestBody = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(requestBody).toEqual({
         filter: {
           value: 'page',
-          property: 'object'
+          property: 'object',
         },
         sort: {
           direction: 'descending',
-          timestamp: 'last_edited_time'
+          timestamp: 'last_edited_time',
         },
-        page_size: 100
+        page_size: 100,
       });
     });
 
@@ -175,16 +175,16 @@ describe('NotionClient', () => {
         { id: 'page-1', last_edited_time: '2023-01-02T00:00:00Z' },
         { id: 'page-2', last_edited_time: '2023-01-01T12:00:00Z' },
       ];
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => ({ results: mockPages }),
         headers: new Map(),
       });
-      
+
       const results = await client.getUpdatedPages(workspaceId, null);
-      
+
       expect(results).toHaveLength(2);
       expect(results[0].id).toBe('page-1');
       expect(results[1].id).toBe('page-2');
@@ -192,7 +192,7 @@ describe('NotionClient', () => {
 
     it('should throw ServiceError on API failure with correct properties', async () => {
       const workspaceId = 'workspace-123';
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
@@ -200,7 +200,7 @@ describe('NotionClient', () => {
         text: async () => 'Server Error',
         headers: new Map(),
       });
-      
+
       try {
         await client.getUpdatedPages(workspaceId, null);
         expect(true).toBe(false); // This will always fail the test if we get here
@@ -215,13 +215,13 @@ describe('NotionClient', () => {
         expect(serviceError).toHaveProperty('details');
       }
     });
-  
+
     it('should throw ServiceError on fetch failure with correct properties', async () => {
       const workspaceId = 'workspace-123';
       const networkError = new Error('Network error');
-      
+
       mockFetch.mockRejectedValueOnce(networkError);
-      
+
       try {
         await client.getUpdatedPages(workspaceId, null);
         expect(true).toBe(false); // This will always fail the test if we get here
@@ -245,29 +245,26 @@ describe('NotionClient', () => {
         id: pageId,
         properties: {
           title: {
-            title: [
-              { plain_text: 'Test' },
-              { plain_text: ' Page' }
-            ]
-          }
-        }
+            title: [{ plain_text: 'Test' }, { plain_text: ' Page' }],
+          },
+        },
       };
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => mockPage,
         headers: new Map(),
       });
-      
+
       const result = await client.getPage(pageId);
-      
+
       expect(result.id).toBe(pageId);
       expect(result.title).toBe('Test Page');
-      
+
       expect(mockFetch).toHaveBeenCalledWith(
         `https://api.notion.com/v1/pages/${pageId}`,
-        expect.anything()
+        expect.anything(),
       );
     });
 
@@ -277,22 +274,20 @@ describe('NotionClient', () => {
         id: pageId,
         properties: {
           Name: {
-            title: [
-              { plain_text: 'Test Page' }
-            ]
-          }
-        }
+            title: [{ plain_text: 'Test Page' }],
+          },
+        },
       };
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => mockPage,
         headers: new Map(),
       });
-      
+
       const result = await client.getPage(pageId);
-      
+
       expect(result.title).toBe('Test Page');
     });
 
@@ -300,24 +295,24 @@ describe('NotionClient', () => {
       const pageId = 'page-123';
       const mockPage = {
         id: pageId,
-        properties: {}
+        properties: {},
       };
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => mockPage,
         headers: new Map(),
       });
-      
+
       const result = await client.getPage(pageId);
-      
+
       expect(result.title).toBe(`Untitled Page (${pageId})`);
     });
 
     it('should throw ServiceError on API failure with proper error details', async () => {
       const pageId = 'page-123';
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
@@ -325,7 +320,7 @@ describe('NotionClient', () => {
         text: async () => 'Not Found',
         headers: new Map(),
       });
-      
+
       try {
         await client.getPage(pageId);
         expect(true).toBe(false); // This will always fail the test if we get here
@@ -339,23 +334,23 @@ describe('NotionClient', () => {
         expect(serviceError).toHaveProperty('details');
       }
     });
-  
+
     it('should handle malformed page response gracefully', async () => {
       const pageId = 'page-123';
       const malformedPage = {
         id: pageId,
         // Missing properties field
       };
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => malformedPage,
         headers: new Map(),
       });
-      
+
       const result = await client.getPage(pageId);
-      
+
       // Should still return a result with default values
       expect(result.id).toBe(pageId);
       expect(result.title).toBe(`Untitled Page (${pageId})`);
@@ -367,53 +362,51 @@ describe('NotionClient', () => {
       const pageId = 'page-123';
       const mockBlocks = [
         { id: 'block-1', type: 'paragraph', has_children: false },
-        { id: 'block-2', type: 'heading_1', has_children: true }
+        { id: 'block-2', type: 'heading_1', has_children: true },
       ];
-      const mockChildBlocks = [
-        { id: 'child-1', type: 'paragraph', has_children: false }
-      ];
-      
+      const mockChildBlocks = [{ id: 'child-1', type: 'paragraph', has_children: false }];
+
       // Mock first request for parent blocks
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ 
+        json: async () => ({
           results: mockBlocks,
-          next_cursor: null
+          next_cursor: null,
         }),
         headers: new Map(),
       });
-      
+
       // Mock request for child blocks of block-2
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ 
+        json: async () => ({
           results: mockChildBlocks,
-          next_cursor: null
+          next_cursor: null,
         }),
         headers: new Map(),
       });
-      
+
       const result = await client.getPageContent(pageId);
-      
+
       // Should return JSON string of all blocks (parent and children)
       const parsedResult = JSON.parse(result);
       expect(parsedResult.length).toBe(3); // 2 parent blocks + 1 child block
       expect(parsedResult[0].id).toBe('block-1');
       expect(parsedResult[1].id).toBe('block-2');
       expect(parsedResult[2].id).toBe('child-1');
-      
+
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(mockFetch).toHaveBeenNthCalledWith(
         1,
         `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`,
-        expect.anything()
+        expect.anything(),
       );
       expect(mockFetch).toHaveBeenNthCalledWith(
         2,
         `https://api.notion.com/v1/blocks/block-2/children?page_size=100`,
-        expect.anything()
+        expect.anything(),
       );
     });
 
@@ -421,52 +414,52 @@ describe('NotionClient', () => {
       const pageId = 'page-123';
       const mockBlocks1 = [{ id: 'block-1', type: 'paragraph', has_children: false }];
       const mockBlocks2 = [{ id: 'block-2', type: 'paragraph', has_children: false }];
-      
+
       // First page of results
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ 
+        json: async () => ({
           results: mockBlocks1,
-          next_cursor: 'cursor-123'
+          next_cursor: 'cursor-123',
         }),
         headers: new Map(),
       });
-      
+
       // Second page of results
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ 
+        json: async () => ({
           results: mockBlocks2,
-          next_cursor: null
+          next_cursor: null,
         }),
         headers: new Map(),
       });
-      
+
       const result = await client.getPageContent(pageId);
-      
+
       const parsedResult = JSON.parse(result);
       expect(parsedResult.length).toBe(2);
       expect(parsedResult[0].id).toBe('block-1');
       expect(parsedResult[1].id).toBe('block-2');
-      
+
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(mockFetch).toHaveBeenNthCalledWith(
         1,
         `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`,
-        expect.anything()
+        expect.anything(),
       );
       expect(mockFetch).toHaveBeenNthCalledWith(
         2,
         `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100&start_cursor=cursor-123`,
-        expect.anything()
+        expect.anything(),
       );
     });
 
     it('should throw ServiceError on API failure with detailed error information', async () => {
       const pageId = 'page-123';
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
@@ -474,7 +467,7 @@ describe('NotionClient', () => {
         text: async () => 'Server Error',
         headers: new Map(),
       });
-      
+
       try {
         await client.getPageContent(pageId);
         expect(true).toBe(false); // This will always fail the test if we get here
@@ -488,18 +481,20 @@ describe('NotionClient', () => {
         expect(serviceError).toHaveProperty('details');
       }
     });
-  
+
     it('should handle non-JSON responses for page content gracefully', async () => {
       const pageId = 'page-123';
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => { throw new Error('Invalid JSON'); },
+        json: async () => {
+          throw new Error('Invalid JSON');
+        },
         text: async () => 'Not JSON content',
         headers: new Map(),
       });
-      
+
       try {
         await client.getPageContent(pageId);
         expect(true).toBe(false); // This will always fail the test if we get here
@@ -520,33 +515,33 @@ describe('NotionClient', () => {
       const mockDatabase = {
         id: databaseId,
         title: [{ plain_text: 'Test Database' }],
-        properties: { 
-          Column1: { type: 'title' }, 
-          Column2: { type: 'text' }
-        }
+        properties: {
+          Column1: { type: 'title' },
+          Column2: { type: 'text' },
+        },
       };
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => mockDatabase,
         headers: new Map(),
       });
-      
+
       const result = await client.getDatabase(databaseId);
-      
+
       expect(result.id).toBe(databaseId);
       expect(result.properties).toEqual(mockDatabase.properties);
-      
+
       expect(mockFetch).toHaveBeenCalledWith(
         `https://api.notion.com/v1/databases/${databaseId}`,
-        expect.anything()
+        expect.anything(),
       );
     });
 
     it('should throw ServiceError on API failure with detailed context', async () => {
       const databaseId = 'db-123';
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
@@ -554,7 +549,7 @@ describe('NotionClient', () => {
         text: async () => 'Not Found',
         headers: new Map(),
       });
-      
+
       try {
         await client.getDatabase(databaseId);
         expect(true).toBe(false); // This will always fail the test if we get here
@@ -568,23 +563,23 @@ describe('NotionClient', () => {
         expect(serviceError).toHaveProperty('details');
       }
     });
-  
+
     it('should handle malformed database response', async () => {
       const databaseId = 'db-123';
       const malformedDatabase = {
         id: databaseId,
         // Missing title and properties
       };
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => malformedDatabase,
         headers: new Map(),
       });
-      
+
       const result = await client.getDatabase(databaseId);
-      
+
       // Should still return a result with default values
       expect(result.id).toBe(databaseId);
       expect(result.properties).toEqual({});
@@ -595,23 +590,20 @@ describe('NotionClient', () => {
     it('should fetch all workspaces', async () => {
       const mockWorkspaces = [
         { id: 'workspace-1', name: 'Workspace 1' },
-        { id: 'workspace-2', name: 'Workspace 2' }
+        { id: 'workspace-2', name: 'Workspace 2' },
       ];
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => ({ results: mockWorkspaces }),
         headers: new Map(),
       });
-      
+
       const result = await client.getWorkspaces();
-      
+
       expect(result).toEqual(mockWorkspaces);
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.notion.com/v1/users',
-        expect.anything()
-      );
+      expect(mockFetch).toHaveBeenCalledWith('https://api.notion.com/v1/users', expect.anything());
     });
 
     it('should return empty array when no workspaces exist', async () => {
@@ -621,9 +613,9 @@ describe('NotionClient', () => {
         json: async () => ({}), // No results property
         headers: new Map(),
       });
-      
+
       const result = await client.getWorkspaces();
-      
+
       expect(result).toEqual([]);
     });
 
@@ -635,10 +627,9 @@ describe('NotionClient', () => {
         text: async () => 'Unauthorized',
         headers: new Map(),
       });
-      
-      await expect(client.getWorkspaces())
-        .rejects.toThrow(ServiceError);
-      
+
+      await expect(client.getWorkspaces()).rejects.toThrow(ServiceError);
+
       try {
         await client.getWorkspaces();
         expect(true).toBe(false); // This will always fail the test if we get here
@@ -657,7 +648,7 @@ describe('NotionClient', () => {
   describe('error handling and retry logic', () => {
     it('should retry on rate limit (429) responses', async () => {
       const pageId = 'page-123';
-      
+
       // First attempt - rate limited
       mockFetch.mockResolvedValueOnce({
         ok: false,
@@ -666,7 +657,7 @@ describe('NotionClient', () => {
         headers: new Map([['retry-after', '1']]),
         text: async () => 'Rate limited',
       });
-      
+
       // Second attempt - success
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -674,28 +665,29 @@ describe('NotionClient', () => {
         json: async () => ({ id: pageId }),
         headers: new Map(),
       });
-      
+
       // Add mock for setTimeout to avoid actually waiting
       vi.useFakeTimers();
-      
+
       const getPagePromise = client.getPage(pageId);
-      
+
       // Fast forward the timer to complete the retry delay
       vi.advanceTimersByTime(1000);
-      
+
       const result = await getPagePromise;
-      
+
       expect(result.id).toBe(pageId);
       expect(mockFetch).toHaveBeenCalledTimes(2);
-      
+
       vi.useRealTimers();
     });
 
     it('should throw ServiceError after max retries on rate limit', async () => {
       const pageId = 'page-123';
-      
+
       // Set up mocks for multiple rate limit responses
-      for (let i = 0; i < 4; i++) { // Original + 3 retries
+      for (let i = 0; i < 4; i++) {
+        // Original + 3 retries
         mockFetch.mockResolvedValueOnce({
           ok: false,
           status: 429,
@@ -704,30 +696,30 @@ describe('NotionClient', () => {
           text: async () => 'Rate limited',
         });
       }
-      
+
       vi.useFakeTimers();
-      
+
       const getPagePromise = client.getPage(pageId);
-      
+
       // Fast forward through all retry delays
       for (let i = 0; i < 3; i++) {
         vi.advanceTimersByTime(1000);
       }
-      
+
       await expect(getPagePromise).rejects.toThrow(ServiceError);
       expect(mockFetch).toHaveBeenCalledTimes(4); // Original + 3 retries
-      
+
       vi.useRealTimers();
     });
 
     it('should handle fetch errors and throw ServiceError with proper context', async () => {
       const pageId = 'page-123';
       const networkError = new Error('Network error');
-      
+
       mockFetch.mockRejectedValueOnce(networkError);
-      
+
       await expect(client.getPage(pageId)).rejects.toThrow(ServiceError);
-      
+
       try {
         await client.getPage(pageId);
         expect(true).toBe(false); // This will always fail the test if we get here
@@ -745,17 +737,19 @@ describe('NotionClient', () => {
     it('should handle non-JSON responses and throw ServiceError with details', async () => {
       const pageId = 'page-123';
       const jsonError = new Error('Invalid JSON');
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => { throw jsonError; },
+        json: async () => {
+          throw jsonError;
+        },
         text: async () => 'Not JSON',
         headers: new Map(),
       });
-      
+
       await expect(client.getPage(pageId)).rejects.toThrow(ServiceError);
-      
+
       try {
         await client.getPage(pageId);
         expect(true).toBe(false); // This will always fail the test if we get here

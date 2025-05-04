@@ -209,10 +209,13 @@ export class TUI {
 
     /* mode shortcuts ------------------------------------------------- */
     const modeKeys: Record<string, string> = { e: 'explore', n: 'note', t: 'chat' };
-    this.screen.key(Object.keys(modeKeys).map(k => `C-${k}`), (_, key) => {
-      const id = modeKeys[key.name ?? ''];
-      if (id) this.modeManager.switchToMode(id);
-    });
+    this.screen.key(
+      Object.keys(modeKeys).map(k => `C-${k}`),
+      (_, key) => {
+        const id = modeKeys[key.name ?? ''];
+        if (id) this.modeManager.switchToMode(id);
+      },
+    );
 
     /* submit --------------------------------------------------------- */
     this.inputBox.on('submit', this.onSubmit);
@@ -290,7 +293,9 @@ export class TUI {
 
   private handleModeChange = (mode: Mode): void => {
     const cfg = mode.getConfig();
-    this.setStatus(` {bold}Mode:{/bold} {${cfg.color}-fg}${cfg.name}{/${cfg.color}-fg} | ${cfg.description}`);
+    this.setStatus(
+      ` {bold}Mode:{/bold} {${cfg.color}-fg}${cfg.name}{/${cfg.color}-fg} | ${cfg.description}`,
+    );
     this.updateSidebar();
   };
 
@@ -328,7 +333,13 @@ export class TUI {
   }
 
   /* getters ---------------------------------------------------------- */
-  getContext(): TUIContext { return this.context; }
-  getModeManager(): ModeManager { return this.modeManager; }
-  getCommandManager(): CommandManager { return this.commandManager; }
+  getContext(): TUIContext {
+    return this.context;
+  }
+  getModeManager(): ModeManager {
+    return this.modeManager;
+  }
+  getCommandManager(): CommandManager {
+    return this.commandManager;
+  }
 }

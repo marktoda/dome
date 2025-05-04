@@ -1,7 +1,13 @@
 import { getLogger } from '@dome/common';
 import { RETRIEVAL_TOOLS } from '../tools';
-import { LangGraphRunnableConfig } from "@langchain/langgraph";
-import { RetrievalToolType, AgentState, RetrievalTask, DocumentChunk, RetrievalResult } from '../types';
+import { LangGraphRunnableConfig } from '@langchain/langgraph';
+import {
+  RetrievalToolType,
+  AgentState,
+  RetrievalTask,
+  DocumentChunk,
+  RetrievalResult,
+} from '../types';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
 
@@ -30,33 +36,38 @@ export async function retrieve(
 
   // Verify that retrievalSelections and tasks are available
   if (!state.retrievals) {
-    logger.warn("Retrieval selections or tasks not found in state");
+    logger.warn('Retrieval selections or tasks not found in state');
     return {
       metadata: {
-        currentNode: "retrieve",
+        currentNode: 'retrieve',
         executionTimeMs: 0,
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          retrieve: 0
+          retrieve: 0,
         },
-        errors: [{
-          node: "retrieve",
-          message: "Retrieval selections or split tasks not found in state",
-          timestamp: Date.now()
-        }]
-      }
+        errors: [
+          {
+            node: 'retrieve',
+            message: 'Retrieval selections or split tasks not found in state',
+            timestamp: Date.now(),
+          },
+        ],
+      },
     };
   }
 
-  logger.info({
-    selectionCount: state.retrievals.length
-  }, "Starting retrieval process");
+  logger.info(
+    {
+      selectionCount: state.retrievals.length,
+    },
+    'Starting retrieval process',
+  );
 
   /* ------------------------------------------------------------------ */
   /*  Trace / logging setup                                             */
   /* ------------------------------------------------------------------ */
   const traceId = state.metadata?.traceId ?? crypto.randomUUID();
-  const spanId = ObservabilityService.startSpan(env, traceId, "retrieve", state);
+  const spanId = ObservabilityService.startSpan(env, traceId, 'retrieve', state);
   const logEvt = (e: string, p: Record<string, unknown>) =>
     ObservabilityService.logEvent(env, traceId, spanId, e, p);
 
@@ -65,21 +76,24 @@ export async function retrieve(
     /*  Process each retrieval in parallel                                */
     /* ------------------------------------------------------------------ */
     // For each task with retrieval selections, execute the retrievals
-    const retrievalPromises = state.retrievals.map(async (retrieval) => {
+    const retrievalPromises = state.retrievals.map(async retrieval => {
       const retriever = RETRIEVAL_TOOLS[retrieval.category];
       const startTime = performance.now();
 
       // Log the retrieval operation starting
-      logEvt("retrieval_started", {
+      logEvt('retrieval_started', {
         query: retrieval.query,
         type: retrieval.category,
       });
 
       // Execute the retrieval
-      const res = await retriever.retrieve({
-        query: retrieval.query,
-        userId: state.userId,
-      }, env);
+      const res = await retriever.retrieve(
+        {
+          query: retrieval.query,
+          userId: state.userId,
+        },
+        env,
+      );
 
       // Convert to document format
       const docs = retriever.toDocuments(res);
@@ -96,7 +110,7 @@ export async function retrieve(
           executionTimeMs: execTime,
           retrievalStrategy: retriever.name || retrieval.category,
           totalCandidates: docs.length,
-        }
+        },
       };
 
       // Return the enhanced retrieval task with all result information
@@ -110,8 +124,8 @@ export async function retrieve(
             executionTimeMs: execTime,
             retrievalStrategy: retriever.name || retrieval.category,
             totalCandidates: docs.length,
-          }
-        }
+          },
+        },
       };
     });
 
@@ -125,53 +139,61 @@ export async function retrieve(
     /*  Finish, log, and return the state update                          */
     /* ------------------------------------------------------------------ */
     const elapsed = performance.now() - t0;
-    ObservabilityService.endSpan(env, traceId, spanId, "retrieve", state, state, elapsed);
+    ObservabilityService.endSpan(env, traceId, spanId, 'retrieve', state, state, elapsed);
 
-    logger.info({
-      elapsedMs: elapsed,
-      totalCategories: results.length,
-      totalChunks: results.reduce((sum, r) => sum + r.result.chunks.length, 0),
-    }, "Retrieval process complete");
+    logger.info(
+      {
+        elapsedMs: elapsed,
+        totalCategories: results.length,
+        totalChunks: results.reduce((sum, r) => sum + r.result.chunks.length, 0),
+      },
+      'Retrieval process complete',
+    );
 
     return {
       retrievals: retrievalTasks,
       metadata: {
-        currentNode: "retrieve",
+        currentNode: 'retrieve',
         executionTimeMs: elapsed,
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          retrieve: elapsed
-        }
-      }
+          retrieve: elapsed,
+        },
+      },
     };
   } catch (error) {
     // Handle errors
     const domeError = toDomeError(error);
-    logger.error({ err: domeError }, "Error in retrieve node");
+    logger.error({ err: domeError }, 'Error in retrieve node');
 
     // Format error with required properties
     const formattedError = {
-      node: "retrieve",
-      message: domeError.message || "Error in retrieve node",
-      timestamp: Date.now()
+      node: 'retrieve',
+      message: domeError.message || 'Error in retrieve node',
+      timestamp: Date.now(),
     };
 
     const elapsed = performance.now() - t0;
-    ObservabilityService.endSpan(env, traceId, spanId, "retrieve", state,
+    ObservabilityService.endSpan(
+      env,
+      traceId,
+      spanId,
+      'retrieve',
+      state,
       { ...state, metadata: { ...state.metadata, errors: [formattedError] } },
-      elapsed
+      elapsed,
     );
 
     return {
       metadata: {
-        currentNode: "retrieve",
+        currentNode: 'retrieve',
         executionTimeMs: elapsed,
         errors: [formattedError],
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          retrieve: elapsed
-        }
-      }
+          retrieve: elapsed,
+        },
+      },
     };
   }
 }

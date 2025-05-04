@@ -17,8 +17,7 @@ function statusCodeFromNumber(status: number): StatusCode {
  * @param authService The authentication service
  * @returns Middleware handler for authentication
  */
-export function createAuthMiddleware(authService: AuthService): MiddlewareHandler<{
-}> {
+export function createAuthMiddleware(authService: AuthService): MiddlewareHandler<{}> {
   const logger = getLogger().child({ component: 'AuthMiddleware' });
 
   return async (c: Context, next: Next) => {

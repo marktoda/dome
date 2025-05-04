@@ -1,5 +1,5 @@
 import { Hono, Context } from 'hono';
-import { upgradeWebSocket } from 'hono/cloudflare-workers'
+import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import { cors } from 'hono/cors';
 import type { ServiceInfo } from '@dome/common';
 import { chatRequestSchema } from '@dome/chat/client';
@@ -184,17 +184,16 @@ chatRouter.post('/', async (c: Context<{ Bindings: Bindings; Variables: AuthCont
 // Mount chat router
 app.route('/chat', chatRouter);
 
-
 // WebSocket chat endpoint
 app.get(
-  '/chat/ws',                     // WebSocket endpoint
-  upgradeWebSocket((c) => {
+  '/chat/ws', // WebSocket endpoint
+  upgradeWebSocket(c => {
     // NB: Cloudflare Workers has no `onOpen`; first client frame is where we start
     return {
       async onMessage(event, ws) {
         const logger = getLogger().child({
           component: 'WebSocketChatHandler',
-          requestId: Math.random().toString(36).substring(2, 12)
+          requestId: Math.random().toString(36).substring(2, 12),
         });
 
         try {
@@ -223,15 +222,18 @@ app.get(
           let authenticatedUserId;
 
           // Get token from various possible locations
-          const token = jsonData.token ||
-            (jsonData.auth && jsonData.auth.token ? jsonData.auth.token : null);
+          const token =
+            jsonData.token || (jsonData.auth && jsonData.auth.token ? jsonData.auth.token : null);
 
-          logger.debug({
-            hasToken: !!token,
-            hasAuthObject: !!jsonData.auth,
-            hasAuthToken: jsonData.auth && !!jsonData.auth.token,
-            providedUserId: jsonData.userId || '[none]'
-          }, 'WebSocket auth details');
+          logger.debug(
+            {
+              hasToken: !!token,
+              hasAuthObject: !!jsonData.auth,
+              hasAuthToken: jsonData.auth && !!jsonData.auth.token,
+              providedUserId: jsonData.userId || '[none]',
+            },
+            'WebSocket auth details',
+          );
 
           if (token) {
             // If token is provided, validate it
@@ -240,7 +242,10 @@ app.get(
 
             if (authResult.success && authResult.user) {
               authenticatedUserId = authResult.user.id;
-              logger.info({ authenticatedUserId }, 'Successfully authenticated WebSocket connection');
+              logger.info(
+                { authenticatedUserId },
+                'Successfully authenticated WebSocket connection',
+              );
             } else {
               logger.warn('Invalid auth token in WebSocket connection');
               ws.send('Error: Authentication failed - invalid token');
@@ -268,35 +273,40 @@ app.get(
 
           // Parse with Zod schema
           const validatedRequest = chatRequestSchema.parse(jsonData);
-          logger.info({
-            userId: authenticatedUserId,
-            req: {
-              ...validatedRequest,
-              // Don't log potential sensitive content
-              messages: validatedRequest.messages ?
-                `${validatedRequest.messages.length} messages` : 'none'
+          logger.info(
+            {
+              userId: authenticatedUserId,
+              req: {
+                ...validatedRequest,
+                // Don't log potential sensitive content
+                messages: validatedRequest.messages
+                  ? `${validatedRequest.messages.length} messages`
+                  : 'none',
+              },
+              op: 'startChatSession',
             },
-            op: 'startChatSession'
-          }, 'ChatController WebSocket request');
+            'ChatController WebSocket request',
+          );
 
           const resp = await chatService.streamResponse(validatedRequest);
 
           // Pump the streaming body into the socket
-          const reader = resp.body!.getReader()
-          const td = new TextDecoder()
+          const reader = resp.body!.getReader();
+          const td = new TextDecoder();
 
           while (true) {
-            const { value, done } = await reader.read()
-            getLogger().debug({ value }, 'streaming response')
-            if (done) break
-            ws.send(td.decode(value))   // send LangGraph chunk to the client
+            const { value, done } = await reader.read();
+            getLogger().debug({ value }, 'streaming response');
+            if (done) break;
+            ws.send(td.decode(value)); // send LangGraph chunk to the client
           }
-          ws.close()                    // tell the client we're done
+          ws.close(); // tell the client we're done
         } catch (error: unknown) {
           // Handle different error types
           if (error && typeof error === 'object' && 'name' in error && error.name === 'ZodError') {
             getLogger().error({ error }, 'Zod validation error for WebSocket message');
-            const errorMessage = error instanceof Error ? error.message : 'Unknown validation error';
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown validation error';
             ws.send(`Error: Invalid request format - ${errorMessage}`);
             ws.close(1007, 'Invalid message format');
           } else {
@@ -312,11 +322,11 @@ app.get(
       },
 
       onError(err) {
-        console.error('ws error', err)
+        console.error('ws error', err);
       },
-    }
+    };
   }),
-)
+);
 
 // Rollout management routes have been removed as part of the Chat RAG Graph migration
 
@@ -329,58 +339,85 @@ contentRouter.use('*', authenticationMiddleware);
 contentRouter.use('*', userIdMiddleware);
 
 // Register a GitHub repository
-contentRouter.post('/github', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env);
-  return await tsunamiController.registerGithubRepo(c);
-});
+contentRouter.post(
+  '/github',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const tsunamiController = controllerFactory.getTsunamiController(c.env);
+    return await tsunamiController.registerGithubRepo(c);
+  },
+);
 
 // Get GitHub repository history
-contentRouter.get('/github/:owner/:repo/history', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env);
-  return await tsunamiController.getGithubRepoHistory(c);
-});
+contentRouter.get(
+  '/github/:owner/:repo/history',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const tsunamiController = controllerFactory.getTsunamiController(c.env);
+    return await tsunamiController.getGithubRepoHistory(c);
+  },
+);
 
 // Get user sync history
-contentRouter.get('/sync/user/:userId/history', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env);
-  return await tsunamiController.getUserHistory(c);
-});
+contentRouter.get(
+  '/sync/user/:userId/history',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const tsunamiController = controllerFactory.getTsunamiController(c.env);
+    return await tsunamiController.getUserHistory(c);
+  },
+);
 
 // Get sync plan history
-contentRouter.get('/sync/plan/:syncPlanId/history', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env);
-  return await tsunamiController.getSyncPlanHistory(c);
-});
+contentRouter.get(
+  '/sync/plan/:syncPlanId/history',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const tsunamiController = controllerFactory.getTsunamiController(c.env);
+    return await tsunamiController.getSyncPlanHistory(c);
+  },
+);
 
 // Notion workspace registration and management
-contentRouter.post('/notion', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.registerNotionWorkspace(c);
-});
+contentRouter.post(
+  '/notion',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const notionController = controllerFactory.getNotionController(c.env);
+    return await notionController.registerNotionWorkspace(c);
+  },
+);
 
 // Get Notion workspace history
-contentRouter.get('/notion/:workspaceId/history', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.getNotionWorkspaceHistory(c);
-});
+contentRouter.get(
+  '/notion/:workspaceId/history',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const notionController = controllerFactory.getNotionController(c.env);
+    return await notionController.getNotionWorkspaceHistory(c);
+  },
+);
 
 // Trigger Notion workspace sync
-contentRouter.post('/notion/:workspaceId/sync', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.triggerNotionWorkspaceSync(c);
-});
+contentRouter.post(
+  '/notion/:workspaceId/sync',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const notionController = controllerFactory.getNotionController(c.env);
+    return await notionController.triggerNotionWorkspaceSync(c);
+  },
+);
 
 // Notion OAuth configuration
-contentRouter.post('/notion/oauth', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.configureNotionOAuth(c);
-});
+contentRouter.post(
+  '/notion/oauth',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const notionController = controllerFactory.getNotionController(c.env);
+    return await notionController.configureNotionOAuth(c);
+  },
+);
 
 // Get Notion OAuth URL
-contentRouter.get('/notion/oauth/url', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.getNotionOAuthUrl(c);
-});
+contentRouter.get(
+  '/notion/oauth/url',
+  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+    const notionController = controllerFactory.getNotionController(c.env);
+    return await notionController.getNotionOAuthUrl(c);
+  },
+);
 
 // Mount GitHub router under content path
 app.route('/content', contentRouter);

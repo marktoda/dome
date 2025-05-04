@@ -119,30 +119,30 @@ export class SearchService {
 
       // Build a comprehensive filter for Constellation
       const filter: Partial<VectorMeta> = { userId };
-      
+
       // Add category filter if specified and valid
       if (category && ['note', 'code', 'document', 'article', 'other'].includes(category)) {
         // Cast to ContentCategory since we've validated it's one of the allowed values
         filter.category = category as VectorMeta['category'];
       }
-      
+
       // Add mimeType filter if specified
       if (mimeType) {
         // Cast to MimeType
         filter.mimeType = mimeType as VectorMeta['mimeType'];
       }
-      
+
       this.logger.info(
         {
           filter,
           query,
           limit,
           offset,
-          originalFilters: { category, mimeType, startDate, endDate }
+          originalFilters: { category, mimeType, startDate, endDate },
         },
-        'Sending filter to Constellation'
+        'Sending filter to Constellation',
       );
-      
+
       // Perform semantic search using Constellation with all filters
       const searchResults = await this.constellation.query(query, filter);
 
@@ -199,10 +199,10 @@ export class SearchService {
           firstResult:
             searchResults.length > 0
               ? {
-                id: searchResults[0].id,
-                contentId: searchResults[0].metadata.contentId,
-                score: searchResults[0].score,
-              }
+                  id: searchResults[0].id,
+                  contentId: searchResults[0].metadata.contentId,
+                  score: searchResults[0].score,
+                }
               : null,
         },
         'Created score map',
@@ -340,8 +340,9 @@ export class SearchService {
       startDate,
       endDate,
     } = options;
-    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${startDate || ''
-      }:${endDate || ''}`;
+    return `${userId}:${query}:${limit}:${offset}:${category || ''}:${mimeType || ''}:${
+      startDate || ''
+    }:${endDate || ''}`;
   }
 
   /**

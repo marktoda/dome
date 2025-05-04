@@ -10,7 +10,11 @@ type SignInResult = {
 };
 
 // Server action wrapper for signIn that can be safely called from client components
-export async function serverSignIn(provider: string, callbackUrl?: string, options?: any): Promise<SignInResult> {
+export async function serverSignIn(
+  provider: string,
+  callbackUrl?: string,
+  options?: any,
+): Promise<SignInResult> {
   try {
     // For credentials provider, direct the request to the proper API endpoint
     if (provider === 'credentials') {
@@ -28,11 +32,11 @@ export async function serverSignIn(provider: string, callbackUrl?: string, optio
         });
 
         const data = await response.json();
-        
+
         if (!data.success) {
           return {
             error: data.message || 'Authentication failed',
-            ok: false
+            ok: false,
           };
         }
 
@@ -41,26 +45,26 @@ export async function serverSignIn(provider: string, callbackUrl?: string, optio
           redirect: true,
           email: options.email,
           password: options.password,
-          callbackUrl: callbackUrl || '/dashboard'
+          callbackUrl: callbackUrl || '/dashboard',
         });
 
         return {
           ok: true,
-          url: callbackUrl || '/dashboard'
+          url: callbackUrl || '/dashboard',
         };
       }
     }
-    
+
     // For OAuth providers or when we want to redirect
-    return await signIn(provider, {
+    return (await signIn(provider, {
       callbackUrl: callbackUrl || '/dashboard',
-      ...options
-    }) as SignInResult;
+      ...options,
+    })) as SignInResult;
   } catch (error) {
     console.error('Error in serverSignIn:', error);
     return {
       error: error instanceof Error ? error.message : 'Unknown error during sign in',
-      ok: false
+      ok: false,
     };
   }
 }

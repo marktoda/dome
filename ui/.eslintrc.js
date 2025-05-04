@@ -4,7 +4,10 @@ module.exports = {
   plugins: ['@typescript-eslint'],
   rules: {
     // Disable rules that are causing problems but aren't critical
-    '@typescript-eslint/no-unused-vars': ['error', { 'argsIgnorePattern': '^_', 'varsIgnorePattern': '^_' }],
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+    ],
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-unsafe-assignment': 'off',
     '@typescript-eslint/no-unsafe-member-access': 'off',
@@ -18,7 +21,7 @@ module.exports = {
     '@typescript-eslint/restrict-template-expressions': 'off',
     '@typescript-eslint/consistent-type-imports': 'off',
     'object-shorthand': 'off',
-    'curly': 'off',
-    'quote-props': 'off'
-  }
+    curly: 'off',
+    'quote-props': 'off',
+  },
 };

@@ -2,10 +2,10 @@
  * WebSocket event map type definitions for Cloudflare Workers
  */
 interface WebSocketEventMap {
-  'close': CloseEvent;
-  'error': Event;
-  'message': MessageEvent;
-  'open': Event;
+  close: CloseEvent;
+  error: Event;
+  message: MessageEvent;
+  open: Event;
 }
 
 /**
@@ -38,22 +38,22 @@ interface WebSocket extends EventTarget {
   addEventListener<K extends keyof WebSocketEventMap>(
     type: K,
     listener: (this: WebSocket, ev: WebSocketEventMap[K]) => any,
-    options?: boolean | AddEventListenerOptions
+    options?: boolean | AddEventListenerOptions,
   ): void;
   addEventListener(
     type: string,
     listener: EventListenerOrEventListenerObject,
-    options?: boolean | AddEventListenerOptions
+    options?: boolean | AddEventListenerOptions,
   ): void;
   removeEventListener<K extends keyof WebSocketEventMap>(
     type: K,
     listener: (this: WebSocket, ev: WebSocketEventMap[K]) => any,
-    options?: boolean | EventListenerOptions
+    options?: boolean | EventListenerOptions,
   ): void;
   removeEventListener(
     type: string,
     listener: EventListenerOrEventListenerObject,
-    options?: boolean | EventListenerOptions
+    options?: boolean | EventListenerOptions,
   ): void;
 }
 
@@ -63,7 +63,7 @@ interface WebSocketConstructor {
   readonly OPEN: number;
   readonly CLOSING: number;
   readonly CLOSED: number;
-  new(url: string, protocols?: string | string[]): WebSocket;
+  new (url: string, protocols?: string | string[]): WebSocket;
   readonly prototype: WebSocket;
 }
 

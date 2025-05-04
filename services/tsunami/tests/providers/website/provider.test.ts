@@ -27,22 +27,22 @@ const mockRobotsChecker = {
 const mockCrawler = {
   configure: vi.fn(),
   crawl: vi.fn().mockResolvedValue([
-      {
-        url: 'https://example.com',
-        title: 'Example Domain',
-        content: '<html><body><h1>Example Domain</h1><p>Test content</p></body></html>',
-        links: ['https://example.com/page1', 'https://example.com/page2'],
-        lastModified: '2025-01-01T00:00:00Z',
-        contentType: 'text/html',
-        statusCode: 200,
-        size: 100,
-      }
-    ]),
+    {
+      url: 'https://example.com',
+      title: 'Example Domain',
+      content: '<html><body><h1>Example Domain</h1><p>Test content</p></body></html>',
+      links: ['https://example.com/page1', 'https://example.com/page2'],
+      lastModified: '2025-01-01T00:00:00Z',
+      contentType: 'text/html',
+      statusCode: 200,
+      size: 100,
+    },
+  ]),
   getPendingUrls: vi.fn().mockReturnValue(['https://example.com/page3']),
 };
 
 const mockContentExtractor = {
-  extract: vi.fn().mockImplementation((html) => 'Extracted content from ' + html.substring(0, 20)),
+  extract: vi.fn().mockImplementation(html => 'Extracted content from ' + html.substring(0, 20)),
 };
 
 // Mock the modules
@@ -78,9 +78,12 @@ vi.mock('../../../src/services/metadataHeaderService', () => ({
       request_id: 'test-request-id',
     },
   }),
-  injectMetadataHeader: vi.fn().mockImplementation((content, metadata) => 
-    `---METADATA---\n${JSON.stringify(metadata, null, 2)}\n---END-METADATA---\n\n${content}`
-  ),
+  injectMetadataHeader: vi
+    .fn()
+    .mockImplementation(
+      (content, metadata) =>
+        `---METADATA---\n${JSON.stringify(metadata, null, 2)}\n---END-METADATA---\n\n${content}`,
+    ),
 }));
 
 describe('WebsiteProvider', () => {
@@ -90,7 +93,7 @@ describe('WebsiteProvider', () => {
   beforeEach(() => {
     mockEnv = {};
     provider = new WebsiteProvider(mockEnv);
-    
+
     // Clear all mocks
     vi.clearAllMocks();
   });
@@ -113,17 +116,21 @@ describe('WebsiteProvider', () => {
 
   describe('pull', () => {
     it('should throw an error for invalid resourceId', async () => {
-      await expect(provider.pull({
-        resourceId: 'invalid-json',
-        cursor: null,
-      })).rejects.toThrow('Invalid resourceId for website provider');
+      await expect(
+        provider.pull({
+          resourceId: 'invalid-json',
+          cursor: null,
+        }),
+      ).rejects.toThrow('Invalid resourceId for website provider');
     });
 
     it('should throw an error if URL is missing', async () => {
-      await expect(provider.pull({
-        resourceId: '{}',
-        cursor: null,
-      })).rejects.toThrow('Website configuration must include a URL');
+      await expect(
+        provider.pull({
+          resourceId: '{}',
+          cursor: null,
+        }),
+      ).rejects.toThrow('Website configuration must include a URL');
     });
 
     it('should successfully pull content from a website', async () => {
@@ -136,7 +143,7 @@ describe('WebsiteProvider', () => {
       expect(mockCrawler.configure).toHaveBeenCalledWith(
         expect.objectContaining({
           baseUrl: 'https://example.com',
-        })
+        }),
       );
 
       // Check the crawler was called
@@ -196,29 +203,27 @@ describe('WebsiteProvider', () => {
 
     it('should respect robots.txt if enabled', async () => {
       await provider.pull({
-        resourceId: JSON.stringify({ 
+        resourceId: JSON.stringify({
           url: 'https://example.com',
-          respectRobotsTxt: true
+          respectRobotsTxt: true,
         }),
         cursor: null,
       });
 
       // Check the robots checker was initialized
-      expect(mockRobotsChecker.initialize).toHaveBeenCalledWith(
-        'https://example.com'
-      );
+      expect(mockRobotsChecker.initialize).toHaveBeenCalledWith('https://example.com');
     });
 
     it('should propagate crawler errors', async () => {
       // Override mock to throw an error
-      mockCrawler.crawl.mockRejectedValueOnce(
-        new Error('Network error')
-      );
+      mockCrawler.crawl.mockRejectedValueOnce(new Error('Network error'));
 
-      await expect(provider.pull({
-        resourceId: JSON.stringify({ url: 'https://example.com' }),
-        cursor: null,
-      })).rejects.toThrow('Network error');
+      await expect(
+        provider.pull({
+          resourceId: JSON.stringify({ url: 'https://example.com' }),
+          cursor: null,
+        }),
+      ).rejects.toThrow('Network error');
     });
   });
 });

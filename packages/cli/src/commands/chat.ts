@@ -21,7 +21,7 @@ class ThinkingBuffer {
 
   tryPush(fragment: string): string {
     this.buf += fragment;
-    return this.buf
+    return this.buf;
   }
 
   reset(): void {
@@ -32,10 +32,7 @@ class ThinkingBuffer {
 type StreamOptions = { verbose: boolean };
 
 /** Shared streaming printer used by both “single message” and REPL modes. */
-async function streamChatResponse(
-  userMessage: string,
-  opts: StreamOptions
-): Promise<void> {
+async function streamChatResponse(userMessage: string, opts: StreamOptions): Promise<void> {
   const thinking = new ThinkingBuffer();
 
   await chat(
@@ -53,7 +50,8 @@ async function streamChatResponse(
       // structured chunk
       if (chunk.type === 'thinking') {
         const content = thinking.tryPush(chunk.content);
-        if (content) { // Only show thinking output in verbose mode
+        if (content) {
+          // Only show thinking output in verbose mode
           console.log(); // line break before the block
           console.log(chalk.gray('Thinking:'));
           console.log(chalk.gray(chunk.content));
@@ -75,15 +73,15 @@ async function streamChatResponse(
           // Filter out metadata entries and other non-displayable sources
           sources = sources.filter(source => {
             const title = source.title || '';
-            return !title.includes('---DOME-METADATA-START---') &&
+            return (
+              !title.includes('---DOME-METADATA-START---') &&
               !title.match(/^---.*---$/) &&
-              title.trim() !== '';
+              title.trim() !== ''
+            );
           });
 
           // Sort sources by relevance score (highest first)
-          sources.sort((a, b) =>
-            (b.relevanceScore || 0) - (a.relevanceScore || 0)
-          );
+          sources.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
 
           // Display sources with correct numbering
           sources.forEach((source, index) => {
@@ -93,7 +91,12 @@ async function streamChatResponse(
             if (source.relevanceScore !== undefined) {
               // Format relevance score as percentage
               const scorePercentage = Math.round(source.relevanceScore * 100);
-              const scoreColor = scorePercentage > 70 ? chalk.green : scorePercentage > 40 ? chalk.yellow : chalk.red;
+              const scoreColor =
+                scorePercentage > 70
+                  ? chalk.green
+                  : scorePercentage > 40
+                  ? chalk.yellow
+                  : chalk.red;
               console.log(scoreColor(`    Relevance: ${scorePercentage}%`));
             }
             if (index < sources.length - 1) console.log(); // Add space between sources
@@ -105,7 +108,7 @@ async function streamChatResponse(
         // process.stdout.write(chunk.content); // Uncommented to handle unknown chunk types
       }
     },
-    { retryNonStreaming: true, debug: opts.verbose }
+    { retryNonStreaming: true, debug: opts.verbose },
   );
 
   console.log(); // newline after full response
@@ -143,7 +146,7 @@ export function chatCommand(program: Command): void {
         const rl = readline.createInterface({
           input: process.stdin,
           output: process.stdout,
-          prompt: chalk.bold.green('You: ')
+          prompt: chalk.bold.green('You: '),
         });
 
         rl.prompt();

@@ -6,7 +6,7 @@ import {
   logOperationStart,
   logOperationSuccess,
   logOperationFailure,
-  createServiceMetrics
+  createServiceMetrics,
 } from '@dome/common';
 import { toDomeError } from '@dome/errors';
 
@@ -29,15 +29,15 @@ export function getLogger(): any {
 export function logError(error: unknown, message: string, context: Record<string, any> = {}): void {
   const domeError = toDomeError(error, message, {
     service: 'ai-processor',
-    ...context
+    ...context,
   });
-  
+
   domeLogError(domeError, message, context);
-  
+
   // Track error metrics for monitoring
   aiProcessorMetrics.trackOperation('error', false, {
     errorType: domeError.code,
-    operation: context.operation || 'unknown'
+    operation: context.operation || 'unknown',
   });
 }
 
@@ -51,13 +51,9 @@ export function logError(error: unknown, message: string, context: Record<string
 export async function trackOperation<T>(
   operationName: string,
   fn: () => Promise<T>,
-  context: Record<string, any> = {}
+  context: Record<string, any> = {},
 ): Promise<T> {
-  return domeTrackOperation(
-    operationName,
-    fn,
-    { service: 'ai-processor', ...context }
-  );
+  return domeTrackOperation(operationName, fn, { service: 'ai-processor', ...context });
 }
 
 /**
@@ -76,15 +72,15 @@ export function initLogging(env: { LOG_LEVEL?: string; ENVIRONMENT?: string; VER
       environment,
       version,
       service: 'ai-processor',
-      initTimestamp: new Date().toISOString()
+      initTimestamp: new Date().toISOString(),
     },
     'Initialized logging for ai-processor service',
   );
-  
+
   // Set up initial metrics
   aiProcessorMetrics.gauge('service.initialized', 1, {
     environment,
-    version
+    version,
   });
 }
 
@@ -96,24 +92,22 @@ export function initLogging(env: { LOG_LEVEL?: string; ENVIRONMENT?: string; VER
 export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
   const sensitiveFields = ['password', 'token', 'secret', 'key', 'apiKey', 'auth'];
   const sanitized = { ...data };
-  
+
   for (const field of Object.keys(sanitized)) {
     if (sensitiveFields.some(sensitive => field.toLowerCase().includes(sensitive))) {
       sanitized[field as keyof T] = '[REDACTED]' as any;
-    } else if (typeof sanitized[field as keyof T] === 'object' && sanitized[field as keyof T] !== null) {
+    } else if (
+      typeof sanitized[field as keyof T] === 'object' &&
+      sanitized[field as keyof T] !== null
+    ) {
       sanitized[field as keyof T] = sanitizeForLogging(sanitized[field as keyof T]) as any;
     }
   }
-  
+
   return sanitized;
 }
 
 /**
  * Export metrics and logging utilities from @dome/common
  */
-export {
-  metrics,
-  logOperationStart,
-  logOperationSuccess,
-  logOperationFailure
-};
+export { metrics, logOperationStart, logOperationSuccess, logOperationFailure };

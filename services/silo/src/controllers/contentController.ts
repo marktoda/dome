@@ -40,7 +40,7 @@ export class ContentController {
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
     private readonly siloService: SiloService,
-  ) { }
+  ) {}
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -127,7 +127,9 @@ export class ContentController {
               results[item.id].body = await obj.text();
             } else {
               // TODO: fix
-              throw new ValidationError('Object too large for simple retrieval', { size: item.size });
+              throw new ValidationError('Object too large for simple retrieval', {
+                size: item.size,
+              });
             }
           }
         }),
@@ -161,7 +163,7 @@ export class ContentController {
       throw new UnauthorizedError('You do not have permission to delete this content', {
         contentId: id,
         requestUserId: userId,
-        contentUserId: meta.userId
+        contentUserId: meta.userId,
       });
     }
 

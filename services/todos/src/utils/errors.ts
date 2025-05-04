@@ -14,7 +14,7 @@ export class DomeError extends Error {
     message: string,
     code = 'INTERNAL_ERROR',
     statusCode = 500,
-    details: Record<string, any> = {}
+    details: Record<string, any> = {},
   ) {
     super(message);
     this.name = this.constructor.name;
@@ -22,7 +22,7 @@ export class DomeError extends Error {
     this.statusCode = statusCode;
     this.details = {
       service: 'todos',
-      ...details
+      ...details,
     };
   }
 }
@@ -85,7 +85,7 @@ export class QueueProcessingError extends DomeError {
 export function assertValid(
   condition: any,
   message: string,
-  details: Record<string, any> = {}
+  details: Record<string, any> = {},
 ): void {
   if (!condition) {
     throw new ValidationError(message, details);
@@ -98,7 +98,7 @@ export function assertValid(
 export function assertExists<T>(
   value: T | null | undefined,
   message: string,
-  details: Record<string, any> = {}
+  details: Record<string, any> = {},
 ): asserts value is T {
   if (value === null || value === undefined) {
     throw new NotFoundError(message, details);
@@ -111,7 +111,7 @@ export function assertExists<T>(
 export function toDomeError(
   error: unknown,
   defaultMessage = 'An unexpected error occurred in Todos service',
-  defaultDetails: Record<string, any> = {}
+  defaultDetails: Record<string, any> = {},
 ): DomeError {
   if (error instanceof DomeError) {
     return error;
@@ -120,7 +120,7 @@ export function toDomeError(
   const message = error instanceof Error ? error.message : defaultMessage;
   const errorDetails = {
     ...defaultDetails,
-    originalError: error instanceof Error ? error.message : String(error)
+    originalError: error instanceof Error ? error.message : String(error),
   };
 
   // Create appropriate error type based on available information
@@ -143,9 +143,11 @@ export function toDomeError(
 /**
  * Create error middleware for Hono
  */
-export function createErrorMiddleware(options: {
-  errorMapper?: (err: unknown) => any;
-} = {}) {
+export function createErrorMiddleware(
+  options: {
+    errorMapper?: (err: unknown) => any;
+  } = {},
+) {
   return async (c: any, next: any) => {
     try {
       await next();
@@ -172,8 +174,8 @@ export function createErrorMiddleware(options: {
         error: {
           code: error.code || 'INTERNAL_ERROR',
           message: error.message || 'An unexpected error occurred',
-          details: error.details
-        }
+          details: error.details,
+        },
       });
     }
   };
@@ -185,5 +187,5 @@ export enum TodosErrorCode {
   VALIDATION_ERROR = 'VALIDATION_ERROR',
   NOT_FOUND = 'NOT_FOUND',
   CONFLICT = 'CONFLICT',
-  QUEUE_ERROR = 'QUEUE_ERROR'
+  QUEUE_ERROR = 'QUEUE_ERROR',
 }

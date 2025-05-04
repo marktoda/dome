@@ -57,7 +57,7 @@ describe('Function Wrapper Utilities', () => {
 
       expect(withContext).toHaveBeenCalledWith(
         expect.objectContaining({ service: 'test-service' }),
-        expect.any(Function)
+        expect.any(Function),
       );
     });
 
@@ -71,7 +71,7 @@ describe('Function Wrapper Utilities', () => {
       expect(trackOperation).toHaveBeenCalledWith(
         'test-service.test-op',
         expect.any(Function),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -102,7 +102,7 @@ describe('Function Wrapper Utilities', () => {
             code: 'MOCKED_ERROR',
           }),
           expect.stringContaining('test-service'),
-          expect.objectContaining({ operation: 'test-op' })
+          expect.objectContaining({ operation: 'test-op' }),
         );
       }
     });
@@ -113,7 +113,7 @@ describe('Function Wrapper Utilities', () => {
         code: 'DOMAIN_ERROR',
         details: { test: true },
       };
-      
+
       const wrap = createServiceWrapper('test-service');
       const fn = vi.fn().mockRejectedValue(domeError);
 

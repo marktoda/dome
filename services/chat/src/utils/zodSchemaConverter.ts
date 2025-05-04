@@ -54,7 +54,7 @@ export class ZodSchemaConverter {
    */
   private static convertObjectSchema(node: any): z.ZodObject<any> {
     const shape: Record<string, z.ZodTypeAny> = {};
-    
+
     // Process all properties
     if (node.properties) {
       Object.entries(node.properties).forEach(([key, propSchema]) => {
@@ -68,10 +68,10 @@ export class ZodSchemaConverter {
     // Handle required properties
     if (Array.isArray(node.required) && node.required.length > 0) {
       const requiredKeys = new Set(node.required);
-      
+
       // Mark non-required properties as optional
       const partialShape: Record<string, z.ZodTypeAny> = {};
-      
+
       Object.entries(shape).forEach(([key, value]) => {
         if (!requiredKeys.has(key)) {
           partialShape[key] = value.optional();
@@ -79,7 +79,7 @@ export class ZodSchemaConverter {
           partialShape[key] = value;
         }
       });
-      
+
       schema = z.object(partialShape);
     }
 
@@ -94,7 +94,7 @@ export class ZodSchemaConverter {
     if (node.items) {
       return z.array(this.convertSchemaNode(node.items));
     }
-    
+
     // Default to array of any
     return z.array(z.any());
   }

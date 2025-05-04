@@ -32,34 +32,34 @@ export function createNotionMetadata(
   sizeBytes: number,
 ): DomeMetadata {
   const requestId = getRequestId();
-  
+
   // Validate inputs
   assertValid(workspaceId && workspaceId.trim().length > 0, 'Workspace ID cannot be empty', {
     operation: 'createNotionMetadata',
-    requestId
+    requestId,
   });
-  
+
   assertValid(pageId && pageId.trim().length > 0, 'Page ID cannot be empty', {
     operation: 'createNotionMetadata',
     workspaceId,
-    requestId
+    requestId,
   });
-  
+
   assertValid(updatedAt && updatedAt.trim().length > 0, 'UpdatedAt cannot be empty', {
     operation: 'createNotionMetadata',
     workspaceId,
     pageId,
-    requestId
+    requestId,
   });
-  
+
   assertValid(sizeBytes >= 0, 'Size must be a non-negative number', {
     operation: 'createNotionMetadata',
     workspaceId,
     pageId,
     sizeBytes,
-    requestId
+    requestId,
   });
-  
+
   const metadata: DomeMetadata = {
     source: {
       type: 'notion',
@@ -77,16 +77,19 @@ export function createNotionMetadata(
       version: METADATA_VERSION,
     },
   };
-  
-  logger.debug({
-    event: 'notion_metadata_created',
-    workspaceId,
-    pageId,
-    title,
-    sizeBytes,
-    requestId
-  }, 'Created Notion metadata object');
-  
+
+  logger.debug(
+    {
+      event: 'notion_metadata_created',
+      workspaceId,
+      pageId,
+      title,
+      sizeBytes,
+      requestId,
+    },
+    'Created Notion metadata object',
+  );
+
   return metadata;
 }
 
@@ -101,7 +104,7 @@ export function determineCategory(page: NotionPage): ContentCategory {
   if (page.parent?.type === 'database_id') {
     return 'database' as ContentCategory;
   }
-  
+
   // Check for code blocks (would require analyzing blocks)
   // Default to document for most Notion pages
   return 'document' as ContentCategory;
@@ -126,14 +129,14 @@ export function determineMimeType(page: NotionPage): MimeType {
  */
 export function blocksToText(blocks: NotionBlock[]): string {
   let text = '';
-  
+
   for (const block of blocks) {
     const blockText = extractTextFromBlock(block);
     if (blockText) {
       text += blockText + '\n\n';
     }
   }
-  
+
   return text.trim();
 }
 
@@ -148,54 +151,58 @@ export function extractTextFromBlock(block: NotionBlock): string {
     switch (block.type) {
       case 'paragraph':
         return extractRichText(block.paragraph?.rich_text || []);
-      
+
       case 'heading_1':
         return `# ${extractRichText(block.heading_1?.rich_text || [])}`;
-      
+
       case 'heading_2':
         return `## ${extractRichText(block.heading_2?.rich_text || [])}`;
-      
+
       case 'heading_3':
         return `### ${extractRichText(block.heading_3?.rich_text || [])}`;
-      
+
       case 'bulleted_list_item':
         return `• ${extractRichText(block.bulleted_list_item?.rich_text || [])}`;
-      
+
       case 'numbered_list_item':
         return `1. ${extractRichText(block.numbered_list_item?.rich_text || [])}`;
-      
+
       case 'to_do':
         const checked = block.to_do?.checked ? '[x]' : '[ ]';
         return `${checked} ${extractRichText(block.to_do?.rich_text || [])}`;
-      
+
       case 'toggle':
         return `▶ ${extractRichText(block.toggle?.rich_text || [])}`;
-      
+
       case 'code':
         const language = block.code?.language || '';
         return `\`\`\`${language}\n${extractRichText(block.code?.rich_text || [])}\n\`\`\``;
-      
+
       case 'quote':
         return `> ${extractRichText(block.quote?.rich_text || [])}`;
-      
+
       case 'callout':
         const emoji = block.callout?.icon?.emoji || '';
         return `${emoji} ${extractRichText(block.callout?.rich_text || [])}`;
-      
+
       case 'divider':
         return '---';
-      
+
       case 'table':
         // Tables require special handling with the children blocks
         return '[Table]';
-      
+
       default:
         return '';
     }
   } catch (error) {
     logger.warn(
-      { blockType: block.type, blockId: block.id, error: error instanceof Error ? error.message : String(error) },
-      'notion: error extracting text from block'
+      {
+        blockType: block.type,
+        blockId: block.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'notion: error extracting text from block',
     );
     return '';
   }
@@ -209,25 +216,27 @@ export function extractTextFromBlock(block: NotionBlock): string {
  */
 export function extractRichText(richText: any[]): string {
   if (!Array.isArray(richText)) return '';
-  
-  return richText.map(textObj => {
-    let text = textObj.plain_text || '';
-    
-    // Apply markdown-like formatting if available
-    if (textObj.annotations) {
-      if (textObj.annotations.bold) text = `**${text}**`;
-      if (textObj.annotations.italic) text = `*${text}*`;
-      if (textObj.annotations.strikethrough) text = `~~${text}~~`;
-      if (textObj.annotations.code) text = `\`${text}\``;
-    }
-    
-    // Add hyperlinks
-    if (textObj.href) {
-      text = `[${text}](${textObj.href})`;
-    }
-    
-    return text;
-  }).join('');
+
+  return richText
+    .map(textObj => {
+      let text = textObj.plain_text || '';
+
+      // Apply markdown-like formatting if available
+      if (textObj.annotations) {
+        if (textObj.annotations.bold) text = `**${text}**`;
+        if (textObj.annotations.italic) text = `*${text}*`;
+        if (textObj.annotations.strikethrough) text = `~~${text}~~`;
+        if (textObj.annotations.code) text = `\`${text}\``;
+      }
+
+      // Add hyperlinks
+      if (textObj.href) {
+        text = `[${text}](${textObj.href})`;
+      }
+
+      return text;
+    })
+    .join('');
 }
 
 /**
@@ -240,32 +249,32 @@ export function extractRichText(richText: any[]): string {
 export function databaseToText(database: any, rows: any[]): string {
   try {
     let text = `# ${database.title || 'Untitled Database'}\n\n`;
-    
+
     // Extract property names
     const properties = Object.keys(database.properties || {});
     if (properties.length === 0 || rows.length === 0) {
       return text + '[Empty Database]';
     }
-    
+
     // Create table header
     text += '| ' + properties.join(' | ') + ' |\n';
     text += '| ' + properties.map(() => '---').join(' | ') + ' |\n';
-    
+
     // Add rows
     for (const row of rows) {
       const rowValues = properties.map(prop => {
         const value = row.properties[prop];
         return extractPropertyValue(value);
       });
-      
+
       text += '| ' + rowValues.join(' | ') + ' |\n';
     }
-    
+
     return text;
   } catch (error) {
     logger.warn(
       { databaseId: database.id, error: error instanceof Error ? error.message : String(error) },
-      'notion: error converting database to text'
+      'notion: error converting database to text',
     );
     return `# ${database.title || 'Untitled Database'}\n\n[Database Conversion Error]`;
   }
@@ -279,59 +288,60 @@ export function databaseToText(database: any, rows: any[]): string {
  */
 export function extractPropertyValue(property: any): string {
   if (!property) return '';
-  
+
   try {
     switch (property.type) {
       case 'title':
       case 'rich_text':
         return extractRichText(property[property.type] || []);
-      
+
       case 'number':
         return property.number?.toString() || '';
-      
+
       case 'select':
         return property.select?.name || '';
-      
+
       case 'multi_select':
-        return (property.multi_select || [])
-          .map((item: any) => item.name)
-          .join(', ');
-      
+        return (property.multi_select || []).map((item: any) => item.name).join(', ');
+
       case 'date':
         const start = property.date?.start || '';
         const end = property.date?.end ? ` - ${property.date.end}` : '';
         return start + end;
-      
+
       case 'people':
-        return (property.people || [])
-          .map((person: any) => person.name || person.id)
-          .join(', ');
-      
+        return (property.people || []).map((person: any) => person.name || person.id).join(', ');
+
       case 'checkbox':
         return property.checkbox ? '✓' : '✗';
-      
+
       case 'url':
         return property.url || '';
-      
+
       case 'email':
         return property.email || '';
-      
+
       case 'phone_number':
         return property.phone_number || '';
-      
+
       case 'formula':
-        return property.formula?.string || 
-               property.formula?.number?.toString() || 
-               property.formula?.boolean?.toString() || 
-               '';
-      
+        return (
+          property.formula?.string ||
+          property.formula?.number?.toString() ||
+          property.formula?.boolean?.toString() ||
+          ''
+        );
+
       default:
         return '[Unsupported Property]';
     }
   } catch (error) {
     logger.warn(
-      { propertyType: property.type, error: error instanceof Error ? error.message : String(error) },
-      'notion: error extracting property value'
+      {
+        propertyType: property.type,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'notion: error extracting property value',
     );
     return '[Error]';
   }
@@ -346,9 +356,9 @@ export function extractPropertyValue(property: any): string {
 export function shouldIgnorePage(page: NotionPage): boolean {
   // Skip archived pages if that property exists
   if ('archived' in page && page.archived) return true;
-  
+
   // Skip pages with specific tags (if implemented)
-  
+
   // Default to including the page
   return false;
 }

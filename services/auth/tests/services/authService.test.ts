@@ -28,8 +28,8 @@ vi.mock('drizzle-orm/d1', () => ({
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
     get: mockDbFunctions.get,
-    insert: vi.fn().mockReturnValue({ 
-      values: mockDbFunctions.values 
+    insert: vi.fn().mockReturnValue({
+      values: mockDbFunctions.values,
     }),
   }),
 }));
@@ -55,7 +55,7 @@ vi.mock('jose', () => ({
       role: 'user',
       exp: Math.floor(Date.now() / 1000) + 3600,
       iat: Math.floor(Date.now() / 1000),
-    }
+    },
   }),
 }));
 
@@ -100,32 +100,37 @@ describe('AuthService', () => {
       const result = await authService.register('test@example.com', 'password', 'Test User');
 
       // Assert
-      expect(result).toEqual(expect.objectContaining({
-        id: 'mock_uuid',
-        email: 'test@example.com',
-        name: 'Test User',
-        role: UserRole.USER,
-      }));
-      
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: 'mock_uuid',
+          email: 'test@example.com',
+          name: 'Test User',
+          role: UserRole.USER,
+        }),
+      );
+
       // Verify DB interactions
-      expect(mockDbFunctions.values).toHaveBeenCalledWith(expect.objectContaining({
-        email: 'test@example.com',
-        name: 'Test User',
-      }));
+      expect(mockDbFunctions.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'test@example.com',
+          name: 'Test User',
+        }),
+      );
     });
 
     it('should throw an error if user already exists', async () => {
       // Setup mock to return an existing user
-      mockDbFunctions.get.mockResolvedValueOnce({ 
-        id: 'existing_id', 
-        email: 'test@example.com' 
+      mockDbFunctions.get.mockResolvedValueOnce({
+        id: 'existing_id',
+        email: 'test@example.com',
       });
 
       // Execute and assert
-      await expect(authService.register('test@example.com', 'password'))
-        .rejects.toThrow(expect.objectContaining({
+      await expect(authService.register('test@example.com', 'password')).rejects.toThrow(
+        expect.objectContaining({
           type: AuthErrorType.USER_EXISTS,
-        }));
+        }),
+      );
     });
   });
 
@@ -141,34 +146,37 @@ describe('AuthService', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      
+
       mockDbFunctions.get.mockResolvedValueOnce(mockUser);
-      
+
       // Execute
       const result = await authService.login('test@example.com', 'password');
-      
+
       // Assert
-      expect(result).toEqual(expect.objectContaining({
-        success: true,
-        token: 'mock_token',
-        user: expect.objectContaining({
-          id: 'user_123',
-          email: 'test@example.com',
+      expect(result).toEqual(
+        expect.objectContaining({
+          success: true,
+          token: 'mock_token',
+          user: expect.objectContaining({
+            id: 'user_123',
+            email: 'test@example.com',
+          }),
         }),
-      }));
+      );
     });
-    
+
     it('should throw an error if user not found', async () => {
       // Setup mock to return null (user not found)
       mockDbFunctions.get.mockResolvedValueOnce(null);
-      
+
       // Execute and assert
-      await expect(authService.login('nonexistent@example.com', 'password'))
-        .rejects.toThrow(expect.objectContaining({
+      await expect(authService.login('nonexistent@example.com', 'password')).rejects.toThrow(
+        expect.objectContaining({
           type: AuthErrorType.INVALID_CREDENTIALS,
-        }));
+        }),
+      );
     });
-    
+
     it('should throw an error if password is invalid', async () => {
       // Setup mock to return a user
       const mockUser = {
@@ -180,28 +188,30 @@ describe('AuthService', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      
+
       mockDbFunctions.get.mockResolvedValueOnce(mockUser);
-      
+
       // Override bcrypt.compare for this test only
       (bcrypt.compare as unknown as any).mockResolvedValueOnce(false);
-      
+
       // Execute and assert
-      await expect(authService.login('test@example.com', 'wrong_password'))
-        .rejects.toThrow(expect.objectContaining({
+      await expect(authService.login('test@example.com', 'wrong_password')).rejects.toThrow(
+        expect.objectContaining({
           type: AuthErrorType.INVALID_CREDENTIALS,
-        }));
+        }),
+      );
     });
-    
+
     it('should handle database errors', async () => {
       // Setup mock to throw an error
       mockDbFunctions.get.mockRejectedValueOnce(new Error('Database connection failed'));
-      
+
       // Execute and assert
-      await expect(authService.login('test@example.com', 'password'))
-        .rejects.toThrow(expect.objectContaining({
+      await expect(authService.login('test@example.com', 'password')).rejects.toThrow(
+        expect.objectContaining({
           type: AuthErrorType.LOGIN_FAILED,
-        }));
+        }),
+      );
     });
   });
 
@@ -219,53 +229,58 @@ describe('AuthService', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      
+
       // Execute
       const result = await authService.validateToken('valid_token');
-      
+
       // Assert
-      expect(result).toEqual(expect.objectContaining({
-        id: 'user_123',
-        email: 'test@example.com',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: 'user_123',
+          email: 'test@example.com',
+        }),
+      );
     });
-    
+
     it('should throw an error if token is blacklisted', async () => {
       // Setup mock to return blacklisted token
-      mockDbFunctions.get.mockResolvedValueOnce({ 
-        token: 'blacklisted_token' 
+      mockDbFunctions.get.mockResolvedValueOnce({
+        token: 'blacklisted_token',
       });
-      
+
       // Execute and assert
-      await expect(authService.validateToken('blacklisted_token'))
-        .rejects.toThrow(expect.objectContaining({
+      await expect(authService.validateToken('blacklisted_token')).rejects.toThrow(
+        expect.objectContaining({
           type: AuthErrorType.INVALID_TOKEN,
-        }));
+        }),
+      );
     });
-    
+
     it('should throw an error if user not found after token validation', async () => {
       // Setup mocks
       // First call (blacklist check) - return null (not blacklisted)
       mockDbFunctions.get.mockResolvedValueOnce(null);
       // Second call (get user) - return null (user not found)
       mockDbFunctions.get.mockResolvedValueOnce(null);
-      
+
       // Execute and assert
-      await expect(authService.validateToken('valid_token'))
-        .rejects.toThrow(expect.objectContaining({
+      await expect(authService.validateToken('valid_token')).rejects.toThrow(
+        expect.objectContaining({
           type: AuthErrorType.USER_NOT_FOUND,
-        }));
+        }),
+      );
     });
-    
+
     it('should throw an error if token verification fails', async () => {
       // Override jose.jwtVerify for this test only
       (jose.jwtVerify as unknown as any).mockRejectedValueOnce(new Error('Invalid token'));
-      
+
       // Execute and assert
-      await expect(authService.validateToken('invalid_token'))
-        .rejects.toThrow(expect.objectContaining({
+      await expect(authService.validateToken('invalid_token')).rejects.toThrow(
+        expect.objectContaining({
           type: AuthErrorType.INVALID_TOKEN,
-        }));
+        }),
+      );
     });
   });
 
@@ -273,16 +288,18 @@ describe('AuthService', () => {
     it('should logout a user successfully', async () => {
       // Setup mocks
       mockDbFunctions.values.mockResolvedValueOnce({});
-      
+
       // Execute
       const result = await authService.logout('valid_token', 'user_123');
-      
+
       // Assert
       expect(result).toBe(true);
-      expect(mockDbFunctions.values).toHaveBeenCalledWith(expect.objectContaining({
-        token: 'valid_token',
-        userId: 'user_123',
-      }));
+      expect(mockDbFunctions.values).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: 'valid_token',
+          userId: 'user_123',
+        }),
+      );
     });
   });
 
@@ -297,35 +314,37 @@ describe('AuthService', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      
+
       // Execute
       const result = await authService.getUserById('user_123');
-      
+
       // Assert
-      expect(result).toEqual(expect.objectContaining({
-        id: 'user_123',
-        email: 'test@example.com',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          id: 'user_123',
+          email: 'test@example.com',
+        }),
+      );
     });
-    
+
     it('should return null if user not found', async () => {
       // Setup mock to return null
       mockDbFunctions.get.mockResolvedValueOnce(null);
-      
+
       // Execute
       const result = await authService.getUserById('nonexistent_id');
-      
+
       // Assert
       expect(result).toBeNull();
     });
-    
+
     it('should return null if database error occurs', async () => {
       // Setup mock to throw an error
       mockDbFunctions.get.mockRejectedValueOnce(new Error('Database connection failed'));
-      
+
       // Execute
       const result = await authService.getUserById('user_123');
-      
+
       // Assert
       expect(result).toBeNull();
     });

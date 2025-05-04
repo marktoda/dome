@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { 
-  createContentSanitizer, 
-  sanitizeThinkingContent, 
-  createPatternDetector, 
+import {
+  createContentSanitizer,
+  sanitizeThinkingContent,
+  createPatternDetector,
   isThinkingContent,
-  processThinkingContent
+  processThinkingContent,
 } from '../../src/utils/contentSanitizers';
 
 // Mock dependencies
@@ -68,7 +68,9 @@ describe('Content Sanitizers', () => {
         ],
       });
 
-      expect(sanitizer('too    many   spaces and !@#$%^&*() symbols')).toBe('too many spaces and  symbols');
+      expect(sanitizer('too    many   spaces and !@#$%^&*() symbols')).toBe(
+        'too many spaces and  symbols',
+      );
     });
 
     it('should handle errors gracefully', () => {
@@ -101,7 +103,9 @@ describe('Content Sanitizers', () => {
 
   describe('sanitizeThinkingContent', () => {
     it('should remove URLs', () => {
-      const result = sanitizeThinkingContent('Check this link: https://example.com/test?param=value');
+      const result = sanitizeThinkingContent(
+        'Check this link: https://example.com/test?param=value',
+      );
       expect(result).not.toContain('https://');
       expect(result).toContain('[URL REMOVED]');
     });
@@ -179,14 +183,14 @@ describe('Content Sanitizers', () => {
 
     it('should detect thinking prefixes', () => {
       expect(isThinkingContent('Let me think about this problem')).toBe(true);
-      expect(isThinkingContent('I\'m thinking about the solution')).toBe(true);
+      expect(isThinkingContent("I'm thinking about the solution")).toBe(true);
       expect(isThinkingContent('Analyzing the data provided')).toBe(true);
     });
 
     it('should detect step-by-step reasoning', () => {
       expect(isThinkingContent('Step 1: Understand the problem')).toBe(true);
       expect(isThinkingContent('First, we need to identify the variables')).toBe(true);
-      expect(isThinkingContent('Let\'s start by breaking down the requirements')).toBe(true);
+      expect(isThinkingContent("Let's start by breaking down the requirements")).toBe(true);
     });
 
     it('should return false for regular content', () => {
@@ -203,18 +207,16 @@ describe('Content Sanitizers', () => {
     });
 
     it('should sanitize thinking content', () => {
-      const mockSanitizeThinkingContent = vi.spyOn(
-        { sanitizeThinkingContent }, 
-        'sanitizeThinkingContent'
-      ).mockReturnValue('sanitized content');
+      const mockSanitizeThinkingContent = vi
+        .spyOn({ sanitizeThinkingContent }, 'sanitizeThinkingContent')
+        .mockReturnValue('sanitized content');
 
-      const mockIsThinkingContent = vi.spyOn(
-        { isThinkingContent }, 
-        'isThinkingContent'
-      ).mockReturnValue(true);
+      const mockIsThinkingContent = vi
+        .spyOn({ isThinkingContent }, 'isThinkingContent')
+        .mockReturnValue(true);
 
       expect(processThinkingContent('<thinking>Test content</thinking>')).toBe('sanitized content');
-      
+
       expect(mockIsThinkingContent).toHaveBeenCalled();
       expect(mockSanitizeThinkingContent).toHaveBeenCalled();
 
@@ -224,18 +226,17 @@ describe('Content Sanitizers', () => {
 
     it('should return original content if not thinking content', () => {
       const mockSanitizeThinkingContent = vi.spyOn(
-        { sanitizeThinkingContent }, 
-        'sanitizeThinkingContent'
+        { sanitizeThinkingContent },
+        'sanitizeThinkingContent',
       );
 
-      const mockIsThinkingContent = vi.spyOn(
-        { isThinkingContent }, 
-        'isThinkingContent'
-      ).mockReturnValue(false);
+      const mockIsThinkingContent = vi
+        .spyOn({ isThinkingContent }, 'isThinkingContent')
+        .mockReturnValue(false);
 
       const content = 'Regular content';
       expect(processThinkingContent(content)).toBe(content);
-      
+
       expect(mockIsThinkingContent).toHaveBeenCalled();
       expect(mockSanitizeThinkingContent).not.toHaveBeenCalled();
 

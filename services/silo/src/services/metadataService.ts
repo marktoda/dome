@@ -121,10 +121,10 @@ export class MetadataService {
             error:
               error instanceof Error
                 ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack,
+                  }
                 : String(error),
             ids,
             errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -142,10 +142,10 @@ export class MetadataService {
           error:
             error instanceof Error
               ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-              }
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
               : String(error),
           ids,
           errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -362,12 +362,12 @@ export class MetadataService {
           .set(updateData)
           .where(eq(contents.id, id))
           .run();
-        
+
         // Check if any rows were actually updated
         if (!result || result.changes === 0) {
           getLogger().warn(
             { id, hasTitle: !!data.title, hasSummary: !!data.summary },
-            'Content metadata update did not affect any rows - possible ID mismatch or content not found'
+            'Content metadata update did not affect any rows - possible ID mismatch or content not found',
           );
           metrics.increment('silo.d1.update_enriched.no_rows_affected', 1);
           return;
@@ -381,7 +381,7 @@ export class MetadataService {
             hasSummary: !!data.summary,
             title: data.title,
             summary: data.summary,
-            rowsAffected: result.changes
+            rowsAffected: result.changes,
           },
           'Content metadata enriched',
         );

@@ -22,7 +22,7 @@ vi.mock('@dome/common', () => ({
 vi.mock('../services/llmService');
 vi.mock('../services/observabilityService');
 vi.mock('../utils/errors', () => ({
-  toDomeError: vi.fn((error) => ({
+  toDomeError: vi.fn(error => ({
     message: error instanceof Error ? error.message : 'Unknown error',
     code: 'ERR_RETRIEVAL_SELECTOR',
   })),
@@ -30,7 +30,8 @@ vi.mock('../utils/errors', () => ({
 
 // Mock performance API
 global.performance = {
-  now: vi.fn()
+  now: vi
+    .fn()
     .mockReturnValueOnce(100) // Start time
     .mockReturnValueOnce(300), // End time (200ms elapsed)
 } as any;
@@ -42,12 +43,12 @@ describe('retrievalSelector Node', () => {
   let mockState: AgentState;
   let mockEnv: any;
   let mockConfig: any;
-  let mockLlmResponse: { tasks: RetrievalTask[], reasoning: string };
+  let mockLlmResponse: { tasks: RetrievalTask[]; reasoning: string };
 
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks();
-    
+
     // Setup mock task entities
     const mockTaskEntities: Record<string, UserTaskEntity> = {
       'task-1': {
@@ -55,21 +56,25 @@ describe('retrievalSelector Node', () => {
         definition: 'Implementation of binary search tree in Python',
         originalQuery: 'How do I implement a binary search tree in Python with code examples?',
         status: 'pending',
-        createdAt: Date.now()
+        createdAt: Date.now(),
       },
       'task-2': {
         id: 'task-2',
         definition: 'Applications of binary search trees',
         originalQuery: 'What are the practical applications of binary search trees?',
         status: 'pending',
-        createdAt: Date.now()
-      }
+        createdAt: Date.now(),
+      },
     };
-    
+
     mockState = {
       userId: 'user-123',
       messages: [
-        { role: 'user', content: 'How do I implement a binary search tree in Python and what are the applications?' }
+        {
+          role: 'user',
+          content:
+            'How do I implement a binary search tree in Python and what are the applications?',
+        },
       ],
       options: {
         enhanceWithContext: true,
@@ -81,33 +86,34 @@ describe('retrievalSelector Node', () => {
       taskIds: ['task-1', 'task-2'],
       metadata: {
         traceId: 'trace-123',
-      }
+      },
     };
-    
-    mockEnv = { 
+
+    mockEnv = {
       OPENAI_API_KEY: 'mock-api-key',
     };
-    
+
     mockConfig = {};
-    
+
     // Setup mock LLM response with retrieval tasks
     mockLlmResponse = {
       tasks: [
         {
           category: 'code' as any,
-          query: 'How do I implement a binary search tree in Python?'
+          query: 'How do I implement a binary search tree in Python?',
         },
         {
           category: 'docs' as any,
-          query: 'What are the practical applications of binary search trees?'
-        }
+          query: 'What are the practical applications of binary search trees?',
+        },
       ],
-      reasoning: 'Selected code repositories for implementation examples and documentation for understanding applications.'
+      reasoning:
+        'Selected code repositories for implementation examples and documentation for understanding applications.',
     };
-    
+
     // Mock LlmService.invokeStructured to return our mock response
     vi.mocked(LlmService.invokeStructured).mockResolvedValue(mockLlmResponse);
-    
+
     // Mock ObservabilityService
     vi.mocked(ObservabilityService.startSpan).mockReturnValue('span-123');
     vi.mocked(ObservabilityService.logEvent).mockReturnValue(undefined);
@@ -116,26 +122,26 @@ describe('retrievalSelector Node', () => {
   it('should select appropriate retrievers for each task', async () => {
     // Execute the node
     const result = await retrievalSelector(mockState, mockConfig, mockEnv);
-    
+
     // Verify the result
     expect(result).toBeDefined();
     expect(result.retrievals).toBeDefined();
-    
+
     // Check retrieval tasks match the LLM response
     expect(result.retrievals).toEqual(mockLlmResponse.tasks);
-    
+
     // Verify reasoning was added
     expect(result.reasoning).toContain(mockLlmResponse.reasoning);
-    
+
     // Verify metadata
     expect(result.metadata).toMatchObject({
       currentNode: 'retrievalSelector',
       executionTimeMs: expect.any(Number),
     });
-    
+
     // Verify LLM service was called
     expect(LlmService.invokeStructured).toHaveBeenCalledTimes(1);
-    
+
     // Verify observability service was used
     expect(ObservabilityService.startSpan).toHaveBeenCalled();
     expect(ObservabilityService.endSpan).toHaveBeenCalled();
@@ -146,19 +152,19 @@ describe('retrievalSelector Node', () => {
     const stateWithoutTasks = {
       ...mockState,
       taskIds: [],
-      taskEntities: {}
+      taskEntities: {},
     };
-    
+
     // Execute the node
     const result = await retrievalSelector(stateWithoutTasks, mockConfig, mockEnv);
-    
+
     // Verify error handling
     expect(result.metadata?.errors).toBeDefined();
     expect(result.metadata?.errors?.[0]).toMatchObject({
       node: 'retrievalSelector',
       message: expect.any(String),
     });
-    
+
     // Verify LLM service was not called
     expect(LlmService.invokeStructured).not.toHaveBeenCalled();
   });
@@ -168,19 +174,19 @@ describe('retrievalSelector Node', () => {
     const stateWithEmptyTasks = {
       ...mockState,
       taskIds: [],
-      taskEntities: {}
+      taskEntities: {},
     };
-    
+
     // Execute the node
     const result = await retrievalSelector(stateWithEmptyTasks, mockConfig, mockEnv);
-    
+
     // Verify error handling
     expect(result.metadata?.errors).toBeDefined();
     expect(result.metadata?.errors?.[0]).toMatchObject({
       node: 'retrievalSelector',
       message: expect.any(String),
     });
-    
+
     // Verify LLM service was not called
     expect(LlmService.invokeStructured).not.toHaveBeenCalled();
   });
@@ -189,10 +195,10 @@ describe('retrievalSelector Node', () => {
     // Make the LLM service throw an error
     vi.mocked(LlmService.invokeStructured).mockReset();
     vi.mocked(LlmService.invokeStructured).mockRejectedValue(new Error('LLM API error'));
-    
+
     // Execute the node
     const result = await retrievalSelector(mockState, mockConfig, mockEnv);
-    
+
     // Verify error handling
     expect(result.metadata?.errors).toBeDefined();
     expect(result.metadata?.errors?.[0]).toMatchObject({

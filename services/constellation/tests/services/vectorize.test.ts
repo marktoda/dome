@@ -28,7 +28,7 @@ vi.mock('@dome/common', () => ({
     }),
   },
   // Add the missing function
-  createServiceMetrics: vi.fn((serviceName) => ({
+  createServiceMetrics: vi.fn(serviceName => ({
     increment: vi.fn(),
     decrement: vi.fn(),
     gauge: vi.fn(),

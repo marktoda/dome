@@ -7,12 +7,12 @@ import { ObservabilityService } from '../services/observabilityService';
  * Widening strategy types
  */
 export enum WideningStrategy {
-  SEMANTIC = 'semantic',    // Expands semantic scope for better recall
-  TEMPORAL = 'temporal',    // Extends time range for historical content
-  RELEVANCE = 'relevance',  // Reduces relevance threshold to include more results
-  CATEGORY = 'category',    // Expands to related content categories
-  SYNONYM = 'synonym',      // Includes synonyms and related terms
-  HYBRID = 'hybrid'         // Combines multiple strategies
+  SEMANTIC = 'semantic', // Expands semantic scope for better recall
+  TEMPORAL = 'temporal', // Extends time range for historical content
+  RELEVANCE = 'relevance', // Reduces relevance threshold to include more results
+  CATEGORY = 'category', // Expands to related content categories
+  SYNONYM = 'synonym', // Includes synonyms and related terms
+  HYBRID = 'hybrid', // Combines multiple strategies
 }
 
 /**
@@ -48,22 +48,22 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
 
   // Track the tasks that need widening
   const tasksToWiden: string[] = [];
-  
+
   // Find tasks that need widening
   for (const taskId of taskIds) {
     const task = taskEntities[taskId];
     if (!task) continue;
-    
+
     if (task.needsWidening) {
       tasksToWiden.push(taskId);
     }
   }
-  
+
   if (tasksToWiden.length === 0) {
     logger.info('No tasks need widening, skipping dynamicWiden node');
     const endTime = performance.now();
     const executionTime = endTime - startTime;
-    
+
     return {
       ...state,
       metadata: {
@@ -75,23 +75,23 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
       },
     };
   }
-  
+
   // Set maximum iterations to prevent infinite widening
   const MAX_WIDENING_ATTEMPTS = 3;
-  
+
   // Create an updated state we'll modify
   const updatedState = {
     ...state,
     taskEntities: { ...taskEntities },
   };
-  
+
   // Process each task that needs widening
   for (const taskId of tasksToWiden) {
     const task = taskEntities[taskId];
-    
+
     // Increment widening attempts
     const wideningAttempts = (task.wideningAttempts || 0) + 1;
-    
+
     // Check if we've reached maximum attempts
     if (wideningAttempts > MAX_WIDENING_ATTEMPTS) {
       logger.warn(
@@ -104,7 +104,7 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
         },
         'Maximum widening attempts reached for task',
       );
-      
+
       // Update task with no further widening
       updatedState.taskEntities[taskId] = {
         ...updatedState.taskEntities[taskId],
@@ -117,7 +117,7 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
           minRelevance: 0.2, // Lower threshold as a final attempt
         },
       };
-      
+
       continue;
     }
 
@@ -145,7 +145,7 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
         traceId,
         spanId,
       );
-      
+
       // Add maximum iterations to widening parameters
       wideningParams.maxIterations = MAX_WIDENING_ATTEMPTS;
 
@@ -169,7 +169,7 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
         wideningStrategy: wideningParams.strategy,
         wideningParams,
       };
-      
+
       // Log the widening event
       ObservabilityService.logEvent(env, traceId, spanId, 'widening_parameters_adjusted', {
         taskId,
@@ -205,7 +205,7 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
         wideningStrategy: defaultParams.strategy,
         wideningParams: defaultParams,
       };
-      
+
       // Log the error event
       ObservabilityService.logEvent(env, traceId, spanId, 'widening_error', {
         taskId,
@@ -258,7 +258,7 @@ async function determineWideningStrategy(
 
   // Get the query
   const query = task.rewrittenQuery || task.originalQuery || '';
-  
+
   // Get docs related to this task (if available) or use all docs as a fallback
   const previousDocs = task.docs || allDocs;
   const queryAnalysis = task.queryAnalysis;
@@ -268,7 +268,8 @@ async function determineWideningStrategy(
     // Check if the results are relevant but insufficient
     const relevanceScores = previousDocs.map((doc: Document) => doc.metadata.relevanceScore);
     const avgRelevance =
-      relevanceScores.reduce((sum: number, score: number) => sum + score, 0) / relevanceScores.length;
+      relevanceScores.reduce((sum: number, score: number) => sum + score, 0) /
+      relevanceScores.length;
 
     // If average relevance is high but we don't have enough results, try temporal widening
     if (avgRelevance > 0.7 && previousDocs.length < 3) {

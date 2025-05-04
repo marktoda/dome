@@ -24,14 +24,18 @@ interface AuthResponse {
  * @param name User name
  * @returns Registration result with token if successful
  */
-export async function registerUser(email: string, password: string, name: string): Promise<AuthResponse> {
+export async function registerUser(
+  email: string,
+  password: string,
+  name: string,
+): Promise<AuthResponse> {
   try {
-    const response = await api.post('/auth/register', {
+    const response = (await api.post('/auth/register', {
       email,
       password,
-      name
-    }) as AuthResponse;
-    
+      name,
+    })) as AuthResponse;
+
     return response;
   } catch (error: unknown) {
     // Handle different error scenarios
@@ -44,8 +48,8 @@ export async function registerUser(email: string, password: string, name: string
           success: false,
           error: {
             code: axiosError.response.status,
-            message: responseData?.error?.message || 'Registration failed'
-          }
+            message: responseData?.error?.message || 'Registration failed',
+          },
         };
       } else if (axiosError.request) {
         // Request was made but no response received
@@ -53,20 +57,21 @@ export async function registerUser(email: string, password: string, name: string
           success: false,
           error: {
             code: 'NETWORK_ERROR',
-            message: 'No response from server. Please check your connection.'
-          }
+            message: 'No response from server. Please check your connection.',
+          },
         };
       }
     }
-    
+
     // Something else went wrong
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error during registration';
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error during registration';
     return {
       success: false,
       error: {
         code: 'UNKNOWN_ERROR',
-        message: errorMessage
-      }
+        message: errorMessage,
+      },
     };
   }
 }
@@ -79,11 +84,11 @@ export async function registerUser(email: string, password: string, name: string
  */
 export async function loginUser(email: string, password: string): Promise<AuthResponse> {
   try {
-    const response = await api.post('/auth/login', {
+    const response = (await api.post('/auth/login', {
       email,
-      password
-    }) as AuthResponse;
-    
+      password,
+    })) as AuthResponse;
+
     return response;
   } catch (error: unknown) {
     // Handle different error scenarios
@@ -96,8 +101,8 @@ export async function loginUser(email: string, password: string): Promise<AuthRe
           success: false,
           error: {
             code: axiosError.response.status,
-            message: responseData?.error?.message || 'Login failed'
-          }
+            message: responseData?.error?.message || 'Login failed',
+          },
         };
       } else if (axiosError.request) {
         // Request was made but no response received
@@ -105,20 +110,20 @@ export async function loginUser(email: string, password: string): Promise<AuthRe
           success: false,
           error: {
             code: 'NETWORK_ERROR',
-            message: 'No response from server. Please check your connection.'
-          }
+            message: 'No response from server. Please check your connection.',
+          },
         };
       }
     }
-    
+
     // Something else went wrong
     const errorMessage = error instanceof Error ? error.message : 'Unknown error during login';
     return {
       success: false,
       error: {
         code: 'UNKNOWN_ERROR',
-        message: errorMessage
-      }
+        message: errorMessage,
+      },
     };
   }
 }

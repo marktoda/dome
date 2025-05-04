@@ -48,14 +48,11 @@ export function createServiceBindings(
   });
 
   // Create service binding for dome-api to chat-orchestrator
-  bindings.domeApiToChat = new cloudflare.ServiceBinding(
-    'dome-api-to-chat-orchestrator',
-    {
-      name: 'CHAT_ORCHESTRATOR',
-      service: workers.chatOrchestrator.name,
-      environment: 'production',
-    },
-  );
+  bindings.domeApiToChat = new cloudflare.ServiceBinding('dome-api-to-chat-orchestrator', {
+    name: 'CHAT_ORCHESTRATOR',
+    service: workers.chatOrchestrator.name,
+    environment: 'production',
+  });
 
   // Create service binding for chat-orchestrator to constellation
   bindings.chatOrchestratorToConstellation = new cloudflare.ServiceBinding(

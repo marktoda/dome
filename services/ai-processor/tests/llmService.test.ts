@@ -7,13 +7,13 @@ vi.mock('../src/schemas', async () => {
   const actualSchemas = await vi.importActual('../src/schemas');
   return {
     ...actualSchemas,
-    getSchemaForContentType: vi.fn().mockImplementation((contentType) => {
+    getSchemaForContentType: vi.fn().mockImplementation(contentType => {
       // Return a mock schema that validates our test data
       return {
-        parse: vi.fn().mockImplementation((data) => data),
+        parse: vi.fn().mockImplementation(data => data),
       };
     }),
-    getSchemaInstructions: vi.fn().mockImplementation((contentType) => {
+    getSchemaInstructions: vi.fn().mockImplementation(contentType => {
       return `Mock instructions for ${contentType}`;
     }),
   };
@@ -239,7 +239,7 @@ describe('LlmService', () => {
       // Spy on schema getter functions
       const spyGetSchema = vi.spyOn(schemas, 'getSchemaForContentType');
       const spyGetInstructions = vi.spyOn(schemas, 'getSchemaInstructions');
-      
+
       const content = 'This is some content with unknown type.';
       await llmService.processContent(content, 'unknown-type');
 
@@ -416,31 +416,31 @@ describe('LlmService', () => {
 
   describe('helperMethods', () => {
     it('should generate fallback title from first line', () => {
-      const title = (llmService as any).generateFallbackTitle("First line\nSecond line");
-      expect(title).toBe("First line");
+      const title = (llmService as any).generateFallbackTitle('First line\nSecond line');
+      expect(title).toBe('First line');
     });
-    
+
     it('should truncate long titles', () => {
-      const longLine = "A".repeat(100);
+      const longLine = 'A'.repeat(100);
       const title = (llmService as any).generateFallbackTitle(longLine);
       expect(title.length).toBeLessThan(longLine.length);
-      expect(title).toContain("...");
+      expect(title).toContain('...');
     });
-    
+
     it('should handle empty content for title generation', () => {
-      const title = (llmService as any).generateFallbackTitle("");
-      expect(title).toBe("Untitled Content");
+      const title = (llmService as any).generateFallbackTitle('');
+      expect(title).toBe('Untitled Content');
     });
-    
+
     it('should truncate content properly', () => {
-      const content = "A".repeat(10000);
+      const content = 'A'.repeat(10000);
       const truncated = (llmService as any).truncateContent(content, 5000);
       expect(truncated.length).toBeLessThanOrEqual(5000 + 25); // Allow for truncation message
-      expect(truncated).toContain("... [content truncated]");
+      expect(truncated).toContain('... [content truncated]');
     });
-    
+
     it('should not truncate content under the limit', () => {
-      const content = "A".repeat(100);
+      const content = 'A'.repeat(100);
       const truncated = (llmService as any).truncateContent(content, 200);
       expect(truncated).toBe(content);
     });

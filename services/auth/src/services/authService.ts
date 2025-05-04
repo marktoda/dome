@@ -42,11 +42,7 @@ export class AuthService {
 
     try {
       // Check if user already exists
-      const existingUser = await this.db
-        .select()
-        .from(users)
-        .where(eq(users.email, email))
-        .get();
+      const existingUser = await this.db.select().from(users).where(eq(users.email, email)).get();
 
       if (existingUser) {
         throw new AuthError('User with this email already exists', AuthErrorType.USER_EXISTS);
@@ -94,11 +90,9 @@ export class AuthService {
 
     try {
       // Find the user
-      const user = await this.db
-        .select()
-        .from(users)
-        .where(eq(users.email, email))
-        .get() as UserWithPassword | undefined;
+      const user = (await this.db.select().from(users).where(eq(users.email, email)).get()) as
+        | UserWithPassword
+        | undefined;
 
       if (!user) {
         throw new AuthError('Invalid email or password', AuthErrorType.INVALID_CREDENTIALS);

@@ -24,16 +24,13 @@ const wrap = createServiceWrapper('auth-service');
 
 // Use the wrapper for service functions
 async function authenticateUser(credentials) {
-  return wrap(
-    { operation: 'authenticateUser', userId: credentials.userId },
-    async () => {
-      // Implementation with automatic:
-      // - Error handling and conversion
-      // - Context propagation
-      // - Operation tracking
-      // - Structured logging
-    }
-  );
+  return wrap({ operation: 'authenticateUser', userId: credentials.userId }, async () => {
+    // Implementation with automatic:
+    // - Error handling and conversion
+    // - Context propagation
+    // - Operation tracking
+    // - Structured logging
+  });
 }
 ```
 
@@ -55,23 +52,23 @@ import { createProcessChain } from '@dome/common';
 const processUserRegistration = createProcessChain({
   serviceName: 'user-service',
   operation: 'registerUser',
-  
+
   // Step 1: Input validation
-  inputValidation: (input) => {
+  inputValidation: input => {
     assertValid(input.email, 'Email is required');
     assertValid(input.password, 'Password is required');
   },
-  
+
   // Step 2: Main processing
-  process: async (input) => {
+  process: async input => {
     // Implementation with automatic error handling
     return createdUser;
   },
-  
+
   // Step 3: Output validation
-  outputValidation: (output) => {
+  outputValidation: output => {
     assertValid(output.id, 'User ID is missing in the result');
-  }
+  },
 });
 
 // Use the process chain
@@ -96,26 +93,23 @@ The context utilities provide a way to maintain context across asynchronous oper
 import { withContext, getContext } from '@dome/common';
 
 // Run a function with context
-const result = await withContext(
-  { requestId, userId, operation: 'processData' },
-  async (logger) => {
-    // The logger is pre-configured with the context
-    logger.info('Processing data');
-    
-    // The context is available to all functions called from here
-    await processStep1();
-    await processStep2();
-    
-    return result;
-  }
-);
+const result = await withContext({ requestId, userId, operation: 'processData' }, async logger => {
+  // The logger is pre-configured with the context
+  logger.info('Processing data');
+
+  // The context is available to all functions called from here
+  await processStep1();
+  await processStep2();
+
+  return result;
+});
 
 // Access context in nested functions
 function processStep1() {
   // Get the current context
   const context = getContext();
   const requestId = context.get('requestId');
-  
+
   // Use the context-aware logger
   const logger = getLogger();
   logger.info({ step: 1 }, 'Processing step 1');
@@ -144,7 +138,7 @@ initLogging(app);
 app.use('*', requestContextMiddleware());
 
 // In your handlers, context is automatically available
-app.get('/users/:id', async (c) => {
+app.get('/users/:id', async c => {
   const logger = getLogger();
   // Logger automatically includes request ID and other context
   logger.info({ userId: c.req.param('id') }, 'Fetching user');
@@ -171,7 +165,7 @@ function processUserData(userData) {
   // Sanitize sensitive data before logging
   const sanitizedData = sanitizeForLogging(userData);
   getLogger().info({ user: sanitizedData }, 'Processing user data');
-  
+
   // Process the original data
   // ...
 }
@@ -219,7 +213,7 @@ import { z } from 'zod';
 const userSchema = z.object({
   email: z.string().email(),
   name: z.string().min(2),
-  age: z.number().optional()
+  age: z.number().optional(),
 });
 
 // Create a validator
@@ -232,14 +226,17 @@ try {
 } catch (error) {
   // Format error for API response
   const formattedErrors = formatZodError(error);
-  return c.json({ 
-    success: false, 
-    error: { 
-      code: 'VALIDATION_ERROR',
-      message: 'Invalid user data',
-      details: formattedErrors
-    } 
-  }, 400);
+  return c.json(
+    {
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid user data',
+        details: formattedErrors,
+      },
+    },
+    400,
+  );
 }
 ```
 
@@ -302,9 +299,9 @@ const response = await trackedFetch(
   {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
+    body: JSON.stringify(data),
   },
-  { operation: 'fetchExternalData' }
+  { operation: 'fetchExternalData' },
 );
 
 // Process the response
@@ -337,17 +334,15 @@ try {
 }
 
 // Try an operation with automatic error logging
-const result = tryWithErrorLogging(
-  () => riskyOperation(),
-  'Failed to perform risky operation',
-  { context: 'additional context' }
-);
+const result = tryWithErrorLogging(() => riskyOperation(), 'Failed to perform risky operation', {
+  context: 'additional context',
+});
 
 // Async version
 const asyncResult = await tryWithErrorLoggingAsync(
   () => asyncRiskyOperation(),
   'Failed to perform async risky operation',
-  { context: 'additional context' }
+  { context: 'additional context' },
 );
 ```
 
@@ -418,6 +413,7 @@ try {
 If you're migrating from custom utility functions to the standardized utilities:
 
 1. Replace custom function wrappers with service wrappers:
+
    ```typescript
    // Old
    async function withErrorHandling(fn) {
@@ -427,10 +423,10 @@ If you're migrating from custom utility functions to the standardized utilities:
        // Custom error handling
      }
    }
-   
+
    // New
    const wrap = createServiceWrapper('my-service');
-   
+
    async function myFunction(data) {
      return wrap({ operation: 'myFunction', dataId: data.id }, async () => {
        // Implementation
@@ -439,11 +435,12 @@ If you're migrating from custom utility functions to the standardized utilities:
    ```
 
 2. Replace custom context management with standardized context:
+
    ```typescript
    // Old
    const context = { requestId };
    await processWithContext(context);
-   
+
    // New
    await withContext({ requestId }, async () => {
      await process();
@@ -451,16 +448,18 @@ If you're migrating from custom utility functions to the standardized utilities:
    ```
 
 3. Replace custom metrics with standardized metrics:
+
    ```typescript
    // Old
    incrementCounter('my_service_counter');
-   
+
    // New
    const metrics = createServiceMetrics('my-service');
    metrics.counter('counter');
    ```
 
 4. Replace custom fetch wrappers with trackedFetch:
+
    ```typescript
    // Old
    async function callApi() {
@@ -474,6 +473,7 @@ If you're migrating from custom utility functions to the standardized utilities:
        throw error;
      }
    }
-   
+
    // New
    const response = await trackedFetch(url, options, { operation: 'callApi' });
+   ```

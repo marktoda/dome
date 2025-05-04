@@ -8,7 +8,7 @@
 export const mockNotionWorkspaceData = {
   workspaceId: 'workspace-123',
   userId: 'user-123',
-  cadence: 'PT2H' // 2 hours
+  cadence: 'PT2H', // 2 hours
 };
 
 /**
@@ -16,7 +16,7 @@ export const mockNotionWorkspaceData = {
  */
 export const mockNotionWorkspaceDataNoCadence = {
   workspaceId: 'workspace-123',
-  userId: 'user-123'
+  userId: 'user-123',
 };
 
 /**
@@ -25,7 +25,7 @@ export const mockNotionWorkspaceDataNoCadence = {
 export const mockNotionWorkspaceInvalidData = {
   // Missing required workspaceId
   userId: 'user-123',
-  cadence: 'PT1H'
+  cadence: 'PT1H',
 };
 
 /**
@@ -34,7 +34,7 @@ export const mockNotionWorkspaceInvalidData = {
 export const mockNotionWorkspaceResponse = {
   id: 'sync-123',
   resourceId: 'workspace-123',
-  wasInitialised: true
+  wasInitialised: true,
 };
 
 /**
@@ -49,16 +49,16 @@ export const mockNotionWorkspaceHistory = {
       timestamp: 1617235678000,
       status: 'completed',
       itemCount: 42,
-      error: null
+      error: null,
     },
     {
       id: 'history-2',
       timestamp: 1617235679000,
       status: 'completed',
       itemCount: 17,
-      error: null
-    }
-  ]
+      error: null,
+    },
+  ],
 };
 
 /**
@@ -67,7 +67,7 @@ export const mockNotionWorkspaceHistory = {
 export const mockNotionOAuthConfigData = {
   code: 'oauth-code-123',
   redirectUri: 'https://example.com/callback',
-  userId: 'user-123'
+  userId: 'user-123',
 };
 
 /**
@@ -76,7 +76,7 @@ export const mockNotionOAuthConfigData = {
 export const mockNotionOAuthConfigInvalidData = {
   code: 'oauth-code-123',
   redirectUri: 'invalid-url', // Not a valid URL
-  userId: 'user-123'
+  userId: 'user-123',
 };
 
 /**
@@ -84,21 +84,21 @@ export const mockNotionOAuthConfigInvalidData = {
  */
 export const mockNotionOAuthUrlData = {
   redirectUri: 'https://example.com/callback',
-  state: 'random-state-123'
+  state: 'random-state-123',
 };
 
 /**
  * Mock Notion OAuth URL request data without state
  */
 export const mockNotionOAuthUrlDataNoState = {
-  redirectUri: 'https://example.com/callback'
+  redirectUri: 'https://example.com/callback',
 };
 
 /**
  * Mock Notion OAuth URL response
  */
 export const mockNotionOAuthUrlResponse = {
-  url: 'https://api.notion.com/v1/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&response_type=code&state=random-state-123'
+  url: 'https://api.notion.com/v1/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&response_type=code&state=random-state-123',
 };
 
 /**
@@ -107,5 +107,5 @@ export const mockNotionOAuthUrlResponse = {
 export const mockTsunamiServiceError = {
   message: 'Failed to register workspace',
   code: 'REGISTRATION_ERROR',
-  status: 503
+  status: 503,
 };

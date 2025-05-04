@@ -32,7 +32,7 @@ export class AuthError extends Error {
     this.name = 'AuthError';
     this.type = type;
     this.status = status;
-    
+
     // Maintain proper stack trace
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, AuthError);

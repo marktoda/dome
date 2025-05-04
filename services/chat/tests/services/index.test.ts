@@ -72,7 +72,7 @@ vi.mock('../../src/services/searchService', () => {
   const mockSearchInstance = {
     search: vi.fn().mockResolvedValue([]),
   };
-  
+
   return {
     SearchService: {
       fromEnv: vi.fn().mockReturnValue(mockSearchInstance),
@@ -89,7 +89,7 @@ vi.mock('../../src/services/llmService', () => ({
     analyzeQuery: vi.fn().mockResolvedValue({
       isComplex: false,
       shouldSplit: false,
-      reason: 'Simple query'
+      reason: 'Simple query',
     }),
     stream: vi.fn().mockImplementation(async function* () {
       yield 'Generated response';
@@ -140,7 +140,7 @@ describe('Services', () => {
       DOME_API_URL: 'https://api.example.com',
       DOME_API_KEY: 'mock-api-key',
       SILO: {} as any,
-      CONSTELLATION: {} as any
+      CONSTELLATION: {} as any,
     } as unknown as Env;
   });
 

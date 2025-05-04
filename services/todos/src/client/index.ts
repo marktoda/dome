@@ -1,10 +1,10 @@
 /**
  * Todos Service Client
- * 
+ *
  * This client allows other services to interact with the Todos service
  * and provides shared types for consistent data exchange.
  */
-import { 
+import {
   TodoItem,
   TodoStatus,
   TodoPriority,
@@ -14,7 +14,7 @@ import {
   Pagination,
   ListTodosResult,
   BatchUpdateInput,
-  TodoStats
+  TodoStats,
 } from '../types';
 import { getLogger } from '@dome/common';
 import { createServiceMetrics } from '@dome/common';
@@ -29,29 +29,29 @@ export {
   Pagination,
   ListTodosResult,
   BatchUpdateInput,
-  TodoStats
+  TodoStats,
 };
 
 // Export TodoQueueItem type for use by services that send todos to the queue
 export interface TodoQueueItem {
   // Required fields
-  userId: string;        // User who owns the todo
-  sourceNoteId: string;  // ID of the note/content this todo was extracted from
-  sourceText: string;    // Original text snippet from which the todo was extracted
-  
+  userId: string; // User who owns the todo
+  sourceNoteId: string; // ID of the note/content this todo was extracted from
+  sourceText: string; // Original text snippet from which the todo was extracted
+
   // AI-enriched content
-  title: string;         // Short title/summary
-  description?: string;  // Detailed description (optional)
-  
+  title: string; // Short title/summary
+  description?: string; // Detailed description (optional)
+
   // Metadata suggestions
-  priority?: TodoPriority | string;  // Suggested priority
-  dueDate?: string | number;         // Suggested due date (string date or timestamp)
-  estimatedEffort?: string;          // Suggested effort (e.g., "5min", "1h")
-  actionableSteps?: string[];        // Suggested breakdown of steps
-  category?: string;                 // Suggested category
-  
-  // Processing metadata 
-  created?: number;      // When this item was created (timestamp)
+  priority?: TodoPriority | string; // Suggested priority
+  dueDate?: string | number; // Suggested due date (string date or timestamp)
+  estimatedEffort?: string; // Suggested effort (e.g., "5min", "1h")
+  actionableSteps?: string[]; // Suggested breakdown of steps
+  category?: string; // Suggested category
+
+  // Processing metadata
+  created?: number; // When this item was created (timestamp)
 }
 
 // Logger for the client
@@ -60,14 +60,14 @@ const metrics = createServiceMetrics('todos.client');
 
 /**
  * Create a client for interacting with the Todos service
- * 
+ *
  * @param binding The Cloudflare Worker binding to the Todos service
  * @param metricsPrefix Optional prefix for metrics
  * @returns A client for the Todos service
  */
 export function createTodosClient(
   binding: TodosWorkerBinding,
-  metricsPrefix = 'todos.client'
+  metricsPrefix = 'todos.client',
 ): TodosBinding {
   const client: TodosBinding = {
     createTodo: async (todo: CreateTodoInput) => {
@@ -176,7 +176,7 @@ export function createTodosClient(
 
 /**
  * Helper function to send todos to the queue in the correct format
- * 
+ *
  * @param queue The queue binding
  * @param todos The todos to send
  * @param metadata Additional metadata for the todos
@@ -185,10 +185,10 @@ export function createTodosClient(
 export async function sendTodosToQueue(
   queue: Queue<TodoQueueItem>,
   todos: TodoQueueItem | TodoQueueItem[],
-  metadata: Record<string, any> = {}
+  metadata: Record<string, any> = {},
 ): Promise<void> {
   const todosArray = Array.isArray(todos) ? todos : [todos];
-  
+
   // Ensure each todo has required fields
   todosArray.forEach(todo => {
     if (!todo.userId) {
@@ -203,7 +203,7 @@ export async function sendTodosToQueue(
     if (!todo.title) {
       throw new Error('Todo must have a title');
     }
-    
+
     // Set created timestamp if not provided
     if (!todo.created) {
       todo.created = Date.now();
@@ -215,17 +215,23 @@ export async function sendTodosToQueue(
     for (const todo of todosArray) {
       await queue.send(todo);
     }
-    
-    logger.info({
-      count: todosArray.length,
-      ...metadata
-    }, 'Sent todos to queue');
+
+    logger.info(
+      {
+        count: todosArray.length,
+        ...metadata,
+      },
+      'Sent todos to queue',
+    );
   } catch (error) {
-    logger.error({
-      error,
-      count: todosArray.length,
-      ...metadata
-    }, 'Error sending todos to queue');
+    logger.error(
+      {
+        error,
+        count: todosArray.length,
+        ...metadata,
+      },
+      'Error sending todos to queue',
+    );
     throw error;
   }
 }
@@ -237,7 +243,10 @@ export interface TodosBinding {
   listTodos(filter: TodoFilter, pagination?: Pagination): Promise<ListTodosResult>;
   updateTodo(id: string, updates: UpdateTodoInput): Promise<{ success: boolean }>;
   deleteTodo(id: string): Promise<{ success: boolean }>;
-  batchUpdateTodos(ids: string[], updates: BatchUpdateInput): Promise<{ success: boolean; updatedCount: number }>;
+  batchUpdateTodos(
+    ids: string[],
+    updates: BatchUpdateInput,
+  ): Promise<{ success: boolean; updatedCount: number }>;
   stats(userId: string): Promise<TodoStats>;
 }
 
@@ -247,6 +256,9 @@ export interface TodosWorkerBinding {
   listTodos(filter: TodoFilter, pagination?: Pagination): Promise<ListTodosResult>;
   updateTodo(id: string, updates: UpdateTodoInput): Promise<{ success: boolean }>;
   deleteTodo(id: string): Promise<{ success: boolean }>;
-  batchUpdateTodos(ids: string[], updates: BatchUpdateInput): Promise<{ success: boolean; updatedCount: number }>;
+  batchUpdateTodos(
+    ids: string[],
+    updates: BatchUpdateInput,
+  ): Promise<{ success: boolean; updatedCount: number }>;
   stats(userId: string): Promise<TodoStats>;
 }

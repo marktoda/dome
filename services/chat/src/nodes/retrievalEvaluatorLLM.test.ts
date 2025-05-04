@@ -22,7 +22,7 @@ vi.mock('@dome/common', () => ({
 vi.mock('../services/modelFactory');
 vi.mock('../services/observabilityService');
 vi.mock('../utils/errors', () => ({
-  toDomeError: vi.fn((error) => ({
+  toDomeError: vi.fn(error => ({
     message: error instanceof Error ? error.message : 'Unknown error',
     code: 'ERR_RETRIEVAL_EVALUATOR',
   })),
@@ -30,7 +30,8 @@ vi.mock('../utils/errors', () => ({
 
 // Mock performance API
 global.performance = {
-  now: vi.fn()
+  now: vi
+    .fn()
     .mockReturnValueOnce(100) // Start time
     .mockReturnValueOnce(350), // End time (250ms elapsed)
 } as any;
@@ -49,7 +50,7 @@ describe('retrievalEvaluatorLLM Node', () => {
   beforeEach(() => {
     // Reset mocks
     vi.clearAllMocks();
-    
+
     // Setup mock data - code chunks
     const mockCodeChunks: DocumentChunk[] = [
       {
@@ -62,11 +63,12 @@ describe('retrievalEvaluatorLLM Node', () => {
           title: 'BST Implementation',
           relevanceScore: 0.92,
           rerankerScore: 0.95,
-        }
+        },
       },
       {
         id: 'code-2',
-        content: 'def insert(self, value):\n    if self.root is None:\n        self.root = Node(value)',
+        content:
+          'def insert(self, value):\n    if self.root is None:\n        self.root = Node(value)',
         metadata: {
           source: 'github',
           sourceType: 'code',
@@ -74,10 +76,10 @@ describe('retrievalEvaluatorLLM Node', () => {
           title: 'BST Insert Method',
           relevanceScore: 0.88,
           rerankerScore: 0.91,
-        }
-      }
+        },
+      },
     ];
-    
+
     // Setup mock data - docs chunks
     const mockDocsChunks: DocumentChunk[] = [
       {
@@ -89,10 +91,10 @@ describe('retrievalEvaluatorLLM Node', () => {
           title: 'Data Structures Documentation',
           relevanceScore: 0.85,
           rerankerScore: 0.89,
-        }
-      }
+        },
+      },
     ];
-    
+
     // Create retrieval tasks
     mockCodeRetrievalTask = {
       category: 'code' as any,
@@ -105,10 +107,10 @@ describe('retrievalEvaluatorLLM Node', () => {
         totalCandidates: 5,
         rerankerModel: 'bge-reranker-code',
         rerankerExecutionTimeMs: 50,
-        scoreThreshold: 0.25
-      }
+        scoreThreshold: 0.25,
+      },
     };
-    
+
     mockDocsRetrievalTask = {
       category: 'docs' as any,
       query: 'binary search tree data structure',
@@ -120,36 +122,31 @@ describe('retrievalEvaluatorLLM Node', () => {
         totalCandidates: 3,
         rerankerModel: 'bge-reranker-docs',
         rerankerExecutionTimeMs: 45,
-        scoreThreshold: 0.25
-      }
+        scoreThreshold: 0.25,
+      },
     };
-    
+
     mockState = {
       userId: 'user-123',
-      messages: [
-        { role: 'user', content: 'How do I implement a binary search tree in Python?' }
-      ],
+      messages: [{ role: 'user', content: 'How do I implement a binary search tree in Python?' }],
       options: {
         enhanceWithContext: true,
         maxContextItems: 5,
         includeSourceInfo: true,
         maxTokens: 1000,
       },
-      retrievals: [
-        mockCodeRetrievalTask,
-        mockDocsRetrievalTask
-      ],
+      retrievals: [mockCodeRetrievalTask, mockDocsRetrievalTask],
       metadata: {
         traceId: 'trace-123',
-      }
+      },
     };
-    
-    mockEnv = { 
+
+    mockEnv = {
       OPENAI_API_KEY: 'mock-api-key',
     };
-    
+
     mockConfig = {};
-    
+
     mockLlmResponse = {
       text: `I've carefully analyzed the retrieved content for the query about implementing a binary search tree in Python.
 
@@ -172,18 +169,18 @@ describe('retrievalEvaluatorLLM Node', () => {
 5. Would external tools or information sources be needed to properly answer this query? Why or why not?
    External tools would not be needed because the provided code snippets cover the core implementation of a binary search tree in Python, and the documentation provides context on its efficiency.
 
-Based on my analysis, I would rate this information as ADEQUATE to answer the query. The retrieved content provides essential implementation details for a binary search tree in Python, including class definition and insertion. While some additional methods are missing, the core implementation is covered, which satisfies the primary question of how to implement a BST.`
+Based on my analysis, I would rate this information as ADEQUATE to answer the query. The retrieved content provides essential implementation details for a binary search tree in Python, including class definition and insertion. While some additional methods are missing, the core implementation is covered, which satisfies the primary question of how to implement a BST.`,
     };
-    
+
     // Mock ChatModel
     const mockChatModel = {
       invoke: vi.fn().mockResolvedValue(mockLlmResponse),
       stream: vi.fn(),
     };
-    
+
     // Mock ModelFactory
     vi.mocked(ModelFactory.createChatModel).mockReturnValue(mockChatModel as any);
-    
+
     // Mock ObservabilityService
     vi.mocked(ObservabilityService.startSpan).mockReturnValue('span-123');
     vi.mocked(ObservabilityService.logLlmCall).mockReturnValue(undefined);
@@ -193,11 +190,11 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
   it('should evaluate retrieval results and determine if content is adequate', async () => {
     // Execute the node
     const result = await retrievalEvaluatorLLM(mockState, mockConfig, mockEnv);
-    
+
     // Verify the result
     expect(result).toBeDefined();
     expect(result.retrievalEvaluation).toBeDefined();
-    
+
     // Check evaluation results
     expect(result.retrievalEvaluation?.overallScore).toBeCloseTo(0.5, 1);
     expect(result.retrievalEvaluation?.isAdequate).toBe(true);
@@ -205,36 +202,38 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
     // the LLM response contains phrases like "would not be needed"
     expect(result.retrievalEvaluation?.suggestedAction).toBe('use_tools');
     expect(result.retrievalEvaluation?.reasoning).toContain('ADEQUATE');
-    
+
     // Verify ModelFactory was called with correct parameters
     expect(ModelFactory.createChatModel).toHaveBeenCalledWith(
       mockEnv,
       expect.objectContaining({
         temperature: 0.2,
         maxTokens: 1000,
-        modelId: 'gpt-4'
-      })
+        modelId: 'gpt-4',
+      }),
     );
-    
+
     // Verify model.invoke was called with a system prompt containing content to evaluate
     const modelInvoke = vi.mocked(ModelFactory.createChatModel).mock.results[0].value.invoke;
     expect(modelInvoke).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
           role: 'system',
-          content: expect.stringContaining('QUERY: How do I implement a binary search tree in Python?')
-        })
-      ])
+          content: expect.stringContaining(
+            'QUERY: How do I implement a binary search tree in Python?',
+          ),
+        }),
+      ]),
     );
-    
+
     // Verify the prompt contains content from both sources
     const systemPrompt = modelInvoke.mock.calls[0][0][0].content;
     expect(systemPrompt).toContain('[CODE CHUNK]');
     expect(systemPrompt).toContain('[DOCS CHUNK]');
-    
+
     // Verify LLM call was logged
     expect(ObservabilityService.logLlmCall).toHaveBeenCalled();
-    
+
     // Verify metadata
     expect(result.metadata).toMatchObject({
       currentNode: 'retrievalEvaluatorLLM',
@@ -246,16 +245,16 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
     // Setup state with no retrievals
     const stateWithoutResults = {
       ...mockState,
-      retrievals: undefined
+      retrievals: undefined,
     };
-    
+
     // Execute the node
     const result = await retrievalEvaluatorLLM(stateWithoutResults, mockConfig, mockEnv);
-    
+
     // Verify no evaluation was performed
     expect(result.retrievalEvaluation).toBeUndefined();
     expect(ModelFactory.createChatModel).not.toHaveBeenCalled();
-    
+
     // Verify metadata
     expect(result.metadata).toMatchObject({
       currentNode: 'retrievalEvaluatorLLM',
@@ -267,16 +266,16 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
     // Setup state with empty retrievals
     const stateWithEmptyResults = {
       ...mockState,
-      retrievals: []
+      retrievals: [],
     };
-    
+
     // Execute the node
     const result = await retrievalEvaluatorLLM(stateWithEmptyResults, mockConfig, mockEnv);
-    
+
     // Verify no evaluation was performed
     expect(result.retrievalEvaluation).toBeUndefined();
     expect(ModelFactory.createChatModel).not.toHaveBeenCalled();
-    
+
     // Verify metadata
     expect(result.metadata).toMatchObject({
       currentNode: 'retrievalEvaluatorLLM',
@@ -288,16 +287,16 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
     // Setup state with no user messages
     const stateWithoutMessages = {
       ...mockState,
-      messages: []
+      messages: [],
     };
-    
+
     // Execute the node
     const result = await retrievalEvaluatorLLM(stateWithoutMessages, mockConfig, mockEnv);
-    
+
     // Verify no evaluation was performed
     expect(result.retrievalEvaluation).toBeUndefined();
     expect(ModelFactory.createChatModel).not.toHaveBeenCalled();
-    
+
     // Verify metadata
     expect(result.metadata).toMatchObject({
       currentNode: 'retrievalEvaluatorLLM',
@@ -311,10 +310,10 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
       invoke: vi.fn().mockRejectedValue(new Error('LLM API error')),
       stream: vi.fn(),
     } as any);
-    
+
     // Execute the node
     const result = await retrievalEvaluatorLLM(mockState, mockConfig, mockEnv);
-    
+
     // Verify error handling
     expect(result.retrievalEvaluation).toBeUndefined();
     expect(result.metadata?.errors).toBeDefined();
@@ -322,7 +321,7 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
       node: 'retrievalEvaluatorLLM',
       message: 'LLM API error',
     });
-    
+
     // Verify ObservabilityService.endSpan was called with error context
     expect(ObservabilityService.endSpan).toHaveBeenCalled();
   });
@@ -351,18 +350,18 @@ Based on my analysis, I would rate this information as ADEQUATE to answer the qu
 5. Would external tools or information sources be needed to properly answer this query? Why or why not?
    External tools would be needed because the provided information is too limited to give a complete implementation of a binary search tree in Python.
 
-Based on my analysis, I would rate this information as INADEQUATE to answer the query. The retrieved content lacks essential implementation details needed for a complete binary search tree implementation.`
+Based on my analysis, I would rate this information as INADEQUATE to answer the query. The retrieved content lacks essential implementation details needed for a complete binary search tree implementation.`,
     };
-    
+
     // Update mock model response
     vi.mocked(ModelFactory.createChatModel).mockReturnValue({
       invoke: vi.fn().mockResolvedValue(inadequateResponse),
       stream: vi.fn(),
     } as any);
-    
+
     // Execute the node
     const result = await retrievalEvaluatorLLM(mockState, mockConfig, mockEnv);
-    
+
     // Verify evaluation indicates inadequate content
     expect(result.retrievalEvaluation?.overallScore).toBeCloseTo(0.5, 1);
     expect(result.retrievalEvaluation?.isAdequate).toBe(false);

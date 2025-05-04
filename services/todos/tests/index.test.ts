@@ -176,7 +176,9 @@ describe('Todos Service', () => {
           first: vi.fn().mockResolvedValue({}),
           run: vi.fn().mockResolvedValue({ success: true }),
         }),
-        batch: vi.fn().mockImplementation((stmts: any[]) => Promise.all(stmts.map((s: any) => s.run()))),
+        batch: vi
+          .fn()
+          .mockImplementation((stmts: any[]) => Promise.all(stmts.map((s: any) => s.run()))),
         exec: vi.fn().mockResolvedValue({}),
       } as unknown as D1Database,
       TODOS_QUEUE: {
@@ -211,7 +213,7 @@ describe('Todos Service', () => {
         expect.objectContaining({
           operation: 'create_todo',
         }),
-        expect.any(String)
+        expect.any(String),
       );
     });
 
@@ -239,7 +241,7 @@ describe('Todos Service', () => {
           id: 'todo-123',
           userId: 'user-123',
           title: 'Test Todo',
-        })
+        }),
       );
     });
   });
@@ -300,7 +302,7 @@ describe('Todos Service', () => {
           totalCount: 10,
           byStatus: expect.any(Object),
           byPriority: expect.any(Object),
-        })
+        }),
       );
     });
   });

@@ -51,12 +51,12 @@ if (typeof crypto === 'undefined') {
       return bytes;
     },
     randomUUID: () => {
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
         const r = (Math.random() * 16) | 0;
         const v = c === 'x' ? r : (r & 0x3) | 0x8;
         return v.toString(16);
       });
-    }
+    },
   };
 }
 
@@ -73,17 +73,17 @@ vi.mock('@dome/common', () => {
       warn: vi.fn(),
       error: vi.fn(),
       debug: vi.fn(),
-      child: vi.fn()
-    })
+      child: vi.fn(),
+    }),
   });
-  
+
   // Create base logger that can spawn child loggers
   const mockLogger: MockLoggerInterface = {
     info: vi.fn(),
     warn: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
-    child: vi.fn().mockImplementation(() => createChildLogger())
+    child: vi.fn().mockImplementation(() => createChildLogger()),
   };
 
   // Create mock metrics functions
@@ -92,7 +92,7 @@ vi.mock('@dome/common', () => {
     timing: vi.fn(),
     gauge: vi.fn(),
     startTimer: vi.fn(() => ({ stop: vi.fn() })),
-    trackOperation: vi.fn().mockImplementation((name, fn) => fn())
+    trackOperation: vi.fn().mockImplementation((name, fn) => fn()),
   };
 
   // Return fully mocked dome/logging module
@@ -108,8 +108,8 @@ vi.mock('@dome/common', () => {
       gauge: vi.fn(),
       timing: vi.fn(),
       startTimer: vi.fn(() => ({ stop: vi.fn() })),
-      trackOperation: vi.fn().mockImplementation((name, fn) => fn())
-    })
+      trackOperation: vi.fn().mockImplementation((name, fn) => fn()),
+    }),
   };
 });
 
@@ -119,8 +119,8 @@ vi.mock('../src/services/searchService', () => ({
     search: vi.fn(),
     extractSourceMetadata: vi.fn(),
     rankAndFilterDocuments: vi.fn(),
-    fromEnv: vi.fn()
-  }
+    fromEnv: vi.fn(),
+  },
 }));
 
 // Ensure that environment variables needed for tests are set

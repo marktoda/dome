@@ -1,6 +1,6 @@
 /**
  * Mock Server for WebsiteProvider Integration Tests
- * 
+ *
  * This file sets up a mock HTTP server that simulates different website scenarios
  * for testing the WebsiteProvider. It provides endpoints for:
  * - Simple websites with different structures
@@ -31,8 +31,8 @@ export async function startMockServer(): Promise<void> {
   }
 
   server = createServer(handleRequest);
-  
-  return new Promise((resolve) => {
+
+  return new Promise(resolve => {
     server!.listen(PORT, () => {
       logger.info({ port: PORT }, 'Mock server started');
       resolve();
@@ -49,7 +49,7 @@ export async function stopMockServer(): Promise<void> {
   }
 
   return new Promise((resolve, reject) => {
-    server!.close((err) => {
+    server!.close(err => {
       if (err) {
         reject(err);
       } else {
@@ -74,12 +74,12 @@ export function getMockServerUrl(): string {
 function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
   const path = url.pathname;
-  
+
   // Check for update parameter to simulate page updates
   if (url.searchParams.has('update')) {
     pagesUpdated = url.searchParams.get('update') === 'true';
   }
-  
+
   // Handle different paths
   try {
     if (path === '/robots.txt') {
@@ -115,7 +115,7 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
  */
 function handleRobotsTxt(req: IncomingMessage, res: ServerResponse): void {
   const host = req.headers.host || '';
-  
+
   if (host.includes('invalid-robots')) {
     // Invalid robots.txt
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -144,9 +144,9 @@ function handleRobotsTxt(req: IncomingMessage, res: ServerResponse): void {
 function handleSimpleSite(req: IncomingMessage, res: ServerResponse, path: string): void {
   if (path === '/simple-site' || path === '/simple-site/') {
     // Home page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -163,9 +163,9 @@ function handleSimpleSite(req: IncomingMessage, res: ServerResponse, path: strin
     `);
   } else if (path === '/simple-site/about') {
     // About page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -179,9 +179,9 @@ function handleSimpleSite(req: IncomingMessage, res: ServerResponse, path: strin
     `);
   } else if (path === '/simple-site/contact') {
     // Contact page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -206,9 +206,9 @@ function handleSimpleSite(req: IncomingMessage, res: ServerResponse, path: strin
 function handleWithRobots(req: IncomingMessage, res: ServerResponse, path: string): void {
   if (path === '/with-robots' || path === '/with-robots/') {
     // Home page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -225,9 +225,9 @@ function handleWithRobots(req: IncomingMessage, res: ServerResponse, path: strin
     `);
   } else if (path === '/with-robots/public') {
     // Public page (allowed by robots.txt)
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -241,9 +241,9 @@ function handleWithRobots(req: IncomingMessage, res: ServerResponse, path: strin
     `);
   } else if (path === '/with-robots/admin') {
     // Admin page (disallowed by robots.txt)
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -268,9 +268,9 @@ function handleWithRobots(req: IncomingMessage, res: ServerResponse, path: strin
 function handleContentExtraction(req: IncomingMessage, res: ServerResponse, path: string): void {
   if (path === '/content-extraction' || path === '/content-extraction/') {
     // Home page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -288,9 +288,9 @@ function handleContentExtraction(req: IncomingMessage, res: ServerResponse, path
     `);
   } else if (path === '/content-extraction/main-tag') {
     // Page with main tag
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -313,9 +313,9 @@ function handleContentExtraction(req: IncomingMessage, res: ServerResponse, path
     `);
   } else if (path === '/content-extraction/article-tag') {
     // Page with article tag
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -338,9 +338,9 @@ function handleContentExtraction(req: IncomingMessage, res: ServerResponse, path
     `);
   } else if (path === '/content-extraction/content-class') {
     // Page with content class
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -374,15 +374,15 @@ function handleContentExtraction(req: IncomingMessage, res: ServerResponse, path
  * Handle incremental sync test cases
  */
 function handleIncremental(req: IncomingMessage, res: ServerResponse, path: string): void {
-  const lastModified = pagesUpdated 
-    ? new Date().toUTCString() 
+  const lastModified = pagesUpdated
+    ? new Date().toUTCString()
     : new Date('2025-01-01').toUTCString();
-  
+
   if (path === '/incremental' || path === '/incremental/') {
     // Home page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': lastModified
+      'Last-Modified': lastModified,
     });
     res.end(`
       <html>
@@ -400,9 +400,9 @@ function handleIncremental(req: IncomingMessage, res: ServerResponse, path: stri
     `);
   } else if (path === '/incremental/page1') {
     // Page 1 (never updated)
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date('2025-01-01').toUTCString()
+      'Last-Modified': new Date('2025-01-01').toUTCString(),
     });
     res.end(`
       <html>
@@ -416,9 +416,9 @@ function handleIncremental(req: IncomingMessage, res: ServerResponse, path: stri
     `);
   } else if (path === '/incremental/page2') {
     // Page 2 (never updated)
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date('2025-01-01').toUTCString()
+      'Last-Modified': new Date('2025-01-01').toUTCString(),
     });
     res.end(`
       <html>
@@ -432,9 +432,9 @@ function handleIncremental(req: IncomingMessage, res: ServerResponse, path: stri
     `);
   } else if (path === '/incremental/updated-page') {
     // Updated page (changes when pagesUpdated is true)
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': lastModified
+      'Last-Modified': lastModified,
     });
     res.end(`
       <html>
@@ -459,9 +459,9 @@ function handleIncremental(req: IncomingMessage, res: ServerResponse, path: stri
 function handleErrorCases(req: IncomingMessage, res: ServerResponse, path: string): void {
   if (path === '/error-cases' || path === '/error-cases/') {
     // Home page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -478,9 +478,9 @@ function handleErrorCases(req: IncomingMessage, res: ServerResponse, path: strin
     `);
   } else if (path === '/error-cases/malformed-html') {
     // Malformed HTML page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -495,9 +495,9 @@ function handleErrorCases(req: IncomingMessage, res: ServerResponse, path: strin
     `);
   } else if (path === '/error-cases/invalid-robots') {
     // Page with invalid robots.txt
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -523,22 +523,22 @@ let rateLimitRequestCount = 0;
 
 function handleRateLimited(req: IncomingMessage, res: ServerResponse, path: string): void {
   rateLimitRequestCount++;
-  
+
   if (rateLimitRequestCount > 10 && rateLimitRequestCount % 3 === 0) {
     // Simulate rate limiting for every third request after 10 requests
-    res.writeHead(429, { 
+    res.writeHead(429, {
       'Content-Type': 'text/plain',
-      'Retry-After': '1'
+      'Retry-After': '1',
     });
     res.end('Too Many Requests');
     return;
   }
-  
+
   if (path === '/rate-limited' || path === '/rate-limited/') {
     // Home page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -557,10 +557,10 @@ function handleRateLimited(req: IncomingMessage, res: ServerResponse, path: stri
   } else if (path.startsWith('/rate-limited/page')) {
     // Generic page
     const pageNumber = path.split('/').pop()?.replace('page', '') || '0';
-    
-    res.writeHead(200, { 
+
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -585,9 +585,9 @@ function handleRateLimited(req: IncomingMessage, res: ServerResponse, path: stri
 function handleBlogPlatforms(req: IncomingMessage, res: ServerResponse, path: string): void {
   if (path === '/blog-platforms' || path === '/blog-platforms/') {
     // Home page
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -605,9 +605,9 @@ function handleBlogPlatforms(req: IncomingMessage, res: ServerResponse, path: st
     `);
   } else if (path === '/blog-platforms/wordpress' || path === '/blog-platforms/wordpress/') {
     // WordPress home
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -636,9 +636,9 @@ function handleBlogPlatforms(req: IncomingMessage, res: ServerResponse, path: st
     `);
   } else if (path === '/blog-platforms/wordpress/2025/01/sample-post') {
     // WordPress post
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -674,9 +674,9 @@ function handleBlogPlatforms(req: IncomingMessage, res: ServerResponse, path: st
     `);
   } else if (path === '/blog-platforms/wordpress/category/news') {
     // WordPress category
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -705,9 +705,9 @@ function handleBlogPlatforms(req: IncomingMessage, res: ServerResponse, path: st
     `);
   } else if (path === '/blog-platforms/medium' || path === '/blog-platforms/medium/') {
     // Medium home
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -727,9 +727,9 @@ function handleBlogPlatforms(req: IncomingMessage, res: ServerResponse, path: st
     `);
   } else if (path === '/blog-platforms/medium/sample-post-123456789abc') {
     // Medium post
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -754,9 +754,9 @@ function handleBlogPlatforms(req: IncomingMessage, res: ServerResponse, path: st
     `);
   } else if (path === '/blog-platforms/ghost' || path === '/blog-platforms/ghost/') {
     // Ghost home
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>
@@ -776,9 +776,9 @@ function handleBlogPlatforms(req: IncomingMessage, res: ServerResponse, path: st
     `);
   } else if (path === '/blog-platforms/ghost/sample-post/') {
     // Ghost post
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': 'text/html',
-      'Last-Modified': new Date().toUTCString()
+      'Last-Modified': new Date().toUTCString(),
     });
     res.end(`
       <html>

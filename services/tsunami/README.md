@@ -152,5 +152,6 @@ The response will indicate whether the workspace was newly registered or already
 ```
 
 For detailed documentation on the Notion integration, see:
+
 - [Notion Integration Guide](./docs/NOTION_INTEGRATION.md)
 - [Notion API Documentation](./docs/API_NOTION.md)

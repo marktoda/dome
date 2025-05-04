@@ -7,10 +7,7 @@
 export { formatZodError } from './zodUtils';
 
 // Function wrappers
-export {
-  createServiceWrapper,
-  createProcessChain
-} from './functionWrapper';
+export { createServiceWrapper, createProcessChain } from './functionWrapper';
 
 // Content sanitization
 export {
@@ -18,5 +15,5 @@ export {
   sanitizeThinkingContent,
   createPatternDetector,
   isThinkingContent,
-  processThinkingContent
+  processThinkingContent,
 } from './contentSanitizers';

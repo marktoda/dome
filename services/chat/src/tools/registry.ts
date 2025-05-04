@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_TOOLS, LLMTool } from ".";
+import { DEFAULT_TOOLS, LLMTool } from '.';
 
 /**
  * A lightweight container for LLM-exposed tools.
@@ -41,9 +41,7 @@ export class ToolRegistry {
   }
 
   /** Get a tool by name (undefined if not present). */
-  get<T extends LLMTool<any, any, any> = LLMTool<any, any, any>>(
-    name: string,
-  ): T | undefined {
+  get<T extends LLMTool<any, any, any> = LLMTool<any, any, any>>(name: string): T | undefined {
     return this.map.get(name) as T | undefined;
   }
 
@@ -51,7 +49,6 @@ export class ToolRegistry {
   list(): readonly LLMTool<any, any, any>[] {
     return [...this.map.values()];
   }
-
 
   /** Pick a subset by name (useful when you want per-LLM -call filtering). */
   subset(names: Iterable<string>): ToolRegistry {
@@ -63,13 +60,12 @@ export class ToolRegistry {
     return sub;
   }
 
-
   toolUnionSchema() {
     const variants = this.list().map(t =>
       z.object({
         toolName: z.literal(t.name),
-        args: t.inputSchema,      // args validated against that tool’s schema
-      })
+        args: t.inputSchema, // args validated against that tool’s schema
+      }),
     );
 
     if (variants.length === 0) {
@@ -83,8 +79,8 @@ export class ToolRegistry {
 
     // cast the plain array to a tuple so TS is satisfied
     return z.discriminatedUnion(
-      "toolName",
-      variants as [typeof variants[0], typeof variants[1], ...typeof variants],
+      'toolName',
+      variants as [(typeof variants)[0], (typeof variants)[1], ...typeof variants],
     );
   }
 }

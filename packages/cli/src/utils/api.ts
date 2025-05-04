@@ -31,7 +31,12 @@ class ApiClient {
     });
   }
 
-  request<T = any>(method: 'get' | 'post' | 'put' | 'delete', url: string, dataOrCfg?: any, cfg?: AxiosRequestConfig) {
+  request<T = any>(
+    method: 'get' | 'post' | 'put' | 'delete',
+    url: string,
+    dataOrCfg?: any,
+    cfg?: AxiosRequestConfig,
+  ) {
     return this.axios[method]<T>(url, dataOrCfg, cfg).then(r => r.data);
   }
 
@@ -42,9 +47,11 @@ class ApiClient {
 }
 
 // Singleton accessor -------------------------------------------------------------
-let apiInstance: ApiClient;  // lazy
+let apiInstance: ApiClient; // lazy
 const getApiInstance = () => (apiInstance ??= new ApiClient());
-export const resetApiInstance = () => { apiInstance = undefined as any; };
+export const resetApiInstance = () => {
+  apiInstance = undefined as any;
+};
 
 // Light backwards‑compat façade
 export const api = {
@@ -63,7 +70,8 @@ export const addNote = (context: string, content: string) =>
 
 export const listItems = async (type: 'notes' | 'tasks', filter?: string) => {
   const params: Record<string, any> = { fields: 'title,summary,body,tags,contentType,createdAt' };
-  if (filter) Object.assign(params, type === 'notes' ? { contentType: filter } : { status: filter });
+  if (filter)
+    Object.assign(params, type === 'notes' ? { contentType: filter } : { status: filter });
   const res = await api.get(type === 'notes' ? '/notes' : '/tasks', { params });
   const items = res[type] ?? res.items ?? (Array.isArray(res) ? res : []);
   return { [type]: items, items, total: res.total ?? items.length };
@@ -76,39 +84,49 @@ export const search = async (query: string, limit = 10, category?: string) => {
   const params: Record<string, any> = {
     q: query,
     limit,
-    fields: 'title,summary,body,tags,contentType,createdAt'
+    fields: 'title,summary,body,tags,contentType,createdAt',
   };
-  
+
   if (category) {
     params.category = category;
   }
-  
+
   const res = await api.get('/search', { params });
   const results = (res.results ?? []).map((r: any) => ({ ...r, score: +r.score || 0 }));
-  return { results, pagination: res.pagination ?? { total: 0, limit, offset: 0, hasMore: false }, query, category };
+  return {
+    results,
+    pagination: res.pagination ?? { total: 0, limit, offset: 0, hasMore: false },
+    query,
+    category,
+  };
 };
 
 // ---------- Streaming / WebSocket chat -----------------------------------------
-export type ChatMessageChunk = { type: 'content' | 'thinking' | 'unknown'; content: string } | {
-  type: 'sources'; node: {
-    sources: {
-      id: string;
-      title: string;
-      source: string;
-      url?: string;
-      relevanceScore: number;
+export type ChatMessageChunk =
+  | { type: 'content' | 'thinking' | 'unknown'; content: string }
+  | {
+      type: 'sources';
+      node: {
+        sources: {
+          id: string;
+          title: string;
+          source: string;
+          url?: string;
+          relevanceScore: number;
+        };
+      };
     };
-  }
-};
 
 // Extensible chunk‑type detector stack
-interface ChunkDetector { (raw: string, parsed: any): ChatMessageChunk | null; }
+interface ChunkDetector {
+  (raw: string, parsed: any): ChatMessageChunk | null;
+}
 const detectors: ChunkDetector[] = [
   // LangGraph updates - sources
   (raw, p) => {
     if (Array.isArray(p) && p[0] === 'updates') {
       const nodeId: string = Object.keys(p[1])[0];
-      if (nodeId !== "doc_to_sources") return null;
+      if (nodeId !== 'doc_to_sources') return null;
       const node = p[1][nodeId];
 
       return { type: 'sources', node };
@@ -134,7 +152,7 @@ const detectors: ChunkDetector[] = [
     if (Array.isArray(p) && p[0] === 'messages') {
       const details = p[1];
       if (Array.isArray(details) && details.length > 0 && details[0].kwargs?.content) {
-        const node = details[1].langgraph_node
+        const node = details[1].langgraph_node;
         if (node === 'generate_answer') {
           return { type: 'content', content: details[0].kwargs.content };
         }
@@ -164,14 +182,16 @@ const detectChunk = (data: string): ChatMessageChunk => {
       const match = det(data, parsed);
       if (match) return match;
     }
-  } catch { /* fall‑through */ }
+  } catch {
+    /* fall‑through */
+  }
   return { type: 'unknown', content: data };
 };
 
 export function connectWebSocketChat(
   message: string,
   onChunk: (chunk: ChatMessageChunk) => void,
-  { debug }: { debug?: boolean } = {}
+  { debug }: { debug?: boolean } = {},
 ): Promise<any> {
   const cfg = loadConfig();
   // Use cleaner, more standard websocket URL with no auth in query params
@@ -183,10 +203,10 @@ export function connectWebSocketChat(
     // Add proper auth headers to match HTTP request pattern
     const wsOptions = {
       headers: {
-        'Authorization': `Bearer ${cfg.apiKey}`,
-        'x-api-key': cfg.apiKey
+        Authorization: `Bearer ${cfg.apiKey}`,
+        'x-api-key': cfg.apiKey,
         // Remove hardcoded user ID to let the server resolve it from the token
-      }
+      },
     };
 
     const ws = new WebSocket(wsUrl, wsOptions);
@@ -195,17 +215,25 @@ export function connectWebSocketChat(
 
     ws.on('open', () => {
       log('open');
-      ws.send(JSON.stringify({
-        // Remove hardcoded user ID to let the server resolve it from the token
-        messages: [{ role: 'user', content: message, timestamp: Date.now() }],
-        options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
-        stream: true,
-        token: cfg.apiKey, // Add token at top level for API authentication
-        // Keep auth object for backward compatibility with existing servers
-        auth: {
-          token: cfg.apiKey
-        }
-      }));
+      ws.send(
+        JSON.stringify({
+          // Remove hardcoded user ID to let the server resolve it from the token
+          messages: [{ role: 'user', content: message, timestamp: Date.now() }],
+          options: {
+            enhanceWithContext: true,
+            maxContextItems: 5,
+            includeSourceInfo: true,
+            maxTokens: 1000,
+            temperature: 0.7,
+          },
+          stream: true,
+          token: cfg.apiKey, // Add token at top level for API authentication
+          // Keep auth object for backward compatibility with existing servers
+          auth: {
+            token: cfg.apiKey,
+          },
+        }),
+      );
     });
 
     ws.on('message', (buffer: Buffer) => {
@@ -217,8 +245,12 @@ export function connectWebSocketChat(
       // Handle direct text response that might not fit detector patterns
       if (chunk.type === 'unknown' && chunk.content) {
         // Skip printing raw JSON for recognized LangGraph message formats
-        if (raw.startsWith('["messages"') || raw.startsWith('["updates"') ||
-          raw.includes('"generatedText"') || raw.includes('"reasoning"')) {
+        if (
+          raw.startsWith('["messages"') ||
+          raw.startsWith('["updates"') ||
+          raw.includes('"generatedText"') ||
+          raw.includes('"reasoning"')
+        ) {
           if (debug) log('Skipping internal LangGraph format:', raw.substring(0, 50) + '...');
           return; // Skip this chunk as it's raw LangGraph metadata
         }
@@ -256,7 +288,7 @@ export function connectWebSocketChat(
 export async function chat(
   message: string,
   onChunk?: (c: string | ChatMessageChunk) => void,
-  opts: { abortSignal?: AbortSignal; retryNonStreaming?: boolean; debug?: boolean } = {}
+  opts: { abortSignal?: AbortSignal; retryNonStreaming?: boolean; debug?: boolean } = {},
 ) {
   if (onChunk) {
     try {
@@ -282,13 +314,19 @@ export async function chat(
           const res = await api.post('/chat', {
             // Remove hardcoded user ID to let the server resolve it
             messages: [{ role: 'user', content: message, timestamp: Date.now() }],
-            options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
+            options: {
+              enhanceWithContext: true,
+              maxContextItems: 5,
+              includeSourceInfo: true,
+              maxTokens: 1000,
+              temperature: 0.7,
+            },
             stream: false,
             token: loadConfig().apiKey, // Add token at top level for API authentication
             // Keep auth object for backward compatibility
             auth: {
-              token: loadConfig().apiKey
-            }
+              token: loadConfig().apiKey,
+            },
           });
 
           // Extract the response text
@@ -305,7 +343,11 @@ export async function chat(
           return { response: responseText, success: true, note: 'WS failed – HTTP fallback' };
         } catch (httpErr) {
           if (opts.debug) {
-            console.debug(`HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)}`);
+            console.debug(
+              `HTTP fallback error: ${
+                httpErr instanceof Error ? httpErr.message : String(httpErr)
+              }`,
+            );
           }
           throw httpErr;
         }
@@ -317,13 +359,19 @@ export async function chat(
   const res = await api.post('/chat', {
     // Remove hardcoded user ID to let the server resolve it
     messages: [{ role: 'user', content: message, timestamp: Date.now() }],
-    options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
+    options: {
+      enhanceWithContext: true,
+      maxContextItems: 5,
+      includeSourceInfo: true,
+      maxTokens: 1000,
+      temperature: 0.7,
+    },
     stream: false,
     token: loadConfig().apiKey, // Add token at top level for API authentication
     // Keep auth object for backward compatibility
     auth: {
-      token: loadConfig().apiKey
-    }
+      token: loadConfig().apiKey,
+    },
   });
   return getResponseText(res);
 }
@@ -339,12 +387,12 @@ export async function chat(
 async function registerGithubRepo(
   owner: string,
   repo: string,
-  cadence: string = 'PT1H'
+  cadence: string = 'PT1H',
 ): Promise<{ success: boolean; id: string; resourceId: string; wasInitialised: boolean }> {
   return api.post('/content/github', {
     owner,
     repo,
-    cadence
+    cadence,
   });
 }
 
@@ -358,7 +406,7 @@ async function registerGithubRepo(
 async function getGithubRepoHistory(
   owner: string,
   repo: string,
-  limit: number = 10
+  limit: number = 10,
 ): Promise<{ success: boolean; owner: string; repo: string; resourceId: string; history: any[] }> {
   return api.get(`/content/github/${owner}/${repo}/history?limit=${limit}`);
 }

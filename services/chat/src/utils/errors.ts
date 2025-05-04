@@ -10,7 +10,7 @@ import {
 import {
   createServiceErrorHandler,
   createEnhancedAssertValid,
-  createServiceErrorMiddleware
+  createServiceErrorMiddleware,
 } from '@dome/common';
 
 // Service name constant for consistency
@@ -31,10 +31,14 @@ export const createErrorMiddleware = createServiceErrorMiddleware(SERVICE_NAME);
  */
 export class RAGError extends ServiceUnavailableError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'RAG_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'RAG_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 
@@ -43,10 +47,14 @@ export class RAGError extends ServiceUnavailableError {
  */
 export class LLMError extends ServiceUnavailableError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'LLM_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'LLM_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 
@@ -55,10 +63,14 @@ export class LLMError extends ServiceUnavailableError {
  */
 export class NodeError extends ServiceUnavailableError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'NODE_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'NODE_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 
@@ -70,5 +82,5 @@ export {
   ServiceUnavailableError,
   UnauthorizedError,
   assertExists,
-  createErrorFactory
+  createErrorFactory,
 };

@@ -14,7 +14,7 @@ import { StatusCode } from 'hono/utils/http-status';
  * @returns Result of the function
  */
 const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
-  withContext(meta, async (logger) => {
+  withContext(meta, async logger => {
     try {
       return await fn();
     } catch (err) {
@@ -26,7 +26,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
         requestId,
         service: 'auth',
         timestamp: new Date().toISOString(),
-        ...meta
+        ...meta,
       };
 
       getLogger().error({ error: err }, `Unhandled error in ${operation}`, errorContext);
@@ -39,7 +39,7 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
       throw new AuthError(
         err instanceof Error ? err.message : 'Unknown error',
         AuthErrorType.INTERNAL_ERROR,
-        500
+        500,
       );
     }
   });
@@ -83,7 +83,11 @@ export default class Auth extends WorkerEntrypoint<Env> {
         try {
           // Validate inputs
           if (!email || !password) {
-            throw new AuthError('Email and password are required', AuthErrorType.INVALID_CREDENTIALS, 400);
+            throw new AuthError(
+              'Email and password are required',
+              AuthErrorType.INVALID_CREDENTIALS,
+              400,
+            );
           }
 
           // Track request metrics
@@ -91,7 +95,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
           getLogger().info(
             { email, requestId, operation: 'login' },
-            'Processing RPC login request'
+            'Processing RPC login request',
           );
 
           // Perform login
@@ -102,7 +106,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
           getLogger().info(
             { userId: result.user.id, email, requestId, operation: 'login' },
-            'Login successful'
+            'Login successful',
           );
 
           return result;
@@ -110,14 +114,11 @@ export default class Auth extends WorkerEntrypoint<Env> {
           // Track failure metrics
           authMetrics.counter('rpc.login.errors', 1);
 
-          getLogger().error(
-            { error, email, requestId, operation: 'login' },
-            'Login failed'
-          );
+          getLogger().error({ error, email, requestId, operation: 'login' }, 'Login failed');
 
           throw error;
         }
-      }
+      },
     );
   }
 
@@ -143,7 +144,11 @@ export default class Auth extends WorkerEntrypoint<Env> {
         try {
           // Validate inputs
           if (!email || !password) {
-            throw new AuthError('Email and password are required', AuthErrorType.REGISTRATION_FAILED, 400);
+            throw new AuthError(
+              'Email and password are required',
+              AuthErrorType.REGISTRATION_FAILED,
+              400,
+            );
           }
 
           // Track request metrics
@@ -151,7 +156,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
           getLogger().info(
             { email, hasName: !!name, requestId, operation: 'register' },
-            'Processing RPC register request'
+            'Processing RPC register request',
           );
 
           // Perform registration
@@ -162,26 +167,22 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
           getLogger().info(
             { userId: user.id, email, requestId, operation: 'register' },
-            'Registration successful'
+            'Registration successful',
           );
 
           return {
             success: true,
-            user
+            user,
           };
         } catch (error) {
           // Track failure metrics
           authMetrics.counter('rpc.register.errors', 1);
 
-          logError(
-            error,
-            'Registration failed',
-            { email, requestId, operation: 'register' },
-          );
+          logError(error, 'Registration failed', { email, requestId, operation: 'register' });
 
           throw error;
         }
-      }
+      },
     );
   }
 
@@ -212,7 +213,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
           getLogger().info(
             { requestId, operation: 'validateToken' },
-            'Processing RPC validateToken request'
+            'Processing RPC validateToken request',
           );
 
           // Validate token
@@ -223,12 +224,12 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
           getLogger().info(
             { userId: user.id, requestId, operation: 'validateToken' },
-            'Token validation successful'
+            'Token validation successful',
           );
 
           return {
             success: true,
-            user
+            user,
           };
         } catch (error) {
           // Track failure metrics
@@ -236,12 +237,12 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
           getLogger().error(
             { error, requestId, operation: 'validateToken' },
-            'Token validation failed'
+            'Token validation failed',
           );
 
           throw error;
         }
-      }
+      },
     );
   }
 
@@ -281,7 +282,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
           getLogger().info(
             { userId, requestId, operation: 'logout' },
-            'Processing RPC logout request'
+            'Processing RPC logout request',
           );
 
           // Perform logout
@@ -290,28 +291,22 @@ export default class Auth extends WorkerEntrypoint<Env> {
           // Track success metrics
           authMetrics.counter('rpc.logout.success', 1);
 
-          getLogger().info(
-            { userId, success, requestId, operation: 'logout' },
-            'Logout completed'
-          );
+          getLogger().info({ userId, success, requestId, operation: 'logout' }, 'Logout completed');
 
           return { success };
         } catch (error) {
           // Track failure metrics
           authMetrics.counter('rpc.logout.errors', 1);
 
-          getLogger().error(
-            { error, requestId, operation: 'logout' },
-            'Logout failed'
-          );
+          getLogger().error({ error, requestId, operation: 'logout' }, 'Logout failed');
 
           throw error;
         }
-      }
+      },
     );
   }
 
   async fetch() {
-    return new Response("Hello from auth");
+    return new Response('Hello from auth');
   }
 }

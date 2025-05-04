@@ -1,10 +1,5 @@
 // vectorize.service.ts
-import {
-  VectorMeta,
-  VectorSearchResult,
-  VectorIndexStats,
-  PUBLIC_USER_ID,
-} from '@dome/common';
+import { VectorMeta, VectorSearchResult, VectorIndexStats, PUBLIC_USER_ID } from '@dome/common';
 import { VectorWithMetadata } from '../types';
 import {
   getLogger,
@@ -13,11 +8,7 @@ import {
   sanitizeForLogging,
   constellationMetrics as metrics,
 } from '../utils/logging';
-import {
-  assertValid,
-  VectorizeError,
-  toDomeError,
-} from '../utils/errors';
+import { assertValid, VectorizeError, toDomeError } from '../utils/errors';
 
 /* ------------------------------------------------------------------ */
 /*  configuration                                                     */
@@ -68,10 +59,7 @@ function sliceIntoBatches<T>(arr: T[], size: number): T[][] {
 export class VectorizeService {
   private readonly cfg: VectorizeConfig;
 
-  constructor(
-    private readonly idx: VectorizeIndex,
-    cfg: Partial<VectorizeConfig> = {},
-  ) {
+  constructor(private readonly idx: VectorizeIndex, cfg: Partial<VectorizeConfig> = {}) {
     this.cfg = { ...DEFAULT_VECTORIZE_CONFIG, ...cfg };
   }
 
@@ -186,9 +174,7 @@ export class VectorizeService {
         /* merge PUBLIC_USER_ID automatically */
         const vf = {
           ...filter,
-          ...(filter.userId
-            ? { userId: { $in: [filter.userId, PUBLIC_USER_ID] } }
-            : {}),
+          ...(filter.userId ? { userId: { $in: [filter.userId, PUBLIC_USER_ID] } } : {}),
         };
 
         getLogger().info({ vf }, 'Querying vectorize index');

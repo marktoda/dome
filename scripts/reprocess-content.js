@@ -2,10 +2,10 @@
 
 /**
  * Reprocess Content Script
- * 
+ *
  * This script reads content IDs from a JSON file and calls the bulk-reprocess endpoint
  * to reprocess them in batches.
- * 
+ *
  * Usage:
  *   node reprocess-content.js [--batch-size=50] [--file=scripts/contents.json] [--api-url=http://localhost:8787] [--token=your-auth-token]
  */
@@ -66,11 +66,16 @@ function readJsonFile(filePath) {
 function extractContentIds(jsonData) {
   // Handle the specific format from the provided contents.json:
   // Array with items containing 'results' array of content objects
-  if (Array.isArray(jsonData) && jsonData.length > 0 && jsonData[0].results && Array.isArray(jsonData[0].results)) {
+  if (
+    Array.isArray(jsonData) &&
+    jsonData.length > 0 &&
+    jsonData[0].results &&
+    Array.isArray(jsonData[0].results)
+  ) {
     // Flatten the results arrays and extract IDs
     return jsonData.flatMap(item => item.results.map(result => result.id));
   }
-  
+
   // If it's an array of content objects with id property
   if (Array.isArray(jsonData)) {
     if (jsonData.length > 0 && jsonData[0].id) {
@@ -81,12 +86,12 @@ function extractContentIds(jsonData) {
       return jsonData;
     }
   }
-  
+
   // If it's an object with an 'items' property containing content objects
   if (jsonData.items && Array.isArray(jsonData.items)) {
     return jsonData.items.map(item => item.id);
   }
-  
+
   // If it's an object with a 'contentIds' property containing an array of IDs
   if (jsonData.contentIds && Array.isArray(jsonData.contentIds)) {
     return jsonData.contentIds;
@@ -117,12 +122,12 @@ function prepareAuthToken(token) {
     console.error('Please provide a token with --token=your-auth-token');
     process.exit(1);
   }
-  
+
   // Format token correctly (add Bearer prefix if it's not already there)
   if (!token.startsWith('Bearer ')) {
     return `Bearer ${token}`;
   }
-  
+
   return token;
 }
 
@@ -132,12 +137,12 @@ async function callBulkReprocessEndpoint(apiUrl, endpoint, batch, token) {
     const url = `${apiUrl}${endpoint}`;
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': prepareAuthToken(token)
+      Authorization: prepareAuthToken(token),
     };
-    
+
     console.log(`Calling ${url} with ${batch.length} content IDs...`);
     console.log(`Using authentication token: ${headers.Authorization.substring(0, 15)}...`);
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers,
@@ -174,7 +179,7 @@ async function main() {
 
   // Read and parse JSON file
   const jsonData = readJsonFile(config.filePath);
-  
+
   // Extract content IDs
   const contentIds = extractContentIds(jsonData);
   console.log(`Found ${contentIds.length} content IDs in the file.`);
@@ -196,7 +201,7 @@ async function main() {
       config.apiUrl,
       config.endpoint,
       batch,
-      config.token
+      config.token,
     );
 
     if (result && result.success) {

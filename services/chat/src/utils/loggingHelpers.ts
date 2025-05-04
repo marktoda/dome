@@ -19,7 +19,7 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
       source: d.metadata.source,
       url: d.metadata.url,
       relevanceScore: d.metadata.relevanceScore,
-    }))
+    }));
   }
 
   // Truncate long messages
@@ -27,7 +27,7 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
     summary.messages = state.messages.map(msg => ({
       role: msg.role,
       content: msg.content.length > 50 ? `${msg.content.substring(0, 50)}...` : msg.content,
-      timestamp: msg.timestamp
+      timestamp: msg.timestamp,
     }));
   }
 
@@ -56,9 +56,8 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
         source: c.metadata.source,
         title: c.metadata.title,
         url: c.metadata.url,
-
-      }))
-    }))
+      })),
+    }));
   }
 
   // If there are task docs in the task entities, summarize those too
@@ -74,7 +73,7 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
         if (typeof summary.taskEntities === 'object') {
           summary.taskEntities[taskId] = {
             ...task,
-            docs: `[${task.docs.length} docs]`
+            docs: `[${task.docs.length} docs]`,
           };
         }
       }

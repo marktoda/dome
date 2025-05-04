@@ -16,7 +16,7 @@ export interface AuthContext {
  */
 export const authenticationMiddleware = async (
   c: Context<{ Bindings: Bindings; Variables: AuthContext }>,
-  next: Next
+  next: Next,
 ) => {
   const logger = getLogger().child({ component: 'AuthMiddleware' });
   const authHeader = c.req.header('Authorization');
@@ -31,7 +31,7 @@ export const authenticationMiddleware = async (
           message: 'Authentication required',
         },
       },
-      401
+      401,
     );
   }
 
@@ -55,7 +55,7 @@ export const authenticationMiddleware = async (
             message: 'Invalid or expired token',
           },
         },
-        401
+        401,
       );
     }
 
@@ -78,7 +78,7 @@ export const authenticationMiddleware = async (
           message: 'Authentication failed',
         },
       },
-      401
+      401,
     );
   }
 };
@@ -88,10 +88,7 @@ export const authenticationMiddleware = async (
  * Creates middleware that ensures user has required role
  */
 export const createRoleMiddleware = (requiredRoles: string[]) => {
-  return async (
-    c: Context<{ Variables: AuthContext }>,
-    next: Next
-  ) => {
+  return async (c: Context<{ Variables: AuthContext }>, next: Next) => {
     const logger = getLogger().child({ component: 'RoleMiddleware' });
     const userRole = c.get('userRole');
 
@@ -105,7 +102,7 @@ export const createRoleMiddleware = (requiredRoles: string[]) => {
             message: 'Insufficient permissions',
           },
         },
-        403
+        403,
       );
     }
 

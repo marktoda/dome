@@ -114,7 +114,7 @@ class DLQControllerImpl implements DLQController {
       logError(error, 'Error sending message to DLQ');
       throw toDomeError(error, 'Failed to send message to DLQ', {
         queueName: metadata.queueName,
-        messageId: metadata.messageId
+        messageId: metadata.messageId,
       });
     }
   }

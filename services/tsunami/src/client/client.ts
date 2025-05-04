@@ -35,19 +35,25 @@ export class TsunamiClient implements TsunamiService {
    */
   async createSyncPlan(providerType: string, resourceId: string, userId?: string): Promise<string> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'create_sync_plan',
-        providerType,
-        resourceId,
-        userId
-      }, 'Creating sync plan');
+      this.logger.info(
+        {
+          event: 'create_sync_plan',
+          providerType,
+          resourceId,
+          userId,
+        },
+        'Creating sync plan',
+      );
 
       const result = await this.binding.createSyncPlan(providerType, resourceId, userId);
 
       metrics.increment(`${this.metricsPrefix}.create_sync_plan.success`);
-      metrics.timing(`${this.metricsPrefix}.create_sync_plan.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.create_sync_plan.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -72,17 +78,23 @@ export class TsunamiClient implements TsunamiService {
    */
   async getSyncPlan(resourceId: string): Promise<any> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'get_sync_plan',
-        resourceId
-      }, 'Getting sync plan');
+      this.logger.info(
+        {
+          event: 'get_sync_plan',
+          resourceId,
+        },
+        'Getting sync plan',
+      );
 
       const result = await this.binding.getSyncPlan(resourceId);
 
       metrics.increment(`${this.metricsPrefix}.get_sync_plan.success`);
-      metrics.timing(`${this.metricsPrefix}.get_sync_plan.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_sync_plan.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -100,13 +112,16 @@ export class TsunamiClient implements TsunamiService {
    */
   async attachUser(syncPlanId: string, userId: string): Promise<void> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'attach_user',
-        syncPlanId,
-        userId
-      }, 'Attaching user to sync plan');
+      this.logger.info(
+        {
+          event: 'attach_user',
+          syncPlanId,
+          userId,
+        },
+        'Attaching user to sync plan',
+      );
 
       await this.binding.attachUser(syncPlanId, userId);
 
@@ -127,24 +142,30 @@ export class TsunamiClient implements TsunamiService {
    * @returns Boolean indicating if the resource was newly created
    */
   async initializeResource(
-    params: { resourceId: string, providerType: string, userId?: string },
-    cadenceSecs: number
+    params: { resourceId: string; providerType: string; userId?: string },
+    cadenceSecs: number,
   ): Promise<boolean> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'initialize_resource',
-        resourceId: params.resourceId,
-        providerType: params.providerType,
-        userId: params.userId,
-        cadenceSecs
-      }, 'Initializing resource');
+      this.logger.info(
+        {
+          event: 'initialize_resource',
+          resourceId: params.resourceId,
+          providerType: params.providerType,
+          userId: params.userId,
+          cadenceSecs,
+        },
+        'Initializing resource',
+      );
 
       const result = await this.binding.initializeResource(params, cadenceSecs);
 
       metrics.increment(`${this.metricsPrefix}.initialize_resource.success`);
-      metrics.timing(`${this.metricsPrefix}.initialize_resource.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.initialize_resource.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -167,23 +188,29 @@ export class TsunamiClient implements TsunamiService {
     owner: string,
     repo: string,
     userId?: string,
-    cadenceSecs: number = 3600
+    cadenceSecs: number = 3600,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'github_repo_registration_start',
-        owner,
-        repo,
-        userId,
-        cadenceSecs
-      }, 'Starting GitHub repository registration');
+      this.logger.info(
+        {
+          event: 'github_repo_registration_start',
+          owner,
+          repo,
+          userId,
+          cadenceSecs,
+        },
+        'Starting GitHub repository registration',
+      );
 
       const result = await this.binding.registerGithubRepo(owner, repo, userId, cadenceSecs);
 
       metrics.increment(`${this.metricsPrefix}.github_repo_registration.success`);
-      metrics.timing(`${this.metricsPrefix}.github_repo_registration.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.github_repo_registration.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -204,22 +231,28 @@ export class TsunamiClient implements TsunamiService {
   async registerNotionWorkspace(
     workspaceId: string,
     userId?: string,
-    cadenceSecs: number = 3600
+    cadenceSecs: number = 3600,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'notion_workspace_registration_start',
-        workspaceId,
-        userId,
-        cadenceSecs
-      }, 'Starting Notion workspace registration');
+      this.logger.info(
+        {
+          event: 'notion_workspace_registration_start',
+          workspaceId,
+          userId,
+          cadenceSecs,
+        },
+        'Starting Notion workspace registration',
+      );
 
       const result = await this.binding.registerNotionWorkspace(workspaceId, userId, cadenceSecs);
 
       metrics.increment(`${this.metricsPrefix}.notion_workspace_registration.success`);
-      metrics.timing(`${this.metricsPrefix}.notion_workspace_registration.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.notion_workspace_registration.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -240,22 +273,28 @@ export class TsunamiClient implements TsunamiService {
   async registerWebsite(
     websiteConfig: WebsiteRegistrationConfig,
     userId?: string,
-    cadenceSecs: number = 3600
+    cadenceSecs: number = 3600,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'website_registration_start',
-        websiteUrl: websiteConfig.url,
-        userId,
-        cadenceSecs
-      }, 'Starting website registration');
+      this.logger.info(
+        {
+          event: 'website_registration_start',
+          websiteUrl: websiteConfig.url,
+          userId,
+          cadenceSecs,
+        },
+        'Starting website registration',
+      );
 
       const result = await this.binding.registerWebsite(websiteConfig, userId, cadenceSecs);
 
       metrics.increment(`${this.metricsPrefix}.website_registration.success`);
-      metrics.timing(`${this.metricsPrefix}.website_registration.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.website_registration.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -272,36 +311,45 @@ export class TsunamiClient implements TsunamiService {
    * @param limit Maximum number of history records to return
    * @returns Website history with metadata
    */
-  async getWebsiteHistory(websiteUrl: string, limit: number = 10): Promise<{
+  async getWebsiteHistory(
+    websiteUrl: string,
+    limit: number = 10,
+  ): Promise<{
     websiteUrl: string;
     resourceId: string;
     history: unknown[];
   }> {
     const startTime = performance.now();
-    
+
     try {
       // For websites, the resourceId is a JSON string with the configuration
       // We need to find the resourceId by looking up the website URL
       // For simplicity, we'll construct a basic config matching search string
       const baseConfig = { url: websiteUrl };
       const resourceId = JSON.stringify(baseConfig);
-      
-      this.logger.info({
-        event: 'get_website_history',
-        websiteUrl,
-        resourceId,
-        limit
-      }, 'Fetching website history');
+
+      this.logger.info(
+        {
+          event: 'get_website_history',
+          websiteUrl,
+          resourceId,
+          limit,
+        },
+        'Fetching website history',
+      );
 
       const history = await this.binding.getHistoryByResourceId(resourceId, limit);
-      
+
       metrics.increment(`${this.metricsPrefix}.get_website_history.success`);
-      metrics.timing(`${this.metricsPrefix}.get_website_history.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_website_history.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return {
         websiteUrl,
         resourceId,
-        history
+        history,
       };
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_website_history.errors`);
@@ -317,31 +365,40 @@ export class TsunamiClient implements TsunamiService {
    * @param limit Maximum number of history records to return
    * @returns Workspace history with metadata
    */
-  async getNotionWorkspaceHistory(workspaceId: string, limit: number = 10): Promise<{
+  async getNotionWorkspaceHistory(
+    workspaceId: string,
+    limit: number = 10,
+  ): Promise<{
     workspaceId: string;
     resourceId: string;
     history: unknown[];
   }> {
     const startTime = performance.now();
     const resourceId = workspaceId;
-    
+
     try {
-      this.logger.info({
-        event: 'get_notion_workspace_history',
-        workspaceId,
-        resourceId,
-        limit
-      }, 'Fetching Notion workspace history');
+      this.logger.info(
+        {
+          event: 'get_notion_workspace_history',
+          workspaceId,
+          resourceId,
+          limit,
+        },
+        'Fetching Notion workspace history',
+      );
 
       const history = await this.binding.getHistoryByResourceId(resourceId, limit);
-      
+
       metrics.increment(`${this.metricsPrefix}.get_notion_workspace_history.success`);
-      metrics.timing(`${this.metricsPrefix}.get_notion_workspace_history.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_notion_workspace_history.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return {
         workspaceId,
         resourceId,
-        history
+        history,
       };
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_notion_workspace_history.errors`);
@@ -358,7 +415,11 @@ export class TsunamiClient implements TsunamiService {
    * @param limit Maximum number of history records to return
    * @returns Repository history with metadata
    */
-  async getGithubRepoHistory(owner: string, repo: string, limit: number = 10): Promise<{
+  async getGithubRepoHistory(
+    owner: string,
+    repo: string,
+    limit: number = 10,
+  ): Promise<{
     owner: string;
     repo: string;
     resourceId: string;
@@ -366,26 +427,32 @@ export class TsunamiClient implements TsunamiService {
   }> {
     const startTime = performance.now();
     const resourceId = `${owner}/${repo}`;
-    
+
     try {
-      this.logger.info({
-        event: 'get_github_repo_history',
-        owner,
-        repo,
-        resourceId,
-        limit
-      }, 'Fetching GitHub repository history');
+      this.logger.info(
+        {
+          event: 'get_github_repo_history',
+          owner,
+          repo,
+          resourceId,
+          limit,
+        },
+        'Fetching GitHub repository history',
+      );
 
       const history = await this.binding.getHistoryByResourceId(resourceId, limit);
-      
+
       metrics.increment(`${this.metricsPrefix}.get_github_repo_history.success`);
-      metrics.timing(`${this.metricsPrefix}.get_github_repo_history.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_github_repo_history.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return {
         owner,
         repo,
         resourceId,
-        history
+        history,
       };
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_github_repo_history.errors`);
@@ -401,27 +468,36 @@ export class TsunamiClient implements TsunamiService {
    * @param limit Maximum number of history records to return
    * @returns User's sync history
    */
-  async getUserHistory(userId: string, limit: number = 10): Promise<{
+  async getUserHistory(
+    userId: string,
+    limit: number = 10,
+  ): Promise<{
     userId: string;
     history: unknown[];
   }> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'get_user_history',
-        userId,
-        limit
-      }, 'Fetching user sync history');
+      this.logger.info(
+        {
+          event: 'get_user_history',
+          userId,
+          limit,
+        },
+        'Fetching user sync history',
+      );
 
       const history = await this.binding.getHistoryByUserId(userId, limit);
-      
+
       metrics.increment(`${this.metricsPrefix}.get_user_history.success`);
-      metrics.timing(`${this.metricsPrefix}.get_user_history.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_user_history.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return {
         userId,
-        history
+        history,
       };
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_user_history.errors`);
@@ -437,27 +513,36 @@ export class TsunamiClient implements TsunamiService {
    * @param limit Maximum number of history records to return
    * @returns Sync plan history
    */
-  async getSyncPlanHistory(syncPlanId: string, limit: number = 10): Promise<{
+  async getSyncPlanHistory(
+    syncPlanId: string,
+    limit: number = 10,
+  ): Promise<{
     syncPlanId: string;
     history: unknown[];
   }> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'get_sync_plan_history',
-        syncPlanId,
-        limit
-      }, 'Fetching sync plan history');
+      this.logger.info(
+        {
+          event: 'get_sync_plan_history',
+          syncPlanId,
+          limit,
+        },
+        'Fetching sync plan history',
+      );
 
       const history = await this.binding.getHistoryBySyncPlanId(syncPlanId, limit);
-      
+
       metrics.increment(`${this.metricsPrefix}.get_sync_plan_history.success`);
-      metrics.timing(`${this.metricsPrefix}.get_sync_plan_history.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_sync_plan_history.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return {
         syncPlanId,
-        history
+        history,
       };
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_sync_plan_history.errors`);
@@ -475,18 +560,24 @@ export class TsunamiClient implements TsunamiService {
    */
   async getHistoryByResourceId(resourceId: string, limit: number): Promise<unknown[]> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'get_history_by_resource_id',
-        resourceId,
-        limit
-      }, 'Getting history by resource ID');
+      this.logger.info(
+        {
+          event: 'get_history_by_resource_id',
+          resourceId,
+          limit,
+        },
+        'Getting history by resource ID',
+      );
 
       const result = await this.binding.getHistoryByResourceId(resourceId, limit);
 
       metrics.increment(`${this.metricsPrefix}.get_history_by_resource_id.success`);
-      metrics.timing(`${this.metricsPrefix}.get_history_by_resource_id.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_history_by_resource_id.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -505,18 +596,24 @@ export class TsunamiClient implements TsunamiService {
    */
   async getHistoryByUserId(userId: string, limit: number): Promise<unknown[]> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'get_history_by_user_id',
-        userId,
-        limit
-      }, 'Getting history by user ID');
+      this.logger.info(
+        {
+          event: 'get_history_by_user_id',
+          userId,
+          limit,
+        },
+        'Getting history by user ID',
+      );
 
       const result = await this.binding.getHistoryByUserId(userId, limit);
 
       metrics.increment(`${this.metricsPrefix}.get_history_by_user_id.success`);
-      metrics.timing(`${this.metricsPrefix}.get_history_by_user_id.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_history_by_user_id.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {
@@ -535,18 +632,24 @@ export class TsunamiClient implements TsunamiService {
    */
   async getHistoryBySyncPlanId(syncPlanId: string, limit: number): Promise<unknown[]> {
     const startTime = performance.now();
-    
+
     try {
-      this.logger.info({
-        event: 'get_history_by_sync_plan_id',
-        syncPlanId,
-        limit
-      }, 'Getting history by sync plan ID');
+      this.logger.info(
+        {
+          event: 'get_history_by_sync_plan_id',
+          syncPlanId,
+          limit,
+        },
+        'Getting history by sync plan ID',
+      );
 
       const result = await this.binding.getHistoryBySyncPlanId(syncPlanId, limit);
 
       metrics.increment(`${this.metricsPrefix}.get_history_by_sync_plan_id.success`);
-      metrics.timing(`${this.metricsPrefix}.get_history_by_sync_plan_id.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.get_history_by_sync_plan_id.latency_ms`,
+        performance.now() - startTime,
+      );
 
       return result;
     } catch (error) {

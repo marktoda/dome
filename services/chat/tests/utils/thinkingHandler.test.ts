@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as thinkingHandlerModule from '../../src/utils/thinkingHandler';
-const { sanitizeThinkingContent, isThinkingContent, processThinkingContent } = thinkingHandlerModule;
+const { sanitizeThinkingContent, isThinkingContent, processThinkingContent } =
+  thinkingHandlerModule;
 
 describe('ThinkingHandler', () => {
   describe('isThinkingContent', () => {
@@ -10,8 +11,8 @@ describe('ThinkingHandler', () => {
 
     it('should identify content with common thinking patterns', () => {
       expect(isThinkingContent('Let me think about this step by step')).toBe(true);
-      expect(isThinkingContent('I\'m thinking about how to approach this')).toBe(true);
-      expect(isThinkingContent('Let\'s analyze this problem first')).toBe(true);
+      expect(isThinkingContent("I'm thinking about how to approach this")).toBe(true);
+      expect(isThinkingContent("Let's analyze this problem first")).toBe(true);
       expect(isThinkingContent('First, we need to understand the context')).toBe(true);
     });
 
@@ -71,14 +72,16 @@ describe('ThinkingHandler', () => {
   describe('processThinkingContent', () => {
     it('should process thinking content', () => {
       const spy = vi.spyOn(thinkingHandlerModule, 'isThinkingContent').mockReturnValue(true);
-      const sanitizeSpy = vi.spyOn(thinkingHandlerModule, 'sanitizeThinkingContent').mockReturnValue('Sanitized content');
-      
+      const sanitizeSpy = vi
+        .spyOn(thinkingHandlerModule, 'sanitizeThinkingContent')
+        .mockReturnValue('Sanitized content');
+
       const result = processThinkingContent('<thinking>Raw thinking content</thinking>');
-      
+
       expect(spy).toHaveBeenCalled();
       expect(sanitizeSpy).toHaveBeenCalled();
       expect(result).toBe('Sanitized content');
-      
+
       spy.mockRestore();
       sanitizeSpy.mockRestore();
     });
@@ -86,14 +89,14 @@ describe('ThinkingHandler', () => {
     it('should return original content if not thinking content', () => {
       const spy = vi.spyOn(thinkingHandlerModule, 'isThinkingContent').mockReturnValue(false);
       const sanitizeSpy = vi.spyOn(thinkingHandlerModule, 'sanitizeThinkingContent');
-      
+
       const originalContent = 'Regular content';
       const result = processThinkingContent(originalContent);
-      
+
       expect(spy).toHaveBeenCalled();
       expect(sanitizeSpy).not.toHaveBeenCalled();
       expect(result).toBe(originalContent);
-      
+
       spy.mockRestore();
       sanitizeSpy.mockRestore();
     });

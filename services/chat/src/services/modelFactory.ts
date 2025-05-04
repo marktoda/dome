@@ -15,12 +15,7 @@ import { StructuredOutputParser } from '@langchain/core/output_parsers';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { Tool } from '@langchain/core/tools';
-import {
-  ModelProvider,
-  getModelConfig,
-  DEFAULT_MODEL,
-  ModelConfig
-} from '../config/modelConfig';
+import { ModelProvider, getModelConfig, DEFAULT_MODEL, ModelConfig } from '../config/modelConfig';
 
 const logger = getLogger().child({ component: 'ModelFactory' });
 
@@ -63,15 +58,21 @@ export class ModelFactory {
     const modelConfig = getModelConfig(options.modelId ?? DEFAULT_MODEL.id);
 
     // Log model creation
-    logger.info({
-      modelId: modelConfig.id,
-      provider: modelConfig.provider,
-      streaming: options.streaming
-    }, 'Creating chat model');
+    logger.info(
+      {
+        modelId: modelConfig.id,
+        provider: modelConfig.provider,
+        streaming: options.streaming,
+      },
+      'Creating chat model',
+    );
 
     // Ensure we handle the request for streaming capability
     if (options.streaming && !modelConfig.capabilities.streaming) {
-      logger.warn({ modelId: modelConfig.id }, 'Model does not support streaming, falling back to non-streaming');
+      logger.warn(
+        { modelId: modelConfig.id },
+        'Model does not support streaming, falling back to non-streaming',
+      );
     }
 
     // Create the appropriate model instance based on provider
@@ -98,7 +99,7 @@ export class ModelFactory {
   private static createOpenAIModel(
     env: Env,
     modelConfig: ModelConfig,
-    options: ModelOptions
+    options: ModelOptions,
   ): ChatOpenAI {
     return new ChatOpenAI({
       modelName: modelConfig.id,
@@ -115,14 +116,14 @@ export class ModelFactory {
   private static createCloudflareModel(
     env: Env,
     modelConfig: ModelConfig,
-    options: ModelOptions
+    options: ModelOptions,
   ): BaseChatModel {
     // For Cloudflare AI, we need the proper environment configuration
     // If not properly configured, fall back to OpenAI
     if (!('AI' in env)) {
       logger.warn(
         { modelId: modelConfig.id },
-        'Workers AI binding not available, falling back to OpenAI'
+        'Workers AI binding not available, falling back to OpenAI',
       );
       return this.createOpenAIModel(env, DEFAULT_MODEL, options);
     }
@@ -147,12 +148,12 @@ export class ModelFactory {
   private static createAnthropicModel(
     env: Env,
     modelConfig: ModelConfig,
-    options: ModelOptions
+    options: ModelOptions,
   ): BaseChatModel {
     // TODO: Implement Anthropic integration when needed
     logger.warn(
       { modelId: modelConfig.id },
-      'Anthropic integration not implemented, falling back to OpenAI'
+      'Anthropic integration not implemented, falling back to OpenAI',
     );
 
     return this.createOpenAIModel(env, DEFAULT_MODEL, options);
@@ -175,10 +176,7 @@ export class ModelFactory {
    * @param options Model options including schema
    * @returns A chat model that produces structured output
    */
-  static createStructuredOutputModel<T>(
-    env: Env,
-    options: StructuredModelOptions,
-  ): BaseChatModel {
+  static createStructuredOutputModel<T>(env: Env, options: StructuredModelOptions): BaseChatModel {
     // Get model configuration
     const modelConfig = getModelConfig(options.modelId);
 
@@ -187,7 +185,7 @@ export class ModelFactory {
       // Fall back to a model that supports structured output
       logger.warn(
         { requestedModel: modelConfig.id },
-        'Model does not support structured output, falling back to suitable model'
+        'Model does not support structured output, falling back to suitable model',
       );
 
       // Find a model that supports structured output
@@ -195,7 +193,7 @@ export class ModelFactory {
         'gpt-4o',
         'gpt-4-turbo',
         'claude-3-opus-20240229',
-        'claude-3-sonnet-20240229'
+        'claude-3-sonnet-20240229',
       ];
 
       // Try each fallback model
@@ -208,10 +206,7 @@ export class ModelFactory {
         }
       }
 
-      logger.info(
-        { fallbackTo: fallbackModel.id },
-        'Using fallback model for structured output'
-      );
+      logger.info({ fallbackTo: fallbackModel.id }, 'Using fallback model for structured output');
 
       // Create structured output with fallback model
       return this.createChatModel(env, { modelId: fallbackModel.id, ...options });
@@ -227,11 +222,7 @@ export class ModelFactory {
    * @param options Model options
    * @returns A chat model with tools bound
    */
-  static createToolBoundModel(
-    env: Env,
-    tools: Tool[],
-    options: ModelOptions = {}
-  ): BaseChatModel {
+  static createToolBoundModel(env: Env, tools: Tool[], options: ModelOptions = {}): BaseChatModel {
     // Get model configuration
     const modelConfig = getModelConfig(options.modelId);
 
@@ -240,7 +231,7 @@ export class ModelFactory {
       // Fall back to a model that supports tool binding
       logger.warn(
         { requestedModel: modelConfig.id },
-        'Model does not support tool binding, falling back to suitable model'
+        'Model does not support tool binding, falling back to suitable model',
       );
 
       // Find a model that supports tool binding
@@ -248,7 +239,7 @@ export class ModelFactory {
         'gpt-4o',
         'gpt-4-turbo',
         'claude-3-opus-20240229',
-        'claude-3-sonnet-20240229'
+        'claude-3-sonnet-20240229',
       ];
 
       // Try each fallback model
@@ -261,10 +252,7 @@ export class ModelFactory {
         }
       }
 
-      logger.info(
-        { fallbackTo: fallbackModel.id },
-        'Using fallback model for tool binding'
-      );
+      logger.info({ fallbackTo: fallbackModel.id }, 'Using fallback model for tool binding');
 
       // Create tool bound model with fallback model
       return this.createToolBoundWithModel(env, tools, fallbackModel, options);
@@ -282,7 +270,7 @@ export class ModelFactory {
     env: Env,
     tools: Tool[],
     modelConfig: ModelConfig,
-    options: ModelOptions
+    options: ModelOptions,
   ): BaseChatModel {
     // Create the model based on provider
     switch (modelConfig.provider) {
@@ -292,7 +280,10 @@ export class ModelFactory {
         // Bind tools to the model and cast back to BaseChatModel
         // This is a type workaround as LangChain returns a Runnable
         if (!model.bindTools) {
-          logger.warn({ modelId: modelConfig.id }, 'Model does not support bindTools method, returning base model');
+          logger.warn(
+            { modelId: modelConfig.id },
+            'Model does not support bindTools method, returning base model',
+          );
           return model;
         }
         return model.bindTools(tools) as unknown as BaseChatModel;
@@ -304,7 +295,10 @@ export class ModelFactory {
         // Bind tools to the model and cast back to BaseChatModel
         // This is a type workaround as LangChain returns a Runnable
         if (!model.bindTools) {
-          logger.warn({ modelId: modelConfig.id }, 'Model does not support bindTools method, returning base model');
+          logger.warn(
+            { modelId: modelConfig.id },
+            'Model does not support bindTools method, returning base model',
+          );
           return model;
         }
         return model.bindTools(tools) as unknown as BaseChatModel;
@@ -315,13 +309,16 @@ export class ModelFactory {
         // Fallback to OpenAI for providers that don't support tool binding well
         logger.warn(
           { provider: modelConfig.provider },
-          'Provider does not support tool binding, falling back to OpenAI'
+          'Provider does not support tool binding, falling back to OpenAI',
         );
         const openAiModel = getModelConfig('gpt-4o');
         const model = this.createOpenAIModel(env, openAiModel, options);
         // Bind tools to the model and cast back to BaseChatModel
         if (!model.bindTools) {
-          logger.warn({ modelId: openAiModel.id }, 'Model does not support bindTools method, returning base model');
+          logger.warn(
+            { modelId: openAiModel.id },
+            'Model does not support bindTools method, returning base model',
+          );
           return model;
         }
         return model.bindTools(tools) as unknown as BaseChatModel;

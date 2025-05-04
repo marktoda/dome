@@ -12,7 +12,7 @@ const mockTodo = {
   priority: TodoPriority.MEDIUM,
   createdAt: Date.now(),
   updatedAt: Date.now(),
-  aiGenerated: false
+  aiGenerated: false,
 };
 
 const mockDb = {
@@ -20,9 +20,9 @@ const mockDb = {
     bind: vi.fn(() => ({
       run: vi.fn(() => ({ success: true })),
       first: vi.fn(() => mockTodo),
-      all: vi.fn(() => ({ results: [mockTodo] }))
-    }))
-  }))
+      all: vi.fn(() => ({ results: [mockTodo] })),
+    })),
+  })),
 } as unknown as D1Database;
 
 // Mock the getLogger function
@@ -31,8 +31,8 @@ vi.mock('logging', () => ({
     debug: vi.fn(),
     info: vi.fn(),
     warn: vi.fn(),
-    error: vi.fn()
-  })
+    error: vi.fn(),
+  }),
 }));
 
 describe('TodosService', () => {
@@ -49,14 +49,14 @@ describe('TodosService', () => {
         userId: 'user123',
         title: 'Test Todo',
         description: 'This is a test todo',
-        priority: TodoPriority.MEDIUM
+        priority: TodoPriority.MEDIUM,
       };
 
       const result = await todosService.createTodo(todoInput);
 
       expect(result).toEqual({
         id: expect.any(String),
-        success: true
+        success: true,
       });
       expect(mockDb.prepare).toHaveBeenCalled();
     });
@@ -65,7 +65,7 @@ describe('TodosService', () => {
       const todoInput: CreateTodoInput = {
         userId: 'user123',
         title: '',
-        description: 'This is a test todo'
+        description: 'This is a test todo',
       };
 
       await expect(todosService.createTodo(todoInput)).rejects.toThrow();
@@ -85,11 +85,11 @@ describe('TodosService', () => {
     it('should list todos with filtering', async () => {
       const filter = {
         userId: 'user123',
-        status: TodoStatus.PENDING
+        status: TodoStatus.PENDING,
       };
 
       const pagination = {
-        limit: 10
+        limit: 10,
       };
 
       const result = await todosService.listTodos(filter, pagination);
@@ -97,7 +97,7 @@ describe('TodosService', () => {
       expect(result).toEqual({
         items: [mockTodo],
         nextCursor: undefined,
-        totalCount: undefined
+        totalCount: undefined,
       });
       expect(mockDb.prepare).toHaveBeenCalled();
     });
@@ -116,8 +116,8 @@ describe('TodosService', () => {
         aiSuggestions: {
           priority: TodoPriority.HIGH,
           dueDate: Date.now() + 7 * 24 * 60 * 60 * 1000,
-          estimatedEffort: '1h'
-        }
+          estimatedEffort: '1h',
+        },
       };
 
       // Spy on the createTodo method
@@ -128,16 +128,18 @@ describe('TodosService', () => {
 
       expect(result).toEqual({
         id: 'todo_123456789012',
-        success: true
+        success: true,
       });
-      expect(createTodoSpy).toHaveBeenCalledWith(expect.objectContaining({
-        userId: job.userId,
-        title: job.title,
-        description: job.description,
-        priority: job.aiSuggestions?.priority,
-        sourceNoteId: job.sourceNoteId,
-        aiGenerated: true
-      }));
+      expect(createTodoSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: job.userId,
+          title: job.title,
+          description: job.description,
+          priority: job.aiSuggestions?.priority,
+          sourceNoteId: job.sourceNoteId,
+          aiGenerated: true,
+        }),
+      );
     });
   });
 });

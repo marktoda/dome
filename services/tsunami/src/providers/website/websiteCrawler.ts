@@ -1,6 +1,6 @@
 /**
  * WebsiteCrawler
- * 
+ *
  * This class is responsible for crawling websites and fetching pages.
  * It handles rate limiting, depth control, and URL filtering.
  */
@@ -56,17 +56,20 @@ export class WebsiteCrawler {
       }
     }
 
-    this.log.info({
-      baseUrl: this.baseUrl,
-      maxDepth: this.maxDepth,
-      delayMs: this.delayMs,
-      respectRobotsTxt: !!this.robotsChecker,
-      includeImages: this.includeImages,
-      includeScripts: this.includeScripts,
-      includeStyles: this.includeStyles,
-      followExternalLinks: this.followExternalLinks,
-      urlPatterns: config.urlPatterns
-    }, 'Crawler configured');
+    this.log.info(
+      {
+        baseUrl: this.baseUrl,
+        maxDepth: this.maxDepth,
+        delayMs: this.delayMs,
+        respectRobotsTxt: !!this.robotsChecker,
+        includeImages: this.includeImages,
+        includeScripts: this.includeScripts,
+        includeStyles: this.includeStyles,
+        followExternalLinks: this.followExternalLinks,
+        urlPatterns: config.urlPatterns,
+      },
+      'Crawler configured',
+    );
   }
 
   /**
@@ -84,85 +87,94 @@ export class WebsiteCrawler {
 
     // Initialize the queue with the start URLs
     const queue: UrlDepthPair[] = startUrls.map(url => ({ url, depth: 0 }));
-    
+
     while (queue.length > 0) {
       const { url, depth } = queue.shift()!;
-      
+
       // Skip if we've already visited this URL
       if (this.visitedUrls.has(url)) {
         continue;
       }
-      
+
       // Mark as visited
       this.visitedUrls.add(url);
-      
+
       try {
         // Check if we should crawl this URL
         if (!this.shouldCrawl(url)) {
           continue;
         }
-        
+
         // Fetch and process the page
         const page = await this.fetchPage(url);
-        
+
         // Skip if the page has not changed since the specified date
         if (changedSinceDate && page.lastModified) {
           const lastModifiedDate = new Date(page.lastModified);
           if (lastModifiedDate <= changedSinceDate) {
-            this.log.debug({ url, lastModified: page.lastModified }, 'Page not modified since last crawl');
+            this.log.debug(
+              { url, lastModified: page.lastModified },
+              'Page not modified since last crawl',
+            );
             continue;
           }
         }
-        
+
         // Add the page to the results
         results.push(page);
-        
+
         // If we've reached the maximum depth, don't add new URLs to the queue
         if (depth >= this.maxDepth) {
           continue;
         }
-        
+
         // Extract links from the page and add them to the queue
         if (page.links && page.links.length > 0) {
           for (const link of page.links) {
             try {
               const linkUrl = new URL(link, url).toString();
               const linkUrlObj = new URL(linkUrl);
-              
+
               // Skip if it's not a supported protocol
               if (!linkUrl.startsWith('http:') && !linkUrl.startsWith('https:')) {
                 continue;
               }
-              
+
               // Skip external links if not allowed
               if (!this.followExternalLinks && linkUrlObj.hostname !== baseHostname) {
                 this.pendingUrls.push(linkUrl);
                 continue;
               }
-              
+
               // Skip if we've already visited or queued this URL
               if (this.visitedUrls.has(linkUrl) || queue.some(item => item.url === linkUrl)) {
                 continue;
               }
-              
+
               // Add to the queue
               queue.push({ url: linkUrl, depth: depth + 1 });
             } catch (error) {
               // Skip invalid URLs
-              this.log.debug({ link, error: error instanceof Error ? error.message : String(error) }, 'Invalid link URL');
+              this.log.debug(
+                { link, error: error instanceof Error ? error.message : String(error) },
+                'Invalid link URL',
+              );
             }
           }
         }
-        
+
         // Respect the delay between requests
         if (queue.length > 0 && this.delayMs > 0) {
           await new Promise(resolve => setTimeout(resolve, this.delayMs));
         }
       } catch (error) {
-        this.log.warn({ 
-          url, 
-          error: error instanceof Error ? error.message : String(error) 
-        }, 'Error crawling URL');
+        this.log.warn(
+          {
+            url,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Error crawling URL',
+        );
       }
     }
 
@@ -185,29 +197,29 @@ export class WebsiteCrawler {
   private shouldCrawl(url: string): boolean {
     try {
       const urlObj = new URL(url);
-      
+
       // Check robots.txt if enabled
       if (this.robotsChecker && !this.robotsChecker.isAllowed(url)) {
         this.log.debug({ url }, 'URL blocked by robots.txt');
         return false;
       }
-      
+
       // Skip URLs with unsupported file extensions
       const path = urlObj.pathname.toLowerCase();
-      
+
       // Skip images, scripts, and styles if not explicitly included
       if (!this.includeImages && this.isImageUrl(path)) {
         return false;
       }
-      
+
       if (!this.includeScripts && this.isScriptUrl(path)) {
         return false;
       }
-      
+
       if (!this.includeStyles && this.isStyleUrl(path)) {
         return false;
       }
-      
+
       // Check URL patterns if defined
       if (this.urlPatterns.length > 0) {
         const fullUrl = url.toString();
@@ -217,10 +229,13 @@ export class WebsiteCrawler {
           return false;
         }
       }
-      
+
       return true;
     } catch (error) {
-      this.log.warn({ url, error: error instanceof Error ? error.message : String(error) }, 'Error checking URL');
+      this.log.warn(
+        { url, error: error instanceof Error ? error.message : String(error) },
+        'Error checking URL',
+      );
       return false;
     }
   }
@@ -232,17 +247,17 @@ export class WebsiteCrawler {
    */
   private async fetchPage(url: string): Promise<CrawledPage> {
     this.log.debug({ url }, 'Fetching page');
-    
+
     const response = await fetch(url, {
       headers: {
-        'User-Agent': this.userAgent
-      }
+        'User-Agent': this.userAgent,
+      },
     });
-    
+
     // Get content type and last modified date
     const contentType = response.headers.get('content-type') || 'text/html';
     const lastModified = response.headers.get('last-modified');
-    
+
     // Handle non-successful responses
     if (!response.ok) {
       return {
@@ -253,30 +268,30 @@ export class WebsiteCrawler {
         lastModified: null,
         contentType,
         statusCode: response.status,
-        size: 0
+        size: 0,
       };
     }
-    
+
     // Get text content for text/* and application/json
     let content = '';
     let links: string[] = [];
     let title = '';
-    
+
     if (contentType.includes('text/html')) {
       content = await response.text();
-      
+
       // Extract links and title from HTML
       const extractedData = this.extractFromHtml(content);
       links = extractedData.links;
       title = extractedData.title;
     } else if (
-      contentType.includes('text/') || 
+      contentType.includes('text/') ||
       contentType.includes('application/json') ||
       contentType.includes('application/javascript') ||
       contentType.includes('application/xml')
     ) {
       content = await response.text();
-      
+
       // Use the last part of the URL path as the title
       const urlObj = new URL(url);
       const pathParts = urlObj.pathname.split('/');
@@ -285,7 +300,7 @@ export class WebsiteCrawler {
       // Skip non-text content
       this.log.debug({ url, contentType }, 'Skipping non-text content');
     }
-    
+
     return {
       url,
       title,
@@ -294,7 +309,7 @@ export class WebsiteCrawler {
       lastModified,
       contentType,
       statusCode: response.status,
-      size: content.length
+      size: content.length,
     };
   }
 
@@ -303,31 +318,31 @@ export class WebsiteCrawler {
    * @param html The HTML content
    * @returns The extracted links and title
    */
-  private extractFromHtml(html: string): { links: string[], title: string } {
+  private extractFromHtml(html: string): { links: string[]; title: string } {
     const links: string[] = [];
     let title = '';
-    
+
     // Extract title
     const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
     if (titleMatch && titleMatch[1]) {
       title = titleMatch[1].trim();
     }
-    
+
     // Extract links
     const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>/gi;
     let match;
-    
+
     while ((match = linkRegex.exec(html)) !== null) {
       const href = match[1];
-      
+
       // Skip anchor links and javascript: links
       if (href.startsWith('#') || href.startsWith('javascript:')) {
         continue;
       }
-      
+
       links.push(href);
     }
-    
+
     return { links, title };
   }
 

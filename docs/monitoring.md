@@ -31,49 +31,49 @@ This guide will help you understand how to leverage these capabilities to monito
 
 All logs across Dome services follow a standardized structured JSON format, which includes these common fields:
 
-| Field         | Description                                        | Example                               |
-|---------------|----------------------------------------------------|---------------------------------------|
-| `timestamp`   | ISO 8601 timestamp                                 | `2025-04-26T22:54:31.123Z`            |
-| `level`       | Log level                                          | `info`, `error`, `warn`, `debug`      |
-| `service`     | Service name                                       | `dome-api`, `silo`, `constellation`   |
-| `component`   | Component within the service                       | `database`, `vectorize`, `controller` |
-| `message`     | Human-readable message                             | `Request processed successfully`      |
-| `requestId`   | Unique identifier for distributed tracing          | `f8e7d6c5-b4a3-2c1d-0e9f-8a7b6c5d4e3f`|
-| `event`       | Standardized event type                            | `REQUEST_START`, `OPERATION_END`      |
-| `operation`   | Name of the operation being performed              | `createUser`, `queryVectors`          |
-| `duration_ms` | Operation duration in milliseconds (when applicable)| `123.45`                             |
+| Field         | Description                                          | Example                                |
+| ------------- | ---------------------------------------------------- | -------------------------------------- |
+| `timestamp`   | ISO 8601 timestamp                                   | `2025-04-26T22:54:31.123Z`             |
+| `level`       | Log level                                            | `info`, `error`, `warn`, `debug`       |
+| `service`     | Service name                                         | `dome-api`, `silo`, `constellation`    |
+| `component`   | Component within the service                         | `database`, `vectorize`, `controller`  |
+| `message`     | Human-readable message                               | `Request processed successfully`       |
+| `requestId`   | Unique identifier for distributed tracing            | `f8e7d6c5-b4a3-2c1d-0e9f-8a7b6c5d4e3f` |
+| `event`       | Standardized event type                              | `REQUEST_START`, `OPERATION_END`       |
+| `operation`   | Name of the operation being performed                | `createUser`, `queryVectors`           |
+| `duration_ms` | Operation duration in milliseconds (when applicable) | `123.45`                               |
 
 ### Log Levels
 
 Logs use standard levels, each serving a specific purpose:
 
-| Level   | Purpose                                                | When to Use                                     |
-|---------|--------------------------------------------------------|------------------------------------------------|
-| `trace` | Extremely detailed information for pinpointing issues  | Function entry/exit, variable values in loops  |
-| `debug` | Detailed information useful for debugging              | Configuration values, detailed processing steps |
-| `info`  | General operational information                        | Service startup, request handling, operations  |
-| `warn`  | Potentially harmful situations                         | Deprecated API usage, fallbacks, retries       |
-| `error` | Error conditions preventing an operation from completing | Failed requests, database errors, exceptions  |
-| `fatal` | Severe error conditions preventing application function | Database connection failures, critical outages |
+| Level   | Purpose                                                  | When to Use                                     |
+| ------- | -------------------------------------------------------- | ----------------------------------------------- |
+| `trace` | Extremely detailed information for pinpointing issues    | Function entry/exit, variable values in loops   |
+| `debug` | Detailed information useful for debugging                | Configuration values, detailed processing steps |
+| `info`  | General operational information                          | Service startup, request handling, operations   |
+| `warn`  | Potentially harmful situations                           | Deprecated API usage, fallbacks, retries        |
+| `error` | Error conditions preventing an operation from completing | Failed requests, database errors, exceptions    |
+| `fatal` | Severe error conditions preventing application function  | Database connection failures, critical outages  |
 
 ### Standardized Event Names
 
 The `@dome/logging` package defines standard event names that appear in the `event` field:
 
-| Event Name           | Description                              | Typical Log Level |
-|----------------------|------------------------------------------|------------------|
-| `REQUEST_START`      | Start of a request processing            | `info`           |
-| `REQUEST_END`        | End of a request processing              | `info`           |
-| `REQUEST_ERROR`      | Error during request processing          | `error`          |
-| `OPERATION_START`    | Start of an internal operation           | `debug`          |
-| `OPERATION_END`      | Successful completion of an operation    | `debug`          |
-| `OPERATION_ERROR`    | Error during an operation                | `error`          |
-| `EXTERNAL_CALL`      | External API or service call             | `debug`          |
-| `DATABASE_QUERY`     | Database operation                       | `debug`          |
-| `CACHE_HIT`          | Cache hit event                          | `debug`          |
-| `CACHE_MISS`         | Cache miss event                         | `debug`          |
-| `WORKER_START`       | Worker startup                           | `info`           |
-| `WORKER_SHUTDOWN`    | Worker shutdown                          | `info`           |
+| Event Name        | Description                           | Typical Log Level |
+| ----------------- | ------------------------------------- | ----------------- |
+| `REQUEST_START`   | Start of a request processing         | `info`            |
+| `REQUEST_END`     | End of a request processing           | `info`            |
+| `REQUEST_ERROR`   | Error during request processing       | `error`           |
+| `OPERATION_START` | Start of an internal operation        | `debug`           |
+| `OPERATION_END`   | Successful completion of an operation | `debug`           |
+| `OPERATION_ERROR` | Error during an operation             | `error`           |
+| `EXTERNAL_CALL`   | External API or service call          | `debug`           |
+| `DATABASE_QUERY`  | Database operation                    | `debug`           |
+| `CACHE_HIT`       | Cache hit event                       | `debug`           |
+| `CACHE_MISS`      | Cache miss event                      | `debug`           |
+| `WORKER_START`    | Worker startup                        | `info`            |
+| `WORKER_SHUTDOWN` | Worker shutdown                       | `info`            |
 
 ### Reading Logs in Cloudflare Logs Engine
 
@@ -135,16 +135,16 @@ The Dome platform uses standardized error types across all services, which are l
 
 Each error belongs to one of these standardized types:
 
-| Error Type                | HTTP Status | Common Causes                                    | Metrics Tag           |
-|---------------------------|-------------|--------------------------------------------------|------------------------|
-| `ValidationError`         | 400         | Invalid input, failed validation rules           | `errors.validation`    |
-| `BadRequestError`         | 400         | Malformed requests, missing required parameters  | `errors.badRequest`    |
-| `UnauthorizedError`       | 401         | Missing or invalid authentication                | `errors.unauthorized`  |
-| `ForbiddenError`          | 403         | Insufficient permissions                         | `errors.forbidden`     |
-| `NotFoundError`           | 404         | Resource not found                              | `errors.notFound`      |
-| `ConflictError`           | 409         | Resource conflicts, duplicate entries            | `errors.conflict`      |
-| `RateLimitError`          | 429         | Rate limit exceeded                             | `errors.rateLimit`     |
-| `InternalError`           | 500         | Unexpected server errors                        | `errors.internal`      |
+| Error Type                | HTTP Status | Common Causes                                   | Metrics Tag                 |
+| ------------------------- | ----------- | ----------------------------------------------- | --------------------------- |
+| `ValidationError`         | 400         | Invalid input, failed validation rules          | `errors.validation`         |
+| `BadRequestError`         | 400         | Malformed requests, missing required parameters | `errors.badRequest`         |
+| `UnauthorizedError`       | 401         | Missing or invalid authentication               | `errors.unauthorized`       |
+| `ForbiddenError`          | 403         | Insufficient permissions                        | `errors.forbidden`          |
+| `NotFoundError`           | 404         | Resource not found                              | `errors.notFound`           |
+| `ConflictError`           | 409         | Resource conflicts, duplicate entries           | `errors.conflict`           |
+| `RateLimitError`          | 429         | Rate limit exceeded                             | `errors.rateLimit`          |
+| `InternalError`           | 500         | Unexpected server errors                        | `errors.internal`           |
 | `ServiceUnavailableError` | 503         | Temporary unavailability, maintenance           | `errors.serviceUnavailable` |
 
 ### Error Structure
@@ -174,17 +174,17 @@ Error logs include standardized fields:
 
 ### Common Error Meanings and Implications
 
-| Error Type                | Business Impact                                   | Typical Response                                      |
-|---------------------------|---------------------------------------------------|------------------------------------------------------|
-| `ValidationError`         | Client-side issue, no data impact                 | Review and fix client requests                        |
-| `BadRequestError`         | Client integration issues                         | Review API documentation and client implementations   |
-| `UnauthorizedError`       | Security concern if unexpected                    | Check authentication systems, token expiration        |
-| `ForbiddenError`          | Security or permission configuration issue        | Review access control policies                        |
-| `NotFoundError`           | Data consistency issue if resource should exist   | Check data integrity, database indexes                |
-| `ConflictError`           | Duplicate requests or race conditions             | Review client retry logic, check for duplicate submissions |
-| `RateLimitError`          | Client sending too many requests                  | Implement backoff strategies, review client patterns  |
-| `InternalError`           | Server-side issue requiring attention             | Investigate logs, review recent changes, check dependencies |
-| `ServiceUnavailableError` | Downstream dependency or scaling issue            | Check system health, dependency status, scaling needs |
+| Error Type                | Business Impact                                 | Typical Response                                            |
+| ------------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| `ValidationError`         | Client-side issue, no data impact               | Review and fix client requests                              |
+| `BadRequestError`         | Client integration issues                       | Review API documentation and client implementations         |
+| `UnauthorizedError`       | Security concern if unexpected                  | Check authentication systems, token expiration              |
+| `ForbiddenError`          | Security or permission configuration issue      | Review access control policies                              |
+| `NotFoundError`           | Data consistency issue if resource should exist | Check data integrity, database indexes                      |
+| `ConflictError`           | Duplicate requests or race conditions           | Review client retry logic, check for duplicate submissions  |
+| `RateLimitError`          | Client sending too many requests                | Implement backoff strategies, review client patterns        |
+| `InternalError`           | Server-side issue requiring attention           | Investigate logs, review recent changes, check dependencies |
+| `ServiceUnavailableError` | Downstream dependency or scaling issue          | Check system health, dependency status, scaling needs       |
 
 ## Monitoring Dashboards
 
@@ -264,37 +264,37 @@ Each alert definition includes:
 
 ### Severity Levels
 
-| Severity  | Description                                             | Response Time      | Notification Channels          |
-|-----------|---------------------------------------------------------|-------------------|--------------------------------|
-| `warning` | Potential issue that requires attention but not urgent  | Within 4 hours    | Email, Slack                   |
-| `critical`| Serious issue that requires immediate attention         | Within 30 minutes | Email, Slack, PagerDuty        |
+| Severity   | Description                                            | Response Time     | Notification Channels   |
+| ---------- | ------------------------------------------------------ | ----------------- | ----------------------- |
+| `warning`  | Potential issue that requires attention but not urgent | Within 4 hours    | Email, Slack            |
+| `critical` | Serious issue that requires immediate attention        | Within 30 minutes | Email, Slack, PagerDuty |
 
 ### Alert Thresholds Explained
 
 #### Error Rate Alerts
 
-| Alert                    | Threshold            | Justification                                      |
-|--------------------------|----------------------|----------------------------------------------------|
-| High Queue Error Rate    | > 10 in 5 minutes    | Indicates persistent processing issues             |
-| Embedding Errors         | > 5 in 5 minutes     | Potential AI service issues                        |
-| Critical Internal Errors | > 5 in 2 minutes     | Server-side issues requiring immediate attention   |
-| Service Unavailable      | > 0 in 1 minute      | Dependency outage requiring immediate action       |
+| Alert                    | Threshold         | Justification                                    |
+| ------------------------ | ----------------- | ------------------------------------------------ |
+| High Queue Error Rate    | > 10 in 5 minutes | Indicates persistent processing issues           |
+| Embedding Errors         | > 5 in 5 minutes  | Potential AI service issues                      |
+| Critical Internal Errors | > 5 in 2 minutes  | Server-side issues requiring immediate attention |
+| Service Unavailable      | > 0 in 1 minute   | Dependency outage requiring immediate action     |
 
 #### Duration Alerts
 
-| Alert                     | Threshold         | Justification                                        |
-|---------------------------|-------------------|------------------------------------------------------|
-| Slow Embedding            | > 8000ms (8s)     | AI service performance degradation                   |
-| Slow Vectorize Operations | > 3000ms (3s)     | Vector database performance issues                   |
-| Slow Queries              | > 2000ms (2s)     | Query optimization or index issues                   |
-| Slow Batch Processing     | > 10000ms (10s)   | Batch processing bottlenecks                         |
+| Alert                     | Threshold       | Justification                      |
+| ------------------------- | --------------- | ---------------------------------- |
+| Slow Embedding            | > 8000ms (8s)   | AI service performance degradation |
+| Slow Vectorize Operations | > 3000ms (3s)   | Vector database performance issues |
+| Slow Queries              | > 2000ms (2s)   | Query optimization or index issues |
+| Slow Batch Processing     | > 10000ms (10s) | Batch processing bottlenecks       |
 
 #### System Resource Alerts
 
-| Alert                    | Threshold          | Justification                                        |
-|--------------------------|--------------------|----------------------------------------------------|
-| High CPU Usage           | > 80% for 5 minutes | Approaching resource limits, potential scaling needed |
-| High Memory Usage        | > 80% for 5 minutes | Potential memory leaks or need for scaling           |
+| Alert             | Threshold           | Justification                                         |
+| ----------------- | ------------------- | ----------------------------------------------------- |
+| High CPU Usage    | > 80% for 5 minutes | Approaching resource limits, potential scaling needed |
+| High Memory Usage | > 80% for 5 minutes | Potential memory leaks or need for scaling            |
 
 ## Troubleshooting Guide
 
@@ -315,16 +315,19 @@ This section provides guidance on how to investigate and address common issues u
 #### ValidationError
 
 **Potential Causes**:
+
 - Client sending invalid data
 - Recent API changes not reflected in client implementation
 - Schema validation rules too strict
 
 **Investigation Steps**:
+
 1. Check error details for specific validation failures
 2. Review recent API changes
 3. Verify client implementation
 
 **Resolution Approaches**:
+
 - Update client implementation
 - Adjust validation rules if appropriate
 - Improve API documentation
@@ -332,18 +335,21 @@ This section provides guidance on how to investigate and address common issues u
 #### NotFoundError
 
 **Potential Causes**:
+
 - Resource deleted or never existed
 - Database index issues
 - Cache inconsistency
 - Data integrity problems
 
 **Investigation Steps**:
+
 1. Verify resource ID in request
 2. Check database directly for the resource
 3. Look for recent delete operations
 4. Check for cache inconsistencies
 
 **Resolution Approaches**:
+
 - Update client to handle missing resources
 - Restore data if accidentally deleted
 - Fix cache synchronization issues
@@ -351,12 +357,14 @@ This section provides guidance on how to investigate and address common issues u
 #### InternalError
 
 **Potential Causes**:
+
 - Unhandled exceptions in code
 - Database connection issues
 - Out of memory conditions
 - Dependency failures
 
 **Investigation Steps**:
+
 1. Check error stack trace
 2. Look for patterns in affected operations
 3. Review recent deployments
@@ -364,6 +372,7 @@ This section provides guidance on how to investigate and address common issues u
 5. Verify dependency health
 
 **Resolution Approaches**:
+
 - Fix code bugs
 - Scale resources if needed
 - Address dependency issues
@@ -372,18 +381,21 @@ This section provides guidance on how to investigate and address common issues u
 #### ServiceUnavailableError
 
 **Potential Causes**:
+
 - Downstream service outage
 - Rate limiting by dependencies
 - Planned maintenance
 - Resource exhaustion
 
 **Investigation Steps**:
+
 1. Check status of all dependencies
 2. Review rate limits and quotas
 3. Check for planned maintenance
 4. Monitor resource utilization
 
 **Resolution Approaches**:
+
 - Wait for dependency recovery
 - Implement circuit breakers
 - Adjust rate limiting
@@ -394,6 +406,7 @@ This section provides guidance on how to investigate and address common issues u
 #### Slow Operations
 
 **Potential Causes**:
+
 - Inefficient algorithms
 - Missing database indexes
 - Resource contention
@@ -401,6 +414,7 @@ This section provides guidance on how to investigate and address common issues u
 - Network issues
 
 **Investigation Steps**:
+
 1. Identify slow operations in logs
 2. Check operation parameters
 3. Look for patterns in slow operations
@@ -408,6 +422,7 @@ This section provides guidance on how to investigate and address common issues u
 5. Check external service performance
 
 **Resolution Approaches**:
+
 - Optimize code
 - Add or fix database indexes
 - Scale resources
@@ -417,6 +432,7 @@ This section provides guidance on how to investigate and address common issues u
 #### High Error Rates
 
 **Potential Causes**:
+
 - Code bugs
 - Configuration issues
 - External dependency failures
@@ -424,6 +440,7 @@ This section provides guidance on how to investigate and address common issues u
 - Security incidents
 
 **Investigation Steps**:
+
 1. Analyze error patterns
 2. Check recent deployments
 3. Verify configuration
@@ -431,6 +448,7 @@ This section provides guidance on how to investigate and address common issues u
 5. Check for unusual access patterns
 
 **Resolution Approaches**:
+
 - Roll back recent changes
 - Fix bugs
 - Update configuration

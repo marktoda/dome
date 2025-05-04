@@ -7,9 +7,9 @@ This document outlines the standards and best practices for error handling in th
 The Dome project uses a consistent error hierarchy based on the `DomeError` class. All application-specific errors should extend this base class.
 
 ```typescript
-import { 
-  DomeError, 
-  ValidationError, 
+import {
+  DomeError,
+  ValidationError,
   NotFoundError,
   UnauthorizedError,
   ForbiddenError,
@@ -17,7 +17,7 @@ import {
   InternalError,
   ConflictError,
   RateLimitError,
-  ServiceUnavailableError
+  ServiceUnavailableError,
 } from '@dome/errors';
 ```
 
@@ -34,17 +34,17 @@ import {
 
 The following standard error types are provided:
 
-| Error Class             | Code                   | Status Code | Use Case                                      |
-|-------------------------|------------------------|-------------|-----------------------------------------------|
-| `ValidationError`       | `VALIDATION_ERROR`     | 400         | Input validation failures                     |
-| `BadRequestError`       | `BAD_REQUEST`          | 400         | Malformed requests                           |
-| `UnauthorizedError`     | `UNAUTHORIZED`         | 401         | Authentication required                      |
-| `ForbiddenError`        | `FORBIDDEN`            | 403         | Permission denied                            |
-| `NotFoundError`         | `NOT_FOUND`            | 404         | Resource not found                           |
-| `ConflictError`         | `CONFLICT`             | 409         | Resource conflicts (e.g., duplicates)        |
-| `RateLimitError`        | `RATE_LIMIT_EXCEEDED`  | 429         | Rate limit exceeded                          |
-| `InternalError`         | `INTERNAL_ERROR`       | 500         | Unexpected server errors                     |
-| `ServiceUnavailableError`| `SERVICE_UNAVAILABLE` | 503         | Service temporarily unavailable             |
+| Error Class               | Code                  | Status Code | Use Case                              |
+| ------------------------- | --------------------- | ----------- | ------------------------------------- |
+| `ValidationError`         | `VALIDATION_ERROR`    | 400         | Input validation failures             |
+| `BadRequestError`         | `BAD_REQUEST`         | 400         | Malformed requests                    |
+| `UnauthorizedError`       | `UNAUTHORIZED`        | 401         | Authentication required               |
+| `ForbiddenError`          | `FORBIDDEN`           | 403         | Permission denied                     |
+| `NotFoundError`           | `NOT_FOUND`           | 404         | Resource not found                    |
+| `ConflictError`           | `CONFLICT`            | 409         | Resource conflicts (e.g., duplicates) |
+| `RateLimitError`          | `RATE_LIMIT_EXCEEDED` | 429         | Rate limit exceeded                   |
+| `InternalError`           | `INTERNAL_ERROR`      | 500         | Unexpected server errors              |
+| `ServiceUnavailableError` | `SERVICE_UNAVAILABLE` | 503         | Service temporarily unavailable       |
 
 ## When to Use Each Error Type
 
@@ -132,10 +132,10 @@ Example:
 
 ```typescript
 if (user.role !== 'admin' && resource.ownerId !== user.id) {
-  throw new ForbiddenError('Insufficient permissions', { 
-    requiredRole: 'admin', 
+  throw new ForbiddenError('Insufficient permissions', {
+    requiredRole: 'admin',
     userRole: user.role,
-    resourceId: resource.id 
+    resourceId: resource.id,
   });
 }
 ```
@@ -168,9 +168,9 @@ Example:
 
 ```typescript
 if (requestCount > RATE_LIMIT) {
-  throw new RateLimitError('Rate limit exceeded', { 
-    limit: RATE_LIMIT, 
-    resetAt: new Date(Date.now() + RESET_PERIOD).toISOString() 
+  throw new RateLimitError('Rate limit exceeded', {
+    limit: RATE_LIMIT,
+    resetAt: new Date(Date.now() + RESET_PERIOD).toISOString(),
   });
 }
 ```
@@ -189,10 +189,14 @@ Example:
 try {
   await databaseService.connect();
 } catch (error) {
-  throw new InternalError('Database connection failed', {
-    operation: 'connect',
-    database: DB_NAME
-  }, error instanceof Error ? error : undefined);
+  throw new InternalError(
+    'Database connection failed',
+    {
+      operation: 'connect',
+      database: DB_NAME,
+    },
+    error instanceof Error ? error : undefined,
+  );
 }
 ```
 
@@ -208,13 +212,13 @@ Example:
 ```typescript
 if (isMaintenanceMode) {
   throw new ServiceUnavailableError('Service is in maintenance mode', {
-    estimatedResumption: maintenanceEndTime
+    estimatedResumption: maintenanceEndTime,
   });
 }
 
 if (!dependencyService.isAvailable()) {
   throw new ServiceUnavailableError('Dependency service unavailable', {
-    dependency: 'payment-processor'
+    dependency: 'payment-processor',
   });
 }
 ```
@@ -235,10 +239,10 @@ try {
 } catch (error) {
   throw new ValidationError(
     'Failed to process input data',
-    { 
+    {
       inputId: input.id,
       operation: 'processData',
-      step: 'validation' 
+      step: 'validation',
     },
     error instanceof Error ? error : undefined,
   );
@@ -260,15 +264,16 @@ try {
 } catch (error) {
   // Log the error with context
   logError(error, 'User creation failed', { userData });
-  
+
   // Convert to an appropriate DomeError if it's not already
-  const domeError = error instanceof DomeError ? error : toDomeError(error, 'Failed to create user');
-  
+  const domeError =
+    error instanceof DomeError ? error : toDomeError(error, 'Failed to create user');
+
   if (domeError instanceof ValidationError) {
     // Pass validation errors through
     throw domeError;
   }
-  
+
   // Don't expose internal details to users
   throw new InternalError('An error occurred while creating user');
 }
@@ -287,7 +292,7 @@ import { toDomeError } from '@dome/errors';
 const domeError = toDomeError(
   error,
   'Operation failed', // Default message
-  { operation: 'processData' } // Default details
+  { operation: 'processData' }, // Default details
 );
 ```
 
@@ -316,11 +321,7 @@ throw userErrors.validation('Email is required', { field: 'email' });
 throw userErrors.notFound(`User with ID ${userId} not found`);
 
 // Use wrapped operations
-return userErrors.wrap(
-  () => updateUser(user),
-  'Failed to update user',
-  { userId: user.id }
-);
+return userErrors.wrap(() => updateUser(user), 'Failed to update user', { userId: user.id });
 ```
 
 #### Database Error Handling
@@ -350,14 +351,19 @@ const app = new Hono();
 app.use('*', errorHandler());
 
 // With custom options
-app.use('*', errorHandler({
-  includeStack: process.env.NODE_ENV !== 'production',
-  includeCause: process.env.NODE_ENV !== 'production',
-  errorMapper: (err) => {
-    // Custom error mapping logic
-    return err instanceof DomeError ? err : new InternalError('Internal server error', {}, err instanceof Error ? err : undefined);
-  }
-}));
+app.use(
+  '*',
+  errorHandler({
+    includeStack: process.env.NODE_ENV !== 'production',
+    includeCause: process.env.NODE_ENV !== 'production',
+    errorMapper: err => {
+      // Custom error mapping logic
+      return err instanceof DomeError
+        ? err
+        : new InternalError('Internal server error', {}, err instanceof Error ? err : undefined);
+    },
+  }),
+);
 ```
 
 The middleware will:
@@ -427,10 +433,10 @@ Example:
 ```typescript
 it('should throw ValidationError for invalid input', async () => {
   const invalidData = { name: '' };
-  
+
   // Test that the right error type is thrown
   await expect(userService.createUser(invalidData)).rejects.toThrow(ValidationError);
-  
+
   // Test error properties in detail
   try {
     await userService.createUser(invalidData);
@@ -444,9 +450,9 @@ it('should throw ValidationError for invalid input', async () => {
 
 it('should convert unknown errors to DomeErrors', () => {
   const originalError = new Error('Database connection failed');
-  
+
   const domeError = toDomeError(originalError, 'Operation failed');
-  
+
   expect(domeError).toBeInstanceOf(InternalError);
   expect(domeError.message).toBe('Database connection failed');
   expect(domeError.cause).toBe(originalError);
@@ -462,19 +468,19 @@ import { ValidationError } from '@dome/errors';
 
 function validateUser(user) {
   const errors = [];
-  
+
   if (!user.name) {
     errors.push({ field: 'name', message: 'Name is required' });
   }
-  
+
   if (!user.email || !isValidEmail(user.email)) {
     errors.push({ field: 'email', message: 'Valid email is required' });
   }
-  
+
   if (errors.length > 0) {
     throw new ValidationError('User validation failed', { errors });
   }
-  
+
   return user;
 }
 ```
@@ -486,11 +492,11 @@ import { NotFoundError } from '@dome/errors';
 
 async function getUserById(id) {
   const user = await db.user.findUnique({ where: { id } });
-  
+
   if (!user) {
     throw new NotFoundError(`User with ID ${id} not found`, { userId: id });
   }
-  
+
   return user;
 }
 ```
@@ -504,11 +510,11 @@ function checkAccess(user, resource) {
   if (!user) {
     throw new UnauthorizedError('Authentication required');
   }
-  
+
   if (resource.ownerId !== user.id && !user.roles.includes('admin')) {
     throw new ForbiddenError('Access denied', {
       resourceId: resource.id,
-      requiredRoles: ['admin', 'owner']
+      requiredRoles: ['admin', 'owner'],
     });
   }
 }
@@ -524,35 +530,39 @@ async function callExternalAPI(endpoint, data) {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
     });
-    
+
     if (!response.ok) {
       const text = await response.text();
-      
+
       if (response.status === 503) {
         throw new ServiceUnavailableError('External service unavailable', {
           status: response.status,
-          endpoint
+          endpoint,
         });
       }
-      
+
       throw new InternalError(`External API error: ${text}`, {
         status: response.status,
-        endpoint
+        endpoint,
       });
     }
-    
+
     return await response.json();
   } catch (error) {
     if (error instanceof DomeError) throw error;
-    
+
     if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-      throw new ServiceUnavailableError('External service request timed out', {
-        endpoint
-      }, error);
+      throw new ServiceUnavailableError(
+        'External service request timed out',
+        {
+          endpoint,
+        },
+        error,
+      );
     }
-    
+
     throw new InternalError('Failed to call external service', { endpoint }, error);
   }
 }
@@ -563,6 +573,7 @@ async function callExternalAPI(endpoint, data) {
 Consistent error handling improves the developer experience, makes debugging easier, and provides better feedback to API consumers. By following these standards, we ensure that errors throughout the Dome project are handled in a consistent and user-friendly way.
 
 Always remember:
+
 1. Use the most specific error type
 2. Include meaningful context
 3. Preserve error causes

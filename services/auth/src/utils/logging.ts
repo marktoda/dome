@@ -5,7 +5,7 @@ import {
   logOperationStart,
   logOperationSuccess,
   logOperationFailure,
-  createServiceMetrics
+  createServiceMetrics,
 } from '@dome/common';
 import { AuthError, AuthErrorType } from './errors';
 
@@ -29,13 +29,9 @@ export function getLogger(): any {
 export async function trackOperation<T>(
   operationName: string,
   fn: () => Promise<T>,
-  context: Record<string, any> = {}
+  context: Record<string, any> = {},
 ): Promise<T> {
-  return domeTrackOperation(
-    operationName,
-    fn,
-    { service: 'auth', ...context }
-  );
+  return domeTrackOperation(operationName, fn, { service: 'auth', ...context });
 }
 
 /**
@@ -50,7 +46,10 @@ export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
   for (const field of Object.keys(sanitized)) {
     if (sensitiveFields.some(sensitive => field.toLowerCase().includes(sensitive))) {
       sanitized[field as keyof T] = '[REDACTED]' as any;
-    } else if (typeof sanitized[field as keyof T] === 'object' && sanitized[field as keyof T] !== null) {
+    } else if (
+      typeof sanitized[field as keyof T] === 'object' &&
+      sanitized[field as keyof T] !== null
+    ) {
       sanitized[field as keyof T] = sanitizeForLogging(sanitized[field as keyof T]) as any;
     }
   }
@@ -61,9 +60,4 @@ export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
 /**
  * Export metrics and logging utilities from @dome/common
  */
-export {
-  metrics,
-  logOperationStart,
-  logOperationSuccess,
-  logOperationFailure
-};
+export { metrics, logOperationStart, logOperationSuccess, logOperationFailure };

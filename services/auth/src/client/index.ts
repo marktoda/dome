@@ -7,7 +7,7 @@ import type {
   RegisterResponse,
   ValidateTokenResponse,
   LogoutResponse,
-  User
+  User,
 } from './types';
 
 export * from './types';

@@ -493,22 +493,30 @@ export class SiloController {
    * POST /notes/bulk-reprocess
    * Reprocess multiple content items by their IDs
    */
-  async bulkReprocess(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+  async bulkReprocess(
+    c: Context<{ Bindings: Bindings; Variables: UserIdContext }>,
+  ): Promise<Response> {
     try {
       const startTime = performance.now();
-      this.logger.info({ path: c.req.path, method: c.req.method }, 'Bulk reprocess request received');
+      this.logger.info(
+        { path: c.req.path, method: c.req.method },
+        'Bulk reprocess request received',
+      );
 
       // Parse request body
       const body = await c.req.json();
-      
+
       // Validate request body
       const validatedData = bulkReprocessSchema.parse(body);
-      this.logger.info({ 
-        bulkReprocessRequest: { 
-          contentCount: validatedData.contentIds.length,
-          contentIds: validatedData.contentIds
-        }
-      }, 'Validated bulk reprocess request data');
+      this.logger.info(
+        {
+          bulkReprocessRequest: {
+            contentCount: validatedData.contentIds.length,
+            contentIds: validatedData.contentIds,
+          },
+        },
+        'Validated bulk reprocess request data',
+      );
 
       // Call the silo service to reprocess the content
       const result = await this.silo.reprocessContent(validatedData.contentIds);
@@ -529,7 +537,7 @@ export class SiloController {
           path: c.req.path,
           method: c.req.method,
         },
-        'Error in bulk reprocess controller'
+        'Error in bulk reprocess controller',
       );
 
       metrics.increment('api.bulk_reprocess.errors', 1);
@@ -544,7 +552,7 @@ export class SiloController {
               details: error.errors,
             },
           },
-          400
+          400,
         );
       }
 
@@ -558,7 +566,7 @@ export class SiloController {
             details: error instanceof Error ? error.message : String(error),
           },
         },
-        500
+        500,
       );
     }
   }

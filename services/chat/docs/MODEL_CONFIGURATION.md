@@ -18,14 +18,14 @@ The model configuration includes:
 
 ## Available Models
 
-| Model ID | Provider | Context Window | Description |
-|----------|----------|----------------|-------------|
-| GPT_4_TURBO | OpenAI | 128K tokens | High-capability model with large context window |
-| GPT_3_5_TURBO | OpenAI | 16K tokens | Cost-effective model with moderate capabilities |
-| LLAMA_3_70B | Cloudflare | 24K tokens | High-performance Llama model on Cloudflare |
-| LLAMA_3_8B | Cloudflare | 16K tokens | Cost-effective Llama model on Cloudflare |
-| CLAUDE_3_OPUS | Anthropic | 200K tokens | Highest-capability Claude model (future support) |
-| CLAUDE_3_SONNET | Anthropic | 200K tokens | Mid-range Claude model (future support) |
+| Model ID        | Provider   | Context Window | Description                                      |
+| --------------- | ---------- | -------------- | ------------------------------------------------ |
+| GPT_4_TURBO     | OpenAI     | 128K tokens    | High-capability model with large context window  |
+| GPT_3_5_TURBO   | OpenAI     | 16K tokens     | Cost-effective model with moderate capabilities  |
+| LLAMA_3_70B     | Cloudflare | 24K tokens     | High-performance Llama model on Cloudflare       |
+| LLAMA_3_8B      | Cloudflare | 16K tokens     | Cost-effective Llama model on Cloudflare         |
+| CLAUDE_3_OPUS   | Anthropic  | 200K tokens    | Highest-capability Claude model (future support) |
+| CLAUDE_3_SONNET | Anthropic  | 200K tokens    | Mid-range Claude model (future support)          |
 
 ## Environment Configuration
 
@@ -49,11 +49,7 @@ const defaultModel = DEFAULT_MODEL;
 const model = getModelConfig('gpt-4-turbo');
 
 // Calculate token limits
-const { maxResponseTokens } = calculateTokenLimits(
-  model,
-  inputTokens,
-  requestedMaxTokens
-);
+const { maxResponseTokens } = calculateTokenLimits(model, inputTokens, requestedMaxTokens);
 ```
 
 ### Using the Model Factory
@@ -71,11 +67,12 @@ const customModel = ModelFactory.createChatModel(env, {
   modelId: 'gpt-4-turbo',
   temperature: 0.8,
   maxTokens: 2000,
-  streaming: true
+  streaming: true,
 });
 ```
 
 The factory automatically handles:
+
 - Model provider selection (OpenAI, Cloudflare, Anthropic)
 - Configuration based on the model's capabilities
 - Environment-specific settings

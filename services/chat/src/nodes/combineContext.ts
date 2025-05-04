@@ -1,10 +1,10 @@
-import { getLogger, logError } from "@dome/common";
-import { ObservabilityService } from "../services/observabilityService";
-import { ModelFactory } from "../services/modelFactory";
-import { AgentState, Document, ToolResult } from "../types";
-import { toDomeError } from "../utils/errors";
-import { countTokens } from "../utils/tokenCounter";
-import { formatDocsForPrompt } from "../utils/promptHelpers";
+import { getLogger, logError } from '@dome/common';
+import { ObservabilityService } from '../services/observabilityService';
+import { ModelFactory } from '../services/modelFactory';
+import { AgentState, Document, ToolResult } from '../types';
+import { toDomeError } from '../utils/errors';
+import { countTokens } from '../utils/tokenCounter';
+import { formatDocsForPrompt } from '../utils/promptHelpers';
 
 /**
  * Combine Context LLM Node
@@ -27,14 +27,11 @@ import { formatDocsForPrompt } from "../utils/promptHelpers";
  * @param env Environment bindings
  * @returns Updated agent state with synthesized context
  */
-export async function combineContext(
-  state: AgentState,
-  env: Env,
-): Promise<Partial<AgentState>> {
-  const log = getLogger().child({ node: "combineContextLLM" });
+export async function combineContext(state: AgentState, env: Env): Promise<Partial<AgentState>> {
+  const log = getLogger().child({ node: 'combineContextLLM' });
   const started = performance.now();
-  const traceId = state.metadata?.traceId ?? "";
-  const spanId = ObservabilityService.startSpan(env, traceId, "combineContextLLM", state);
+  const traceId = state.metadata?.traceId ?? '';
+  const spanId = ObservabilityService.startSpan(env, traceId, 'combineContextLLM', state);
 
   try {
     /* ── 1 · gather all documents and tool results ──────────────── */
@@ -57,8 +54,8 @@ export async function combineContext(
               sourceType: chunk.metadata.sourceType,
               createdAt: chunk.metadata.createdAt || new Date().toISOString(),
               relevanceScore: chunk.metadata.rerankerScore || chunk.metadata.relevanceScore || 0,
-              mimeType: "text/plain"
-            }
+              mimeType: 'text/plain',
+            },
           }));
 
           rerankedDocs.push(...docs);
@@ -80,17 +77,17 @@ export async function combineContext(
 
     // Get all tool results from all task entities
     const allToolResults: ToolResult[] = Object.values(state.taskEntities || {}).flatMap(
-      task => task.toolResults || []
+      task => task.toolResults || [],
     );
 
     /* ── 2 · prepare documents by relevance and limit token count ──────────────── */
     // Sort documents by relevance score (descending)
-    rerankedDocs.sort((a, b) =>
-      (b.metadata.relevanceScore || 0) - (a.metadata.relevanceScore || 0)
+    rerankedDocs.sort(
+      (a, b) => (b.metadata.relevanceScore || 0) - (a.metadata.relevanceScore || 0),
     );
 
     // Set a token limit for context
-    const modelId = state.options?.modelId ?? "gpt-4";
+    const modelId = state.options?.modelId ?? 'gpt-4';
     const contextTokenLimit = 4000; // Adjust based on model constraints
 
     // Calculate tokens for each document and keep track of total
@@ -134,9 +131,9 @@ Label sources explicitly by index to maintain clear attribution.
 Format in clear sections, using bullet points and headings when appropriate.
 
 INFORMATION SOURCES:
-${formattedDocs || "No relevant documents found."}
+${formattedDocs || 'No relevant documents found.'}
 
-${formattedTools ? `TOOL RESULTS:\n${formattedTools}` : ""}
+${formattedTools ? `TOOL RESULTS:\n${formattedTools}` : ''}
 
 SYNTHESIZED CONTEXT OUTPUT:
 `;
@@ -145,15 +142,17 @@ SYNTHESIZED CONTEXT OUTPUT:
     const model = ModelFactory.createChatModel(env, {
       modelId,
       temperature: 0.2, // Low temperature for deterministic synthesis
-      maxTokens: 2000,  // Limit response size
+      maxTokens: 2000, // Limit response size
     });
 
     // Call the model to synthesize context
     const messages = [{ role: 'user', content: contextCombinerPrompt }];
-    const response = await model.invoke(messages.map(m => ({
-      role: m.role,
-      content: m.content,
-    })));
+    const response = await model.invoke(
+      messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      })),
+    );
 
     const synthesizedContext = response.text;
 
@@ -162,24 +161,27 @@ SYNTHESIZED CONTEXT OUTPUT:
     const elapsed = performance.now() - started;
 
     // Log success
-    log.info({
-      docsCount: selectedDocs.length,
-      toolsCount: allToolResults.length,
-      contextTokens: currentTokenCount,
-      synthesizedTokens: countTokens(synthesizedContext),
-      elapsedMs: elapsed
-    }, "Context synthesis complete");
+    log.info(
+      {
+        docsCount: selectedDocs.length,
+        toolsCount: allToolResults.length,
+        contextTokens: currentTokenCount,
+        synthesizedTokens: countTokens(synthesizedContext),
+        elapsedMs: elapsed,
+      },
+      'Context synthesis complete',
+    );
 
     // End span with successful result
     ObservabilityService.endSpan(
       env,
       traceId,
       spanId,
-      "combineContextLLM",
+      'combineContextLLM',
       state,
       // Just pass state without custom additions that aren't in the AgentState type
       state,
-      elapsed
+      elapsed,
     );
 
     // Return state updates
@@ -188,57 +190,45 @@ SYNTHESIZED CONTEXT OUTPUT:
       // Store synthesized context for the next node to use
       synthesizedContext,
       metadata: {
-        currentNode: "combineContext",
+        currentNode: 'combineContext',
         executionTimeMs: elapsed,
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          combineContextLLM: elapsed
-        }
-      }
+          combineContextLLM: elapsed,
+        },
+      },
     };
-
   } catch (err) {
     // Handle errors
     const domeError = toDomeError(err);
     const elapsed = performance.now() - started;
 
     // Log the error
-    logError(domeError, "Error in combineContextLLM", { traceId, spanId });
+    logError(domeError, 'Error in combineContextLLM', { traceId, spanId });
 
     // End span with error
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      "combineContextLLM",
-      state,
-      state,
-      elapsed
-    );
+    ObservabilityService.endSpan(env, traceId, spanId, 'combineContextLLM', state, state, elapsed);
 
     // Format error for state
     const formattedError = {
-      node: "combineContextLLM",
+      node: 'combineContextLLM',
       message: domeError.message,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     // Return error state update with fallback reasoning
     return {
       metadata: {
-        currentNode: "combineContextLLM",
+        currentNode: 'combineContextLLM',
         executionTimeMs: elapsed,
-        errors: [
-          ...(state.metadata?.errors || []),
-          formattedError
-        ],
+        errors: [...(state.metadata?.errors || []), formattedError],
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          combineContextLLM: elapsed
-        }
+          combineContextLLM: elapsed,
+        },
       },
       // Add fallback reasoning for downstream nodes
-      reasoning: ["Unable to synthesize context due to an error. Proceeding with raw documents."]
+      reasoning: ['Unable to synthesize context due to an error. Proceeding with raw documents.'],
     };
   }
 }
@@ -248,19 +238,23 @@ SYNTHESIZED CONTEXT OUTPUT:
  */
 function formatToolResults(results: ToolResult[]): string {
   if (!results || results.length === 0) {
-    return "";
+    return '';
   }
 
   return results
     .map((r, i) => {
       const out = r.error
         ? `Error: ${r.error}`
-        : typeof r.output === "string"
-          ? r.output
-          : JSON.stringify(r.output, null, 2);
-      return `[Tool ${i + 1}] ${r.toolName}\nInput: ${JSON.stringify(r.input, null, 2)}\nOutput: ${out}`;
+        : typeof r.output === 'string'
+        ? r.output
+        : JSON.stringify(r.output, null, 2);
+      return `[Tool ${i + 1}] ${r.toolName}\nInput: ${JSON.stringify(
+        r.input,
+        null,
+        2,
+      )}\nOutput: ${out}`;
     })
-    .join("\n\n");
+    .join('\n\n');
 }
 
 /**
@@ -281,52 +275,53 @@ function generateBetterTitle(chunk: any, sourceType: string): string {
     const language = chunk.metadata.language;
     const startLine = chunk.metadata.startLine;
     const endLine = chunk.metadata.endLine;
-    
+
     let title = 'Code';
-    
+
     // Add file path if available
     if (path) {
       // Extract filename from path
       const filename = path.split('/').pop();
       title = filename || path;
     }
-    
+
     // Add language if available
     if (language) {
       title = `${title} (${language})`;
     }
-    
+
     // Add line numbers if available
     if (startLine !== undefined && endLine !== undefined) {
       title = `${title} [Lines ${startLine}-${endLine}]`;
     } else if (startLine !== undefined) {
       title = `${title} [Line ${startLine}]`;
     }
-    
+
     return title;
   }
-  
+
   // Helper function to generate content preview
   function generateContentPreview(content: string, maxLength: number = 60): string {
     // Extract the first characters up to maxLength
     const previewText = content.trim().substring(0, maxLength);
-    
+
     // Find a reasonable stopping point (end of word or sentence)
     let endIndex = previewText.length;
     if (previewText.length === maxLength) {
       // Find the last space to avoid cutting words in half
       const lastSpace = previewText.lastIndexOf(' ');
-      if (lastSpace > maxLength/2) { // Only use if we have a decent preview length
+      if (lastSpace > maxLength / 2) {
+        // Only use if we have a decent preview length
         endIndex = lastSpace;
       }
-      
+
       // Or find the last sentence break for an even better cutoff point
       const lastPeriod = previewText.lastIndexOf('.');
-      if (lastPeriod > maxLength/2) {
+      if (lastPeriod > maxLength / 2) {
         endIndex = lastPeriod + 1;
       }
     }
-    
+
     const title = previewText.substring(0, endIndex).trim();
     return title + (endIndex < content.trim().length ? '...' : '');
   }
@@ -337,20 +332,20 @@ function generateBetterTitle(chunk: any, sourceType: string): string {
       return generateContentPreview(chunk.content);
     }
   }
-  
+
   // For doc/docs sources, create a more descriptive title
   if (sourceType === 'doc' || sourceType === 'docs') {
     // First try to use the document name if available
     if (chunk.metadata.documentName) {
       return chunk.metadata.documentName;
     }
-    
+
     // Otherwise create a preview from content
     if (chunk.content) {
       return generateContentPreview(chunk.content);
     }
   }
-  
+
   // For web sources, use the URL or domain
   if (sourceType === 'web') {
     if (chunk.metadata.url) {

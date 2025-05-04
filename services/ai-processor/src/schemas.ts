@@ -13,19 +13,23 @@ export const BaseContentSchema = z.object({
  * Schema for note content type
  */
 export const NoteProcessingSchema = BaseContentSchema.extend({
-  todos: z.array(
-    z.object({
-      text: z.string(),
-      dueDate: z.string().optional(),
-      priority: z.enum(['high', 'medium', 'low']).default('medium'),
-    })
-  ).default([]),
-  reminders: z.array(
-    z.object({
-      text: z.string(),
-      reminderTime: z.string().optional(),
-    })
-  ).default([]),
+  todos: z
+    .array(
+      z.object({
+        text: z.string(),
+        dueDate: z.string().optional(),
+        priority: z.enum(['high', 'medium', 'low']).default('medium'),
+      }),
+    )
+    .default([]),
+  reminders: z
+    .array(
+      z.object({
+        text: z.string(),
+        reminderTime: z.string().optional(),
+      }),
+    )
+    .default([]),
   topics: z.array(z.string()).default([]),
 });
 
@@ -33,12 +37,14 @@ export const NoteProcessingSchema = BaseContentSchema.extend({
  * Schema for code content type
  */
 export const CodeProcessingSchema = BaseContentSchema.extend({
-  todos: z.array(
-    z.object({
-      text: z.string(),
-      location: z.string().optional(),
-    })
-  ).default([]),
+  todos: z
+    .array(
+      z.object({
+        text: z.string(),
+        location: z.string().optional(),
+      }),
+    )
+    .default([]),
   components: z.array(z.string()).default([]),
   language: z.string().default('unknown'),
   frameworks: z.array(z.string()).default([]),
@@ -51,11 +57,13 @@ export const CodeProcessingSchema = BaseContentSchema.extend({
 export const ArticleProcessingSchema = BaseContentSchema.extend({
   keyPoints: z.array(z.string()).default([]),
   topics: z.array(z.string()).default([]),
-  entities: z.object({
-    people: z.array(z.string()).default([]),
-    organizations: z.array(z.string()).default([]),
-    products: z.array(z.string()).default([]),
-  }).default({ people: [], organizations: [], products: [] }),
+  entities: z
+    .object({
+      people: z.array(z.string()).default([]),
+      organizations: z.array(z.string()).default([]),
+      products: z.array(z.string()).default([]),
+    })
+    .default({ people: [], organizations: [], products: [] }),
 });
 
 /**

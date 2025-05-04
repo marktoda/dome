@@ -94,6 +94,7 @@ Alternatively, configure automatic deployments in the Cloudflare Pages dashboard
 
 1. Connect your repository to Cloudflare Pages
 2. Configure the build settings:
+
    - Build command: `npm run pages:build`
    - Build output directory: `.vercel/output/static`
    - Root directory: `ui`

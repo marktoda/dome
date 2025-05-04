@@ -1,7 +1,14 @@
 /**
  * Type definitions for the Auth client
  */
-import { User, UserRole, LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse } from '../types';
+import {
+  User,
+  UserRole,
+  LoginResponse,
+  RegisterResponse,
+  ValidateTokenResponse,
+  LogoutResponse,
+} from '../types';
 
 // Re-export types that are used by the client
 export { User, UserRole, LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse };
@@ -19,7 +26,7 @@ export enum AuthErrorCode {
   INSUFFICIENT_PERMISSIONS = 'INSUFFICIENT_PERMISSIONS',
   REGISTRATION_FAILED = 'REGISTRATION_FAILED',
   LOGIN_FAILED = 'LOGIN_FAILED',
-  INTERNAL_ERROR = 'INTERNAL_ERROR'
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
 }
 
 /**
@@ -31,17 +38,17 @@ export interface AuthBinding {
    * Login a user
    */
   login(email: string, password: string): Promise<LoginResponse>;
-  
+
   /**
    * Register a new user
    */
   register(email: string, password: string, name?: string): Promise<RegisterResponse>;
-  
+
   /**
    * Validate a token
    */
   validateToken(token: string): Promise<ValidateTokenResponse>;
-  
+
   /**
    * Logout a user (invalidate their token)
    */

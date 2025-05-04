@@ -149,7 +149,7 @@ export function calculateMinRelevanceScore(wideningAttempts: number): number {
   const config = getRetrieveConfig();
   return Math.max(
     config.relevanceScores.baseMinRelevance -
-    wideningAttempts * config.relevanceScores.wideningReduction,
+      wideningAttempts * config.relevanceScores.wideningReduction,
     config.relevanceScores.minimumRelevanceFloor,
   );
 }

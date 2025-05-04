@@ -10,7 +10,7 @@ import {
 import {
   createServiceErrorHandler,
   createEnhancedAssertValid,
-  createServiceErrorMiddleware
+  createServiceErrorMiddleware,
 } from '@dome/common';
 
 // Service name constant for consistency
@@ -34,5 +34,5 @@ export {
   ServiceUnavailableError,
   UnauthorizedError,
   assertExists,
-  createErrorFactory
+  createErrorFactory,
 };

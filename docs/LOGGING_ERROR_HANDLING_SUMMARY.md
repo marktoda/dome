@@ -58,7 +58,7 @@ import { initLogging } from '@dome/logging';
 const app = new Hono();
 initLogging(app, {
   idFactory: () => nanoid(12),
-  extraBindings: { apiVersion: '2.0', environment: 'production' }
+  extraBindings: { apiVersion: '2.0', environment: 'production' },
 });
 
 // Usage in controllers/services
@@ -75,6 +75,7 @@ await trackOperation('userAuthentication', async () => {
 ```
 
 Key enhancements:
+
 - Redaction of sensitive information in logs
 - Consistent request ID propagation
 - Service-specific metrics collection
@@ -111,6 +112,7 @@ app.use('*', errorHandler());
 ```
 
 Key enhancements:
+
 - Consistent HTTP status code mapping
 - Standardized error response format
 - Error assertion utilities
@@ -140,6 +142,7 @@ The AI-Processor service received comprehensive logging and error handling impro
 - **Sensitive Data Handling**: Implemented sanitization for sensitive information in logs.
 
 **Key Metrics:**
+
 - 64 files modified
 - 100% compliance with new error standards
 - 100% console.log-free implementation
@@ -155,6 +158,7 @@ The Silo service improvements focused on storage and queue operations:
 - **Database Error Conversion**: Added conversion of database errors to appropriate types.
 
 **Key Metrics:**
+
 - 42 files modified
 - 100% adoption of structured logging
 - 100% compliance with error standards
@@ -170,6 +174,7 @@ The Constellation service received vectorization-specific improvements:
 - **Error Enrichment**: Enhanced error context for better troubleshooting.
 
 **Key Metrics:**
+
 - 28 files modified
 - 100% adoption of structured logging
 - 100% compliance with error standards
@@ -184,6 +189,7 @@ The Tsunami service is still in the process of being fully migrated:
 - **Technical Debt**: Identified remaining areas for improvement.
 
 **Key Metrics:**
+
 - Migration in progress
 - Partial compliance with new standards
 - Technical debt identified and documented
@@ -197,6 +203,7 @@ The Dome-Notify service received notification-specific improvements:
 - **Retry Logic**: Improved logging for retry attempts with context preservation.
 
 **Key Metrics:**
+
 - 35 files modified
 - 100% adoption of structured logging
 - 100% compliance with error standards
@@ -215,6 +222,7 @@ New monitoring capabilities were implemented based on the standardized logging a
 - **Log Volume Monitoring**: Tracking of log volume by level and service.
 
 The dashboards provide real-time visibility into:
+
 - Error rates by service, endpoint, and error type
 - Operation latency distributions
 - Success/failure ratios for critical operations
@@ -282,30 +290,34 @@ Developers report spending 25-30% less time on implementing error handling and d
 The following patterns have been established as best practices:
 
 - **Use Structured Logging**: Always use structured logging with object context.
+
   ```typescript
   // GOOD
   logger.info({ userId, operation: 'createUser', duration }, 'User created successfully');
-  
+
   // AVOID
   logger.info(`User ${userId} created successfully in ${duration}ms`);
   ```
 
 - **Use Appropriate Log Levels**:
+
   - `error`: Only for errors that impact functionality
   - `warn`: For issues that don't prevent operation but require attention
   - `info`: For normal operational information
   - `debug`: For detailed information useful for debugging (disable in production)
 
 - **Use Specific Error Types**:
+
   ```typescript
   // GOOD
   throw new ValidationError('Invalid email format', { field: 'email' });
-  
+
   // AVOID
   throw new Error('Invalid email format');
   ```
 
 - **Chain Errors to Preserve Causes**:
+
   ```typescript
   try {
     await db.query(sql);
@@ -335,7 +347,7 @@ import { initLogging, getLogger } from '@dome/logging';
 
 const app = new Hono();
 initLogging(app, {
-  extraBindings: { service: 'api', version: '1.0.0' }
+  extraBindings: { service: 'api', version: '1.0.0' },
 });
 
 export default app;
@@ -350,20 +362,20 @@ import { ValidationError, NotFoundError } from '@dome/errors';
 export async function getUserProfile(c) {
   const logger = getLogger();
   const userId = c.req.param('userId');
-  
+
   logger.info({ userId }, 'Getting user profile');
-  
+
   return await trackOperation('getUserProfile', async () => {
     if (!userId) {
       throw new ValidationError('User ID is required');
     }
-    
+
     const user = await userService.findById(userId);
-    
+
     if (!user) {
       throw new NotFoundError(`User with ID ${userId} not found`);
     }
-    
+
     return c.json(user);
   });
 }
@@ -389,20 +401,20 @@ export default app;
 
 ### 6.3 Quick Reference for New Developers
 
-| Task | Recommended Pattern | Package |
-|------|-------------------|---------|
-| Initialize logging | `initLogging(app)` | @dome/logging |
-| Get the current logger | `const logger = getLogger()` | @dome/logging |
-| Log structured information | `logger.info({ key: value }, 'message')` | @dome/logging |
-| Track operation with timing | `trackOperation('name', async () => { ... })` | @dome/logging |
-| Log an error | `logError(error, 'message', context)` | @dome/logging |
-| Throw validation error | `throw new ValidationError('message', details)` | @dome/errors |
-| Throw not found error | `throw new NotFoundError('message', details)` | @dome/errors |
-| Create domain-specific errors | `const Errors = createErrorFactory('domain')` | @dome/errors |
-| Convert any error to DomeError | `const domeError = toDomeError(error)` | @dome/errors |
-| Add error middleware | `app.use('*', errorHandler())` | @dome/errors |
-| Assert valid input | `assertValid(condition, 'message', details)` | @dome/errors |
-| Assert entity exists | `assertExists(entity, 'message', details)` | @dome/errors |
+| Task                           | Recommended Pattern                             | Package       |
+| ------------------------------ | ----------------------------------------------- | ------------- |
+| Initialize logging             | `initLogging(app)`                              | @dome/logging |
+| Get the current logger         | `const logger = getLogger()`                    | @dome/logging |
+| Log structured information     | `logger.info({ key: value }, 'message')`        | @dome/logging |
+| Track operation with timing    | `trackOperation('name', async () => { ... })`   | @dome/logging |
+| Log an error                   | `logError(error, 'message', context)`           | @dome/logging |
+| Throw validation error         | `throw new ValidationError('message', details)` | @dome/errors  |
+| Throw not found error          | `throw new NotFoundError('message', details)`   | @dome/errors  |
+| Create domain-specific errors  | `const Errors = createErrorFactory('domain')`   | @dome/errors  |
+| Convert any error to DomeError | `const domeError = toDomeError(error)`          | @dome/errors  |
+| Add error middleware           | `app.use('*', errorHandler())`                  | @dome/errors  |
+| Assert valid input             | `assertValid(condition, 'message', details)`    | @dome/errors  |
+| Assert entity exists           | `assertExists(entity, 'message', details)`      | @dome/errors  |
 
 ## 7. Future Recommendations
 

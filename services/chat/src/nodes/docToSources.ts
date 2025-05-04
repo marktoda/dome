@@ -15,21 +15,24 @@ export async function docToSources(state: AgentState): Promise<Partial<AgentStat
   const t0 = performance.now();
   const logger = getLogger().child({ component: 'docToSources' });
 
-  logger.info({
-    docsCount: state.docs?.length || 0
-  }, "Mapping documents to sources for streaming");
+  logger.info(
+    {
+      docsCount: state.docs?.length || 0,
+    },
+    'Mapping documents to sources for streaming',
+  );
 
   // Skip if no docs are available
   if (!state.docs || state.docs.length === 0) {
-    logger.info("No documents to map to sources");
+    logger.info('No documents to map to sources');
     return {
       sources: [],
       metadata: {
-        currentNode: "doc_to_sources",
+        currentNode: 'doc_to_sources',
         nodeTimings: {
-          docToSources: performance.now() - t0
-        }
-      }
+          docToSources: performance.now() - t0,
+        },
+      },
     };
   }
 
@@ -47,20 +50,23 @@ export async function docToSources(state: AgentState): Promise<Partial<AgentStat
 
   const elapsed = performance.now() - t0;
 
-  logger.info({
-    docsCount: state.docs.length,
-    sourcesCount: sources.length,
-    elapsedMs: elapsed
-  }, "Successfully mapped documents to sources");
+  logger.info(
+    {
+      docsCount: state.docs.length,
+      sourcesCount: sources.length,
+      elapsedMs: elapsed,
+    },
+    'Successfully mapped documents to sources',
+  );
 
   // Return the updated state with sources
   return {
     sources,
     metadata: {
-      currentNode: "doc_to_sources",
+      currentNode: 'doc_to_sources',
       nodeTimings: {
-        docToSources: elapsed
-      }
-    }
+        docToSources: elapsed,
+      },
+    },
   };
 }

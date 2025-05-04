@@ -26,10 +26,14 @@ export const toDomeError = createServiceErrorHandler(SERVICE_NAME);
  */
 export class VectorizeError extends InternalError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'VECTORIZE_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'VECTORIZE_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 
@@ -38,10 +42,14 @@ export class VectorizeError extends InternalError {
  */
 export class EmbeddingError extends InternalError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'EMBEDDING_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'EMBEDDING_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 
@@ -50,12 +58,23 @@ export class EmbeddingError extends InternalError {
  */
 export class PreprocessingError extends InternalError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'PREPROCESSING_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'PREPROCESSING_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 
 // Re-export common errors
-export { ValidationError, NotFoundError, ConflictError, ServiceUnavailableError, assertValid, assertExists };
+export {
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  ServiceUnavailableError,
+  assertValid,
+  assertExists,
+};

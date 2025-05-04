@@ -98,8 +98,8 @@ export const DEFAULT_IGNORE_PATTERNS = [
   '*.tsv',
   '*.sqlite',
   '*.db',
-  
+
   // Notion-specific patterns
   '**/notion.cache/**', // Notion cache files
-  '**/.notion/**',      // Notion hidden files
+  '**/.notion/**', // Notion hidden files
 ];

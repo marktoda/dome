@@ -143,7 +143,7 @@ export class WebsiteProvider implements Provider {
         this.log.info({ url: config.url }, 'website: no updates found');
         return {
           contents: [],
-          newCursor: this.createCursor(cursor, crawledPages, [])
+          newCursor: this.createCursor(cursor, crawledPages, []),
         };
       }
 
@@ -179,7 +179,10 @@ export class WebsiteProvider implements Provider {
           mimeType = 'text/plain';
         } else {
           // Skip non-text content
-          this.log.debug({ url: page.url, contentType: page.contentType }, 'website: skipping non-text content');
+          this.log.debug(
+            { url: page.url, contentType: page.contentType },
+            'website: skipping non-text content',
+          );
           continue;
         }
 
@@ -195,7 +198,7 @@ export class WebsiteProvider implements Provider {
           page.url,
           page.lastModified || new Date().toISOString(),
           page.title,
-          content.length
+          content.length,
         );
 
         // Inject metadata header into content
@@ -234,7 +237,7 @@ export class WebsiteProvider implements Provider {
           pages: puts.length,
           filtered: filteredPages,
           crawled: crawledUrls.length,
-          pending: pendingUrls.length
+          pending: pendingUrls.length,
         },
         'website: pull done',
       );
@@ -251,7 +254,7 @@ export class WebsiteProvider implements Provider {
   private createCursor(
     currentCursor: string | null,
     crawledPages: WebsitePage[],
-    pendingUrls: string[]
+    pendingUrls: string[],
   ): string {
     // Create a cursor that contains:
     // 1. The timestamp of this crawl

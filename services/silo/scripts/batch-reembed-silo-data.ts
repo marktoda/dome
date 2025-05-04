@@ -41,7 +41,7 @@ function parseArgs(): CommandLineArgs {
   const args: CommandLineArgs = {
     batchSize: 100,
     dryRun: false,
-    help: false
+    help: false,
   };
 
   process.argv.slice(2).forEach(arg => {
@@ -83,7 +83,10 @@ if (args.help) {
  */
 async function createTempFile(prefix: string, content: string): Promise<string> {
   // Generate a unique temporary file path
-  const tempFilePath = path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`);
+  const tempFilePath = path.join(
+    os.tmpdir(),
+    `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`,
+  );
 
   try {
     // Write content to the temporary file
@@ -113,7 +116,6 @@ async function main() {
   logger.info(`Starting batch re-embedding process${args.dryRun ? ' (DRY RUN)' : ''}`);
   logger.info(`Batch size: ${args.batchSize}`);
   logger.info(`Using temporary directory: ${os.tmpdir()}`);
-
 
   const contents = await fs.readFile('./scripts/contents.json', 'utf-8');
   // Parse the results
@@ -163,10 +165,15 @@ async function main() {
 
             // Send to both queues
             try {
-              await execAsync(`wrangler queues publish new-content-constellation ${tempMessageFile}`);
+              await execAsync(
+                `wrangler queues publish new-content-constellation ${tempMessageFile}`,
+              );
               logger.debug(`Sent message to constellation queue for ID: ${item.id}`);
             } catch (queueError) {
-              logger.error({ error: queueError }, `Failed to send to constellation queue for ID: ${item.id}`);
+              logger.error(
+                { error: queueError },
+                `Failed to send to constellation queue for ID: ${item.id}`,
+              );
             }
 
             try {
@@ -188,7 +195,7 @@ async function main() {
       } catch (error) {
         logger.error(
           { error, contentId: item.id },
-          `Failed to send message for content ID: ${item.id}`
+          `Failed to send message for content ID: ${item.id}`,
         );
         failureCount++;
       }
@@ -215,9 +222,10 @@ async function main() {
   logger.info(`Total content items: ${contentItems.length}`);
   logger.info(`Successfully processed: ${successCount}`);
   logger.info(`Failed to process: ${failureCount}`);
-  logger.info(`${args.dryRun ? '[DRY RUN] No actual messages were sent' : 'All messages sent successfully'}`);
+  logger.info(
+    `${args.dryRun ? '[DRY RUN] No actual messages were sent' : 'All messages sent successfully'}`,
+  );
   logger.info('======================================');
-
 }
 
 // Execute main function

@@ -12,7 +12,7 @@ import {
   determineCategory,
   determineMimeType,
   blocksToText,
-  shouldIgnorePage
+  shouldIgnorePage,
 } from './utils';
 import { injectMetadataHeader } from '../../services/metadataHeaderService';
 import { IgnorePatternProcessor } from '../../utils/ignorePatternProcessor';
@@ -46,7 +46,7 @@ export class NotionProvider implements Provider {
     // Get workspace ID from resourceId
     const workspaceId = resourceId;
     const startTime = performance.now();
-    
+
     this.log.info({ workspaceId, cursor, userId }, 'notion: pull start');
 
     try {
@@ -54,10 +54,10 @@ export class NotionProvider implements Provider {
       const client = userId
         ? await this.notionClient.forUser(userId, workspaceId)
         : this.notionClient;
-      
+
       // Get pages changed since cursor
       const pages = await client.getUpdatedPages(workspaceId, cursor);
-      
+
       if (!pages.length) {
         this.log.info({ resourceId }, 'notion: no updates found');
         return { contents: [], newCursor: cursor };
@@ -79,14 +79,14 @@ export class NotionProvider implements Provider {
         try {
           // Get page content as blocks using same client instance
           const contentData = await client.getPageContent(page.id);
-          
+
           // Create metadata for the page
           const metadata = createNotionMetadata(
             workspaceId,
             page.id,
             page.last_edited_time,
             page.title,
-            contentData.length
+            contentData.length,
           );
 
           // Inject metadata header into content
@@ -113,7 +113,7 @@ export class NotionProvider implements Provider {
         } catch (error) {
           this.log.error(
             { pageId: page.id, error: error instanceof Error ? error.message : String(error) },
-            'notion: error processing page'
+            'notion: error processing page',
           );
           metrics.increment('notion.pull.page_errors');
         }
@@ -131,18 +131,18 @@ export class NotionProvider implements Provider {
 
       this.log.info(
         { resourceId, pages: puts.length, filtered: filteredPages },
-        'notion: pull done'
+        'notion: pull done',
       );
 
       return { contents: puts, newCursor: latestUpdate };
     } catch (error) {
       this.log.error(
         { resourceId, error: error instanceof Error ? error.message : String(error) },
-        'notion: pull failed'
+        'notion: pull failed',
       );
-      
+
       metrics.increment('notion.pull.errors');
-      
+
       // Rethrow to let the caller handle it
       throw error;
     }

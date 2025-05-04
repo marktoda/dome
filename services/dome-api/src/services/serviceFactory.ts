@@ -142,10 +142,10 @@ export class DefaultServiceFactory implements ServiceFactory {
     let service = this.authServices.get(env);
     if (!service) {
       this.logger.debug('Creating new AuthService instance');
-      
+
       // Cast to the appropriate worker binding type, similar to other services
       service = createAuthServiceFromBinding(env.AUTH as unknown as AuthWorkerBinding);
-      
+
       this.authServices.set(env, service);
     }
     return service;

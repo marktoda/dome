@@ -29,7 +29,7 @@ export function searchCommand(program: Command): void {
         const searchMessage = category
           ? `Searching for: "${query}" in category: ${category}`
           : `Searching for: "${query}"`;
-        
+
         const spinner = createSpinner(searchMessage);
         spinner.start();
 
@@ -45,7 +45,7 @@ export function searchCommand(program: Command): void {
         const headerText = category
           ? `Search Results for: "${query}" (Category: ${category})`
           : `Search Results for: "${query}"`;
-        
+
         console.log(heading(headerText));
         console.log(`Found ${results.results.length} results.\n`);
 

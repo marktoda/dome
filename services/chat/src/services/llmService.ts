@@ -1,7 +1,12 @@
 import { getLogger } from '@dome/common';
 import { AIMessage } from '../types';
 import { ChatOpenAI } from '@langchain/openai';
-import { HumanMessage, MessageContent, SystemMessage, AIMessage as LangChainAIMessage } from '@langchain/core/messages';
+import {
+  HumanMessage,
+  MessageContent,
+  SystemMessage,
+  AIMessage as LangChainAIMessage,
+} from '@langchain/core/messages';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { Tool } from '@langchain/core/tools';
@@ -27,8 +32,7 @@ const logger = getLogger();
 /* -------------------------------------------------------- */
 const isTest = () => false;
 const mockResponse = 'This is a mock response for testing purposes.';
-const fallbackResponse =
-  "I'm sorry, but I couldn't process that just now – please try again.";
+const fallbackResponse = "I'm sorry, but I couldn't process that just now – please try again.";
 
 function withTimeout<T>(p: Promise<T>, ms = getTimeoutConfig().llmServiceTimeout) {
   return Promise.race<T>([
@@ -72,11 +76,14 @@ export class LlmService {
     // Update the static MODEL property to match the configured default
     this.MODEL = DEFAULT_MODEL.id;
 
-    logger.info({
-      model: DEFAULT_MODEL.id,
-      modelName: DEFAULT_MODEL.name,
-      provider: DEFAULT_MODEL.provider
-    }, 'LLM service initialized');
+    logger.info(
+      {
+        model: DEFAULT_MODEL.id,
+        modelName: DEFAULT_MODEL.name,
+        provider: DEFAULT_MODEL.provider,
+      },
+      'LLM service initialized',
+    );
   }
 
   /**
@@ -84,7 +91,7 @@ export class LlmService {
    */
   private static getClient(
     env: Env,
-    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {}
+    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {},
   ): ChatOpenAI {
     // Get model config - use specified modelId or default
     const modelConfig = getModelConfig(opts.modelId ?? this.MODEL);
@@ -135,14 +142,17 @@ export class LlmService {
    */
   private static getStreamingClient(
     env: Env,
-    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {}
+    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {},
   ): ChatOpenAI {
     // Get model config - use specified modelId or default
     const modelConfig = getModelConfig(opts.modelId ?? this.MODEL);
 
     // Verify the model supports streaming
     if (!modelConfig.capabilities.streaming) {
-      logger.warn({ modelId: modelConfig.id }, 'Model does not support streaming, using non-streaming client');
+      logger.warn(
+        { modelId: modelConfig.id },
+        'Model does not support streaming, using non-streaming client',
+      );
     }
 
     // Base client options
@@ -194,34 +204,40 @@ export class LlmService {
   static createToolBoundLLM(
     env: Env,
     tools: Tool[],
-    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {}
+    opts: { temperature?: number; maxTokens?: number; modelId?: string } = {},
   ): BaseChatModel {
     const modelId = opts.modelId ?? this.MODEL;
     const modelConfig = getModelConfig(modelId);
 
-    logger.info({
-      modelId,
-      toolCount: tools.length
-    }, 'Creating tool-bound LLM');
+    logger.info(
+      {
+        modelId,
+        toolCount: tools.length,
+      },
+      'Creating tool-bound LLM',
+    );
 
     try {
       return ModelFactory.createToolBoundModel(env, tools, {
         modelId,
         temperature: opts.temperature,
-        maxTokens: opts.maxTokens
+        maxTokens: opts.maxTokens,
       });
     } catch (error) {
-      logger.error({
-        err: error,
-        modelId
-      }, 'Failed to create tool-bound LLM');
+      logger.error(
+        {
+          err: error,
+          modelId,
+        },
+        'Failed to create tool-bound LLM',
+      );
 
       // Fall back to default model if specified model fails
       if (modelId !== DEFAULT_MODEL.id) {
         logger.info('Falling back to default model for tool binding');
         return ModelFactory.createToolBoundModel(env, tools, {
           temperature: opts.temperature,
-          maxTokens: opts.maxTokens
+          maxTokens: opts.maxTokens,
         });
       }
       throw error;
@@ -288,17 +304,20 @@ export class LlmService {
     opts: {
       temperature?: number;
       modelId?: string;
-      schema: ZodSchema,
+      schema: ZodSchema;
       schemaInstructions: string;
-    }
+    },
   ): Promise<T> {
     if (isTest()) return mockResponse as unknown as T;
 
     try {
-      logger.info({
-        modelId: opts.modelId ?? this.MODEL,
-        messageCount: messages.length
-      }, 'Invoking LLM with structured output schema');
+      logger.info(
+        {
+          modelId: opts.modelId ?? this.MODEL,
+          messageCount: messages.length,
+        },
+        'Invoking LLM with structured output schema',
+      );
 
       // Convert messages to LangChain format
       const langChainMessages = this.convertMessages(messages);
@@ -358,11 +377,7 @@ export class LlmService {
   /* ------------------------------------------------------ */
   /*  Higher‑level helpers                                  */
   /* ------------------------------------------------------ */
-  static async rewriteQuery(
-    env: Env,
-    original: string,
-    ctx: AIMessage[] = [],
-  ): Promise<string> {
+  static async rewriteQuery(env: Env, original: string, ctx: AIMessage[] = []): Promise<string> {
     const msgs: AIMessage[] = [
       { role: 'system', content: getQueryRewritingPrompt() },
       ...ctx,

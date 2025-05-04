@@ -40,22 +40,19 @@ vi.mock('@dome/common', () => {
       startTimer: vi.fn(() => ({ stop: vi.fn() })),
       trackOperation: vi.fn(),
     })),
-    createServiceWrapper: vi.fn((serviceName) => {
+    createServiceWrapper: vi.fn(serviceName => {
       return async (meta: Record<string, unknown>, fn: () => Promise<any>) => {
-        return withContext(
-          { ...meta, service: serviceName },
-          async () => {
-            try {
-              return await fn();
-            } catch (error) {
-              mockLogger.error({ err: error }, 'Unhandled error');
-              throw error;
-            }
+        return withContext({ ...meta, service: serviceName }, async () => {
+          try {
+            return await fn();
+          } catch (error) {
+            mockLogger.error({ err: error }, 'Unhandled error');
+            throw error;
           }
-        );
+        });
       };
     }),
-    createServiceErrorHandler: vi.fn((serviceName) => {
+    createServiceErrorHandler: vi.fn(serviceName => {
       return (error: any, message?: string, details?: Record<string, any>) => {
         return {
           message: message || (error instanceof Error ? error.message : 'Unknown error'),
@@ -185,7 +182,9 @@ describe('ChatController', () => {
         'test-user',
         'chatHistory',
       );
-      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.chat.generated', 1, { streaming: 'true' });
+      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.chat.generated', 1, {
+        streaming: 'true',
+      });
     });
 
     it('should handle errors during chat session start', async () => {
@@ -208,8 +207,10 @@ describe('ChatController', () => {
       // Act & Assert
       await expect(controller.startChatSession(request)).rejects.toThrow('Test error');
       // Verify error metrics
-      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.chat.errors', 1,
-        expect.objectContaining({ errorType: 'Error' })
+      expect(metrics.increment).toHaveBeenCalledWith(
+        'chat_orchestrator.chat.errors',
+        1,
+        expect.objectContaining({ errorType: 'Error' }),
       );
     });
   });
@@ -251,12 +252,14 @@ describe('ChatController', () => {
 
       // Act & Assert
       await expect(controller.resumeChatSession(request)).rejects.toThrow('Test error');
-      
+
       // Verify error metrics
-      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.chat.errors', 1,
+      expect(metrics.increment).toHaveBeenCalledWith(
+        'chat_orchestrator.chat.errors',
+        1,
         expect.objectContaining({
           errorType: 'Error',
-        })
+        }),
       );
     });
   });

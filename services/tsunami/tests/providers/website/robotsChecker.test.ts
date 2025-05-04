@@ -22,7 +22,7 @@ describe('RobotsChecker', () => {
   beforeEach(() => {
     robotsChecker = new RobotsChecker(userAgent);
     vi.clearAllMocks();
-    
+
     // Default successful response
     mockFetch.mockResolvedValue({
       ok: true,
@@ -47,22 +47,22 @@ describe('RobotsChecker', () => {
         Disallow: /admin/
         Allow: /
       `;
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         text: async () => robotsTxt,
       });
-      
+
       await robotsChecker.initialize(baseUrl);
-      
+
       expect(mockFetch).toHaveBeenCalledWith(
         'https://example.com/robots.txt',
         expect.objectContaining({
           headers: expect.objectContaining({
-            'User-Agent': userAgent
-          })
-        })
+            'User-Agent': userAgent,
+          }),
+        }),
       );
     });
 
@@ -72,17 +72,17 @@ describe('RobotsChecker', () => {
         status: 404,
         statusText: 'Not Found',
       });
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       expect(robotsChecker.isAllowed('https://example.com/any-path')).toBe(true);
     });
 
     it('should handle fetch errors gracefully', async () => {
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       // Should default to allowing all URLs on error
       expect(robotsChecker.isAllowed('https://example.com/any-path')).toBe(true);
     });
@@ -94,15 +94,15 @@ describe('RobotsChecker', () => {
         User-agent: *
         Disallow: /admin/
       `;
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         text: async () => robotsTxt,
       });
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       expect(robotsChecker.isAllowed('https://example.com/public')).toBe(true);
     });
 
@@ -111,15 +111,15 @@ describe('RobotsChecker', () => {
         User-agent: *
         Disallow: /admin/
       `;
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         text: async () => robotsTxt,
       });
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       expect(robotsChecker.isAllowed('https://example.com/admin/settings')).toBe(false);
     });
 
@@ -128,15 +128,15 @@ describe('RobotsChecker', () => {
         User-agent: *
         Disallow: /*.pdf$
       `;
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         text: async () => robotsTxt,
       });
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       expect(robotsChecker.isAllowed('https://example.com/document.pdf')).toBe(false);
       expect(robotsChecker.isAllowed('https://example.com/document.pdf?view=1')).toBe(true);
     });
@@ -150,15 +150,15 @@ describe('RobotsChecker', () => {
         Allow: /private/public
         Disallow: /private/
       `;
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         text: async () => robotsTxt,
       });
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       expect(robotsChecker.isAllowed('https://example.com/private/secret')).toBe(false);
       expect(robotsChecker.isAllowed('https://example.com/private/public')).toBe(true);
     });
@@ -175,9 +175,9 @@ describe('RobotsChecker', () => {
         status: 200,
         text: async () => '',
       });
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       expect(robotsChecker.isAllowed('https://example.com/any-path')).toBe(true);
     });
 
@@ -186,15 +186,15 @@ describe('RobotsChecker', () => {
         This is not a valid robots.txt file
         It has no proper directives
       `;
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         text: async () => malformedRobotsTxt,
       });
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       expect(robotsChecker.isAllowed('https://example.com/any-path')).toBe(true);
     });
 
@@ -204,15 +204,15 @@ describe('RobotsChecker', () => {
         User-agent: * # This applies to all bots
         Disallow: /admin/ # Don't crawl admin
       `;
-      
+
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
         text: async () => robotsTxtWithComments,
       });
-      
+
       await robotsChecker.initialize('https://example.com');
-      
+
       expect(robotsChecker.isAllowed('https://example.com/admin/settings')).toBe(false);
     });
   });

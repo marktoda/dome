@@ -91,13 +91,13 @@ const result = await trackOperation('userAuthentication', async () => {
 
 The logging system uses the following standardized log levels:
 
-| Level | Usage |
-|-------|-------|
-| `error` | Only for errors that impact functionality |
-| `warn` | For issues that don't prevent operation but require attention |
-| `info` | For normal operational information |
+| Level   | Usage                                                                 |
+| ------- | --------------------------------------------------------------------- |
+| `error` | Only for errors that impact functionality                             |
+| `warn`  | For issues that don't prevent operation but require attention         |
+| `info`  | For normal operational information                                    |
 | `debug` | For detailed information useful for debugging (disable in production) |
-| `trace` | For very detailed tracing information (rarely used) |
+| `trace` | For very detailed tracing information (rarely used)                   |
 
 ## 5. Utility Functions
 
@@ -132,10 +132,14 @@ logOperationFailure('processMessage', error, { messageId });
 
 ```ts
 // Track external API calls with standardized logging
-const response = await trackedFetch('https://api.example.com/data', {
-  method: 'POST',
-  body: JSON.stringify(data)
-}, { operation: 'fetchExternalData' });
+const response = await trackedFetch(
+  'https://api.example.com/data',
+  {
+    method: 'POST',
+    body: JSON.stringify(data),
+  },
+  { operation: 'fetchExternalData' },
+);
 ```
 
 ### 5.4 Sanitization
@@ -158,7 +162,7 @@ const app = new Hono();
 
 // Initialize logging
 initLogging(app, {
-  extraBindings: { service: 'api', version: '1.0.0' }
+  extraBindings: { service: 'api', version: '1.0.0' },
 });
 
 // Add error handling middleware
@@ -167,7 +171,7 @@ app.use('*', createErrorMiddleware());
 app.get('/users/:id', async c => {
   const logger = getLogger();
   logger.info({ params: c.req.param() }, 'Fetching user');
-  
+
   // Rest of handler code
 });
 
@@ -230,12 +234,15 @@ logger.debug({ query }, 'Executing database query');
 Always include relevant context with your logs:
 
 ```ts
-logger.info({
-  userId,
-  operation: 'createUser',
-  userType: 'admin',
-  source: 'api'
-}, 'User created successfully');
+logger.info(
+  {
+    userId,
+    operation: 'createUser',
+    userType: 'admin',
+    source: 'api',
+  },
+  'User created successfully',
+);
 ```
 
 ### 7.4 Use Operation Tracking
@@ -243,9 +250,13 @@ logger.info({
 Use operation tracking for important operations:
 
 ```ts
-await trackOperation('processPayment', async () => {
-  // Payment processing code
-}, { userId, amount, currency });
+await trackOperation(
+  'processPayment',
+  async () => {
+    // Payment processing code
+  },
+  { userId, amount, currency },
+);
 ```
 
 ### 7.5 Handle Sensitive Information
@@ -263,24 +274,27 @@ logger.info({ user: sanitizedData }, 'User data processed');
 If you're migrating from the old logging approach to the new standardized system:
 
 1. Replace direct `console.log` calls with structured logging:
+
    ```ts
    // Old
    console.log(`Processing user ${userId}`);
-   
+
    // New
    getLogger().info({ userId }, 'Processing user');
    ```
 
 2. Replace custom error logging with standardized error logging:
+
    ```ts
    // Old
    console.error('Error processing request', error);
-   
+
    // New
    logError(error, 'Error processing request', { requestId });
    ```
 
 3. Add operation tracking for important operations:
+
    ```ts
    // Old
    async function processMessage(message) {
@@ -288,24 +302,29 @@ If you're migrating from the old logging approach to the new standardized system
      // ... processing code
      console.log(`Finished processing message ${message.id}`);
    }
-   
+
    // New
    async function processMessage(message) {
-     return trackOperation('processMessage', async () => {
-       // ... processing code
-     }, { messageId: message.id });
+     return trackOperation(
+       'processMessage',
+       async () => {
+         // ... processing code
+       },
+       { messageId: message.id },
+     );
    }
    ```
 
 4. Initialize logging in your application entry point:
+
    ```ts
    import { Hono } from 'hono';
    import { initLogging, createErrorMiddleware } from '@dome/common';
-   
+
    const app = new Hono();
    initLogging(app, { extraBindings: { service: 'my-service' } });
    app.use('*', createErrorMiddleware());
-   
+
    // Rest of your application
    ```
 

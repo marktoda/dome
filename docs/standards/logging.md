@@ -54,20 +54,20 @@ logger.info({ event: LogEvent.OPERATION_END, duration }, 'Operation completed');
 
 Common event names include:
 
-| Event Name           | Description                                     |
-| -------------------- | ----------------------------------------------- |
-| `REQUEST_START`      | Start of a request processing                   |
-| `REQUEST_END`        | End of a request processing                     |
-| `REQUEST_ERROR`      | Error during request processing                 |
-| `OPERATION_START`    | Start of an internal operation                  |
-| `OPERATION_END`      | Successful completion of an operation           |
-| `OPERATION_ERROR`    | Error during an operation                       |
-| `EXTERNAL_CALL`      | External API or service call                    |
-| `DATABASE_QUERY`     | Database operation                              |
-| `CACHE_HIT`          | Cache hit event                                 |
-| `CACHE_MISS`         | Cache miss event                                |
-| `WORKER_START`       | Worker startup                                  |
-| `WORKER_SHUTDOWN`    | Worker shutdown                                 |
+| Event Name        | Description                           |
+| ----------------- | ------------------------------------- |
+| `REQUEST_START`   | Start of a request processing         |
+| `REQUEST_END`     | End of a request processing           |
+| `REQUEST_ERROR`   | Error during request processing       |
+| `OPERATION_START` | Start of an internal operation        |
+| `OPERATION_END`   | Successful completion of an operation |
+| `OPERATION_ERROR` | Error during an operation             |
+| `EXTERNAL_CALL`   | External API or service call          |
+| `DATABASE_QUERY`  | Database operation                    |
+| `CACHE_HIT`       | Cache hit event                       |
+| `CACHE_MISS`      | Cache miss event                      |
+| `WORKER_START`    | Worker startup                        |
+| `WORKER_SHUTDOWN` | Worker shutdown                       |
 
 ### Context Types
 
@@ -82,14 +82,14 @@ const requestCtx: RequestContext = {
   path: '/api/users',
   method: 'POST',
   userAgent,
-  ip: clientIp
+  ip: clientIp,
 };
 
 // Operation context
 const operationCtx: OperationContext = {
   operation: 'createUser',
   component: 'userService',
-  duration: 123.45
+  duration: 123.45,
 };
 
 // External call context
@@ -97,7 +97,7 @@ const callCtx: ExternalCallContext = {
   url: 'https://api.example.com/data',
   method: 'GET',
   status: 200,
-  duration: 342.1
+  duration: 342.1,
 };
 ```
 
@@ -169,7 +169,7 @@ import { trackedFetch } from '@dome/logging';
 const response = await trackedFetch(
   'https://api.example.com/data',
   { method: 'POST', body: JSON.stringify(data) },
-  { operation: 'fetchExternalData' }
+  { operation: 'fetchExternalData' },
 );
 ```
 
@@ -180,7 +180,7 @@ import { getRequestId } from '@dome/logging';
 
 async function callExternalService(url, data) {
   const requestId = getRequestId();
-  
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -189,16 +189,13 @@ async function callExternalService(url, data) {
     },
     body: JSON.stringify(data),
   });
-  
+
   // Log the external call with standardized format
-  logExternalCall(
-    url,
-    'POST',
-    response.status,
-    performance.now() - startTime,
-    { requestId, dataSize: JSON.stringify(data).length }
-  );
-  
+  logExternalCall(url, 'POST', response.status, performance.now() - startTime, {
+    requestId,
+    dataSize: JSON.stringify(data).length,
+  });
+
   return response;
 }
 ```
@@ -220,33 +217,29 @@ const result = await trackOperation(
     // Your operation logic here
     return await createUser(userData);
   },
-  { userId: userData.id }
+  { userId: userData.id },
 );
 ```
 
 ### Manual Operation Tracking
 
 ```typescript
-import { 
-  logOperationStart, 
-  logOperationSuccess, 
-  logOperationFailure 
-} from '@dome/logging';
+import { logOperationStart, logOperationSuccess, logOperationFailure } from '@dome/logging';
 
 function processItem(item) {
   const operationName = 'item-processing';
   const context = { itemId: item.id, type: item.type };
-  
+
   logOperationStart(operationName, context);
   const startTime = performance.now();
-  
+
   try {
     // Process the item
     const result = doProcessing(item);
-    
+
     const duration = performance.now() - startTime;
     logOperationSuccess(operationName, duration, context);
-    
+
     return result;
   } catch (error) {
     logOperationFailure(operationName, error, context);
@@ -267,13 +260,14 @@ try {
 } catch (error) {
   // This extracts and logs all relevant error information
   logError(error, 'Failed to process data', { dataId, operation: 'data-processing' });
-  
+
   // Rethrow if needed
   throw error;
 }
 ```
 
 The `logError` function automatically extracts:
+
 - Error message
 - Error name
 - Error stack trace
@@ -351,31 +345,34 @@ export async function handleRequest(request) {
       component: 'requestHandler',
       path: new URL(request.url).pathname,
       method: request.method,
-      requestId: request.headers.get('x-request-id') || crypto.randomUUID()
+      requestId: request.headers.get('x-request-id') || crypto.randomUUID(),
     },
-    async (logger) => {
-      logger.info({ event: 'request_start' }, `Start ${request.method} ${new URL(request.url).pathname}`);
-      
+    async logger => {
+      logger.info(
+        { event: 'request_start' },
+        `Start ${request.method} ${new URL(request.url).pathname}`,
+      );
+
       const startTime = performance.now();
       try {
         const response = await processRequest(request);
-        
+
         const duration = performance.now() - startTime;
         logger.info(
           { event: 'request_end', duration, status: response.status },
-          `Completed ${request.method} ${new URL(request.url).pathname}`
+          `Completed ${request.method} ${new URL(request.url).pathname}`,
         );
-        
+
         return response;
       } catch (error) {
         const duration = performance.now() - startTime;
         logger.error(
           { event: 'request_error', error, duration },
-          `Error processing ${request.method} ${new URL(request.url).pathname}`
+          `Error processing ${request.method} ${new URL(request.url).pathname}`,
         );
         throw error;
       }
-    }
+    },
   );
 }
 ```
@@ -388,33 +385,30 @@ import { getLogger, logError } from '@dome/logging';
 async function queryDatabase(sql, params) {
   const logger = getLogger();
   const startTime = performance.now();
-  
+
   logger.debug(
     { event: 'database_query_start', sql, params: sanitizeForLogging(params) },
-    'Starting database query'
+    'Starting database query',
   );
-  
+
   try {
     const result = await db.query(sql, params);
-    
+
     const duration = performance.now() - startTime;
     logger.debug(
-      { 
-        event: 'database_query_end', 
-        duration, 
-        rowCount: result.rowCount 
+      {
+        event: 'database_query_end',
+        duration,
+        rowCount: result.rowCount,
       },
-      'Database query completed'
+      'Database query completed',
     );
-    
+
     return result;
   } catch (error) {
     const duration = performance.now() - startTime;
-    logError(
-      error,
-      'Database query failed',
-      { sql, params: sanitizeForLogging(params), duration }
-    );
+    logError(error, 'Database query failed', { sql, params: sanitizeForLogging(params), duration });
     throw error;
   }
 }
+```

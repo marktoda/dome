@@ -27,8 +27,8 @@ describe('docToSources Node', () => {
           createdAt: '2025-04-01',
           relevanceScore: 0.95,
           url: 'https://example.com/doc1',
-          tokenCount: 100
-        }
+          tokenCount: 100,
+        },
       },
       {
         id: 'doc2',
@@ -39,14 +39,14 @@ describe('docToSources Node', () => {
           createdAt: '2025-04-02',
           relevanceScore: 0.85,
           url: null,
-          tokenCount: 80
-        }
-      }
+          tokenCount: 80,
+        },
+      },
     ];
 
     const initialState: Partial<AgentState> = {
       docs: mockDocs,
-      metadata: {}
+      metadata: {},
     };
 
     // Execute the node
@@ -55,22 +55,22 @@ describe('docToSources Node', () => {
     // Assert the expected outcome
     expect(result.sources).toBeDefined();
     expect(result.sources?.length).toBe(2);
-    
+
     // Verify source mapping structure
     expect(result.sources?.[0]).toEqual({
       id: 'doc1',
       title: 'Document 1',
       source: 'knowledge-base',
       url: 'https://example.com/doc1',
-      relevanceScore: 0.95
+      relevanceScore: 0.95,
     });
-    
+
     expect(result.sources?.[1]).toEqual({
       id: 'doc2',
       title: 'Document 2',
       source: 'web-search',
       url: null,
-      relevanceScore: 0.85
+      relevanceScore: 0.85,
     });
 
     // Verify metadata was updated
@@ -82,7 +82,7 @@ describe('docToSources Node', () => {
     // Setup test with empty docs
     const initialState: Partial<AgentState> = {
       docs: [],
-      metadata: {}
+      metadata: {},
     };
 
     // Execute the node
@@ -97,7 +97,7 @@ describe('docToSources Node', () => {
   it('should handle undefined docs', async () => {
     // Setup test with undefined docs
     const initialState: Partial<AgentState> = {
-      metadata: {}
+      metadata: {},
     };
 
     // Execute the node

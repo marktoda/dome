@@ -30,14 +30,11 @@ export class NotionController {
       const schema = z.object({
         workspaceId: z.string().min(1),
         userId: z.string().optional(),
-        cadence: z.string().default('PT1H')
+        cadence: z.string().default('PT1H'),
       });
 
       const { workspaceId, userId, cadence } = await c.req.json<z.infer<typeof schema>>();
-      this.logger.info(
-        { workspaceId, userId, cadence },
-        'Registering Notion workspace'
-      );
+      this.logger.info({ workspaceId, userId, cadence }, 'Registering Notion workspace');
 
       // Convert cadence string (e.g., "PT1H") to seconds if provided
       let cadenceSecs = 3600; // Default 1 hour
@@ -54,16 +51,20 @@ export class NotionController {
         }
       }
 
-      const result = await this.tsunamiService.registerNotionWorkspace(workspaceId, userId, cadenceSecs);
+      const result = await this.tsunamiService.registerNotionWorkspace(
+        workspaceId,
+        userId,
+        cadenceSecs,
+      );
 
       this.logger.info(
         { id: result.id, resourceId: result.resourceId, wasInitialised: result.wasInitialised },
-        'Notion workspace registered successfully'
+        'Notion workspace registered successfully',
       );
 
       return c.json({
         success: true,
-        ...result
+        ...result,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error registering Notion workspace');
@@ -82,21 +83,18 @@ export class NotionController {
       const { workspaceId } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '10', 10);
 
-      this.logger.info(
-        { workspaceId, limit },
-        'Getting Notion workspace history'
-      );
+      this.logger.info({ workspaceId, limit }, 'Getting Notion workspace history');
 
       const result = await this.tsunamiService.getNotionWorkspaceHistory(workspaceId, limit);
 
       this.logger.info(
         { workspaceId, historyCount: result.history.length },
-        'Notion workspace history retrieved successfully'
+        'Notion workspace history retrieved successfully',
       );
 
       return c.json({
         success: true,
-        ...result
+        ...result,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error retrieving Notion workspace history');
@@ -113,20 +111,17 @@ export class NotionController {
   async triggerNotionWorkspaceSync(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
     try {
       const { workspaceId } = c.req.param();
-      
-      this.logger.info(
-        { workspaceId },
-        'Triggering Notion workspace sync'
-      );
+
+      this.logger.info({ workspaceId }, 'Triggering Notion workspace sync');
 
       // For a real implementation, we would call a method on tsunamiService
       // This would need to be implemented in the Tsunami service
       // For now, we'll return a placeholder response
-      
+
       return c.json({
         success: true,
         message: 'Notion workspace sync has been triggered',
-        workspaceId
+        workspaceId,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error triggering Notion workspace sync');
@@ -145,24 +140,21 @@ export class NotionController {
       const schema = z.object({
         code: z.string().min(1),
         redirectUri: z.string().url(),
-        userId: z.string().optional()
+        userId: z.string().optional(),
       });
 
       const { code, redirectUri, userId } = await c.req.json<z.infer<typeof schema>>();
-      
-      this.logger.info(
-        { codeExists: !!code, redirectUri, userId },
-        'Configuring Notion OAuth'
-      );
+
+      this.logger.info({ codeExists: !!code, redirectUri, userId }, 'Configuring Notion OAuth');
 
       // In a real implementation, we would exchange the code for a token
       // and then use that token to access the Notion API
       // For now, we'll return a placeholder response
-      
+
       return c.json({
         success: true,
         message: 'Notion OAuth configured successfully',
-        userId
+        userId,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error configuring Notion OAuth');
@@ -180,25 +172,24 @@ export class NotionController {
     try {
       const schema = z.object({
         redirectUri: z.string().url(),
-        state: z.string().optional()
+        state: z.string().optional(),
       });
 
       const { redirectUri, state } = await c.req.json<z.infer<typeof schema>>();
-      
-      this.logger.info(
-        { redirectUri, state },
-        'Getting Notion OAuth URL'
-      );
+
+      this.logger.info({ redirectUri, state }, 'Getting Notion OAuth URL');
 
       // In a real implementation, we would generate a proper OAuth URL
       // For now, we'll return a placeholder response
-      
+
       // Example Notion OAuth URL structure (not for production use)
-      const notionOAuthUrl = `https://api.notion.com/v1/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code${state ? `&state=${state}` : ''}`;
-      
+      const notionOAuthUrl = `https://api.notion.com/v1/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=${encodeURIComponent(
+        redirectUri,
+      )}&response_type=code${state ? `&state=${state}` : ''}`;
+
       return c.json({
         success: true,
-        url: notionOAuthUrl
+        url: notionOAuthUrl,
       });
     } catch (error) {
       this.logger.error({ error }, 'Error getting Notion OAuth URL');

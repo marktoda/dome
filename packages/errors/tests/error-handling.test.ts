@@ -16,7 +16,7 @@ import {
   assertExists,
   handleDatabaseError,
   createErrorFactory,
-  errorHandler
+  errorHandler,
 } from '../src';
 
 describe('DomeError Base Class', () => {
@@ -32,13 +32,13 @@ describe('DomeError Base Class', () => {
   it('should create an error with all properties', () => {
     const cause = new Error('Original error');
     const details = { foo: 'bar' };
-    const error = new DomeError('Test error', { 
-      code: 'TEST_ERROR', 
-      statusCode: 418, 
-      details, 
-      cause 
+    const error = new DomeError('Test error', {
+      code: 'TEST_ERROR',
+      statusCode: 418,
+      details,
+      cause,
     });
-    
+
     expect(error.message).toBe('Test error');
     expect(error.code).toBe('TEST_ERROR');
     expect(error.statusCode).toBe(418);
@@ -49,27 +49,27 @@ describe('DomeError Base Class', () => {
   it('should convert to JSON with stack trace in non-production', () => {
     const originalEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
-    
+
     const error = new DomeError('Test error', { code: 'TEST_ERROR' });
     const json = error.toJSON();
-    
+
     expect(json.name).toBe('DomeError');
     expect(json.message).toBe('Test error');
     expect(json.code).toBe('TEST_ERROR');
     expect(json.stack).toBeDefined();
-    
+
     process.env.NODE_ENV = originalEnv;
   });
 
   it('should hide stack trace in production', () => {
     const originalEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
-    
+
     const error = new DomeError('Test error', { code: 'TEST_ERROR' });
     const json = error.toJSON();
-    
+
     expect(json.stack).toBeUndefined();
-    
+
     process.env.NODE_ENV = originalEnv;
   });
 
@@ -77,13 +77,13 @@ describe('DomeError Base Class', () => {
     const details = { foo: 'bar' };
     const error = new DomeError('Test error', { code: 'TEST_ERROR', details });
     const response = error.toApiResponse();
-    
+
     expect(response).toEqual({
       error: {
         code: 'TEST_ERROR',
         message: 'Test error',
-        details: { foo: 'bar' }
-      }
+        details: { foo: 'bar' },
+      },
     });
   });
 
@@ -91,7 +91,7 @@ describe('DomeError Base Class', () => {
     const error = new DomeError('Test error', { code: 'TEST_ERROR' });
     error.withContext({ foo: 'bar' });
     expect(error.details).toEqual({ foo: 'bar' });
-    
+
     // Add more context
     error.withContext({ baz: 'qux' });
     expect(error.details).toEqual({ foo: 'bar', baz: 'qux' });
@@ -208,16 +208,18 @@ describe('toDomeError Utility', () => {
 describe('Error Wrapping Utilities', () => {
   it('should wrap function with error handling', async () => {
     const wrapWithError = createErrorWrapper('Operation failed');
-    
+
     // Success case
     const successFn = async () => 'success';
     const result = await wrapWithError(successFn);
     expect(result).toBe('success');
-    
+
     // Error case
-    const errorFn = async () => { throw new Error('Original error'); };
+    const errorFn = async () => {
+      throw new Error('Original error');
+    };
     await expect(wrapWithError(errorFn)).rejects.toBeInstanceOf(InternalError);
-    
+
     try {
       await wrapWithError(errorFn);
     } catch (error) {
@@ -229,8 +231,10 @@ describe('Error Wrapping Utilities', () => {
 
   it('should allow custom message and details in wrapper', async () => {
     const wrapWithError = createErrorWrapper('Default message');
-    const errorFn = async () => { throw new Error('Original error'); };
-    
+    const errorFn = async () => {
+      throw new Error('Original error');
+    };
+
     try {
       await wrapWithError(errorFn, 'Custom message', { operation: 'test' });
     } catch (error) {
@@ -306,11 +310,11 @@ describe('Database Error Handling', () => {
 describe('Error Factory', () => {
   it('should create domain-prefixed errors', () => {
     const userErrors = createErrorFactory('UserService');
-    
+
     const validationError = userErrors.validation('Invalid email');
     expect(validationError).toBeInstanceOf(ValidationError);
     expect(validationError.message).toBe('[UserService] Invalid email');
-    
+
     const notFoundError = userErrors.notFound('User not found');
     expect(notFoundError).toBeInstanceOf(NotFoundError);
     expect(notFoundError.message).toBe('[UserService] User not found');
@@ -318,11 +322,11 @@ describe('Error Factory', () => {
 
   it('should include default details in all errors', () => {
     const authErrors = createErrorFactory('AuthService', { service: 'auth' });
-    
+
     const unauthorizedError = authErrors.unauthorized('Invalid token');
     expect(unauthorizedError).toBeInstanceOf(UnauthorizedError);
     expect(unauthorizedError.details).toEqual({ service: 'auth' });
-    
+
     // Should merge with provided details
     const forbiddenError = authErrors.forbidden('Access denied', { resource: 'admin' });
     expect(forbiddenError.details).toEqual({ service: 'auth', resource: 'admin' });
@@ -332,103 +336,109 @@ describe('Error Factory', () => {
 describe('Error Handler Middleware', () => {
   let mockContext;
   let mockNext;
-  
+
   beforeEach(() => {
     // Setup mock context
     mockContext = {
       req: {
         path: '/test',
-        method: 'GET'
+        method: 'GET',
       },
       res: {
         status: vi.fn().mockReturnThis(),
       },
       status: vi.fn().mockReturnThis(),
       json: vi.fn().mockReturnThis(),
-      get: vi.fn().mockImplementation((key) => {
+      get: vi.fn().mockImplementation(key => {
         if (key === 'logger') {
           return { error: vi.fn() };
         }
         return undefined;
       }),
-      set: vi.fn()
+      set: vi.fn(),
     };
-    
+
     mockNext = vi.fn();
   });
-  
+
   it('should pass through when no error occurs', async () => {
     const handler = errorHandler();
     await handler(mockContext, mockNext);
     expect(mockNext).toHaveBeenCalled();
     expect(mockContext.status).not.toHaveBeenCalled();
   });
-  
+
   it('should handle DomeError correctly', async () => {
     const handler = errorHandler();
     mockNext.mockRejectedValue(new ValidationError('Invalid input'));
-    
+
     await handler(mockContext, mockNext);
-    
+
     expect(mockContext.status).toHaveBeenCalledWith(400);
-    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: expect.objectContaining({
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid input'
-      })
-    }));
+    expect(mockContext.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid input',
+        }),
+      }),
+    );
   });
-  
+
   it('should convert non-DomeError to InternalError', async () => {
     const handler = errorHandler();
     mockNext.mockRejectedValue(new Error('Standard error'));
-    
+
     await handler(mockContext, mockNext);
-    
+
     expect(mockContext.status).toHaveBeenCalledWith(500);
-    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: expect.objectContaining({
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred'
-      })
-    }));
-  });
-  
-  it('should use custom error mapper if provided', async () => {
-    const errorMapper = vi.fn().mockReturnValue(
-      new BadRequestError('Mapped error')
+    expect(mockContext.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'INTERNAL_ERROR',
+          message: 'An unexpected error occurred',
+        }),
+      }),
     );
-    
+  });
+
+  it('should use custom error mapper if provided', async () => {
+    const errorMapper = vi.fn().mockReturnValue(new BadRequestError('Mapped error'));
+
     const handler = errorHandler({ errorMapper });
     mockNext.mockRejectedValue(new Error('Original error'));
-    
+
     await handler(mockContext, mockNext);
-    
+
     expect(errorMapper).toHaveBeenCalled();
     expect(mockContext.status).toHaveBeenCalledWith(400);
-    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: expect.objectContaining({
-        code: 'BAD_REQUEST',
-        message: 'Mapped error'
-      })
-    }));
+    expect(mockContext.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'BAD_REQUEST',
+          message: 'Mapped error',
+        }),
+      }),
+    );
   });
-  
+
   it('should include stack traces when configured and not in production', async () => {
     const originalEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
-    
+
     const handler = errorHandler({ includeStack: true });
     mockNext.mockRejectedValue(new ValidationError('Invalid input'));
-    
+
     await handler(mockContext, mockNext);
-    
-    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: expect.objectContaining({
-        stack: expect.any(String)
-      })
-    }));
-    
+
+    expect(mockContext.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          stack: expect.any(String),
+        }),
+      }),
+    );
+
     process.env.NODE_ENV = originalEnv;
   });
 });

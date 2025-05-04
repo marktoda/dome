@@ -21,7 +21,7 @@ export interface WorkersAiResponse {
 
 export interface WorkersAi {
   run: (
-    modelId: string, 
-    options: WorkersAiRunOptions
+    modelId: string,
+    options: WorkersAiRunOptions,
   ) => Promise<WorkersAiResponse | ReadableStream>;
 }

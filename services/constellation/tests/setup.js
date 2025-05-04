@@ -17,7 +17,7 @@ vi.mock('pino', () => {
     error: noop,
     child: () => mockLogger,
   };
-  
+
   return {
     default: vi.fn().mockReturnValue(mockLogger),
   };
@@ -33,11 +33,11 @@ vi.mock('@dome/logging', () => {
     error: noop,
     child: () => mockLogger,
   };
-  
+
   // Create proper mock implementations for metrics
   const counters = new Map();
   const gauges = new Map();
-  
+
   const mockMetricsService = {
     increment: vi.fn((name, value = 1, tags = {}) => {
       const current = counters.get(name) || 0;
@@ -73,7 +73,7 @@ vi.mock('@dome/logging', () => {
     metrics: mockMetricsService,
     MetricsService: vi.fn(() => mockMetricsService),
     // Add missing createServiceMetrics function
-    createServiceMetrics: vi.fn((serviceName) => ({
+    createServiceMetrics: vi.fn(serviceName => ({
       increment: vi.fn(),
       decrement: vi.fn(),
       gauge: vi.fn(),

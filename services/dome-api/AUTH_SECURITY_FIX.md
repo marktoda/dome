@@ -49,13 +49,14 @@ The fix modifies the `userIdMiddleware.ts` to:
 
 ```typescript
 // Use authenticated user ID when available, only fallback to header in unauthenticated routes
-const isAuthRoute = c.req.path.startsWith('/auth') || c.req.path === '/' || c.req.path === '/health';
+const isAuthRoute =
+  c.req.path.startsWith('/auth') || c.req.path === '/' || c.req.path === '/health';
 
 // If auth information is expected (non-auth routes) but missing, don't accept header/query params
 if (!isAuthRoute && !userIdFromAuth && userIdFromHeader) {
   getLogger().warn(
     { path: c.req.path, headerUserId: userIdFromHeader },
-    'Rejecting unauthenticated user ID from header/query - missing auth context'
+    'Rejecting unauthenticated user ID from header/query - missing auth context',
   );
   throw new UnauthorizedError('Authentication required');
 }
@@ -82,7 +83,7 @@ if (jsonData.token) {
   // If token is provided, validate it
   const authResult = await authService.validateToken(jsonData.token);
   logger.info({ authResult }, 'WebSocket auth validation result');
-  
+
   if (authResult.success && authResult.user) {
     authenticatedUserId = authResult.user.id;
     logger.info({ authenticatedUserId }, 'Successfully authenticated WebSocket connection');
@@ -96,7 +97,7 @@ if (jsonData.token) {
   // For compatibility with older clients, allow CLI testing with a specific user ID
   // ONLY IN DEVELOPMENT ENVIRONMENT
   const isDevelopment = c.env.ENVIRONMENT === 'development';
-  
+
   if (isDevelopment && jsonData.userId === 'test-user-id') {
     logger.warn('Using test user ID in development environment');
     authenticatedUserId = 'test-user-id';
@@ -164,6 +165,7 @@ For backward compatibility during development, test clients can continue to use 
 The CLI client has been updated to work with the new authentication system:
 
 1. Added the authentication token at the top level of the WebSocket message:
+
    ```javascript
    {
      "messages": [...],

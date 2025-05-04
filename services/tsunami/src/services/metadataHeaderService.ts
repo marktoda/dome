@@ -29,61 +29,67 @@ const METADATA_VERSION = '1.0';
  */
 export function injectMetadataHeader(content: string, metadata: DomeMetadata): string {
   const requestId = getRequestId();
-  
+
   // Validate inputs
   assertValid(content !== null && content !== undefined, 'Content cannot be null or undefined', {
     operation: 'injectMetadataHeader',
     contentType: typeof content,
-    requestId
+    requestId,
   });
-  
+
   assertValid(metadata !== null && metadata !== undefined, 'Metadata cannot be null or undefined', {
     operation: 'injectMetadataHeader',
     metadataType: typeof metadata,
-    requestId
+    requestId,
   });
-  
+
   // Validate required metadata fields
   assertValid(
     metadata.source && typeof metadata.source === 'object',
     'Metadata must include a valid source object',
-    { operation: 'injectMetadataHeader', requestId }
+    { operation: 'injectMetadataHeader', requestId },
   );
-  
+
   assertValid(
     metadata.content && typeof metadata.content === 'object',
     'Metadata must include a valid content object',
-    { operation: 'injectMetadataHeader', requestId }
+    { operation: 'injectMetadataHeader', requestId },
   );
-  
+
   try {
     const metadataJson = JSON.stringify(metadata, null, 2);
-    
-    logger.debug({
-      event: 'metadata_header_injected',
-      sourceType: metadata.source.type,
-      contentType: metadata.content.type,
-      metadataSize: metadataJson.length,
-      contentSize: content.length,
-      requestId
-    }, 'Injecting metadata header into content');
-    
+
+    logger.debug(
+      {
+        event: 'metadata_header_injected',
+        sourceType: metadata.source.type,
+        contentType: metadata.content.type,
+        metadataSize: metadataJson.length,
+        contentSize: content.length,
+        requestId,
+      },
+      'Injecting metadata header into content',
+    );
+
     return `${METADATA_START}
 ${metadataJson}
 ${METADATA_END}
 
 ${content}`;
   } catch (error) {
-    logger.error({
-      event: 'metadata_header_error',
-      error: error instanceof Error ? error.message : String(error),
-      requestId
-    }, 'Error serializing metadata');
-    
+    logger.error(
+      {
+        event: 'metadata_header_error',
+        error: error instanceof Error ? error.message : String(error),
+        requestId,
+      },
+      'Error serializing metadata',
+    );
+
     throw new ValidationError('Failed to serialize metadata', {
       operation: 'injectMetadataHeader',
       error: error instanceof Error ? error.message : String(error),
-      requestId
+      requestId,
     });
   }
 }
@@ -106,34 +112,34 @@ export function createGitHubMetadata(
   sizeBytes: number,
 ): DomeMetadata {
   const requestId = getRequestId();
-  
+
   // Validate inputs
   assertValid(repository && repository.trim().length > 0, 'Repository cannot be empty', {
     operation: 'createGitHubMetadata',
-    requestId
+    requestId,
   });
-  
+
   assertValid(path && path.trim().length > 0, 'Path cannot be empty', {
     operation: 'createGitHubMetadata',
     repository,
-    requestId
+    requestId,
   });
-  
+
   assertValid(updatedAt && updatedAt.trim().length > 0, 'UpdatedAt cannot be empty', {
     operation: 'createGitHubMetadata',
     repository,
     path,
-    requestId
+    requestId,
   });
-  
+
   assertValid(sizeBytes >= 0, 'Size must be a non-negative number', {
     operation: 'createGitHubMetadata',
     repository,
     path,
     sizeBytes,
-    requestId
+    requestId,
   });
-  
+
   const metadata = {
     source: {
       type: 'github',
@@ -152,16 +158,19 @@ export function createGitHubMetadata(
       request_id: requestId || 'unknown',
     },
   };
-  
-  logger.debug({
-    event: 'github_metadata_created',
-    repository,
-    path,
-    language,
-    sizeBytes,
-    requestId
-  }, 'Created GitHub metadata object');
-  
+
+  logger.debug(
+    {
+      event: 'github_metadata_created',
+      repository,
+      path,
+      language,
+      sizeBytes,
+      requestId,
+    },
+    'Created GitHub metadata object',
+  );
+
   return metadata;
 }
 
@@ -173,18 +182,18 @@ export function createGitHubMetadata(
  */
 export function getLanguageFromPath(path: string): string {
   const requestId = getRequestId();
-  
+
   // Validate input
   assertValid(path && typeof path === 'string', 'Path must be a non-empty string', {
     operation: 'getLanguageFromPath',
     pathType: typeof path,
-    requestId
+    requestId,
   });
-  
+
   // Extract extension safely
   const lastDotIndex = path.lastIndexOf('.');
   const extension = lastDotIndex >= 0 ? path.slice(lastDotIndex).toLowerCase() : '';
-  
+
   const languageMap: Record<string, string> = {
     '.js': 'javascript',
     '.ts': 'typescript',
@@ -213,17 +222,20 @@ export function getLanguageFromPath(path: string): string {
     '.kt': 'kotlin',
     '.dart': 'dart',
   };
-  
+
   const language = languageMap[extension] || 'plaintext';
-  
-  logger.debug({
-    event: 'language_detected',
-    path,
-    extension,
-    language,
-    requestId
-  }, `Detected language ${language} for file ${path}`);
-  
+
+  logger.debug(
+    {
+      event: 'language_detected',
+      path,
+      extension,
+      language,
+      requestId,
+    },
+    `Detected language ${language} for file ${path}`,
+  );
+
   return language;
 }
 
@@ -245,37 +257,37 @@ export function createWebsiteMetadata(
   sizeBytes: number,
 ): DomeMetadata {
   const requestId = getRequestId();
-  
+
   // Validate inputs
   assertValid(baseUrl && baseUrl.trim().length > 0, 'BaseUrl cannot be empty', {
     operation: 'createWebsiteMetadata',
-    requestId
+    requestId,
   });
-  
+
   assertValid(pageUrl && pageUrl.trim().length > 0, 'PageUrl cannot be empty', {
     operation: 'createWebsiteMetadata',
     baseUrl,
-    requestId
+    requestId,
   });
-  
+
   assertValid(updatedAt && updatedAt.trim().length > 0, 'UpdatedAt cannot be empty', {
     operation: 'createWebsiteMetadata',
     baseUrl,
     pageUrl,
-    requestId
+    requestId,
   });
-  
+
   assertValid(sizeBytes >= 0, 'Size must be a non-negative number', {
     operation: 'createWebsiteMetadata',
     baseUrl,
     pageUrl,
     sizeBytes,
-    requestId
+    requestId,
   });
-  
+
   // Determine content type - default to document
   const contentType = 'document';
-  
+
   const metadata = {
     source: {
       type: 'website',
@@ -295,15 +307,18 @@ export function createWebsiteMetadata(
       request_id: requestId || 'unknown',
     },
   };
-  
-  logger.debug({
-    event: 'website_metadata_created',
-    baseUrl,
-    pageUrl,
-    title,
-    sizeBytes,
-    requestId
-  }, 'Created Website metadata object');
-  
+
+  logger.debug(
+    {
+      event: 'website_metadata_created',
+      baseUrl,
+      pageUrl,
+      title,
+      sizeBytes,
+      requestId,
+    },
+    'Created Website metadata object',
+  );
+
   return metadata;
 }

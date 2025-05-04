@@ -33,7 +33,7 @@ export class SiloClient {
     private readonly binding: SiloBinding,
     private readonly queue?: Queue<SiloSimplePutInput>,
     private readonly metricsPrefix: string = 'silo.client',
-  ) { }
+  ) {}
 
   /**
    * Upload multiple content items to Silo
@@ -304,15 +304,15 @@ export class SiloClient {
   async reprocessContent(contentIds: string[]): Promise<{ reprocessed: number }> {
     const startTime = performance.now();
     try {
-      getLogger().info(
-        { contentIds, count: contentIds.length },
-        'Reprocessing content items'
-      );
+      getLogger().info({ contentIds, count: contentIds.length }, 'Reprocessing content items');
 
       const result = await this.binding.reprocessContent(contentIds);
 
       metrics.increment(`${this.metricsPrefix}.reprocessContent.success`);
-      metrics.timing(`${this.metricsPrefix}.reprocessContent.latency_ms`, performance.now() - startTime);
+      metrics.timing(
+        `${this.metricsPrefix}.reprocessContent.latency_ms`,
+        performance.now() - startTime,
+      );
       metrics.gauge(`${this.metricsPrefix}.reprocessContent.count`, result.reprocessed);
 
       return result;

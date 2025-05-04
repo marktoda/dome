@@ -18,18 +18,18 @@ graph TB
         TSU[Tsunami Service]
         TSU_CLIENT[Tsunami Client]
         SYNC_SVC[Sync Plan Service]
-        
+
         subgraph "Providers"
             PROV_IF[Provider Interface]
             GH_PROV[GitHub Provider]
             NOTION_PROV[Notion Provider]
         end
-        
+
         subgraph "Resource Management"
             RES_OBJ[Resource Object]
             META_SVC[Metadata Header Service]
         end
-        
+
         subgraph "Notion-Specific Components"
             NOTION_CLIENT[Notion API Client]
             NOTION_AUTH[Notion Auth Manager]
@@ -47,20 +47,20 @@ graph TB
     TSU_CLIENT --> TSU
     TSU --> SYNC_SVC
     SYNC_SVC --> RES_OBJ
-    
+
     RES_OBJ --> PROV_IF
     PROV_IF --> GH_PROV
     PROV_IF --> NOTION_PROV
-    
+
     GH_PROV --> GH_API
     GH_PROV --> META_SVC
-    
+
     NOTION_PROV --> NOTION_CLIENT
     NOTION_PROV --> META_SVC
     NOTION_CLIENT --> NOTION_AUTH
     NOTION_CLIENT --> NOTION_API
     NOTION_PROV --> NOTION_PARSER
-    
+
     RES_OBJ --> SILO
 ```
 
@@ -80,12 +80,12 @@ sequenceDiagram
     Tsunami->>Tsunami: Create sync plan
     Tsunami->>Tsunami: Initialize resource
     Tsunami->>NotionProv: pull({userId, resourceId, cursor})
-    
+
     NotionProv->>NotionAPI: Authenticate & fetch pages
     NotionAPI-->>NotionProv: Return pages/blocks
     NotionProv->>NotionProv: Process content & inject metadata
     NotionProv-->>Tsunami: Return content & new cursor
-    
+
     Tsunami->>Silo: Upload processed content
     Silo-->>Tsunami: Return content IDs
     Tsunami->>Tsunami: Record sync history
@@ -93,7 +93,7 @@ sequenceDiagram
     DomeAPI-->>User: Confirmation
 
     note over Tsunami: Schedule periodic sync
-    
+
     loop Every cadenceSecs
         Tsunami->>NotionProv: pull with latest cursor
         NotionProv->>NotionAPI: Fetch incremental changes
@@ -143,14 +143,14 @@ export class NotionProvider implements Provider {
 
       // Get page content (blocks)
       const content = await this.notionClient.getPageContent(page.id);
-      
+
       // Create metadata for the page
       const metadata = createNotionMetadata(
         workspaceId,
         page.id,
         page.last_edited_time,
         page.title,
-        content.length
+        content.length,
       );
 
       // Inject metadata header into content
@@ -176,10 +176,7 @@ export class NotionProvider implements Provider {
       }
     }
 
-    this.log.info(
-      { resourceId, pages: puts.length },
-      'notion: pull done'
-    );
+    this.log.info({ resourceId, pages: puts.length }, 'notion: pull done');
 
     return { contents: puts, newCursor: latestUpdate };
   }
@@ -208,12 +205,12 @@ export class NotionClient {
   private headers: Record<string, string>;
   private log = getLogger();
   private API_BASE = 'https://api.notion.com/v1';
-  
+
   constructor(apiKey: string) {
     this.headers = {
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'Notion-Version': '2022-06-28',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     };
   }
 
@@ -290,7 +287,7 @@ export class NotionContentParser {
   parseDatabase(database: any): string {
     // Convert Notion database to structured text
   }
-  
+
   convertRichText(richText: any[]): string {
     // Convert Notion rich text to plain text
   }
@@ -338,7 +335,7 @@ Add a new method to the Tsunami service to register a Notion workspace:
 ```typescript
 /**
  * Register and initialize a Notion workspace for syncing
- * 
+ *
  * @param workspaceId - Notion workspace ID
  * @param userId - Optional user ID to associate with the sync plan
  * @param cadenceSecs - Optional sync frequency in seconds (defaults to 3600 - 1 hour)
@@ -435,7 +432,7 @@ Extend the Tsunami client with methods for interacting with Notion workspaces:
 ```typescript
 /**
  * Register a Notion workspace and initialize syncing
- * 
+ *
  * @param workspaceId Notion workspace ID
  * @param userId Optional user ID to associate with the sync plan
  * @param cadenceSecs Optional sync frequency in seconds (defaults to 3600 - 1 hour)
@@ -447,7 +444,7 @@ async registerNotionWorkspace(
   cadenceSecs: number = 3600
 ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
   const startTime = performance.now();
-  
+
   try {
     this.logger.info({
       event: 'notion_workspace_registration_start',
@@ -471,7 +468,7 @@ async registerNotionWorkspace(
 
 /**
  * Get sync history for a Notion workspace
- * 
+ *
  * @param workspaceId Notion workspace ID
  * @param limit Maximum number of history records to return
  * @returns Workspace history with metadata
@@ -483,7 +480,7 @@ async getNotionWorkspaceHistory(workspaceId: string, limit: number = 10): Promis
 }> {
   const startTime = performance.now();
   const resourceId = workspaceId;
-  
+
   try {
     this.logger.info({
       event: 'get_notion_workspace_history',
@@ -493,7 +490,7 @@ async getNotionWorkspaceHistory(workspaceId: string, limit: number = 10): Promis
     }, 'Fetching Notion workspace history');
 
     const history = await this.binding.getHistoryByResourceId(resourceId, limit);
-    
+
     metrics.increment(`${this.metricsPrefix}.get_notion_workspace_history.success`);
     metrics.timing(`${this.metricsPrefix}.get_notion_workspace_history.latency_ms`, performance.now() - startTime);
 
@@ -593,15 +590,15 @@ try {
   const domeError = toDomeError(error, 'Failed to fetch updated pages from Notion', {
     workspaceId,
     cursor,
-    operation: 'notion.pull'
+    operation: 'notion.pull',
   });
-  
+
   // Log the error with context
   logError(domeError, 'Error pulling content from Notion');
-  
+
   // Track metric
   metrics.increment('notion.pull.errors');
-  
+
   // Propagate
   throw domeError;
 }

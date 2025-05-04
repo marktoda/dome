@@ -1,7 +1,4 @@
-import {
-  AuthErrorCode,
-  AuthBinding
-} from './client/types';
+import { AuthErrorCode, AuthBinding } from './client/types';
 import { AuthService } from './services/authService';
 import { getLogger } from '@dome/common';
 import { AuthError } from './utils/errors';
@@ -39,7 +36,7 @@ export class AuthRPCHandler implements AuthBinding {
 
       logger.debug('RPC: login completed', {
         userId: result.user.id,
-        email
+        email,
       });
 
       return result;
@@ -60,12 +57,12 @@ export class AuthRPCHandler implements AuthBinding {
 
       logger.debug('RPC: register completed', {
         userId: user.id,
-        email
+        email,
       });
 
       return {
         success: true,
-        user
+        user,
       };
     } catch (error) {
       logger.error('RPC: register failed', { error, email });
@@ -83,12 +80,12 @@ export class AuthRPCHandler implements AuthBinding {
       const user = await this.authService.validateToken(token);
 
       logger.debug('RPC: validateToken completed', {
-        userId: user.id
+        userId: user.id,
       });
 
       return {
         success: true,
-        user
+        user,
       };
     } catch (error) {
       logger.error('RPC: validateToken failed', { error });
@@ -116,7 +113,7 @@ export class AuthRPCHandler implements AuthBinding {
 
       logger.debug('RPC: logout completed', {
         userId,
-        success
+        success,
       });
 
       return { success };
@@ -171,8 +168,8 @@ export class AuthRPCHandler implements AuthBinding {
       error: {
         code,
         message,
-        details: error.details
-      }
+        details: error.details,
+      },
     };
 
     // Convert to a real Error object for proper throwing

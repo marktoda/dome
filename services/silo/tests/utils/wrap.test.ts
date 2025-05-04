@@ -24,17 +24,14 @@ vi.mock('@dome/common', () => {
     trackOperation: vi.fn((name, fn, meta) => fn()),
     createServiceWrapper: vi.fn((serviceName: string) => {
       return async (meta: Record<string, unknown>, fn: () => Promise<any>) => {
-        return withContext(
-          { ...meta, service: serviceName },
-          async () => {
-            try {
-              return await fn();
-            } catch (error) {
-              mockLogger.error({ err: error }, 'Unhandled error');
-              throw error;
-            }
+        return withContext({ ...meta, service: serviceName }, async () => {
+          try {
+            return await fn();
+          } catch (error) {
+            mockLogger.error({ err: error }, 'Unhandled error');
+            throw error;
           }
-        );
+        });
       };
     }),
   };
@@ -50,10 +47,10 @@ describe('wrap utility', () => {
   it('should use createServiceWrapper with correct service name', async () => {
     // Verify that the wrap function is using createServiceWrapper
     expect(createServiceWrapper).toHaveBeenCalledWith('silo');
-    
+
     // Reset mocks for this test
     vi.clearAllMocks();
-    
+
     const meta = { operation: 'test', id: '123' };
     const fn = vi.fn().mockResolvedValue('result');
 
@@ -68,7 +65,7 @@ describe('wrap utility', () => {
       }),
       expect.any(Function),
     );
-    
+
     // Verify the function was called
     expect(fn).toHaveBeenCalled();
   });

@@ -6,11 +6,13 @@ The Chat service's WebSocket implementation has been refactored to use Hono's We
 
 ## Key Changes
 
-1. **Hono Integration**: 
+1. **Hono Integration**:
+
    - Replaced manual WebSocket handling with Hono's `upgradeWebSocket` helper
    - Integrated WebSocket handling with Hono's routing system
 
 2. **Code Organization**:
+
    - Separated message parsing from chat processing logic
    - Clearly defined the WebSocket lifecycle with `onMessage`, `onClose`, and `onError` handlers
    - Enhanced function naming and documentation for better clarity
@@ -34,23 +36,26 @@ The main application now uses Hono for both HTTP and WebSocket routing. WebSocke
 
 ```typescript
 // WebSocket route
-this.app.get('/ws', upgradeWebSocket((c) => {
-  const logger = this.logger.child({ component: 'WebSocketHandler' });
-  logger.info('WebSocket connection upgrade requested');
-  
-  return {
-    onMessage: (event, ws) => {
-      // Handle incoming WebSocket messages
-      // ...
-    },
-    onClose: () => {
-      logger.info('WebSocket connection closed');
-    },
-    onError: (err) => {
-      logError(err, 'WebSocket connection error');
-    }
-  };
-}));
+this.app.get(
+  '/ws',
+  upgradeWebSocket(c => {
+    const logger = this.logger.child({ component: 'WebSocketHandler' });
+    logger.info('WebSocket connection upgrade requested');
+
+    return {
+      onMessage: (event, ws) => {
+        // Handle incoming WebSocket messages
+        // ...
+      },
+      onClose: () => {
+        logger.info('WebSocket connection closed');
+      },
+      onError: err => {
+        logError(err, 'WebSocket connection error');
+      },
+    };
+  }),
+);
 ```
 
 ### Message Processing Flow
@@ -71,7 +76,7 @@ export enum MessageType {
   WORKFLOW_STEP = 'workflow_step',
   FINAL = 'final',
   ERROR = 'error',
-  END = 'end'
+  END = 'end',
 }
 
 export interface WebSocketMessage {

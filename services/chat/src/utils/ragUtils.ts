@@ -77,7 +77,8 @@ export function concatListFiles(files: string[], maxLength: number): string {
     const nextLine = `- ${file}\n`;
 
     // Check if adding this file would exceed the max length
-    if (result.length + nextLine.length > maxLength - 25) { // Reserve space for truncation message
+    if (result.length + nextLine.length > maxLength - 25) {
+      // Reserve space for truncation message
       // If we would exceed the length, add a truncation message and stop
       const remainingCount = files.length - result.split('\n').length + 1;
       if (remainingCount > 0) {
@@ -88,7 +89,7 @@ export function concatListFiles(files: string[], maxLength: number): string {
           result += truncationMessage;
         } else {
           // If not enough space, just add a simpler message
-          result += "...";
+          result += '...';
         }
       }
       break;
@@ -108,7 +109,7 @@ export function concatListFiles(files: string[], maxLength: number): string {
  */
 export function reduceRagContext(
   state: AgentState,
-  maxTokens: number
+  maxTokens: number,
 ): { docs: Document[]; tokenCount: number } {
   if (!state.docs || state.docs.length === 0) {
     return { docs: [], tokenCount: 0 };
@@ -120,16 +121,10 @@ export function reduceRagContext(
   // Sort documents by relevance score (highest first)
   const sortedDocs = [...state.docs].sort((a, b) => {
     const scoreA =
-      a.metadata.relevanceScore ||
-      a.metadata.semantic_similarity ||
-      a.metadata.confidence ||
-      0;
+      a.metadata.relevanceScore || a.metadata.semantic_similarity || a.metadata.confidence || 0;
 
     const scoreB =
-      b.metadata.relevanceScore ||
-      b.metadata.semantic_similarity ||
-      b.metadata.confidence ||
-      0;
+      b.metadata.relevanceScore || b.metadata.semantic_similarity || b.metadata.confidence || 0;
 
     return scoreB - scoreA;
   });

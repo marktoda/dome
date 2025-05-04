@@ -20,7 +20,7 @@ import {
   createErrorFactory,
   toDomeError,
   assertValid,
-  assertExists
+  assertExists,
 } from '../src';
 
 // Import logging package integration
@@ -86,56 +86,67 @@ export function createAdvancedApp() {
   const app = new Hono();
 
   // Setup custom error handler with advanced options
-  app.use('*', errorHandler({
-    // Include stack traces in non-production environments
-    includeStack: true,
+  app.use(
+    '*',
+    errorHandler({
+      // Include stack traces in non-production environments
+      includeStack: true,
 
-    // Include cause details in non-production environments
-    includeCause: true,
+      // Include cause details in non-production environments
+      includeCause: true,
 
-    // Custom error mapping function
-    errorMapper: (err: unknown) => {
-      // Handle database-specific errors
-      if (err instanceof Error && (err as any).code === 'P2002') {
-        return new ConflictError(
-          'Resource already exists',
-          { constraint: (err as any).meta?.target },
-          err
-        );
-      }
-
-      // Handle axios errors
-      if (err instanceof Error && (err as any).isAxiosError) {
-        const axiosError = err as any;
-        const status = axiosError.response?.status;
-
-        if (status === 404) {
-          return new NotFoundError('Resource not found in external service', {
-            url: axiosError.config?.url
-          }, err);
+      // Custom error mapping function
+      errorMapper: (err: unknown) => {
+        // Handle database-specific errors
+        if (err instanceof Error && (err as any).code === 'P2002') {
+          return new ConflictError(
+            'Resource already exists',
+            { constraint: (err as any).meta?.target },
+            err,
+          );
         }
 
-        return new InternalError('External service error', {
-          status,
-          url: axiosError.config?.url
-        }, err);
-      }
+        // Handle axios errors
+        if (err instanceof Error && (err as any).isAxiosError) {
+          const axiosError = err as any;
+          const status = axiosError.response?.status;
 
-      // Use default conversion for other errors
-      return err instanceof Error && !(err instanceof Hono.HTTPException)
-        ? toDomeError(err, 'An error occurred')
-        : err;
-    },
+          if (status === 404) {
+            return new NotFoundError(
+              'Resource not found in external service',
+              {
+                url: axiosError.config?.url,
+              },
+              err,
+            );
+          }
 
-    // Custom logger retrieval
-    getContextLogger: (c) => {
-      try {
-        return c.get('logger') || getLogger();
-      } catch {
-        return getLogger();
-      }
-    }
-  }));
+          return new InternalError(
+            'External service error',
+            {
+              status,
+              url: axiosError.config?.url,
+            },
+            err,
+          );
+        }
+
+        // Use default conversion for other errors
+        return err instanceof Error && !(err instanceof Hono.HTTPException)
+          ? toDomeError(err, 'An error occurred')
+          : err;
+      },
+
+      // Custom logger retrieval
+      getContextLogger: c => {
+        try {
+          return c.get('logger') || getLogger();
+        } catch {
+          return getLogger();
+        }
+      },
+    }),
+  );
 
   // Add logging middleware (assuming @dome/common is set up)
   app.use('*', async (c, next) => {
@@ -157,7 +168,7 @@ export function createAdvancedApp() {
       throw new RateLimitError('Too many requests', {
         retryAfter: 60,
         limit: 100,
-        clientIp
+        clientIp,
       });
     }
 
@@ -198,7 +209,7 @@ export function createDomainApp() {
       userErrors.assertValid(
         typeof data.age === 'number' && data.age >= 18,
         'Age must be at least 18',
-        { field: 'age', value: data.age, minValue: 18 }
+        { field: 'age', value: data.age, minValue: 18 },
       );
 
       return c.json({ success: true });
@@ -229,14 +240,14 @@ export function createDomainApp() {
           throw productErrors.badRequest('Product is discontinued', {
             productId: id,
             status: 'discontinued',
-            discontinuedAt: product.discontinuedAt
+            discontinuedAt: product.discontinuedAt,
           });
         }
 
         return product;
       },
       'Failed to retrieve product', // Default message
-      { productId: id } // Context for all errors
+      { productId: id }, // Context for all errors
     );
 
     return c.json({ product });
@@ -269,9 +280,10 @@ export function createIntegratedApp() {
       const requestId = c.get('requestId');
 
       // Convert to DomeError if needed
-      const domeError = error instanceof Error && !(error instanceof Hono.HTTPException)
-        ? toDomeError(error, 'Request processing failed')
-        : error;
+      const domeError =
+        error instanceof Error && !(error instanceof Hono.HTTPException)
+          ? toDomeError(error, 'Request processing failed')
+          : error;
 
       // Log the error with full details
       logger.error({
@@ -279,31 +291,37 @@ export function createIntegratedApp() {
         error: domeError instanceof Error ? domeError : String(domeError),
         requestId,
         path: c.req.path,
-        method: c.req.method
+        method: c.req.method,
       });
 
       // Generate appropriate response
       if (domeError instanceof Error && 'statusCode' in domeError && 'code' in domeError) {
         const statusCode = (domeError as any).statusCode || 500;
 
-        return c.json({
-          error: {
-            code: (domeError as any).code || 'INTERNAL_ERROR',
-            message: domeError.message,
-            details: (domeError as any).details,
-            requestId
-          }
-        }, statusCode);
+        return c.json(
+          {
+            error: {
+              code: (domeError as any).code || 'INTERNAL_ERROR',
+              message: domeError.message,
+              details: (domeError as any).details,
+              requestId,
+            },
+          },
+          statusCode,
+        );
       }
 
       // Fallback for non-DomeErrors
-      return c.json({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred',
-          requestId
-        }
-      }, 500);
+      return c.json(
+        {
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'An unexpected error occurred',
+            requestId,
+          },
+        },
+        500,
+      );
     }
   });
 
@@ -349,7 +367,7 @@ async function findProduct(id: string): Promise<any | null> {
     name: `Product ${id}`,
     price: 99.99,
     status: id === 'discontinued' ? 'discontinued' : 'active',
-    discontinuedAt: id === 'discontinued' ? new Date().toISOString() : null
+    discontinuedAt: id === 'discontinued' ? new Date().toISOString() : null,
   };
 }
 

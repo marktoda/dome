@@ -25,14 +25,11 @@ type PromptUpdateResult = z.infer<typeof promptUpdateSchema>;
  * ------------------------------------------------------------------
  * 1. Use UPDATE_PROMPT to modify instructions and activated tools
  * 2. Return state with updated instructions and reasoning
- * 
+ *
  * This node enhances the system prompt based on the current conversation
  * context and any task-specific requirements identified.
  */
-export const editSystemPrompt = async (
-  state: AgentState,
-  env: Env,
-): Promise<AgentState> => {
+export const editSystemPrompt = async (state: AgentState, env: Env): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'editSystemPrompt' });
   const t0 = performance.now();
 
@@ -42,11 +39,12 @@ export const editSystemPrompt = async (
   const userId = getUserId(state);
   const traceId = state.metadata?.traceId ?? ObservabilityService.initTrace(env, userId, state);
   const spanId = ObservabilityService.startSpan(env, traceId, 'editSystemPrompt', state);
-  const logEvt = (e: string, p: Record<string, unknown>) => ObservabilityService.logEvent(env, traceId, spanId, e, p);
+  const logEvt = (e: string, p: Record<string, unknown>) =>
+    ObservabilityService.logEvent(env, traceId, spanId, e, p);
 
-  logEvt('edit_system_prompt_start', { 
+  logEvt('edit_system_prompt_start', {
     currentInstructions: state.instructions || 'no instructions',
-    taskEntitiesCount: Object.keys(state.taskEntities || {}).length
+    taskEntitiesCount: Object.keys(state.taskEntities || {}).length,
   });
 
   try {
@@ -55,16 +53,18 @@ export const editSystemPrompt = async (
     /* --------------------------------------------------------------- */
     const tasks = Object.values(state.taskEntities || {});
     const requiredTools = new Set<string>();
-    
+
     // Collect all required tools from tasks
     tasks.forEach(task => {
       if (task.requiredTools) {
         task.requiredTools.forEach(tool => requiredTools.add(tool));
       }
     });
-    
+
     const toolsArray = Array.from(requiredTools);
-    const taskDefinitions = tasks.map(task => task.definition || task.originalQuery).filter(Boolean);
+    const taskDefinitions = tasks
+      .map(task => task.definition || task.originalQuery)
+      .filter(Boolean);
 
     /* --------------------------------------------------------------- */
     /*  3. Use LLM to update system prompt                             */
@@ -72,45 +72,44 @@ export const editSystemPrompt = async (
     // Create messages for the LLM
     const messages: AIMessage[] = [
       { role: 'system', content: getUpdateChatPrompt() },
-      { 
-        role: 'user', 
+      {
+        role: 'user',
         content: JSON.stringify({
           currentInstructions: state.instructions || '',
           tasks: taskDefinitions,
-          tools: toolsArray
-        })
-      }
+          tools: toolsArray,
+        }),
+      },
     ];
 
     // Schema is already defined with zod above
 
     // Call LLM with structured output schema
-    const result = await LlmService.invokeStructured<PromptUpdateResult>(
-      env,
-      messages,
-      {
-        schema: promptUpdateSchema,
-        schemaInstructions: 'Update the system instructions based on the tasks and available tools.'
-      }
-    );
+    const result = await LlmService.invokeStructured<PromptUpdateResult>(env, messages, {
+      schema: promptUpdateSchema,
+      schemaInstructions: 'Update the system instructions based on the tasks and available tools.',
+    });
 
     /* --------------------------------------------------------------- */
     /*  4. Log completion and metrics                                  */
     /* --------------------------------------------------------------- */
     const elapsed = performance.now() - t0;
-    logEvt('edit_system_prompt_complete', { 
+    logEvt('edit_system_prompt_complete', {
       updatedInstructions: result.updatedInstructions,
       activatedToolsCount: result.activatedTools?.length || 0,
       reasoning: result.reasoning,
-      elapsedMs: elapsed
+      elapsedMs: elapsed,
     });
-    
+
     ObservabilityService.endSpan(env, traceId, spanId, 'editSystemPrompt', state, state, elapsed);
 
-    logger.info({ 
-      toolsCount: result.activatedTools?.length || 0,
-      elapsedMs: elapsed 
-    }, 'editSystemPrompt done');
+    logger.info(
+      {
+        toolsCount: result.activatedTools?.length || 0,
+        elapsedMs: elapsed,
+      },
+      'editSystemPrompt done',
+    );
 
     /* --------------------------------------------------------------- */
     /*  5. Return updated state                                        */
@@ -118,7 +117,10 @@ export const editSystemPrompt = async (
     return {
       ...state,
       instructions: result.updatedInstructions === null ? '' : result.updatedInstructions,
-      reasoning: [...(state.reasoning || []), result.reasoning === null ? 'System prompt updated.' : result.reasoning],
+      reasoning: [
+        ...(state.reasoning || []),
+        result.reasoning === null ? 'System prompt updated.' : result.reasoning,
+      ],
       // Store required tools in _filter as it accepts flexible properties
       _filter: {
         ...(state._filter || {}),
@@ -136,16 +138,20 @@ export const editSystemPrompt = async (
       },
     };
   } catch (error) {
-    const domeError = toDomeError(error instanceof Error ? error : new NodeError('Error in editSystemPrompt', {
-      node: 'editSystemPrompt'
-    }));
-    
+    const domeError = toDomeError(
+      error instanceof Error
+        ? error
+        : new NodeError('Error in editSystemPrompt', {
+            node: 'editSystemPrompt',
+          }),
+    );
+
     logger.error({ error: domeError }, 'Error in editSystemPrompt');
-    
+
     // Handle error case
     const errorMsg = domeError.message;
     const elapsed = performance.now() - t0;
-    
+
     // Add error to metadata before ending span
     const stateWithError = {
       ...state,
@@ -161,9 +167,17 @@ export const editSystemPrompt = async (
         ],
       },
     };
-    
-    ObservabilityService.endSpan(env, traceId, spanId, 'editSystemPrompt', state, stateWithError, elapsed);
-    
+
+    ObservabilityService.endSpan(
+      env,
+      traceId,
+      spanId,
+      'editSystemPrompt',
+      state,
+      stateWithError,
+      elapsed,
+    );
+
     return {
       ...state,
       reasoning: [...(state.reasoning || []), `Error updating system prompt: ${errorMsg}`],

@@ -34,11 +34,7 @@ data: {"thinking":"This is thinking content that's been sanitized"}
 To handle thinking content in your UI:
 
 ```typescript
-import { 
-  ThinkingEventHandler, 
-  EventType, 
-  createThinkingEventHandler 
-} from '@dome/chat';
+import { ThinkingEventHandler, EventType, createThinkingEventHandler } from '@dome/chat';
 
 // Create a handler
 const eventHandler = createThinkingEventHandler();
@@ -47,12 +43,12 @@ const eventHandler = createThinkingEventHandler();
 const eventSource = new EventSource('/api/chat/stream');
 
 // Set up listeners
-eventSource.onmessage = (event) => {
+eventSource.onmessage = event => {
   // Generic message handling
 };
 
 // Process specific event types
-eventSource.addEventListener('thinking', (event) => {
+eventSource.addEventListener('thinking', event => {
   const thinkingEvent = ThinkingEventHandler.parseSSEMessage('thinking', event.data);
   if (thinkingEvent) {
     eventHandler.processEvent(thinkingEvent);
@@ -60,7 +56,7 @@ eventSource.addEventListener('thinking', (event) => {
 });
 
 // Subscribe to thinking events
-eventHandler.addEventListener(EventType.Thinking, (data) => {
+eventHandler.addEventListener(EventType.Thinking, data => {
   // Display thinking content in your UI
   thinkingContentElement.textContent = data.thinking;
 });
@@ -72,7 +68,7 @@ When displaying thinking content:
 
 1. Consider using a different style or section of the UI for thinking content
 2. Use a monospace font for better readability of logic/code
-3. Clearly label it as "Thinking" or "Analysis" 
+3. Clearly label it as "Thinking" or "Analysis"
 4. Consider making it collapsible or optional for users
 5. If your UI doesn't need to display thinking content, you can simply ignore these events
 

@@ -3,7 +3,6 @@ import { z, ZodError } from 'zod';
 import { formatZodError } from '../../src/utils/zodUtils';
 
 describe('Zod Utilities', () => {
-
   describe('formatZodError', () => {
     it('should format ZodError into structured format', () => {
       const schema = z.object({
@@ -22,33 +21,33 @@ describe('Zod Utilities', () => {
         expect(true).toBe(false);
       } catch (error) {
         const formatted = formatZodError(error as ZodError);
-        
+
         expect(formatted).toHaveProperty('issues');
         expect(Array.isArray(formatted.issues)).toBe(true);
         expect(formatted.issues.length).toBe(3);
-        
+
         // Check for name error
         expect(formatted.issues).toContainEqual(
           expect.objectContaining({
             path: expect.stringContaining('name'),
             message: expect.stringContaining('3 characters'),
-          })
+          }),
         );
-        
+
         // Check for email error
         expect(formatted.issues).toContainEqual(
           expect.objectContaining({
             path: expect.stringContaining('email'),
             message: expect.stringContaining('Invalid email'),
-          })
+          }),
         );
-        
+
         // Check for age error
         expect(formatted.issues).toContainEqual(
           expect.objectContaining({
             path: expect.stringContaining('age'),
             message: expect.stringContaining('18 years'),
-          })
+          }),
         );
       }
     });
@@ -74,7 +73,7 @@ describe('Zod Utilities', () => {
         expect(true).toBe(false);
       } catch (error) {
         const formatted = formatZodError(error as ZodError);
-        
+
         expect(formatted.issues.length).toBe(1);
         expect(formatted.issues[0].path).toBe('user.profile.name');
         expect(formatted.issues[0].message).toContain('3 characters');
@@ -94,7 +93,7 @@ describe('Zod Utilities', () => {
         expect(true).toBe(false);
       } catch (error) {
         const formatted = formatZodError(error as ZodError);
-        
+
         expect(formatted.issues.length).toBe(1);
         expect(formatted.issues[0].path).toBe('items.1');
         expect(formatted.issues[0].message).toContain('3 characters');
@@ -105,11 +104,11 @@ describe('Zod Utilities', () => {
       // This is just for testing - in real code we should only pass ZodError
       // but we want to ensure it doesn't crash if something else is passed
       const mockZodError = {
-        errors: [{ path: ['test'], message: 'Test error', code: 'custom' }]
+        errors: [{ path: ['test'], message: 'Test error', code: 'custom' }],
       } as unknown as ZodError;
-      
+
       const formatted = formatZodError(mockZodError);
-      
+
       expect(formatted).toHaveProperty('issues');
       expect(formatted.issues.length).toBe(1);
     });

@@ -132,9 +132,13 @@ import { getLogger, trackOperation } from '@dome/common';
 getLogger().info({ userId }, 'Processing user');
 
 // Operation tracking
-await trackOperation('processUser', async () => {
-  // ... operation
-}, { userId });
+await trackOperation(
+  'processUser',
+  async () => {
+    // ... operation
+  },
+  { userId },
+);
 ```
 
 ### 4.3 Function Wrapper Migration
@@ -148,13 +152,13 @@ async function processData(data) {
     if (!data.id) {
       throw new Error('Missing ID');
     }
-    
+
     // Process
     const result = await doSomething(data);
-    
+
     // Log
     console.log(`Processed data ${data.id}`);
-    
+
     return result;
   } catch (error) {
     console.error('Error processing data:', error);
@@ -181,14 +185,14 @@ async function processData(data) {
 const processData = createProcessChain({
   serviceName: 'data-service',
   operation: 'processData',
-  
-  inputValidation: (data) => {
+
+  inputValidation: data => {
     assertValid(data.id, 'Missing ID');
   },
-  
-  process: async (data) => {
+
+  process: async data => {
     return await doSomething(data);
-  }
+  },
 });
 ```
 

@@ -12,17 +12,17 @@ This document provides examples of proper JSDoc documentation for the key functi
 
 ### 2.1 withContext Function
 
-```typescript
+````typescript
 /**
  * Runs a function with a specific context using AsyncLocalStorage.
  * This allows context to be propagated through async operations without passing it explicitly.
- * 
+ *
  * @param meta - Metadata to include in the context and logger
  * @param meta.level - Optional logging level for the child logger
  * @param meta.identity - Optional user identity information
  * @param fn - The function to execute within the context
  * @returns The result of the function execution
- * 
+ *
  * @example
  * ```typescript
  * const result = await withContext(
@@ -34,23 +34,20 @@ This document provides examples of proper JSDoc documentation for the key functi
  * );
  * ```
  */
-export async function withContext<T>(
-  meta: Meta,
-  fn: (log: Logger) => Promise<T> | T,
-): Promise<T> {
+export async function withContext<T>(meta: Meta, fn: (log: Logger) => Promise<T> | T): Promise<T> {
   // Implementation
 }
-```
+````
 
 ### 2.2 Context Accessor Functions
 
-```typescript
+````typescript
 /**
  * Gets the current user identity from the context if available.
  * Returns undefined if no identity is set or if called outside a context.
- * 
+ *
  * @returns The current user identity or undefined
- * 
+ *
  * @example
  * ```typescript
  * const identity = getIdentity();
@@ -64,9 +61,9 @@ export const getIdentity: () => Identity | undefined = () => ctxStore.getStore()
 /**
  * Gets the context-aware logger instance.
  * If called outside a context, returns the base logger.
- * 
+ *
  * @returns A logger instance with the current context
- * 
+ *
  * @example
  * ```typescript
  * const logger = getLogger();
@@ -78,9 +75,9 @@ export const getLogger: () => Logger = () => ctxStore.getStore()?.logger ?? base
 /**
  * Gets the current request ID from the context if available.
  * Returns undefined if no request ID is set or if called outside a context.
- * 
+ *
  * @returns The current request ID or undefined
- * 
+ *
  * @example
  * ```typescript
  * const requestId = getRequestId();
@@ -88,61 +85,58 @@ export const getLogger: () => Logger = () => ctxStore.getStore()?.logger ?? base
  * ```
  */
 export const getRequestId: () => string | undefined = () => ctxStore.getStore()?.requestId;
-```
+````
 
 ## 3. Error Handling Module
 
 ### 3.1 Error Factory Function
 
-```typescript
+````typescript
 /**
  * Creates a factory for domain-specific error classes.
  * This allows services to create their own error types with consistent behavior.
- * 
+ *
  * @param domain - The domain name for the errors (e.g., 'auth', 'storage')
  * @param defaultDetails - Default details to include in all errors created by this factory
  * @returns An object with factory methods for creating different error types
- * 
+ *
  * @example
  * ```typescript
  * const AuthErrors = createErrorFactory('auth', { service: 'auth-service' });
- * 
+ *
  * // Create a validation error
  * throw new AuthErrors.ValidationError('Invalid email format', { field: 'email' });
- * 
+ *
  * // Create a not found error
  * throw new AuthErrors.NotFoundError('User not found', { userId });
  * ```
  */
-export function createErrorFactory(
-  domain: string,
-  defaultDetails: Record<string, any> = {}
-) {
+export function createErrorFactory(domain: string, defaultDetails: Record<string, any> = {}) {
   // Implementation
 }
-```
+````
 
 ### 3.2 Error Middleware
 
-```typescript
+````typescript
 /**
  * Creates an error handling middleware for Hono applications.
  * This middleware catches errors, formats them into standardized responses,
  * and handles different error types appropriately.
- * 
+ *
  * @param formatZodError - Optional function to format Zod validation errors
  * @returns A middleware handler for error handling
- * 
+ *
  * @example
  * ```typescript
  * import { Hono } from 'hono';
  * import { createErrorMiddleware } from '@dome/common';
- * 
+ *
  * const app = new Hono();
- * 
+ *
  * // Add error handling middleware
  * app.use('*', createErrorMiddleware());
- * 
+ *
  * // Or with custom Zod error formatting
  * app.use('*', createErrorMiddleware((error) => {
  *   return error.errors.map(err => ({
@@ -157,20 +151,20 @@ export function createErrorMiddleware(
 ): MiddlewareHandler {
   // Implementation
 }
-```
+````
 
 ## 4. Logging Module
 
 ### 4.1 Error Logging Functions
 
-```typescript
+````typescript
 /**
  * Extracts detailed error information for structured logging.
  * This function handles different error types and extracts relevant properties.
- * 
+ *
  * @param error - The error object to extract information from
  * @returns An object with error details including message, name, code, stack, etc.
- * 
+ *
  * @example
  * ```typescript
  * try {
@@ -197,11 +191,11 @@ export function extractErrorInfo(error: unknown): {
 /**
  * Enhanced error logging that properly extracts and includes error information.
  * This function should be used instead of directly logging errors.
- * 
+ *
  * @param error - The error object to log
  * @param message - The log message describing what happened
  * @param additionalContext - Additional context to include in the log
- * 
+ *
  * @example
  * ```typescript
  * try {
@@ -219,21 +213,21 @@ export function logError(
 ): void {
   // Implementation
 }
-```
+````
 
 ### 4.2 Operation Tracking
 
-```typescript
+````typescript
 /**
  * Wraps an asynchronous operation with standardized start/success/error logging.
  * This function automatically logs the start, success, or failure of an operation
  * along with timing information.
- * 
+ *
  * @param operationName - Name of the operation to track
  * @param fn - The async function to execute
  * @param context - Additional context to include in logs
  * @returns The result of the async function
- * 
+ *
  * @example
  * ```typescript
  * const result = await trackOperation(
@@ -249,28 +243,28 @@ export function logError(
 export async function trackOperation<T>(
   operationName: string,
   fn: () => Promise<T>,
-  context: Record<string, any> = {}
+  context: Record<string, any> = {},
 ): Promise<T> {
   // Implementation
 }
-```
+````
 
 ## 5. Function Wrappers
 
 ### 5.1 Service Wrapper
 
-```typescript
+````typescript
 /**
  * Creates a service-specific wrapper that provides consistent error handling,
  * logging, and context propagation for service functions.
- * 
+ *
  * @param serviceName - The name of the service for logging and error context
  * @returns A function that wraps service operations with error handling and logging
- * 
+ *
  * @example
  * ```typescript
  * const wrap = createServiceWrapper('auth-service');
- * 
+ *
  * async function authenticateUser(credentials) {
  *   return wrap(
  *     { operation: 'authenticateUser', userId: credentials.userId },
@@ -284,15 +278,15 @@ export async function trackOperation<T>(
 export function createServiceWrapper(serviceName: string) {
   // Implementation
 }
-```
+````
 
 ### 5.2 Process Chain
 
-```typescript
+````typescript
 /**
  * Creates a processing chain that breaks down complex operations into
  * discrete steps with proper validation and error handling.
- * 
+ *
  * @param options - Configuration options
  * @param options.serviceName - The name of the service
  * @param options.operation - The operation name for logging
@@ -300,22 +294,22 @@ export function createServiceWrapper(serviceName: string) {
  * @param options.process - The main processing function
  * @param options.outputValidation - Optional function to validate outputs
  * @returns A function that chains all the steps with proper error handling
- * 
+ *
  * @example
  * ```typescript
  * const processUserRegistration = createProcessChain({
  *   serviceName: 'user-service',
  *   operation: 'registerUser',
- *   
+ *
  *   inputValidation: (input) => {
  *     assertValid(input.email, 'Email is required');
  *   },
- *   
+ *
  *   process: async (input) => {
  *     // Implementation
  *     return createdUser;
  *   },
- *   
+ *
  *   outputValidation: (output) => {
  *     assertValid(output.id, 'User ID is missing');
  *   }
@@ -331,31 +325,31 @@ export function createProcessChain<TInput, TOutput>(options: {
 }) {
   // Implementation
 }
-```
+````
 
 ## 6. Middleware
 
 ### 6.1 Request Context Middleware
 
-```typescript
+````typescript
 /**
  * Creates middleware for setting up request context in Hono applications.
  * This middleware extracts or generates a request ID and makes it available
  * throughout the request lifecycle.
- * 
+ *
  * @param requestIdHeader - The header to use for the request ID (default: X-Request-ID)
  * @returns A middleware function that sets up the request context
- * 
+ *
  * @example
  * ```typescript
  * import { Hono } from 'hono';
  * import { createRequestContextMiddleware } from '@dome/common';
- * 
+ *
  * const app = new Hono();
- * 
+ *
  * // Add request context middleware
  * app.use('*', createRequestContextMiddleware());
- * 
+ *
  * // Or with a custom header
  * app.use('*', createRequestContextMiddleware('X-Correlation-ID'));
  * ```
@@ -365,7 +359,7 @@ export function createRequestContextMiddleware(
 ): (c: Context, next: Next) => Promise<void> {
   // Implementation
 }
-```
+````
 
 ## 7. Best Practices for JSDoc Documentation
 
@@ -392,26 +386,26 @@ export function createRequestContextMiddleware(
 
 ### 7.3 Example Template
 
-```typescript
+````typescript
 /**
  * Brief description of what the function does.
  * More detailed explanation if needed.
- * 
+ *
  * @param paramName - Description of the parameter
  * @param [optionalParam] - Description of the optional parameter
  * @returns Description of the return value
  * @throws {ErrorType} Description of when this error is thrown
- * 
+ *
  * @example
  * ```typescript
  * // Example usage
  * const result = myFunction('value');
  * ```
- * 
+ *
  * @see OtherRelatedFunction
  * @since 1.0.0
  */
-```
+````
 
 ## 8. Conclusion
 

@@ -61,8 +61,7 @@ export class ChatClient {
   constructor(
     private readonly binding: ChatBinding,
     private readonly metricsPrefix: string = 'chat_orchestrator.client',
-  ) { }
-
+  ) {}
 
   /**
    * Stream a chat response
@@ -71,16 +70,13 @@ export class ChatClient {
    */
   async streamResponse(request: ChatRequest): Promise<Response> {
     const resp = await this.binding.fetch(
-      new Request(
-        'https://chat.internal/stream',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request),
-        }
-      )
-    )
-    return resp  // a streaming HTTP Response
+      new Request('https://chat.internal/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      }),
+    );
+    return resp; // a streaming HTTP Response
   }
 
   /**
@@ -104,16 +100,21 @@ export class ChatClient {
         headerKeys.push(key);
       });
 
-      getLogger().info({
-        status: response.status,
-        statusText: response.statusText,
-        headerKeys: headerKeys,
-        isBodyUsed: response.bodyUsed,
-        response,
-      }, '[ChatClient]: Non-streaming chat response received');
+      getLogger().info(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          headerKeys: headerKeys,
+          isBodyUsed: response.bodyUsed,
+          response,
+        },
+        '[ChatClient]: Non-streaming chat response received',
+      );
 
       if (!response.ok) {
-        throw new Error(`Failed to generate chat message: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `Failed to generate chat message: ${response.status} ${response.statusText}`,
+        );
       }
 
       // Clone the response before parsing to enable safer debugging
@@ -121,19 +122,23 @@ export class ChatClient {
 
       try {
         // Parse the JSON response using the defined type
-        const responseData = await response.json() as ChatServerResponse;
-        getLogger().info({
-          responseDataKeys: Object.keys(responseData),
-          hasGeneratedText: !!responseData.generatedText,
-          generatedTextLength: responseData.generatedText?.length || 0
-        }, '[ChatClient]: Successfully parsed response JSON');
+        const responseData = (await response.json()) as ChatServerResponse;
+        getLogger().info(
+          {
+            responseDataKeys: Object.keys(responseData),
+            hasGeneratedText: !!responseData.generatedText,
+            generatedTextLength: responseData.generatedText?.length || 0,
+          },
+          '[ChatClient]: Successfully parsed response JSON',
+        );
 
         // Create the response object using standardized types
         const result: ChatResponse = {
           response: responseData.generatedText || '',
           sources: responseData.sources,
           metadata: {
-            executionTimeMs: responseData.metadata?.executionTimeMs || Math.round(performance.now() - startTime),
+            executionTimeMs:
+              responseData.metadata?.executionTimeMs || Math.round(performance.now() - startTime),
             nodeTimings: responseData.metadata?.nodeTimings || {},
             tokenCounts: responseData.metadata?.tokenCounts || {},
           },
@@ -166,7 +171,10 @@ export class ChatClient {
         try {
           // Try to get the raw text to see what went wrong
           const rawText = await responseClone.text();
-          getLogger().error({ rawText, rawTextLength: rawText.length }, '[ChatClient]: Raw response text');
+          getLogger().error(
+            { rawText, rawTextLength: rawText.length },
+            '[ChatClient]: Raw response text',
+          );
 
           // Attempt to recover if there's actual text in the response
           if (rawText && rawText.length > 0 && rawText !== '{}') {
@@ -190,9 +198,8 @@ export class ChatClient {
 
         // If all else fails, provide a fallback response
         // Handle the error properly with type checking
-        const errorMessage = parseError instanceof Error
-          ? parseError.message
-          : 'Unknown parsing error';
+        const errorMessage =
+          parseError instanceof Error ? parseError.message : 'Unknown parsing error';
 
         throw new Error(`Failed to parse chat response: ${errorMessage}`);
       }
@@ -411,9 +418,6 @@ export class ChatClient {
  * @param metricsPrefix Optional prefix for metrics (defaults to 'chat_orchestrator.client')
  * @returns A new ChatClient instance
  */
-export function createChatClient(
-  binding: ChatBinding,
-  metricsPrefix?: string,
-): ChatClient {
+export function createChatClient(binding: ChatBinding, metricsPrefix?: string): ChatClient {
   return new ChatClient(binding, metricsPrefix);
 }

@@ -2,24 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from './auth';
 
 // Configure explicitly for edge runtime for Cloudflare Pages compatibility
-export const runtime = "experimental-edge";
+export const runtime = 'experimental-edge';
 
 // Protected routes that require authentication
 const protectedPaths = ['/dashboard'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  
+
   // Check if the path is a protected route
-  const isProtectedPath = protectedPaths.some(path =>
-    pathname === path || pathname.startsWith(`${path}/`)
+  const isProtectedPath = protectedPaths.some(
+    path => pathname === path || pathname.startsWith(`${path}/`),
   );
-  
+
   if (isProtectedPath) {
     try {
       // Get the user's session using Auth.js v5
       const session = await auth();
-      
+
       // If there is no session, redirect to the login page
       if (!session) {
         const url = new URL('/auth/login', request.url);
@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
         url.searchParams.set('callbackUrl', encodeURI(pathname));
         return NextResponse.redirect(url);
       }
-      
+
       // Check if session has the required information
       if (!session.user?.id) {
         const url = new URL('/auth/login', request.url);
@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
   }
-  
+
   // Allow the request to continue
   return NextResponse.next();
 }

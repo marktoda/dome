@@ -6,7 +6,7 @@ import {
   Pagination,
   BatchUpdateInput,
   TodosErrorCode,
-  Env
+  Env,
 } from './types';
 import { TodosService } from './services/todosService';
 import { getLogger } from '@dome/common';
@@ -15,7 +15,7 @@ const logger = getLogger();
 
 /**
  * RPC handler for the Todos service
- * 
+ *
  * Implements the TodosBinding interface to expose methods to other services
  */
 export class TodosRPCHandler implements TodosBinding {
@@ -27,7 +27,7 @@ export class TodosRPCHandler implements TodosBinding {
       logger.error('Missing DB binding in environment');
       throw new Error('Missing DB binding. Check wrangler.toml configuration.');
     }
-    
+
     // Initialize service with DB binding
     this.todosService = new TodosService(env.DB);
     logger.info('Todos RPC Handler initialized');
@@ -39,14 +39,14 @@ export class TodosRPCHandler implements TodosBinding {
   async createTodo(todo: CreateTodoInput) {
     try {
       logger.debug('RPC: createTodo', { userId: todo.userId });
-      
+
       const result = await this.todosService.createTodo(todo);
-      
-      logger.debug('RPC: createTodo completed', { 
-        todoId: result.id, 
-        userId: todo.userId 
+
+      logger.debug('RPC: createTodo completed', {
+        todoId: result.id,
+        userId: todo.userId,
       });
-      
+
       return result;
     } catch (error) {
       logger.error('RPC: createTodo failed', { error, userId: todo.userId });
@@ -60,14 +60,14 @@ export class TodosRPCHandler implements TodosBinding {
   async getTodo(id: string) {
     try {
       logger.debug('RPC: getTodo', { todoId: id });
-      
+
       const todo = await this.todosService.getTodo(id);
-      
-      logger.debug('RPC: getTodo completed', { 
-        todoId: id, 
-        found: !!todo 
+
+      logger.debug('RPC: getTodo completed', {
+        todoId: id,
+        found: !!todo,
       });
-      
+
       return todo;
     } catch (error) {
       logger.error('RPC: getTodo failed', { error, todoId: id });
@@ -81,14 +81,14 @@ export class TodosRPCHandler implements TodosBinding {
   async listTodos(filter: TodoFilter, pagination?: Pagination) {
     try {
       logger.debug('RPC: listTodos', { filter });
-      
+
       const result = await this.todosService.listTodos(filter, pagination);
-      
-      logger.debug('RPC: listTodos completed', { 
-        userId: filter.userId, 
-        count: result.items.length 
+
+      logger.debug('RPC: listTodos completed', {
+        userId: filter.userId,
+        count: result.items.length,
       });
-      
+
       return result;
     } catch (error) {
       logger.error('RPC: listTodos failed', { error, filter });
@@ -102,14 +102,14 @@ export class TodosRPCHandler implements TodosBinding {
   async updateTodo(id: string, updates: UpdateTodoInput) {
     try {
       logger.debug('RPC: updateTodo', { todoId: id });
-      
+
       const result = await this.todosService.updateTodo(id, updates);
-      
-      logger.debug('RPC: updateTodo completed', { 
-        todoId: id, 
-        success: result.success 
+
+      logger.debug('RPC: updateTodo completed', {
+        todoId: id,
+        success: result.success,
       });
-      
+
       return result;
     } catch (error) {
       logger.error('RPC: updateTodo failed', { error, todoId: id });
@@ -123,14 +123,14 @@ export class TodosRPCHandler implements TodosBinding {
   async deleteTodo(id: string) {
     try {
       logger.debug('RPC: deleteTodo', { todoId: id });
-      
+
       const result = await this.todosService.deleteTodo(id);
-      
-      logger.debug('RPC: deleteTodo completed', { 
-        todoId: id, 
-        success: result.success 
+
+      logger.debug('RPC: deleteTodo completed', {
+        todoId: id,
+        success: result.success,
       });
-      
+
       return result;
     } catch (error) {
       logger.error('RPC: deleteTodo failed', { error, todoId: id });
@@ -143,17 +143,17 @@ export class TodosRPCHandler implements TodosBinding {
    */
   async batchUpdateTodos(ids: string[], updates: BatchUpdateInput) {
     try {
-      logger.debug('RPC: batchUpdateTodos', { 
-        todoCount: ids.length 
+      logger.debug('RPC: batchUpdateTodos', {
+        todoCount: ids.length,
       });
-      
+
       const result = await this.todosService.batchUpdateTodos(ids, updates);
-      
-      logger.debug('RPC: batchUpdateTodos completed', { 
-        todoCount: ids.length, 
-        updatedCount: result.updatedCount 
+
+      logger.debug('RPC: batchUpdateTodos completed', {
+        todoCount: ids.length,
+        updatedCount: result.updatedCount,
       });
-      
+
       return result;
     } catch (error) {
       logger.error('RPC: batchUpdateTodos failed', { error, todoIds: ids });
@@ -167,14 +167,14 @@ export class TodosRPCHandler implements TodosBinding {
   async stats(userId: string) {
     try {
       logger.debug('RPC: stats', { userId });
-      
+
       const stats = await this.todosService.getTodoStats(userId);
-      
-      logger.debug('RPC: stats completed', { 
-        userId, 
-        totalCount: stats.totalCount 
+
+      logger.debug('RPC: stats completed', {
+        userId,
+        totalCount: stats.totalCount,
       });
-      
+
       return stats;
     } catch (error) {
       logger.error('RPC: stats failed', { error, userId });
@@ -189,19 +189,19 @@ export class TodosRPCHandler implements TodosBinding {
     // Extract code and message if available
     const code = (error as any).code || TodosErrorCode.INTERNAL_ERROR;
     const message = error.message || 'An unknown error occurred';
-    
+
     // Create a standardized error response
     const formattedError = {
       error: {
         code,
         message,
-        details: (error as any).details
-      }
+        details: (error as any).details,
+      },
     };
-    
+
     // Convert to a real Error object for proper throwing
     const rpcError = new Error(JSON.stringify(formattedError));
-    
+
     return rpcError;
   }
 }

@@ -18,6 +18,7 @@ This service provides authentication functionality for the Dome ecosystem, inclu
 Register a new user.
 
 **Request:**
+
 ```json
 {
   "email": "user@example.com",
@@ -27,6 +28,7 @@ Register a new user.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -46,6 +48,7 @@ Register a new user.
 Login a user and get an authentication token.
 
 **Request:**
+
 ```json
 {
   "email": "user@example.com",
@@ -54,6 +57,7 @@ Login a user and get an authentication token.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -75,11 +79,13 @@ Login a user and get an authentication token.
 Validate a token and get the user information.
 
 **Headers:**
+
 ```
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -99,11 +105,13 @@ Authorization: Bearer <token>
 Invalidate a token.
 
 **Headers:**
+
 ```
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -116,11 +124,13 @@ Authorization: Bearer <token>
 ### Setup
 
 1. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 2. Start the development server:
+
 ```bash
 pnpm run dev
 ```
@@ -128,6 +138,7 @@ pnpm run dev
 ### Deployment
 
 Deploy to Cloudflare Workers:
+
 ```bash
 pnpm run deploy
 ```
@@ -137,6 +148,7 @@ pnpm run deploy
 The auth service provides client libraries for integration with other services. To integrate with dome-api:
 
 1. Add the auth service as a dependency in dome-api's package.json:
+
 ```json
 {
   "dependencies": {
@@ -146,6 +158,7 @@ The auth service provides client libraries for integration with other services. 
 ```
 
 2. Update dome-api's wrangler.toml to add the service binding:
+
 ```toml
 [[services]]
 binding = "AUTH"
@@ -153,6 +166,7 @@ service = "auth"
 ```
 
 3. Use the auth middleware in dome-api to protect routes:
+
 ```typescript
 import { createAuthMiddleware } from '@dome/auth/middleware';
 import { createAuthService } from '@dome/auth/services';

@@ -24,10 +24,7 @@ type RewrittenTask = z.infer<typeof rewrittenTaskSchema>;
  * This node condenses verbose user queries into clearer, more focused task
  * definitions to improve downstream processing.
  */
-export const rewrite = async (
-  state: AgentState,
-  env: Env,
-): Promise<AgentState> => {
+export const rewrite = async (state: AgentState, env: Env): Promise<AgentState> => {
   const logger = getLogger().child({ node: 'rewrite' });
   const t0 = performance.now();
 
@@ -37,7 +34,8 @@ export const rewrite = async (
   const userId = getUserId(state);
   const traceId = state.metadata?.traceId ?? ObservabilityService.initTrace(env, userId, state);
   const spanId = ObservabilityService.startSpan(env, traceId, 'rewrite', state);
-  const logEvt = (e: string, p: Record<string, unknown>) => ObservabilityService.logEvent(env, traceId, spanId, e, p);
+  const logEvt = (e: string, p: Record<string, unknown>) =>
+    ObservabilityService.logEvent(env, traceId, spanId, e, p);
 
   const taskEntities = state.taskEntities || {};
   const taskCount = Object.keys(taskEntities).length;
@@ -74,35 +72,35 @@ export const rewrite = async (
 
     // Process tasks in parallel
     const tasks = state.taskEntities ?? {};
-    const reasons = await Promise.all(Object.entries(taskEntities).map(async ([taskId, task]) => {
-      const originalQuery = task.originalQuery || '';
-      if (!originalQuery) {
-        logger.warn({ taskId }, 'Task has no original query to rewrite');
-        return 'No original query to rewrite.';
-      }
+    const reasons = await Promise.all(
+      Object.entries(taskEntities).map(async ([taskId, task]) => {
+        const originalQuery = task.originalQuery || '';
+        if (!originalQuery) {
+          logger.warn({ taskId }, 'Task has no original query to rewrite');
+          return 'No original query to rewrite.';
+        }
 
-      // Create messages for the LLM call
-      const messages = buildMessages(getCondenseTaskPrompt(), state.chatHistory, originalQuery);
+        // Create messages for the LLM call
+        const messages = buildMessages(getCondenseTaskPrompt(), state.chatHistory, originalQuery);
 
-      // Call LLM with structured output schema
-      try {
-        const result = await LlmService.invokeStructured<RewrittenTask>(
-          env,
-          messages,
-          {
+        // Call LLM with structured output schema
+        try {
+          const result = await LlmService.invokeStructured<RewrittenTask>(env, messages, {
             schema: rewrittenTaskSchema,
-            schemaInstructions: 'Rewrite the user query in a concise, clear format'
-          }
-        );
+            schemaInstructions: 'Rewrite the user query in a concise, clear format',
+          });
 
-        tasks[taskId].rewrittenQuery = result.rewrittenQuery;
-        tasks[taskId].definition = result.rewrittenQuery;
-        return result.reasoning || 'No reasoning provided';
-      } catch (error) {
-        logger.error({ err: error, taskId }, 'Error rewriting task');
-        return `Error during rewriting: ${error instanceof Error ? error.message : 'Unknown error'}`
-      }
-    }));
+          tasks[taskId].rewrittenQuery = result.rewrittenQuery;
+          tasks[taskId].definition = result.rewrittenQuery;
+          return result.reasoning || 'No reasoning provided';
+        } catch (error) {
+          logger.error({ err: error, taskId }, 'Error rewriting task');
+          return `Error during rewriting: ${
+            error instanceof Error ? error.message : 'Unknown error'
+          }`;
+        }
+      }),
+    );
 
     /* --------------------------------------------------------------- */
     /*  4. Log completion and metrics                                  */
@@ -111,7 +109,7 @@ export const rewrite = async (
     logEvt('rewrite_complete', {
       taskCount,
       processingTimeMs: elapsed,
-      taskRewriteCount: reasons.length
+      taskRewriteCount: reasons.length,
     });
 
     ObservabilityService.endSpan(env, traceId, spanId, 'rewrite', state, state, elapsed);
@@ -183,5 +181,3 @@ export const rewrite = async (
     };
   }
 };
-
-

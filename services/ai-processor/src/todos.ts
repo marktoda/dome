@@ -20,11 +20,14 @@ const logger = getLogger();
  */
 export async function sendTodosToQueue(
   content: EnrichedContentMessage,
-  queue: Queue<TodoQueueItem>
+  queue: Queue<TodoQueueItem>,
 ): Promise<void> {
   const todos = content.metadata.todos;
   if (!content.userId || content.userId === PUBLIC_USER_ID) {
-    logger.debug({ contentId: content.id }, 'No user ID found for content, skipping todo processing');
+    logger.debug(
+      { contentId: content.id },
+      'No user ID found for content, skipping todo processing',
+    );
     return;
   }
   if (!Array.isArray(todos) || todos.length === 0) {
@@ -48,42 +51,51 @@ export async function sendTodosToQueue(
           title: todo.text.slice(0, Math.min(todo.text.length, 100)),
           priority: todo.priority,
           dueDate: todo.dueDate,
-          created: Date.now()
+          created: Date.now(),
         }));
 
-        logger.info({
-          contentId,
-          userId,
-          todoCount: todoItems.length,
-          todoItems,
-        }, 'Sending todos to queue');
+        logger.info(
+          {
+            contentId,
+            userId,
+            todoCount: todoItems.length,
+            todoItems,
+          },
+          'Sending todos to queue',
+        );
 
         // Send each todo to the queue
         for (const item of todoItems) {
           await queue.send(item);
         }
 
-        logger.info({
-          contentId,
-          userId,
-          todoCount: todoItems.length
-        }, 'Successfully sent todos to queue');
+        logger.info(
+          {
+            contentId,
+            userId,
+            todoCount: todoItems.length,
+          },
+          'Successfully sent todos to queue',
+        );
       } catch (error) {
         const domeError = toDomeError(error, 'Failed to send todos to queue', {
           contentId,
           userId,
-          todoCount: todos.length
+          todoCount: todos.length,
         });
 
-        logger.error({
-          error: domeError,
-          contentId,
-          userId
-        }, 'Error sending todos to queue');
+        logger.error(
+          {
+            error: domeError,
+            contentId,
+            userId,
+          },
+          'Error sending todos to queue',
+        );
 
         throw domeError;
       }
     },
-    { contentId, userId, todoCount: todos.length }
+    { contentId, userId, todoCount: todos.length },
   );
 }

@@ -75,7 +75,7 @@ vi.mock('@dome/common', () => {
     })),
     metrics: mockMetricsService,
     MetricsService: vi.fn(() => mockMetricsService),
-    createServiceMetrics: vi.fn((serviceName) => ({
+    createServiceMetrics: vi.fn(serviceName => ({
       increment: vi.fn(),
       decrement: vi.fn(),
       gauge: vi.fn(),
@@ -89,17 +89,14 @@ vi.mock('@dome/common', () => {
     createServiceWrapper: vi.fn((serviceName: string) => {
       return async (meta: Record<string, unknown>, fn: () => Promise<any>) => {
         const withContextFn = vi.fn((meta, fn) => fn(mockLogger));
-        return withContextFn(
-          { ...meta, service: serviceName },
-          async () => {
-            try {
-              return await fn();
-            } catch (error) {
-              mockLogger.error({ err: error }, 'Unhandled error');
-              throw error;
-            }
+        return withContextFn({ ...meta, service: serviceName }, async () => {
+          try {
+            return await fn();
+          } catch (error) {
+            mockLogger.error({ err: error }, 'Unhandled error');
+            throw error;
           }
-        );
+        });
       };
     }),
     createServiceErrorHandler: vi.fn((serviceName: string) => {
@@ -483,4 +480,3 @@ describe.skip('Constellation', () => {
     });
   });
 });
-

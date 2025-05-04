@@ -153,18 +153,20 @@ describe('errorHandler middleware', () => {
     // Use options to disable stack traces for testing
     const handler = errorHandler({
       includeStack: false,
-      includeCause: false
+      includeCause: false,
     });
     await handler(mockContext, mockNext);
 
     // Update the expected error log format - we don't need to check the exact error.toJSON() format
-    expect(mockLogger.error).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'error_handled',
-      error: expect.objectContaining({
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid input'
-      })
-    }));
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'error_handled',
+        error: expect.objectContaining({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid input',
+        }),
+      }),
+    );
 
     expect(mockContext.status).toHaveBeenCalledWith(400);
     expect(mockContext.json).toHaveBeenCalledWith({
@@ -183,7 +185,7 @@ describe('errorHandler middleware', () => {
     // Use options to disable stack traces for testing
     const handler = errorHandler({
       includeStack: false,
-      includeCause: false
+      includeCause: false,
     });
     await handler(mockContext, mockNext);
 

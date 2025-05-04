@@ -3,7 +3,6 @@
  */
 import { D1Database, KVNamespace } from '@cloudflare/workers-types';
 
-
 /**
  * User role enum
  */

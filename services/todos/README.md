@@ -44,10 +44,7 @@ Here's how to use the TodosClient in another service:
 import { createTodosClient, TodosBinding } from 'todos/client';
 
 // Create a TodosClient instance
-const todosClient: TodosBinding = createTodosClient(
-  env.TODOS,
-  'your-service.todos'
-);
+const todosClient: TodosBinding = createTodosClient(env.TODOS, 'your-service.todos');
 
 // Create a todo
 await todosClient.createTodo({
@@ -63,9 +60,9 @@ const todos = await todosClient.listTodos(
   {
     userId: 'user123',
     status: 'pending',
-    priority: 'high'
+    priority: 'high',
   },
-  { limit: 10 }
+  { limit: 10 },
 );
 
 // Get todo statistics

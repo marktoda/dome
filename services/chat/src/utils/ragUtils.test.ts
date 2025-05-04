@@ -17,7 +17,7 @@ describe('countTokens', () => {
 
   it('should count tokens for different models', () => {
     const text = 'This is a test sentence for token counting.';
-    
+
     // Different model IDs should yield reasonable token counts
     const gpt4Count = countTokens(text, 'gpt-4');
     const gpt35Count = countTokens(text, 'gpt-3.5-turbo');
@@ -124,7 +124,7 @@ describe('concatListFiles', () => {
   it('should format file list within max length', () => {
     const files = ['file1.txt', 'file2.txt', 'file3.txt'];
     const result = concatListFiles(files, 100);
-    
+
     expect(result).toContain('Files:');
     expect(result).toContain('- file1.txt');
     expect(result).toContain('- file2.txt');
@@ -140,10 +140,10 @@ describe('concatListFiles', () => {
       'very_long_filename4.txt',
       'very_long_filename5.txt',
     ];
-    
+
     // Set a small max length to force truncation
     const result = concatListFiles(files, 50);
-    
+
     expect(result).toContain('Files:');
     expect(result).toContain('more files');
     expect(result.length).toBeLessThanOrEqual(50);
@@ -219,7 +219,7 @@ describe('reduceRagContext', () => {
   it('should return empty array when no docs are provided', () => {
     const emptyState: AgentState = { ...mockState, docs: [] };
     const result = reduceRagContext(emptyState, 100);
-    
+
     expect(result.docs).toEqual([]);
     expect(result.tokenCount).toBe(0);
   });
@@ -227,7 +227,7 @@ describe('reduceRagContext', () => {
   it('should sort and include docs within token limit', () => {
     // Set token limit to fit only 2 docs
     const result = reduceRagContext(mockState, 45);
-    
+
     expect(result.docs).toHaveLength(2);
     expect(result.docs[0].id).toBe('doc1'); // Highest relevance
     expect(result.docs[1].id).toBe('doc4'); // Second highest using semantic_similarity
@@ -237,7 +237,7 @@ describe('reduceRagContext', () => {
   it('should include at least one document even if it exceeds the token limit', () => {
     // Set token limit lower than a single doc's token count
     const result = reduceRagContext(mockState, 15);
-    
+
     expect(result.docs).toHaveLength(1);
     expect(result.docs[0].id).toBe('doc1'); // Most relevant doc
     expect(result.tokenCount).toBe(20); // Still include the doc even though it's over limit
@@ -249,18 +249,18 @@ describe('reduceRagContext', () => {
       ...doc,
       metadata: { ...doc.metadata, tokenCount: undefined },
     }));
-    
+
     const stateWithoutTokenCounts: AgentState = {
       ...mockState,
       docs: docsWithoutTokenCounts,
     };
-    
+
     const result = reduceRagContext(stateWithoutTokenCounts, 100);
-    
+
     // Should still return results and calculate token counts on the fly
     expect(result.docs.length).toBeGreaterThan(0);
     expect(result.tokenCount).toBeGreaterThan(0);
-    
+
     // Should have added token counts to the docs
     expect(result.docs[0].metadata.tokenCount).toBeDefined();
   });

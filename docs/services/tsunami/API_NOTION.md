@@ -35,11 +35,11 @@ Authorization: Bearer <your_token>
 
 #### Request Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `userId` | string | No | User ID to associate with the sync plan |
-| `workspaceId` | string | Yes | Notion workspace ID to register |
-| `cadence` | string | No | Sync frequency in ISO 8601 duration format (default: `PT1H`) |
+| Parameter     | Type   | Required | Description                                                  |
+| ------------- | ------ | -------- | ------------------------------------------------------------ |
+| `userId`      | string | No       | User ID to associate with the sync plan                      |
+| `workspaceId` | string | Yes      | Notion workspace ID to register                              |
+| `cadence`     | string | No       | Sync frequency in ISO 8601 duration format (default: `PT1H`) |
 
 #### Response
 
@@ -83,7 +83,7 @@ const tsunami = createTsunamiClient(env.TSUNAMI);
 const result = await tsunami.registerNotionWorkspace(
   'your_workspace_id',
   'user123',
-  3600 // Sync every hour (in seconds)
+  3600, // Sync every hour (in seconds)
 );
 
 console.log(`Workspace registered with ID: ${result.id}`);
@@ -103,10 +103,10 @@ Authorization: Bearer <your_token>
 
 #### Request Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `workspaceId` | string | Yes | Notion workspace ID |
-| `limit` | number | No | Maximum number of history records to return (default: 10) |
+| Parameter     | Type   | Required | Description                                               |
+| ------------- | ------ | -------- | --------------------------------------------------------- |
+| `workspaceId` | string | Yes      | Notion workspace ID                                       |
+| `limit`       | number | No       | Maximum number of history records to return (default: 10) |
 
 #### Response
 
@@ -125,7 +125,7 @@ Authorization: Bearer <your_token>
       "itemsFiltered": 5,
       "durationMs": 1234,
       "error": null
-    },
+    }
     // Additional history records...
   ]
 }
@@ -153,7 +153,7 @@ const tsunami = createTsunamiClient(env.TSUNAMI);
 
 const history = await tsunami.getNotionWorkspaceHistory(
   'your_workspace_id',
-  10 // Limit to 10 most recent entries
+  10, // Limit to 10 most recent entries
 );
 
 console.log(history);
@@ -172,10 +172,10 @@ Authorization: Bearer <your_token>
 
 #### Request Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `userId` | string | Yes | User ID to associate with the OAuth token |
-| `state` | string | Yes | Random string for CSRF protection |
+| Parameter | Type   | Required | Description                               |
+| --------- | ------ | -------- | ----------------------------------------- |
+| `userId`  | string | Yes      | User ID to associate with the OAuth token |
+| `state`   | string | Yes      | Random string for CSRF protection         |
 
 #### Response
 
@@ -193,10 +193,10 @@ GET /api/tsunami/notion/oauth/callback?code=authorization_code&state=random_stat
 
 #### Request Parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `code` | string | Yes | Authorization code from Notion |
-| `state` | string | Yes | State parameter passed in the authorize request |
+| Parameter | Type   | Required | Description                                     |
+| --------- | ------ | -------- | ----------------------------------------------- |
+| `code`    | string | Yes      | Authorization code from Notion                  |
+| `state`   | string | Yes      | State parameter passed in the authorize request |
 
 #### Response
 
@@ -259,13 +259,13 @@ const tsunami = createTsunamiClient(env.TSUNAMI);
 const result = await tsunami.registerNotionWorkspace(
   'your_workspace_id',
   'user123',
-  3600 // Sync every hour (in seconds)
+  3600, // Sync every hour (in seconds)
 );
 
 // Get sync history
 const history = await tsunami.getNotionWorkspaceHistory(
   'your_workspace_id',
-  10 // Limit to 10 most recent entries
+  10, // Limit to 10 most recent entries
 );
 ```
 
@@ -279,16 +279,16 @@ export interface TsunamiBinding {
   registerNotionWorkspace(
     workspaceId: string,
     userId?: string,
-    cadenceSecs?: number
+    cadenceSecs?: number,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>;
-  
+
   // Generic methods used with Notion
   createSyncPlan(providerType: string, resourceId: string, userId?: string): Promise<string>;
   getSyncPlan(resourceId: string): Promise<any>;
   attachUser(syncPlanId: string, userId: string): Promise<void>;
   initializeResource(
-    params: { resourceId: string, providerType: string, userId?: string },
-    cadenceSecs: number
+    params: { resourceId: string; providerType: string; userId?: string },
+    cadenceSecs: number,
   ): Promise<boolean>;
   getHistoryByResourceId(resourceId: string, limit: number): Promise<unknown[]>;
   getHistoryByUserId(userId: string, limit: number): Promise<unknown[]>;
@@ -307,32 +307,33 @@ export class TsunamiClient implements TsunamiService {
     private readonly binding: TsunamiBinding,
     private readonly metricsPrefix: string = 'tsunami.client',
   ) {}
-  
+
   // Notion-specific methods
   async registerNotionWorkspace(
     workspaceId: string,
     userId?: string,
-    cadenceSecs: number = 3600
+    cadenceSecs: number = 3600,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>;
-  
+
   async getNotionWorkspaceHistory(
     workspaceId: string,
-    limit: number = 10
+    limit: number = 10,
   ): Promise<{
     workspaceId: string;
     resourceId: string;
     history: unknown[];
   }>;
-  
+
   // Generic methods used with Notion
   async createSyncPlan(providerType: string, resourceId: string, userId?: string): Promise<string>;
   async getSyncPlan(resourceId: string): Promise<any>;
   async attachUser(syncPlanId: string, userId: string): Promise<void>;
   async initializeResource(
-    params: { resourceId: string, providerType: string, userId?: string },
-    cadenceSecs: number
+    params: { resourceId: string; providerType: string; userId?: string },
+    cadenceSecs: number,
   ): Promise<boolean>;
   async getHistoryByResourceId(resourceId: string, limit: number): Promise<unknown[]>;
   async getHistoryByUserId(userId: string, limit: number): Promise<unknown[]>;
   async getHistoryBySyncPlanId(syncPlanId: string, limit: number): Promise<unknown[]>;
 }
+```

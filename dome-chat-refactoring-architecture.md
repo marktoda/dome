@@ -9,6 +9,7 @@ This document presents an architectural plan for refactoring the Dome Chat Servi
 ### 2.1 Current State
 
 The existing chat implementation consists of:
+
 - **ChatController**: Handles HTTP requests and input validation
 - **ChatService**: Orchestrates chat flow in a linear process
 - **PromptBuilder**: Builds prompts with retrieved context
@@ -16,6 +17,7 @@ The existing chat implementation consists of:
 - **SearchService**: Retrieves relevant documents
 
 The current flow is linear and monolithic:
+
 1. Validate input
 2. Retrieve context (optional)
 3. Build prompt with context
@@ -42,24 +44,24 @@ flowchart TD
     subgraph "Client"
         UI["Frontend UI"]
     end
-    
+
     subgraph "Dome API"
         API["API Controller"]
         WSHandler["WebSocket Handler"]
     end
-    
+
     subgraph "Chat Orchestrator Worker"
         Graph["LangGraph State Machine"]
         Nodes["Node Functions"]
         Checkpointer["Native LangGraph Checkpointer"]
     end
-    
+
     subgraph "External Services"
         LLM["LLM Provider"]
         Search["Vector Search"]
         Tools["External Tools"]
     end
-    
+
     UI <--> WSHandler
     API --> WSHandler
     WSHandler <--> Graph
@@ -75,6 +77,7 @@ flowchart TD
 #### 3.2.1 WebSocket Handler
 
 A new WebSocket implementation that:
+
 - Establishes bidirectional communication with clients
 - Handles message parsing and validation
 - Manages connection lifecycle and error states
@@ -86,19 +89,19 @@ sequenceDiagram
     participant API as Dome API
     participant WS as WebSocket Handler
     participant Graph as LangGraph Engine
-    
+
     Client->>API: Open WebSocket connection
     API->>WS: Setup connection
     WS->>Client: Connection established
-    
+
     Client->>WS: Send message
     WS->>Graph: Process message
-    
+
     loop While processing
         Graph->>WS: Stream updates and tokens
         WS->>Client: Forward updates in real-time
     end
-    
+
     Graph->>WS: Final response
     WS->>Client: Complete response
 ```
@@ -106,6 +109,7 @@ sequenceDiagram
 #### 3.2.2 LangGraph State Machine
 
 Fully leverage Langchain's native `StateGraph` implementation:
+
 - Define state interfaces aligned with Langchain patterns
 - Implement specialized node functions
 - Configure conditional routing logic
@@ -117,11 +121,11 @@ flowchart LR
     Start --> SplitRewrite
     SplitRewrite --> Retrieve
     Retrieve --> RouteAfterRetrieve
-    
+
     RouteAfterRetrieve -- "No results" --> DynamicWiden
     RouteAfterRetrieve -- "Tool needed" --> ToolRouter
     RouteAfterRetrieve -- "Has results" --> GenerateAnswer
-    
+
     DynamicWiden --> Retrieve
     ToolRouter --> RunTool
     RunTool --> GenerateAnswer
@@ -131,6 +135,7 @@ flowchart LR
 #### 3.2.3 Native Checkpointer
 
 Implement Langchain's built-in `@langchain/langgraph-checkpoint` interface:
+
 - Use D1 as the persistence layer
 - Support conversation resumption
 - Enable multi-turn conversation history
@@ -142,11 +147,11 @@ flowchart TD
         CP[Checkpointer]
         D1[D1 Database]
     end
-    
+
     subgraph "Graph Engine"
         Graph[LangGraph Engine]
     end
-    
+
     Graph -- "write(runId, step, state)" --> CP
     CP -- "Persist" --> D1
     Graph -- "read(runId)" --> CP
@@ -156,6 +161,7 @@ flowchart TD
 #### 3.2.4 Consolidated LLM Service
 
 Adopt Langchain's built-in LLM client abstractions:
+
 - Use `ChatCloudflareWorkers` adapter for Cloudflare AI platform
 - Leverage Langchain's token management and retry logic
 - Use streaming functionality provided by Langchain
@@ -226,6 +232,7 @@ interface ServerMessage {
 ### 4.3 Compatibility Strategy
 
 To ensure a smooth transition:
+
 - Implement a dual-protocol period where both SSE and WebSockets are supported
 - Add protocol negotiation in the API to detect client capabilities
 - Create an SSE-to-WebSocket adapter for backward compatibility
@@ -241,7 +248,7 @@ classDiagram
         +read(runId: string)
         +write(runId: string, step: SuperStep, state: unknown)
     }
-    
+
     class D1Checkpointer {
         -db: D1Database
         -ttlSeconds: number
@@ -253,7 +260,7 @@ classDiagram
         +cleanup(maxAgeSeconds)
         +getStats()
     }
-    
+
     LangGraphCheckpointer <|-- D1Checkpointer
 ```
 
@@ -293,13 +300,13 @@ flowchart TD
         OldPrompt[Custom Prompt Builder]
         OldStreaming[Custom SSE Transformer]
     end
-    
+
     subgraph "After"
         LC[LangChain ChatModel]
         Templates[LangChain PromptTemplates]
         Streaming[LangChain StreamingCallbacks]
     end
-    
+
     OldLLM --> LC
     OldPrompt --> Templates
     OldStreaming --> Streaming
@@ -368,33 +375,33 @@ gantt
 
 ### 8.1 WebSockets vs. SSE
 
-| Factor | WebSockets | SSE | Decision Rationale |
-|--------|------------|-----|-------------------|
-| Bidirectional | Yes | No | WebSockets enable client feedback during generation |
-| Connection overhead | Moderate | High | WebSockets have lower overhead per message |
-| Browser support | Excellent | Excellent | Both have good support, not a deciding factor |
-| Implementation complexity | Moderate | Low | The additional complexity is justified by the benefits |
-| Scalability | Excellent | Good | WebSockets scale better with proper implementation |
+| Factor                    | WebSockets | SSE       | Decision Rationale                                     |
+| ------------------------- | ---------- | --------- | ------------------------------------------------------ |
+| Bidirectional             | Yes        | No        | WebSockets enable client feedback during generation    |
+| Connection overhead       | Moderate   | High      | WebSockets have lower overhead per message             |
+| Browser support           | Excellent  | Excellent | Both have good support, not a deciding factor          |
+| Implementation complexity | Moderate   | Low       | The additional complexity is justified by the benefits |
+| Scalability               | Excellent  | Good      | WebSockets scale better with proper implementation     |
 
 ### 8.2 Native vs. Custom Checkpointer
 
-| Factor | Native | Custom | Decision Rationale |
-|--------|--------|--------|-------------------|
-| Maintenance | Low | High | Using native reduces long-term maintenance burden |
-| Integration | Seamless | Complex | Native interfaces directly with Langchain internals |
-| Flexibility | Moderate | High | Some flexibility is traded for standardization |
-| Performance | Optimized | Variable | Native implementation is optimized by Langchain team |
-| Future-proof | Yes | No | Will automatically benefit from upstream improvements |
+| Factor       | Native    | Custom   | Decision Rationale                                    |
+| ------------ | --------- | -------- | ----------------------------------------------------- |
+| Maintenance  | Low       | High     | Using native reduces long-term maintenance burden     |
+| Integration  | Seamless  | Complex  | Native interfaces directly with Langchain internals   |
+| Flexibility  | Moderate  | High     | Some flexibility is traded for standardization        |
+| Performance  | Optimized | Variable | Native implementation is optimized by Langchain team  |
+| Future-proof | Yes       | No       | Will automatically benefit from upstream improvements |
 
 ### 8.3 Consolidated LLM Service
 
-| Factor | Langchain | Custom | Decision Rationale |
-|--------|-----------|--------|-------------------|
-| Feature set | Comprehensive | Limited | Langchain offers more built-in capabilities |
-| Development speed | Fast | Slow | Leveraging existing code accelerates development |
-| Control | Medium | High | Sufficient control while reducing maintenance |
-| Ecosystem integration | Strong | Weak | Better integration with other Langchain components |
-| Community support | Active | None | Benefits from community improvements and fixes |
+| Factor                | Langchain     | Custom  | Decision Rationale                                 |
+| --------------------- | ------------- | ------- | -------------------------------------------------- |
+| Feature set           | Comprehensive | Limited | Langchain offers more built-in capabilities        |
+| Development speed     | Fast          | Slow    | Leveraging existing code accelerates development   |
+| Control               | Medium        | High    | Sufficient control while reducing maintenance      |
+| Ecosystem integration | Strong        | Weak    | Better integration with other Langchain components |
+| Community support     | Active        | None    | Benefits from community improvements and fixes     |
 
 ## 9. Performance Considerations
 

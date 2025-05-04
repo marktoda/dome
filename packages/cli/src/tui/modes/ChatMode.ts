@@ -33,7 +33,7 @@ export class ChatMode extends BaseMode {
   ];
 
   /** Processes thinking content and maintains state between chunks */
-  private thinkingProcessor = new class {
+  private thinkingProcessor = new (class {
     private buffer = '';
     private lastThinking = '';
     private isJson = false;
@@ -41,12 +41,12 @@ export class ChatMode extends BaseMode {
     /** Add a new thinking chunk and return processed thinking content */
     process(chunk: string): string {
       this.buffer += chunk;
-      
+
       // Try to extract meaningful thinking content
       try {
         const parsed = JSON.parse(this.buffer);
         this.isJson = true;
-        
+
         // Extract thinking from various formats
         if (Array.isArray(parsed) && parsed.length === 1 && typeof parsed[0] === 'string') {
           this.lastThinking = parsed[0];
@@ -78,8 +78,8 @@ export class ChatMode extends BaseMode {
           this.lastThinking = this.buffer;
         }
       }
-      
-      return this.lastThinking || "Thinking...";
+
+      return this.lastThinking || 'Thinking...';
     }
 
     reset(): void {
@@ -87,7 +87,7 @@ export class ChatMode extends BaseMode {
       this.lastThinking = '';
       this.isJson = false;
     }
-  }();
+  })();
 
   constructor() {
     super({
@@ -103,7 +103,9 @@ export class ChatMode extends BaseMode {
   /*  lifecycle                                                         */
   /* ------------------------------------------------------------------ */
 
-  protected onInit(): void {/* nothing */ }
+  protected onInit(): void {
+    /* nothing */
+  }
 
   protected onActivate(): void {
     this.configureContainer();
@@ -111,7 +113,9 @@ export class ChatMode extends BaseMode {
     this.renderHeader();
   }
 
-  protected onDeactivate(): void {/* nothing */ }
+  protected onDeactivate(): void {
+    /* nothing */
+  }
 
   /* ------------------------------------------------------------------ */
   /*  input handler                                                     */
@@ -175,14 +179,16 @@ export class ChatMode extends BaseMode {
           convo.reply += chunk.content || '';
         }
       }
-      
+
       rebuild();
     };
 
     /* api call ------------------------------------------------------- */
     try {
-      const verbose = process.env.DOME_VERBOSE === 'true' ||
-        process.argv.includes('-v') || process.argv.includes('--verbose');
+      const verbose =
+        process.env.DOME_VERBOSE === 'true' ||
+        process.argv.includes('-v') ||
+        process.argv.includes('--verbose');
 
       const result = await chat(input, onChunk, { debug: verbose });
 
@@ -193,23 +199,23 @@ export class ChatMode extends BaseMode {
         sources = result.sources;
       } else if (result?.node?.sources) {
         // Handle sources from final chunk format
-        sources = Array.isArray(result.node.sources)
-          ? result.node.sources
-          : [result.node.sources];
+        sources = Array.isArray(result.node.sources) ? result.node.sources : [result.node.sources];
       }
 
       if (sources?.length) {
         // Filter out metadata entries and other non-displayable sources
         sources = sources.filter((source: SourceInfo) => {
           const title = source.title || '';
-          return !title.includes('---DOME-METADATA-START---') &&
+          return (
+            !title.includes('---DOME-METADATA-START---') &&
             !title.match(/^---.*---$/) &&
-            title.trim() !== '';
+            title.trim() !== ''
+          );
         });
 
         // Sort by relevance score (highest first)
-        sources.sort((a: SourceInfo, b: SourceInfo) =>
-          (b.relevanceScore || 0) - (a.relevanceScore || 0)
+        sources.sort(
+          (a: SourceInfo, b: SourceInfo) => (b.relevanceScore || 0) - (a.relevanceScore || 0),
         );
 
         // Display top sources
@@ -240,13 +246,10 @@ export class ChatMode extends BaseMode {
     this.printBlock('{bold}{green-fg}You:{/green-fg}{/bold}', user, cw);
 
     // Format and display thinking content if available
-    if (thinking && thinking !== "Thinking..." && thinking.length > 1) {
+    if (thinking && thinking !== 'Thinking...' && thinking.length > 1) {
       // Break thinking into paragraphs and format as readable content
-      const formattedThinking = thinking
-        .replace(/\n\n+/g, '\n\n')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
+      const formattedThinking = thinking.replace(/\n\n+/g, '\n\n').replace(/\s+/g, ' ').trim();
+
       this.printBlock('{bold}{gray-fg}Thinking:{/gray-fg}{/bold}', formattedThinking, cw);
     }
 
@@ -265,12 +268,13 @@ export class ChatMode extends BaseMode {
   }
 
   private wrapText(text: string, cw: number): void {
-    if (!text) { this.container.pushLine(''); return; }
+    if (!text) {
+      this.container.pushLine('');
+      return;
+    }
 
     const safeWidth = Math.max(cw - 2, 10);
-    const lines = text
-      .split('\n')
-      .flatMap(line => this.wordWrap(line, safeWidth));
+    const lines = text.split('\n').flatMap(line => this.wordWrap(line, safeWidth));
 
     lines.forEach(l => this.container.pushLine(l));
   }
@@ -282,7 +286,10 @@ export class ChatMode extends BaseMode {
     let cur = '';
     for (const word of line.split(' ')) {
       if (word.length > width) {
-        if (cur) { out.push(cur); cur = ''; }
+        if (cur) {
+          out.push(cur);
+          cur = '';
+        }
         let w = word;
         while (w.length > width) {
           out.push(w.slice(0, width - 1) + '-');
@@ -305,7 +312,9 @@ export class ChatMode extends BaseMode {
     sources.forEach((s, i) => {
       // Safely handle potentially undefined title
       const title = s.title
-        ? (s.title.length > 80 ? s.title.slice(0, 80) + '…' : s.title)
+        ? s.title.length > 80
+          ? s.title.slice(0, 80) + '…'
+          : s.title
         : 'Unnamed Source';
 
       // Display index and title
@@ -325,7 +334,9 @@ export class ChatMode extends BaseMode {
       if (s.relevanceScore !== undefined) {
         const scorePercentage = Math.round(s.relevanceScore * 100);
         const scoreColor = scorePercentage > 70 ? 'green' : scorePercentage > 40 ? 'yellow' : 'red';
-        this.container.pushLine(`   Relevance: {${scoreColor}-fg}${scorePercentage}%{/${scoreColor}-fg}`);
+        this.container.pushLine(
+          `   Relevance: {${scoreColor}-fg}${scorePercentage}%{/${scoreColor}-fg}`,
+        );
       }
 
       // Display snippet if available

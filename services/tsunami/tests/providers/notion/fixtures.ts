@@ -1,6 +1,6 @@
 /**
  * Notion Test Fixtures
- * 
+ *
  * This file contains shared mock data and fixtures for Notion tests.
  */
 
@@ -17,16 +17,14 @@ export const mockPages: NotionPage[] = [
     last_edited_time: '2023-04-30T12:00:00Z',
     parent: {
       type: 'workspace',
-      workspace: true
+      workspace: true,
     },
     properties: {
       title: {
         type: 'title',
-        title: [
-          { plain_text: 'Test Page' }
-        ]
-      }
-    }
+        title: [{ plain_text: 'Test Page' }],
+      },
+    },
   },
   {
     id: 'page-456',
@@ -35,16 +33,14 @@ export const mockPages: NotionPage[] = [
     last_edited_time: '2023-04-29T12:00:00Z',
     parent: {
       type: 'page_id',
-      page_id: 'parent-789'
+      page_id: 'parent-789',
     },
     properties: {
       Name: {
         type: 'title',
-        title: [
-          { plain_text: 'Test Page with Parent' }
-        ]
-      }
-    }
+        title: [{ plain_text: 'Test Page with Parent' }],
+      },
+    },
   },
   {
     id: 'db-entry-789',
@@ -53,27 +49,25 @@ export const mockPages: NotionPage[] = [
     last_edited_time: '2023-04-28T12:00:00Z',
     parent: {
       type: 'database_id',
-      database_id: 'db-123'
+      database_id: 'db-123',
     },
     properties: {
       Name: {
         type: 'title',
-        title: [
-          { plain_text: 'Database Entry' }
-        ]
+        title: [{ plain_text: 'Database Entry' }],
       },
       Status: {
         type: 'select',
         select: {
-          name: 'Complete'
-        }
+          name: 'Complete',
+        },
       },
       Priority: {
         type: 'number',
-        number: 1
-      }
-    }
-  }
+        number: 1,
+      },
+    },
+  },
 ];
 
 /**
@@ -86,14 +80,14 @@ export const mockBlocks: NotionBlock[] = [
     has_children: false,
     paragraph: {
       rich_text: [
-        { 
+        {
           plain_text: 'This is a paragraph with ',
-          annotations: { 
+          annotations: {
             bold: false,
             italic: false,
             strikethrough: false,
-            code: false
-          }
+            code: false,
+          },
         },
         {
           plain_text: 'bold',
@@ -101,8 +95,8 @@ export const mockBlocks: NotionBlock[] = [
             bold: true,
             italic: false,
             strikethrough: false,
-            code: false
-          }
+            code: false,
+          },
         },
         {
           plain_text: ' and ',
@@ -110,8 +104,8 @@ export const mockBlocks: NotionBlock[] = [
             bold: false,
             italic: false,
             strikethrough: false,
-            code: false
-          }
+            code: false,
+          },
         },
         {
           plain_text: 'italic',
@@ -119,8 +113,8 @@ export const mockBlocks: NotionBlock[] = [
             bold: false,
             italic: true,
             strikethrough: false,
-            code: false
-          }
+            code: false,
+          },
         },
         {
           plain_text: ' text.',
@@ -128,123 +122,103 @@ export const mockBlocks: NotionBlock[] = [
             bold: false,
             italic: false,
             strikethrough: false,
-            code: false
-          }
-        }
-      ]
-    }
+            code: false,
+          },
+        },
+      ],
+    },
   },
   {
     id: 'block-2',
     type: 'heading_1',
     has_children: false,
     heading_1: {
-      rich_text: [
-        { plain_text: 'Heading 1' }
-      ]
-    }
+      rich_text: [{ plain_text: 'Heading 1' }],
+    },
   },
   {
     id: 'block-3',
     type: 'heading_2',
     has_children: false,
     heading_2: {
-      rich_text: [
-        { plain_text: 'Heading 2' }
-      ]
-    }
+      rich_text: [{ plain_text: 'Heading 2' }],
+    },
   },
   {
     id: 'block-4',
     type: 'heading_3',
     has_children: false,
     heading_3: {
-      rich_text: [
-        { plain_text: 'Heading 3' }
-      ]
-    }
+      rich_text: [{ plain_text: 'Heading 3' }],
+    },
   },
   {
     id: 'block-5',
     type: 'bulleted_list_item',
     has_children: false,
     bulleted_list_item: {
-      rich_text: [
-        { plain_text: 'Bullet point 1' }
-      ]
-    }
+      rich_text: [{ plain_text: 'Bullet point 1' }],
+    },
   },
   {
     id: 'block-6',
     type: 'numbered_list_item',
     has_children: false,
     numbered_list_item: {
-      rich_text: [
-        { plain_text: 'Numbered point 1' }
-      ]
-    }
+      rich_text: [{ plain_text: 'Numbered point 1' }],
+    },
   },
   {
     id: 'block-7',
     type: 'to_do',
     has_children: false,
     to_do: {
-      rich_text: [
-        { plain_text: 'Todo item (unchecked)' }
-      ],
-      checked: false
-    }
+      rich_text: [{ plain_text: 'Todo item (unchecked)' }],
+      checked: false,
+    },
   },
   {
     id: 'block-8',
     type: 'to_do',
     has_children: false,
     to_do: {
-      rich_text: [
-        { plain_text: 'Todo item (checked)' }
-      ],
-      checked: true
-    }
+      rich_text: [{ plain_text: 'Todo item (checked)' }],
+      checked: true,
+    },
   },
   {
     id: 'block-9',
     type: 'code',
     has_children: false,
     code: {
-      rich_text: [
-        { plain_text: 'const x = 1;\nconsole.log(x);' }
-      ],
-      language: 'javascript'
-    }
+      rich_text: [{ plain_text: 'const x = 1;\nconsole.log(x);' }],
+      language: 'javascript',
+    },
   },
   {
     id: 'block-10',
     type: 'quote',
     has_children: false,
     quote: {
-      rich_text: [
-        { plain_text: 'This is a quote' }
-      ]
-    }
+      rich_text: [{ plain_text: 'This is a quote' }],
+    },
   },
   {
     id: 'block-11',
     type: 'divider',
-    has_children: false
+    has_children: false,
   },
   {
     id: 'block-12',
     type: 'callout',
     has_children: false,
     callout: {
-      rich_text: [
-        { plain_text: 'This is a callout' }
-      ],
+      rich_text: [{ plain_text: 'This is a callout' }],
       icon: {
-        emoji: '💡'
-      }
-    }
-  }
+        emoji: '💡',
+      },
+    },
+  },
 ];
 
 /**
@@ -260,8 +234,8 @@ export const mockDatabase = {
     Tags: { type: 'multi_select', name: 'Tags' },
     Status: { type: 'select', name: 'Status' },
     Deadline: { type: 'date', name: 'Deadline' },
-    Priority: { type: 'number', name: 'Priority' }
-  }
+    Priority: { type: 'number', name: 'Priority' },
+  },
 };
 
 /**
@@ -271,86 +245,78 @@ export const mockDatabaseRows = [
   {
     id: 'row-1',
     properties: {
-      Name: { 
-        type: 'title', 
-        title: [{ plain_text: 'Task 1' }] 
+      Name: {
+        type: 'title',
+        title: [{ plain_text: 'Task 1' }],
       },
-      Tags: { 
-        type: 'multi_select', 
-        multi_select: [
-          { name: 'Important' },
-          { name: 'Frontend' }
-        ] 
+      Tags: {
+        type: 'multi_select',
+        multi_select: [{ name: 'Important' }, { name: 'Frontend' }],
       },
-      Status: { 
-        type: 'select', 
-        select: { name: 'In Progress' } 
+      Status: {
+        type: 'select',
+        select: { name: 'In Progress' },
       },
-      Deadline: { 
-        type: 'date', 
-        date: { start: '2023-05-15' } 
+      Deadline: {
+        type: 'date',
+        date: { start: '2023-05-15' },
       },
-      Priority: { 
-        type: 'number', 
-        number: 1 
-      }
-    }
+      Priority: {
+        type: 'number',
+        number: 1,
+      },
+    },
   },
   {
     id: 'row-2',
     properties: {
-      Name: { 
-        type: 'title', 
-        title: [{ plain_text: 'Task 2' }] 
+      Name: {
+        type: 'title',
+        title: [{ plain_text: 'Task 2' }],
       },
-      Tags: { 
-        type: 'multi_select', 
-        multi_select: [
-          { name: 'Backend' }
-        ] 
+      Tags: {
+        type: 'multi_select',
+        multi_select: [{ name: 'Backend' }],
       },
-      Status: { 
-        type: 'select', 
-        select: { name: 'To Do' } 
+      Status: {
+        type: 'select',
+        select: { name: 'To Do' },
       },
-      Deadline: { 
-        type: 'date', 
-        date: { start: '2023-05-30' } 
+      Deadline: {
+        type: 'date',
+        date: { start: '2023-05-30' },
       },
-      Priority: { 
-        type: 'number', 
-        number: 2 
-      }
-    }
+      Priority: {
+        type: 'number',
+        number: 2,
+      },
+    },
   },
   {
     id: 'row-3',
     properties: {
-      Name: { 
-        type: 'title', 
-        title: [{ plain_text: 'Task 3' }] 
+      Name: {
+        type: 'title',
+        title: [{ plain_text: 'Task 3' }],
       },
-      Tags: { 
-        type: 'multi_select', 
-        multi_select: [
-          { name: 'Documentation' },
-          { name: 'Important' }
-        ] 
+      Tags: {
+        type: 'multi_select',
+        multi_select: [{ name: 'Documentation' }, { name: 'Important' }],
       },
-      Status: { 
-        type: 'select', 
-        select: { name: 'Done' } 
+      Status: {
+        type: 'select',
+        select: { name: 'Done' },
       },
-      Deadline: { 
-        type: 'date', 
-        date: { start: '2023-04-20', end: '2023-04-25' } 
+      Deadline: {
+        type: 'date',
+        date: { start: '2023-04-20', end: '2023-04-25' },
       },
-      Priority: { 
-        type: 'number', 
-        number: 1 
-      }
-    }
-  }
+      Priority: {
+        type: 'number',
+        number: 1,
+      },
+    },
+  },
 ];
 
 /**
@@ -367,9 +333,9 @@ export const mockOAuthTokenResponse = {
     user: {
       id: 'user-123',
       name: 'Test User',
-      avatar_url: 'https://notion.so/avatars/user-123.png'
-    }
-  }
+      avatar_url: 'https://notion.so/avatars/user-123.png',
+    },
+  },
 };
 
 /**
@@ -381,13 +347,13 @@ export const mockApiResponses = {
     next_cursor: null,
     has_more: false,
     type: 'page',
-    page: {}
+    page: {},
   },
   getPage: mockPages[0],
   getBlocks: {
     results: mockBlocks,
     next_cursor: null,
-    has_more: false
+    has_more: false,
   },
   getUsers: {
     results: [
@@ -395,17 +361,17 @@ export const mockApiResponses = {
         id: 'user-123',
         name: 'Test User',
         avatar_url: 'https://notion.so/avatars/user-123.png',
-        type: 'person'
+        type: 'person',
       },
       {
         id: 'bot-123',
         name: 'Integration Bot',
         avatar_url: 'https://notion.so/avatars/bot-123.png',
-        type: 'bot'
-      }
+        type: 'bot',
+      },
     ],
     next_cursor: null,
-    has_more: false
+    has_more: false,
   },
-  getDatabase: mockDatabase
+  getDatabase: mockDatabase,
 };

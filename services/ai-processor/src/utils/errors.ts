@@ -20,10 +20,14 @@ export const AiProcessorErrors = createErrorFactory('aiprocessor', {
  */
 export class LLMProcessingError extends InternalError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'LLM_PROCESSING_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'LLM_PROCESSING_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 
@@ -32,10 +36,14 @@ export class LLMProcessingError extends InternalError {
  */
 export class ContentProcessingError extends InternalError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'CONTENT_PROCESSING_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'CONTENT_PROCESSING_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 
@@ -44,10 +52,14 @@ export class ContentProcessingError extends InternalError {
  */
 export class QueueError extends InternalError {
   constructor(message: string, details?: Record<string, any>, cause?: Error) {
-    super(message, {
-      code: 'QUEUE_ERROR',
-      ...details,
-    }, cause);
+    super(
+      message,
+      {
+        code: 'QUEUE_ERROR',
+        ...details,
+      },
+      cause,
+    );
   }
 }
 

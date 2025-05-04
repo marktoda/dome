@@ -170,13 +170,10 @@ const wrap = createServiceWrapper('auth-service');
 
 // Use the wrapper for service functions
 async function authenticateUser(credentials) {
-  return wrap(
-    { operation: 'authenticateUser', userId: credentials.userId },
-    async () => {
-      // Implementation with automatic error handling
-      // Any errors will be properly converted, logged, and rethrown
-    }
-  );
+  return wrap({ operation: 'authenticateUser', userId: credentials.userId }, async () => {
+    // Implementation with automatic error handling
+    // Any errors will be properly converted, logged, and rethrown
+  });
 }
 ```
 
@@ -190,23 +187,23 @@ import { createProcessChain } from '@dome/common';
 const processUserRegistration = createProcessChain({
   serviceName: 'user-service',
   operation: 'registerUser',
-  
+
   // Input validation step
-  inputValidation: (input) => {
+  inputValidation: input => {
     assertValid(input.email, 'Email is required');
     assertValid(input.password, 'Password is required');
   },
-  
+
   // Main processing step
-  process: async (input) => {
+  process: async input => {
     // Implementation with automatic error handling
     return createdUser;
   },
-  
+
   // Output validation step
-  outputValidation: (output) => {
+  outputValidation: output => {
     assertValid(output.id, 'User ID is missing in the result');
-  }
+  },
 });
 
 // Use the process chain
@@ -225,7 +222,7 @@ try {
 } catch (error) {
   // Log the error with rich context
   logError(error, 'Failed to process request', { requestId, userId });
-  
+
   // Rethrow or handle as appropriate
   throw error;
 }
@@ -251,10 +248,10 @@ Always include relevant context in error details:
 
 ```typescript
 // GOOD
-throw new ValidationError('Invalid email format', { 
-  field: 'email', 
+throw new ValidationError('Invalid email format', {
+  field: 'email',
   value: input.email,
-  validationRule: 'email'
+  validationRule: 'email',
 });
 
 // AVOID
@@ -270,11 +267,7 @@ try {
   await db.query(sql);
 } catch (error) {
   // Include the original error as the cause
-  throw new ServiceError(
-    'Database query failed', 
-    { operation: 'getUserProfile' }, 
-    error
-  );
+  throw new ServiceError('Database query failed', { operation: 'getUserProfile' }, error);
 }
 ```
 
@@ -317,21 +310,24 @@ try {
 If you're migrating from the old error handling approach:
 
 1. Replace generic Error instances with specific error types:
+
    ```typescript
    // Old
    throw new Error('User not found');
-   
+
    // New
    throw new NotFoundError(`User with ID ${userId} not found`);
    ```
 
 2. Add error middleware to your application:
+
    ```typescript
    // Add to your application setup
    app.use('*', createErrorMiddleware());
    ```
 
 3. Replace custom error handling with standardized utilities:
+
    ```typescript
    // Old
    try {
@@ -340,7 +336,7 @@ If you're migrating from the old error handling approach:
      console.error('Error:', error);
      return c.json({ error: 'An error occurred' }, 500);
    }
-   
+
    // New
    // The middleware will handle errors automatically
    // Just throw the appropriate error type
@@ -348,6 +344,7 @@ If you're migrating from the old error handling approach:
    ```
 
 4. Use function wrappers for service operations:
+
    ```typescript
    // Old
    async function processData(data) {
@@ -357,10 +354,10 @@ If you're migrating from the old error handling approach:
        // custom error handling
      }
    }
-   
+
    // New
    const wrap = createServiceWrapper('data-service');
-   
+
    async function processData(data) {
      return wrap({ operation: 'processData', dataId: data.id }, async () => {
        // implementation with automatic error handling

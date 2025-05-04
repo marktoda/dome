@@ -30,8 +30,8 @@ vi.mock('ws', () => ({
   default: vi.fn().mockImplementation(() => ({
     on: vi.fn(),
     send: vi.fn(),
-    close: vi.fn()
-  }))
+    close: vi.fn(),
+  })),
 }));
 
 describe('ApiClient', () => {
@@ -62,10 +62,10 @@ describe('ApiClient', () => {
   test('should use API client with authentication headers', () => {
     // Create a new axios instance and check if interceptors are correctly set up
     resetApiInstance();
-    
+
     // Force creation of a new API client by making a call
     api.get('/test');
-    
+
     // Verify that axios.create was called with correct base URL
     expect(mockedAxios.create).toHaveBeenCalledWith({
       baseURL: 'http://localhost:8787',
@@ -73,12 +73,12 @@ describe('ApiClient', () => {
         'Content-Type': 'application/json',
       },
     });
-    
+
     // Verify request interceptor adds authentication headers
     const requestInterceptor = mockedAxios.create().interceptors.request.use.mock.calls[0][0];
     const config = { headers: {} };
     const result = requestInterceptor(config);
-    
+
     expect(result.headers).toHaveProperty('Authorization', 'Bearer test-api-key');
     expect(result.headers).toHaveProperty('x-api-key', 'test-api-key');
     expect(result.headers).toHaveProperty('x-user-id', 'test-user-id');

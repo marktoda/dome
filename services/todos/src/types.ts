@@ -6,20 +6,20 @@
  * Enum for todo status values
  */
 export enum TodoStatus {
-  PENDING = "pending",
-  IN_PROGRESS = "in_progress",
-  COMPLETED = "completed",
-  CANCELLED = "cancelled"
+  PENDING = 'pending',
+  IN_PROGRESS = 'in_progress',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
 }
 
 /**
  * Enum for todo priority values
  */
 export enum TodoPriority {
-  LOW = "low",
-  MEDIUM = "medium",
-  HIGH = "high",
-  URGENT = "urgent"
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  URGENT = 'urgent',
 }
 
 /**
@@ -81,23 +81,23 @@ export interface CreateTodoInput {
  */
 export interface TodoQueueItem {
   // Required fields
-  userId: string;        // User who owns the todo
-  sourceNoteId: string;  // ID of the note/content this todo was extracted from
-  sourceText: string;    // Original text snippet from which the todo was extracted
+  userId: string; // User who owns the todo
+  sourceNoteId: string; // ID of the note/content this todo was extracted from
+  sourceText: string; // Original text snippet from which the todo was extracted
 
   // AI-enriched content
-  title: string;         // Short title/summary
-  description?: string;  // Detailed description (optional)
+  title: string; // Short title/summary
+  description?: string; // Detailed description (optional)
 
   // Metadata suggestions
-  priority?: TodoPriority | string;  // Suggested priority
-  dueDate?: string | number;         // Suggested due date (string date or timestamp)
-  estimatedEffort?: string;          // Suggested effort (e.g., "5min", "1h")
-  actionableSteps?: string[];        // Suggested breakdown of steps
-  category?: string;                 // Suggested category
+  priority?: TodoPriority | string; // Suggested priority
+  dueDate?: string | number; // Suggested due date (string date or timestamp)
+  estimatedEffort?: string; // Suggested effort (e.g., "5min", "1h")
+  actionableSteps?: string[]; // Suggested breakdown of steps
+  category?: string; // Suggested category
 
   // Processing metadata
-  created?: number;      // When this item was created (timestamp)
+  created?: number; // When this item was created (timestamp)
 }
 
 /**
@@ -215,10 +215,10 @@ export interface TodoJob {
   sourceNoteId: string;
   sourceText: string;
   title: string;
-  
+
   // Optional fields
   description?: string;
-  
+
   // Structured suggestions that have been processed and normalized
   aiSuggestions?: {
     priority?: TodoPriority;
@@ -227,7 +227,7 @@ export interface TodoJob {
     actionableSteps?: string[];
     category?: string;
   };
-  
+
   // Processing metadata
   created: number;
   version: number;
@@ -266,11 +266,11 @@ export interface Env {
  * Error codes for the Todos service
  */
 export enum TodosErrorCode {
-  VALIDATION_ERROR = "VALIDATION_ERROR",
-  NOT_FOUND = "NOT_FOUND",
-  UNAUTHORIZED = "UNAUTHORIZED",
-  DATABASE_ERROR = "DATABASE_ERROR",
-  INTERNAL_ERROR = "INTERNAL_ERROR"
+  VALIDATION_ERROR = 'VALIDATION_ERROR',
+  NOT_FOUND = 'NOT_FOUND',
+  UNAUTHORIZED = 'UNAUTHORIZED',
+  DATABASE_ERROR = 'DATABASE_ERROR',
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
 }
 
 /**

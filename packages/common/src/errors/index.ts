@@ -57,5 +57,5 @@ export interface ExtendedError {
 export {
   createServiceErrorHandler,
   createEnhancedAssertValid,
-  createServiceErrorMiddleware
+  createServiceErrorMiddleware,
 } from './errorUtils';

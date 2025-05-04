@@ -20,7 +20,7 @@ Update `services/dome-api/package.json` to include the auth service:
 ```json
 {
   "dependencies": {
-    "@dome/auth": "workspace:*",
+    "@dome/auth": "workspace:*"
     // other dependencies...
   }
 }
@@ -70,11 +70,11 @@ export interface AuthContext {
 // Middleware to authenticate requests
 export const authMiddleware = async (
   c: Context<{ Bindings: Bindings; Variables: AuthContext }>,
-  next: Next
+  next: Next,
 ) => {
   const logger = getLogger().child({ component: 'AuthMiddleware' });
   const authHeader = c.req.header('Authorization');
-  
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     logger.warn('Missing or invalid Authorization header');
     return c.json(
@@ -85,20 +85,20 @@ export const authMiddleware = async (
           message: 'Authentication required',
         },
       },
-      401
+      401,
     );
   }
 
   try {
     const token = authHeader.slice(7);
-    
+
     // Create auth service client
     const authServiceUrl = 'https://auth.dome.example.com'; // Replace with actual URL
     const authService = new AuthServiceBinding(authServiceUrl);
-    
+
     // Validate token
     const { success, user } = await authService.validateToken(token);
-    
+
     if (!success || !user) {
       logger.warn('Invalid token');
       return c.json(
@@ -109,17 +109,17 @@ export const authMiddleware = async (
             message: 'Invalid or expired token',
           },
         },
-        401
+        401,
       );
     }
-    
+
     // Set user info in context
     c.set('userId', user.id);
     c.set('userRole', user.role);
     c.set('userEmail', user.email);
-    
+
     logger.debug({ userId: user.id }, 'User authenticated');
-    
+
     // Continue to next middleware/handler
     await next();
   } catch (error) {
@@ -132,20 +132,17 @@ export const authMiddleware = async (
           message: 'Authentication failed',
         },
       },
-      401
+      401,
     );
   }
 };
 
 // Role-based access control middleware factory
 export const createRoleMiddleware = (requiredRoles: string[]) => {
-  return async (
-    c: Context<{ Variables: AuthContext }>,
-    next: Next
-  ) => {
+  return async (c: Context<{ Variables: AuthContext }>, next: Next) => {
     const logger = getLogger().child({ component: 'RoleMiddleware' });
     const userRole = c.get('userRole');
-    
+
     if (!userRole || !requiredRoles.includes(userRole)) {
       logger.warn({ userRole, requiredRoles }, 'Insufficient permissions');
       return c.json(
@@ -156,10 +153,10 @@ export const createRoleMiddleware = (requiredRoles: string[]) => {
             message: 'Insufficient permissions',
           },
         },
-        403
+        403,
       );
     }
-    
+
     await next();
   };
 };
@@ -209,11 +206,11 @@ export interface UserIdContext {
 // User ID middleware
 export const userIdMiddleware = async (
   c: Context<{ Bindings: Bindings; Variables: UserIdContext }>,
-  next: Next
+  next: Next,
 ) => {
   // Get the user ID from the auth context (already set by authMiddleware)
   const userId = c.get('userId');
-  
+
   if (!userId) {
     const logger = getLogger().child({ component: 'UserIdMiddleware' });
     logger.error('Missing userId in context');
@@ -225,13 +222,13 @@ export const userIdMiddleware = async (
           message: 'Authentication required',
         },
       },
-      401
+      401,
     );
   }
-  
+
   // Set userId in context for downstream handlers
   c.set('userId', userId);
-  
+
   await next();
 };
 ```
@@ -251,14 +248,14 @@ const authRouter = new Hono();
 authRouter.post('/login', async (c: Context<{ Bindings: Bindings }>) => {
   try {
     const { email, password } = await c.req.json();
-    
+
     // Create auth service client
     const authServiceUrl = 'https://auth.dome.example.com'; // Replace with actual URL
     const authService = new AuthServiceBinding(authServiceUrl);
-    
+
     // Login user
     const result = await authService.login(email, password);
-    
+
     return c.json(result);
   } catch (error) {
     getLogger().error({ error }, 'Login failed');
@@ -270,7 +267,7 @@ authRouter.post('/login', async (c: Context<{ Bindings: Bindings }>) => {
           message: 'Login failed',
         },
       },
-      401
+      401,
     );
   }
 });
@@ -287,14 +284,14 @@ Add a registration endpoint to dome-api:
 authRouter.post('/register', async (c: Context<{ Bindings: Bindings }>) => {
   try {
     const { email, password, name } = await c.req.json();
-    
+
     // Create auth service client
     const authServiceUrl = 'https://auth.dome.example.com'; // Replace with actual URL
     const authService = new AuthServiceBinding(authServiceUrl);
-    
+
     // Register user
     const result = await authService.register(email, password, name);
-    
+
     return c.json(result);
   } catch (error) {
     getLogger().error({ error }, 'Registration failed');
@@ -306,7 +303,7 @@ authRouter.post('/register', async (c: Context<{ Bindings: Bindings }>) => {
           message: 'Registration failed',
         },
       },
-      400
+      400,
     );
   }
 });
@@ -315,6 +312,7 @@ authRouter.post('/register', async (c: Context<{ Bindings: Bindings }>) => {
 ## Testing Authentication
 
 1. Start both the auth service and dome-api:
+
 ```bash
 cd services/auth
 pnpm run dev
@@ -325,6 +323,7 @@ pnpm run dev
 ```
 
 2. Register a user:
+
 ```bash
 curl -X POST http://localhost:8787/auth/register \
   -H "Content-Type: application/json" \
@@ -332,6 +331,7 @@ curl -X POST http://localhost:8787/auth/register \
 ```
 
 3. Login to get a token:
+
 ```bash
 curl -X POST http://localhost:8787/auth/login \
   -H "Content-Type: application/json" \
@@ -339,6 +339,7 @@ curl -X POST http://localhost:8787/auth/login \
 ```
 
 4. Use the token for authenticated requests:
+
 ```bash
 curl -X GET http://localhost:8787/notes \
   -H "Authorization: Bearer <token>"

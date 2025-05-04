@@ -7,6 +7,7 @@ This document provides a comprehensive overview of the Notion ingestor system im
 The Notion ingestor system is a specialized component within the Dome platform that enables users to connect their Notion workspaces and synchronize content into the platform. It provides a seamless integration with Notion's API, allowing for automated content ingestion, transformation, and storage. The system handles authentication via OAuth, periodic content synchronization, and content transformation from Notion's proprietary format to standardized formats used within the Dome ecosystem.
 
 Key capabilities include:
+
 - OAuth-based authentication with Notion workspaces
 - Periodic and on-demand content synchronization
 - Intelligent content filtering and transformation
@@ -36,11 +37,13 @@ The Notion ingestor system follows a microservices architecture pattern and is d
 ### Service Responsibilities
 
 1. **Dome API Service**
+
    - Exposes REST endpoints for Notion workspace registration and management
    - Handles user authentication and authorization
    - Provides API for triggering syncs and viewing history
 
 2. **Tsunami Service**
+
    - Manages the content ingestion pipeline
    - Implements the Notion provider for content extraction
    - Handles OAuth token exchange and secure storage
@@ -85,13 +88,13 @@ The Notion Client handles direct communication with the Notion API, including:
 ```typescript
 export class NotionClient {
   // Fetches updated pages in a workspace
-  async getUpdatedPages(workspaceId: string, cursor: string | null): Promise<NotionPage[]>
-  
+  async getUpdatedPages(workspaceId: string, cursor: string | null): Promise<NotionPage[]>;
+
   // Gets content for a specific page
-  async getPageContent(pageId: string): Promise<string>
-  
+  async getPageContent(pageId: string): Promise<string>;
+
   // Creates a client instance for a specific user
-  async forUser(userId: string, workspaceId: string): Promise<NotionClient>
+  async forUser(userId: string, workspaceId: string): Promise<NotionClient>;
 }
 ```
 
@@ -106,19 +109,19 @@ The Auth Manager handles OAuth integration with Notion, including:
 ```typescript
 export class NotionAuthManager {
   // Generates OAuth authorization URL
-  getAuthUrl(state: string): string
-  
+  getAuthUrl(state: string): string;
+
   // Exchanges authorization code for access token
   async exchangeCodeForToken(code: string): Promise<{
     accessToken: string;
     workspaceId: string;
     workspaceName: string;
     botId: string;
-  }>
-  
+  }>;
+
   // Stores and retrieves user tokens
-  async storeUserToken(userId: string, workspaceId: string, token: string): Promise<void>
-  async getUserToken(userId: string, workspaceId: string): Promise<string | null>
+  async storeUserToken(userId: string, workspaceId: string, token: string): Promise<void>;
+  async getUserToken(userId: string, workspaceId: string): Promise<string | null>;
 }
 ```
 
@@ -139,13 +142,13 @@ export function createNotionMetadata(
   updatedAt: string,
   title: string,
   sizeBytes: number,
-): DomeMetadata
+): DomeMetadata;
 
 // Converts Notion blocks to text
-export function blocksToText(blocks: NotionBlock[]): string
+export function blocksToText(blocks: NotionBlock[]): string;
 
 // Determines if a page should be filtered out
-export function shouldIgnorePage(page: NotionPage): boolean
+export function shouldIgnorePage(page: NotionPage): boolean;
 ```
 
 ### Dome API Service Integration
@@ -162,19 +165,19 @@ The Notion Controller exposes the API endpoints for Notion integration:
 ```typescript
 export class NotionController {
   // Registers a Notion workspace
-  async registerNotionWorkspace(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>)
-  
+  async registerNotionWorkspace(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>);
+
   // Gets history for a workspace
-  async getNotionWorkspaceHistory(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>)
-  
+  async getNotionWorkspaceHistory(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>);
+
   // Triggers a sync for a workspace
-  async triggerNotionWorkspaceSync(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>)
-  
+  async triggerNotionWorkspaceSync(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>);
+
   // Configures OAuth
-  async configureNotionOAuth(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>)
-  
+  async configureNotionOAuth(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>);
+
   // Gets OAuth URL
-  async getNotionOAuthUrl(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>)
+  async getNotionOAuthUrl(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>);
 }
 ```
 
@@ -184,31 +187,31 @@ The API routes for Notion integration:
 
 ```typescript
 // Notion workspace registration and management
-contentRouter.post('/notion', async (c) => {
+contentRouter.post('/notion', async c => {
   const notionController = controllerFactory.getNotionController(c.env);
   return await notionController.registerNotionWorkspace(c);
 });
 
 // Get Notion workspace history
-contentRouter.get('/notion/:workspaceId/history', async (c) => {
+contentRouter.get('/notion/:workspaceId/history', async c => {
   const notionController = controllerFactory.getNotionController(c.env);
   return await notionController.getNotionWorkspaceHistory(c);
 });
 
 // Trigger Notion workspace sync
-contentRouter.post('/notion/:workspaceId/sync', async (c) => {
+contentRouter.post('/notion/:workspaceId/sync', async c => {
   const notionController = controllerFactory.getNotionController(c.env);
   return await notionController.triggerNotionWorkspaceSync(c);
 });
 
 // Notion OAuth configuration
-contentRouter.post('/notion/oauth', async (c) => {
+contentRouter.post('/notion/oauth', async c => {
   const notionController = controllerFactory.getNotionController(c.env);
   return await notionController.configureNotionOAuth(c);
 });
 
 // Get Notion OAuth URL
-contentRouter.get('/notion/oauth/url', async (c) => {
+contentRouter.get('/notion/oauth/url', async c => {
   const notionController = controllerFactory.getNotionController(c.env);
   return await notionController.getNotionOAuthUrl(c);
 });
@@ -224,15 +227,18 @@ export class TsunamiClient implements TsunamiService {
   async registerNotionWorkspace(
     workspaceId: string,
     userId?: string,
-    cadenceSecs: number = 3600
-  ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>
-  
+    cadenceSecs: number = 3600,
+  ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>;
+
   // Gets history for a Notion workspace
-  async getNotionWorkspaceHistory(workspaceId: string, limit: number = 10): Promise<{
+  async getNotionWorkspaceHistory(
+    workspaceId: string,
+    limit: number = 10,
+  ): Promise<{
     workspaceId: string;
     resourceId: string;
     history: unknown[];
-  }>
+  }>;
 }
 ```
 
@@ -241,11 +247,13 @@ export class TsunamiClient implements TsunamiService {
 The Notion ingestor system includes comprehensive test coverage:
 
 1. **Unit Tests**
+
    - `services/tsunami/tests/providers/notion/client.test.ts` - Tests for the Notion client
    - `services/tsunami/tests/providers/notion/auth.test.ts` - Tests for the auth manager
    - `services/tsunami/tests/providers/notion/utils.test.ts` - Tests for utility functions
 
 2. **Integration Tests**
+
    - `services/tsunami/tests/providers/notion/integration.test.ts` - Tests for the Notion provider
    - `services/dome-api/tests/routes/notion.test.ts` - Tests for the API routes
    - `services/dome-api/tests/controllers/notionController.test.ts` - Tests for the controller
@@ -258,19 +266,20 @@ The Notion ingestor system includes comprehensive test coverage:
 
 ### Notion Integration Endpoints
 
-| Endpoint | Method | Description | Request Body | Response |
-|----------|--------|-------------|-------------|----------|
-| `/content/notion` | POST | Register a Notion workspace | `{ workspaceId: string, userId?: string, cadence?: string }` | `{ success: true, id: string, resourceId: string, wasInitialised: boolean }` |
-| `/content/notion/:workspaceId/history` | GET | Get workspace sync history | - | `{ success: true, workspaceId: string, resourceId: string, history: Array }` |
-| `/content/notion/:workspaceId/sync` | POST | Trigger workspace sync | - | `{ success: true, message: string, workspaceId: string }` |
-| `/content/notion/oauth` | POST | Configure OAuth | `{ code: string, redirectUri: string, userId?: string }` | `{ success: true, message: string, userId?: string }` |
-| `/content/notion/oauth/url` | GET | Get OAuth URL | `{ redirectUri: string, state?: string }` | `{ success: true, url: string }` |
+| Endpoint                               | Method | Description                 | Request Body                                                 | Response                                                                     |
+| -------------------------------------- | ------ | --------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `/content/notion`                      | POST   | Register a Notion workspace | `{ workspaceId: string, userId?: string, cadence?: string }` | `{ success: true, id: string, resourceId: string, wasInitialised: boolean }` |
+| `/content/notion/:workspaceId/history` | GET    | Get workspace sync history  | -                                                            | `{ success: true, workspaceId: string, resourceId: string, history: Array }` |
+| `/content/notion/:workspaceId/sync`    | POST   | Trigger workspace sync      | -                                                            | `{ success: true, message: string, workspaceId: string }`                    |
+| `/content/notion/oauth`                | POST   | Configure OAuth             | `{ code: string, redirectUri: string, userId?: string }`     | `{ success: true, message: string, userId?: string }`                        |
+| `/content/notion/oauth/url`            | GET    | Get OAuth URL               | `{ redirectUri: string, state?: string }`                    | `{ success: true, url: string }`                                             |
 
 ### Request/Response Examples
 
 #### Register Notion Workspace
 
 Request:
+
 ```json
 POST /content/notion
 {
@@ -281,6 +290,7 @@ POST /content/notion
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -293,11 +303,13 @@ Response:
 #### Get Workspace History
 
 Request:
+
 ```
 GET /content/notion/workspace-123/history?limit=5
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -311,7 +323,7 @@ Response:
       "status": "success",
       "pagesProcessed": 15,
       "pagesFiltered": 3
-    },
+    }
     // Additional history entries...
   ]
 }
@@ -320,11 +332,13 @@ Response:
 #### Trigger Workspace Sync
 
 Request:
+
 ```
 POST /content/notion/workspace-123/sync
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -336,6 +350,7 @@ Response:
 #### Configure OAuth
 
 Request:
+
 ```json
 POST /content/notion/oauth
 {
@@ -346,6 +361,7 @@ POST /content/notion/oauth
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -357,6 +373,7 @@ Response:
 #### Get OAuth URL
 
 Request:
+
 ```json
 GET /content/notion/oauth/url
 {
@@ -366,6 +383,7 @@ GET /content/notion/oauth/url
 ```
 
 Response:
+
 ```json
 {
   "success": true,
@@ -382,7 +400,7 @@ Response:
 const response = await domeApiClient.post('/content/notion', {
   workspaceId: 'workspace-123',
   userId: 'user-456',
-  cadence: 'PT1H' // 1 hour sync interval
+  cadence: 'PT1H', // 1 hour sync interval
 });
 
 if (response.success) {
@@ -396,7 +414,7 @@ if (response.success) {
 // Step 1: Get the OAuth URL
 const urlResponse = await domeApiClient.get('/content/notion/oauth/url', {
   redirectUri: 'https://dome.example.com/oauth/callback',
-  state: 'random-state-123'
+  state: 'random-state-123',
 });
 
 // Step 2: Redirect user to the OAuth URL
@@ -410,7 +428,7 @@ const code = new URLSearchParams(window.location.search).get('code');
 const tokenResponse = await domeApiClient.post('/content/notion/oauth', {
   code,
   redirectUri: 'https://dome.example.com/oauth/callback',
-  userId: 'user-456'
+  userId: 'user-456',
 });
 
 if (tokenResponse.success) {
@@ -434,12 +452,12 @@ if (response.success) {
 ```typescript
 // Using the Dome API client
 const response = await domeApiClient.get('/content/notion/workspace-123/history', {
-  params: { limit: 10 }
+  params: { limit: 10 },
 });
 
 if (response.success) {
   console.log(`Found ${response.history.length} sync records`);
-  
+
   // Display the most recent sync
   const latestSync = response.history[0];
   console.log(`Latest sync: ${latestSync.timestamp}`);
@@ -488,26 +506,31 @@ The implementation includes comprehensive metrics and logging:
 ## Future Improvements
 
 1. **Enhanced Content Filtering**
+
    - Support for custom ignore patterns
    - Content classification for sensitive information
    - User-configurable filtering rules
 
 2. **Advanced Sync Options**
+
    - Selective sync for specific pages or databases
    - Differential sync to reduce bandwidth and processing
    - Real-time sync using Notion webhooks (when available)
 
 3. **Content Transformation**
+
    - Improved rendering of complex Notion elements (tables, databases)
    - Support for embedded content and media
    - Preservation of rich formatting
 
 4. **User Experience**
+
    - Workspace selection UI during OAuth flow
    - Sync status dashboard with real-time updates
    - Content preview before ingestion
 
 5. **Performance Optimizations**
+
    - Parallel processing for large workspaces
    - Caching frequently accessed content
    - Optimized storage format for faster retrieval
