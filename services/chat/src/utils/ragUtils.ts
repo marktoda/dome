@@ -139,7 +139,8 @@ export function reduceRagContext(
 
     if (!docTokens) {
       // Compute token count if not available
-      docTokens = countTokens(doc.title + '\n' + doc.body, modelId) + DOC_METADATA_TOKENS;
+      const title = doc.title || '';
+      docTokens = countTokens(title + '\n' + doc.content, modelId) + DOC_METADATA_TOKENS;
 
       // Cache the token count in the metadata
       doc.metadata.tokenCount = docTokens;

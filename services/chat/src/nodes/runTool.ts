@@ -122,9 +122,10 @@ export async function runTool(
         {
           id: `tool-error-${toolName}-${crypto.randomUUID()}`,
           title: `Error executing ${toolName}`,
-          body: `Failed to execute tool ${toolName}: ${domeError.message}`,
+          content: `Failed to execute tool ${toolName}: ${domeError.message}`,
           metadata: {
             source: 'tool_error',
+            sourceType: 'tool_error',
             createdAt: new Date().toISOString(),
             relevanceScore: 0.5,
             mimeType: 'text/plain',
@@ -236,7 +237,7 @@ export function toolOutputToDocuments(toolName: string, output: unknown): Docume
       {
         id: `tool-${toolName}-${crypto.randomUUID()}`,
         title: `${toolName} result`,
-        body: output,
+        content: output,
         metadata: { ...baseMeta, mimeType: 'text/plain' },
       },
     ];
@@ -246,7 +247,7 @@ export function toolOutputToDocuments(toolName: string, output: unknown): Docume
     return output.map((item, idx) => ({
       id: `tool-${toolName}-${idx}-${crypto.randomUUID()}`,
       title: `${toolName} result #${idx + 1}`,
-      body: typeof item === 'string' ? item : JSON.stringify(item, null, 2),
+      content: typeof item === 'string' ? item : JSON.stringify(item, null, 2),
       metadata: {
         ...baseMeta,
         mimeType: typeof item === 'string' ? 'text/plain' : 'application/json',
@@ -258,7 +259,7 @@ export function toolOutputToDocuments(toolName: string, output: unknown): Docume
     {
       id: `tool-${toolName}-${crypto.randomUUID()}`,
       title: `${toolName} result`,
-      body: JSON.stringify(output, null, 2),
+      content: JSON.stringify(output, null, 2),
       metadata: { ...baseMeta, mimeType: 'application/json' },
     },
   ];

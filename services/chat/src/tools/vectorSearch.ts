@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ContentCategory, ContentCategoryEnum } from '@dome/common';
 import { SearchService, SearchOptions } from '../services/searchService';
 import { getLogger } from '@dome/common';
-import { Document, DocumentChunk } from '../types';
+import { Document } from '../types';
 import { RetrievalTool, RetrievalInput } from '.';
 
 /* ------------------------------------------------------------------ */
@@ -21,10 +21,11 @@ const DEFAULT_TOP_K = 10;
 export const vectorSearchOutput = z.array(
   z.object({
     id: z.string(),
-    title: z.string(),
-    body: z.string(),
+    content: z.string(),
+    title: z.string().optional(),
     metadata: z.object({
       source: z.string(),
+      sourceType: z.string().optional(),
       summary: z.string().nullable().optional(),
       createdAt: z.string(),
       relevanceScore: z.number(),
@@ -75,22 +76,37 @@ export const vectorSearchTool: VectorRetrievalTool<
     let docs = await searchService.search(options);
     docs = SearchService.rankAndFilterDocuments(docs);
 
-    return docs;
+    // Convert Document[] to the schema-expected output format
+    return docs.map(doc => ({
+      id: doc.id,
+      content: doc.content,
+      title: doc.title,
+      metadata: {
+        source: doc.metadata.source,
+        sourceType: doc.metadata.sourceType,
+        summary: doc.metadata.summary || undefined,
+        createdAt: doc.metadata.createdAt || new Date().toISOString(),
+        relevanceScore: doc.metadata.relevanceScore || 0.5,
+        url: doc.metadata.url || undefined,
+        mimeType: doc.metadata.mimeType || undefined
+      }
+    }));
   },
 
-  toDocuments(input: VectorSearchOutput): DocumentChunk[] {
+  toDocuments(input: VectorSearchOutput): Document[] {
     return input.map(r => ({
-      id: r.title,
-      content: r.body,
+      id: r.id,
+      content: r.content,
+      title: r.title,
       metadata: {
         title: r.title,
-        summary: r.metadata.summary ?? '',
-        url: r.metadata.url ?? '',
+        summary: r.metadata.summary || undefined,
+        url: r.metadata.url || undefined,
         createdAt: r.metadata.createdAt,
-        relevanceScore: r.metadata.relevanceScore,
-        mimeType: r.metadata.mimeType,
-        source: r.metadata.source || '',
-        sourceType: 'vector',
+        relevanceScore: r.metadata.relevanceScore || 0.5,
+        mimeType: r.metadata.mimeType || undefined,
+        source: r.metadata.source,
+        sourceType: r.metadata.sourceType || 'vector',
       },
     }));
   },

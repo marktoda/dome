@@ -49,12 +49,13 @@ describe('dynamicWiden node', () => {
       {
         id: 'doc1',
         title: 'Test Document 1',
-        body: 'This is a test document with relevant content.',
+        content: 'This is a test document with relevant content.',
         metadata: {
           source: 'test-source',
+          sourceType: 'test-source',
           createdAt: new Date().toISOString(),
           relevanceScore: 0.6,
-          url: null,
+          url: undefined,
         },
       },
     ];
@@ -145,12 +146,13 @@ describe('dynamicWiden node', () => {
       {
         id: 'doc1',
         title: 'Low Relevance Document',
-        body: 'This document has low relevance.',
+        content: 'This document has low relevance.',
         metadata: {
           source: 'test-source',
+          sourceType: 'test-source',
           createdAt: new Date().toISOString(),
           relevanceScore: 0.3, // Low relevance
-          url: null,
+          url: undefined,
         },
       },
     ];

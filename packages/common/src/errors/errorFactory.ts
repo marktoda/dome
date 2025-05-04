@@ -3,7 +3,7 @@ import {
   DomeError,
   toDomeError as baseToDomeError,
 } from '@dome/errors';
-import { getLogger } from '../logging';
+import { getLogger } from '../context';
 
 /**
  * Creates a service-specific error factory with default context

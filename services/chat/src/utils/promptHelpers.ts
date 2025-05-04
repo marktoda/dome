@@ -27,7 +27,8 @@ export function formatDocsForPrompt(
   // First, format all documents
   const formattedDocs = docs.map((doc, index) => {
     const docNumber = index + 1;
-    let formattedDoc = `[Source ${docNumber}] ${doc.title}\n${doc.body}`;
+    const title = doc.title || '';
+    let formattedDoc = `[Source ${docNumber}] ${title}\n${doc.content}`;
 
     if (includeSourceInfo && doc.metadata) {
       formattedDoc += `\nSource: ${doc.metadata.source}`;
@@ -113,22 +114,22 @@ export function truncateToMaxTokens(text: string, maxTokens: number): string {
  */
 export function truncateDocumentToMaxTokens(doc: Document, maxTokens: number): Document {
   // Reserve tokens for title and metadata
-  const titleTokens = approximateTokenCount(doc.title);
+  const titleTokens = approximateTokenCount(doc.title || '');
   const metadataTokens = DOC_METADATA_TOKENS;
-  const bodyMaxTokens = maxTokens - titleTokens - metadataTokens;
+  const contentMaxTokens = maxTokens - titleTokens - metadataTokens;
 
-  // If body is already within limits, return the original document
-  const bodyTokens = approximateTokenCount(doc.body);
-  if (bodyTokens <= bodyMaxTokens) {
+  // If content is already within limits, return the original document
+  const contentTokens = approximateTokenCount(doc.content);
+  if (contentTokens <= contentMaxTokens) {
     return doc;
   }
 
-  // Truncate the body
-  const truncatedBody = truncateToMaxTokens(doc.body, bodyMaxTokens);
+  // Truncate the content
+  const truncatedContent = truncateToMaxTokens(doc.content, contentMaxTokens);
 
   return {
     ...doc,
-    body: truncatedBody,
+    content: truncatedContent,
   };
 }
 

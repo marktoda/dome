@@ -24,6 +24,11 @@ service = "silo"
 environment = "production"
 
 [[services]]
+binding = "TODOS"
+service = "todos"
+environment = "production"
+
+[[services]]
 binding = "CHAT"
 service = "chat"
 environment = "production"

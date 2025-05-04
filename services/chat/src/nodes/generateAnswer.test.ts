@@ -63,9 +63,10 @@ describe('generateAnswer Node', () => {
         {
           id: 'doc1',
           title: 'Introduction to Quantum Computing',
-          body: 'Quantum computing is a type of computation that harnesses quantum mechanics...',
+          content: 'Quantum computing is a type of computation that harnesses quantum mechanics...',
           metadata: {
             source: 'quantum-docs',
+            sourceType: 'quantum-docs',
             createdAt: '2025-01-01',
             relevanceScore: 0.95,
             tokenCount: 150,
@@ -74,9 +75,10 @@ describe('generateAnswer Node', () => {
         {
           id: 'doc2',
           title: 'Quantum Algorithms',
-          body: 'Quantum algorithms can solve certain problems faster than classical algorithms...',
+          content: 'Quantum algorithms can solve certain problems faster than classical algorithms...',
           metadata: {
             source: 'quantum-docs',
+            sourceType: 'quantum-docs',
             createdAt: '2025-01-02',
             relevanceScore: 0.85,
             tokenCount: 120,

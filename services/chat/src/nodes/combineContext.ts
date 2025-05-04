@@ -32,11 +32,11 @@ export async function combineContext(
   }, '[CombineContext]: Combining context up to token cap');
 
   try {
-    /* 1 · helpers */
+    /* 1 · helpers */
     const chunkToDoc = (c: any): Document => ({
       id: c.id,
+      content: c.content,
       title: c.metadata.title ?? 'Untitled',
-      body: c.content,
       metadata: {
         source: c.metadata.source,
         createdAt: c.metadata.createdAt ?? new Date().toISOString(),
@@ -68,7 +68,7 @@ export async function combineContext(
     const docs: Document[] = [];
     let tokens = 0;
     const tryAdd = (d: Document) => {
-      const need = countTokens(d.body);
+      const need = countTokens(d.content);
       if (tokens + need > cap) return false;
       tokens += need;
       docs.push(d);

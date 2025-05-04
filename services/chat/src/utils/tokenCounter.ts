@@ -96,9 +96,18 @@ export function countMessagesTokens(
 
 /**
  * Estimate token count for a document
- * @param doc Document object with title and body
+ * @param doc Document object with content (and optional title)
  * @returns Estimated token count
  */
-export function estimateDocumentTokens(doc: { title: string; body: string }): number {
+export function estimateDocumentTokens(doc: { content: string; title?: string }): number {
+  const title = doc.title || '';
+  return approximateTokenCount(title + ' ' + doc.content);
+}
+
+/**
+ * Legacy function for backward compatibility
+ * @deprecated Use estimateDocumentTokens instead
+ */
+export function estimateDocumentTokensLegacy(doc: { title: string; body: string }): number {
   return approximateTokenCount(doc.title + ' ' + doc.body);
 }

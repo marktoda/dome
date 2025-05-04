@@ -47,3 +47,7 @@ ENVIRONMENT = "prod"
 # Miniflare configuration for local development
 [miniflare]
 durable_objects_persist = true
+
+[observability]
+enabled = true
+head_sampling_rate = 1 # optional. default = 1.

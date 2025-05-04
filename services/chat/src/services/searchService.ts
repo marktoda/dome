@@ -145,14 +145,15 @@ export class SearchService {
 
           return {
             id: contentId,
+            content: content.body || '',
             title: content.title || `Unknown title`,
-            body: content.body || '',
             metadata: {
               summary: content.summary,
               source: content.category || 'unknown',
+              sourceType: content.category || 'unknown',
               createdAt: new Date(content.createdAt || Date.now()).toISOString(),
               relevanceScore: score,
-              url: content.url || null,
+              url: content.url || undefined,
               mimeType: content.mimeType || 'text/plain',
             },
           };
@@ -181,10 +182,10 @@ export class SearchService {
   static extractSourceMetadata(docs: Document[]): SourceMetadata[] {
     return docs.map(doc => ({
       id: doc.id,
-      title: doc.title,
+      title: doc.title || '',
       source: doc.metadata.source,
-      url: doc.metadata.url || null,
-      relevanceScore: doc.metadata.relevanceScore,
+      url: doc.metadata.url || undefined,
+      relevanceScore: doc.metadata.relevanceScore || 0,
     }));
   }
 
@@ -196,9 +197,11 @@ export class SearchService {
    */
   static rankAndFilterDocuments(docs: Document[], minRelevance = 0.5): Document[] {
     // Filter out documents with low relevance scores
-    const filteredDocs = docs.filter(doc => doc.metadata.relevanceScore >= minRelevance);
+    const filteredDocs = docs.filter(doc => (doc.metadata.relevanceScore || 0) >= minRelevance);
 
     // Sort by relevance score (highest first)
-    return filteredDocs.sort((a, b) => b.metadata.relevanceScore - a.metadata.relevanceScore);
+    return filteredDocs.sort((a, b) =>
+      (b.metadata.relevanceScore || 0) - (a.metadata.relevanceScore || 0)
+    );
   }
 }

@@ -97,21 +97,22 @@ export interface UserTaskEntity {
 }
 
 /**
- * Document Chunk interface used by retrievers
- * Represents a specific chunk of content retrieved from a data source
+ * Document interface
+ * Represents content retrieved from a data source
  */
-export interface DocumentChunk {
+export interface Document {
   id: string;
   content: string;
+  title?: string;
   metadata: {
     source: string;
-    sourceType: ContentCategory | 'web' | string;
+    sourceType?: ContentCategory | 'web' | string;
     url?: string;
     path?: string;
+    title?: string;
     startLine?: number;
     endLine?: number;
     language?: string;
-    title?: string;
     summary?: string;
     author?: string;
     createdAt?: string;
@@ -119,8 +120,20 @@ export interface DocumentChunk {
     relevanceScore?: number;
     embeddingScore?: number;
     rerankerScore?: number;
+    hybridScore?: number;
+    // Additional fields from old Document interface
+    tokenCount?: number;
+    mimeType?: string;
+    confidence?: number;
+    semantic_similarity?: number;
+    keyword_match?: number;
+    recency_boost?: number;
+    user_preference_score?: number;
   };
 }
+
+// Alias for backward compatibility during transition
+export type DocumentChunk = Document;
 
 /**
  * Interface for retrieval results from vector stores
@@ -308,28 +321,7 @@ export interface AgentState {
  */
 export type AIMessage = Message;
 
-/**
- * Document interface for retrieved content with enhanced relevance scoring
- */
-export interface Document {
-  id: string;
-  title: string;
-  body: string;
-  metadata: {
-    source: string;
-    createdAt: string;
-    relevanceScore: number;
-    tokenCount?: number;
-    summary?: string;
-    url?: string | null;
-    mimeType?: string;
-    confidence?: number;
-    semantic_similarity?: number;
-    keyword_match?: number;
-    recency_boost?: number;
-    user_preference_score?: number;
-  };
-}
+// Document interface is now defined above (lines 99-127)
 
 /**
  * Tool result interface
@@ -357,9 +349,9 @@ export interface QueryAnalysis {
  */
 export interface SourceMetadata {
   id: string;
-  title: string;
+  title: string | undefined;
   source: string;
-  url?: string | null;
+  url?: string | undefined;
   relevanceScore: number;
 }
 

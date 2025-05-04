@@ -26,6 +26,10 @@ service = "constellation"
 binding = "SILO"
 service = "silo"
 
+[[services]]
+binding = "TODOS"
+service = "todos"
+
 # AI binding for Workers AI
 [ai]
 binding = "AI"

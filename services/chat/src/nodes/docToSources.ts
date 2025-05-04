@@ -39,10 +39,10 @@ export async function docToSources(state: AgentState): Promise<Partial<AgentStat
   // Map docs to sources metadata
   const sources: SourceMetadata[] = state.docs.map((doc: Document) => ({
     id: doc.id,
-    title: doc.title,
+    title: doc.title || '',
     source: doc.metadata.source,
-    url: doc.metadata.url || null,
-    relevanceScore: doc.metadata.relevanceScore,
+    url: doc.metadata.url || undefined,
+    relevanceScore: doc.metadata.relevanceScore || 0,
   }));
 
   const elapsed = performance.now() - t0;

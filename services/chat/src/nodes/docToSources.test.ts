@@ -21,9 +21,10 @@ describe('docToSources Node', () => {
       {
         id: 'doc1',
         title: 'Document 1',
-        body: 'This is document 1 content',
+        content: 'This is document 1 content',
         metadata: {
           source: 'knowledge-base',
+          sourceType: 'knowledge-base',
           createdAt: '2025-04-01',
           relevanceScore: 0.95,
           url: 'https://example.com/doc1',
@@ -33,12 +34,13 @@ describe('docToSources Node', () => {
       {
         id: 'doc2',
         title: 'Document 2',
-        body: 'This is document 2 content',
+        content: 'This is document 2 content',
         metadata: {
           source: 'web-search',
+          sourceType: 'web-search',
           createdAt: '2025-04-02',
           relevanceScore: 0.85,
-          url: null,
+          url: undefined,
           tokenCount: 80,
         },
       },
@@ -69,7 +71,7 @@ describe('docToSources Node', () => {
       id: 'doc2',
       title: 'Document 2',
       source: 'web-search',
-      url: null,
+      url: undefined,
       relevanceScore: 0.85,
     });
 

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getLogger } from '@dome/common';
-import { DocumentChunk } from '../types';
+import { Document } from '../types';
 import { RetrievalTool, RetrievalInput } from '.';
 /* ------------------------------------------------------------------ */
 /* Schemas                                                            */
@@ -104,16 +104,18 @@ export const webSearchTool: RetrievalTool<ParsedSearchInput, WebSearchOutput, Ra
     return { results };
   },
 
-  toDocuments(input: WebSearchOutput): DocumentChunk[] {
+  toDocuments(input: WebSearchOutput): Document[] {
     const results = input.results;
     return results.map(r => ({
       id: r.title,
       content: r.snippet || r.title || '',
+      title: r.title,
       metadata: {
         url: r.url,
-        createdAt: r.published,
+        createdAt: r.published || new Date().toISOString(),
         source: r.source || '',
         sourceType: 'web',
+        relevanceScore: 1.0, // Default high relevance for direct search results
       },
     }));
   },

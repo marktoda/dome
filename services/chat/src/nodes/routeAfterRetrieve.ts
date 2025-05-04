@@ -247,7 +247,7 @@ function detectToolIntent(
 
     // Count keyword occurrences across all docs
     for (const doc of docs) {
-      const content = doc.body.toLowerCase();
+      const content = doc.content.toLowerCase();
 
       for (const tool of toolPatterns) {
         for (const keyword of tool.keywords) {
