@@ -193,44 +193,12 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
       return res;
     },
 
-    outputGuardrail: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
-      log.info({ preState: createStateSummary(state) }, '→ [START] outputGuardrail');
-      // Using the actual outputGuardrail implementation
-      const res = await nodes.outputGuardrail(state, cfg, env);
-      log.info({ postState: createStateSummary(res) }, '→ [END] outputGuardrail');
-      return res;
-    },
-
     /* Document to Sources mapping node */
     docToSources: async (state: AgentState) => {
       log.info({ preState: createStateSummary(state) }, '→ [START] docToSources');
       const res = await nodes.docToSources(state);
       log.info({ postState: createStateSummary(res) }, '→ [END] docToSources');
       return res;
-    },
-
-    /* Helper functions */
-
-    routeBasedOnToolNecessity: async (state: any, config: LangGraphRunnableConfig) => {
-      // We need to use 'any' type here to accommodate the LangGraph type system
-      // The actual classification results would be in state based on tool_necessity_classifier node
-
-      // Check if tools are needed by examining various possible state structures
-      let needsTools = false;
-
-      // Check various possible locations where tool necessity might be stored
-      if (state.toolNecessityResult && typeof state.toolNecessityResult === 'object') {
-        needsTools = !!state.toolNecessityResult.needsTools;
-      } else if (state.classificationResult && typeof state.classificationResult === 'object') {
-        needsTools = !!state.classificationResult.needsTools;
-      } else if (state.classifierOutput && typeof state.classifierOutput === 'string') {
-        // In case the classifier outputs a string decision
-        needsTools = state.classifierOutput.includes('tools');
-      }
-
-      log.info({ needsTools }, 'Routing based on tool necessity');
-
-      return needsTools ? 'needs_tools' : 'no_tools';
     },
   };
 }

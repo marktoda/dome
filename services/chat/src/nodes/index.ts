@@ -18,7 +18,6 @@ export { combineContext } from './combineContext';
 export { docToSources } from './docToSources'; // Mapping docs to sources for streaming
 export { generateAnswer } from './generateAnswer'; // RAG answer generation
 export { generateChatLLM } from './generateChatLLM'; // Simple chat generation
-export { outputGuardrail } from './outputGuardrail'; // Validate final outputs
 
 // Query processing nodes
 export { routingSplit } from './routingSplit';

@@ -226,31 +226,6 @@ export interface ToolRoutingDecision {
   confidence: number;
 }
 
-/**
- * Combined context interface
- * Synthesized context from all information sources
- */
-export interface CombinedContext {
-  /**
-   * Content retrieved from databases/vectors
-   */
-  retrievedContent: DocumentChunk[];
-
-  /**
-   * Results from any tools that were executed
-   */
-  toolResults?: ToolResult[];
-
-  /**
-   * Synthesized context prepared for the LLM
-   */
-  synthesizedContext: string;
-
-  /**
-   * Source attribution information
-   */
-  sources: SourceMetadata[];
-}
 
 /**
  * Core state interface for the RAG graph V2
@@ -284,7 +259,6 @@ export interface AgentState {
   // Retrieved documents and results
   docs?: Document[];
   sources?: SourceMetadata[];
-  synthesizedContext?: string;
 
   // Reasoning and instructions
   reasoning?: string[];
@@ -309,9 +283,6 @@ export interface AgentState {
 
   // Tool routing decisions
   toolRoutingDecision?: ToolRoutingDecision;
-
-  // Combined context
-  combinedContext?: CombinedContext;
 
   // Metadata for tracking and debugging
   metadata: {
@@ -513,5 +484,4 @@ export const GraphStateAnnotation = Annotation.Root({
 
   /* ---------- retrieval and reranking ----------------------------- */
   retrievals: Annotation<RetrievalTask[]>(),
-  synthesizedContext: Annotation<string>(),
 });

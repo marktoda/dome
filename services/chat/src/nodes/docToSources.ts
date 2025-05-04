@@ -45,9 +45,6 @@ export async function docToSources(state: AgentState): Promise<Partial<AgentStat
     relevanceScore: doc.metadata.relevanceScore,
   }));
 
-  // sort sources by relevance score
-  sources.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-
   const elapsed = performance.now() - t0;
 
   logger.info(

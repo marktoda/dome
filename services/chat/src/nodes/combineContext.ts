@@ -1,368 +1,100 @@
 import { getLogger, logError } from '@dome/common';
 import { ObservabilityService } from '../services/observabilityService';
-import { ModelFactory } from '../services/modelFactory';
 import { AgentState, Document, ToolResult } from '../types';
 import { toDomeError } from '../utils/errors';
 import { countTokens } from '../utils/tokenCounter';
-import { formatDocsForPrompt } from '../utils/promptHelpers';
 
-/**
- * Combine Context LLM Node
- *
- * Synthesizes retrieved and tool-derived content into a coherent prompt-ready context.
- * This node is responsible for taking reranked retrieval results and tool execution
- * results and combining them into a cohesive context for the LLM to generate an answer.
- *
- * The node:
- * 1. Collects all reranked documents and tool results
- * 2. Uses an LLM to synthesize this information into a coherent context
- * 3. Explicitly labels sources for attribution and user transparency
- * 4. Organizes information by relevance and type
- * 5. Updates agent state with the combined context
- *
- * This node bridges between the retrieval/tool execution phases and the answer
- * generation phase, preparing all information in an optimal format for the LLM.
- *
- * @param state Current agent state
- * @param env Environment bindings
- * @returns Updated agent state with synthesized context
- */
-export async function combineContext(state: AgentState, env: Env): Promise<Partial<AgentState>> {
-  const log = getLogger().child({ node: 'combineContextLLM' });
-  const started = performance.now();
-  const traceId = state.metadata?.traceId ?? '';
-  const spanId = ObservabilityService.startSpan(env, traceId, 'combineContextLLM', state);
+/* ────────────────────────────────────────────────────────────────
+ * combineContext
+ *   1. take top doc per retrieval
+ *   3. back-fill best remaining docs until token cap
+ * ──────────────────────────────────────────────────────────────── */
+export async function combineContext(
+  state: AgentState,
+  env: Env,
+): Promise<Partial<AgentState>> {
+  const log = getLogger().child({ node: 'combineContext' });
+  const t0 = performance.now();
+  const trace = state.metadata?.traceId ?? '';
+  const span = ObservabilityService.startSpan(env, trace, 'combineContext', state);
+  const cap = state.options.maxTokens;
+  log.info({ cap, retrievals: state.retrievals?.length }, '[CombineContext]: Combining context up to token cap');
 
   try {
-    /* ── 1 · gather all documents and tool results ──────────────── */
-    // Get retrieval results
-    const rerankedDocs: Document[] = [];
-
-    // Collect all retrieved documents from the retrievals array
-    if (state.retrievals && state.retrievals.length > 0) {
-      for (const retrieval of state.retrievals) {
-        const sourceType = retrieval.sourceType || retrieval.category;
-
-        if (retrieval.chunks && retrieval.chunks.length > 0) {
-          // Convert document chunks to standard document format
-          const docs = retrieval.chunks.map(chunk => ({
-            id: chunk.id,
-            title: generateBetterTitle(chunk, sourceType),
-            body: chunk.content,
-            metadata: {
-              source: chunk.metadata.source,
-              sourceType: chunk.metadata.sourceType,
-              createdAt: chunk.metadata.createdAt || new Date().toISOString(),
-              relevanceScore: chunk.metadata.rerankerScore || chunk.metadata.relevanceScore || 0,
-              mimeType: 'text/plain',
-            },
-          }));
-
-          rerankedDocs.push(...docs);
-        }
-      }
-    }
-
-    // Add any existing documents from the state (could be from previous nodes)
-    if (state.docs && state.docs.length > 0) {
-      const existingDocIds = new Set(rerankedDocs.map(d => d.id));
-
-      for (const doc of state.docs) {
-        // Only add docs that aren't already included
-        if (!existingDocIds.has(doc.id)) {
-          rerankedDocs.push(doc);
-        }
-      }
-    }
-
-    // Get all tool results from all task entities
-    const allToolResults: ToolResult[] = Object.values(state.taskEntities || {}).flatMap(
-      task => task.toolResults || [],
-    );
-
-    /* ── 2 · prepare documents by relevance and limit token count ──────────────── */
-    // Sort documents by relevance score (descending)
-    rerankedDocs.sort(
-      (a, b) => (b.metadata.relevanceScore || 0) - (a.metadata.relevanceScore || 0),
-    );
-
-    // Set a token limit for context
-    const modelId = state.options?.modelId ?? 'gpt-4';
-    const contextTokenLimit = 4000; // Adjust based on model constraints
-
-    // Calculate tokens for each document and keep track of total
-    let currentTokenCount = 0;
-    const selectedDocs: Document[] = [];
-
-    for (const doc of rerankedDocs) {
-      const docTokens = countTokens(doc.body);
-
-      // If adding this document would exceed our limit, stop adding
-      if (currentTokenCount + docTokens > contextTokenLimit) {
-        break;
-      }
-
-      selectedDocs.push(doc);
-      currentTokenCount += docTokens;
-    }
-
-    /* ── 3 · format documents and tool results for synthesis ──────────────── */
-    const userQuery = state.messages[0].content;
-
-    // Format documents for context
-    const includeSources = state.options?.includeSourceInfo ?? true;
-    const formattedDocs = formatDocsForPrompt(selectedDocs, includeSources, contextTokenLimit);
-
-    // Format tool results
-    const formattedTools = formatToolResults(allToolResults);
-
-    /* ── 4 · use LLM to synthesize context ──────────────── */
-    // Build the prompt for the context combiner LLM
-    const contextCombinerPrompt = `
-You are Context Synthesizer, an AI that organizes and synthesizes information from multiple sources.
-
-USER QUERY: ${userQuery}
-
-YOUR TASK:
-Create a comprehensive, well-structured context document that synthesizes the following information sources.
-Focus on connecting related information across sources, removing redundancy, and organizing for coherence.
-Preserve specific technical details, code examples, numerical data, and facts.
-Label sources explicitly by index to maintain clear attribution.
-Format in clear sections, using bullet points and headings when appropriate.
-
-INFORMATION SOURCES:
-${formattedDocs || 'No relevant documents found.'}
-
-${formattedTools ? `TOOL RESULTS:\n${formattedTools}` : ''}
-
-SYNTHESIZED CONTEXT OUTPUT:
-`;
-
-    // Create the model for context synthesis
-    const model = ModelFactory.createChatModel(env, {
-      modelId,
-      temperature: 0.2, // Low temperature for deterministic synthesis
-      maxTokens: 2000, // Limit response size
+    /* 1 · helpers */
+    const chunkToDoc = (c: any): Document => ({
+      id: c.id,
+      title: c.metadata.title ?? 'Untitled',
+      body: c.content,
+      metadata: {
+        source: c.metadata.source,
+        createdAt: c.metadata.createdAt ?? new Date().toISOString(),
+        relevanceScore: c.metadata.rerankerScore ?? 0,
+        mimeType: 'text/plain',
+      },
     });
 
-    // Call the model to synthesize context
-    const messages = [{ role: 'user', content: contextCombinerPrompt }];
-    const response = await model.invoke(
-      messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
+    /* 2 · collect top-per-retrieval & remainder */
+    const topDocs: Document[] = [];
+    const remainder: Document[] = [];
+
+    for (const ret of state.retrievals ?? []) {
+      if (!ret.chunks?.length) continue;
+
+      const sorted = [...ret.chunks].sort(
+        (a, b) => (b.metadata.rerankerScore ?? 0) - (a.metadata.rerankerScore ?? 0),
+      );
+
+      topDocs.push(chunkToDoc(sorted[0]));
+      remainder.push(...sorted.slice(1).map(chunkToDoc));
+    }
+
+    /* 4 · fill until token cap */
+    remainder.sort(
+      (a, b) => (b.metadata.relevanceScore ?? 0) - (a.metadata.relevanceScore ?? 0),
     );
 
-    const synthesizedContext = response.text;
+    const docs: Document[] = [];
+    let tokens = 0;
+    const tryAdd = (d: Document) => {
+      const need = countTokens(d.body);
+      if (tokens + need > cap) return false;
+      tokens += need;
+      docs.push(d);
+      return true;
+    };
 
-    /* ── 5 · build state update ──────────────── */
-    // Calculate execution time
-    const elapsed = performance.now() - started;
+    [...topDocs].forEach(tryAdd);  // must-include
+    remainder.some(d => !tryAdd(d));            // stop when full
+    log.info({ docCount: docs.length }, '[CombineContext] finished combining context');
 
-    // Log success
-    log.info(
-      {
-        docsCount: selectedDocs.length,
-        toolsCount: allToolResults.length,
-        contextTokens: currentTokenCount,
-        synthesizedTokens: countTokens(synthesizedContext),
-        elapsedMs: elapsed,
-      },
-      'Context synthesis complete',
-    );
+    /* 5 · done */
+    const elapsed = performance.now() - t0;
+    ObservabilityService.endSpan(env, trace, span, 'combineContext', state, state, elapsed);
 
-    // End span with successful result
-    ObservabilityService.endSpan(
-      env,
-      traceId,
-      spanId,
-      'combineContextLLM',
-      state,
-      // Just pass state without custom additions that aren't in the AgentState type
-      state,
-      elapsed,
-    );
-
-    // Return state updates
     return {
-      docs: selectedDocs,
-      // Store synthesized context for the next node to use
-      synthesizedContext,
+      docs,
       metadata: {
         currentNode: 'combineContext',
         executionTimeMs: elapsed,
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          combineContextLLM: elapsed,
-        },
       },
     };
   } catch (err) {
-    // Handle errors
-    const domeError = toDomeError(err);
-    const elapsed = performance.now() - started;
+    /* error path */
+    const e = toDomeError(err);
+    logError(e, 'combineContext failed');
+    const elapsed = performance.now() - t0;
+    ObservabilityService.endSpan(env, trace, span, 'combineContext', state, state, elapsed);
 
-    // Log the error
-    logError(domeError, 'Error in combineContextLLM', { traceId, spanId });
-
-    // End span with error
-    ObservabilityService.endSpan(env, traceId, spanId, 'combineContextLLM', state, state, elapsed);
-
-    // Format error for state
-    const formattedError = {
-      node: 'combineContextLLM',
-      message: domeError.message,
-      timestamp: Date.now(),
-    };
-
-    // Return error state update with fallback reasoning
     return {
       metadata: {
-        currentNode: 'combineContextLLM',
-        executionTimeMs: elapsed,
-        errors: [...(state.metadata?.errors || []), formattedError],
-        nodeTimings: {
-          ...state.metadata?.nodeTimings,
-          combineContextLLM: elapsed,
-        },
+        currentNode: 'combineContext',
+        errors: [
+          ...(state.metadata?.errors ?? []),
+          { node: 'combineContext', message: e.message, timestamp: Date.now() },
+        ],
       },
-      // Add fallback reasoning for downstream nodes
-      reasoning: ['Unable to synthesize context due to an error. Proceeding with raw documents.'],
+      reasoning: ['Context aggregation failed; proceeding with fallback logic.'],
     };
   }
-}
-
-/**
- * Format tool results for inclusion in the prompt
- */
-function formatToolResults(results: ToolResult[]): string {
-  if (!results || results.length === 0) {
-    return '';
-  }
-
-  return results
-    .map((r, i) => {
-      const out = r.error
-        ? `Error: ${r.error}`
-        : typeof r.output === 'string'
-        ? r.output
-        : JSON.stringify(r.output, null, 2);
-      return `[Tool ${i + 1}] ${r.toolName}\nInput: ${JSON.stringify(
-        r.input,
-        null,
-        2,
-      )}\nOutput: ${out}`;
-    })
-    .join('\n\n');
-}
-
-/**
- * Generate a better title for document chunks based on available metadata
- * @param chunk The document chunk
- * @param sourceType The source type (code, docs, etc.)
- * @returns A descriptive title
- */
-function generateBetterTitle(chunk: any, sourceType: string): string {
-  // If there's already a title, use it
-  if (chunk.metadata.title) {
-    return chunk.metadata.title;
-  }
-
-  // For code sources, create a more descriptive title
-  if (sourceType === 'code') {
-    const path = chunk.metadata.path;
-    const language = chunk.metadata.language;
-    const startLine = chunk.metadata.startLine;
-    const endLine = chunk.metadata.endLine;
-
-    let title = 'Code';
-
-    // Add file path if available
-    if (path) {
-      // Extract filename from path
-      const filename = path.split('/').pop();
-      title = filename || path;
-    }
-
-    // Add language if available
-    if (language) {
-      title = `${title} (${language})`;
-    }
-
-    // Add line numbers if available
-    if (startLine !== undefined && endLine !== undefined) {
-      title = `${title} [Lines ${startLine}-${endLine}]`;
-    } else if (startLine !== undefined) {
-      title = `${title} [Line ${startLine}]`;
-    }
-
-    return title;
-  }
-
-  // Helper function to generate content preview
-  function generateContentPreview(content: string, maxLength: number = 60): string {
-    // Extract the first characters up to maxLength
-    const previewText = content.trim().substring(0, maxLength);
-
-    // Find a reasonable stopping point (end of word or sentence)
-    let endIndex = previewText.length;
-    if (previewText.length === maxLength) {
-      // Find the last space to avoid cutting words in half
-      const lastSpace = previewText.lastIndexOf(' ');
-      if (lastSpace > maxLength / 2) {
-        // Only use if we have a decent preview length
-        endIndex = lastSpace;
-      }
-
-      // Or find the last sentence break for an even better cutoff point
-      const lastPeriod = previewText.lastIndexOf('.');
-      if (lastPeriod > maxLength / 2) {
-        endIndex = lastPeriod + 1;
-      }
-    }
-
-    const title = previewText.substring(0, endIndex).trim();
-    return title + (endIndex < content.trim().length ? '...' : '');
-  }
-
-  // For note sources, extract the first few words from content
-  if (sourceType === 'note' || sourceType === 'notes') {
-    if (chunk.content) {
-      return generateContentPreview(chunk.content);
-    }
-  }
-
-  // For doc/docs sources, create a more descriptive title
-  if (sourceType === 'doc' || sourceType === 'docs') {
-    // First try to use the document name if available
-    if (chunk.metadata.documentName) {
-      return chunk.metadata.documentName;
-    }
-
-    // Otherwise create a preview from content
-    if (chunk.content) {
-      return generateContentPreview(chunk.content);
-    }
-  }
-
-  // For web sources, use the URL or domain
-  if (sourceType === 'web') {
-    if (chunk.metadata.url) {
-      try {
-        const url = new URL(chunk.metadata.url);
-        return url.hostname || chunk.metadata.url;
-      } catch {
-        return chunk.metadata.url;
-      }
-    }
-  }
-
-  // For other source types, try to create a meaningful title
-  if (chunk.metadata.source) {
-    return `${chunk.metadata.source}`;
-  }
-
-  // Fallback to generic title with source type
-  return `${sourceType} result`;
 }

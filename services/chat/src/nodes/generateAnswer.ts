@@ -15,7 +15,7 @@ import { getGenerateAnswerPrompt } from '../config/promptsConfig';
  *
  * Generates a comprehensive answer based strictly on the combined context from the previous node.
  * This node is responsible for generating a high-quality response that answers the user query
- * using the synthesized context from combineContextLLM.
+ * using the doc context
  *
  * The node:
  * 1. Takes the original query and the synthesized context from previous nodes
@@ -55,11 +55,9 @@ export async function generateAnswer(
     const userQuery = state.messages[0].content;
 
     // Get the synthesized context from previous node (fallback to empty if missing)
-    let synthesizedContext;
-    if (state.synthesizedContext) {
-      synthesizedContext = state.synthesizedContext;
-    } else if (state.docs) {
-      synthesizedContext = formatDocsForPrompt(state.docs);
+    let docContext;
+    if (state.docs) {
+      docContext = formatDocsForPrompt(state.docs);
     } else {
       throw new Error('No synthesized context or documents found in state');
     }
@@ -69,7 +67,7 @@ export async function generateAnswer(
     const modelConfig = getModelConfig(modelId);
 
     // Calculate token usage and limits
-    const contextTokens = countTokens(synthesizedContext);
+    const contextTokens = countTokens(docContext);
     const userQueryTokens = countTokens(userQuery);
 
     // Calculate token limits for response
@@ -82,7 +80,7 @@ export async function generateAnswer(
     // Build the system prompt for answer generation using the central configuration
     // Pass user context if available, but we don't have specific user info in this state
     // In a real implementation, you might extract this from request context or session
-    const systemPrompt = getGenerateAnswerPrompt(userQuery, synthesizedContext);
+    const systemPrompt = getGenerateAnswerPrompt(userQuery, docContext);
 
     // Build the messages for the LLM
     const chatMessages = buildMessages(systemPrompt, state.chatHistory, userQuery);
