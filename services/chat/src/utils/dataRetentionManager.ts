@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { D1Checkpointer } from '../checkpointer/d1Checkpointer';
 import { getUserInfo, UserRole } from '@dome/common/src/middleware/enhancedAuthMiddleware';
 import { Context } from 'hono';

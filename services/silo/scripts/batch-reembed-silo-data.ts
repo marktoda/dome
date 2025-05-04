@@ -16,7 +16,7 @@
  */
 
 import { NewContentMessage } from '@dome/common';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';

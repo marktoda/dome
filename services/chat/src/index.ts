@@ -8,7 +8,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
-import { getLogger, logError } from '@dome/logging';
+import { getLogger, logError } from '@dome/common';
 import { createServices } from './services';
 import { createControllers } from './controllers';
 import { ChatBinding } from './client';

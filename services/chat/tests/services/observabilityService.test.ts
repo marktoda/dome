@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ObservabilityService } from '../../src/services/observabilityService';
 
 // Mock the metrics and logger
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   // Create a mockLogger that can be reused
   const mockChildLogger = {
     info: vi.fn(),

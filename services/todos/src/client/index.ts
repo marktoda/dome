@@ -16,8 +16,8 @@ import {
   BatchUpdateInput,
   TodoStats
 } from '../types';
-import { getLogger } from '@dome/logging';
-import { createServiceMetrics } from '@dome/logging';
+import { getLogger } from '@dome/common';
+import { createServiceMetrics } from '@dome/common';
 
 export {
   TodoItem,

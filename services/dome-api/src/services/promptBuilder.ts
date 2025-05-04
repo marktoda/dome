@@ -1,5 +1,5 @@
 import { SearchResult } from './searchService';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { encoding_for_model } from '@dqbd/tiktoken';
 
 /**

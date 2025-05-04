@@ -12,7 +12,7 @@ import {
   BaseCheckpointSaver,
   LangGraphRunnableConfig,
 } from "@langchain/langgraph";
-import { getLogger } from "@dome/logging";
+import { getLogger } from "@dome/common";
 
 import { D1Checkpointer } from "../checkpointer/d1Checkpointer";
 import { ToolRegistry } from "../tools";
@@ -33,7 +33,7 @@ export const V1Chat: ChatBuilder = {
     log.info("⧉ building RAG Chat V2 graph");
 
     // Initialize the checkpointer and tools
-    const checkpointer = cp ?? await new D1Checkpointer(env.CHAT_DB, env).initialize().then(r => r ?? cp!);
+    const checkpointer = cp ?? await new D1Checkpointer(env.CHAT_DB).initialize().then(r => r ?? cp!);
     const tools = ToolRegistry.fromDefault();
 
     // Get the wrapped node functions with proper environment

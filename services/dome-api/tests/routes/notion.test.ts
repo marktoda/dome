@@ -41,7 +41,7 @@ vi.mock('../../src/middleware/userIdMiddleware', () => ({
 }));
 
 // Mock logger
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     info: vi.fn(),
     debug: vi.fn(),

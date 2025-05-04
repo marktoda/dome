@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatClient, ChatRequest } from '../../src/client/client';
 import { ChatBinding } from '../../src/client';
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   // Create a mockLogger that can be reused
   const mockChildLogger = {
     info: vi.fn(),

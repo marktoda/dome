@@ -1,4 +1,4 @@
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, desc, count, sum, or, isNull, inArray } from 'drizzle-orm';
 import { contents } from '../db/schema';

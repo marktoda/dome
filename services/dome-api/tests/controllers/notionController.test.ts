@@ -17,7 +17,7 @@ vi.mock('@dome/tsunami/client', () => {
 });
 
 // Mock logger
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     child: () => ({
       info: vi.fn(),

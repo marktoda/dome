@@ -1,11 +1,11 @@
 import { vi, describe, test, expect, beforeEach } from 'vitest';
 import { dynamicWiden, WideningStrategy } from './dynamicWiden';
 import { AgentState, Document } from '../types';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { ObservabilityService } from '../services/observabilityService';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn().mockReturnValue({
     info: vi.fn(),
     warn: vi.fn(),

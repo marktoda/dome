@@ -5,7 +5,7 @@ import { Bindings } from '../types';
 import { SearchService, PaginatedSearchResults } from '../services/searchService';
 import { trackTiming, trackOperation, incrementCounter, getMetrics } from '../utils/metrics';
 import { UserIdContext } from '../middleware/userIdMiddleware';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { ServiceError } from '@dome/common';
 
 /* -------------------------------------------------------------------------- */

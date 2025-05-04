@@ -1,5 +1,5 @@
 import { Context } from 'hono';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { createServiceFactory } from '../services/serviceFactory';
 import type { Bindings } from '../types';
 

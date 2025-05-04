@@ -15,7 +15,7 @@ vi.mock('../../src/services/searchService');
 vi.mock('../../src/services/observabilityService');
 
 // Mock logger
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   // Create a mockLogger that can be reused
   const mockLogger = {
     info: vi.fn(),

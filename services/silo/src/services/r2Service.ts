@@ -1,4 +1,4 @@
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 
 /**
  * R2Service - A wrapper around R2 for content storage operations

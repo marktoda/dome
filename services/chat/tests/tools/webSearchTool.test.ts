@@ -4,7 +4,7 @@ import { LlmService } from '../../src/services/llmService';
 import { AIMessage } from '../../src/types';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn(() => ({
     info: vi.fn(),
     warn: vi.fn(),

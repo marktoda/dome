@@ -3,7 +3,7 @@ import {
   AuthBinding
 } from './client/types';
 import { AuthService } from './services/authService';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { AuthError } from './utils/errors';
 
 const logger = getLogger();

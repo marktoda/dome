@@ -4,8 +4,8 @@
  * Provides metrics tracking capabilities for the Constellation service.
  */
 
-import { MetricsService, logMetric } from '@dome/logging';
-import { getLogger } from '@dome/logging';
+import { MetricsService, logMetric } from '@dome/common';
+import { getLogger } from '@dome/common';
 
 // Re-export logging utilities
 export { logMetric };

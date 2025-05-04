@@ -1,4 +1,5 @@
-import { getLogger, metrics, withLogger } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
+import { withContext } from '@dome/common';
 import { toDomeError, ValidationError } from '../utils/errors';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
 import {
@@ -44,7 +45,7 @@ export class ChatController {
   ): Promise<IterableReadableStream<unknown>> {
     const { runId, newMessage } = resumeChatRequestSchema.parse(req);
 
-    return withLogger(
+    return withContext(
       { service: 'chat-orchestrator', operation: 'resumeChatSession', runId },
       async () => {
         const state = await this.buildResumeState(runId, newMessage);

@@ -17,7 +17,7 @@ vi.mock('../../src/services/searchService', () => {
 });
 
 // Mock logger
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     info: vi.fn(),
     debug: vi.fn(),

@@ -1,4 +1,4 @@
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { z } from 'zod';
 import { ReprocessRequestSchema, ReprocessResponseSchema } from '../index';
 import { AiProcessorBinding } from './types';

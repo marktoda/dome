@@ -1,5 +1,5 @@
 import { AgentState, Document } from '../types';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { getModelConfig } from '../config/modelConfig';
 import { countTokens as baseCountTokens } from './tokenCounter';
 import { DOC_METADATA_TOKENS } from './tokenConstants';

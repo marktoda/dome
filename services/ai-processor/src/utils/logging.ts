@@ -7,7 +7,7 @@ import {
   logOperationSuccess,
   logOperationFailure,
   createServiceMetrics
-} from '@dome/logging';
+} from '@dome/common';
 import { toDomeError } from '@dome/errors';
 
 // Create service-specific metrics
@@ -65,7 +65,7 @@ export async function trackOperation<T>(
  * @param env Environment variables
  */
 export function initLogging(env: { LOG_LEVEL?: string; ENVIRONMENT?: string; VERSION?: string }) {
-  // The @dome/logging package handles configuration internally
+  // The @dome/common package handles configuration internally
   // We just need to add some context for our service
   const environment = env.ENVIRONMENT || 'dev';
   const version = env.VERSION || '0.1.0';
@@ -109,7 +109,7 @@ export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
 }
 
 /**
- * Export metrics and logging utilities from @dome/logging
+ * Export metrics and logging utilities from @dome/common
  */
 export {
   metrics,

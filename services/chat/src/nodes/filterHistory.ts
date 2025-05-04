@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { AgentState, MessagePair } from '../types';
 import { getUserId } from '../utils/stateUtils';
 import { ObservabilityService } from '../services/observabilityService';

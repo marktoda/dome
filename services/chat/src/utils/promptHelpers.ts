@@ -1,7 +1,7 @@
 import { Document } from '../types';
 import { AIMessage, MessagePair } from "../types";
 import { DEFAULT_MODEL } from "../config/modelConfig";
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import {
   DEFAULT_MAX_TOTAL_DOC_TOKENS,
   DOC_METADATA_TOKENS,

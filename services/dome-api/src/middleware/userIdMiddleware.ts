@@ -1,6 +1,6 @@
 import { Context, Next } from 'hono';
 import { UnauthorizedError } from '@dome/common';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { Bindings } from '../types';
 import { AuthContext } from './authenticationMiddleware';
 

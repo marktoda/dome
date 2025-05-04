@@ -5,7 +5,7 @@
  * It provides methods for WebSocket connection, handling messages and reconnection logic.
  */
 
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { ChatRequest, chatRequestSchema, ResumeChatRequest } from '../types';
 import { MessageType, WebSocketMessage } from '../utils/wsTransformer';
 

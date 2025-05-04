@@ -1,4 +1,4 @@
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { toDomeError } from '../utils/errors';
 import { SiloStatsResponse } from '@dome/common';
 import { MetadataService } from '../services/metadataService';

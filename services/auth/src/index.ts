@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { getLogger, initLogging, withLogger, logError } from '@dome/logging';
+import { getLogger, initLogging, logError } from '@dome/common';
+import { withContext } from '@dome/common';
 import { authMetrics, trackOperation } from './utils/logging';
 import { LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse } from './types';
 import { AuthService } from './services/authService';
@@ -13,7 +14,7 @@ import { StatusCode } from 'hono/utils/http-status';
  * @returns Result of the function
  */
 const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
-  withLogger(meta, async () => {
+  withContext(meta, async (logger) => {
     try {
       return await fn();
     } catch (err) {

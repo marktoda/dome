@@ -6,7 +6,7 @@ import { reduceRagContext } from '../utils/ragUtils';
 import { AgentState, Document } from '../types';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn(() => ({
     info: vi.fn(),
     warn: vi.fn(),

@@ -1,5 +1,5 @@
 import { Context } from 'hono';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { TsunamiClient } from '@dome/tsunami/client';
 import { Bindings } from '../types';
 import { UserIdContext } from '../middleware/userIdMiddleware';

@@ -95,7 +95,7 @@ export const mockChatService = {
 };
 
 // Mock the logging module
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     info: vi.fn(),
     debug: vi.fn(),

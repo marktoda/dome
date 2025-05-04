@@ -1,7 +1,6 @@
-import { getLogger } from '@dome/logging';
+import { MetricsService, getLogger } from '@dome/common';
 import { AgentState } from '../types';
 import { getUserId } from '../utils/stateUtils';
-import { ServiceMetrics } from '@dome/metrics';
 
 /**
  * Trace context interface
@@ -24,7 +23,7 @@ export type SpanStatus = 'success' | 'error' | 'unset';
  */
 export class ObservabilityService {
   private static readonly logger = getLogger().child({ component: 'ObservabilityService' });
-  private static readonly metrics = new ServiceMetrics('chat');
+  private static readonly metrics = new MetricsService();
 
   // Trace and span storage for in-memory correlation
   private static traces: Map<
@@ -83,7 +82,7 @@ export class ObservabilityService {
     );
 
     // Record trace initialization metric
-    this.metrics.counter('trace.init', 1, {
+    this.metrics.increment('trace.init', 1, {
       traceId,
       userId,
       environment: env.ENVIRONMENT || 'unknown',
@@ -139,7 +138,7 @@ export class ObservabilityService {
     );
 
     // Record span start metric
-    this.metrics.counter('span.start', 1, {
+    this.metrics.increment('span.start', 1, {
       traceId,
       spanId,
       spanName: nodeName,
@@ -221,7 +220,7 @@ export class ObservabilityService {
     );
 
     // Record span metrics
-    this.metrics.counter('span.end', 1, {
+    this.metrics.increment('span.end', 1, {
       traceId,
       spanId,
       spanName: nodeName,
@@ -282,7 +281,7 @@ export class ObservabilityService {
     );
 
     // Record event metric
-    this.metrics.counter('event', 1, {
+    this.metrics.increment('event', 1, {
       traceId,
       spanId,
       eventName,
@@ -337,7 +336,7 @@ export class ObservabilityService {
     );
 
     // Record trace metrics
-    this.metrics.counter('trace.end', 1, {
+    this.metrics.increment('trace.end', 1, {
       traceId,
       userId,
       environment: env.ENVIRONMENT || 'unknown',
@@ -386,7 +385,7 @@ export class ObservabilityService {
     });
 
     // Record LLM metrics
-    this.metrics.counter('llm.call', 1, {
+    this.metrics.increment('llm.call', 1, {
       traceId,
       spanId,
       model,
@@ -421,7 +420,7 @@ export class ObservabilityService {
     });
 
     // Record retrieval metrics
-    this.metrics.counter('retrieval.call', 1, {
+    this.metrics.increment('retrieval.call', 1, {
       traceId,
       spanId,
       environment: env.ENVIRONMENT || 'unknown',

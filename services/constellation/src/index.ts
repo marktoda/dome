@@ -7,7 +7,7 @@ import {
 } from '@dome/common';
 import { z } from 'zod';
 
-import { withLogger } from '@dome/logging';
+import { withContext } from '@dome/common';
 import {
   getLogger,
   logError,
@@ -48,7 +48,7 @@ const buildServices = (env: Env) => ({
  * @returns Result of the function
  */
 const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
-  withLogger(meta, async () => {
+  withContext(meta, async (logger) => {
     try {
       return await fn();
     } catch (err) {

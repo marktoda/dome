@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { ChatController } from './chatController';
 import { NotionController } from './notionController';
 import { SearchController } from './searchController';

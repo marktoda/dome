@@ -4,7 +4,7 @@
  * Handles text chunking and preparation for embedding.
  */
 
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 /**
  * Configuration for text preprocessing

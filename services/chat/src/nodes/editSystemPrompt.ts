@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { NodeError, toDomeError } from '../utils/errors';
 import { z } from 'zod';
 import { AgentState, AIMessage } from '../types';

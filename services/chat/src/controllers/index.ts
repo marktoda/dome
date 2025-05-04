@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { Services } from '../services';
 import { ChatController, createChatController } from './chatController';
 import { AdminController, createAdminController } from './adminController';

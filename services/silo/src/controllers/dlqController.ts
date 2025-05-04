@@ -1,4 +1,4 @@
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { toDomeError } from '../utils/errors';
 import { DLQService } from '../services/dlqService';
 import { DLQFilterOptions, DLQMessage, DLQStats } from '../types';

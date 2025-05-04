@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { DocumentChunk } from '../types';
 import { RetrievalTool, RetrievalInput } from '.';
 /* ------------------------------------------------------------------ */

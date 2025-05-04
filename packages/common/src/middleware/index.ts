@@ -13,7 +13,7 @@ export { createErrorMiddleware } from './errorMiddleware';
 export { responseHandlerMiddleware } from './responseHandlerMiddleware';
 
 // Detailed logger middleware
-export { createDetailedLoggerMiddleware } from './detailedLoggerMiddleware';
+export { createDetailedLoggerMiddleware, initLogging } from './detailedLoggerMiddleware';
 
 // Rate limit middleware
 export { createRateLimitMiddleware } from './rateLimitMiddleware';

@@ -3,7 +3,7 @@ import { userIdMiddleware } from '../../src/middleware/userIdMiddleware';
 import { UnauthorizedError } from '@dome/common';
 
 // Mock the getLogger function
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn(() => ({
     debug: vi.fn(),
     warn: vi.fn(),

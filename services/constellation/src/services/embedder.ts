@@ -4,7 +4,7 @@
  * Interfaces with Workers AI to generate embeddings.
  */
 
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 
 /**
  * Configuration for the embedding service

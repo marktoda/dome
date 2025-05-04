@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Todos from '../src/index';
 import { TodoStatus, TodoPriority, TodoJob } from '../src/types';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 // Define types needed for testing
 interface Env {
@@ -34,7 +34,7 @@ interface TestMessageBatch<T> {
 }
 
 // Mock dependencies
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   const mockMetricsService = {
     increment: vi.fn(),
     decrement: vi.fn(),

@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { DocumentChunk, RetrievalResult, AgentState, RetrievalTask, RetrievalToolType } from '../types';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from './errors';

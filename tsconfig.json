@@ -30,12 +30,8 @@
       "@dome/chat/*": ["services/chat/src/*"],
       "@dome/ai-processor": ["services/ai-processor/src"],
       "@dome/ai-processor/*": ["services/ai-processor/src/*"],
-      "@dome/logging": ["packages/logging/src"],
-      "@dome/logging/*": ["packages/logging/src/*"],
       "@dome/cli": ["packages/cli/src"],
       "@dome/cli/*": ["packages/cli/src/*"],
-      "@dome/metrics": ["packages/metrics/src"],
-      "@dome/metrics/*": ["packages/metrics/src/*"]
     }
   },
   "exclude": ["node_modules", "dist"]

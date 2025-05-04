@@ -1,5 +1,5 @@
 import { Bindings } from '../types';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { ConstellationClient, ConstellationBinding } from '@dome/constellation/client';
 import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';

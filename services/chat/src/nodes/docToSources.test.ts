@@ -3,7 +3,7 @@ import { docToSources } from './docToSources';
 import { AgentState, Document } from '../types';
 
 // Mock the logger
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: () => ({
     child: () => ({
       info: vi.fn(),

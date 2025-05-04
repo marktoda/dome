@@ -12,7 +12,7 @@ import {
   TodoStats,
   TodosErrorCode
 } from '../types';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { eq, and, gt, lt, like, desc, sql, or, inArray, isNull, isNotNull, gte, lte, not } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import { todos } from '../db/schema';

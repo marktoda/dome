@@ -5,7 +5,7 @@
  * It provides methods for all Chat Orchestrator operations and handles error logging, metrics, and validation.
  */
 
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { ChatBinding, ChatRequest, chatRequestSchema, ResumeChatRequest } from '.';
 import { SourceMetadata } from '../types';
 import { z } from 'zod';

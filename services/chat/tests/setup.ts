@@ -60,8 +60,8 @@ if (typeof crypto === 'undefined') {
   };
 }
 
-// Mock @dome/logging
-vi.mock('@dome/logging', () => {
+// Mock @dome/common
+vi.mock('@dome/common', () => {
   // Create mock child logger function that returns a consistent interface
   const createChildLogger = (): MockLoggerInterface => ({
     info: vi.fn(),

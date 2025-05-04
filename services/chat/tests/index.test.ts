@@ -2,10 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Chat from '../src/index';
 import { createServices } from '../src/services';
 import { createControllers } from '../src/controllers';
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
+  withContext: vi.fn((_, fn) => fn()),
+}));
+
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn(() => ({
     child: vi.fn(() => ({
       info: vi.fn(),
@@ -25,7 +29,6 @@ vi.mock('@dome/logging', () => ({
     gauge: vi.fn(),
     startTimer: vi.fn(() => ({ stop: vi.fn() })),
   },
-  withLogger: vi.fn((_, fn) => fn()),
 }));
 
 // Mock services and controllers

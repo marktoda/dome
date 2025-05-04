@@ -1,6 +1,6 @@
 import { Env, TodoJob } from './types';
 import { TodosService } from './services/todosService';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { AiProcessorAdapter, AiExtractedTodo } from './adapters/aiProcessorAdapter';
 import { TodoQueueItem } from './client';
 

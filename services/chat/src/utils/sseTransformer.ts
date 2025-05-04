@@ -1,4 +1,4 @@
-import { getLogger, logError } from '@dome/logging';
+import { getLogger, logError } from '@dome/common';
 import { AgentState } from '../types';
 import { processThinkingContent } from './thinkingHandler';
 

@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { AgentState, Document, QueryAnalysis } from '../types';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';

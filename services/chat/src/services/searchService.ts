@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { Document, SourceMetadata } from '../types';
 import {
   ConstellationBinding,

@@ -10,7 +10,7 @@ import {
   createErrorFactory,
   errorHandler,
 } from '@dome/errors';
-import { getLogger as getDomeLogger } from '@dome/logging';
+import { getLogger as getDomeLogger } from '@dome/common';
 
 // Create domain-specific error factory
 export const SiloErrors = createErrorFactory('silo', {

@@ -3,11 +3,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MetricsService, metrics, logMetric } from '@dome/logging';
-import { getLogger } from '@dome/logging';
+import { MetricsService, metrics, logMetric } from '@dome/common';
+import { getLogger } from '@dome/common';
 
 // Mock the logging utilities
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   const mockMetricsService = {
     increment: vi.fn(),
     decrement: vi.fn(),

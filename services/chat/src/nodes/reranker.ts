@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { AgentState, DocumentChunk, RetrievalResult, RetrievalTask } from '../types';
 import { createReranker } from '../utils/rerankerUtils';

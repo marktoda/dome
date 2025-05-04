@@ -1,19 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatController } from '../../src/controllers/chatController';
 import { Services } from '../../src/services';
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => {
-  // Create a mockLogger that can be reused
-  const mockLogger = {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-    child: vi.fn(function() { return mockLogger; }),
+vi.mock('@dome/common', () => {
+  return {
+    withContext: vi.fn((_, fn) => fn(mockLogger)),
   };
+});
 
+// Create a mockLogger that can be reused
+const mockLogger = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  child: vi.fn(() => mockLogger),
+};
+
+vi.mock('@dome/common', () => {
   return {
     getLogger: vi.fn(() => mockLogger),
     logError: vi.fn(),
@@ -24,7 +30,6 @@ vi.mock('@dome/logging', () => {
       startTimer: vi.fn(() => ({ stop: vi.fn() })),
       trackOperation: vi.fn(),
     },
-    withLogger: vi.fn((_, fn) => fn(mockLogger)),
     baseLogger: mockLogger,
     createLogger: vi.fn(() => mockLogger),
     createServiceMetrics: vi.fn(() => ({

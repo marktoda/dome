@@ -6,7 +6,7 @@
  */
 
 import { SiloContentItem, VectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 
 /**
  * ConstellationBinding interface

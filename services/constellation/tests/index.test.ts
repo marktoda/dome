@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Constellation from '../src/index';
 import { SiloContentItem, VectorMeta } from '@dome/common';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 // Define types needed for testing
 interface Env {
@@ -36,7 +36,13 @@ interface TestMessageBatch<T> {
 }
 
 // Mock dependencies
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
+  return {
+    withContext: vi.fn((_, fn) => fn()),
+  };
+});
+
+vi.mock('@dome/common', () => {
   const mockMetricsService = {
     increment: vi.fn(),
     decrement: vi.fn(),
@@ -52,7 +58,6 @@ vi.mock('@dome/logging', () => {
   };
 
   return {
-    withLogger: vi.fn((_, fn) => fn()),
     getLogger: vi.fn(() => ({
       info: vi.fn(),
       debug: vi.fn(),

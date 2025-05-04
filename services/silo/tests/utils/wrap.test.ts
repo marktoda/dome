@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { wrap } from '../../src/utils/wrap';
 
+// Mock the common module
+vi.mock('@dome/common', () => ({
+  withContext: vi.fn((meta, fn) => fn()),
+}));
+
 // Mock the logging module
-vi.mock('@dome/logging', () => ({
-  withLogger: vi.fn((meta, fn) => fn()),
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn(() => ({
     info: vi.fn(),
     error: vi.fn(),
@@ -12,20 +16,21 @@ vi.mock('@dome/logging', () => ({
   })),
 }));
 
-import { withLogger, getLogger } from '@dome/logging';
+import { withContext } from '@dome/common';
+import { getLogger } from '@dome/common';
 
 describe('wrap utility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should call withLogger with correct metadata', async () => {
+  it('should call withContext with correct metadata', async () => {
     const meta = { operation: 'test', id: '123' };
     const fn = vi.fn().mockResolvedValue('result');
 
     await wrap(meta, fn);
 
-    expect(withLogger).toHaveBeenCalledWith(
+    expect(withContext).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: 'test',
         id: '123',

@@ -21,7 +21,7 @@ vi.mock('../services/observabilityService', () => ({
   }
 }));
 
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn(() => ({
     child: vi.fn(() => ({
       info: vi.fn(),

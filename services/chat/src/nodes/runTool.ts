@@ -1,4 +1,4 @@
-import { getLogger, logError } from "@dome/logging";
+import { getLogger, logError } from "@dome/common";
 import { ObservabilityService } from "../services/observabilityService";
 import { ToolRegistry } from "../tools";
 import { AgentState, Document, ToolResult } from "../types";

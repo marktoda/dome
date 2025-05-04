@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createServices, Services } from '../../src/services';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 // Mock dependencies
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   const mockLogger = {
     info: vi.fn(),
     debug: vi.fn(),

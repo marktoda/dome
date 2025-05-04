@@ -24,7 +24,7 @@ import {
 } from '../src';
 
 // Import logging package integration
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 // -----------------------------------------------
 // Basic App with Default Error Handler
@@ -137,7 +137,7 @@ export function createAdvancedApp() {
     }
   }));
 
-  // Add logging middleware (assuming @dome/logging is set up)
+  // Add logging middleware (assuming @dome/common is set up)
   app.use('*', async (c, next) => {
     c.set('requestId', c.req.header('x-request-id') || crypto.randomUUID());
     await next();

@@ -5,7 +5,7 @@
  * centralized model configuration.
  */
 
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { ChatOpenAI } from '@langchain/openai';
 import { CloudflareWorkersAI } from '@langchain/cloudflare';
 // Import for Anthropic when ready

@@ -74,7 +74,7 @@ vi.mock('../../src/services/observabilityService', () => ({
 global.jest = vi;
 
 // Mock logger
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   // Create a mockLogger that can be reused
   const mockLogger = {
     info: vi.fn(),

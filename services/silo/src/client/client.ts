@@ -9,7 +9,7 @@ import {
   SiloContentItem,
   SiloContentMetadata,
 } from '@dome/common';
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { SiloBinding } from '../types';
 export { SiloBinding } from '../types';
 import { ulid } from 'ulid';

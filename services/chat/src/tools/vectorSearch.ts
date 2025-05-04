@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ContentCategory, ContentCategoryEnum } from '@dome/common';
 import { SearchService, SearchOptions } from "../services/searchService";
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { Document, DocumentChunk } from '../types';
 import { RetrievalTool, RetrievalInput } from '.';
 

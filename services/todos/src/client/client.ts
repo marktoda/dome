@@ -3,7 +3,7 @@
  *
  * A client for interacting with the Todos service using WorkerEntrypoint RPC
  */
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import {
   TodoItem,
   CreateTodoInput,

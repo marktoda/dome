@@ -13,7 +13,7 @@ vi.mock('../src/services/todosService', () => {
 });
 
 // Mock the logger
-vi.mock('@dome/logging', () => {
+vi.mock('@dome/common', () => {
   return {
     getLogger: vi.fn().mockReturnValue({
       info: vi.fn(),

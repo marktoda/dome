@@ -26,7 +26,6 @@
   },
   "dependencies": {
     "@dome/common": "workspace:*",
-    "@dome/logging": "workspace:*",
     "@dome/errors": "workspace:*",
     "@hono/zod-validator": "^0.1.8",
     "drizzle-orm": "^0.42.0",

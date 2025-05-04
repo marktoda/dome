@@ -1,5 +1,5 @@
 import { encoding_for_model } from '@dqbd/tiktoken';
-import { getLogger, logError } from '@dome/logging';
+import { getLogger, logError } from '@dome/common';
 import { CHARS_PER_TOKEN, MESSAGE_FORMAT_TOKENS, approximateTokenCount } from './tokenConstants';
 
 // Track if we've already logged the tokenizer error to avoid flooding logs

@@ -6,7 +6,7 @@
  */
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { getLogger, logError, metrics, trackOperation, trackedFetch } from '@dome/logging';
+import { getLogger, logError, metrics, trackOperation, trackedFetch } from '@dome/common';
 import {
   DomeError, ValidationError, NotFoundError, toDomeError,
   assertValid, assertExists

@@ -8,7 +8,7 @@ import {
   logError,
   trackOperation,
   createServiceMetrics
-} from '@dome/logging';
+} from '@dome/common';
 import { processTodoQueue } from './queueConsumer';
 import { TodosService } from './services/todosService';
 import { Env, TodoQueueItem, CreateTodoInput, UpdateTodoInput, TodoFilter, Pagination, BatchUpdateInput } from './types';

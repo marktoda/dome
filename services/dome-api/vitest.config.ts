@@ -15,7 +15,7 @@ export default defineConfig({
     setupFiles: ['./tests/setup.js'],
     alias: {
       '@dome/common': path.resolve(__dirname, '../../packages/common/src'),
-      '@dome/logging': path.resolve(__dirname, '../../packages/logging/src'),
+      '@dome/common': path.resolve(__dirname, '../../packages/logging/src'),
     },
   },
 });

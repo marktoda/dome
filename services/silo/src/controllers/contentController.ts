@@ -1,4 +1,4 @@
-import { getLogger, logError, metrics } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
 import { ValidationError, NotFoundError, UnauthorizedError, toDomeError } from '../utils/errors';
 import { ulid } from 'ulid';
 import { R2Service } from '../services/r2Service';

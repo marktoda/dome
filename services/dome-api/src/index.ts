@@ -13,7 +13,7 @@ import {
 import { userIdMiddleware, UserIdContext } from './middleware/userIdMiddleware';
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { createAuthController } from './controllers/authController';
-import { initLogging, getLogger } from '@dome/logging';
+import { initLogging, getLogger } from '@dome/common';
 import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
 import { createServiceFactory } from './services/serviceFactory';
@@ -196,7 +196,7 @@ app.get(
           component: 'WebSocketChatHandler',
           requestId: Math.random().toString(36).substring(2, 12)
         });
-        
+
         try {
           const chatService = serviceFactory.getChatService(c.env);
           const authService = serviceFactory.getAuthService(c.env);
@@ -216,28 +216,28 @@ app.get(
           } else {
             jsonData = event.data;
           }
-          
+
           logger.debug({ jsonData }, 'Received WebSocket message');
-          
+
           // Validate authentication
           let authenticatedUserId;
-          
+
           // Get token from various possible locations
           const token = jsonData.token ||
-                       (jsonData.auth && jsonData.auth.token ? jsonData.auth.token : null);
-          
+            (jsonData.auth && jsonData.auth.token ? jsonData.auth.token : null);
+
           logger.debug({
             hasToken: !!token,
             hasAuthObject: !!jsonData.auth,
             hasAuthToken: jsonData.auth && !!jsonData.auth.token,
             providedUserId: jsonData.userId || '[none]'
           }, 'WebSocket auth details');
-          
+
           if (token) {
             // If token is provided, validate it
             const authResult = await authService.validateToken(token);
             logger.info({ authResult }, 'WebSocket auth validation result');
-            
+
             if (authResult.success && authResult.user) {
               authenticatedUserId = authResult.user.id;
               logger.info({ authenticatedUserId }, 'Successfully authenticated WebSocket connection');
@@ -251,7 +251,7 @@ app.get(
             // For compatibility with older clients, allow CLI testing with a specific user ID
             // ONLY IN DEVELOPMENT ENVIRONMENT
             const isDevelopment = c.env.ENVIRONMENT === 'development';
-            
+
             if (isDevelopment && jsonData.userId === 'test-user-id') {
               logger.warn('Using test user ID in development environment');
               authenticatedUserId = 'test-user-id';
@@ -262,7 +262,7 @@ app.get(
               return;
             }
           }
-          
+
           // Override any user ID in the request with the authenticated one
           jsonData.userId = authenticatedUserId;
 

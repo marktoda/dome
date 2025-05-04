@@ -12,7 +12,7 @@ import { VectorWithMetadata } from '../../src/types';
 import { VectorMeta, VectorSearchResult, PUBLIC_USER_ID } from '@dome/common';
 
 // Mock the logger and metrics
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
     info: vi.fn(),

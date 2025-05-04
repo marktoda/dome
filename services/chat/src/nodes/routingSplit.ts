@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { z } from 'zod';
 import { AgentState, UserTaskEntity, AIMessage } from '../types';
 import { getUserId } from '../utils/stateUtils';

@@ -1,4 +1,4 @@
-import { getLogger, logError } from '@dome/logging';
+import { getLogger, logError } from '@dome/common';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { AgentState } from '../types';
 import { countTokens } from '../utils/tokenCounter';

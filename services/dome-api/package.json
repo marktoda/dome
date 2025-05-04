@@ -12,8 +12,6 @@
   },
   "dependencies": {
     "@dome/common": "workspace:*",
-    "@dome/logging": "workspace:*",
-    "@dome/metrics": "workspace:*",
     "@dome/silo": "workspace:*",
     "@dome/constellation": "workspace:*",
     "@dome/chat": "workspace:*",

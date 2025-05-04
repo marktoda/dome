@@ -1,6 +1,6 @@
 import { Context, Next, MiddlewareHandler } from 'hono';
 import { StatusCode } from 'hono/utils/http-status';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { AuthService } from '../services/authService';
 import { User, AuthContext } from '../types';
 import { AuthError, AuthErrorType } from '../utils/errors';

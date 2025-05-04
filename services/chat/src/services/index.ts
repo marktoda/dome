@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { LlmService } from './llmService';
 import { SearchService } from './searchService';
 import { ObservabilityService } from './observabilityService';
@@ -30,8 +30,6 @@ export function createServices(env: Env): Services {
   // Create the checkpointer
   const checkpointer = new D1Checkpointer(
     env.CHAT_DB,
-    env,
-    undefined, // No Hono context in RPC
     86400, // 24 hours TTL
   );
 

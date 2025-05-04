@@ -6,9 +6,13 @@ vi.mock('ulid', () => ({
   ulid: vi.fn().mockReturnValue('test-id-123456'),
 }));
 
+// Mock common
+vi.mock('@dome/common', () => ({
+  withContext: vi.fn((_, fn) => fn()),
+}));
+
 // Mock logging
-vi.mock('@dome/logging', () => ({
-  withLogger: vi.fn((_, fn) => fn()),
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn(() => ({
     info: vi.fn(),
     error: vi.fn(),

@@ -5,7 +5,7 @@ import { zValidator } from '@hono/zod-validator';
 import { SiloClient } from '@dome/silo/client';
 import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
 import { UserIdContext } from '../middleware/userIdMiddleware';
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
 import {
   ServiceError,
   siloSimplePutSchema,

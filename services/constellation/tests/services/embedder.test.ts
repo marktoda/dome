@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Embedder, DEFAULT_EMBEDDER_CONFIG, createEmbedder } from '../../src/services/embedder';
 
 // Mock the logger and metrics
-vi.mock('@dome/logging', () => ({
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
     info: vi.fn(),

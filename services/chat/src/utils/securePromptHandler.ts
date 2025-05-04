@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { filterLlmOutput } from './inputValidator';
 import { ForbiddenError } from '@dome/common/src/errors/ServiceError';
 import { Role } from '../types';

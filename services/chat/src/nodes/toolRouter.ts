@@ -1,6 +1,6 @@
 // src/nodes/toolRouter.ts
 import { z } from "zod";
-import { getLogger, logError } from "@dome/logging";
+import { getLogger, logError } from "@dome/common";
 import { ObservabilityService } from "../services/observabilityService";
 import { LlmService } from "../services/llmService";
 import { buildMessages } from "../utils";

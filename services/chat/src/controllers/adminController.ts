@@ -1,4 +1,5 @@
-import { getLogger, logError, metrics, withLogger } from '@dome/logging';
+import { getLogger, logError, metrics } from '@dome/common';
+import { withContext } from '@dome/common';
 import { z } from 'zod';
 import { Services } from '../services';
 
@@ -51,7 +52,7 @@ export class AdminController {
    * @returns Checkpoint statistics
    */
   async getCheckpointStats(): Promise<z.infer<typeof checkpointStatsResponseSchema>> {
-    return withLogger(
+    return withContext(
       {
         service: 'chat-orchestrator',
         operation: 'getCheckpointStats',
@@ -84,7 +85,7 @@ export class AdminController {
    * @returns Cleanup result
    */
   async cleanupCheckpoints(): Promise<z.infer<typeof cleanupResponseSchema>> {
-    return withLogger(
+    return withContext(
       {
         service: 'chat-orchestrator',
         operation: 'cleanupCheckpoints',
@@ -118,7 +119,7 @@ export class AdminController {
    * @returns Data retention statistics
    */
   async getDataRetentionStats(): Promise<z.infer<typeof dataRetentionStatsResponseSchema>> {
-    return withLogger(
+    return withContext(
       {
         service: 'chat-orchestrator',
         operation: 'getDataRetentionStats',
@@ -163,7 +164,7 @@ export class AdminController {
    * @returns Cleanup result
    */
   async cleanupExpiredData(): Promise<any> {
-    return withLogger(
+    return withContext(
       {
         service: 'chat-orchestrator',
         operation: 'cleanupExpiredData',
@@ -207,7 +208,7 @@ export class AdminController {
    * @returns Deletion result
    */
   async deleteUserData(userId: string): Promise<{ deletedCount: number }> {
-    return withLogger(
+    return withContext(
       {
         service: 'chat-orchestrator',
         operation: 'deleteUserData',
@@ -255,7 +256,7 @@ export class AdminController {
     dataCategory: string,
     request: z.infer<typeof consentRequestSchema>,
   ): Promise<{ success: boolean }> {
-    return withLogger(
+    return withContext(
       {
         service: 'chat-orchestrator',
         operation: 'recordConsent',

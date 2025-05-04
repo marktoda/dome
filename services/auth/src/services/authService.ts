@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { DrizzleD1Database, drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';

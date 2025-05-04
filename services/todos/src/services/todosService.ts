@@ -11,7 +11,7 @@ import {
   TodoJob
 } from '../types';
 import { TodosRepository } from '../db/todosRepository';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 
 const logger = getLogger();
 

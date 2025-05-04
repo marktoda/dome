@@ -1,4 +1,5 @@
-import { withLogger, getLogger, logError, trackOperation } from '@dome/logging';
+import { getLogger, logError, trackOperation } from '@dome/common';
+import { withContext } from '@dome/common';
 import { toDomeError, DomeError } from '@dome/errors';
 
 /**
@@ -13,7 +14,7 @@ export async function wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T
   // Extract operation name if present for better error context
   const operation = meta.operation || meta.op || 'unknown_operation';
   
-  return withLogger(Object.assign({}, meta, { service: 'silo' }), async (logger) => {
+  return withContext(Object.assign({}, meta, { service: 'silo' }), async (logger) => {
     try {
       // If this is a named operation with no specific tracking, use trackOperation
       if (typeof operation === 'string' && !meta.skipTracking) {

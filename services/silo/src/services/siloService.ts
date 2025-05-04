@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { PUBLIC_USER_ID } from '@dome/common';
 import { MetadataService } from './metadataService';
 

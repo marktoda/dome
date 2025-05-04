@@ -3,7 +3,7 @@
  *
  * A client for interacting with the Auth service using WorkerEntrypoint RPC
  */
-import { getLogger, metrics } from '@dome/logging';
+import { getLogger, metrics } from '@dome/common';
 import {
   AuthBinding, 
   AuthService, 

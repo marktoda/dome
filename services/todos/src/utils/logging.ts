@@ -7,7 +7,7 @@ import {
   logOperationSuccess,
   logOperationFailure,
   createServiceMetrics
-} from '@dome/logging';
+} from '@dome/common';
 import { toDomeError } from './errors';
 
 // Create service-specific metrics
@@ -81,7 +81,7 @@ export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
 }
 
 /**
- * Export metrics and logging utilities from @dome/logging
+ * Export metrics and logging utilities from @dome/common
  */
 export { 
   metrics,

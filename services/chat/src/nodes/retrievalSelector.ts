@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { LangGraphRunnableConfig } from "@langchain/langgraph";
 import { ContentCategory, ContentCategoryEnum } from '@dome/common';
 import { RETRIEVAL_TOOLS } from '../tools';

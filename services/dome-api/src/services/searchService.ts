@@ -1,6 +1,6 @@
 import { Bindings } from '../types';
 import { ServiceError, VectorMeta } from '@dome/common';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { ConstellationClient } from '@dome/constellation/client';
 import { SiloClient } from '@dome/silo/client';
 

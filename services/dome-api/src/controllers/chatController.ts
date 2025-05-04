@@ -1,5 +1,5 @@
 import { Context } from 'hono';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { ChatClient, chatRequestSchema } from '@dome/chat/client';
 import { z } from 'zod';
 import {

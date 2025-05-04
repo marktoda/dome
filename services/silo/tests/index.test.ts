@@ -13,8 +13,11 @@ vi.mock('cloudflare:workers', () => ({
 }));
 
 // Mock dependencies
-vi.mock('@dome/logging', () => ({
-  withLogger: vi.fn((_, fn) => fn()),
+vi.mock('@dome/common', () => ({
+  withContext: vi.fn((_, fn) => fn()),
+}));
+
+vi.mock('@dome/common', () => ({
   getLogger: vi.fn(() => ({
     info: vi.fn(),
     error: vi.fn(),
@@ -72,7 +75,8 @@ const mockStatsController = {
 };
 
 // Import mocks after they've been defined
-import { metrics } from '@dome/logging';
+import { withContext } from '@dome/common';
+import { metrics } from '@dome/common';
 import { createContentController } from '../src/controllers/contentController';
 import { createStatsController } from '../src/controllers/statsController';
 

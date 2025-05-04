@@ -3,10 +3,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { logMetric, createTimer, getLogger } from '@dome/logging';
+import { logMetric, createTimer, getLogger } from '@dome/common';
 
-// Mock the @dome/logging module
-vi.mock('@dome/logging', () => {
+// Mock the @dome/common module
+vi.mock('@dome/common', () => {
   const mockLogger = {
     info: vi.fn(),
     error: vi.fn(),

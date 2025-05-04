@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { z } from 'zod';
 import { ForbiddenError, BadRequestError } from '@dome/errors';
 import { AgentState } from '../types';

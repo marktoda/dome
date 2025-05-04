@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { AgentState, Document, SourceMetadata } from '../types';
 
 /**

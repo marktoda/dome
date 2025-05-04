@@ -4,7 +4,7 @@ import {
   type CheckpointMetadata,
 } from '@langchain/langgraph';
 import { RunnableConfig } from '@langchain/core/runnables';
-import { getLogger } from '@dome/logging';
+import { getLogger } from '@dome/common';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, lt, sql } from 'drizzle-orm';
 import { checkpoints } from '../db/schema';

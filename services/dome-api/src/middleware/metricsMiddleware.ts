@@ -1,6 +1,6 @@
 import { Next } from 'hono';
 import { Context } from 'hono';
-import { getLogger, logError } from '@dome/logging';
+import { getLogger, logError } from '@dome/common';
 
 // Simple metrics implementation
 export const metrics = {
