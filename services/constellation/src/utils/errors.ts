@@ -4,16 +4,22 @@ import {
   InternalError,
   ConflictError,
   ServiceUnavailableError,
-  toDomeError as baseToDomeError,
   assertValid,
   assertExists,
   createErrorFactory,
 } from '@dome/errors';
+import { createServiceErrorHandler } from '@dome/common';
+
+// Service name constant for consistency
+const SERVICE_NAME = 'constellation';
 
 // Create domain-specific error factory
-export const ConstellationErrors = createErrorFactory('constellation', {
-  service: 'constellation',
+export const ConstellationErrors = createErrorFactory(SERVICE_NAME, {
+  service: SERVICE_NAME,
 });
+
+// Create service-specific error handling utilities
+export const toDomeError = createServiceErrorHandler(SERVICE_NAME);
 
 /**
  * Specialized error for vectorize operations
@@ -51,22 +57,5 @@ export class PreprocessingError extends InternalError {
   }
 }
 
-/**
- * Enhanced toDomeError function with Constellation-specific context
- * @param error Any error or exception
- * @param defaultMessage Message to use if error is not an Error instance
- * @param defaultDetails Details to include if none available
- * @returns A DomeError instance
- */
-export function toDomeError(
-  error: unknown, 
-  defaultMessage = 'An unexpected error occurred in Constellation service',
-  defaultDetails: Record<string, any> = {}
-) {
-  return baseToDomeError(error, defaultMessage, {
-    service: 'constellation',
-    ...defaultDetails
-  });
-}
-
+// Re-export common errors
 export { ValidationError, NotFoundError, ConflictError, ServiceUnavailableError, assertValid, assertExists };

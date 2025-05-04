@@ -24,7 +24,7 @@ const MAX_CHUNKS = 10;
  * Threshold score for filtering chunks (0-1)
  * Chunks with scores below the threshold will be filtered out
  */
-const SCORE_THRESHOLD = 0.2;
+const SCORE_THRESHOLD = 0.0;
 
 /**
  * Unified Reranker Node
@@ -110,17 +110,17 @@ export async function reranker(
 
         // Create a map to deduplicate chunks by ID to prevent duplicates
         const chunkMap = new Map<string, DocumentChunk>();
-        
+
         // Add existing chunks
         for (const chunk of existingChunks) {
           chunkMap.set(chunk.id, chunk);
         }
-        
+
         // Add new chunks (will overwrite if ID already exists)
         for (const chunk of newChunks) {
           chunkMap.set(chunk.id, chunk);
         }
-        
+
         // Update the existing task with deduplicated chunks
         existingTask.chunks = Array.from(chunkMap.values());
       }

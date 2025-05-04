@@ -37,12 +37,20 @@ interface TestMessageBatch<T> {
 
 // Mock dependencies
 vi.mock('@dome/common', () => {
-  return {
-    withContext: vi.fn((_, fn) => fn()),
+  const mockLogger: {
+    info: any;
+    debug: any;
+    warn: any;
+    error: any;
+    child: any;
+  } = {
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(() => mockLogger),
   };
-});
 
-vi.mock('@dome/common', () => {
   const mockMetricsService = {
     increment: vi.fn(),
     decrement: vi.fn(),
@@ -58,25 +66,15 @@ vi.mock('@dome/common', () => {
   };
 
   return {
-    getLogger: vi.fn(() => ({
-      info: vi.fn(),
-      debug: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      child: vi.fn().mockReturnValue({
-        info: vi.fn(),
-        debug: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-      }),
-    })),
+    withContext: vi.fn((meta, fn) => fn(mockLogger)),
+    getLogger: vi.fn(() => mockLogger),
+    logError: vi.fn(),
     logMetric: vi.fn(),
     createTimer: vi.fn(() => ({
       stop: vi.fn(() => 100),
     })),
     metrics: mockMetricsService,
     MetricsService: vi.fn(() => mockMetricsService),
-    // Add the missing function
     createServiceMetrics: vi.fn((serviceName) => ({
       increment: vi.fn(),
       decrement: vi.fn(),
@@ -88,6 +86,40 @@ vi.mock('@dome/common', () => {
       getGauge: vi.fn(() => 0),
       reset: vi.fn(),
     })),
+    createServiceWrapper: vi.fn((serviceName: string) => {
+      return async (meta: Record<string, unknown>, fn: () => Promise<any>) => {
+        const withContextFn = vi.fn((meta, fn) => fn(mockLogger));
+        return withContextFn(
+          { ...meta, service: serviceName },
+          async () => {
+            try {
+              return await fn();
+            } catch (error) {
+              mockLogger.error({ err: error }, 'Unhandled error');
+              throw error;
+            }
+          }
+        );
+      };
+    }),
+    createServiceErrorHandler: vi.fn((serviceName: string) => {
+      return (error: any, message?: string, details?: Record<string, any>) => {
+        return {
+          message: message || (error instanceof Error ? error.message : 'Unknown error'),
+          code: error.code || 'ERROR',
+          details: { ...(error.details || {}), ...(details || {}), service: serviceName },
+          statusCode: error.statusCode || 500,
+        };
+      };
+    }),
+    tryWithErrorLoggingAsync: vi.fn(async (fn, errorMessage, context) => {
+      try {
+        return await fn();
+      } catch (error) {
+        mockLogger.error({ err: error, ...context }, errorMessage || 'Operation failed');
+        return undefined;
+      }
+    }),
   };
 });
 

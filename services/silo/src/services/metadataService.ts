@@ -121,10 +121,10 @@ export class MetadataService {
             error:
               error instanceof Error
                 ? {
-                    name: error.name,
-                    message: error.message,
-                    stack: error.stack,
-                  }
+                  name: error.name,
+                  message: error.message,
+                  stack: error.stack,
+                }
                 : String(error),
             ids,
             errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -142,10 +142,10 @@ export class MetadataService {
           error:
             error instanceof Error
               ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
               : String(error),
           ids,
           errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -365,7 +365,7 @@ export class MetadataService {
 
         metrics.timing('silo.d1.update_enriched.latency_ms', Date.now() - startTime);
         getLogger().info(
-          { id, hasTitle: !!data.title, hasSummary: !!data.summary },
+          { id, hasTitle: !!data.title, hasSummary: !!data.summary, title: data.title, summary: data.summary },
           'Content metadata enriched',
         );
 

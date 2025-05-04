@@ -106,6 +106,7 @@ export class SearchService {
       this.logger.info(
         {
           contentsCount: contents.items.length,
+          titles: contents.items.map(c => c.title),
           firstContentId: contents.items.length > 0 ? contents.items[0].id : null,
         },
         'Results from siloService.batchGet',
@@ -147,6 +148,7 @@ export class SearchService {
             title: content.title || `Unknown title`,
             body: content.body || '',
             metadata: {
+              summary: content.summary,
               source: content.category || 'unknown',
               createdAt: new Date(content.createdAt || Date.now()).toISOString(),
               relevanceScore: score,

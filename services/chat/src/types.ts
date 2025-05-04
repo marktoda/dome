@@ -112,6 +112,7 @@ export interface DocumentChunk {
     endLine?: number;
     language?: string;
     title?: string;
+    summary?: string;
     author?: string;
     createdAt?: string;
     updatedAt?: string;
@@ -350,6 +351,7 @@ export interface Document {
     createdAt: string;
     relevanceScore: number;
     tokenCount?: number;
+    summary?: string;
     url?: string | null;
     mimeType?: string;
     confidence?: number;

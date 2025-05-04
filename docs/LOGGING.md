@@ -1,68 +1,42 @@
-# Dome Logging SDK – Design Spec **v0.1.0‑alpha**
+# Dome Logging System
 
-> **Package Name:** `@dome/logging` > **Runtime:** Cloudflare Workers (HTTP, Cron, Queue)
-> **Stack:** TypeScript 5 · Hono v4 · Pino v8
+> **Version:** 1.0.0
+> **Runtime:** Cloudflare Workers (HTTP, Cron, Queue)
+> **Stack:** TypeScript 5 · Hono v4 · Pino v8
 
----
+## 1. Overview
 
-## 1  Overview
-
-`@dome/logging` is a drop‑in SDK that gives every Dome Worker a **structured, request‑aware logger** with one line of setup and one global helper:
+The Dome logging system provides a structured, context-aware logging framework that ensures consistent logging patterns across all services. It has been refactored to centralize logging functionality in the `@dome/common` package, making it easier to maintain and extend.
 
 ```ts
+// Initialize logging in your application
+import { initLogging } from '@dome/common';
+const app = new Hono();
 initLogging(app);
-getLogger().info('hello');
+
+// Use the logger anywhere in your code
+import { getLogger } from '@dome/common';
+getLogger().info({ userId, operation: 'createUser' }, 'User created successfully');
 ```
 
----
+## 2. Key Features
 
-## 2  Installation
+- **Structured Logging**: All logs are structured JSON objects with consistent fields
+- **Context Propagation**: Request context is automatically propagated through AsyncLocalStorage
+- **Request Tracking**: Automatic logging of request start/end events with duration metrics
+- **Operation Tracking**: Specialized helpers for tracking operations with timing and success/failure metrics
+- **Error Extraction**: Automatic extraction of detailed error information
+- **Sensitive Data Handling**: Automatic redaction of sensitive information
+- **Service Metrics**: Standardized metrics collection for monitoring and alerting
 
-```bash
-pnpm add @dome/logging    # private registry / workspace
-```
+## 3. Core Components
 
-Consumer Worker **must** enable ALS:
+### 3.1 Base Logger
 
-```toml
-# wrangler.toml
-compatibility_date = "2025-04-17"
-compatibility_flags = ["nodejs_als"]
-```
-
----
-
-## 3  Public API
+The base logger is built on Pino and configured for the Cloudflare Workers environment:
 
 ```ts
-function initLogging(app: Hono, options?: InitOptions): void;
-function getLogger(): Logger;
-function runWithLogger(meta: object, fn: () => Promise<unknown>): Promise<void>;
-```
-
-`InitOptions` interface:
-
-```ts
-interface InitOptions {
-  idFactory?: () => string;
-  extraBindings?: Record<string, unknown>;
-  level?: pino.LevelWithSilent;
-  serializer?: pino.SerializerFn;
-}
-```
-
----
-
-## 4  Package Files (with full source)
-
-### 4.1 `src/base.ts`
-
-```ts
-import pino from 'pino';
-
-/**
- * Global base logger – heavy Pino internals are initialised once per isolate.
- */
+// src/logging/base.ts
 export const baseLogger = pino({
   level: (globalThis as any).LOG_LEVEL ?? 'info',
   browser: {
@@ -71,149 +45,146 @@ export const baseLogger = pino({
   },
   timestamp: pino.stdTimeFunctions.isoTime,
 });
-
-export type BaseLogger = typeof baseLogger;
 ```
 
-### 4.2 `src/helper.ts`
+### 3.2 Context-Aware Logging
+
+The logging system uses AsyncLocalStorage to maintain context across asynchronous operations:
 
 ```ts
-import { getContext } from 'hono/context-storage';
-import { baseLogger, BaseLogger } from './base';
+// Get the context-aware logger
+const logger = getLogger();
 
-/**
- * Returns the request‑scoped logger if inside ALS context,
- * otherwise returns the singleton base logger.
- */
-export function getLogger(): BaseLogger {
-  const ctx = getContext<BaseLogger | undefined>();
-  return (ctx?.get('logger') as BaseLogger) ?? baseLogger;
+// Log with structured context
+logger.info({ userId, operation: 'createUser' }, 'User created successfully');
+```
+
+### 3.3 Error Logging
+
+Enhanced error logging automatically extracts and includes detailed error information:
+
+```ts
+import { logError } from '@dome/common';
+
+try {
+  // Operation code
+} catch (error) {
+  logError(error, 'Failed to process request', { requestId, userId });
+  throw error; // or handle it
 }
 ```
 
-### 4.3 `src/middleware.ts`
+### 3.4 Operation Tracking
+
+Track operations with automatic timing and success/failure metrics:
 
 ```ts
-import { MiddlewareHandler } from 'hono';
-import { contextStorage } from 'hono/context-storage';
-import { baseLogger } from './base';
-import { nanoid } from 'nanoid';
-import type { InitOptions } from './types';
+import { trackOperation } from '@dome/common';
 
-export function buildLoggingMiddleware(opts: InitOptions = {}): MiddlewareHandler {
-  const idFactory = opts.idFactory ?? (() => nanoid(12));
-  const extra = opts.extraBindings ?? {};
-
-  return async (c, next) => {
-    const reqId = idFactory();
-    const child = baseLogger.child({
-      reqId,
-      ip: c.req.header('CF-Connecting-IP'),
-      colo: c.req.raw.cf?.colo,
-      cfRay: c.req.raw.headers.get('cf-ray'),
-      ...extra,
-    });
-
-    c.set('logger', child);
-    await next();
-  };
-}
-
-/**
- * Convenience to wire both contextStorage & logging in one call.
- */
-export function initLogging(app: import('hono').Hono, opts?: InitOptions) {
-  app.use(contextStorage());
-  app.use('*', buildLoggingMiddleware(opts));
-}
+const result = await trackOperation('userAuthentication', async () => {
+  // Operation code here
+  return result;
+});
 ```
 
-### 4.4 `src/runWithLogger.ts`
+## 4. Standardized Log Levels
+
+The logging system uses the following standardized log levels:
+
+| Level | Usage |
+|-------|-------|
+| `error` | Only for errors that impact functionality |
+| `warn` | For issues that don't prevent operation but require attention |
+| `info` | For normal operational information |
+| `debug` | For detailed information useful for debugging (disable in production) |
+| `trace` | For very detailed tracing information (rarely used) |
+
+## 5. Utility Functions
+
+### 5.1 Error Logging
 
 ```ts
-import { ExecutionContext } from '@cloudflare/workers-types';
-import { baseLogger } from './base';
-import { getContext } from 'hono/context-storage';
+// Log an error with context
+logError(error, 'Failed to process request', { requestId, userId });
 
-export async function runWithLogger<T>(
-  meta: object,
-  fn: () => Promise<T>,
-  ctx?: ExecutionContext,
-): Promise<T> {
-  const child = baseLogger.child(meta);
-  const storage = getContext();
-  // If no ALS context yet, fall back to base run
-  if (!storage) return await fn();
-
-  return (
-    (await ctx?.run(() => {
-      storage.set('logger', child);
-      return fn();
-    })) ?? fn()
-  );
-}
+// Create a context-bound error logger
+const errorLogger = createErrorLogger({ service: 'auth' });
+errorLogger(error, 'Authentication failed', { userId });
 ```
 
-### 4.5 `src/index.ts`
+### 5.2 Operation Tracking
 
 ```ts
-export * from './base';
-export * from './helper';
-export * from './middleware';
-export * from './runWithLogger';
-export type { InitOptions } from './types';
+// Track an operation with timing
+await trackOperation('processMessage', async () => {
+  // Operation code
+});
+
+// Log operation stages manually
+logOperationStart('processMessage', { messageId });
+// ... operation code
+logOperationSuccess('processMessage', duration, { messageId });
+// or if it fails
+logOperationFailure('processMessage', error, { messageId });
 ```
 
-### 4.6 `src/types.ts`
+### 5.3 External API Calls
 
 ```ts
-import pino from 'pino';
-
-export interface InitOptions {
-  idFactory?: () => string;
-  extraBindings?: Record<string, unknown>;
-  level?: pino.LevelWithSilent;
-  serializer?: pino.SerializerFn;
-}
+// Track external API calls with standardized logging
+const response = await trackedFetch('https://api.example.com/data', {
+  method: 'POST',
+  body: JSON.stringify(data)
+}, { operation: 'fetchExternalData' });
 ```
 
----
+### 5.4 Sanitization
 
-## 5  Consumer Examples
+```ts
+// Sanitize sensitive data before logging
+const sanitizedData = sanitizeForLogging(userData);
+logger.info({ user: sanitizedData }, 'User data processed');
+```
 
-### 5.1 HTTP API Worker (`services/dome-api/src/index.ts`)
+## 6. Service Integration
+
+### 6.1 HTTP API Worker
 
 ```ts
 import { Hono } from 'hono';
-import { initLogging, getLogger } from '@dome/logging';
+import { initLogging, getLogger, createErrorMiddleware } from '@dome/common';
 
 const app = new Hono();
-initLogging(app); // <‑‑ one‑liner
 
-app.get('/users/:id', async c => {
-  getLogger().info({ params: c.req.param() }, 'fetch user');
-  return c.json({ ok: true });
+// Initialize logging
+initLogging(app, {
+  extraBindings: { service: 'api', version: '1.0.0' }
 });
 
-app.onError((err, c) => {
-  getLogger().error({ err }, 'unhandled');
-  return c.json({ error: 'internal' }, 500);
+// Add error handling middleware
+app.use('*', createErrorMiddleware());
+
+app.get('/users/:id', async c => {
+  const logger = getLogger();
+  logger.info({ params: c.req.param() }, 'Fetching user');
+  
+  // Rest of handler code
 });
 
 export default app;
 ```
 
-### 5.2 Queue Consumer Worker
+### 6.2 Queue Consumer Worker
 
 ```ts
-import { runWithLogger, getLogger } from '@dome/logging';
+import { runWithLogger, getLogger } from '@dome/common';
 
-export default <QueueHandler>{
+export default {
   async queue(batch, env, ctx) {
     await runWithLogger(
       { trigger: 'queue', batch: batch.length },
       async () => {
-        getLogger().info('processing batch');
+        getLogger().info('Processing batch');
         // ...process
       },
       ctx,
@@ -222,63 +193,127 @@ export default <QueueHandler>{
 };
 ```
 
-### 5.3 Cron Worker
+## 7. Best Practices
+
+### 7.1 Use Structured Logging
+
+Always use structured logging with object context:
 
 ```ts
-import { runWithLogger, getLogger } from '@dome/logging';
+// GOOD
+logger.info({ userId, operation: 'createUser', duration }, 'User created successfully');
 
-export default {
-  async scheduled(event, env, ctx) {
-    await runWithLogger(
-      { trigger: 'cron', cron: event.cron },
-      async () => {
-        getLogger().debug('cron tick');
-        // ...job work
-      },
-      ctx,
-    );
-  },
-};
+// AVOID
+logger.info(`User ${userId} created successfully in ${duration}ms`);
 ```
 
----
+### 7.2 Use Appropriate Log Levels
 
-## 6  Test Setup (Jest)
+Use the correct log level for different types of information:
 
 ```ts
-import { initLogging, getLogger } from '@dome/logging';
-import { Hono } from 'hono';
-import { unstable_dev } from 'wrangler';
+// Error: Only for errors that impact functionality
+logger.error({ err }, 'Database connection failed');
 
-describe('logging', () => {
-  it('attaches logger', async () => {
-    const app = new Hono();
-    initLogging(app);
-    app.get('/ping', c => {
-      getLogger().info('hit ping');
-      return c.text('pong');
-    });
-    const worker = await unstable_dev({ name: 'test', modules: [{ text: app }], bindings: {} });
-    const res = await worker.fetch('http://localhost/ping');
-    expect(await res.text()).toBe('pong');
-  });
-});
+// Warning: For issues that don't prevent operation but require attention
+logger.warn({ queueSize }, 'Queue size exceeding threshold');
+
+// Info: For normal operational information
+logger.info({ userId }, 'User logged in successfully');
+
+// Debug: For detailed information useful for debugging
+logger.debug({ query }, 'Executing database query');
 ```
 
----
+### 7.3 Include Contextual Information
 
-## 7  Changelog Template
+Always include relevant context with your logs:
 
-```md
-### Added
-
-- Initial release with `initLogging`, `getLogger`, `runWithLogger`.
-
-### Fixed / Changed
-
-- n/a
+```ts
+logger.info({
+  userId,
+  operation: 'createUser',
+  userType: 'admin',
+  source: 'api'
+}, 'User created successfully');
 ```
 
----
+### 7.4 Use Operation Tracking
 
-End of document.
+Use operation tracking for important operations:
+
+```ts
+await trackOperation('processPayment', async () => {
+  // Payment processing code
+}, { userId, amount, currency });
+```
+
+### 7.5 Handle Sensitive Information
+
+Be careful with sensitive information in logs:
+
+```ts
+// Use sanitizeForLogging to redact sensitive fields
+const sanitizedData = sanitizeForLogging(userData);
+logger.info({ user: sanitizedData }, 'User data processed');
+```
+
+## 8. Migration Guide
+
+If you're migrating from the old logging approach to the new standardized system:
+
+1. Replace direct `console.log` calls with structured logging:
+   ```ts
+   // Old
+   console.log(`Processing user ${userId}`);
+   
+   // New
+   getLogger().info({ userId }, 'Processing user');
+   ```
+
+2. Replace custom error logging with standardized error logging:
+   ```ts
+   // Old
+   console.error('Error processing request', error);
+   
+   // New
+   logError(error, 'Error processing request', { requestId });
+   ```
+
+3. Add operation tracking for important operations:
+   ```ts
+   // Old
+   async function processMessage(message) {
+     console.log(`Processing message ${message.id}`);
+     // ... processing code
+     console.log(`Finished processing message ${message.id}`);
+   }
+   
+   // New
+   async function processMessage(message) {
+     return trackOperation('processMessage', async () => {
+       // ... processing code
+     }, { messageId: message.id });
+   }
+   ```
+
+4. Initialize logging in your application entry point:
+   ```ts
+   import { Hono } from 'hono';
+   import { initLogging, createErrorMiddleware } from '@dome/common';
+   
+   const app = new Hono();
+   initLogging(app, { extraBindings: { service: 'my-service' } });
+   app.use('*', createErrorMiddleware());
+   
+   // Rest of your application
+   ```
+
+## 9. Verification
+
+The repository includes verification scripts to ensure compliance with the logging standards:
+
+- `scripts/verify-logging-errors.js`: Verifies that all services are using the standardized logging approach
+- `scripts/verify-log-levels.js`: Checks that log levels are used appropriately
+
+Run these scripts regularly to ensure your codebase maintains consistent logging practices.

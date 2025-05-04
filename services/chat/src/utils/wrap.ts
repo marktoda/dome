@@ -1,13 +1,13 @@
 import { createServiceWrapper } from '@dome/common';
 
 /**
- * Service-specific wrapper for the Silo service
- * This uses the standardized function wrapper with Silo-specific context
+ * Service-specific wrapper for the Chat service
+ * This uses the standardized function wrapper with Chat-specific context
  */
-const wrapServiceFunction = createServiceWrapper('silo');
+const wrapServiceFunction = createServiceWrapper('chat');
 
 /**
- * Wraps a function call with logging context specific to the Silo service.
+ * Wraps a function call with logging context specific to the Chat service.
  * Provides enhanced error handling and structured logging.
  *
  * @param meta Metadata to include with logs (operation name, IDs, etc.)

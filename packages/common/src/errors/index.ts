@@ -40,6 +40,7 @@ export {
 };
 
 // For backward compatibility
+// TODO: Remove this export after verifying it's not used anywhere
 export { BaseError as AppError } from './BaseError';
 
 /**
@@ -51,3 +52,10 @@ export interface ExtendedError {
   requestId?: string;
   details?: Record<string, any>;
 }
+
+// Error utilities for service integration
+export {
+  createServiceErrorHandler,
+  createEnhancedAssertValid,
+  createServiceErrorMiddleware
+} from './errorUtils';

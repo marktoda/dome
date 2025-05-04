@@ -374,6 +374,7 @@ async function rerankWithWorkersAI(
       query,
       contexts: documents.map(d => ({ text: d }))
     };
+    logger.info({ rerankerInput }, '[DEBUG] Workers AI reranking');
 
     // Call Workers AI reranker model
     // Use type assertion to handle AI property on Env
@@ -382,6 +383,7 @@ async function rerankWithWorkersAI(
 
     // Call the reranker model
     const rerankerOutput = await envWithAI.AI.run('@cf/baai/bge-reranker-base', rerankerInput) as RerankerResponse;
+    logger.info({ rerankerOutput }, '[DEBUG] Workers AI reranking');
 
 
     // Map scores back to original chunks

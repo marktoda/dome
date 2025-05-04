@@ -40,7 +40,7 @@ export class ContentController {
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
     private readonly siloService: SiloService,
-  ) {}
+  ) { }
 
   /* ----------------------------------------------------------------------- */
   /*  Public API                                                             */
@@ -121,7 +121,7 @@ export class ContentController {
                 results[item.id].customMetadata = customMetadata;
               }
             }
-            
+
             // Get the content body for small objects
             if (item.size <= SIMPLE_PUT_MAX_SIZE) {
               results[item.id].body = await obj.text();

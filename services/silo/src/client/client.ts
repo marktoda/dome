@@ -33,7 +33,7 @@ export class SiloClient {
     private readonly binding: SiloBinding,
     private readonly queue?: Queue<SiloSimplePutInput>,
     private readonly metricsPrefix: string = 'silo.client',
-  ) {}
+  ) { }
 
   /**
    * Upload multiple content items to Silo

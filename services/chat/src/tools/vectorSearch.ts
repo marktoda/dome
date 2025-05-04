@@ -25,6 +25,7 @@ export const vectorSearchOutput = z.array(
     body: z.string(),
     metadata: z.object({
       source: z.string(),
+      summary: z.string().nullable().optional(),
       createdAt: z.string(),
       relevanceScore: z.number(),
       url: z.string().url().nullable().optional(),
@@ -81,6 +82,8 @@ export const vectorSearchTool: VectorRetrievalTool<
       id: r.title,
       content: r.body,
       metadata: {
+        title: r.title,
+        summary: r.metadata.summary ?? '',
         url: r.metadata.url ?? '',
         createdAt: r.metadata.createdAt,
         relevanceScore: r.metadata.relevanceScore,

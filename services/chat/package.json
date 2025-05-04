@@ -17,6 +17,7 @@
     "@dome/errors": "workspace:*",
     "@dqbd/tiktoken": "^1.0.7",
     "@langchain/cloudflare": "^0.1.0",
+    "@langchain/cohere": "^0.3.3",
     "@langchain/community": "^0.3.41",
     "@langchain/core": "^0.3.48",
     "@langchain/langgraph": "^0.2.67",
