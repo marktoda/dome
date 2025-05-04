@@ -157,12 +157,22 @@ export function createReranker(options: RerankerOptions) {
         env
       );
 
-      // Filter by threshold and limit result count
+      // Filter by appropriate threshold based on source type
       let filteredChunks = rerankedChunks;
       if (!keepBelowThreshold) {
-        filteredChunks = rerankedChunks.filter(chunk =>
-          (chunk.metadata.rerankerScore || 0) >= scoreThreshold
-        );
+        filteredChunks = rerankedChunks.filter(chunk => {
+          // Get the appropriate threshold for this content type
+          const contentType = chunk.metadata.sourceType as string || 'note';
+          const sourceThreshold = SOURCE_THRESHOLDS[contentType as keyof typeof SOURCE_THRESHOLDS] || scoreThreshold;
+          
+          // Use hybridScore for filtering if available, otherwise fall back to rerankerScore
+          // Using type assertion since we added these properties dynamically
+          const hybridScore = (chunk.metadata as any).hybridScore;
+          const rerankerScore = chunk.metadata.rerankerScore || 0;
+          const scoreToUse = hybridScore !== undefined ? hybridScore : rerankerScore;
+            
+          return scoreToUse >= sourceThreshold;
+        });
       }
 
       // Take top results up to maxResults
@@ -324,6 +334,45 @@ export function createReranker(options: RerankerOptions) {
 }
 
 /**
+ * Map to store per-source score thresholds for different content types
+ */
+const SOURCE_THRESHOLDS = {
+  code: 0.3,   // Code generally scores lower
+  docs: 0.55,  // Documentation tends to score higher
+  note: 0.4,   // Notes often score in the middle range
+  notes: 0.4,  // Alias for note
+  web: 0.5     // Web content generally scores well
+};
+
+/**
+ * Apply logistic function to map raw logit scores to [0,1] range
+ * BGE reranker scores are typically in range [-5, 10], this maps to [0.007, 0.9999]
+ *
+ * @param x Raw logit score from the reranker
+ * @returns Normalized score in [0,1] range
+ */
+function logistic(x: number): number {
+  return 1 / (1 + Math.exp(-x));
+}
+
+/**
+ * Clean text input to remove markup and code fencing that might confuse the reranker
+ *
+ * @param text Input text to clean
+ * @returns Cleaned text with code blocks and HTML tags simplified
+ */
+function cleanTextForReranker(text: string): string {
+  // Replace code blocks with simplified <code> tag
+  const withoutCodeBlocks = text.replace(/```[\s\S]*?```/g, "<code>");
+  
+  // Remove HTML tags
+  const withoutHtml = withoutCodeBlocks.replace(/<[^>]+>/g, "");
+  
+  // Truncate to reasonable length for reranker (about 300 tokens)
+  return withoutHtml.slice(0, 1500);
+}
+
+/**
  * Interface for the reranking request to Workers AI
  */
 interface RerankerRequest {
@@ -366,53 +415,88 @@ async function rerankWithWorkersAI(
       query
     }, 'Starting Workers AI reranking');
 
-    // Extract text content from chunks for reranking
-    const documents = chunks.map(chunk => chunk.content);
+    // Clean and truncate the query
+    const cleanedQuery = cleanTextForReranker(query).slice(0, 500);
+    
+    // Clean and truncate content from chunks for reranking
+    const cleanedChunks = chunks.map(chunk => ({
+      ...chunk,
+      cleanedContent: cleanTextForReranker(chunk.content)
+    }));
 
     // Format for BGE reranker needs { query, contexts: [{ text: "doc1" }, ...] }
     const rerankerInput = {
-      query,
-      contexts: documents.map(d => ({ text: d }))
+      query: cleanedQuery,
+      contexts: cleanedChunks.map(c => ({ text: c.cleanedContent }))
     };
     logger.info({ rerankerInput }, '[DEBUG] Workers AI reranking');
 
-    // Call Workers AI reranker model
-    // Use type assertion to handle AI property on Env
-    const envWithAI = env as any;
-    logger.info({ model: modelName }, 'Using Workers AI model for reranking');
+    // Determine which model to use based on content type
+    // Use bge-reranker-large for code or bge-m3 for potential multilingual content
+    const sourceType = chunks[0]?.metadata?.sourceType as string || '';
+    const isCodeContent = sourceType === 'code' || query.toLowerCase().includes('code');
+    
+    // Choose appropriate model based on content
+    const effectiveModel = isCodeContent ? '@cf/baai/bge-reranker-large' : modelName;
+    
+    logger.info({ model: effectiveModel }, 'Using Workers AI model for reranking');
 
-    // Call the reranker model
-    const rerankerOutput = await envWithAI.AI.run('@cf/baai/bge-reranker-base', rerankerInput) as RerankerResponse;
+    // Call Workers AI reranker model
+    const envWithAI = env as any;
+    const rerankerOutput = await envWithAI.AI.run(effectiveModel, rerankerInput) as RerankerResponse;
     logger.info({ rerankerOutput }, '[DEBUG] Workers AI reranking');
 
-
-    // Map scores back to original chunks
+    // Check for unusually low scores across all results
+    const allScoresLow = rerankerOutput.response.every(r => r.score < -2);
+    
+    // Get source type for threshold lookup
+    const contentType = chunks[0]?.metadata?.sourceType || 'note';
+    // Get source-specific threshold or default to 0.45
+    const sourceThreshold = SOURCE_THRESHOLDS[contentType as keyof typeof SOURCE_THRESHOLDS] || 0.45;
+    
+    // Map scores back to original chunks with normalization
     const rerankedChunks = chunks.map((chunk, i) => {
       // Find the corresponding score from reranker response
-      // The bge-reranker-base model returns response array with id and score
       const result = rerankerOutput.response.find(r => r.id === i);
-      const score = result ? result.score : 0;
-
-      // Create a new chunk with the reranker score
+      const rawScore = result ? result.score : -5; // Default to very low score if missing
+      
+      // Normalize raw score with logistic function
+      const normalizedScore = logistic(rawScore);
+      
+      // Calculate hybrid score (70% reranker, 30% original vector score)
+      const vectorScore = chunk.metadata.relevanceScore || 0.5;
+      const hybridScore = allScoresLow
+        ? vectorScore  // If all scores are very low, fall back to vector scores
+        : 0.7 * normalizedScore + 0.3 * vectorScore;
+      
+      // Create a new chunk with all score information
       return {
         ...chunk,
         metadata: {
           ...chunk.metadata,
-          rerankerScore: score
+          rerankerRawScore: rawScore,           // Original BGE score (-5 to 10 range)
+          rerankerScore: normalizedScore,       // Normalized to 0-1 range
+          hybridScore: hybridScore,             // Combined score
+          sourceThreshold: sourceThreshold      // The threshold for this content type
         }
       };
     });
+    
     getLogger().info({
-      chunks: rerankedChunks.length, ranked: rerankedChunks.map((c) => ({
+      chunks: rerankedChunks.length,
+      ranked: rerankedChunks.map((c) => ({
         id: c.id,
-        rerankedScore: c.metadata.rerankerScore,
-        preScore: c.metadata.relevanceScore
+        sourceType: c.metadata.sourceType,
+        rawScore: c.metadata.rerankerRawScore,
+        normalizedScore: c.metadata.rerankerScore,
+        hybridScore: c.metadata.hybridScore,
+        vectorScore: c.metadata.relevanceScore
       }))
     }, 'Workers AI reranked');
 
-    // Sort by reranker score (highest first)
+    // Sort by hybrid score (highest first)
     return rerankedChunks.sort((a, b) =>
-      (b.metadata.rerankerScore || 0) - (a.metadata.rerankerScore || 0)
+      (b.metadata.hybridScore || 0) - (a.metadata.hybridScore || 0)
     );
   } catch (error) {
     // Log error details
@@ -423,15 +507,24 @@ async function rerankWithWorkersAI(
     }, 'Workers AI reranking failed');
 
     // Fallback to basic scoring if Workers AI fails
-    // Return chunks with relevance scores or default scores
-    return chunks.map(chunk => ({
-      ...chunk,
-      metadata: {
-        ...chunk.metadata,
-        rerankerScore: chunk.metadata.relevanceScore || 0.5
-      }
-    })).sort((a, b) =>
-      (b.metadata.rerankerScore || 0) - (a.metadata.rerankerScore || 0)
+    // Return chunks with relevance scores as hybrid scores
+    return chunks.map(chunk => {
+      const contentType = chunk.metadata.sourceType as string || 'note';
+      const sourceThreshold = SOURCE_THRESHOLDS[contentType as keyof typeof SOURCE_THRESHOLDS] || 0.45;
+      const vectorScore = chunk.metadata.relevanceScore || 0.5;
+      
+      return {
+        ...chunk,
+        metadata: {
+          ...chunk.metadata,
+          rerankerRawScore: 0,
+          rerankerScore: vectorScore,
+          hybridScore: vectorScore,
+          sourceThreshold: sourceThreshold
+        }
+      };
+    }).sort((a, b) =>
+      (b.metadata.hybridScore || 0) - (a.metadata.hybridScore || 0)
     );
   }
 }

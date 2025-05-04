@@ -362,10 +362,27 @@ export class MetadataService {
           .set(updateData)
           .where(eq(contents.id, id))
           .run();
+        
+        // Check if any rows were actually updated
+        if (!result || result.changes === 0) {
+          getLogger().warn(
+            { id, hasTitle: !!data.title, hasSummary: !!data.summary },
+            'Content metadata update did not affect any rows - possible ID mismatch or content not found'
+          );
+          metrics.increment('silo.d1.update_enriched.no_rows_affected', 1);
+          return;
+        }
 
         metrics.timing('silo.d1.update_enriched.latency_ms', Date.now() - startTime);
         getLogger().info(
-          { id, hasTitle: !!data.title, hasSummary: !!data.summary, title: data.title, summary: data.summary },
+          {
+            id,
+            hasTitle: !!data.title,
+            hasSummary: !!data.summary,
+            title: data.title,
+            summary: data.summary,
+            rowsAffected: result.changes
+          },
           'Content metadata enriched',
         );
 

@@ -132,6 +132,11 @@ export class LlmService {
             } catch (error) {
               lastError = error;
 
+              // Check if this is a rate limit error
+              const isRateLimit = error instanceof Error &&
+                (error.message.includes("Capacity temporarily exceeded") ||
+                 error.message.includes("3040"));
+
               // Check if we should retry
               if (attempt < this.MAX_RETRY_ATTEMPTS) {
                 const backoffMs = Math.pow(2, attempt) * 100; // Exponential backoff
@@ -141,11 +146,50 @@ export class LlmService {
                   attempt: attempt + 1,
                   maxAttempts: this.MAX_RETRY_ATTEMPTS,
                   error: error instanceof Error ? error.message : String(error),
+                  isRateLimit,
                   backoffMs
                 }, `LLM processing attempt failed, retrying in ${backoffMs}ms`);
 
                 await new Promise(resolve => setTimeout(resolve, backoffMs));
                 attempt++;
+              } else if (isRateLimit && 'RATE_LIMIT_DLQ' in this.env) {
+                // We've exhausted retries and it's a rate limit error - send to DLQ
+                try {
+                  // Create a focused message with only essential data
+                  const dlqMessage = {
+                    contentType,
+                    content,
+                    requestId: logContext.requestId,
+                    timestamp: Date.now(),
+                    error: error instanceof Error ? error.message : String(error),
+                    retryCount: attempt
+                  };
+                  
+                  await (this.env as any).RATE_LIMIT_DLQ.send(dlqMessage);
+                  
+                  this.logger.info({
+                    ...logContext,
+                    queue: 'RATE_LIMIT_DLQ'
+                  }, 'Rate-limited content queued for later processing');
+                  
+                  // Return a specific response indicating it's queued for later
+                  return {
+                    title: this.generateFallbackTitle(content),
+                    summary: "Processing scheduled for later due to high demand",
+                    processingVersion: 2,
+                    modelUsed: this.MODEL_NAME,
+                    status: "QUEUED_FOR_RETRY",
+                    queuedAt: new Date().toISOString(),
+                  };
+                } catch (dlqError) {
+                  this.logger.error({
+                    ...logContext,
+                    dlqError: dlqError instanceof Error ? dlqError.message : String(dlqError)
+                  }, 'Failed to send rate-limited content to DLQ');
+                  // Continue to standard fallback response
+                }
+                
+                break;
               } else {
                 break;
               }

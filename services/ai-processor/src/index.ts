@@ -341,7 +341,166 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
    * @param env Environment bindings
    */
   /**
-   * Queue handler for processing batches of messages
+   * Queue handler for processing rate-limited content requests
+   * This handler processes messages from the rate limit DLQ with special handling
+   * for rate-limited AI requests, including exponential backoff and capacity checking
+   * @param batch Batch of messages from the rate limit queue
+   */
+  async ratelimitQueue(batch: MessageBatch<any>) {
+    const batchId = crypto.randomUUID();
+    
+    await trackOperation(
+      'process_rate_limit_queue',
+      async () => {
+        const startTime = Date.now();
+        
+        getLogger().info(
+          {
+            queueName: 'rate-limit-dlq',
+            batchId,
+            messageCount: batch.messages.length,
+            operation: 'ratelimitQueue'
+          },
+          'Processing rate limit DLQ batch',
+        );
+        
+        // Track metrics for the batch
+        aiProcessorMetrics.counter('ratelimit_dlq.batch.received', 1);
+        aiProcessorMetrics.counter('ratelimit_dlq.messages.received', batch.messages.length);
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
+        // Process each message with a longer delay between attempts
+        for (const message of batch.messages) {
+          const messageRequestId = `${batchId}-${message.id}`;
+          
+          try {
+            // Check if the message is valid
+            if (!message.body || !message.body.contentType || !message.body.content) {
+              getLogger().warn(
+                { messageId: message.id, requestId: messageRequestId },
+                'Invalid message in rate limit queue, acknowledging'
+              );
+              message.ack();
+              continue;
+            }
+            
+            // Extract message content
+            const { contentType, content, retryCount = 0 } = message.body;
+            
+            // Check if the AI service still has capacity issues
+            let hasCapacity = true;
+            try {
+              // Make a tiny test request to check capacity
+              await this.env.AI.run('@cf/google/gemma-7b-it-lora', {
+                messages: [{ role: 'user', content: 'test capacity' }],
+                stream: false,
+              });
+            } catch (error) {
+              if (error instanceof Error &&
+                  (error.message.includes("Capacity temporarily exceeded") ||
+                   error.message.includes("3040"))) {
+                hasCapacity = false;
+              }
+            }
+            
+            if (!hasCapacity) {
+              // System is still busy, use exponential backoff based on retry count
+              const backoffMinutes = Math.min(Math.pow(2, retryCount), 60); // Max 60 minute backoff
+              
+              getLogger().info(
+                {
+                  messageId: message.id,
+                  requestId: messageRequestId,
+                  retryCount,
+                  backoffMinutes,
+                  operation: 'ratelimitQueue'
+                },
+                `System still at capacity, not acknowledging to allow retry in ~${backoffMinutes} minutes`
+              );
+              
+              // Don't acknowledge so it will retry according to the queue config
+              continue;
+            }
+            
+            // System has capacity, attempt to process the content
+            const result = await this.services.llm.processContent(content, contentType);
+            
+            // If we get here, processing succeeded
+            getLogger().info(
+              {
+                messageId: message.id,
+                requestId: messageRequestId,
+                contentType,
+                operation: 'ratelimitQueue',
+                hasTitle: !!result.title,
+                hasSummary: !!result.summary
+              },
+              'Successfully processed previously rate-limited content'
+            );
+            
+            // Acknowledge the message
+            message.ack();
+            successCount++;
+            
+            // Track successful processing
+            aiProcessorMetrics.counter('ratelimit_dlq.messages.processed', 1);
+          } catch (error) {
+            errorCount++;
+            const domeError = toDomeError(error, 'Failed to process rate-limited content', {
+              messageId: message.id,
+              requestId: messageRequestId,
+              batchId
+            });
+            
+            logError(domeError, 'Failed to process message from rate limit queue');
+            
+            // If it's still a rate limit error, don't acknowledge
+            if (error instanceof Error &&
+                (error.message.includes("Capacity temporarily exceeded") ||
+                 error.message.includes("3040"))) {
+              getLogger().warn(
+                {
+                  messageId: message.id,
+                  requestId: messageRequestId,
+                  error: error instanceof Error ? error.message : String(error)
+                },
+                'Still rate limited, not acknowledging to allow retry'
+              );
+            } else {
+              // For other errors, acknowledge to prevent infinite retries
+              message.ack();
+              aiProcessorMetrics.counter('ratelimit_dlq.messages.errors', 1);
+            }
+          }
+        }
+        
+        // Log batch completion
+        const duration = Date.now() - startTime;
+        getLogger().info(
+          {
+            queueName: 'rate-limit-dlq',
+            batchId,
+            messageCount: batch.messages.length,
+            successCount,
+            errorCount,
+            durationMs: duration,
+            operation: 'ratelimitQueue'
+          },
+          'Completed processing rate limit queue batch',
+        );
+        
+        // Track batch metrics
+        aiProcessorMetrics.timing('ratelimit_dlq.batch.duration_ms', duration);
+        aiProcessorMetrics.counter('ratelimit_dlq.batch.completed', 1);
+      },
+      { batchId, queueName: 'rate-limit-dlq', messageCount: batch.messages.length }
+    );
+  }
+
+  /**
+   * Queue handler for processing regular content messages
    * @param batch Batch of messages from the queue
    */
   async queue(batch: MessageBatch<NewContentMessage>) {

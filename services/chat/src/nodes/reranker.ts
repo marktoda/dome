@@ -11,9 +11,19 @@ import { toDomeError } from '../utils/errors';
 export type ContentCategory = 'code' | 'docs' | 'notes';
 
 /**
- * Model configurations for different content types - now using a single model
+ * Model configurations for different content types
+ * We now use specialized models depending on content type
  */
-const RERANKER_MODEL = '@cf/baai/bge-reranker-base';
+const RERANKER_MODELS = {
+  base: '@cf/baai/bge-reranker-base',    // General purpose model
+  large: '@cf/baai/bge-reranker-large',  // Better for complex content
+  multilingual: '@cf/baai/bge-reranker-m3' // Better for non-English or mixed content
+};
+
+/**
+ * Default model to use when no specific model is selected
+ */
+const DEFAULT_RERANKER_MODEL = RERANKER_MODELS.base;
 
 /**
  * Maximum number of chunks to return after reranking
@@ -21,10 +31,11 @@ const RERANKER_MODEL = '@cf/baai/bge-reranker-base';
 const MAX_CHUNKS = 10;
 
 /**
- * Threshold score for filtering chunks (0-1)
- * Chunks with scores below the threshold will be filtered out
+ * Default threshold score for filtering chunks (0-1)
+ * Using an adaptive threshold based on content type
+ * The actual thresholds are defined in rerankerUtils.ts
  */
-const SCORE_THRESHOLD = 0.0;
+const DEFAULT_SCORE_THRESHOLD = 0.45;
 
 /**
  * Unified Reranker Node
@@ -167,13 +178,13 @@ export async function reranker(
     // Array to store all reranked tasks
     const rerankedTasks: RetrievalTask[] = [];
 
-    // Create a base reranker that doesn't depend on categories
-    const baseRerankerConfig = {
-      name: 'unified',
-      model: RERANKER_MODEL,
-      scoreThreshold: SCORE_THRESHOLD,
-      maxResults: MAX_CHUNKS
-    };
+    // Log the reranker model configuration
+    logger.info({
+      models: RERANKER_MODELS,
+      defaultModel: DEFAULT_RERANKER_MODEL,
+      defaultThreshold: DEFAULT_SCORE_THRESHOLD,
+      maxChunks: MAX_CHUNKS
+    }, 'Reranker configuration');
 
     // Process each merged retrieval task separately
     for (const task of mergedTasks) {
@@ -186,15 +197,33 @@ export async function reranker(
         continue;
       }
 
+      // Determine the best model to use based on content type
+      const contentType = task.sourceType || task.category;
+      const contentTypeStr = contentType.toString().toLowerCase();
+      
+      // Use specialized model based on content type
+      let modelToUse = DEFAULT_RERANKER_MODEL;
+      if (contentTypeStr === 'code' || task.query?.toLowerCase().includes('code')) {
+        modelToUse = RERANKER_MODELS.large; // Better for code content
+      } else if (task.query?.match(/[^\x00-\x7F]/)) { // Contains non-ASCII characters
+        modelToUse = RERANKER_MODELS.multilingual; // Better for multilingual content
+      }
+      
       logger.info({
         category: task.category,
         query: task.query,
         chunkCount: task.chunks.length,
-        sourceType: task.sourceType || task.category
+        sourceType: contentType,
+        selectedModel: modelToUse
       }, `Reranking chunks for ${task.category}`);
 
-      // Create a reranker instance
-      const reranker = createReranker(baseRerankerConfig);
+      // Create a reranker instance with appropriate configuration
+      const reranker = createReranker({
+        name: `reranker-${contentTypeStr}`,
+        model: modelToUse,
+        scoreThreshold: DEFAULT_SCORE_THRESHOLD, // This is just a default, source-specific thresholds are applied in rerankerUtils
+        maxResults: MAX_CHUNKS
+      });
 
       // Create a properly typed RetrievalResult for the reranker
       const retrievalResult: RetrievalResult = {
@@ -225,7 +254,7 @@ export async function reranker(
         metadata: {
           ...(task.metadata || {}),
           executionTimeMs: rerankedResult.metadata?.executionTimeMs || 0,
-          rerankerModel: RERANKER_MODEL,
+          rerankerModel: modelToUse, // Use the selected model for this task
           originalChunkCount: task.chunks?.length || 0,
           rerankedChunkCount: rerankedResult.chunks?.length || 0,
           // Ensure required metadata properties always have values
@@ -237,11 +266,27 @@ export async function reranker(
       // Add to the reranked tasks array
       rerankedTasks.push(rerankedTask);
 
+      // Add enhanced logging with score information
+      const rerankedChunks = rerankedResult.chunks || [];
+      const scoreInfo = rerankedChunks.slice(0, 3).map(chunk => {
+        // Use type assertion to access the dynamically added properties
+        const meta = chunk.metadata as any;
+        return {
+          id: chunk.id,
+          rawScore: meta.rerankerRawScore,
+          normalizedScore: meta.rerankerScore,
+          hybridScore: meta.hybridScore,
+          sourceThreshold: meta.sourceThreshold
+        };
+      });
+      
       logger.info({
         category: task.category,
         originalChunks: task.chunks?.length || 0,
         rerankedChunks: rerankedResult.chunks?.length || 0,
-        executionTimeMs: rerankedResult.metadata?.executionTimeMs || 0
+        executionTimeMs: rerankedResult.metadata?.executionTimeMs || 0,
+        model: modelToUse,
+        topScores: scoreInfo
       }, `Completed reranking for ${task.category}`);
     }
 
@@ -265,10 +310,15 @@ export async function reranker(
       elapsed
     );
 
-    // Log the deduplicated and reranked retrievals
+    // Log the deduplicated and reranked retrievals with enhanced information
     logger.info({
       rerankedTaskCount: rerankedTasks.length,
-      totalRerankedChunks: rerankedTasks.reduce((sum, task) => sum + (task.chunks?.length || 0), 0)
+      totalRerankedChunks: rerankedTasks.reduce((sum, task) => sum + (task.chunks?.length || 0), 0),
+      taskBreakdown: rerankedTasks.map(task => ({
+        category: task.category,
+        sourceType: task.sourceType,
+        chunkCount: task.chunks?.length || 0
+      }))
     }, "Completed all reranking operations");
 
     // Return updated state with all reranked tasks

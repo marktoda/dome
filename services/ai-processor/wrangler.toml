@@ -17,10 +17,24 @@ max_retries = 3
 queue = "enriched-content"
 binding = "ENRICHED_CONTENT"
 
-# Queue producer for ENRICHED_CONTENT
+# Queue producer for TODOS
 [[queues.producers]]
 queue = "todos"
 binding = "TODOS"
+
+# Rate limit DLQ for handling rate-limited AI requests
+[[queues.producers]]
+queue = "rate-limit-dlq"
+binding = "RATE_LIMIT_DLQ"
+
+# Rate limit DLQ consumer
+[[queues.consumers]]
+queue = "rate-limit-dlq"
+binding = "RATE_LIMIT_DLQ"
+max_batch_size = 5  # Smaller batch size for rate-limited content
+max_batch_timeout = 30  # Longer timeout to avoid overwhelming the AI service
+max_retries = 10  # More retries for rate-limited content
+dead_letter_queue = "ingest-dlq"  # Send to general DLQ after all retries exhaust
 
 # AI binding for Workers AI
 [ai]
