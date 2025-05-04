@@ -1,8 +1,7 @@
 import { Context } from 'hono';
-import { getLogger } from '@dome/common';
+import { getIdentity, getLogger } from '@dome/common';
 import { TsunamiClient } from '@dome/tsunami/client';
 import { Bindings } from '../types';
-import { UserIdContext } from '../middleware/userIdMiddleware';
 import { z } from 'zod';
 
 /**
@@ -25,15 +24,16 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async registerNotionWorkspace(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async registerNotionWorkspace(c: Context<{ Bindings: Bindings; }>) {
     try {
+      const { userId } = getIdentity();
       const schema = z.object({
         workspaceId: z.string().min(1),
         userId: z.string().optional(),
         cadence: z.string().default('PT1H'),
       });
 
-      const { workspaceId, userId, cadence } = await c.req.json<z.infer<typeof schema>>();
+      const { workspaceId, cadence } = await c.req.json<z.infer<typeof schema>>();
       this.logger.info({ workspaceId, userId, cadence }, 'Registering Notion workspace');
 
       // Convert cadence string (e.g., "PT1H") to seconds if provided
@@ -78,7 +78,7 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async getNotionWorkspaceHistory(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async getNotionWorkspaceHistory(c: Context<{ Bindings: Bindings; }>) {
     try {
       const { workspaceId } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '10', 10);
@@ -108,7 +108,7 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async triggerNotionWorkspaceSync(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async triggerNotionWorkspaceSync(c: Context<{ Bindings: Bindings; }>) {
     try {
       const { workspaceId } = c.req.param();
 
@@ -135,15 +135,15 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async configureNotionOAuth(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async configureNotionOAuth(c: Context<{ Bindings: Bindings; }>) {
     try {
       const schema = z.object({
         code: z.string().min(1),
         redirectUri: z.string().url(),
-        userId: z.string().optional(),
       });
+      const { userId } = getIdentity();
 
-      const { code, redirectUri, userId } = await c.req.json<z.infer<typeof schema>>();
+      const { code, redirectUri } = await c.req.json<z.infer<typeof schema>>();
 
       this.logger.info({ codeExists: !!code, redirectUri, userId }, 'Configuring Notion OAuth');
 
@@ -168,7 +168,7 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async getNotionOAuthUrl(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async getNotionOAuthUrl(c: Context<{ Bindings: Bindings; }>) {
     try {
       const schema = z.object({
         redirectUri: z.string().url(),

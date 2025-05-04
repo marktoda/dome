@@ -4,9 +4,7 @@ import { z } from 'zod';
 import { Bindings } from '../types';
 import { SearchService, PaginatedSearchResults } from '../services/searchService';
 import { trackTiming, trackOperation, incrementCounter, getMetrics } from '../utils/metrics';
-import { UserIdContext } from '../middleware/userIdMiddleware';
-import { getLogger } from '@dome/common';
-import { ServiceError } from '@dome/common';
+import { getLogger, getIdentity, ServiceError } from '@dome/common';
 
 /* -------------------------------------------------------------------------- */
 /*                             Validation Schema                              */
@@ -101,10 +99,10 @@ export class SearchController {
    * @param c Hono context
    * @returns Response with search results
    */
-  async search(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+  async search(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
     try {
+      const { userId } = getIdentity();
       const parsed = SearchQuerySchema.parse(c.req.query());
-      const userId = c.get('userId');
 
       // Track search query metrics
       incrementCounter('search.query', 1, {
@@ -202,11 +200,11 @@ export class SearchController {
    * @returns Streaming response with search results
    */
   async streamSearch(
-    c: Context<{ Bindings: Bindings; Variables: UserIdContext }>,
+    c: Context<{ Bindings: Bindings; }>,
   ): Promise<Response> {
     try {
+      const { userId } = getIdentity();
       const parsed = SearchQuerySchema.parse(c.req.query());
-      const userId = c.get('userId');
 
       // Track streaming search query metrics
       incrementCounter('search.stream_query', 1, {

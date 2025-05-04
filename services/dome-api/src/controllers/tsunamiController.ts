@@ -1,8 +1,7 @@
 import { Context } from 'hono';
-import { getLogger } from '@dome/common';
+import { getIdentity, getLogger } from '@dome/common';
 import { TsunamiClient } from '@dome/tsunami/client';
 import { Bindings } from '../types';
-import { UserIdContext } from '../middleware/userIdMiddleware';
 import { z } from 'zod';
 
 /**
@@ -25,16 +24,16 @@ export class TsunamiController {
    * @param c Hono context
    * @returns Response
    */
-  async registerGithubRepo(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async registerGithubRepo(c: Context<{ Bindings: Bindings; }>) {
     try {
+      const { userId } = getIdentity();
       const schema = z.object({
         owner: z.string().min(1),
         repo: z.string().min(1),
-        userId: z.string().optional(),
         cadence: z.string().default('PT1H'),
       });
 
-      const { owner, repo, userId, cadence } = await c.req.json<z.infer<typeof schema>>();
+      const { owner, repo, cadence } = await c.req.json<z.infer<typeof schema>>();
       this.logger.info({ owner, repo, userId, cadence }, 'Registering GitHub repository');
 
       // Convert cadence string (e.g., "PT1H") to seconds if provided
@@ -75,8 +74,9 @@ export class TsunamiController {
    * @param c Hono context
    * @returns Response
    */
-  async getGithubRepoHistory(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async getGithubRepoHistory(c: Context<{ Bindings: Bindings; }>) {
     try {
+      const { userId } = getIdentity();
       const { owner, repo } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '10', 10);
 
@@ -105,9 +105,9 @@ export class TsunamiController {
    * @param c Hono context
    * @returns Response
    */
-  async getUserHistory(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async getUserHistory(c: Context<{ Bindings: Bindings; }>) {
     try {
-      const { userId } = c.req.param();
+      const { userId } = getIdentity();
       const limit = parseInt(c.req.query('limit') || '10', 10);
 
       this.logger.info({ userId, limit }, 'Getting user sync history');
@@ -135,8 +135,9 @@ export class TsunamiController {
    * @param c Hono context
    * @returns Response
    */
-  async getSyncPlanHistory(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) {
+  async getSyncPlanHistory(c: Context<{ Bindings: Bindings; }>) {
     try {
+      const { userId } = getIdentity();
       const { syncPlanId } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '10', 10);
 

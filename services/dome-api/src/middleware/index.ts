@@ -12,6 +12,3 @@ export {
 
 // Metrics middleware
 export * from './metricsMiddleware';
-
-// User ID middleware
-export * from './userIdMiddleware';

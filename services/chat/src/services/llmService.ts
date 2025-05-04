@@ -21,6 +21,8 @@ import {
   getTimeoutConfig,
   getQueryRewritingPrompt,
   getQueryComplexityAnalysisPrompt,
+  DEFAULT_CONTEXT_ALLOCATION,
+  calculateContextLimits,
 } from '../config';
 
 // Default model ID to use - will be properly initialized during service startup
@@ -43,11 +45,28 @@ function withTimeout<T>(p: Promise<T>, ms = getTimeoutConfig().llmServiceTimeout
   ]);
 }
 
-function truncateContext(context: string, cfg: ReturnType<typeof getModelConfig>): string {
+/**
+ * Truncates context to fit within the model's context window
+ * Using dynamic allocation based on the contextConfig settings
+ *
+ * @param context Text context to truncate if necessary
+ * @param modelConfig Model configuration to use for limits
+ * @returns Truncated context with ellipsis if needed
+ */
+function truncateContext(context: string, modelConfig: ReturnType<typeof getModelConfig>): string {
+  // Roughly estimate token count (more accurate would be to use a proper tokenizer)
   const ctxTokens = Math.ceil(context.length / 4);
-  const maxCtx = Math.floor(cfg.maxContextTokens * 0.5);
-  if (ctxTokens <= maxCtx) return context;
-  const ratio = maxCtx / ctxTokens;
+  
+  // Get context limits using our new configuration system
+  const { maxDocumentsTokens } = calculateContextLimits(modelConfig);
+  
+  // If context fits within limit, return as is
+  if (ctxTokens <= maxDocumentsTokens) return context;
+  
+  // Calculate ratio for truncation
+  const ratio = maxDocumentsTokens / ctxTokens;
+  
+  // Truncate to fit within limit and add ellipsis
   return context.slice(0, Math.floor(context.length * ratio)) + '…';
 }
 

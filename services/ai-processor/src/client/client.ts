@@ -1,6 +1,6 @@
 import { getLogger, logError, metrics } from '@dome/common';
 import { z } from 'zod';
-import { ReprocessRequestSchema, ReprocessResponseSchema } from '../index';
+import { ReprocessRequestSchema, ReprocessResponseSchema } from '../types';
 import { AiProcessorBinding } from './types';
 
 /**
@@ -16,7 +16,7 @@ export class AiProcessorClient {
   constructor(
     private readonly binding: AiProcessorBinding,
     private readonly metricsPrefix: string = 'ai_processor.client',
-  ) {}
+  ) { }
 
   /**
    * Reprocess content by ID or all content with failed summaries

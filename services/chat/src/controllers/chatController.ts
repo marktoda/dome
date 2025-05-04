@@ -2,6 +2,8 @@ import { getLogger, metrics } from '@dome/common';
 import { withContext } from '@dome/common';
 import { toDomeError, ValidationError } from '../utils/errors';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
+import { getModelConfig } from '../config/modelConfig';
+import { calculateContextLimits } from '../config/contextConfig';
 import {
   chatRequestSchema,
   resumeChatRequestSchema,
@@ -91,7 +93,7 @@ export class ChatController {
         enhanceWithContext: true,
         maxContextItems: 5,
         includeSourceInfo: true,
-        maxTokens: 1000,
+        maxTokens: this.getModelLimits().maxResponseTokens,
       },
       runId,
     });
@@ -123,6 +125,30 @@ export class ChatController {
       generatedText,
       metadata: { ...metadata, startTime: performance.now(), runId },
     } as AgentState;
+  }
+  
+  /**
+   * Get model-specific context limits
+   *
+   * @param modelId Optional model ID
+   * @returns Object with token limits for different components
+   */
+  private getModelLimits(modelId?: string): {
+    maxContextTokens: number;
+    maxResponseTokens: number;
+    maxDocumentsTokens: number;
+  } {
+    // Get model configuration from modelId or use default
+    const modelConfig = modelId ? getModelConfig(modelId) : getModelConfig();
+    
+    // Calculate context limits
+    const contextLimits = calculateContextLimits(modelConfig);
+    
+    return {
+      maxContextTokens: contextLimits.maxContextTokens,
+      maxResponseTokens: contextLimits.maxResponseTokens,
+      maxDocumentsTokens: contextLimits.maxDocumentsTokens,
+    };
   }
 
   /* ---------------------------------------------------------------------- */

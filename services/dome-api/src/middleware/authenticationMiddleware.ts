@@ -1,5 +1,5 @@
 import { Context, Next } from 'hono';
-import { getLogger } from '@dome/common';
+import { getLogger, updateContext } from '@dome/common';
 import type { Bindings } from '../types';
 import { createServiceFactory } from '../services/serviceFactory';
 
@@ -65,6 +65,13 @@ export const authenticationMiddleware = async (
     c.set('userEmail', user.email);
 
     logger.debug({ userId: user.id }, 'User authenticated');
+    await updateContext({
+      identity: {
+        userId: user.id,
+        role: user.role,
+        email: user.email,
+      }
+    })
 
     // Continue to next middleware/handler
     await next();

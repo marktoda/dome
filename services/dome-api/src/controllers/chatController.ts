@@ -1,5 +1,5 @@
 import { Context } from 'hono';
-import { getLogger } from '@dome/common';
+import { getIdentity, getLogger } from '@dome/common';
 import { ChatClient, chatRequestSchema } from '@dome/chat/client';
 import { z } from 'zod';
 import {
@@ -19,7 +19,7 @@ export class ChatController {
    * Create a new chat controller
    * @param chatService Chat service instance
    */
-  constructor(private chatService: ChatClient) {}
+  constructor(private chatService: ChatClient) { }
 
   /**
    * Handle chat requests
@@ -28,12 +28,7 @@ export class ChatController {
    */
   async chat(c: Context): Promise<Response> {
     try {
-      // Get user ID from header
-      const userId = c.req.header('x-user-id');
-      if (!userId) {
-        this.logger.warn('Missing user ID in request');
-        return unauthorizedResponse(c, 'User ID is required');
-      }
+      const { userId } = getIdentity();
 
       // Parse request body
       const requestData = chatRequestSchema.parse(await c.req.json());

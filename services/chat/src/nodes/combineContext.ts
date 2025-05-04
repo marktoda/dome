@@ -3,6 +3,7 @@ import { ObservabilityService } from '../services/observabilityService';
 import { AgentState, Document, ToolResult } from '../types';
 import { toDomeError } from '../utils/errors';
 import { countTokens } from '../utils/tokenCounter';
+import { getModelDocumentLimits } from '../config/retrieveConfig';
 
 /* ────────────────────────────────────────────────────────────────
  * combineContext
@@ -17,8 +18,18 @@ export async function combineContext(
   const t0 = performance.now();
   const trace = state.metadata?.traceId ?? '';
   const span = ObservabilityService.startSpan(env, trace, 'combineContext', state);
-  const cap = state.options.maxTokens;
-  log.info({ cap, retrievals: state.retrievals?.length }, '[CombineContext]: Combining context up to token cap');
+  
+  // Get model-specific document limits based on configured model
+  const { maxTotalDocumentTokens } = getModelDocumentLimits(state.options?.modelId);
+  
+  // Use the dynamic token cap from the model config or fall back to state options
+  const cap = maxTotalDocumentTokens || state.options.maxTokens;
+  
+  log.info({
+    tokenCap: cap,
+    modelId: state.options?.modelId,
+    retrievals: state.retrievals?.length
+  }, '[CombineContext]: Combining context up to token cap');
 
   try {
     /* 1 · helpers */

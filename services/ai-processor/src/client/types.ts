@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ReprocessRequestSchema, ReprocessResponseSchema } from '../index';
+import { ReprocessRequestSchema, ReprocessResponseSchema } from '../types';
 
 /**
  * AiProcessorBinding interface

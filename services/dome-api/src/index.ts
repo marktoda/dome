@@ -10,7 +10,6 @@ import {
   formatZodError,
   createDetailedLoggerMiddleware,
 } from '@dome/common';
-import { userIdMiddleware, UserIdContext } from './middleware/userIdMiddleware';
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { createAuthController } from './controllers/authController';
 import { initLogging, getLogger } from '@dome/common';
@@ -123,29 +122,26 @@ const notesRouter = new Hono();
 // Apply authentication middleware to all note routes
 notesRouter.use('*', authenticationMiddleware);
 
-// Apply user ID middleware (now gets userId from auth context)
-notesRouter.use('*', userIdMiddleware);
-
 // Ingest endpoint - for adding new notes, files, etc.
-notesRouter.post('/', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+notesRouter.post('/', async (c: Context<{ Bindings: Bindings; }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.ingest(c);
 });
 
 // CRUD operations for notes
-notesRouter.get('/:id', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+notesRouter.get('/:id', async (c: Context<{ Bindings: Bindings; }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.get(c);
 });
-notesRouter.put('/:id', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+notesRouter.put('/:id', async (c: Context<{ Bindings: Bindings; }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.updateNote(c);
 });
-notesRouter.delete('/:id', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+notesRouter.delete('/:id', async (c: Context<{ Bindings: Bindings; }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.delete(c);
 });
-notesRouter.get('/', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+notesRouter.get('/', async (c: Context<{ Bindings: Bindings; }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.listNotes(c);
 });
@@ -156,17 +152,14 @@ const searchRouter = new Hono();
 // Apply authentication middleware to all search routes
 searchRouter.use('*', authenticationMiddleware);
 
-// Apply user ID middleware to all search routes
-searchRouter.use('*', userIdMiddleware);
-
 // Search endpoints - for semantic search over notes
-searchRouter.get('/', async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+searchRouter.get('/', async (c: Context<{ Bindings: Bindings; }>) => {
   const searchController = controllerFactory.getSearchController(c.env);
   return await searchController.search(c);
 });
 searchRouter.get(
   '/stream',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const searchController = controllerFactory.getSearchController(c.env);
     return await searchController.streamSearch(c);
   },
@@ -176,7 +169,7 @@ searchRouter.get(
 const chatRouter = new Hono();
 chatRouter.use('*', authenticationMiddleware);
 
-chatRouter.post('/', async (c: Context<{ Bindings: Bindings; Variables: AuthContext }>) => {
+chatRouter.post('/', async (c: Context<{ Bindings: Bindings; }>) => {
   const chatController = controllerFactory.getChatController(c.env);
   return await chatController.chat(c);
 });
@@ -336,12 +329,11 @@ app.route('/search', searchRouter);
 
 const contentRouter = new Hono();
 contentRouter.use('*', authenticationMiddleware);
-contentRouter.use('*', userIdMiddleware);
 
 // Register a GitHub repository
 contentRouter.post(
   '/github',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const tsunamiController = controllerFactory.getTsunamiController(c.env);
     return await tsunamiController.registerGithubRepo(c);
   },
@@ -350,7 +342,7 @@ contentRouter.post(
 // Get GitHub repository history
 contentRouter.get(
   '/github/:owner/:repo/history',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const tsunamiController = controllerFactory.getTsunamiController(c.env);
     return await tsunamiController.getGithubRepoHistory(c);
   },
@@ -359,7 +351,7 @@ contentRouter.get(
 // Get user sync history
 contentRouter.get(
   '/sync/user/:userId/history',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const tsunamiController = controllerFactory.getTsunamiController(c.env);
     return await tsunamiController.getUserHistory(c);
   },
@@ -368,7 +360,7 @@ contentRouter.get(
 // Get sync plan history
 contentRouter.get(
   '/sync/plan/:syncPlanId/history',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const tsunamiController = controllerFactory.getTsunamiController(c.env);
     return await tsunamiController.getSyncPlanHistory(c);
   },
@@ -377,7 +369,7 @@ contentRouter.get(
 // Notion workspace registration and management
 contentRouter.post(
   '/notion',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const notionController = controllerFactory.getNotionController(c.env);
     return await notionController.registerNotionWorkspace(c);
   },
@@ -386,7 +378,7 @@ contentRouter.post(
 // Get Notion workspace history
 contentRouter.get(
   '/notion/:workspaceId/history',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const notionController = controllerFactory.getNotionController(c.env);
     return await notionController.getNotionWorkspaceHistory(c);
   },
@@ -395,7 +387,7 @@ contentRouter.get(
 // Trigger Notion workspace sync
 contentRouter.post(
   '/notion/:workspaceId/sync',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const notionController = controllerFactory.getNotionController(c.env);
     return await notionController.triggerNotionWorkspaceSync(c);
   },
@@ -404,7 +396,7 @@ contentRouter.post(
 // Notion OAuth configuration
 contentRouter.post(
   '/notion/oauth',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const notionController = controllerFactory.getNotionController(c.env);
     return await notionController.configureNotionOAuth(c);
   },
@@ -413,7 +405,7 @@ contentRouter.post(
 // Get Notion OAuth URL
 contentRouter.get(
   '/notion/oauth/url',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const notionController = controllerFactory.getNotionController(c.env);
     return await notionController.getNotionOAuthUrl(c);
   },
@@ -425,12 +417,11 @@ app.route('/content', contentRouter);
 // AI endpoints - protected by authentication
 const aiRouter = new Hono();
 aiRouter.use('*', authenticationMiddleware);
-aiRouter.use('*', userIdMiddleware);
 
 // Reprocess endpoint - for reprocessing failed AI metadata
 aiRouter.post(
   '/reprocess',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const siloController = controllerFactory.getSiloController(c.env);
     return await siloController.reprocess(c);
   },
@@ -439,7 +430,7 @@ aiRouter.post(
 // Bulk reprocess endpoint - for reprocessing multiple content items by IDs
 aiRouter.post(
   '/bulk-reprocess',
-  async (c: Context<{ Bindings: Bindings; Variables: UserIdContext }>) => {
+  async (c: Context<{ Bindings: Bindings; }>) => {
     const siloController = controllerFactory.getSiloController(c.env);
     return await siloController.bulkReprocess(c);
   },

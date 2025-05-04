@@ -1,16 +1,12 @@
 import { Context } from 'hono';
 import type { Bindings } from '../types';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
 import { SiloClient } from '@dome/silo/client';
 import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
-import { UserIdContext } from '../middleware/userIdMiddleware';
-import { getLogger, metrics } from '@dome/common';
+import { getIdentity, getLogger, metrics } from '@dome/common';
 import {
   ServiceError,
-  siloSimplePutSchema,
   ContentCategory,
-  SiloContentBatch,
   SiloSimplePutInput,
 } from '@dome/common';
 
@@ -63,9 +59,9 @@ export class SiloController {
    * GET /notes/:id
    * Get a single note by ID
    */
-  async get(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+  async get(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
     try {
-      const userId = c.get('userId');
+      const { userId } = getIdentity();
       const id = c.req.param('id');
 
       this.logger.info(
@@ -122,9 +118,9 @@ export class SiloController {
    * GET /notes
    * List notes with optional filtering
    */
-  async listNotes(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+  async listNotes(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
     try {
-      const userId = c.get('userId');
+      const { userId } = getIdentity();
 
       this.logger.info(
         {
@@ -153,7 +149,6 @@ export class SiloController {
       this.logger.error(
         {
           err: error,
-          userId: c.get('userId'),
           path: c.req.path,
         },
         'Error listing notes',
@@ -181,9 +176,9 @@ export class SiloController {
    * GET /notes/batch
    * Batch get notes by IDs
    */
-  async batchGet(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+  async batchGet(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
     try {
-      const userId = c.get('userId');
+      const { userId } = getIdentity();
       const ids = c.req.query('ids')?.split(',') || [];
 
       if (ids.length === 0) {
@@ -219,7 +214,7 @@ export class SiloController {
    * POST /notes/ingest
    * Ingest content and create a note
    */
-  async ingest(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+  async ingest(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
     try {
       this.logger.info({ path: c.req.path, method: c.req.method }, 'Note ingestion started');
 
@@ -229,8 +224,7 @@ export class SiloController {
       const validatedData = ingestSchema.parse(body);
       this.logger.info({ ingestRequest: validatedData }, 'Validated Ingest data');
 
-      // Get user ID from context (set by middleware)
-      const userId = c.get('userId');
+      const { userId } = getIdentity();
 
       // Generate title if not provided
       const title = validatedData.title || validatedData.content.split('\n')[0].substring(0, 50);
@@ -293,10 +287,10 @@ export class SiloController {
    * Update a note
    */
   async updateNote(
-    c: Context<{ Bindings: Bindings; Variables: UserIdContext }>,
+    c: Context<{ Bindings: Bindings; }>,
   ): Promise<Response> {
     try {
-      const userId = c.get('userId');
+      const { userId } = getIdentity();
       const noteId = c.req.param('id');
 
       this.logger.info(
@@ -371,9 +365,9 @@ export class SiloController {
    * DELETE /notes/:id
    * Delete a note
    */
-  async delete(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+  async delete(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
     try {
-      const userId = c.get('userId');
+      const { userId } = getIdentity();
       const id = c.req.param('id');
 
       this.logger.info(
@@ -419,7 +413,7 @@ export class SiloController {
    * POST /notes/reprocess
    * Reprocess AI metadata for content
    */
-  async reprocess(c: Context<{ Bindings: Bindings; Variables: UserIdContext }>): Promise<Response> {
+  async reprocess(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
     try {
       const startTime = performance.now();
       this.logger.info({ path: c.req.path, method: c.req.method }, 'Reprocess request received');
@@ -494,7 +488,7 @@ export class SiloController {
    * Reprocess multiple content items by their IDs
    */
   async bulkReprocess(
-    c: Context<{ Bindings: Bindings; Variables: UserIdContext }>,
+    c: Context<{ Bindings: Bindings; }>,
   ): Promise<Response> {
     try {
       const startTime = performance.now();

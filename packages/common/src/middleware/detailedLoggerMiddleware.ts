@@ -99,10 +99,10 @@ export function createDetailedLoggerMiddleware(): MiddlewareHandler {
           error:
             error instanceof Error
               ? {
-                  name: error.name,
-                  message: error.message,
-                  stack: error.stack,
-                }
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+              }
               : String(error),
           request: {
             method,
@@ -374,7 +374,7 @@ export function buildLoggingMiddleware(options: LoggingMiddlewareOptions = {}): 
     }
 
     // Create logger with all the metadata
-    return withContext(meta, async logger => {
+    return withContext(meta, async ({ logger }) => {
       // Store logger and requestId in context
       c.set('logger', logger);
       c.set('requestId', requestId);

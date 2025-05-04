@@ -1,4 +1,5 @@
 import { SiloBatchGetInput, SiloContentBatch } from '@dome/common';
+import { z } from 'zod';
 
 // Define Cloudflare Workers types
 export interface Queue<T> {
@@ -91,3 +92,23 @@ export interface ReminderQueueMessage {
   priority: number;
   metadata: Record<string, any>;
 }
+
+// Define the schema for reprocess requests
+export const ReprocessRequestSchema = z.object({
+  id: z.string().optional(),
+});
+
+// Define the schema for reprocess responses
+export const ReprocessResponseSchema = z.object({
+  success: z.boolean(),
+  reprocessed: z.union([
+    z.object({
+      id: z.string(),
+      success: z.boolean(),
+    }),
+    z.object({
+      total: z.number(),
+      successful: z.number(),
+    }),
+  ]),
+});

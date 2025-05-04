@@ -6,7 +6,8 @@ import { AgentState } from '../types';
 import { countTokens } from '../utils/tokenCounter';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
-import { getModelConfig, calculateTokenLimits } from '../config/modelConfig';
+import { getModelConfig } from '../config/modelConfig';
+import { calculateResponseTokens } from '../config/contextConfig';
 import { buildMessages } from '../utils';
 import { getGenerateAnswerPrompt } from '../config/promptsConfig';
 
@@ -63,19 +64,28 @@ export async function generateAnswer(
     }
 
     // Configure model parameters
-    const modelId = state.options?.modelId ?? 'gpt-4-turbo'; // Use latest model
+    const modelId = state.options?.modelId ?? 'gpt-4o'; // Use latest model
     const modelConfig = getModelConfig(modelId);
 
     // Calculate token usage and limits
     const contextTokens = countTokens(docContext);
     const userQueryTokens = countTokens(userQuery);
+    const systemPromptEstimate = 500; // Placeholder until we actually build the prompt
 
-    // Calculate token limits for response
-    const { maxResponseTokens } = calculateTokenLimits(
+    // Calculate token limits for response using the new context configuration system
+    const maxResponseTokens = calculateResponseTokens(
       modelConfig,
-      contextTokens + userQueryTokens + 500, // Add buffer for system prompt
-      state.options?.maxTokens,
+      contextTokens + userQueryTokens + systemPromptEstimate,
+      state.options?.maxTokens
     );
+    
+    logger.info({
+      modelId,
+      contextTokens,
+      userQueryTokens,
+      maxResponseTokens,
+      maxContextWindow: modelConfig.maxContextTokens
+    }, 'Token usage breakdown for answer generation');
 
     // Build the system prompt for answer generation using the central configuration
     // Pass user context if available, but we don't have specific user info in this state

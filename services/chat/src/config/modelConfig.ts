@@ -298,18 +298,31 @@ export function getModelByKey(modelKey: string): ModelConfig {
  * @param requestedMaxTokens Requested maximum tokens for response
  * @returns Object with maxContextTokens and maxResponseTokens
  */
+/**
+ * Calculate token limits for context and response
+ * This is a backwards-compatible wrapper around the contextConfig.calculateResponseTokens function
+ *
+ * @param modelConfig Model configuration
+ * @param inputTokens Number of tokens in the input (prompt + messages)
+ * @param requestedMaxTokens Requested maximum tokens for response
+ * @returns Object with maxContextTokens and maxResponseTokens
+ *
+ * @deprecated Use functions from contextConfig.ts instead
+ */
 export function calculateTokenLimits(
   modelConfig: ModelConfig,
   inputTokens: number,
   requestedMaxTokens?: number,
 ): { maxContextTokens: number; maxResponseTokens: number } {
-  // Reserve tokens for the response
-  const defaultMaxTokens = requestedMaxTokens || modelConfig.defaultMaxTokens;
-
-  // Calculate maximum response tokens based on available context window
-  // Leave a small buffer (100 tokens) for safety
-  const availableTokens = Math.max(500, modelConfig.maxContextTokens - inputTokens - 100);
-  const maxResponseTokens = Math.min(defaultMaxTokens, availableTokens);
+  // Import here to avoid circular dependencies
+  const { calculateResponseTokens } = require('./contextConfig');
+  
+  // Calculate response tokens using the new utility
+  const maxResponseTokens = calculateResponseTokens(
+    modelConfig,
+    inputTokens,
+    requestedMaxTokens
+  );
 
   return {
     maxContextTokens: modelConfig.maxContextTokens,

@@ -21,6 +21,7 @@ import {
   sanitizeForLogging,
   aiProcessorMetrics,
 } from './utils/logging';
+import { ReprocessResponseSchema, ReprocessRequestSchema } from './types';
 import {
   assertValid,
   assertExists,
@@ -76,25 +77,6 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     }
   });
 
-// Define the schema for reprocess requests
-export const ReprocessRequestSchema = z.object({
-  id: z.string().optional(),
-});
-
-// Define the schema for reprocess responses
-export const ReprocessResponseSchema = z.object({
-  success: z.boolean(),
-  reprocessed: z.union([
-    z.object({
-      id: z.string(),
-      success: z.boolean(),
-    }),
-    z.object({
-      total: z.number(),
-      successful: z.number(),
-    }),
-  ]),
-});
 
 /**
  * AI Processor Worker
