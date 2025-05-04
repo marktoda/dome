@@ -20,7 +20,7 @@ export class LlmService {
   private readonly MAX_RETRY_ATTEMPTS = 2;
   private readonly logger = getLogger().child({ component: 'LlmService' });
 
-  constructor(private env: Env) {}
+  constructor(private env: Env) { }
 
   /**
    * Process content with LLM based on content type
@@ -241,15 +241,7 @@ export class LlmService {
 
           logError(domeError, 'LLM processing failed after all retry attempts');
 
-          // Return minimal metadata on error
-          return {
-            title: this.generateFallbackTitle(content),
-            summary: 'Content processing failed',
-            processingVersion: 2,
-            modelUsed: this.MODEL_NAME,
-            error: domeError.message,
-            errorCode: domeError.code,
-          };
+          throw domeError;
         } catch (error) {
           const domeError = toDomeError(
             error,
@@ -264,14 +256,7 @@ export class LlmService {
           logError(domeError, 'Unexpected error in LLM processing');
 
           // Return minimal metadata on error
-          return {
-            title: this.generateFallbackTitle(content),
-            summary: 'Content processing failed',
-            processingVersion: 2,
-            modelUsed: this.MODEL_NAME,
-            error: domeError.message,
-            errorCode: domeError.code,
-          };
+          throw domeError;
         }
       },
       { contentType, contentLength: content.length, requestId },
