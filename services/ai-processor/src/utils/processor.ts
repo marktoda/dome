@@ -152,6 +152,7 @@ export class ContentProcessor {
 
     const safe = sanitizeForLogging({
       id,
+      title: metadata.title,
       hasSummary: !!metadata.summary,
       summaryLength: metadata.summary?.length ?? 0,
       hasTodos: !!metadata.todos?.length,

@@ -307,3 +307,7 @@ Dome implements comprehensive error handling and observability:
 ## Getting Started
 
 See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for detailed setup instructions.
+
+# TODOS
+
+- combineContext is slow af
