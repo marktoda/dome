@@ -189,7 +189,7 @@ const detectChunk = (data: string): ChatMessageChunk => {
 };
 
 export function connectWebSocketChat(
-  message: string,
+  messages: Array<{ role: string; content: string; timestamp: number }>,
   onChunk: (chunk: ChatMessageChunk) => void,
   { debug }: { debug?: boolean } = {},
 ): Promise<any> {
@@ -218,7 +218,7 @@ export function connectWebSocketChat(
       ws.send(
         JSON.stringify({
           // Remove hardcoded user ID to let the server resolve it from the token
-          messages: [{ role: 'user', content: message, timestamp: Date.now() }],
+          messages: messages,
           options: {
             enhanceWithContext: true,
             maxContextItems: 5,
@@ -285,14 +285,28 @@ export function connectWebSocketChat(
 }
 
 // chat() & HTTP fallback are thin wrappers around connectWebSocketChat for brevity ------------------
+import { getChatSession } from './chatSession';
+
 export async function chat(
   message: string,
   onChunk?: (c: string | ChatMessageChunk) => void,
   opts: { abortSignal?: AbortSignal; retryNonStreaming?: boolean; debug?: boolean } = {},
 ) {
+  // Get the chat session and add the user message
+  const session = getChatSession();
+  session.addUserMessage(message);
+  const messages = session.getMessages();
+
   if (onChunk) {
     try {
-      return await connectWebSocketChat(message, chunk => onChunk?.(chunk), opts);
+      const result = await connectWebSocketChat(messages, chunk => onChunk?.(chunk), opts);
+      
+      // If we got a successful response, add it to the session
+      if (result && result.response) {
+        session.addAssistantMessage(result.response);
+      }
+      
+      return result;
     } catch (e) {
       if (opts.debug) {
         if (e instanceof Error) {
@@ -312,8 +326,8 @@ export async function chat(
         try {
           // Fallback to blocking call
           const res = await api.post('/chat', {
-            // Remove hardcoded user ID to let the server resolve it
-            messages: [{ role: 'user', content: message, timestamp: Date.now() }],
+            // Use all messages from the session
+            messages: messages,
             options: {
               enhanceWithContext: true,
               maxContextItems: 5,
@@ -331,6 +345,9 @@ export async function chat(
 
           // Extract the response text
           const responseText = getResponseText(res);
+
+          // Add the assistant's response to the session
+          session.addAssistantMessage(responseText);
 
           // Only log in debug mode
           if (opts.debug) {
@@ -357,8 +374,8 @@ export async function chat(
   }
   // non‑streaming path
   const res = await api.post('/chat', {
-    // Remove hardcoded user ID to let the server resolve it
-    messages: [{ role: 'user', content: message, timestamp: Date.now() }],
+    // Use all messages from the session
+    messages: messages,
     options: {
       enhanceWithContext: true,
       maxContextItems: 5,
@@ -373,7 +390,13 @@ export async function chat(
       token: loadConfig().apiKey,
     },
   });
-  return getResponseText(res);
+  
+  const responseText = getResponseText(res);
+  
+  // Add the assistant's response to the session
+  session.addAssistantMessage(responseText);
+  
+  return responseText;
 }
 
 // ---------- GitHub repository API functions -------------------------------------

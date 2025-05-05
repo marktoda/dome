@@ -2,7 +2,10 @@ import { z } from 'zod';
 import { DocumentChunk, RetrievalToolType } from '../types';
 import { webSearchTool } from './webSearchTool';
 import { docVectorSearchTool, codeVectorSearchTool, noteVectorSearchTool } from './vectorSearch';
+import { todoRetrievalTool } from './todoRetrieval';
+
 export { webSearchTool } from './webSearchTool';
+export { todoRetrievalTool } from './todoRetrieval';
 export { ToolRegistry } from './registry';
 
 export const DEFAULT_TOOLS = [];
@@ -11,6 +14,7 @@ export const RETRIEVAL_TOOLS: Record<RetrievalToolType, RetrievalTool> = {
   [RetrievalToolType.CODE]: codeVectorSearchTool,
   [RetrievalToolType.NOTE]: noteVectorSearchTool,
   [RetrievalToolType.WEB]: webSearchTool,
+  [RetrievalToolType.TODO]: todoRetrievalTool,
 };
 
 /**

@@ -48,6 +48,7 @@ export enum RetrievalToolType {
   DOC = 'doc',
   CODE = 'code',
   NOTE = 'note',
+  TODO = 'todo',
 }
 
 /**

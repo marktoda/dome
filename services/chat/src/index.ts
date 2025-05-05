@@ -68,7 +68,7 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
    * @param request Chat request
    * @returns Complete response with aggregated output
    */
-  async generateChatMessage(request: any): Promise<Response> {
+  async generateChatMessage(request: ChatRequest): Promise<Response> {
     try {
       this.logger.info(
         {

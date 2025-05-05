@@ -308,6 +308,9 @@ importers:
       '@dome/errors':
         specifier: workspace:*
         version: link:../../packages/errors
+      '@dome/todos':
+        specifier: workspace:*
+        version: link:../todos
       '@dqbd/tiktoken':
         specifier: ^1.0.7
         version: 1.0.21

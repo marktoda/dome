@@ -176,7 +176,10 @@ export class MetadataService {
         // Check if the error is because the table doesn't exist
         if (error instanceof Error && error.message.includes('no such table: contents')) {
           getLogger().warn({ id }, 'Contents table does not exist yet, nothing to delete');
-          return { changes: 0 };
+          return {
+            success: true,
+            meta: { count: 0 }
+          };
         }
         throw error;
       }
@@ -364,7 +367,8 @@ export class MetadataService {
           .run();
 
         // Check if any rows were actually updated
-        if (!result || result.changes === 0) {
+        // D1Result doesn't have 'changes' property, use meta or check results
+        if (!result || result.meta?.count === 0) {
           getLogger().warn(
             { id, hasTitle: !!data.title, hasSummary: !!data.summary },
             'Content metadata update did not affect any rows - possible ID mismatch or content not found',
@@ -381,7 +385,7 @@ export class MetadataService {
             hasSummary: !!data.summary,
             title: data.title,
             summary: data.summary,
-            rowsAffected: result.changes,
+            rowsAffected: result.meta?.count ?? 0,
           },
           'Content metadata enriched',
         );

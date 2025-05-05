@@ -3,6 +3,16 @@
   "version": "1.0.0",
   "description": "Todos service for the Dome platform",
   "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./client": {
+      "import": "./dist/client/index.js",
+      "types": "./dist/client/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "wrangler dev",

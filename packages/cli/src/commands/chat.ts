@@ -4,7 +4,8 @@ import chalk from 'chalk';
 
 import { chat, ChatMessageChunk } from '../utils/api';
 import { isAuthenticated } from '../utils/config';
-import { heading, info, error } from '../utils/ui';
+import { heading, info, error, success } from '../utils/ui';
+import { getChatSession } from '../utils/chatSession';
 
 /* ------------------------------------------------------------------ */
 /*  helpers                                                           */
@@ -124,15 +125,27 @@ export function chatCommand(program: Command): void {
     .description('Chat with the RAG-enhanced interface')
     .option('-m, --message <message>', 'Send a single message (otherwise start interactive mode)')
     .option('-v, --verbose', 'Enable verbose debug logging')
-    .action(async (options: { message?: string; verbose?: boolean }) => {
+    .option('-c, --clear', 'Clear chat history before starting')
+    .action(async (options: { message?: string; verbose?: boolean; clear?: boolean }) => {
       if (!isAuthenticated()) fatal('You need to login first. Run `dome login`.');
 
       const verbose = !!options.verbose;
+      const session = getChatSession();
+      
+      // Clear history if requested
+      if (options.clear) {
+        session.clearSession();
+        console.log(success('Chat history cleared.'));
+      }
+      
+      // Show history status
+      const messages = session.getMessages();
+      const hasHistory = messages.length > 0;
 
       try {
         /* -------- non-interactive -------- */
         if (options.message) {
-          console.log(heading('Chat'));
+          console.log(heading('Chat' + (hasHistory ? ' (with history)' : '')));
           console.log(chalk.bold.green('You: ') + options.message);
           process.stdout.write(chalk.bold.blue('Dome: '));
           await streamChatResponse(options.message, { verbose });
@@ -140,8 +153,11 @@ export function chatCommand(program: Command): void {
         }
 
         /* -------- interactive REPL -------- */
-        console.log(heading('Interactive Chat'));
-        console.log(info('Type messages.  Enter "/exit" to quit.\n'));
+        console.log(heading('Interactive Chat' + (hasHistory ? ' (with history)' : '')));
+        console.log(info('Type messages. Special commands:'));
+        console.log(info('  /exit - Exit the chat'));
+        console.log(info('  /clear - Clear chat history'));
+        console.log(info('  /history - Show message history\n'));
 
         const rl = readline.createInterface({
           input: process.stdin,
@@ -153,9 +169,34 @@ export function chatCommand(program: Command): void {
 
         rl.on('line', async line => {
           const trimmed = line.trim();
+          
+          // Handle special commands
           if (trimmed === '/exit') {
             console.log(info('Chat session ended.'));
             rl.close();
+            return;
+          }
+          
+          if (trimmed === '/clear') {
+            session.clearSession();
+            console.log(success('Chat history cleared.'));
+            rl.prompt();
+            return;
+          }
+          
+          if (trimmed === '/history') {
+            const historyMessages = session.getMessages();
+            if (historyMessages.length === 0) {
+              console.log(info('No chat history.'));
+            } else {
+              console.log(heading('Chat History:'));
+              historyMessages.forEach((msg, i) => {
+                const role = msg.role === 'user' ? chalk.bold.green('You: ') : chalk.bold.blue('Dome: ');
+                console.log(`${role}${msg.content}`);
+                if (i < historyMessages.length - 1) console.log(); // Add spacing between messages
+              });
+            }
+            rl.prompt();
             return;
           }
 
