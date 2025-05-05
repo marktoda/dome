@@ -179,6 +179,7 @@ export function buildMessages(
   /* ── 3 · Assemble in chronological order + current user turn ─────── */
   messages.push(...pairs);
   messages.push({ role: 'user', content: userPrompt });
+  getLogger().info({ messages, historyLength: history?.length }, '[BuildMessages] Built messages for LLM');
 
   return messages;
 }

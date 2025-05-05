@@ -140,7 +140,7 @@ export const docVectorSearchTool: VectorRetrievalTool<
 > = {
   ...vectorSearchTool,
   name: 'doc_search',
-  description: 'Searches official documentation, knowledge base articles, structured content',
+  description: 'Searches official documentation, knowledge base articles, structured content.',
   category: ContentCategoryEnum.enum.document,
 };
 
@@ -151,7 +151,7 @@ export const codeVectorSearchTool: VectorRetrievalTool<
 > = {
   ...vectorSearchTool, // copy everything
   name: 'code_search',
-  description: 'Searches source code repositories, API documentation, implementation details',
+  description: 'Searches source code repositories, API documentation, implementation details. Use in conjunction with doc search for technical topics',
   category: ContentCategoryEnum.enum.code,
 };
 

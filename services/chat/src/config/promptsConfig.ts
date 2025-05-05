@@ -391,7 +391,7 @@ Available retrieval categories:
 
 Guidelines:
 - Select all sources that may be relevant and likely to help answer the user's question
-- You may select multiple sources if needed
+- You may select multiple sources
 - Order sources by likelihood to be helpful in answering the user's question
 - Base your decision on the specific information needs of the task
 - Include a brief reasoning explaining your selection

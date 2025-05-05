@@ -1,5 +1,6 @@
 import { getLogger } from '@dome/common';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
+import { buildMessages } from '../utils';
 import { ContentCategory, ContentCategoryEnum } from '@dome/common';
 import { RETRIEVAL_TOOLS } from '../tools';
 import { RetrievalToolType, AgentState, Message } from '../types';
@@ -85,7 +86,7 @@ export async function retrievalSelector(
     logger.info({ systemPrompt }, 'System prompt for retrieval selection');
 
     // Call LLM to decide which retrievers are appropriate for this task
-    const messages: Message[] = [{ role: 'system', content: systemPrompt }, lastUserMsg];
+    const messages = buildMessages(systemPrompt, state.chatHistory, lastUserMsg.content);
 
     // Get structured output from LLM
     const result = await LlmService.invokeStructured<RetrievalTasks>(env, messages, {

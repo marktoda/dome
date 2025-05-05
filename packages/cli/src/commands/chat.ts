@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import { chat, ChatMessageChunk } from '../utils/api';
 import { isAuthenticated } from '../utils/config';
 import { heading, info, error, success, subheading, formatTable, formatDate } from '../utils/ui';
-import { getChatSession, ChatSession } from '../utils/chatSession';
+import { getChatSession, ChatSession, ChatSessionManager } from '../utils/chatSession';
 
 /* ------------------------------------------------------------------ */
 /*  helpers                                                           */
@@ -32,9 +32,13 @@ class ThinkingBuffer {
 
 type StreamOptions = { verbose: boolean };
 
-/** Shared streaming printer used by both “single message” and REPL modes. */
-async function streamChatResponse(userMessage: string, opts: StreamOptions): Promise<void> {
+/** Shared streaming printer used by both "single message" and REPL modes. */
+async function streamChatResponse(userMessage: string, opts: StreamOptions, session: ChatSessionManager): Promise<void> {
   const thinking = new ThinkingBuffer();
+  
+  // Don't add the user message here since the chat() function already does this
+  // Buffer for accumulating the assistant's complete response
+  let assistantResponse = '';
 
   await chat(
     userMessage,
@@ -61,6 +65,8 @@ async function streamChatResponse(userMessage: string, opts: StreamOptions): Pro
       } else if (chunk.type === 'content') {
         // Prevent duplicate content printing
         process.stdout.write(chunk.content);
+        // Accumulate the assistant's response
+        assistantResponse += chunk.content;
       } else if (chunk.type === 'sources') {
         if (chunk.node.sources) {
           console.log(); // Empty line before sources
@@ -113,6 +119,9 @@ async function streamChatResponse(userMessage: string, opts: StreamOptions): Pro
   );
 
   console.log(); // newline after full response
+  
+  // We don't need to save the assistant's response here because
+  // the chat() function in api.ts already does this
 }
 
 /* ------------------------------------------------------------------ */
@@ -140,7 +149,13 @@ export function chatCommand(program: Command): void {
       if (!isAuthenticated()) fatal('You need to login first. Run `dome login`.');
 
       const verbose = !!options.verbose;
-      const session = getChatSession();
+      
+      // Determine if we should create a new session:
+      // - If user explicitly requested a specific session, don't create a new one
+      // - If user explicitly requested a new session, create one
+      // - Otherwise, create a new session by default for new CLI invocations
+      const shouldCreateNewSession = !options.session && !options.list;
+      const session = getChatSession(shouldCreateNewSession);
       
       // List sessions if requested
       if (options.list) {
@@ -153,13 +168,14 @@ export function chatCommand(program: Command): void {
         console.log(heading('Chat Sessions'));
         
         const currentSessionId = session.getSessionId();
-        sessions.forEach(s => {
+        sessions.forEach((s, index) => {
           const isActive = s.id === currentSessionId;
           const title = isActive
             ? chalk.bold.cyan(`${s.name} ${chalk.gray('(active)')}`)
             : chalk.bold(s.name);
             
-          console.log(`${isActive ? '➤' : ' '} ${title}`);
+          // Add index number (1-based) to make it easy to reference sessions with /switch
+          console.log(`${isActive ? '➤' : ' '} ${chalk.bold.blue(`[${index + 1}]`)} ${title}`);
           console.log(`   ID: ${chalk.gray(s.id)}`);
           console.log(`   Last updated: ${chalk.gray(formatDate(s.lastUpdated))}`);
           console.log(`   Messages: ${chalk.gray(s.messages.length.toString())}`);
@@ -202,7 +218,7 @@ export function chatCommand(program: Command): void {
           console.log(heading(`Chat: ${sessionName}` + (hasHistory ? ' (with history)' : '')));
           console.log(chalk.bold.green('You: ') + options.message);
           process.stdout.write(chalk.bold.blue('Dome: '));
-          await streamChatResponse(options.message, { verbose });
+          await streamChatResponse(options.message, { verbose }, session);
           return;
         }
 
@@ -214,7 +230,7 @@ export function chatCommand(program: Command): void {
         console.log(info('  /history         - Show message history'));
         console.log(info('  /sessions        - List available sessions'));
         console.log(info('  /new [name]      - Create a new session with optional name'));
-        console.log(info('  /switch <id>     - Switch to a different session'));
+        console.log(info('  /switch <id|index> - Switch to a different session by ID or index number'));
         console.log(info('  /rename <name>   - Rename current session'));
         console.log(info('  /delete [id]     - Delete current or specified session'));
         console.log();
@@ -271,13 +287,14 @@ export function chatCommand(program: Command): void {
             console.log(heading('Chat Sessions'));
             
             const currentSessionId = session.getSessionId();
-            sessions.forEach(s => {
+            sessions.forEach((s, index) => {
               const isActive = s.id === currentSessionId;
               const title = isActive
                 ? chalk.bold.cyan(`${s.name} ${chalk.gray('(active)')}`)
                 : chalk.bold(s.name);
                 
-              console.log(`${isActive ? '➤' : ' '} ${title}`);
+              // Add index number (1-based) to make it easy to reference sessions with /switch
+              console.log(`${isActive ? '➤' : ' '} ${chalk.bold.blue(`[${index + 1}]`)} ${title}`);
               console.log(`   ID: ${chalk.gray(s.id)}`);
               console.log(`   Last updated: ${chalk.gray(formatDate(s.lastUpdated))}`);
               console.log(`   Messages: ${chalk.gray(s.messages.length.toString())}`);
@@ -306,18 +323,41 @@ export function chatCommand(program: Command): void {
           
           if (trimmed.startsWith('/switch')) {
             const parts = trimmed.split(' ');
-            const sessionId = parts[1]?.trim();
+            const sessionIdOrIndex = parts[1]?.trim();
             
-            if (!sessionId) {
-              console.log(error('Session ID required. Usage: /switch <id>'));
+            if (!sessionIdOrIndex) {
+              console.log(error('Session ID or index required. Usage: /switch <id|index>'));
               rl.prompt();
               return;
             }
             
-            if (session.switchSession(sessionId)) {
-              console.log(success(`Switched to session: ${session.getSessionName()}`));
+            // Check if the argument is a number (index)
+            if (/^\d+$/.test(sessionIdOrIndex)) {
+              const index = parseInt(sessionIdOrIndex, 10);
+              const sessions = session.listSessions();
+              
+              // Check if the index is valid
+              if (index < 1 || index > sessions.length) {
+                console.log(error(`Invalid session index: ${index}. Valid range: 1-${sessions.length}`));
+                rl.prompt();
+                return;
+              }
+              
+              // Get the session ID at index-1 (zero-based array)
+              const targetSessionId = sessions[index - 1].id;
+              
+              if (session.switchSession(targetSessionId)) {
+                console.log(success(`Switched to session: ${session.getSessionName()}`));
+              } else {
+                console.log(error(`Failed to switch to session at index ${index}`));
+              }
             } else {
-              console.log(error(`Session not found: ${sessionId}`));
+              // Treat as a session ID
+              if (session.switchSession(sessionIdOrIndex)) {
+                console.log(success(`Switched to session: ${session.getSessionName()}`));
+              } else {
+                console.log(error(`Session not found: ${sessionIdOrIndex}`));
+              }
             }
             
             rl.prompt();
@@ -362,7 +402,7 @@ export function chatCommand(program: Command): void {
           process.stdout.write(chalk.bold.blue('Dome: '));
 
           try {
-            await streamChatResponse(trimmed, { verbose });
+            await streamChatResponse(trimmed, { verbose }, session);
           } catch (err) {
             console.log(error(`Error: ${err instanceof Error ? err.message : String(err)}`));
           }

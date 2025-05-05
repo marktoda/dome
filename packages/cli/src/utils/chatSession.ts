@@ -20,7 +20,7 @@ export type ChatSession = {
  * Manages chat sessions for the CLI, providing persistence and isolation
  * between separate chat conversations.
  */
-class ChatSessionManager {
+export class ChatSessionManager {
   private sessionsDir: string;
   private activeSessionId: string = '';
   private sessions: Map<string, ChatSession> = new Map();
@@ -90,7 +90,7 @@ class ChatSessionManager {
   /**
    * Create a new session
    */
-  private createNewSession(): void {
+  public createNewSession(): void {
     const sessionId = crypto.randomUUID();
     const session: ChatSession = {
       id: sessionId,
@@ -291,9 +291,15 @@ class ChatSessionManager {
 // Singleton instance
 let sessionManager: ChatSessionManager;
 
-export const getChatSession = (): ChatSessionManager => {
+export const getChatSession = (forceNewSession: boolean = false): ChatSessionManager => {
   if (!sessionManager) {
     sessionManager = new ChatSessionManager();
   }
+  
+  // If we're forcing a new session, create one
+  if (forceNewSession) {
+    sessionManager.createNewSession();
+  }
+  
   return sessionManager;
 };

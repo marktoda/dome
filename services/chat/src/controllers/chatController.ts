@@ -10,6 +10,7 @@ import {
   ChatRequest,
   ResumeChatRequest,
   AgentState,
+  MessagePair,
 } from '../types';
 import { Services } from '../services';
 import { V2Chat } from '../graphs';
@@ -115,9 +116,31 @@ export class ChatController {
     options?: AgentState['options'];
     runId: string;
   }): AgentState {
+    // Build chat history from messages array
+    const chatHistory: MessagePair[] = [];
+    
+    // Process messages to create user-assistant pairs
+    for (let i = 0; i < messages.length - 1; i++) {
+      const current = messages[i];
+      const next = messages[i + 1];
+      
+      // If we have a user message followed by an assistant message, create a pair
+      if (current.role === 'user' && next.role === 'assistant') {
+        chatHistory.push({
+          user: current,
+          assistant: next,
+          timestamp: next.timestamp || current.timestamp || Date.now(),
+          tokenCount: undefined // We could calculate this if needed
+        });
+        // Skip the next message since we've already used it in this pair
+        i++;
+      }
+    }
+    
     return {
       userId,
       messages,
+      chatHistory,
       options,
       taskIds,
       taskEntities,
