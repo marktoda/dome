@@ -311,3 +311,4 @@ See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for detailed setup instructions.
 # TODOS
 
 - retrieval tools more complex input parameters (i.e. todo priority)
+- thinking steps of the graph dont seem to have chat history context properly

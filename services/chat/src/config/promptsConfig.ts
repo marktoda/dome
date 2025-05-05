@@ -390,7 +390,7 @@ Available retrieval categories:
 {{availableRetrievalTypes}}
 
 Guidelines:
-- Select sources that are truly relevant and likely to help answer the user's question
+- Select all sources that may be relevant and likely to help answer the user's question
 - You may select multiple sources if needed
 - Order sources by likelihood to be helpful in answering the user's question
 - Base your decision on the specific information needs of the task
