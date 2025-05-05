@@ -59,7 +59,7 @@ export const todoRetrievalTool: RetrievalTool<
   ParsedTodoRetrievalInput
 > = {
   name: 'todo_retrieval',
-  description: 'Retrieves the user\'s todo list with filtering options. Best used in conjunction with user notes',
+  description: 'Retrieves the user\'s todo list with filtering options. Always use in conjunction with user notes',
 
   inputSchema: todoRetrievalInput,
   outputSchema: todoRetrievalOutput,
