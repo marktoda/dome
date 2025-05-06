@@ -65,6 +65,9 @@ export const api = {
 export const addContent = (content: string, title?: string, tags?: string[]) =>
   api.post('/notes', { content, contentType: 'text/plain', title, tags }).then(r => r.note ?? r);
 
+export const updateContent = (id: string, content: string, title?: string, tags?: string[]) =>
+  api.put(`/notes/${id}`, { content, contentType: 'text/plain', title, tags }).then(r => r.note ?? r);
+
 export const addNote = (context: string, content: string) =>
   api.post('/notes', { content, contentType: 'text/plain', metadata: { context } });
 
@@ -105,17 +108,17 @@ export const search = async (query: string, limit = 10, category?: string) => {
 export type ChatMessageChunk =
   | { type: 'content' | 'thinking' | 'unknown'; content: string }
   | {
-      type: 'sources';
-      node: {
-        sources: {
-          id: string;
-          title: string;
-          source: string;
-          url?: string;
-          relevanceScore: number;
-        };
+    type: 'sources';
+    node: {
+      sources: {
+        id: string;
+        title: string;
+        source: string;
+        url?: string;
+        relevanceScore: number;
       };
     };
+  };
 
 // Extensible chunk‑type detector stack
 interface ChunkDetector {
@@ -197,7 +200,7 @@ export function connectWebSocketChat(
   // Use cleaner, more standard websocket URL with no auth in query params
   // We'll handle auth in the connection headers and message
   // The correct WebSocket endpoint appears to be at /chat/ws based on the 404 error
-  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/chat/ws`;
+  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/ chat / ws`;
 
   return new Promise((resolve, reject) => {
     // Add proper auth headers to match HTTP request pattern
@@ -300,12 +303,12 @@ export async function chat(
   if (onChunk) {
     try {
       const result = await connectWebSocketChat(messages, chunk => onChunk?.(chunk), opts);
-      
+
       // If we got a successful response, add it to the session
       if (result && result.response) {
         session.addAssistantMessage(result.response);
       }
-      
+
       return result;
     } catch (e) {
       if (opts.debug) {
@@ -361,8 +364,7 @@ export async function chat(
         } catch (httpErr) {
           if (opts.debug) {
             console.debug(
-              `HTTP fallback error: ${
-                httpErr instanceof Error ? httpErr.message : String(httpErr)
+              `HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)
               }`,
             );
           }
@@ -390,12 +392,12 @@ export async function chat(
       token: loadConfig().apiKey,
     },
   });
-  
+
   const responseText = getResponseText(res);
-  
+
   // Add the assistant's response to the session
   session.addAssistantMessage(responseText);
-  
+
   return responseText;
 }
 

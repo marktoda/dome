@@ -1,7 +1,11 @@
 import { Command } from 'commander';
-import { registerGithubRepo } from '../utils/api';
+import { registerGithubRepo, showItem, updateContent } from '../utils/api';
 import { error, info, success } from '../utils/ui';
 import { isAuthenticated } from '../utils/config';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { execSync } from 'child_process';
 
 /**
  * Register the content command
@@ -57,4 +61,155 @@ export function contentCommand(program: Command): void {
           }
         }),
     );
+
+  // Add update command
+  contentCmd
+    .command('update')
+    .description('Update existing content in Dome')
+    .argument('<contentId>', 'ID of the content to update')
+    .action(async (contentId) => {
+      // Check if user is authenticated
+      if (!isAuthenticated()) {
+        console.log(error('You need to login first. Run `dome login` to authenticate.'));
+        process.exit(1);
+      }
+
+      try {
+        // Fetch the content
+        console.log(info(`Fetching content with ID: ${contentId}`));
+        const content = await showItem(contentId);
+        
+        if (!content) {
+          console.log(error(`Content with ID ${contentId} not found.`));
+          process.exit(1);
+        }
+        
+        // Create temp file with content
+        const tempFilePath = path.join(os.tmpdir(), `dome-content-${Date.now()}.md`);
+        
+        // Format the content with metadata
+        const title = content.title || 'Untitled Content';
+        // Try different property names that might contain the content
+        let contentBody = '';
+        if (content.body) {
+          contentBody = content.body;
+        } else if (content.content) {
+          contentBody = content.content;
+        } else if (typeof content === 'string') {
+          contentBody = content;
+        } else if (content.text) {
+          contentBody = content.text;
+        } else {
+          console.log(info('Content body not found in expected properties. Using empty string.'));
+        }
+        
+        const tags = content.tags ? content.tags.join(', ') : '';
+        const summary = content.summary || '';
+        
+        const fileContent = [
+          `# ${title}`,
+          `Tags: ${tags}`,
+          summary ? `Summary: ${summary}` : '',
+          '',
+          '<!-- Write your content below this line -->',
+          '',  // Add an extra blank line for clarity
+          contentBody,
+        ].join('\n');
+        
+        // Log the content being written to the file
+        
+        fs.writeFileSync(tempFilePath, fileContent);
+        
+        // Open in editor
+        console.log(info(`Opening content in your editor (${process.env.EDITOR || 'default editor'})...`));
+        console.log(info('The CLI will continue when you exit the editor.'));
+        
+        try {
+          execSync(`${process.env.EDITOR || 'vi'} "${tempFilePath}"`, {
+            stdio: 'inherit',
+            env: process.env,
+          });
+          
+          // Parse updated content
+          const updatedContent = fs.readFileSync(tempFilePath, 'utf8');
+          const lines = updatedContent.split('\n');
+          
+          let updatedTitle = 'Untitled Content';
+          let updatedTags: string[] = [];
+          let contentStartIndex = 0;
+          
+          // Parse metadata
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            
+            if (i === 0 && line.startsWith('# ')) {
+              updatedTitle = line.substring(2).trim();
+              continue;
+            }
+            
+            if (line.startsWith('Tags:')) {
+              const tagsPart = line.substring(5).trim();
+              if (tagsPart) {
+                updatedTags = tagsPart.split(',').map(tag => tag.trim());
+              }
+              continue;
+            }
+            
+            if (line.includes('<!-- Write your content below this line -->')) {
+              contentStartIndex = i + 1;
+              break;
+            }
+            
+            // If we've gone through several lines without finding the marker,
+            // assume content starts after a reasonable number of metadata lines
+            if (i >= 5) {
+              contentStartIndex = i;
+              break;
+            }
+          }
+          
+          const updatedContentBody = lines.slice(contentStartIndex).join('\n').trim();
+          
+          // Clean up temp file
+          try {
+            fs.unlinkSync(tempFilePath);
+          } catch (err) {
+            // Ignore errors when deleting temp file
+          }
+          
+          if (!updatedContentBody.trim()) {
+            console.log(error('Content was empty, nothing updated.'));
+            process.exit(1);
+          }
+          
+          // Update the content
+          console.log(info(`Updating content with ID: ${contentId}`));
+          const result = await updateContent(contentId, updatedContentBody, updatedTitle, updatedTags);
+          
+          if (result) {
+            console.log(success(`Content updated successfully!`));
+            console.log(info(`Title: ${result.title || updatedTitle}`));
+            console.log(info(`Content will be reprocessed automatically.`));
+          } else {
+            console.log(error('Failed to update content.'));
+          }
+        } catch (err) {
+          console.log(error('An error occurred while editing the content:'));
+          console.log(error(err instanceof Error ? err.message : String(err)));
+          
+          // Clean up temp file
+          try {
+            fs.unlinkSync(tempFilePath);
+          } catch (cleanupErr) {
+            // Ignore errors when deleting temp file
+          }
+          
+          process.exit(1);
+        }
+      } catch (err) {
+        console.log(error('An error occurred while updating the content:'));
+        console.log(error(err instanceof Error ? err.message : String(err)));
+        process.exit(1);
+      }
+    });
 }
