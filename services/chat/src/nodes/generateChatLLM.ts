@@ -1,11 +1,9 @@
-import { getLogger, logError } from '@dome/common';
+import { getLogger, logError, countTokens, getModelConfig, calculateTokenLimits } from '@dome/common';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { AgentState } from '../types';
-import { countTokens } from '../utils/tokenCounter';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
-import { getModelConfig, calculateTokenLimits } from '../config/modelConfig';
 import { getChatLLMPrompt } from '../config/promptsConfig';
 
 /**

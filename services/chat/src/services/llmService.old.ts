@@ -13,23 +13,20 @@ import { Tool } from '@langchain/core/tools';
 import { ZodSchema } from 'zod';
 import { ModelFactory } from './modelFactory';
 import {
-  // Import from the new common package instead of local config
-  getModelConfig,
-  getDefaultModel,
-  calculateTokenLimits,
-  configureLlmSystem,
+  DEFAULT_MODEL,
   ModelProvider,
-  BaseModelConfig,
-  truncateToTokenLimit,
-  countTokens,
+  getModelConfig,
+  calculateTokenLimits,
+  configureDefaultModel,
+  getTimeoutConfig,
+  getQueryRewritingPrompt,
+  getQueryComplexityAnalysisPrompt,
+  DEFAULT_CONTEXT_ALLOCATION,
   calculateContextLimits,
-} from '@dome/common';
-
-// Get prompts from local config for now (these aren't part of the common package yet)
-import { getTimeoutConfig, getQueryRewritingPrompt, getQueryComplexityAnalysisPrompt } from '../config';
+} from '../config';
 
 // Default model ID to use - will be properly initialized during service startup
-let MODEL = getDefaultModel().id;
+export const MODEL = DEFAULT_MODEL.id;
 const logger = getLogger();
 
 /* -------------------------------------------------------- */
@@ -53,54 +50,58 @@ function withTimeout<T>(p: Promise<T>, ms = getTimeoutConfig().llmServiceTimeout
  * Using dynamic allocation based on the contextConfig settings
  *
  * @param context Text context to truncate if necessary
- * @param modelId Model ID to use for tokenization and limits
+ * @param modelConfig Model configuration to use for limits
  * @returns Truncated context with ellipsis if needed
  */
-function truncateContextToFit(context: string, modelId?: string): string {
-  // Get model configuration
-  const modelConfig = getModelConfig(modelId);
-  
-  // Count tokens in the context using the common package tokenizer
-  const ctxTokens = countTokens(context, modelConfig.id);
+function truncateContext(context: string, modelConfig: ReturnType<typeof getModelConfig>): string {
+  // Roughly estimate token count (more accurate would be to use a proper tokenizer)
+  const ctxTokens = Math.ceil(context.length / 4);
   
   // Get context limits using our new configuration system
   const { maxDocumentsTokens } = calculateContextLimits(modelConfig);
   
   // If context fits within limit, return as is
-  if (ctxTokens <= maxDocumentsTokens!) return context;
+  if (ctxTokens <= maxDocumentsTokens) return context;
   
-  // Use the common package's truncation utility with our token counter
-  return truncateToTokenLimit(
-    context, 
-    maxDocumentsTokens!, 
-    (text) => countTokens(text, modelConfig.id)
-  );
+  // Calculate ratio for truncation
+  const ratio = maxDocumentsTokens / ctxTokens;
+  
+  // Truncate to fit within limit and add ellipsis
+  return context.slice(0, Math.floor(context.length * ratio)) + '…';
 }
 
 /* -------------------------------------------------------- */
 /*  LLM Service implementation                              */
 /* -------------------------------------------------------- */
 export class LlmService {
-  static get MODEL() { return MODEL; }
-  
+  static MODEL = MODEL;
+
   /**
    * Initialize the LLM service with environment variables
    * This must be called during service startup
    */
   static initialize(env: Env): void {
-    // Use the common package's configureLlmSystem function
-    configureLlmSystem(env);
-    
+    // Create a safe configuration object from env
+    const config: Record<string, unknown> = {};
+
+    // Extract model configuration if available
+    if ('DEFAULT_MODEL_ID' in env && typeof env.DEFAULT_MODEL_ID === 'string') {
+      config.DEFAULT_MODEL_ID = env.DEFAULT_MODEL_ID;
+    }
+
+    // Configure the default model based on environment variables
+    configureDefaultModel(config);
+
     // Update the static MODEL property to match the configured default
-    MODEL = getDefaultModel().id;
-    
+    this.MODEL = DEFAULT_MODEL.id;
+
     logger.info(
       {
-        model: MODEL,
-        modelName: getDefaultModel().name,
-        provider: getDefaultModel().provider,
+        model: DEFAULT_MODEL.id,
+        modelName: DEFAULT_MODEL.name,
+        provider: DEFAULT_MODEL.provider,
       },
-      'LLM service initialized'
+      'LLM service initialized',
     );
   }
 
@@ -251,7 +252,7 @@ export class LlmService {
       );
 
       // Fall back to default model if specified model fails
-      if (modelId !== getDefaultModel().id) {
+      if (modelId !== DEFAULT_MODEL.id) {
         logger.info('Falling back to default model for tool binding');
         return ModelFactory.createToolBoundModel(env, tools, {
           temperature: opts.temperature,

@@ -1,9 +1,6 @@
-import { getLogger, metrics } from '@dome/common';
-import { withContext } from '@dome/common';
+import { getLogger, metrics, withContext, getModelConfig, calculateContextLimits } from '@dome/common';
 import { toDomeError, ValidationError } from '../utils/errors';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
-import { getModelConfig } from '../config/modelConfig';
-import { calculateContextLimits } from '../config/contextConfig';
 import {
   chatRequestSchema,
   resumeChatRequestSchema,
@@ -162,15 +159,19 @@ export class ChatController {
     maxDocumentsTokens: number;
   } {
     // Get model configuration from modelId or use default
-    const modelConfig = modelId ? getModelConfig(modelId) : getModelConfig();
+    const modelConfig = getModelConfig(modelId);
     
     // Calculate context limits
     const contextLimits = calculateContextLimits(modelConfig);
     
+    // Provide fallback for optional properties
+    const maxDocumentsTokens = contextLimits.maxDocumentsTokens ||
+      Math.floor(contextLimits.maxContextTokens * 0.4); // Default to 40% if not specified
+    
     return {
       maxContextTokens: contextLimits.maxContextTokens,
       maxResponseTokens: contextLimits.maxResponseTokens,
-      maxDocumentsTokens: contextLimits.maxDocumentsTokens,
+      maxDocumentsTokens,
     };
   }
 

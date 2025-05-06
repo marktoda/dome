@@ -1,39 +1,7 @@
 import { AgentState, Document } from '../types';
-import { getLogger } from '@dome/common';
-import { getModelConfig } from '../config/modelConfig';
-import { countTokens as baseCountTokens } from './tokenCounter';
+import { getLogger, getModelConfig, countTokens } from '@dome/common';
 import { DOC_METADATA_TOKENS } from './tokenConstants';
 
-/**
- * Count tokens in a string for a specific model
- * @param text The text to count tokens for
- * @param modelId The model ID to use for tokenization
- * @returns The number of tokens
- */
-export function countTokens(text: string, modelId?: string): number {
-  if (!text) return 0;
-
-  // Get the appropriate model format for tiktoken
-  let tikTokenModel = 'gpt-4'; // Default model for tiktoken
-
-  if (modelId) {
-    // Map specific model IDs to tiktoken compatible formats
-    if (modelId.includes('gpt-3.5')) {
-      tikTokenModel = 'gpt-3.5-turbo';
-    } else if (modelId.includes('gpt-4')) {
-      tikTokenModel = 'gpt-4';
-    } else if (modelId.includes('claude')) {
-      // Claude models have similar tokenization to GPT-4
-      tikTokenModel = 'gpt-4';
-    } else if (modelId.includes('llama')) {
-      // LLaMA models have similar tokenization to GPT-3.5
-      tikTokenModel = 'gpt-3.5-turbo';
-    }
-  }
-
-  // Use the base countTokens function with the appropriate model
-  return baseCountTokens(text, tikTokenModel);
-}
 
 /**
  * Filter documents by relevance score

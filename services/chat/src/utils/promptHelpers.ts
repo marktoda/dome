@@ -1,11 +1,9 @@
 import { Document } from '../types';
 import { AIMessage, MessagePair } from '../types';
-import { DEFAULT_MODEL } from '../config/modelConfig';
-import { getLogger } from '@dome/common';
+import { getLogger, getDefaultModel, countTokens } from '@dome/common';
 import {
   DEFAULT_MAX_TOTAL_DOC_TOKENS,
   DOC_METADATA_TOKENS,
-  approximateTokenCount,
 } from './tokenConstants';
 
 /**
@@ -37,8 +35,8 @@ export function formatDocsForPrompt(
       }
     }
 
-    // Calculate approximate token count for this document
-    const tokenCount = approximateTokenCount(formattedDoc);
+    // Calculate token count for this document
+    const tokenCount = countTokens(formattedDoc);
 
     return {
       text: formattedDoc,
@@ -94,10 +92,10 @@ function formatDate(dateString: string): string {
  * @returns Truncated text
  */
 export function truncateToMaxTokens(text: string, maxTokens: number): string {
-  // Use the standardized token approximation
-  const approximateTokens = approximateTokenCount(text);
+  // Use the standardized token counting
+  const tokenCount = countTokens(text);
 
-  if (approximateTokens <= maxTokens) {
+  if (tokenCount <= maxTokens) {
     return text;
   }
 
@@ -114,12 +112,12 @@ export function truncateToMaxTokens(text: string, maxTokens: number): string {
  */
 export function truncateDocumentToMaxTokens(doc: Document, maxTokens: number): Document {
   // Reserve tokens for title and metadata
-  const titleTokens = approximateTokenCount(doc.title || '');
+  const titleTokens = countTokens(doc.title || '');
   const metadataTokens = DOC_METADATA_TOKENS;
   const contentMaxTokens = maxTokens - titleTokens - metadataTokens;
 
   // If content is already within limits, return the original document
-  const contentTokens = approximateTokenCount(doc.content);
+  const contentTokens = countTokens(doc.content);
   if (contentTokens <= contentMaxTokens) {
     return doc;
   }
@@ -149,12 +147,12 @@ export function buildMessages(
   opts: { maxPairs?: number; budget?: number } = {},
 ): AIMessage[] {
   const maxPairs = opts.maxPairs ?? 3;
-  const budget = opts.budget ?? DEFAULT_MODEL.maxContextTokens;
+  const budget = opts.budget ?? getDefaultModel().maxContextTokens;
 
   /* ── 1 · Always include system + new user message ────────────────── */
   const messages: AIMessage[] = [{ role: 'system', content: systemPrompt }];
 
-  let used = approximateTokenCount(systemPrompt) + approximateTokenCount(userPrompt);
+  let used = countTokens(systemPrompt) + countTokens(userPrompt);
 
   /* ── 2 · Add history pairs (tail-first, token-aware) ─────────────── */
   const pairs: AIMessage[] = [];
@@ -166,7 +164,7 @@ export function buildMessages(
       const assistantMsg = { role: 'assistant' as const, content: pair.assistant.content };
 
       const pairTokens =
-        approximateTokenCount(userMsg.content) + approximateTokenCount(assistantMsg.content);
+        countTokens(userMsg.content) + countTokens(assistantMsg.content);
 
       if (used + pairTokens > budget) break;
 

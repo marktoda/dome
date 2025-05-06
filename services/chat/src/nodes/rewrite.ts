@@ -1,12 +1,11 @@
-import { getLogger } from '@dome/common';
+import { getLogger, getDefaultModel, countTokens } from '@dome/common';
 import { z } from 'zod';
 import { AgentState, AIMessage, MessagePair } from '../types';
 import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
-import { countTokens, buildMessages } from '../utils';
+import { buildMessages } from '../utils';
 import { ObservabilityService } from '../services/observabilityService';
 import { getCondenseTaskPrompt } from '../config/promptsConfig';
-import { DEFAULT_MODEL } from '../config/modelConfig';
 
 const rewrittenTaskSchema = z.object({
   rewrittenQuery: z.string(),

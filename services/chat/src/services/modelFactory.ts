@@ -15,7 +15,12 @@ import { StructuredOutputParser } from '@langchain/core/output_parsers';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { Tool } from '@langchain/core/tools';
-import { ModelProvider, getModelConfig, DEFAULT_MODEL, ModelConfig } from '../config/modelConfig';
+import {
+  ModelProvider,
+  getModelConfig,
+  getDefaultModel,
+  BaseModelConfig
+} from '@dome/common';
 
 const logger = getLogger().child({ component: 'ModelFactory' });
 
@@ -55,7 +60,7 @@ export class ModelFactory {
    */
   static createChatModel(env: Env, options: ModelOptions = {}): BaseChatModel {
     // Get model configuration from centralized config
-    const modelConfig = getModelConfig(options.modelId ?? DEFAULT_MODEL.id);
+    const modelConfig = getModelConfig(options.modelId ?? getDefaultModel().id);
 
     // Log model creation
     logger.info(
@@ -98,7 +103,7 @@ export class ModelFactory {
    */
   private static createOpenAIModel(
     env: Env,
-    modelConfig: ModelConfig,
+    modelConfig: BaseModelConfig,
     options: ModelOptions,
   ): ChatOpenAI {
     return new ChatOpenAI({
@@ -115,7 +120,7 @@ export class ModelFactory {
    */
   private static createCloudflareModel(
     env: Env,
-    modelConfig: ModelConfig,
+    modelConfig: BaseModelConfig,
     options: ModelOptions,
   ): BaseChatModel {
     // For Cloudflare AI, we need the proper environment configuration
@@ -125,7 +130,7 @@ export class ModelFactory {
         { modelId: modelConfig.id },
         'Workers AI binding not available, falling back to OpenAI',
       );
-      return this.createOpenAIModel(env, DEFAULT_MODEL, options);
+      return this.createOpenAIModel(env, getDefaultModel(), options);
     }
 
     // We need to type cast since the Cloudflare Workers AI implementation
@@ -147,7 +152,7 @@ export class ModelFactory {
    */
   private static createAnthropicModel(
     env: Env,
-    modelConfig: ModelConfig,
+    modelConfig: BaseModelConfig,
     options: ModelOptions,
   ): BaseChatModel {
     // TODO: Implement Anthropic integration when needed
@@ -156,7 +161,7 @@ export class ModelFactory {
       'Anthropic integration not implemented, falling back to OpenAI',
     );
 
-    return this.createOpenAIModel(env, DEFAULT_MODEL, options);
+    return this.createOpenAIModel(env, getDefaultModel(), options);
 
     // When implementing Anthropic, use something like this:
     /*
@@ -269,7 +274,7 @@ export class ModelFactory {
   private static createToolBoundWithModel(
     env: Env,
     tools: Tool[],
-    modelConfig: ModelConfig,
+    modelConfig: BaseModelConfig,
     options: ModelOptions,
   ): BaseChatModel {
     // Create the model based on provider
