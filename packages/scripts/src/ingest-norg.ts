@@ -11,7 +11,7 @@ import chalk from 'chalk';
 const execPromise = promisify(exec);
 
 /**
- * Ingests all .norg files from ~/neorg into the system using `just cli add`
+ * Ingests all .norg files from ~/neorg into the system using `just cli content add`
  */
 async function ingestNorgFiles() {
   try {
@@ -49,8 +49,8 @@ async function ingestNorgFiles() {
         // Escape quotes in the content to prevent command injection
         const escapedContent = content.replace(/"/g, '\\"');
 
-        // Execute the just cli add command
-        const command = `just cli add "${escapedContent}"`;
+        // Execute the just cli content add command
+        const command = `just cli content add "${escapedContent}"`;
         console.log(chalk.dim(`Executing: ${command.substring(0, 50)}...`));
 
         const { stdout, stderr } = await execPromise(command);
