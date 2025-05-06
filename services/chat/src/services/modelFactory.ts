@@ -80,6 +80,8 @@ export class ModelFactory {
       );
     }
 
+    getLogger().info({ modelConfig }, '[ModelFactory]: Using Model');
+
     // Create the appropriate model instance based on provider
     switch (modelConfig.provider) {
       case ModelProvider.OPENAI:

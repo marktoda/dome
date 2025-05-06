@@ -16,6 +16,7 @@ import {
   // Import from the new common package instead of local config
   getModelConfig,
   getDefaultModel,
+  OPENAI_MODELS,
   calculateTokenLimits,
   configureLlmSystem,
   ModelProvider,
@@ -28,8 +29,7 @@ import {
 // Get prompts from local config for now (these aren't part of the common package yet)
 import { getTimeoutConfig, getQueryRewritingPrompt, getQueryComplexityAnalysisPrompt } from '../config';
 
-// Default model ID to use - will be properly initialized during service startup
-let MODEL = getDefaultModel().id;
+let MODEL = OPENAI_MODELS.GPT_4_TURBO.id;
 const logger = getLogger();
 
 /* -------------------------------------------------------- */
@@ -59,20 +59,20 @@ function withTimeout<T>(p: Promise<T>, ms = getTimeoutConfig().llmServiceTimeout
 function truncateContextToFit(context: string, modelId?: string): string {
   // Get model configuration
   const modelConfig = getModelConfig(modelId);
-  
+
   // Count tokens in the context using the common package tokenizer
   const ctxTokens = countTokens(context, modelConfig.id);
-  
+
   // Get context limits using our new configuration system
   const { maxDocumentsTokens } = calculateContextLimits(modelConfig);
-  
+
   // If context fits within limit, return as is
   if (ctxTokens <= maxDocumentsTokens!) return context;
-  
+
   // Use the common package's truncation utility with our token counter
   return truncateToTokenLimit(
-    context, 
-    maxDocumentsTokens!, 
+    context,
+    maxDocumentsTokens!,
     (text) => countTokens(text, modelConfig.id)
   );
 }
@@ -82,7 +82,7 @@ function truncateContextToFit(context: string, modelId?: string): string {
 /* -------------------------------------------------------- */
 export class LlmService {
   static get MODEL() { return MODEL; }
-  
+
   /**
    * Initialize the LLM service with environment variables
    * This must be called during service startup
@@ -90,10 +90,10 @@ export class LlmService {
   static initialize(env: Env): void {
     // Use the common package's configureLlmSystem function
     configureLlmSystem(env);
-    
+
     // Update the static MODEL property to match the configured default
     MODEL = getDefaultModel().id;
-    
+
     logger.info(
       {
         model: MODEL,

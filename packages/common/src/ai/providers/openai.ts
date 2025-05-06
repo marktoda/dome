@@ -1,6 +1,6 @@
 /**
  * OpenAI model configurations
- * 
+ *
  * This file defines all OpenAI models available in the system along with
  * their capabilities, context windows, and other parameters.
  */
@@ -38,7 +38,7 @@ export const OPENAI_MODELS: Record<string, BaseModelConfig> = {
     capabilities: STANDARD_CAPABILITIES,
     productionReady: true,
   },
-  
+
   GPT_3_5_TURBO_16K: {
     key: 'GPT_3_5_TURBO_16K',
     id: 'gpt-3.5-turbo-16k',
@@ -50,7 +50,7 @@ export const OPENAI_MODELS: Record<string, BaseModelConfig> = {
     capabilities: STANDARD_CAPABILITIES,
     productionReady: true,
   },
-  
+
   GPT_4: {
     key: 'GPT_4',
     id: 'gpt-4',
@@ -62,7 +62,7 @@ export const OPENAI_MODELS: Record<string, BaseModelConfig> = {
     capabilities: STANDARD_CAPABILITIES,
     productionReady: true,
   },
-  
+
   GPT_4_32K: {
     key: 'GPT_4_32K',
     id: 'gpt-4-32k',
@@ -74,7 +74,7 @@ export const OPENAI_MODELS: Record<string, BaseModelConfig> = {
     capabilities: STANDARD_CAPABILITIES,
     productionReady: true,
   },
-  
+
   GPT_4_TURBO: {
     key: 'GPT_4_TURBO',
     id: 'gpt-4-turbo',
@@ -86,7 +86,7 @@ export const OPENAI_MODELS: Record<string, BaseModelConfig> = {
     capabilities: STANDARD_CAPABILITIES,
     productionReady: true,
   },
-  
+
   GPT_4_VISION: {
     key: 'GPT_4_VISION',
     id: 'gpt-4-vision-preview',

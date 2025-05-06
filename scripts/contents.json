@@ -1516,14 +1516,14 @@
       "served_by_region": "ENAM",
       "served_by_primary": true,
       "timings": {
-        "sql_duration_ms": 2.1036
+        "sql_duration_ms": 6.7311
       },
-      "duration": 2.1036,
+      "duration": 6.7311,
       "changes": 0,
       "last_row_id": 0,
       "changed_db": false,
-      "size_after": 1363968,
-      "rows_read": 3822,
+      "size_after": 1466368,
+      "rows_read": 4110,
       "rows_written": 0
     }
   }
