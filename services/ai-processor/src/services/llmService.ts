@@ -1,6 +1,18 @@
 import { getLogger, logError, trackOperation } from '../utils/logging';
 import { toDomeError, LLMProcessingError, assertValid } from '../utils/errors';
 import { getSchemaForContentType, getSchemaInstructions } from '../schemas';
+import {
+  CLOUDFLARE_MODELS,
+  CLOUDFLARE_MODELS_ARRAY,
+  ModelRegistry,
+  truncateToTokenLimit,
+  countTokens,
+  BaseModelConfig,
+} from '@dome/common';
+
+const DEFAULT_MODEL = CLOUDFLARE_MODELS.GEMMA_3;
+const REGISTRY = new ModelRegistry(CLOUDFLARE_MODELS_ARRAY);
+REGISTRY.setDefaultModel(DEFAULT_MODEL.id);
 
 /** Factory */
 export function createLlmService(env: Env): LlmService {
@@ -11,22 +23,13 @@ export function createLlmService(env: Env): LlmService {
  * LLM Service – flat control‑flow, minimal nested try/catch
  */
 export class LlmService {
-  private static readonly DEFAULT_MODEL_NAME = '@cf/google/gemma-3-12b-it' as const;
   private static readonly MAX_RETRY_ATTEMPTS = 2;
-
-  // Model-specific token limits
-  private static readonly MODEL_TOKEN_LIMITS: Record<string, number> = {
-    '@cf/google/gemma-7b-it-lora': 8000,
-    '@cf/meta/llama-2-7b-chat-int8': 4000,
-    '@cf/mistral/mistral-7b-instruct-v0.1': 8000,
-    '@cf/meta/llama-3-8b-instruct': 16000,
-    '@cf/meta/llama-3-70b-instruct': 32000,
-    '@cf/google/gemma-3-12b-it': 70000,
-  };
 
   private readonly logger = getLogger().child({ component: 'LlmService' });
 
-  constructor(private readonly env: Env) { }
+  constructor(private readonly env: Env) {
+    // Note: LLM configuration is now initialized automatically by the common package
+  }
 
   /**
    * Process content with LLM
@@ -48,13 +51,13 @@ export class LlmService {
 
     const requestId = crypto.randomUUID();
     // Get model from environment or use default
-    const modelName = this.getModelName();
+    const modelConfig = this.getModelConfig();
 
     const logContext = {
       requestId,
       contentType,
       contentLength: content.length,
-      modelName,
+      modelName: modelConfig.id,
       hasExistingMetadata: !!existingMetadata,
     };
 
@@ -66,20 +69,13 @@ export class LlmService {
   }
 
   /**
-   * Get the AI model name from environment config or use default
+   * Get the AI model configuration from environment config or use default
    */
-  private getModelName() {
+  private getModelConfig(): BaseModelConfig {
     // Type assertion for accessing potentially undefined env vars
     const env = this.env as any;
-    const configuredModel = env.AI_MODEL_NAME;
-    const validModels = Object.keys(LlmService.MODEL_TOKEN_LIMITS);
-
-    // If model is configured and valid, use it
-    if (configuredModel && validModels.includes(configuredModel)) {
-      return configuredModel as keyof AiModels;
-    }
-
-    return LlmService.DEFAULT_MODEL_NAME;
+    const configuredModelId = env.AI_MODEL_NAME;
+    return REGISTRY.getModel(configuredModelId);
   }
 
   // -------------------------------------------------------------------------
@@ -94,7 +90,7 @@ export class LlmService {
   ) {
     const schema = getSchemaForContentType(contentType);
     const instructions = getSchemaInstructions(contentType);
-    const modelName = this.getModelName();
+    const modelConfig = this.getModelConfig();
 
     // Build the prompt with existing metadata if available
     let promptContent = '';
@@ -113,7 +109,16 @@ export class LlmService {
       }
     }
 
-    promptContent += `${contentType.toUpperCase()} CONTENT:\n${this.truncateContent(content, modelName as keyof AiModels)}`;
+    // Get token limit from model config or environment override
+    const env = this.env as any;
+    const configLimitStr = env.AI_TOKEN_LIMIT;
+    const configLimit = configLimitStr ? parseInt(configLimitStr, 10) : null;
+    const modelLimit = modelConfig.maxContextTokens;
+    const tokenLimit = configLimit && !isNaN(configLimit) ? configLimit : modelLimit;
+
+    // Truncate content if needed
+    const truncatedContent = this.truncateContent(content, tokenLimit);
+    promptContent += `${contentType.toUpperCase()} CONTENT:\n${truncatedContent}`;
 
     const prompt = `${instructions}\n\n${promptContent}`;
 
@@ -121,7 +126,7 @@ export class LlmService {
 
     for (let attempt = 0; attempt <= LlmService.MAX_RETRY_ATTEMPTS; attempt++) {
       try {
-        const raw = await this.callLlm(prompt, modelName as keyof AiModels);
+        const raw = await this.callLlm(prompt, modelConfig.id);
         if (!raw) {
           throw new LLMProcessingError('Empty response from LLM', { requestId: ctx.requestId });
         }
@@ -150,7 +155,7 @@ export class LlmService {
           responseLength: responseText.length
         }, 'LLM processing successful');
 
-        return { ...parsed, processingVersion: 3, modelUsed: modelName };
+        return { ...parsed, processingVersion: 3, modelUsed: modelConfig.id };
       } catch (error) {
         lastError = error;
 
@@ -168,8 +173,10 @@ export class LlmService {
     throw this.wrapError(lastError, 'Exhausted attempts', ctx);
   }
 
-  private async callLlm(prompt: string, modelName: keyof AiModels) {
-    const raw = await this.env.AI.run(modelName, {
+  private async callLlm(prompt: string, modelName: string) {
+    // Type assertion to satisfy the Cloudflare Workers AI type constraints
+    const modelNameAsKey = modelName as keyof AiModels;
+    const raw = await this.env.AI.run(modelNameAsKey, {
       messages: [{ role: 'user', content: prompt }],
       stream: false,
     });
@@ -203,22 +210,26 @@ export class LlmService {
     return domeErr;
   }
 
-  private truncateContent(content: string, modelName: keyof AiModels) {
-    // Get the token limit for the specified model, or use a default limit
-    // Type assertion for accessing potentially undefined env vars
-    const env = this.env as any;
-    const configLimitStr = env.AI_TOKEN_LIMIT;
-    const configLimit = configLimitStr ? parseInt(configLimitStr, 10) : null;
-    const modelLimit = LlmService.MODEL_TOKEN_LIMITS[modelName] || 8000;
-    const maxLength = configLimit && !isNaN(configLimit) ? configLimit : modelLimit;
+  /**
+   * Truncate content to fit within token limit
+   * @param content Content to truncate
+   * @param tokenLimit Maximum tokens allowed
+   * @returns Truncated content
+   */
+  private truncateContent(content: string, tokenLimit: number): string {
+    if (!content) return '';
 
-    if (content.length <= maxLength) return content;
-    this.logger.debug({
-      originalLength: content.length,
-      truncatedLength: maxLength,
-      modelName,
-      customLimit: !!configLimit
-    }, 'Truncating content');
-    return content.substring(0, maxLength) + '... [content truncated]';
+    // Log truncation details
+    const tokenCount = countTokens(content);
+    if (tokenCount > tokenLimit) {
+      this.logger.debug({
+        originalTokens: tokenCount,
+        tokenLimit,
+        customLimit: (this.env as any).AI_TOKEN_LIMIT ? true : false
+      }, 'Truncating content');
+    }
+
+    // Use the common package's truncation utility
+    return truncateToTokenLimit(content, tokenLimit, (text) => countTokens(text));
   }
 }

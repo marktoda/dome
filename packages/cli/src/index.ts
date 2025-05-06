@@ -4,7 +4,6 @@ import { Command } from 'commander';
 import figlet from 'figlet';
 import chalk from 'chalk';
 import { loadConfig } from './utils/config';
-import { addCommand } from './commands/add';
 import { noteCommand } from './commands/note';
 import { listCommand } from './commands/list';
 import { showCommand } from './commands/show';
@@ -47,7 +46,6 @@ if (
 }
 
 // Register commands
-addCommand(program);
 noteCommand(program);
 listCommand(program);
 showCommand(program);

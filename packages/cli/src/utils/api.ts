@@ -64,7 +64,7 @@ export const api = {
 // ---------- Convenience wrappers (unchanged signatures) -------------------------
 export const addContent = (content: string, title?: string, tags?: string[]) =>
   api.post('/notes', {
-    body: content,
+    content,
     mimeType: 'text/plain',
     title,
     metadata: tags ? { tags } : undefined
@@ -109,7 +109,7 @@ export const updateContent = (id: string, content: string, title?: string, tags?
 
 export const addNote = (context: string, content: string) =>
   api.post('/notes', {
-    body: content,
+    content,
     mimeType: 'text/plain',
     metadata: { context }
   }, {

@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { registerGithubRepo, showItem, updateContent } from '../utils/api';
+import { registerGithubRepo, showItem, updateContent, addContent } from '../utils/api';
 import { error, info, success } from '../utils/ui';
 import { isAuthenticated } from '../utils/config';
 import * as fs from 'fs';
@@ -14,7 +14,49 @@ import { execSync } from 'child_process';
 export function contentCommand(program: Command): void {
   const contentCmd = program.command('content').description('Manage content in Dome');
 
-  // Add a GitHub repository
+  // Add content to Dome (general command)
+  contentCmd
+    .command('add')
+    .description('Add content to Dome')
+    .argument('[content]', 'Content to add (text, file path, or URL)')
+    .action(async (content: string) => {
+      // Check if user is authenticated
+      if (!isAuthenticated()) {
+        console.log(error('You need to login first. Run `dome login` to authenticate.'));
+        process.exit(1);
+      }
+
+      try {
+        // Check if content is a file path
+        if (fs.existsSync(content) && fs.statSync(content).isFile()) {
+          const fileName = path.basename(content);
+          console.log(info(`Adding file: ${fileName}`));
+
+          // Read file content
+          const fileContent = fs.readFileSync(content, 'utf-8');
+
+          // Add file content
+          await addContent(fileContent);
+
+          console.log(success(`Added file: ${fileName}`));
+        } else {
+          // Add text content
+          const contentPreview = content.length > 40 ? `${content.substring(0, 40)}...` : content;
+          console.log(info(`Adding: "${contentPreview}"`));
+
+          await addContent(content);
+
+          console.log(success('Added to dome'));
+        }
+      } catch (err) {
+        console.log(
+          error(`Failed to add content: ${err instanceof Error ? err.message : String(err)}`),
+        );
+        process.exit(1);
+      }
+    });
+
+  // Add subcategories to the 'add' command
   contentCmd
     .command('add')
     .description('Add content to Dome')

@@ -1,6 +1,6 @@
 /**
  * Cloudflare Workers AI model configurations
- * 
+ *
  * This file defines all Cloudflare Workers AI models available in the system along with
  * their capabilities, context windows, and other parameters.
  */
@@ -32,6 +32,18 @@ const CLOUDFLARE_EMBEDDING_CAPABILITIES: ModelCapabilities = {
  */
 export const CLOUDFLARE_MODELS: Record<string, BaseModelConfig> = {
   // LLMs
+  GEMMA_3: {
+    key: 'GEMMA_3',
+    id: '@cf/google/gemma-3-12b-it',
+    name: 'Gemma 3',
+    provider: ModelProvider.CLOUDFLARE,
+    maxContextTokens: 80000,
+    defaultMaxTokens: 1024,
+    defaultTemperature: 0.7,
+    capabilities: CLOUDFLARE_LLM_CAPABILITIES,
+    productionReady: true,
+  },
+
   LLAMA_2_7B: {
     key: 'LLAMA_2_7B',
     id: '@cf/meta/llama-2-7b-chat-int8',
@@ -43,7 +55,7 @@ export const CLOUDFLARE_MODELS: Record<string, BaseModelConfig> = {
     capabilities: CLOUDFLARE_LLM_CAPABILITIES,
     productionReady: true,
   },
-  
+
   LLAMA_2_13B: {
     key: 'LLAMA_2_13B',
     id: '@cf/meta/llama-2-13b-chat-int8',
@@ -55,7 +67,7 @@ export const CLOUDFLARE_MODELS: Record<string, BaseModelConfig> = {
     capabilities: CLOUDFLARE_LLM_CAPABILITIES,
     productionReady: true,
   },
-  
+
   MISTRAL_7B: {
     key: 'MISTRAL_7B',
     id: '@cf/mistral/mistral-7b-instruct-v0.1',
@@ -67,7 +79,7 @@ export const CLOUDFLARE_MODELS: Record<string, BaseModelConfig> = {
     capabilities: CLOUDFLARE_LLM_CAPABILITIES,
     productionReady: true,
   },
-  
+
   // Embedding models
   E5_LARGE_V2: {
     key: 'E5_LARGE_V2',
@@ -80,7 +92,7 @@ export const CLOUDFLARE_MODELS: Record<string, BaseModelConfig> = {
     capabilities: CLOUDFLARE_EMBEDDING_CAPABILITIES,
     productionReady: true,
   },
-  
+
   E5_SMALL_V2: {
     key: 'E5_SMALL_V2',
     id: '@cf/baai/bge-small-en-v1.5',
