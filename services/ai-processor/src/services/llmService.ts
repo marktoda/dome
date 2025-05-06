@@ -11,51 +11,146 @@ export function createLlmService(env: Env): LlmService {
  * LLM Service – flat control‑flow, minimal nested try/catch
  */
 export class LlmService {
-  private static readonly MODEL_NAME = '@cf/google/gemma-7b-it-lora';
+  private static readonly DEFAULT_MODEL_NAME = '@cf/google/gemma-3-12b-it' as const;
   private static readonly MAX_RETRY_ATTEMPTS = 2;
+
+  // Model-specific token limits
+  private static readonly MODEL_TOKEN_LIMITS: Record<string, number> = {
+    '@cf/google/gemma-7b-it-lora': 8000,
+    '@cf/meta/llama-2-7b-chat-int8': 4000,
+    '@cf/mistral/mistral-7b-instruct-v0.1': 8000,
+    '@cf/meta/llama-3-8b-instruct': 16000,
+    '@cf/meta/llama-3-70b-instruct': 32000,
+    '@cf/google/gemma-3-12b-it': 70000,
+  };
 
   private readonly logger = getLogger().child({ component: 'LlmService' });
 
   constructor(private readonly env: Env) { }
 
-  /** Entry point */
-  async processContent(content: string, contentType: string) {
+  /**
+   * Process content with LLM
+   * @param content The content body to process
+   * @param contentType The type of content (note, email, etc)
+   * @param existingMetadata Optional existing metadata to include as context
+   */
+  async processContent(
+    content: string,
+    contentType: string,
+    existingMetadata?: {
+      title?: string;
+      summary?: string;
+      tags?: string[];
+    }
+  ) {
     assertValid(!!content, 'Content is required for LLM processing', { contentType });
     assertValid(!!contentType, 'Content type is required for LLM processing');
 
     const requestId = crypto.randomUUID();
+    // Get model from environment or use default
+    const modelName = this.getModelName();
+
     const logContext = {
       requestId,
       contentType,
       contentLength: content.length,
-      modelName: LlmService.MODEL_NAME,
+      modelName,
+      hasExistingMetadata: !!existingMetadata,
     };
 
-    return trackOperation('llm_process_content', () => this.withRetries(content, contentType, logContext), logContext);
+    return trackOperation(
+      'llm_process_content',
+      () => this.withRetries(content, contentType, existingMetadata, logContext),
+      logContext
+    );
+  }
+
+  /**
+   * Get the AI model name from environment config or use default
+   */
+  private getModelName() {
+    // Type assertion for accessing potentially undefined env vars
+    const env = this.env as any;
+    const configuredModel = env.AI_MODEL_NAME;
+    const validModels = Object.keys(LlmService.MODEL_TOKEN_LIMITS);
+
+    // If model is configured and valid, use it
+    if (configuredModel && validModels.includes(configuredModel)) {
+      return configuredModel as keyof AiModels;
+    }
+
+    return LlmService.DEFAULT_MODEL_NAME;
   }
 
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
 
-  private async withRetries(content: string, contentType: string, ctx: Record<string, unknown>) {
+  private async withRetries(
+    content: string,
+    contentType: string,
+    existingMetadata: { title?: string; summary?: string; tags?: string[] } | undefined,
+    ctx: Record<string, unknown>
+  ) {
     const schema = getSchemaForContentType(contentType);
     const instructions = getSchemaInstructions(contentType);
-    const prompt = `${instructions}\n\n${contentType.toUpperCase()} CONTENT:\n${this.truncateContent(content, 8000)}`;
+    const modelName = this.getModelName();
+
+    // Build the prompt with existing metadata if available
+    let promptContent = '';
+
+    if (existingMetadata) {
+      if (existingMetadata.title) {
+        promptContent += `EXISTING TITLE: ${existingMetadata.title}\n\n`;
+      }
+
+      if (existingMetadata.summary) {
+        promptContent += `EXISTING SUMMARY: ${existingMetadata.summary}\n\n`;
+      }
+
+      if (existingMetadata.tags && existingMetadata.tags.length > 0) {
+        promptContent += `EXISTING TAGS: ${existingMetadata.tags.join(', ')}\n\n`;
+      }
+    }
+
+    promptContent += `${contentType.toUpperCase()} CONTENT:\n${this.truncateContent(content, modelName as keyof AiModels)}`;
+
+    const prompt = `${instructions}\n\n${promptContent}`;
 
     let lastError: unknown = null;
 
     for (let attempt = 0; attempt <= LlmService.MAX_RETRY_ATTEMPTS; attempt++) {
       try {
-        const raw = await this.callLlm(prompt);
-        if (!raw || !raw.response) {
+        const raw = await this.callLlm(prompt, modelName as keyof AiModels);
+        if (!raw) {
           throw new LLMProcessingError('Empty response from LLM', { requestId: ctx.requestId });
         }
-        const parsed = this.parseStructuredResponse(raw.response, schema, ctx.requestId as string);
 
-        this.logger.info({ ...ctx, attempt: attempt + 1, responseLength: raw.response?.length ?? 0 }, 'LLM processing successful');
+        // Handle different response formats with safer type handling
+        let responseText = '';
+        if (typeof raw === 'string') {
+          responseText = raw;
+        } else if (raw && typeof raw === 'object') {
+          // Handle both response and response.text patterns seen in AI APIs
+          responseText = (raw as any).response ||
+            (raw as any).text ||
+            (raw as any).completion ||
+            '';
+        }
 
-        return { ...parsed, processingVersion: 2, modelUsed: LlmService.MODEL_NAME };
+        if (!responseText) {
+          throw new LLMProcessingError('Empty response text from LLM', { requestId: ctx.requestId });
+        }
+
+        const parsed = this.parseStructuredResponse(responseText, schema, ctx.requestId as string);
+
+        this.logger.info({
+          ...ctx,
+          attempt: attempt + 1,
+          responseLength: responseText.length
+        }, 'LLM processing successful');
+
+        return { ...parsed, processingVersion: 3, modelUsed: modelName };
       } catch (error) {
         lastError = error;
 
@@ -73,8 +168,8 @@ export class LlmService {
     throw this.wrapError(lastError, 'Exhausted attempts', ctx);
   }
 
-  private async callLlm(prompt: string) {
-    const raw = await this.env.AI.run(LlmService.MODEL_NAME, {
+  private async callLlm(prompt: string, modelName: keyof AiModels) {
+    const raw = await this.env.AI.run(modelName, {
       messages: [{ role: 'user', content: prompt }],
       stream: false,
     });
@@ -108,9 +203,22 @@ export class LlmService {
     return domeErr;
   }
 
-  private truncateContent(content: string, maxLength: number) {
+  private truncateContent(content: string, modelName: keyof AiModels) {
+    // Get the token limit for the specified model, or use a default limit
+    // Type assertion for accessing potentially undefined env vars
+    const env = this.env as any;
+    const configLimitStr = env.AI_TOKEN_LIMIT;
+    const configLimit = configLimitStr ? parseInt(configLimitStr, 10) : null;
+    const modelLimit = LlmService.MODEL_TOKEN_LIMITS[modelName] || 8000;
+    const maxLength = configLimit && !isNaN(configLimit) ? configLimit : modelLimit;
+
     if (content.length <= maxLength) return content;
-    this.logger.debug({ originalLength: content.length, truncatedLength: maxLength }, 'Truncating content');
+    this.logger.debug({
+      originalLength: content.length,
+      truncatedLength: maxLength,
+      modelName,
+      customLimit: !!configLimit
+    }, 'Truncating content');
     return content.substring(0, maxLength) + '... [content truncated]';
   }
 }

@@ -73,8 +73,33 @@ export class ContentProcessor {
         logger.info({ id, requestId }, 'Skipping empty body');
         return;
       }
+      
+      // Extract existing metadata to pass as context to the LLM
+      const existingMetadata = {
+        title: doc.title || undefined,
+        summary: doc.summary || undefined,
+        tags: Array.isArray((doc as any).tags) ? (doc as any).tags : undefined
+      };
+      
+      const hasExistingMetadata = !!(existingMetadata.title || existingMetadata.summary ||
+                                    (existingMetadata.tags && existingMetadata.tags.length > 0));
+      
+      if (hasExistingMetadata) {
+        logger.info({
+          id,
+          requestId,
+          hasTitle: !!existingMetadata.title,
+          hasSummary: !!existingMetadata.summary,
+          hasTags: !!(existingMetadata.tags && existingMetadata.tags.length > 0)
+        }, 'Processing with existing metadata as context');
+      }
 
-      const raw = await this.services.llm.processContent(body, contentType);
+      const raw = await this.services.llm.processContent(
+        body,
+        contentType,
+        hasExistingMetadata ? existingMetadata : undefined
+      );
+      
       if (!raw) return; // LlmService already queued rate‑limited work
 
       const metadata = this.normalize(raw);
