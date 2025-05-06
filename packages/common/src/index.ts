@@ -21,3 +21,6 @@ export * from './services';
 
 // Export all constants
 export * from './constants/publicContent';
+
+// Export AI config system
+export * from './ai';

@@ -46,10 +46,11 @@ export async function withContext<T>(meta: Meta, fn: (req: RequestContext) => Pr
 }
 
 export async function updateContext(c: Partial<RequestContext>): Promise<void> {
-  const parent = ctx.getStore();
-  if (!parent) {
+  let store = ctx.getStore();
+  if (!store) {
     throw new Error('No parent context found');
   }
 
-  ctx.enterWith({ ...parent, ...c });
+  // TODO: stupid hack for updating the store
+  Object.assign(store, c);
 }
