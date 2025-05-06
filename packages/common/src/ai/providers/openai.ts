@@ -98,6 +98,18 @@ export const OPENAI_MODELS: Record<string, BaseModelConfig> = {
     capabilities: VISION_CAPABILITIES,
     productionReady: true,
   },
+
+  GPT_4o: {
+    key: 'GPT_4o',
+    id: 'gpt-4o',
+    name: 'GPT-4',
+    provider: ModelProvider.OPENAI,
+    maxContextTokens: 128000,
+    defaultMaxTokens: 1000,
+    defaultTemperature: 0.7,
+    capabilities: STANDARD_CAPABILITIES,
+    productionReady: true,
+  },
 };
 
 // Export all models as an array

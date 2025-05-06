@@ -14,22 +14,21 @@ import { ZodSchema } from 'zod';
 import { ModelFactory } from './modelFactory';
 import {
   // Import from the new common package instead of local config
-  getModelConfig,
+  MODELS,
+  ALL_MODELS_ARRAY,
   getDefaultModel,
-  OPENAI_MODELS,
-  calculateTokenLimits,
-  configureLlmSystem,
+  ModelRegistry,
   ModelProvider,
-  BaseModelConfig,
-  truncateToTokenLimit,
-  countTokens,
-  calculateContextLimits,
 } from '@dome/common';
 
 // Get prompts from local config for now (these aren't part of the common package yet)
-import { getTimeoutConfig, getQueryRewritingPrompt, getQueryComplexityAnalysisPrompt } from '../config';
+import { getTimeoutConfig } from '../config';
+import { ALL } from 'node:dns';
 
-let MODEL = OPENAI_MODELS.GPT_4_TURBO.id;
+const DEFAULT_MODEL_ID = MODELS.OPENAI.GPT_4_TURBO.id;
+const DEFAULT_STRUCTURED_MODEL_ID = MODELS.OPENAI.GPT_4o.id;
+export const MODEL_REGISTRY = new ModelRegistry(ALL_MODELS_ARRAY);
+MODEL_REGISTRY.setDefaultModel(DEFAULT_MODEL_ID);
 const logger = getLogger();
 
 /* -------------------------------------------------------- */
@@ -48,61 +47,11 @@ function withTimeout<T>(p: Promise<T>, ms = getTimeoutConfig().llmServiceTimeout
   ]);
 }
 
-/**
- * Truncates context to fit within the model's context window
- * Using dynamic allocation based on the contextConfig settings
- *
- * @param context Text context to truncate if necessary
- * @param modelId Model ID to use for tokenization and limits
- * @returns Truncated context with ellipsis if needed
- */
-function truncateContextToFit(context: string, modelId?: string): string {
-  // Get model configuration
-  const modelConfig = getModelConfig(modelId);
-
-  // Count tokens in the context using the common package tokenizer
-  const ctxTokens = countTokens(context, modelConfig.id);
-
-  // Get context limits using our new configuration system
-  const { maxDocumentsTokens } = calculateContextLimits(modelConfig);
-
-  // If context fits within limit, return as is
-  if (ctxTokens <= maxDocumentsTokens!) return context;
-
-  // Use the common package's truncation utility with our token counter
-  return truncateToTokenLimit(
-    context,
-    maxDocumentsTokens!,
-    (text) => countTokens(text, modelConfig.id)
-  );
-}
 
 /* -------------------------------------------------------- */
 /*  LLM Service implementation                              */
 /* -------------------------------------------------------- */
 export class LlmService {
-  static get MODEL() { return MODEL; }
-
-  /**
-   * Initialize the LLM service with environment variables
-   * This must be called during service startup
-   */
-  static initialize(env: Env): void {
-    // Use the common package's configureLlmSystem function
-    configureLlmSystem(env);
-
-    // Update the static MODEL property to match the configured default
-    MODEL = getDefaultModel().id;
-
-    logger.info(
-      {
-        model: MODEL,
-        modelName: getDefaultModel().name,
-        provider: getDefaultModel().provider,
-      },
-      'LLM service initialized'
-    );
-  }
 
   /**
    * Get a configured ChatOpenAI instance
@@ -111,19 +60,18 @@ export class LlmService {
     env: Env,
     opts: { temperature?: number; maxTokens?: number; modelId?: string } = {},
   ): ChatOpenAI {
-    // Get model config - use specified modelId or default
-    const modelConfig = getModelConfig(opts.modelId ?? this.MODEL);
+    const model = MODEL_REGISTRY.getModel(opts.modelId);
 
     // Base client options
     const clientOptions = {
-      modelName: modelConfig.id,
-      temperature: opts.temperature ?? modelConfig.defaultTemperature,
+      modelName: model.id,
+      temperature: opts.temperature ?? model.defaultTemperature,
       maxTokens: opts.maxTokens,
       streaming: false,
     };
 
     // Provider-specific configuration
-    switch (modelConfig.provider) {
+    switch (model.provider) {
       case ModelProvider.OPENAI:
         return new ChatOpenAI({
           ...clientOptions,
@@ -163,7 +111,7 @@ export class LlmService {
     opts: { temperature?: number; maxTokens?: number; modelId?: string } = {},
   ): ChatOpenAI {
     // Get model config - use specified modelId or default
-    const modelConfig = getModelConfig(opts.modelId ?? this.MODEL);
+    const modelConfig = MODEL_REGISTRY.getModel(opts.modelId);
 
     // Verify the model supports streaming
     if (!modelConfig.capabilities.streaming) {
@@ -224,8 +172,8 @@ export class LlmService {
     tools: Tool[],
     opts: { temperature?: number; maxTokens?: number; modelId?: string } = {},
   ): BaseChatModel {
-    const modelId = opts.modelId ?? this.MODEL;
-    const modelConfig = getModelConfig(modelId);
+    const modelConfig = MODEL_REGISTRY.getModel(opts.modelId);
+    const modelId = modelConfig.id;
 
     logger.info(
       {
@@ -294,7 +242,7 @@ export class LlmService {
       // Get client and call the model
       const model = this.getClient(env, {
         ...opts,
-        modelId: opts.modelId ?? this.MODEL,
+        modelId: opts.modelId,
       });
       const outputParser = new StringOutputParser();
 
@@ -321,7 +269,6 @@ export class LlmService {
 
     opts: {
       temperature?: number;
-      modelId?: string;
       schema: ZodSchema;
       schemaInstructions: string;
     },
@@ -329,20 +276,22 @@ export class LlmService {
     if (isTest()) return mockResponse as unknown as T;
 
     try {
+
+      // Convert messages to LangChain format
+      const langChainMessages = LlmService.convertMessages(messages);
+      // Get client and call the model
+      const modelConfig = MODEL_REGISTRY.getModel(DEFAULT_STRUCTURED_MODEL_ID);
       logger.info(
         {
-          modelId: opts.modelId ?? this.MODEL,
+          modelId: modelConfig.id,
           messageCount: messages.length,
         },
         'Invoking LLM with structured output schema',
       );
 
-      // Convert messages to LangChain format
-      const langChainMessages = this.convertMessages(messages);
-
       // Create structured output model
       const model = ModelFactory.createStructuredOutputModel<T>(env, {
-        modelId: opts.modelId ?? this.MODEL,
+        modelId: modelConfig.id,
         temperature: opts.temperature,
         schema: opts.schema,
         schemaInstructions: opts.schemaInstructions,
@@ -370,12 +319,12 @@ export class LlmService {
 
     try {
       // Convert messages to LangChain format
-      const langChainMessages = this.convertMessages(messages);
+      const langChainMessages = LlmService.convertMessages(messages);
 
       // Get streaming-enabled client
       const model = this.getStreamingClient(env, {
         ...opts,
-        modelId: opts.modelId ?? this.MODEL,
+        modelId: opts.modelId,
       });
 
       // Use LangChain's streaming capability
@@ -389,42 +338,6 @@ export class LlmService {
     } catch (e) {
       logger.warn({ err: e }, 'LLM stream failed – sending fallback');
       yield fallbackResponse;
-    }
-  }
-
-  /* ------------------------------------------------------ */
-  /*  Higher‑level helpers                                  */
-  /* ------------------------------------------------------ */
-  static async rewriteQuery(env: Env, original: string, ctx: AIMessage[] = []): Promise<string> {
-    const msgs: AIMessage[] = [
-      { role: 'system', content: getQueryRewritingPrompt() },
-      ...ctx,
-      { role: 'user', content: `Original query: "${original}"` },
-    ];
-    const out = await this.call(env, msgs);
-    const trimmed = out.trim().replace(/^['"]|['"]$/g, '');
-    return trimmed.length > 2 * original.length || trimmed.includes('\n') ? original : trimmed;
-  }
-
-  static async analyzeQuery(
-    env: Env,
-    query: string,
-  ): Promise<{ isComplex: boolean; shouldSplit: boolean; reason: string; suggested?: string[] }> {
-    const msgs: AIMessage[] = [
-      { role: 'system', content: getQueryComplexityAnalysisPrompt() },
-      { role: 'user', content: `Analyze: "${query}"` },
-    ];
-    const out = await this.call(env, msgs);
-    try {
-      const json = JSON.parse(/```(?:json)?\s*([\s\S]*?)\s*```/.exec(out)?.[1] ?? out);
-      return {
-        isComplex: !!json.isComplex,
-        shouldSplit: !!json.shouldSplit,
-        reason: json.reason ?? '',
-        suggested: Array.isArray(json.suggestedQueries) ? json.suggestedQueries : undefined,
-      };
-    } catch {
-      return { isComplex: false, shouldSplit: false, reason: 'parse_error' };
     }
   }
 }

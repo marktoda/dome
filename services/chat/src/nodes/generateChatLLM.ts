@@ -37,7 +37,7 @@ export async function generateChatLLM(
   /* ------------------------------------------------------------------ */
   /*  Prompt setup                                                      */
   /* ------------------------------------------------------------------ */
-  const modelId = state.options?.modelId ?? LlmService.MODEL;
+  const modelId = state.options?.modelId;
   const modelConfig = getModelConfig(modelId);
 
   // Build simple system prompt for non-RAG chat

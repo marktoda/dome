@@ -346,8 +346,6 @@ Always respect user privacy and confidentiality.`,
   generateAnswer: {
     systemPrompt: `You are an expert AI assistant with access to retrieved context information.
 
-USER QUERY: {{userQuery}}
-
 RETRIEVED CONTEXT:
 {{synthesizedContext}}
 
@@ -569,7 +567,6 @@ export function getGenerateAnswerPrompt(
   let prompt = getPromptsConfig().generateAnswer.systemPrompt;
 
   // Replace placeholders with actual values
-  prompt = prompt.replace('{{userQuery}}', userQuery);
   prompt = prompt.replace('{{synthesizedContext}}', synthesizedContext);
 
   // Add situational context

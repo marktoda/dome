@@ -1,4 +1,5 @@
-import { getLogger, logError, countTokens, getModelConfig, calculateResponseTokens } from '@dome/common';
+import { getLogger, logError, countTokens, calculateResponseTokens } from '@dome/common';
+import { LlmService, MODEL_REGISTRY } from '../services/llmService';
 import { toDomeError } from '../utils/errors';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { formatDocsForPrompt } from '../utils/promptHelpers';
@@ -61,8 +62,8 @@ export async function generateAnswer(
     }
 
     // Configure model parameters
-    const modelId = state.options?.modelId ?? 'gpt-4o'; // Use latest model
-    const modelConfig = getModelConfig(modelId);
+    const modelConfig = MODEL_REGISTRY.getModel(state.options?.modelId);
+    const modelId = modelConfig.id;
 
     // Calculate token usage and limits
     const contextTokens = countTokens(docContext);
@@ -75,7 +76,7 @@ export async function generateAnswer(
       contextTokens + userQueryTokens + systemPromptEstimate,
       state.options?.maxTokens
     );
-    
+
     logger.info({
       modelId,
       contextTokens,

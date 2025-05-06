@@ -36,11 +36,6 @@ export function createServices(env: Env): Services {
   // Create data retention manager
   const dataRetention = new DataRetentionManager(env.CHAT_DB, checkpointer);
 
-  // Initialize LLM service with environment configuration
-  // This configures the default model and other LLM-related settings
-  LlmService.initialize(env);
-  const llm = LlmService;
-
   // Create search service
   const search = SearchService.fromEnv(env);
 
@@ -48,20 +43,9 @@ export function createServices(env: Env): Services {
   // This is a static class, so we don't need to instantiate it
   const observability = ObservabilityService;
 
-  // Log which model is being used
-  logger.info(
-    {
-      modelId: LlmService.MODEL,
-      // Get provider information from the configured model
-      modelProvider:
-        'DEFAULT_MODEL_ID' in env ? String(env.DEFAULT_MODEL_ID) : 'default (GPT_4_TURBO)',
-    },
-    'Chat service using initialized LLM model',
-  );
-
   // Return the services container
   return {
-    llm,
+    llm: LlmService,
     search,
     observability,
     modelFactory: ModelFactory, // Static class, we export the class itself
