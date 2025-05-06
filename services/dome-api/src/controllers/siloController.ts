@@ -73,7 +73,7 @@ export class SiloController {
         'Get note request received',
       );
 
-      const note = this.silo.get(id, userId);
+      const note = await this.silo.get(id, userId);
 
       if (!note) {
         return c.json(

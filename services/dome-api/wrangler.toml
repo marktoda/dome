@@ -2,6 +2,7 @@ name = "dome-api"
 main = "src/index.ts"
 compatibility_date = "2025-04-15"
 compatibility_flags = ["nodejs_als"]
+# Required for AsyncLocalStorage in auth propagation system
 
 # Workers AI binding
 [ai]

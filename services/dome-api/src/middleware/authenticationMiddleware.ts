@@ -1,5 +1,5 @@
 import { Context, Next } from 'hono';
-import { getLogger, updateContext } from '@dome/common';
+import { getLogger, logError, updateContext } from '@dome/common';
 import type { Bindings } from '../types';
 import { createServiceFactory } from '../services/serviceFactory';
 
@@ -76,7 +76,7 @@ export const authenticationMiddleware = async (
     // Continue to next middleware/handler
     await next();
   } catch (error) {
-    logger.error({ error }, 'Authentication error');
+    logError(error, 'Authentication error');
     return c.json(
       {
         success: false,
