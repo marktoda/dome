@@ -19,9 +19,10 @@ const splitInputSchema = z.object({
         query: z.string(),
       }),
     )
-    .nullable(),
-  instructions: z.string().nullable(),
-  reasoning: z.string().nullable(),
+    .nullable()
+    .optional(), // Make tasks optional
+  instructions: z.string().nullable().optional(), // Make instructions optional
+  reasoning: z.string().nullable().optional(), // Make reasoning optional
 });
 
 // Type inference from the Zod schema
@@ -279,3 +280,4 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<AgentSt
     };
   }
 };
+

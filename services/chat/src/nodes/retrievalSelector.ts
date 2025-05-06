@@ -21,7 +21,7 @@ const retrievalTasksSchema = z.object({
       query: z.string(),
     }),
   ),
-  reasoning: z.string(),
+  reasoning: z.string().optional(),
 });
 
 // Type inference from the Zod schema
@@ -127,7 +127,7 @@ export async function retrievalSelector(
 
     return {
       retrievals: deduplicatedTasks,
-      reasoning: [...(state.reasoning || []), result.reasoning],
+      reasoning: [...(state.reasoning || []), result.reasoning || 'Selected appropriate retrieval sources based on the task.'],
       metadata: {
         currentNode: 'retrievalSelector',
         executionTimeMs: elapsed,

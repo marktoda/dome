@@ -78,15 +78,15 @@ export function contentCommand(program: Command): void {
         // Fetch the content
         console.log(info(`Fetching content with ID: ${contentId}`));
         const content = await showItem(contentId);
-        
+
         if (!content) {
           console.log(error(`Content with ID ${contentId} not found.`));
           process.exit(1);
         }
-        
+
         // Create temp file with content
         const tempFilePath = path.join(os.tmpdir(), `dome-content-${Date.now()}.md`);
-        
+
         // Format the content with metadata
         const title = content.title || 'Untitled Content';
         // Try different property names that might contain the content
@@ -102,10 +102,10 @@ export function contentCommand(program: Command): void {
         } else {
           console.log(info('Content body not found in expected properties. Using empty string.'));
         }
-        
+
         const tags = content.tags ? content.tags.join(', ') : '';
         const summary = content.summary || '';
-        
+
         const fileContent = [
           `# ${title}`,
           `Tags: ${tags}`,
@@ -115,38 +115,38 @@ export function contentCommand(program: Command): void {
           '',  // Add an extra blank line for clarity
           contentBody,
         ].join('\n');
-        
+
         // Log the content being written to the file
-        
+
         fs.writeFileSync(tempFilePath, fileContent);
-        
+
         // Open in editor
         console.log(info(`Opening content in your editor (${process.env.EDITOR || 'default editor'})...`));
         console.log(info('The CLI will continue when you exit the editor.'));
-        
+
         try {
           execSync(`${process.env.EDITOR || 'vi'} "${tempFilePath}"`, {
             stdio: 'inherit',
             env: process.env,
           });
-          
+
           // Parse updated content
           const updatedContent = fs.readFileSync(tempFilePath, 'utf8');
           const lines = updatedContent.split('\n');
-          
+
           let updatedTitle = 'Untitled Content';
           let updatedTags: string[] = [];
           let contentStartIndex = 0;
-          
+
           // Parse metadata
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
-            
+
             if (i === 0 && line.startsWith('# ')) {
               updatedTitle = line.substring(2).trim();
               continue;
             }
-            
+
             if (line.startsWith('Tags:')) {
               const tagsPart = line.substring(5).trim();
               if (tagsPart) {
@@ -154,12 +154,12 @@ export function contentCommand(program: Command): void {
               }
               continue;
             }
-            
+
             if (line.includes('<!-- Write your content below this line -->')) {
               contentStartIndex = i + 1;
               break;
             }
-            
+
             // If we've gone through several lines without finding the marker,
             // assume content starts after a reasonable number of metadata lines
             if (i >= 5) {
@@ -167,25 +167,24 @@ export function contentCommand(program: Command): void {
               break;
             }
           }
-          
+
           const updatedContentBody = lines.slice(contentStartIndex).join('\n').trim();
-          
+
           // Clean up temp file
           try {
             fs.unlinkSync(tempFilePath);
           } catch (err) {
             // Ignore errors when deleting temp file
           }
-          
+
           if (!updatedContentBody.trim()) {
             console.log(error('Content was empty, nothing updated.'));
             process.exit(1);
           }
-          
+
           // Update the content
-          console.log(info(`Updating content with ID: ${contentId}`));
           const result = await updateContent(contentId, updatedContentBody, updatedTitle, updatedTags);
-          
+
           if (result) {
             console.log(success(`Content updated successfully!`));
             console.log(info(`Title: ${result.title || updatedTitle}`));
@@ -196,14 +195,14 @@ export function contentCommand(program: Command): void {
         } catch (err) {
           console.log(error('An error occurred while editing the content:'));
           console.log(error(err instanceof Error ? err.message : String(err)));
-          
+
           // Clean up temp file
           try {
             fs.unlinkSync(tempFilePath);
           } catch (cleanupErr) {
             // Ignore errors when deleting temp file
           }
-          
+
           process.exit(1);
         }
       } catch (err) {

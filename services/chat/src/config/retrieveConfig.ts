@@ -6,7 +6,12 @@
  *
  * @module config/retrieveConfig
  */
-import { DEFAULT_CONTEXT_ALLOCATION, ContextAllocation } from './contextConfig';
+import { 
+  ContextAllocation, 
+  DEFAULT_CONTEXT_ALLOCATION, 
+  calculateContextLimits, 
+  getModelConfig 
+} from '@dome/common';
 
 /**
  * Configuration options for document retrieval
@@ -90,12 +95,12 @@ const ENVIRONMENT_CONFIGS: Record<string, Partial<RetrieveConfig>> = {
 
 /**
  * Default configuration for document retrieval
- * Token allocation values now mirror those in contextConfig.ts
+ * Token allocation values now mirror those in common package's DEFAULT_CONTEXT_ALLOCATION
  */
 export const DEFAULT_RETRIEVE_CONFIG: RetrieveConfig = {
   tokenAllocation: {
     maxPerDocument: DEFAULT_CONTEXT_ALLOCATION.maxPerDocumentPercentage,
-    maxForAllDocuments: DEFAULT_CONTEXT_ALLOCATION.maxDocumentsPercentage,
+    maxForAllDocuments: DEFAULT_CONTEXT_ALLOCATION.documentsPercentage,
   },
   documentLimits: {
     maxDocuments: 5, // Maximum 5 documents by default
@@ -158,7 +163,7 @@ export function calculateMinRelevanceScore(wideningAttempts: number): number {
 
 /**
  * Get model-specific token limits for document retrieval
- * This function bridges between the legacy retrieveConfig and the new contextConfig
+ * This function bridges between the legacy retrieveConfig and the common package
  *
  * @param modelId Optional model ID to get limits for
  * @param contextAllocation Optional custom allocation
@@ -172,22 +177,18 @@ export function getModelDocumentLimits(
   maxTotalDocumentTokens: number;
   maxDocumentCount: number;
 } {
-  // Import here to avoid circular dependencies
-  const { calculateContextLimits } = require('./contextConfig');
-  const { getModelConfig } = require('./modelConfig');
-  
   // Get retrieve config for document limits
   const retrieveConfig = getRetrieveConfig();
   
-  // Calculate context limits from the provided model
+  // Calculate context limits from the provided model using common package
   const contextLimits = calculateContextLimits(
     modelId || 'default',
     contextAllocation
   );
   
   return {
-    maxDocumentTokens: contextLimits.maxPerDocumentTokens,
-    maxTotalDocumentTokens: contextLimits.maxDocumentsTokens,
+    maxDocumentTokens: contextLimits.maxSystemPromptTokens || 0, // Fallback for possibly undefined values
+    maxTotalDocumentTokens: contextLimits.maxDocumentsTokens || 0,
     maxDocumentCount: retrieveConfig.documentLimits.maxDocuments,
   };
 }

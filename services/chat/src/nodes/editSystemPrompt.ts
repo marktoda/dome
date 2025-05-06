@@ -12,9 +12,9 @@ import { getUpdateChatPrompt } from '../config/promptsConfig';
  * Used for structured output from LLM
  */
 const promptUpdateSchema = z.object({
-  updatedInstructions: z.union([z.string(), z.null()]),
-  reasoning: z.union([z.string(), z.null()]),
-  activatedTools: z.union([z.array(z.string()), z.null()]),
+  updatedInstructions: z.union([z.string(), z.null()]).optional(),
+  reasoning: z.union([z.string(), z.null()]).optional(),
+  activatedTools: z.union([z.array(z.string()), z.null()]).optional(),
 });
 
 // Type inference from the Zod schema
@@ -116,10 +116,10 @@ export const editSystemPrompt = async (state: AgentState, env: Env): Promise<Age
     /* --------------------------------------------------------------- */
     return {
       ...state,
-      instructions: result.updatedInstructions === null ? '' : result.updatedInstructions,
+      instructions: result.updatedInstructions === null ? '' : (result.updatedInstructions || ''),
       reasoning: [
         ...(state.reasoning || []),
-        result.reasoning === null ? 'System prompt updated.' : result.reasoning,
+        result.reasoning === null ? 'System prompt updated.' : (result.reasoning || 'System prompt updated.'),
       ],
       // Store required tools in _filter as it accepts flexible properties
       _filter: {

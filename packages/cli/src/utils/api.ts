@@ -63,13 +63,63 @@ export const api = {
 
 // ---------- Convenience wrappers (unchanged signatures) -------------------------
 export const addContent = (content: string, title?: string, tags?: string[]) =>
-  api.post('/notes', { content, contentType: 'text/plain', title, tags }).then(r => r.note ?? r);
+  api.post('/notes', {
+    body: content,
+    mimeType: 'text/plain',
+    title,
+    metadata: tags ? { tags } : undefined
+  }, {
+    // Add extra protection against malformed JSON
+    transformRequest: [(data, headers) => {
+      if (headers) headers['Content-Type'] = 'application/json';
+      // Use JSON.stringify directly to ensure proper escaping
+      return JSON.stringify(data);
+    }]
+  }).then(r => r.note ?? r);
 
-export const updateContent = (id: string, content: string, title?: string, tags?: string[]) =>
-  api.put(`/notes/${id}`, { content, contentType: 'text/plain', title, tags }).then(r => r.note ?? r);
+export const updateContent = (id: string, content: string, title?: string, tags?: string[]) => {
+  // Basic content sanitization to prevent JSON parsing errors
+  const sanitizeContent = (str: string) => {
+    // Replace any characters that might cause issues in JSON
+    // First, handle any invalid JSON escape sequences
+    return str
+      .replace(/\\/g, '\\\\')  // Escape backslashes first
+      .replace(/\n/g, '\\n')   // Replace newlines with proper JSON newline escape
+      .replace(/\r/g, '\\r')   // Replace carriage returns
+      .replace(/\t/g, '\\t')   // Replace tabs
+      .replace(/\f/g, '\\f')   // Replace form feeds
+      .replace(/"/g, '\\"');   // Escape quotes
+  };
+
+  // Let axios handle JSON serialization
+  return api.put(`/notes/${id}`, {
+    body: content,
+    mimeType: 'text/plain',
+    title,
+    metadata: tags ? { tags } : undefined
+  }, {
+    // Add extra protection against malformed JSON
+    transformRequest: [(data, headers) => {
+      if (headers) headers['Content-Type'] = 'application/json';
+      // Use JSON.stringify directly to ensure proper escaping
+      return JSON.stringify(data);
+    }]
+  }).then(r => r.note ?? r);
+};
 
 export const addNote = (context: string, content: string) =>
-  api.post('/notes', { content, contentType: 'text/plain', metadata: { context } });
+  api.post('/notes', {
+    body: content,
+    mimeType: 'text/plain',
+    metadata: { context }
+  }, {
+    // Add extra protection against malformed JSON
+    transformRequest: [(data, headers) => {
+      if (headers) headers['Content-Type'] = 'application/json';
+      // Use JSON.stringify directly to ensure proper escaping
+      return JSON.stringify(data);
+    }]
+  });
 
 export const listItems = async (type: 'notes' | 'tasks', filter?: string) => {
   const params: Record<string, any> = { fields: 'title,summary,body,tags,contentType,createdAt' };
@@ -200,7 +250,7 @@ export function connectWebSocketChat(
   // Use cleaner, more standard websocket URL with no auth in query params
   // We'll handle auth in the connection headers and message
   // The correct WebSocket endpoint appears to be at /chat/ws based on the 404 error
-  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/ chat / ws`;
+  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/chat/ws`;
 
   return new Promise((resolve, reject) => {
     // Add proper auth headers to match HTTP request pattern
@@ -453,3 +503,4 @@ export type { AxiosRequestConfig } from 'axios';
 // Export search functions
 export { search as searchContent };
 export { registerGithubRepo, getGithubRepoHistory };
+

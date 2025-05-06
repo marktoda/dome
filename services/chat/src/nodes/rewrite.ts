@@ -9,7 +9,7 @@ import { getCondenseTaskPrompt } from '../config/promptsConfig';
 
 const rewrittenTaskSchema = z.object({
   rewrittenQuery: z.string(),
-  reasoning: z.string().nullable(),
+  reasoning: z.string().nullable().optional(),
 });
 type RewrittenTask = z.infer<typeof rewrittenTaskSchema>;
 
