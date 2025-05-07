@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     }
 
     // In a real app, you'd generate a token here
-    const { password: _, ...userWithoutPassword } = user;
+    const { password: _password, ...userWithoutPassword } = user; // Renamed _ to _password
     return NextResponse.json({ user: userWithoutPassword, message: 'Login successful' });
 
   } catch (error) {

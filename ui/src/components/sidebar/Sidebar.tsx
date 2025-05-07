@@ -55,7 +55,7 @@ export function Sidebar({ className }: SidebarProps) {
         )}
         {!isLoading && !error && searchResults.length === 0 && lastQuery && (
           <div className="text-center py-4"> {/* Centered no results message */}
-            <p className="text-sm text-muted-foreground">No results found for "{lastQuery}".</p>
+            <p className="text-sm text-muted-foreground">No results found for &quot;{lastQuery}&quot;.</p>
           </div>
         )}
         <SearchResultsList results={searchResults} />

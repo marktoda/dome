@@ -26,7 +26,7 @@ export type ChatMessageChunk =
   | { type: 'unknown'; content: string };
 
 interface ChunkDetector {
-  (raw: string, parsed: any): ChatMessageChunk | null;
+  (raw: string, parsed: unknown): ChatMessageChunk | null; // Changed any to unknown
 }
 
 const detectors: ChunkDetector[] = [
@@ -56,19 +56,32 @@ const detectors: ChunkDetector[] = [
   },
   // LangGraph updates - sources (adapted for observed structure: ["updates",{"retrieve":{...}}])
   (raw, p) => {
-    if (Array.isArray(p) && p[0] === 'updates' && p[1]?.retrieve?.retrievals) {
-        const retrievals = p[1].retrieve.retrievals;
-        if (Array.isArray(retrievals)) {
-            const allChunksAsSources: ChatMessageChunk['node']['sources'] = [];
-            retrievals.forEach(retrieval => {
-                if (retrieval.chunks && Array.isArray(retrieval.chunks)) {
-                    retrieval.chunks.forEach((chunk: any) => {
-                        allChunksAsSources.push({
-                            id: chunk.id || uuidv4(),
-                            title: chunk.title || chunk.id || 'Unknown Source',
-                            source: chunk.source || chunk.metadata?.source || 'N/A',
-                            url: chunk.url || chunk.metadata?.url,
-                            relevanceScore: chunk.relevanceScore || chunk.score || 0,
+    // Define a more specific type for the payload of an "updates" event with "retrieve"
+    interface UpdateRetrievePayload {
+      retrieve?: {
+        retrievals?: Array<{
+          chunks?: Array<Record<string, unknown>>; // Keep chunk as Record<string, unknown> for flexibility
+        }>;
+      };
+    }
+
+    // Type guard for p to ensure it has the expected structure
+    if (Array.isArray(p) && p.length > 1 && p[0] === 'updates') {
+        const updatePayload = p[1] as UpdateRetrievePayload; // Use the new interface
+        if (updatePayload?.retrieve?.retrievals) {
+            const retrievals = updatePayload.retrieve.retrievals;
+            if (Array.isArray(retrievals)) {
+                const allChunksAsSources: ChatMessageChunk['node']['sources'] = [];
+                retrievals.forEach(retrieval => {
+                    if (retrieval.chunks && Array.isArray(retrieval.chunks)) {
+                        // chunk is already Record<string, unknown> from UpdateRetrievePayload
+                        retrieval.chunks.forEach((chunk) => {
+                            allChunksAsSources.push({
+                                id: (chunk.id as string) || uuidv4(),
+                                title: (chunk.title as string) || (chunk.id as string) || 'Unknown Source',
+                            source: (chunk.source as string) || ((chunk.metadata as Record<string,unknown>)?.source as string) || 'N/A',
+                            url: (chunk.url as string) || ((chunk.metadata as Record<string,unknown>)?.url as string),
+                            relevanceScore: (chunk.relevanceScore as number) || (chunk.score as number) || 0,
                             // content: chunk.content // Optionally include chunk content
                         });
                     });
@@ -216,7 +229,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         wsRef.current = null; // Clear the ref if this instance is closed
       }
     };
-  }, [token, messages]); // Added messages to dependency array of connectAndSendMessage
+  }, [token]); // Removed messages from dependency array
 
   const addMessage = useCallback(async (text: string) => {
     const userMessage: UIMessage = {
@@ -235,7 +248,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     
     connectAndSendMessage(currentMessageHistory, text);
 
-  }, [connectAndSendMessage, messages]); // `messages` is needed here to get current history
+  }, [connectAndSendMessage]); // Removed messages from dependency array
 
   useEffect(() => {
     // Cleanup WebSocket on component unmount

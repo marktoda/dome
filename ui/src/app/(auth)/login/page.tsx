@@ -125,7 +125,7 @@ export default function LoginPage() {
           </Form>
         </CardContent>
         <CardFooter className="text-sm">
-          Don't have an account?{' '}
+          Don&apos;t have an account?{' '}
           <Link href="/register" className="ml-1 underline">
             Sign up
           </Link>

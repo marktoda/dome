@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, MessageSquare, Search, Settings, Home, LogOut, User } from 'lucide-react';
+import { Menu, MessageSquare, Search, Settings, Home, LogOut } from 'lucide-react'; // Removed User icon
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,11 +28,9 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6 justify-between md:justify-end">
       <Sheet>
-        <SheetTrigger asChild>
-          <Button variant="outline" size="icon" className="shrink-0 md:hidden">
+        <SheetTrigger className="shrink-0 md:hidden"> {/* Removed asChild and Button, SheetTrigger will render a button */}
             <Menu className="h-5 w-5" />
             <span className="sr-only">Toggle navigation menu</span>
-          </Button>
         </SheetTrigger>
         <SheetContent side="left">
           <nav className="grid gap-6 text-lg font-medium">

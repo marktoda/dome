@@ -91,6 +91,7 @@ export class LlmService {
     const schema = getSchemaForContentType(contentType);
     const instructions = getSchemaInstructions(contentType);
     const modelConfig = this.getModelConfig();
+    const env = this.env as any; // For accessing potential env vars (declared once here)
 
     // Build the prompt with existing metadata if available
     let promptContent = '';
@@ -110,7 +111,7 @@ export class LlmService {
     }
 
     // Get token limit from model config or environment override
-    const env = this.env as any;
+    // const env = this.env as any; // Removed: env is already declared above
     const configLimitStr = env.AI_TOKEN_LIMIT;
     const configLimit = configLimitStr ? parseInt(configLimitStr, 10) : null;
     const modelLimit = modelConfig.maxContextTokens;
@@ -126,7 +127,14 @@ export class LlmService {
 
     for (let attempt = 0; attempt <= LlmService.MAX_RETRY_ATTEMPTS; attempt++) {
       try {
-        const raw = await this.callLlm(prompt, modelConfig.id);
+        // Determine desired output tokens: use env override or model's default
+        const configuredMaxOutputTokens = env.AI_MAX_OUTPUT_TOKENS ? parseInt(env.AI_MAX_OUTPUT_TOKENS, 10) : null;
+        const desiredOutputTokens =
+          (configuredMaxOutputTokens && !isNaN(configuredMaxOutputTokens))
+          ? configuredMaxOutputTokens
+          : modelConfig.defaultMaxTokens;
+
+        const raw = await this.callLlm(prompt, modelConfig.id, desiredOutputTokens);
         if (!raw) {
           throw new LLMProcessingError('Empty response from LLM', { requestId: ctx.requestId });
         }
@@ -173,13 +181,20 @@ export class LlmService {
     throw this.wrapError(lastError, 'Exhausted attempts', ctx);
   }
 
-  private async callLlm(prompt: string, modelName: string) {
+  private async callLlm(prompt: string, modelName: string, maxTokens?: number) {
     // Type assertion to satisfy the Cloudflare Workers AI type constraints
     const modelNameAsKey = modelName as keyof AiModels;
-    const raw = await this.env.AI.run(modelNameAsKey, {
+    
+    const aiRunParams: { messages: { role: string; content: string }[]; stream: boolean; max_tokens?: number } = {
       messages: [{ role: 'user', content: prompt }],
       stream: false,
-    });
+    };
+
+    if (maxTokens && maxTokens > 0) {
+      aiRunParams.max_tokens = maxTokens;
+    }
+
+    const raw = await this.env.AI.run(modelNameAsKey, aiRunParams);
     if (raw instanceof ReadableStream) throw new LLMProcessingError('Unexpected streaming response');
     return raw;
   }
@@ -193,7 +208,21 @@ export class LlmService {
       const data = JSON.parse(jsonContent);
       return schema.parse(data);
     } catch (err) {
-      throw new LLMProcessingError('Failed to parse structured response', { requestId, response });
+      let message = 'Failed to parse structured response';
+      const trimmedResponse = response.trim();
+      if (trimmedResponse.length > 0) {
+        const lastChar = trimmedResponse[trimmedResponse.length - 1];
+        // Check if the response ends prematurely (e.g. not with a '}' or ']' for an object/array, or unclosed string)
+        const looksTruncated =
+          (trimmedResponse.startsWith('{') && !trimmedResponse.endsWith('}')) ||
+          (trimmedResponse.startsWith('[') && !trimmedResponse.endsWith(']')) ||
+          (lastChar !== '}' && lastChar !== ']' && lastChar !== '"' && (trimmedResponse.includes('{') || trimmedResponse.includes('[')));
+
+        if (looksTruncated) {
+           message = 'Failed to parse structured response, suspected truncation from LLM. Raw response may be incomplete.';
+        }
+      }
+      throw new LLMProcessingError(message, { requestId, response });
     }
   }
 

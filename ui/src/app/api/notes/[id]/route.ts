@@ -44,7 +44,7 @@ export async function GET(
         if (response.headers.get('content-type')?.includes('application/json')) {
           details = JSON.parse(errorData);
         }
-      } catch (parseError) {
+      } catch (_parseError) { // Prefixed unused variable with _
         // Ignore if not JSON, details will remain as text
       }
       return NextResponse.json(

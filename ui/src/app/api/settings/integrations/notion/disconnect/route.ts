@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { updateMockIntegrationStatus } from '@/app/api/settings/integrations/route';
 
-export async function POST(request: Request) {
+export async function POST(_request: Request) { // Prefixed unused request parameter
   // Simulate successful Notion OAuth disconnection
   const updatedStatus = updateMockIntegrationStatus('notion', {
     isConnected: false,

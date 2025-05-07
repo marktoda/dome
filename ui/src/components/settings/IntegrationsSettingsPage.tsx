@@ -7,7 +7,7 @@ import { Github, BookText, RefreshCw, ZapOff } from 'lucide-react'; // Added Zap
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast as sonnerToast } from 'sonner'; // Assuming sonner is used globally for toasts
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'; // Added imports
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'; // Removed CardTitle, CardDescription
 
 // Define your available integrations configuration
 const AVAILABLE_INTEGRATIONS_CONFIG: Omit<Integration, 'isConnected'>[] = [

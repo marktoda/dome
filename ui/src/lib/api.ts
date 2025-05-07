@@ -40,11 +40,11 @@ class ApiClient {
     );
   }
 
-  public async request<T = any>(
+  public async request<T = unknown>( // Changed T default from any to unknown
     method: 'get' | 'post' | 'put' | 'delete' | 'patch',
     url: string,
-    dataOrParams?: any,
-    config?: AxiosRequestConfig
+    dataOrParams?: unknown, // Changed any to unknown
+    config?: AxiosRequestConfig // AxiosRequestConfig is already well-typed
   ): Promise<T> {
     let response;
     if (method === 'get' || method === 'delete') {
@@ -55,23 +55,23 @@ class ApiClient {
     return response.data;
   }
 
-  public get<T = any>(url: string, params?: any, config?: AxiosRequestConfig): Promise<T> {
+  public get<T = unknown>(url: string, params?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and params type
     return this.request<T>('get', url, params, config);
   }
 
-  public post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  public post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and data type
     return this.request<T>('post', url, data, config);
   }
 
-  public put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  public put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and data type
     return this.request<T>('put', url, data, config);
   }
 
-  public delete<T = any>(url: string, params?: any, config?: AxiosRequestConfig): Promise<T> {
+  public delete<T = unknown>(url: string, params?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and params type
     return this.request<T>('delete', url, params, config);
   }
 
-  public patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  public patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and data type
     return this.request<T>('patch', url, data, config);
   }
 }
@@ -81,7 +81,7 @@ const apiClient = new ApiClient();
 export default apiClient;
 
 // Example search function using the apiClient
-import { SearchResponse, SearchResultItem } from '@/lib/types/search';
+import { SearchResponse } from '@/lib/types/search'; // Removed unused SearchResultItem
 
 // Define the structure for customMetadata based on the API response
 export interface CustomMetadata {
@@ -94,7 +94,7 @@ export interface CustomMetadata {
   commitDate?: string; // ISO date string
   htmlUrl?: string;
   tags?: string[]; // Added to allow for tags if they appear in customMetadata
-  [key: string]: any; // For other potential custom fields
+  [key: string]: unknown; // Changed any to unknown
 }
 
 // Define the Note type based on the provided API response structure
@@ -125,7 +125,7 @@ export interface ApiGetNoteByIdResponse {
 
 export const searchApi = {
   search: (query: string, category?: string): Promise<SearchResponse> => {
-    const params: Record<string, any> = { q: query };
+    const params: Record<string, string> = { q: query }; // Changed Record value from any to string
     if (category) {
       params.category = category;
     }

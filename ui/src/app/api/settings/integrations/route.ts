@@ -3,7 +3,7 @@ import type { IntegrationStatus, IntegrationPlatform } from '@/lib/oauth-types';
 
 // Mock database or state for all integrations
 // In a real app, this would come from a database and be user-specific.
-let mockUserIntegrationStatuses: Record<string, IntegrationStatus[]> = {
+const mockUserIntegrationStatuses: Record<string, IntegrationStatus[]> = { // Changed let to const
   'default-user': [ // Using a default user ID for simplicity in mock
     {
       platform: 'github',

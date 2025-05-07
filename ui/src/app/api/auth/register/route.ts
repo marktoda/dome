@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { RegisterSchema } from '@/lib/validators';
 
 // Mock user data - in a real app, this would be a database
-let users = [
+const users = [ // Changed let to const
   { id: '1', name: 'Test User', email: 'test@example.com', password: 'password123' },
 ];
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     users.push(newUser);
 
     // In a real app, you might auto-login or send a verification email
-    const { password: _, ...userWithoutPassword } = newUser;
+    const { password: _password, ...userWithoutPassword } = newUser; // Renamed _ to _password
     return NextResponse.json({ user: userWithoutPassword, message: 'Registration successful' }, { status: 201 });
 
   } catch (error) {

@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation'; // Import useRouter
 import { Button } from '@/components/ui/button';
-import { LogOut, Settings, Menu } from 'lucide-react'; // Assuming lucide-react for icons
+import { LogOut, Settings } from 'lucide-react'; // Removed Menu icon
 import { useAuth } from '@/contexts/AuthContext'; // To handle logout
 import { MobileSidebar } from '@/components/sidebar/MobileSidebar'; // For mobile menu toggle
 

@@ -89,7 +89,7 @@ export default function SearchPage() {
 
       {!isLoading && !error && currentQuery && searchResults.length === 0 && (
         <p className="text-center text-muted-foreground">
-          No results found for "{currentQuery}". Try a different search term.
+          No results found for &quot;{currentQuery}&quot;. Try a different search term.
         </p>
       )}
 
