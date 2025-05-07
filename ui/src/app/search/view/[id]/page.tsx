@@ -1,5 +1,7 @@
 'use client';
 
+export const runtime = 'edge';
+
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation'; // useSearchParams removed as we fetch by ID
 import { Button } from '@/components/ui/button';
@@ -10,8 +12,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { notesApi, Note } from '../../../../lib/api'; // Adjusted path
 
 interface SearchResultViewPageProps {
-  params: { id: string };
-  searchParams?: { [key: string]: string | string[] | undefined };
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 // Using any as a temporary workaround for the persistent PageProps constraint issue
@@ -21,7 +23,7 @@ const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) =
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { id: noteId } = params;
+  const { id: noteId } = React.use(params);
 
   useEffect(() => {
     if (noteId) {
