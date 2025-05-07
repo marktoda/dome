@@ -26,9 +26,14 @@ export async function GET(request: Request) {
   }
 
   // Determine the base URL for the redirect URI used in the token exchange
-  const appBaseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-    : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  let appBaseUrl = process.env.NEXT_PUBLIC_APP_URL; // User-defined, expected to be an absolute URL
+  if (!appBaseUrl) {
+    if (process.env.NEXT_PUBLIC_VERCEL_URL) {
+      appBaseUrl = `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+    } else {
+      appBaseUrl = 'http://localhost:3000'; // Fallback for local development
+    }
+  }
 
   const redirect_uri_for_token_exchange = new URL('/api/settings/integrations/github/callback', appBaseUrl).toString();
 

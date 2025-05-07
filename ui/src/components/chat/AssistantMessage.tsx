@@ -1,240 +1,65 @@
 import React from 'react';
-import { Message } from '@/lib/chat-types';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Message, SourceItem } from '@/lib/chat-types';
 import { ChatMessage } from './ChatMessage';
-import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
+import { Paperclip } from 'lucide-react'; // Using Paperclip for sources icon
 
 interface AssistantMessageProps {
   message: Message;
 }
 
-// Helper function to render generic content (string or stringified JSON)
-const renderGenericContent = (content: string | object): React.ReactNode => {
-  if (typeof content === 'string') {
-    return <p className="whitespace-pre-wrap">{content}</p>;
+const renderRelevance = (score: number) => {
+  const scorePercentage = Math.round(score * 100);
+  let colorClass = 'text-red-600 dark:text-red-400';
+  if (scorePercentage > 70) {
+    colorClass = 'text-green-600 dark:text-green-400';
+  } else if (scorePercentage > 40) {
+    colorClass = 'text-yellow-600 dark:text-yellow-400';
   }
-  return <pre className="whitespace-pre-wrap text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded-md shadow-inner">{JSON.stringify(content, null, 2)}</pre>;
+  return <span className={`text-xs font-medium ${colorClass}`}>({scorePercentage}%)</span>;
 };
-
-// Types for structured "updates" answer
-interface Chunk {
-  id: string;
-  content: string;
-  title?: string;
-  metadata?: {
-    url?: string;
-    [key: string]: unknown; // Changed any to unknown
-  };
-}
-
-interface Retrieval {
-  category: string;
-  query: string;
-  chunks: Chunk[];
-}
-
-interface RetrieveEventData {
-  retrieve: {
-    retrievals: Retrieval[];
-  };
-}
-
-type UpdatesEvent = ["updates", RetrieveEventData];
-
-// Type guard for UpdatesEvent
-function isUpdatesEvent(data: unknown): data is UpdatesEvent { // Changed any to unknown
-  return (
-    Array.isArray(data) &&
-    data.length === 2 &&
-    data[0] === "updates" &&
-    typeof data[1] === "object" &&
-    data[1] !== null &&
-    "retrieve" in data[1] &&
-    typeof data[1].retrieve === "object" &&
-    data[1].retrieve !== null &&
-    "retrievals" in data[1].retrieve &&
-    Array.isArray(data[1].retrieve.retrievals)
-  );
-}
-
-// Custom renderer for the "updates" event structure
-const renderStructuredAnswer = (data: UpdatesEvent): React.ReactNode => {
-  const retrievals = data[1].retrieve.retrievals;
-  if (!retrievals || retrievals.length === 0) {
-    return <p className="text-sm italic">No retrieval data found in the update.</p>;
-  }
-
-  return (
-    <div className="space-y-3">
-      {retrievals.map((retrieval, rIndex) => (
-        <div key={`retrieval-${rIndex}`} className="p-2 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-slate-750 shadow">
-          <h4 className="font-semibold text-sm mb-1 text-gray-700 dark:text-gray-300">
-            Query: <span className="font-normal">{retrieval.query}</span> (Category: <span className="font-normal">{retrieval.category}</span>)
-          </h4>
-          {retrieval.chunks.map((chunk, cIndex) => (
-            <div key={chunk.id || `chunk-${cIndex}`} className="mb-2 last:mb-0 p-2 bg-gray-50 dark:bg-slate-700 rounded-sm border-l-2 border-blue-500 dark:border-blue-400">
-              {chunk.title && <h5 className="font-medium text-xs text-gray-800 dark:text-gray-200 mb-0.5">{chunk.title}</h5>}
-              <div
-                className="text-xs prose prose-sm dark:prose-invert max-w-none [&_strong]:font-semibold"
-                dangerouslySetInnerHTML={{ __html: chunk.content }}
-              />
-              {chunk.metadata?.url && (
-                <a
-                  href={chunk.metadata.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:underline dark:text-blue-400 mt-1 block"
-                >
-                  Source
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-
-/**
- * Extracts the first valid JSON object from the start of a string.
- */
-function extractJsonAndRemainder(text: string): { parsedJson: unknown | null, remainder: string } { // Changed any to unknown
-  let balance = 0;
-  let endIndex = -1;
-  let inString = false;
-  let firstCharIndex = -1;
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (firstCharIndex === -1 && (char === '{' || char === '[')) firstCharIndex = i;
-    if (firstCharIndex === -1) continue;
-
-    if (char === '"' && (i === firstCharIndex || text[i - 1] !== '\\')) inString = !inString;
-    if (!inString) {
-      if (char === '{' || char === '[') balance++;
-      else if (char === '}' || char === ']') balance--;
-    }
-    if (balance === 0 && firstCharIndex !== -1 && (char === '}' || char === ']')) {
-      endIndex = i;
-      break;
-    }
-  }
-
-  if (endIndex !== -1) {
-    const jsonPart = text.substring(firstCharIndex, endIndex + 1);
-    try {
-      return { parsedJson: JSON.parse(jsonPart), remainder: text.substring(endIndex + 1) };
-    } catch { /* fall through, error variable removed */ }
-  }
-  return { parsedJson: null, remainder: text };
-}
 
 export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) => {
   if (message.sender !== 'assistant') return null;
 
-  const thinkingSteps: unknown[] = []; // Changed any[] to unknown[]
-  let finalAnswerContent: string | object | null = null;
-  let finalErrorContent: string | object | null = null;
-  const intermediateJsonObjects: unknown[] = []; // Changed any[] to unknown[]
-
-  let textToParse = message.text;
-  let explicitAnswerFoundJson = false; // Tracks if {"answer": ...} was found
-
-  while (textToParse.trim().length > 0) {
-    const { parsedJson, remainder } = extractJsonAndRemainder(textToParse);
-
-    if (parsedJson) {
-      if (typeof parsedJson === 'object' && parsedJson !== null) {
-        // Type guard for parsedJson to safely access properties
-        const pj = parsedJson as Record<string, unknown>;
-        if ('answer' in pj && !explicitAnswerFoundJson) {
-          finalAnswerContent = (typeof pj.answer === 'string' || typeof pj.answer === 'object') ? pj.answer : String(pj.answer);
-          explicitAnswerFoundJson = true;
-        } else if ('thinking' in pj) {
-          thinkingSteps.push(pj.thinking);
-        } else if ('error' in pj) {
-          finalErrorContent = (typeof pj.error === 'string' || typeof pj.error === 'object') ? pj.error : String(pj.error);
-        } else {
-          intermediateJsonObjects.push(pj);
-        }
-      } else { // Primitive JSON value (string, number, boolean)
-        // Ensure it's assignable to string | object | null for finalAnswerContent or thinkingSteps
-        if (typeof parsedJson === 'string' || typeof parsedJson === 'object') {
-            intermediateJsonObjects.push(parsedJson);
-        } else {
-            intermediateJsonObjects.push(String(parsedJson)); // Convert other primitives to string
-        }
-      }
-      textToParse = remainder.trimStart();
-    } else { // No more JSON, remainder is plain text
-      if (textToParse.trim().length > 0 && !explicitAnswerFoundJson) {
-        finalAnswerContent = textToParse.trim(); // This becomes the answer if no {"answer":...}
-        explicitAnswerFoundJson = true; // Treat trailing text as an explicit answer form
-      }
-      break;
-    }
-  }
-
-  if (!explicitAnswerFoundJson && intermediateJsonObjects.length > 0) {
-    const lastItem = intermediateJsonObjects.pop();
-    if (typeof lastItem === 'string' || typeof lastItem === 'object') {
-        finalAnswerContent = lastItem;
-    } else if (lastItem !== undefined && lastItem !== null) { // Check for undefined/null before String()
-        finalAnswerContent = String(lastItem);
-    }
-  }
-  // Ensure all items pushed to thinkingSteps are compatible with renderGenericContent
-  thinkingSteps.push(...intermediateJsonObjects.map(item =>
-    (typeof item === 'string' || typeof item === 'object' ? item : String(item))
-  ));
-
-  // If after all parsing, no answer/error/thinking steps, and original message had text, use original text as answer.
-  if (finalAnswerContent === null && finalErrorContent === null && thinkingSteps.length === 0 && message.text.trim().length > 0) {
-    finalAnswerContent = message.text;
-  }
-
-  const customRenderedContent = (
+  const content = (
     <div className="space-y-3">
-      {thinkingSteps.map((step, index) => {
-        // Ensure step is string or object before passing to renderGenericContent
-        const contentToRender = (typeof step === 'string' || (typeof step === 'object' && step !== null)) ? step : String(step);
-        return (
-          <div key={`thinking-${index}`} className="p-3 bg-blue-50 dark:bg-slate-800 rounded-lg shadow-md border border-blue-200 dark:border-slate-700">
-            <div className="flex items-center text-blue-700 dark:text-blue-400 mb-1.5">
-              <Info className="h-5 w-5 mr-2 flex-shrink-0" />
-              <h3 className="text-sm font-semibold tracking-wide">Intermediate Step</h3>
-            </div>
-            {renderGenericContent(contentToRender)}
-          </div>
-        );
-      })}
-      {finalErrorContent && (
-        <div className="p-3 bg-red-50 dark:bg-red-900/40 rounded-lg shadow-md border border-red-200 dark:border-red-700">
-          <div className="flex items-center text-red-700 dark:text-red-400 mb-1.5">
-            <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0" />
-            <h3 className="text-sm font-semibold tracking-wide">Error:</h3>
-          </div>
-          {renderGenericContent(finalErrorContent)}
+      <div className="prose prose-sm dark:prose-invert max-w-none">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
+      </div>
+      {message.sources && message.sources.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+          <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2 flex items-center">
+            <Paperclip className="h-4 w-4 mr-2 flex-shrink-0" />
+            Sources
+          </h4>
+          <ul className="space-y-1.5 pl-1">
+            {message.sources.map((source: SourceItem, index: number) => (
+              <li key={source.id || `source-${index}`} className="text-xs">
+                <span className="font-medium text-gray-800 dark:text-gray-200">
+                  {index + 1}. {source.title || 'Untitled Source'}
+                </span>
+                {source.url && (
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-1 text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    (link)
+                  </a>
+                )}
+                {source.relevanceScore !== undefined && (
+                  <span className="ml-1">{renderRelevance(source.relevanceScore)}</span>
+                )}
+                {source.source && !source.url && ( // Show source if URL is not present
+                   <span className="ml-1 text-gray-500 dark:text-gray-400">({source.source})</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
-      )}
-      {finalAnswerContent !== null && ( // Check for null explicitly, as empty string is a valid answer
-        <div className="p-3 bg-green-50 dark:bg-emerald-900/40 rounded-lg shadow-md border border-green-200 dark:border-emerald-700">
-          <div className="flex items-center text-green-700 dark:text-emerald-400 mb-1.5">
-            <CheckCircle2 className="h-5 w-5 mr-2 flex-shrink-0" />
-            <h3 className="text-sm font-semibold tracking-wide">Answer:</h3>
-          </div>
-          {isUpdatesEvent(finalAnswerContent)
-            ? renderStructuredAnswer(finalAnswerContent as UpdatesEvent)
-            : renderGenericContent(finalAnswerContent)
-          }
-        </div>
-      )}
-      {/* Fallback for truly empty messages or if all content was consumed and nothing rendered */}
-      {finalAnswerContent === null && finalErrorContent === null && thinkingSteps.length === 0 && (
-         <div className="p-3 bg-gray-100 dark:bg-slate-800 rounded-lg shadow-md border dark:border-slate-700">
-             <p className="text-sm italic">Assistant provided no structured response.</p>
-         </div>
       )}
     </div>
   );
@@ -243,7 +68,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     <ChatMessage
       message={message}
       avatarFallback="A"
-      contentOverride={customRenderedContent}
+      contentOverride={content}
     />
   );
 };

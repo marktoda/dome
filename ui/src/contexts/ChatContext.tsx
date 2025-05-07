@@ -14,19 +14,20 @@ import { useAuth } from './AuthContext';
 import {
   Message as UIMessage,
   ChatContextType,
+  SourceItem,
 } from '@/lib/chat-types';
 
 /** ------------------------------------------------------------------
  *  Chunk parsing
  * ------------------------------------------------------------------*/
 
-export interface SourceItem {
-  id: string;
-  title: string;
-  source: string;
-  url?: string;
-  relevanceScore: number;
-}
+// export interface SourceItem { // Moved to chat-types.ts
+//   id: string;
+//   title: string;
+//   source: string;
+//   url?: string;
+//   relevanceScore: number;
+// }
 
 export type ChatMessageChunk =
   | { type: 'content'; content: string }
@@ -235,16 +236,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             setMessages(m =>
               m.map(msg =>
                 msg.id === currentAssistantId.current
-                  ? {
-                    ...msg,
-                    text:
-                      msg.text +
-                      chunk.sources
-                        .map(
-                          (s, i) => `\n[Source ${i + 1}: ${s.title}](${s.url ?? ''})`,
-                        )
-                        .join(''),
-                  }
+                  ? { ...msg, sources: chunk.sources }
                   : msg,
               ),
             );

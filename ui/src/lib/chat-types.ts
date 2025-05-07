@@ -1,8 +1,17 @@
+export interface SourceItem {
+  id: string;
+  title: string;
+  source: string;
+  url?: string;
+  relevanceScore: number;
+}
+
 export type Message = {
   id: string;
   text: string;
   sender: 'user' | 'assistant';
   timestamp: Date;
+  sources?: SourceItem[];
 };
 
 export type ChatContextType = {
