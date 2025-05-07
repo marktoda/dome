@@ -51,7 +51,7 @@ export async function generateAnswer(
     /*  Prepare context and model configuration                           */
     /* ------------------------------------------------------------------ */
     // Get user query from messages
-    const userQuery = state.messages[0].content;
+    const userQuery = state.messages[state.messages.length - 1].content;
 
     // Get the synthesized context from previous node (fallback to empty if missing)
     let docContext;
@@ -92,6 +92,7 @@ export async function generateAnswer(
 
     // Build the messages for the LLM
     const chatMessages = buildMessages(systemPrompt, state.chatHistory, userQuery);
+    logger.info({ chatMessages }, '[DEBUG] [GenerateAnswer] Built chat messages for LLM');
 
     // Log context statistics for observability
     ObservabilityService.logEvent(env, traceId, spanId, 'context_stats', {

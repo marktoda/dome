@@ -352,7 +352,7 @@ RETRIEVED CONTEXT:
 YOUR TASK:
 - Generate a comprehensive, accurate answer based EXCLUSIVELY on the provided context
 - Do NOT include information that isn't supported by the context
-- DO cite sources when referencing specific information using [<idx>] notation (i.e. [2] for document #2, and [T3] for tool output #3)
+- DO cite sources when referencing context information using [<idx>] notation (i.e. [2] for document #2, and [T3] for tool output #3)
 - Organize your answer logically with clear sections and formatting when appropriate
 - If the context is insufficient to answer the query fully, acknowledge the limitations
 - Focus on delivering accurate, helpful information rather than being conversational`,

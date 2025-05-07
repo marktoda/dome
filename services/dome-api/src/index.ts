@@ -167,12 +167,16 @@ searchRouter.get(
 
 // Chat API routes - protected by authentication
 const chatRouter = new Hono();
-chatRouter.use('*', authenticationMiddleware);
+// REMOVED: chatRouter.use('*', authenticationMiddleware);
 
-chatRouter.post('/', async (c: Context<{ Bindings: Bindings; }>) => {
-  const chatController = controllerFactory.getChatController(c.env);
-  return await chatController.chat(c);
-});
+// Apply authenticationMiddleware specifically to the POST /chat route
+chatRouter.post('/',
+  authenticationMiddleware,
+  async (c: Context<{ Bindings: Bindings; }>) => {
+    const chatController = controllerFactory.getChatController(c.env);
+    return await chatController.chat(c);
+  }
+);
 
 // Mount chat router
 app.route('/chat', chatRouter);
