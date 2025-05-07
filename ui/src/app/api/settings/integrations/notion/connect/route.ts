@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
-import { updateMockIntegrationStatus } from '@/app/api/settings/integrations/route';
+import { updateMockIntegrationStatus } from '@/lib/integration-mock-db';
 
 export async function GET(request: Request) {
   // Simulate successful Notion OAuth connection
-  const updatedStatus = updateMockIntegrationStatus('notion', {
-    isConnected: true,
-    user: {
+  // In real code, derive userId from the session / auth token.
+  const userId = 'default-user';
+  const updatedStatuses = updateMockIntegrationStatus(
+    userId,
+    'notion',
+    true,
+    {
       name: 'Mock Notion User',
       email: 'mock.notion@example.com',
-    },
-  });
+    }
+  );
 
   const { searchParams } = new URL(request.url);
   const redirect_uri = searchParams.get('redirect_uri') || '/settings/integrations';
@@ -17,7 +21,7 @@ export async function GET(request: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   const absoluteRedirectUrl = new URL(redirect_uri, baseUrl).toString();
 
-  if (updatedStatus) {
+  if (updatedStatuses) {
     return NextResponse.redirect(absoluteRedirectUrl, { status: 302 });
   } else {
     return NextResponse.json({ error: 'Failed to connect Notion account' }, { status: 500 });

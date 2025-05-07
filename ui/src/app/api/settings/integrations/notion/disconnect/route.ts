@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
-import { updateMockIntegrationStatus } from '@/app/api/settings/integrations/route';
+import { updateMockIntegrationStatus } from '@/lib/integration-mock-db';
 
 export async function POST() {
   // Removed unused _request parameter
   // Simulate successful Notion OAuth disconnection
-  const updatedStatus = updateMockIntegrationStatus('notion', {
-    isConnected: false,
-    user: undefined, // Clear user info
-  });
+  // In real code, derive userId from the session / auth token.
+  const userId = 'default-user';
+  const updatedStatuses = updateMockIntegrationStatus(
+    userId,
+    'notion',
+    false, // isConnected: false
+    undefined // No user data on disconnect
+  );
 
-  if (updatedStatus) {
+  if (updatedStatuses) {
     return NextResponse.json({
       success: true,
       message: 'Notion account disconnected successfully.',
@@ -21,3 +25,4 @@ export async function POST() {
     );
   }
 }
+

@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Terminal } from 'lucide-react';
 
-export default function SearchPage() {
+function SearchPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialQueryFromUrl = searchParams.get('q') || '';
@@ -98,6 +98,34 @@ export default function SearchPage() {
           Enter a search term above to find relevant content.
         </p>
       )}
+    </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <React.Suspense fallback={<SearchPageSkeleton />}>
+      <SearchPageContent />
+    </React.Suspense>
+  );
+}
+
+// Basic skeleton for the search page while content is loading
+function SearchPageSkeleton() {
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <header className="mb-8 text-center">
+        <Skeleton className="h-10 w-1/2 mx-auto" />
+        <Skeleton className="mt-2 h-6 w-3/4 mx-auto" />
+      </header>
+      <div className="mb-8">
+        <Skeleton className="h-12 w-full" />
+      </div>
+      <div className="space-y-4">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
     </div>
   );
 }

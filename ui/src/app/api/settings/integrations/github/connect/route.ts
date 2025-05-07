@@ -1,16 +1,20 @@
 import { NextResponse } from 'next/server';
-import { updateMockIntegrationStatus } from '@/app/api/settings/integrations/route';
+import { updateMockIntegrationStatus } from '@/lib/integration-mock-db';
 
 export async function GET(request: Request) {
   // Simulate successful GitHub OAuth connection
   // In a real app, you'd handle the OAuth callback here, exchange code for token, fetch user info, etc.
-  const updatedStatus = updateMockIntegrationStatus('github', {
-    isConnected: true,
-    user: {
+  // In real code, derive userId from the session / auth token.
+  const userId = 'default-user';
+  const updatedStatuses = updateMockIntegrationStatus(
+    userId,
+    'github',
+    true,
+    {
       name: 'Mock GitHub User',
       email: 'mock.github@example.com',
-    },
-  });
+    }
+  );
 
   // For a real OAuth flow, you'd typically redirect the user back to the settings page
   // or a page indicating success.
@@ -22,7 +26,7 @@ export async function GET(request: Request) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   const absoluteRedirectUrl = new URL(redirect_uri, baseUrl).toString();
 
-  if (updatedStatus) {
+  if (updatedStatuses) {
     return NextResponse.redirect(absoluteRedirectUrl, { status: 302 });
   } else {
     // Handle case where status update might fail, though unlikely in this mock

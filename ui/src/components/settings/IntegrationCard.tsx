@@ -17,6 +17,11 @@ interface IntegrationCardProps {
   isDisconnecting?: boolean; // Specifically for disconnect operation
 }
 
+interface IconProps {
+  size?: number;
+  className?: string;
+}
+
 const IntegrationCard: React.FC<IntegrationCardProps> = ({
   integrationConfig,
   status,
@@ -43,7 +48,7 @@ const IntegrationCard: React.FC<IntegrationCardProps> = ({
       <CardHeader className="pb-3"> {/* Adjusted padding */}
         <div className="flex items-start justify-between gap-3"> {/* items-start for better alignment with multi-line title/desc */}
           <div className="flex items-center gap-3">
-            {integrationConfig.icon && React.cloneElement(integrationConfig.icon as React.ReactElement, { size: 28, className: "text-muted-foreground" })} {/* Slightly larger icon */}
+            {integrationConfig.icon && React.cloneElement(integrationConfig.icon as React.ReactElement<IconProps>, { size: 28, className: "text-muted-foreground" })} {/* Slightly larger icon */}
             <CardTitle className="text-lg font-semibold">{integrationConfig.name}</CardTitle> {/* Enhanced title */}
           </div>
           <Badge

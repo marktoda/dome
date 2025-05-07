@@ -1,16 +1,20 @@
 import { NextResponse } from 'next/server';
-import { updateMockIntegrationStatus } from '@/app/api/settings/integrations/route';
+import { updateMockIntegrationStatus } from '@/lib/integration-mock-db';
 
 export async function POST() {
   // Removed unused _request parameter
   // Simulate successful GitHub OAuth disconnection
   // In a real app, you'd invalidate tokens, remove user data related to the integration, etc.
-  const updatedStatus = updateMockIntegrationStatus('github', {
-    isConnected: false,
-    user: undefined, // Clear user info
-  });
+  // In real code, derive userId from the session / auth token.
+  const userId = 'default-user';
+  const updatedStatuses = updateMockIntegrationStatus(
+    userId,
+    'github',
+    false, // isConnected: false
+    undefined // No user data on disconnect
+  );
 
-  if (updatedStatus) {
+  if (updatedStatuses) {
     return NextResponse.json({
       success: true,
       message: 'GitHub account disconnected successfully.',
