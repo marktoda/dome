@@ -9,20 +9,19 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 // import { SearchResultItem } from '@/lib/types/search';
 import { notesApi, Note } from '../../../../lib/api'; // Adjusted path
 
-// interface SearchResultViewPageProps {
-//   params: { id: string };
-//   searchParams?: { [key: string]: string | string[] | undefined };
-// }
+interface SearchResultViewPageProps {
+  params: { id: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
+}
 
 // Using any as a temporary workaround for the persistent PageProps constraint issue
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const SearchResultViewPage: React.FC<any> = ({ params }) => {
+const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) => {
   const router = useRouter();
   const [note, setNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const noteId = params.id;
+  const { id: noteId } = params;
 
   useEffect(() => {
     if (noteId) {
@@ -114,7 +113,7 @@ const SearchResultViewPage: React.FC<any> = ({ params }) => {
               Category: <span className="font-semibold">{note.category}</span>
             </CardDescription>
           )}
-           {note.customMetadata?.tags && Array.isArray(note.customMetadata.tags) && note.customMetadata.tags.length > 0 && (
+          {note.customMetadata?.tags && Array.isArray(note.customMetadata.tags) && note.customMetadata.tags.length > 0 && (
             <CardDescription className="text-md pt-1">
               Tags: {note.customMetadata.tags.join(', ')}
             </CardDescription>
@@ -126,24 +125,24 @@ const SearchResultViewPage: React.FC<any> = ({ params }) => {
             </CardDescription>
           )}
           {note.customMetadata?.path && (
-             <CardDescription className="text-sm pt-1">
+            <CardDescription className="text-sm pt-1">
               File Path: {note.customMetadata.path}
             </CardDescription>
           )}
           {note.customMetadata?.commitMessage && (
-             <CardDescription className="text-sm pt-1">
+            <CardDescription className="text-sm pt-1">
               Commit: {note.customMetadata.commitMessage}
             </CardDescription>
           )}
-           {note.customMetadata?.author && (
-             <CardDescription className="text-sm pt-1">
+          {note.customMetadata?.author && (
+            <CardDescription className="text-sm pt-1">
               Author: {note.customMetadata.author}
             </CardDescription>
           )}
         </CardHeader>
         <CardContent>
           <div className="prose max-w-none dark:prose-invert whitespace-pre-wrap">
-             {displayContent}
+            {displayContent}
           </div>
         </CardContent>
         {note.customMetadata?.htmlUrl && (
