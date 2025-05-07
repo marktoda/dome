@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   // TODO: Retrieve and verify the original state value stored before redirecting to GitHub.
   // For now, we'll parse the client redirect path from the state.
   // This is a simplified approach and proper state verification (e.g., using a short-lived cookie) is crucial for CSRF protection.
-  const [originalStateValue, encodedClientRedirectPath] = stateFromGitHub.split('|');
+  const [_originalStateValue, encodedClientRedirectPath] = stateFromGitHub.split('|');
   const clientFinalRedirectPath = encodedClientRedirectPath ? decodeURIComponent(encodedClientRedirectPath) : '/settings/integrations';
 
 
@@ -26,8 +26,8 @@ export async function GET(request: Request) {
   }
 
   // Determine the base URL for the redirect URI used in the token exchange
-   const appBaseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` 
+  const appBaseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
+    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
     : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
   const redirect_uri_for_token_exchange = new URL('/api/settings/integrations/github/callback', appBaseUrl).toString();
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
         client_secret: GITHUB_CLIENT_SECRET,
         code,
         redirect_uri: redirect_uri_for_token_exchange, // Must match the redirect_uri used in the initial auth request if it was provided there.
-                                                       // Or, if not provided initially, GitHub uses the one registered with the app.
+        // Or, if not provided initially, GitHub uses the one registered with the app.
       }),
     });
 
@@ -95,7 +95,7 @@ export async function GET(request: Request) {
         // Store other relevant details like githubUser.id, accessToken (encrypted)
       }
     );
-    
+
     // 4. Redirect user back to the frontend
     const finalRedirectUrl = new URL(clientFinalRedirectPath, appBaseUrl);
     // Add query params to indicate success to the frontend if needed
