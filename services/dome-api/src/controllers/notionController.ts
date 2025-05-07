@@ -24,7 +24,7 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async registerNotionWorkspace(c: Context<{ Bindings: Bindings; }>) {
+  async registerNotionWorkspace(c: Context<{ Bindings: Bindings }>) {
     try {
       const { userId } = getIdentity();
       const schema = z.object({
@@ -78,7 +78,7 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async getNotionWorkspaceHistory(c: Context<{ Bindings: Bindings; }>) {
+  async getNotionWorkspaceHistory(c: Context<{ Bindings: Bindings }>) {
     try {
       const { workspaceId } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '10', 10);
@@ -108,7 +108,7 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async triggerNotionWorkspaceSync(c: Context<{ Bindings: Bindings; }>) {
+  async triggerNotionWorkspaceSync(c: Context<{ Bindings: Bindings }>) {
     try {
       const { workspaceId } = c.req.param();
 
@@ -135,7 +135,7 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async configureNotionOAuth(c: Context<{ Bindings: Bindings; }>) {
+  async configureNotionOAuth(c: Context<{ Bindings: Bindings }>) {
     try {
       const schema = z.object({
         code: z.string().min(1),
@@ -168,7 +168,7 @@ export class NotionController {
    * @param c Hono context
    * @returns Response
    */
-  async getNotionOAuthUrl(c: Context<{ Bindings: Bindings; }>) {
+  async getNotionOAuthUrl(c: Context<{ Bindings: Bindings }>) {
     try {
       const schema = z.object({
         redirectUri: z.string().url(),

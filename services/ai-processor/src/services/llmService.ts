@@ -44,7 +44,7 @@ export class LlmService {
       title?: string;
       summary?: string;
       tags?: string[];
-    }
+    },
   ) {
     assertValid(!!content, 'Content is required for LLM processing', { contentType });
     assertValid(!!contentType, 'Content type is required for LLM processing');
@@ -64,7 +64,7 @@ export class LlmService {
     return trackOperation(
       'llm_process_content',
       () => this.withRetries(content, contentType, existingMetadata, logContext),
-      logContext
+      logContext,
     );
   }
 
@@ -86,7 +86,7 @@ export class LlmService {
     content: string,
     contentType: string,
     existingMetadata: { title?: string; summary?: string; tags?: string[] } | undefined,
-    ctx: Record<string, unknown>
+    ctx: Record<string, unknown>,
   ) {
     const schema = getSchemaForContentType(contentType);
     const instructions = getSchemaInstructions(contentType);
@@ -128,11 +128,13 @@ export class LlmService {
     for (let attempt = 0; attempt <= LlmService.MAX_RETRY_ATTEMPTS; attempt++) {
       try {
         // Determine desired output tokens: use env override or model's default
-        const configuredMaxOutputTokens = env.AI_MAX_OUTPUT_TOKENS ? parseInt(env.AI_MAX_OUTPUT_TOKENS, 10) : null;
+        const configuredMaxOutputTokens = env.AI_MAX_OUTPUT_TOKENS
+          ? parseInt(env.AI_MAX_OUTPUT_TOKENS, 10)
+          : null;
         const desiredOutputTokens =
-          (configuredMaxOutputTokens && !isNaN(configuredMaxOutputTokens))
-          ? configuredMaxOutputTokens
-          : modelConfig.defaultMaxTokens;
+          configuredMaxOutputTokens && !isNaN(configuredMaxOutputTokens)
+            ? configuredMaxOutputTokens
+            : modelConfig.defaultMaxTokens;
 
         const raw = await this.callLlm(prompt, modelConfig.id, desiredOutputTokens);
         if (!raw) {
@@ -145,23 +147,26 @@ export class LlmService {
           responseText = raw;
         } else if (raw && typeof raw === 'object') {
           // Handle both response and response.text patterns seen in AI APIs
-          responseText = (raw as any).response ||
-            (raw as any).text ||
-            (raw as any).completion ||
-            '';
+          responseText =
+            (raw as any).response || (raw as any).text || (raw as any).completion || '';
         }
 
         if (!responseText) {
-          throw new LLMProcessingError('Empty response text from LLM', { requestId: ctx.requestId });
+          throw new LLMProcessingError('Empty response text from LLM', {
+            requestId: ctx.requestId,
+          });
         }
 
         const parsed = this.parseStructuredResponse(responseText, schema, ctx.requestId as string);
 
-        this.logger.info({
-          ...ctx,
-          attempt: attempt + 1,
-          responseLength: responseText.length
-        }, 'LLM processing successful');
+        this.logger.info(
+          {
+            ...ctx,
+            attempt: attempt + 1,
+            responseLength: responseText.length,
+          },
+          'LLM processing successful',
+        );
 
         return { ...parsed, processingVersion: 3, modelUsed: modelConfig.id };
       } catch (error) {
@@ -173,7 +178,10 @@ export class LlmService {
           continue;
         }
         // final failure
-        throw this.wrapError(error, `All LLM processing attempts failed for ${contentType}`, { ...ctx, attemptsMade: attempt + 1 });
+        throw this.wrapError(error, `All LLM processing attempts failed for ${contentType}`, {
+          ...ctx,
+          attemptsMade: attempt + 1,
+        });
       }
     }
 
@@ -184,8 +192,12 @@ export class LlmService {
   private async callLlm(prompt: string, modelName: string, maxTokens?: number) {
     // Type assertion to satisfy the Cloudflare Workers AI type constraints
     const modelNameAsKey = modelName as keyof AiModels;
-    
-    const aiRunParams: { messages: { role: string; content: string }[]; stream: boolean; max_tokens?: number } = {
+
+    const aiRunParams: {
+      messages: { role: string; content: string }[];
+      stream: boolean;
+      max_tokens?: number;
+    } = {
       messages: [{ role: 'user', content: prompt }],
       stream: false,
     };
@@ -195,7 +207,8 @@ export class LlmService {
     }
 
     const raw = await this.env.AI.run(modelNameAsKey, aiRunParams);
-    if (raw instanceof ReadableStream) throw new LLMProcessingError('Unexpected streaming response');
+    if (raw instanceof ReadableStream)
+      throw new LLMProcessingError('Unexpected streaming response');
     return raw;
   }
 
@@ -216,16 +229,19 @@ export class LlmService {
         const looksTruncated =
           (trimmedResponse.startsWith('{') && !trimmedResponse.endsWith('}')) ||
           (trimmedResponse.startsWith('[') && !trimmedResponse.endsWith(']')) ||
-          (lastChar !== '}' && lastChar !== ']' && lastChar !== '"' && (trimmedResponse.includes('{') || trimmedResponse.includes('[')));
+          (lastChar !== '}' &&
+            lastChar !== ']' &&
+            lastChar !== '"' &&
+            (trimmedResponse.includes('{') || trimmedResponse.includes('[')));
 
         if (looksTruncated) {
-           message = 'Failed to parse structured response, suspected truncation from LLM. Raw response may be incomplete.';
+          message =
+            'Failed to parse structured response, suspected truncation from LLM. Raw response may be incomplete.';
         }
       }
       throw new LLMProcessingError(message, { requestId, response });
     }
   }
-
 
   private backoff(attempt: number) {
     const backoffMs = Math.pow(2, attempt) * 100;
@@ -251,14 +267,17 @@ export class LlmService {
     // Log truncation details
     const tokenCount = countTokens(content);
     if (tokenCount > tokenLimit) {
-      this.logger.debug({
-        originalTokens: tokenCount,
-        tokenLimit,
-        customLimit: (this.env as any).AI_TOKEN_LIMIT ? true : false
-      }, 'Truncating content');
+      this.logger.debug(
+        {
+          originalTokens: tokenCount,
+          tokenLimit,
+          customLimit: (this.env as any).AI_TOKEN_LIMIT ? true : false,
+        },
+        'Truncating content',
+      );
     }
 
     // Use the common package's truncation utility
-    return truncateToTokenLimit(content, tokenLimit, (text) => countTokens(text));
+    return truncateToTokenLimit(content, tokenLimit, text => countTokens(text));
   }
 }

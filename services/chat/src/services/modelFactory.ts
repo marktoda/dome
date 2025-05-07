@@ -15,12 +15,7 @@ import { StructuredOutputParser } from '@langchain/core/output_parsers';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { Tool } from '@langchain/core/tools';
-import {
-  ModelProvider,
-  getModelConfig,
-  getDefaultModel,
-  BaseModelConfig
-} from '@dome/common';
+import { ModelProvider, getModelConfig, getDefaultModel, BaseModelConfig } from '@dome/common';
 
 const logger = getLogger().child({ component: 'ModelFactory' });
 

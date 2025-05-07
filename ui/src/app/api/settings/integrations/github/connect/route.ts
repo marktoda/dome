@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   // The redirect URL should be absolute.
   const { searchParams } = new URL(request.url);
   const redirect_uri = searchParams.get('redirect_uri') || '/settings/integrations';
-  
+
   // Construct the base URL dynamically or from an environment variable
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   const absoluteRedirectUrl = new URL(redirect_uri, baseUrl).toString();

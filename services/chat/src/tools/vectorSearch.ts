@@ -88,8 +88,8 @@ export const vectorSearchTool: VectorRetrievalTool<
         createdAt: doc.metadata.createdAt || new Date().toISOString(),
         relevanceScore: doc.metadata.relevanceScore || 0.5,
         url: doc.metadata.url || undefined,
-        mimeType: doc.metadata.mimeType || undefined
-      }
+        mimeType: doc.metadata.mimeType || undefined,
+      },
     }));
   },
 
@@ -151,7 +151,8 @@ export const codeVectorSearchTool: VectorRetrievalTool<
 > = {
   ...vectorSearchTool, // copy everything
   name: 'code_search',
-  description: 'Searches source code repositories, API documentation, implementation details. Use in conjunction with doc search for technical topics',
+  description:
+    'Searches source code repositories, API documentation, implementation details. Use in conjunction with doc search for technical topics',
   category: ContentCategoryEnum.enum.code,
 };
 

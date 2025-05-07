@@ -4,11 +4,7 @@ import { z } from 'zod';
 import { SiloClient } from '@dome/silo/client';
 import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
 import { getIdentity, getLogger, metrics } from '@dome/common';
-import {
-  ServiceError,
-  ContentCategory,
-  SiloSimplePutInput,
-} from '@dome/common';
+import { ServiceError, ContentCategory, SiloSimplePutInput } from '@dome/common';
 
 /**
  * Validation schemas for Silo endpoints
@@ -59,7 +55,7 @@ export class SiloController {
    * GET /notes/:id
    * Get a single note by ID
    */
-  async get(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
+  async get(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const { userId } = getIdentity();
       const id = c.req.param('id');
@@ -118,7 +114,7 @@ export class SiloController {
    * GET /notes
    * List notes with optional filtering
    */
-  async listNotes(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
+  async listNotes(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const { userId } = getIdentity();
 
@@ -176,7 +172,7 @@ export class SiloController {
    * GET /notes/batch
    * Batch get notes by IDs
    */
-  async batchGet(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
+  async batchGet(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const { userId } = getIdentity();
       const ids = c.req.query('ids')?.split(',') || [];
@@ -214,7 +210,7 @@ export class SiloController {
    * POST /notes/ingest
    * Ingest content and create a note
    */
-  async ingest(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
+  async ingest(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       this.logger.info({ path: c.req.path, method: c.req.method }, 'Note ingestion started');
 
@@ -286,9 +282,7 @@ export class SiloController {
    * PUT /notes/:id
    * Update a note
    */
-  async updateNote(
-    c: Context<{ Bindings: Bindings; }>,
-  ): Promise<Response> {
+  async updateNote(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const { userId } = getIdentity();
       const noteId = c.req.param('id');
@@ -365,7 +359,7 @@ export class SiloController {
    * DELETE /notes/:id
    * Delete a note
    */
-  async delete(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
+  async delete(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const { userId } = getIdentity();
       const id = c.req.param('id');
@@ -413,7 +407,7 @@ export class SiloController {
    * POST /notes/reprocess
    * Reprocess AI metadata for content
    */
-  async reprocess(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
+  async reprocess(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const startTime = performance.now();
       this.logger.info({ path: c.req.path, method: c.req.method }, 'Reprocess request received');
@@ -487,9 +481,7 @@ export class SiloController {
    * POST /notes/bulk-reprocess
    * Reprocess multiple content items by their IDs
    */
-  async bulkReprocess(
-    c: Context<{ Bindings: Bindings; }>,
-  ): Promise<Response> {
+  async bulkReprocess(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const startTime = performance.now();
       this.logger.info(

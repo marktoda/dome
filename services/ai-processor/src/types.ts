@@ -11,7 +11,7 @@ interface Env {
   RATE_LIMIT_DLQ?: Queue<any>;
   TODOS?: Queue<any>;
   SILO: any;
-  
+
   // Environment variables
   AI_MODEL_NAME?: string;
   AI_TOKEN_LIMIT?: string;
@@ -139,7 +139,7 @@ export interface ReminderQueueMessage {
 
 // Define the schema for reprocess requests
 export const ReprocessRequestSchema = z.object({
-  id: z.string().optional()
+  id: z.string().optional(),
 });
 
 // Define the schema for reprocess responses

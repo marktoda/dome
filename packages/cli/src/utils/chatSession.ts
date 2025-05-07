@@ -33,12 +33,12 @@ export class ChatSessionManager {
     if (!fs.existsSync(domeDir)) {
       fs.mkdirSync(domeDir, { recursive: true });
     }
-    
+
     this.sessionsDir = path.join(domeDir, 'chat_sessions');
     if (!fs.existsSync(this.sessionsDir)) {
       fs.mkdirSync(this.sessionsDir, { recursive: true });
     }
-    
+
     // Load active session ID
     const sessionIdFile = path.join(domeDir, this.SESSION_FILE);
     try {
@@ -49,7 +49,7 @@ export class ChatSessionManager {
       // If we can't read the session ID file, create a new session
       this.activeSessionId = '';
     }
-    
+
     // If there's no active session or if it doesn't exist, create a new one
     if (!this.activeSessionId || !this.sessionExists(this.activeSessionId)) {
       this.createNewSession();
@@ -57,7 +57,7 @@ export class ChatSessionManager {
       this.loadSession(this.activeSessionId);
     }
   }
-  
+
   /**
    * Check if a session exists
    */
@@ -65,7 +65,7 @@ export class ChatSessionManager {
     const sessionFile = path.join(this.sessionsDir, `${sessionId}.json`);
     return fs.existsSync(sessionFile);
   }
-  
+
   /**
    * Load a specific session by ID
    */
@@ -86,7 +86,7 @@ export class ChatSessionManager {
       this.createNewSession();
     }
   }
-  
+
   /**
    * Create a new session
    */
@@ -96,15 +96,15 @@ export class ChatSessionManager {
       id: sessionId,
       name: `Chat Session ${new Date().toLocaleString()}`,
       lastUpdated: Date.now(),
-      messages: []
+      messages: [],
     };
-    
+
     this.sessions.set(sessionId, session);
     this.activeSessionId = sessionId;
     this.saveSession(sessionId);
     this.saveActiveSessionId();
   }
-  
+
   /**
    * Save active session ID to file
    */
@@ -116,7 +116,7 @@ export class ChatSessionManager {
       console.error('Failed to save active session ID:', error);
     }
   }
-  
+
   /**
    * Save a specific session by ID
    */
@@ -132,7 +132,7 @@ export class ChatSessionManager {
       console.error(`Failed to save chat session ${sessionId}:`, error);
     }
   }
-  
+
   /**
    * Get list of available sessions
    */
@@ -140,7 +140,7 @@ export class ChatSessionManager {
     try {
       const files = fs.readdirSync(this.sessionsDir);
       const sessions: ChatSession[] = [];
-      
+
       for (const file of files) {
         if (file.endsWith('.json')) {
           try {
@@ -156,7 +156,7 @@ export class ChatSessionManager {
           }
         }
       }
-      
+
       // Sort by last updated (newest first)
       return sessions.sort((a, b) => b.lastUpdated - a.lastUpdated);
     } catch (error) {
@@ -164,7 +164,7 @@ export class ChatSessionManager {
       return [];
     }
   }
-  
+
   /**
    * Switch to a different session
    */
@@ -175,7 +175,7 @@ export class ChatSessionManager {
     }
     return false;
   }
-  
+
   /**
    * Get messages from current session
    */
@@ -183,14 +183,14 @@ export class ChatSessionManager {
     const session = this.sessions.get(this.activeSessionId);
     return session ? [...session.messages] : [];
   }
-  
+
   /**
    * Get current session ID
    */
   getSessionId(): string {
     return this.activeSessionId;
   }
-  
+
   /**
    * Get current session name
    */
@@ -198,7 +198,7 @@ export class ChatSessionManager {
     const session = this.sessions.get(this.activeSessionId);
     return session?.name || 'Unnamed Session';
   }
-  
+
   /**
    * Set name for current session
    */
@@ -221,12 +221,12 @@ export class ChatSessionManager {
         content,
         timestamp: Date.now(),
       });
-      
+
       // Trim history if needed
       if (session.messages.length > this.MAX_HISTORY) {
         session.messages = session.messages.slice(-this.MAX_HISTORY);
       }
-      
+
       this.saveSession(this.activeSessionId);
     }
   }
@@ -242,12 +242,12 @@ export class ChatSessionManager {
         content,
         timestamp: Date.now(),
       });
-      
+
       // Trim history if needed
       if (session.messages.length > this.MAX_HISTORY) {
         session.messages = session.messages.slice(-this.MAX_HISTORY);
       }
-      
+
       this.saveSession(this.activeSessionId);
     }
   }
@@ -262,7 +262,7 @@ export class ChatSessionManager {
       this.saveSession(this.activeSessionId);
     }
   }
-  
+
   /**
    * Delete a session by ID
    */
@@ -272,12 +272,12 @@ export class ChatSessionManager {
       if (fs.existsSync(sessionFile)) {
         fs.unlinkSync(sessionFile);
         this.sessions.delete(sessionId);
-        
+
         // If we deleted the active session, create a new one
         if (sessionId === this.activeSessionId) {
           this.createNewSession();
         }
-        
+
         return true;
       }
       return false;
@@ -295,11 +295,11 @@ export const getChatSession = (forceNewSession: boolean = false): ChatSessionMan
   if (!sessionManager) {
     sessionManager = new ChatSessionManager();
   }
-  
+
   // If we're forcing a new session, create one
   if (forceNewSession) {
     sessionManager.createNewSession();
   }
-  
+
   return sessionManager;
 };

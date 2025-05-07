@@ -74,16 +74,19 @@ export async function generateAnswer(
     const maxResponseTokens = calculateResponseTokens(
       modelConfig,
       contextTokens + userQueryTokens + systemPromptEstimate,
-      state.options?.maxTokens
+      state.options?.maxTokens,
     );
 
-    logger.info({
-      modelId,
-      contextTokens,
-      userQueryTokens,
-      maxResponseTokens,
-      maxContextWindow: modelConfig.maxContextTokens
-    }, 'Token usage breakdown for answer generation');
+    logger.info(
+      {
+        modelId,
+        contextTokens,
+        userQueryTokens,
+        maxResponseTokens,
+        maxContextWindow: modelConfig.maxContextTokens,
+      },
+      'Token usage breakdown for answer generation',
+    );
 
     // Build the system prompt for answer generation using the central configuration
     // Pass user context if available, but we don't have specific user info in this state

@@ -51,7 +51,7 @@ export default function RegisterPage() {
     // setSuccessMessage(null); // Replaced by toast
     try {
       // We don't need the confirmPassword field for the API
-      const { confirmPassword: _confirmPassword, ...submissionData } = data;
+      const { ...submissionData } = data; // Removed _confirmPassword
       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL ? `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/register` : '/api/auth/register';
       const response = await fetch(apiUrl, {
         method: 'POST',

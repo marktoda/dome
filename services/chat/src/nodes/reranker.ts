@@ -79,13 +79,8 @@ export function createReranker(opts: RerankerOptions) {
   const runner =
     cfg.implementation === 'workers-ai' ? new WorkersAIReranker(cfg) : new CohereReranker(cfg);
 
-  return (
-    retrieval: RetrievalResult,
-    query: string,
-    env: Env,
-    traceId: string,
-    spanId: string,
-  ) => runner.rerank(retrieval, query, env, traceId, spanId);
+  return (retrieval: RetrievalResult, query: string, env: Env, traceId: string, spanId: string) =>
+    runner.rerank(retrieval, query, env, traceId, spanId);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -115,20 +110,17 @@ function thresholdFor(chunk: DocumentChunk, fallback: number) {
   return SOURCE_THRESHOLDS[chunk.metadata.sourceType as string] ?? fallback;
 }
 
-function filterAndLimit(
-  chunks: DocumentChunk[],
-  cfg: Partial<BaseOpts>,
-): DocumentChunk[] {
+function filterAndLimit(chunks: DocumentChunk[], cfg: Partial<BaseOpts>): DocumentChunk[] {
   const filtered = cfg.keepBelowThreshold
     ? chunks
     : chunks.filter(c => {
-      const score =
-        (c.metadata as any).hybridScore ??
-        c.metadata.rerankerScore ??
-        c.metadata.relevanceScore ??
-        0;
-      return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
-    });
+        const score =
+          (c.metadata as any).hybridScore ??
+          c.metadata.rerankerScore ??
+          c.metadata.relevanceScore ??
+          0;
+        return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
+      });
   return filtered.slice(0, cfg.maxResults);
 }
 
@@ -137,7 +129,7 @@ function filterAndLimit(
 /* -------------------------------------------------------------------------- */
 
 abstract class BaseReranker {
-  constructor(protected readonly cfg: Required<RerankerOptions>) { }
+  constructor(protected readonly cfg: Required<RerankerOptions>) {}
 
   async rerank(
     res: RetrievalResult,
@@ -248,7 +240,10 @@ class CohereReranker extends BaseReranker {
 class WorkersAIReranker extends BaseReranker {
   protected async rank(chunks: DocumentChunk[], query: string, env: Env): Promise<DocumentChunk[]> {
     const clean = (s: string) =>
-      s.replace(/```[\s\S]*?```/g, '<code>').replace(/<[^>]+>/g, '').slice(0, 1500);
+      s
+        .replace(/```[\s\S]*?```/g, '<code>')
+        .replace(/<[^>]+>/g, '')
+        .slice(0, 1500);
 
     const input = {
       query: clean(query).slice(0, 500),
@@ -322,7 +317,11 @@ export async function reranker(
         query,
         chunks: allChunks,
         sourceType: 'mixed',
-        metadata: { executionTimeMs: 0, retrievalStrategy: 'merged', totalCandidates: allChunks.length },
+        metadata: {
+          executionTimeMs: 0,
+          retrievalStrategy: 'merged',
+          totalCandidates: allChunks.length,
+        },
       },
       query,
       env,
@@ -354,7 +353,10 @@ export async function reranker(
     return {
       metadata: {
         ...state.metadata,
-        errors: [...(state.metadata?.errors ?? []), { node: nodeId, message: err.message, timestamp: Date.now() }],
+        errors: [
+          ...(state.metadata?.errors ?? []),
+          { node: nodeId, message: err.message, timestamp: Date.now() },
+        ],
       },
     };
   }
@@ -376,9 +378,13 @@ function mergeTasks(tasks: RetrievalTask[] | undefined): RetrievalTask[] {
 
 function pickGlobalModel(allChunks: DocumentChunk[], query: string, env: Env): RerankerOptions {
   const multilingual = /[^\x00-\x7F]/.test(query);
-  const isCode = allChunks.some(c => c.metadata.sourceType === 'code') || query.toLowerCase().includes('code');
+  const isCode =
+    allChunks.some(c => c.metadata.sourceType === 'code') || query.toLowerCase().includes('code');
   if ((env as any).COHERE_API_KEY) {
-    return { implementation: 'cohere', model: multilingual ? 'rerank-multilingual-v2.0' : 'rerank-english-v2.0' } as CohereOpts;
+    return {
+      implementation: 'cohere',
+      model: multilingual ? 'rerank-multilingual-v2.0' : 'rerank-english-v2.0',
+    } as CohereOpts;
   }
   return { implementation: 'workers-ai', model: '@cf/baai/bge-reranker-base' } as WorkersAiOpts;
 }
@@ -402,4 +408,3 @@ function finish(
     },
   };
 }
-

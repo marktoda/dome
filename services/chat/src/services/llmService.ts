@@ -47,12 +47,10 @@ function withTimeout<T>(p: Promise<T>, ms = getTimeoutConfig().llmServiceTimeout
   ]);
 }
 
-
 /* -------------------------------------------------------- */
 /*  LLM Service implementation                              */
 /* -------------------------------------------------------- */
 export class LlmService {
-
   /**
    * Get a configured ChatOpenAI instance
    */
@@ -276,7 +274,6 @@ export class LlmService {
     if (isTest()) return mockResponse as unknown as T;
 
     try {
-
       // Convert messages to LangChain format
       const langChainMessages = LlmService.convertMessages(messages);
       // Get client and call the model

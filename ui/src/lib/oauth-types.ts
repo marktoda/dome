@@ -1,4 +1,4 @@
-export type IntegrationPlatform = "github" | "notion";
+export type IntegrationPlatform = 'github' | 'notion';
 
 export interface Integration {
   platform: IntegrationPlatform;
@@ -14,7 +14,8 @@ export interface Integration {
 export interface IntegrationStatus {
   platform: IntegrationPlatform;
   isConnected: boolean;
-  user?: { // Optional: basic user info from the connected service
+  user?: {
+    // Optional: basic user info from the connected service
     name?: string;
     email?: string;
   };

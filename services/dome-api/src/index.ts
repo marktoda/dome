@@ -123,25 +123,25 @@ const notesRouter = new Hono();
 notesRouter.use('*', authenticationMiddleware);
 
 // Ingest endpoint - for adding new notes, files, etc.
-notesRouter.post('/', async (c: Context<{ Bindings: Bindings; }>) => {
+notesRouter.post('/', async (c: Context<{ Bindings: Bindings }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.ingest(c);
 });
 
 // CRUD operations for notes
-notesRouter.get('/:id', async (c: Context<{ Bindings: Bindings; }>) => {
+notesRouter.get('/:id', async (c: Context<{ Bindings: Bindings }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.get(c);
 });
-notesRouter.put('/:id', async (c: Context<{ Bindings: Bindings; }>) => {
+notesRouter.put('/:id', async (c: Context<{ Bindings: Bindings }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.updateNote(c);
 });
-notesRouter.delete('/:id', async (c: Context<{ Bindings: Bindings; }>) => {
+notesRouter.delete('/:id', async (c: Context<{ Bindings: Bindings }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.delete(c);
 });
-notesRouter.get('/', async (c: Context<{ Bindings: Bindings; }>) => {
+notesRouter.get('/', async (c: Context<{ Bindings: Bindings }>) => {
   const siloController = controllerFactory.getSiloController(c.env);
   return await siloController.listNotes(c);
 });
@@ -153,30 +153,24 @@ const searchRouter = new Hono();
 searchRouter.use('*', authenticationMiddleware);
 
 // Search endpoints - for semantic search over notes
-searchRouter.get('/', async (c: Context<{ Bindings: Bindings; }>) => {
+searchRouter.get('/', async (c: Context<{ Bindings: Bindings }>) => {
   const searchController = controllerFactory.getSearchController(c.env);
   return await searchController.search(c);
 });
-searchRouter.get(
-  '/stream',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const searchController = controllerFactory.getSearchController(c.env);
-    return await searchController.streamSearch(c);
-  },
-);
+searchRouter.get('/stream', async (c: Context<{ Bindings: Bindings }>) => {
+  const searchController = controllerFactory.getSearchController(c.env);
+  return await searchController.streamSearch(c);
+});
 
 // Chat API routes - protected by authentication
 const chatRouter = new Hono();
 // REMOVED: chatRouter.use('*', authenticationMiddleware);
 
 // Apply authenticationMiddleware specifically to the POST /chat route
-chatRouter.post('/',
-  authenticationMiddleware,
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const chatController = controllerFactory.getChatController(c.env);
-    return await chatController.chat(c);
-  }
-);
+chatRouter.post('/', authenticationMiddleware, async (c: Context<{ Bindings: Bindings }>) => {
+  const chatController = controllerFactory.getChatController(c.env);
+  return await chatController.chat(c);
+});
 
 // Mount chat router
 app.route('/chat', chatRouter);
@@ -335,85 +329,58 @@ const contentRouter = new Hono();
 contentRouter.use('*', authenticationMiddleware);
 
 // Register a GitHub repository
-contentRouter.post(
-  '/github',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const tsunamiController = controllerFactory.getTsunamiController(c.env);
-    return await tsunamiController.registerGithubRepo(c);
-  },
-);
+contentRouter.post('/github', async (c: Context<{ Bindings: Bindings }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env);
+  return await tsunamiController.registerGithubRepo(c);
+});
 
 // Get GitHub repository history
-contentRouter.get(
-  '/github/:owner/:repo/history',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const tsunamiController = controllerFactory.getTsunamiController(c.env);
-    return await tsunamiController.getGithubRepoHistory(c);
-  },
-);
+contentRouter.get('/github/:owner/:repo/history', async (c: Context<{ Bindings: Bindings }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env);
+  return await tsunamiController.getGithubRepoHistory(c);
+});
 
 // Get user sync history
-contentRouter.get(
-  '/sync/user/:userId/history',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const tsunamiController = controllerFactory.getTsunamiController(c.env);
-    return await tsunamiController.getUserHistory(c);
-  },
-);
+contentRouter.get('/sync/user/:userId/history', async (c: Context<{ Bindings: Bindings }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env);
+  return await tsunamiController.getUserHistory(c);
+});
 
 // Get sync plan history
-contentRouter.get(
-  '/sync/plan/:syncPlanId/history',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const tsunamiController = controllerFactory.getTsunamiController(c.env);
-    return await tsunamiController.getSyncPlanHistory(c);
-  },
-);
+contentRouter.get('/sync/plan/:syncPlanId/history', async (c: Context<{ Bindings: Bindings }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env);
+  return await tsunamiController.getSyncPlanHistory(c);
+});
 
 // Notion workspace registration and management
-contentRouter.post(
-  '/notion',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const notionController = controllerFactory.getNotionController(c.env);
-    return await notionController.registerNotionWorkspace(c);
-  },
-);
+contentRouter.post('/notion', async (c: Context<{ Bindings: Bindings }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.registerNotionWorkspace(c);
+});
 
 // Get Notion workspace history
-contentRouter.get(
-  '/notion/:workspaceId/history',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const notionController = controllerFactory.getNotionController(c.env);
-    return await notionController.getNotionWorkspaceHistory(c);
-  },
-);
+contentRouter.get('/notion/:workspaceId/history', async (c: Context<{ Bindings: Bindings }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.getNotionWorkspaceHistory(c);
+});
 
 // Trigger Notion workspace sync
-contentRouter.post(
-  '/notion/:workspaceId/sync',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const notionController = controllerFactory.getNotionController(c.env);
-    return await notionController.triggerNotionWorkspaceSync(c);
-  },
-);
+contentRouter.post('/notion/:workspaceId/sync', async (c: Context<{ Bindings: Bindings }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.triggerNotionWorkspaceSync(c);
+});
 
 // Notion OAuth configuration
-contentRouter.post(
-  '/notion/oauth',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const notionController = controllerFactory.getNotionController(c.env);
-    return await notionController.configureNotionOAuth(c);
-  },
-);
+contentRouter.post('/notion/oauth', async (c: Context<{ Bindings: Bindings }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.configureNotionOAuth(c);
+});
 
 // Get Notion OAuth URL
-contentRouter.get(
-  '/notion/oauth/url',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const notionController = controllerFactory.getNotionController(c.env);
-    return await notionController.getNotionOAuthUrl(c);
-  },
-);
+contentRouter.get('/notion/oauth/url', async (c: Context<{ Bindings: Bindings }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.getNotionOAuthUrl(c);
+});
 
 // Mount GitHub router under content path
 app.route('/content', contentRouter);
@@ -423,22 +390,16 @@ const aiRouter = new Hono();
 aiRouter.use('*', authenticationMiddleware);
 
 // Reprocess endpoint - for reprocessing failed AI metadata
-aiRouter.post(
-  '/reprocess',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const siloController = controllerFactory.getSiloController(c.env);
-    return await siloController.reprocess(c);
-  },
-);
+aiRouter.post('/reprocess', async (c: Context<{ Bindings: Bindings }>) => {
+  const siloController = controllerFactory.getSiloController(c.env);
+  return await siloController.reprocess(c);
+});
 
 // Bulk reprocess endpoint - for reprocessing multiple content items by IDs
-aiRouter.post(
-  '/bulk-reprocess',
-  async (c: Context<{ Bindings: Bindings; }>) => {
-    const siloController = controllerFactory.getSiloController(c.env);
-    return await siloController.bulkReprocess(c);
-  },
-);
+aiRouter.post('/bulk-reprocess', async (c: Context<{ Bindings: Bindings }>) => {
+  const siloController = controllerFactory.getSiloController(c.env);
+  return await siloController.bulkReprocess(c);
+});
 
 // Mount AI router
 app.route('/ai', aiRouter);

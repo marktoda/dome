@@ -15,9 +15,9 @@ import { modelRegistry } from '.';
 export const DEFAULT_CONTEXT_ALLOCATION: ContextAllocation = {
   systemPromptPercentage: 0.15, // 15% for system prompt
   userMessagesPercentage: 0.25, // 25% for user messages
-  documentsPercentage: 0.40,    // 40% for retrieved documents
-  responsePercentage: 0.20,     // 20% for response generation
-  maxPerDocumentPercentage: 0.15 // Maximum 15% per document
+  documentsPercentage: 0.4, // 40% for retrieved documents
+  responsePercentage: 0.2, // 20% for response generation
+  maxPerDocumentPercentage: 0.15, // Maximum 15% per document
 };
 
 /**
@@ -35,18 +35,17 @@ const TOKEN_SAFETY_MARGIN = 100;
  */
 export function calculateContextLimits(
   modelConfig: BaseModelConfig | string,
-  allocation: Partial<ContextAllocation> = {}
+  allocation: Partial<ContextAllocation> = {},
 ): TokenLimits {
   // Merge custom allocation with defaults
   const alloc: ContextAllocation = {
     ...DEFAULT_CONTEXT_ALLOCATION,
-    ...allocation
+    ...allocation,
   };
 
   // Get model configuration if string was provided
-  const config = typeof modelConfig === 'string'
-    ? modelRegistry.getModel(modelConfig)
-    : modelConfig;
+  const config =
+    typeof modelConfig === 'string' ? modelRegistry.getModel(modelConfig) : modelConfig;
 
   // Calculate token limits for each component
   const maxContextTokens = config.maxContextTokens;
@@ -66,7 +65,7 @@ export function calculateContextLimits(
     maxResponseTokens,
     maxSystemPromptTokens,
     maxUserMessagesTokens,
-    maxDocumentsTokens
+    maxDocumentsTokens,
   };
 }
 
@@ -82,12 +81,11 @@ export function calculateContextLimits(
 export function calculateResponseTokens(
   modelConfig: BaseModelConfig | string,
   inputTokens: number,
-  requestedMaxTokens?: number
+  requestedMaxTokens?: number,
 ): number {
   // Get model configuration if string was provided
-  const config = typeof modelConfig === 'string'
-    ? modelRegistry.getModel(modelConfig)
-    : modelConfig;
+  const config =
+    typeof modelConfig === 'string' ? modelRegistry.getModel(modelConfig) : modelConfig;
 
   // Use requested max tokens or model default
   const defaultMaxTokens = requestedMaxTokens || config.defaultMaxTokens;
@@ -110,24 +108,19 @@ export function calculateResponseTokens(
 export function calculateTokenLimits(
   modelConfig: BaseModelConfig | string,
   inputTokens: number,
-  requestedMaxTokens?: number
+  requestedMaxTokens?: number,
 ): TokenLimits {
   // Get model configuration if string was provided
-  const config = typeof modelConfig === 'string'
-    ? modelRegistry.getModel(modelConfig)
-    : modelConfig;
+  const config =
+    typeof modelConfig === 'string' ? modelRegistry.getModel(modelConfig) : modelConfig;
 
   // Calculate response tokens based on input
-  const maxResponseTokens = calculateResponseTokens(
-    config,
-    inputTokens,
-    requestedMaxTokens
-  );
+  const maxResponseTokens = calculateResponseTokens(config, inputTokens, requestedMaxTokens);
 
   // Return limits
   return {
     maxContextTokens: config.maxContextTokens,
-    maxResponseTokens
+    maxResponseTokens,
   };
 }
 
@@ -142,7 +135,7 @@ export function calculateTokenLimits(
 export function truncateToTokenLimit(
   text: string,
   tokenLimit: number,
-  countTokensFn: (text: string) => number
+  countTokensFn: (text: string) => number,
 ): string {
   const currentTokens = countTokensFn(text);
 
@@ -164,7 +157,11 @@ export function truncateToTokenLimit(
   // Verify we're under the limit
   if (countTokensFn(truncated) > tokenLimit) {
     // If still over limit, recursively truncate more
-    return truncateToTokenLimit(truncated.slice(0, Math.floor(truncated.length * 0.9)), tokenLimit, countTokensFn);
+    return truncateToTokenLimit(
+      truncated.slice(0, Math.floor(truncated.length * 0.9)),
+      tokenLimit,
+      countTokensFn,
+    );
   }
 
   return truncated;

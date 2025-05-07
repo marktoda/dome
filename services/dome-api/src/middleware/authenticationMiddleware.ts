@@ -70,8 +70,8 @@ export const authenticationMiddleware = async (
         userId: user.id,
         role: user.role,
         email: user.email,
-      }
-    })
+      },
+    });
 
     // Continue to next middleware/handler
     await next();

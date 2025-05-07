@@ -16,7 +16,7 @@ export class AiProcessorClient {
   constructor(
     private readonly binding: AiProcessorBinding,
     private readonly metricsPrefix: string = 'ai_processor.client',
-  ) { }
+  ) {}
 
   /**
    * Reprocess content by ID or all content with failed summaries

@@ -10,26 +10,26 @@ import { getModelDocumentLimits } from '../config/retrieveConfig';
  *   1. take top doc per retrieval
  *   3. back-fill best remaining docs until token cap
  * ──────────────────────────────────────────────────────────────── */
-export async function combineContext(
-  state: AgentState,
-  env: Env,
-): Promise<Partial<AgentState>> {
+export async function combineContext(state: AgentState, env: Env): Promise<Partial<AgentState>> {
   const log = getLogger().child({ node: 'combineContext' });
   const t0 = performance.now();
   const trace = state.metadata?.traceId ?? '';
   const span = ObservabilityService.startSpan(env, trace, 'combineContext', state);
-  
+
   // Get model-specific document limits based on configured model
   const { maxTotalDocumentTokens } = getModelDocumentLimits(state.options?.modelId);
-  
+
   // Use the dynamic token cap from the model config or fall back to state options
   const cap = maxTotalDocumentTokens || state.options.maxTokens;
-  
-  log.info({
-    tokenCap: cap,
-    modelId: state.options?.modelId,
-    retrievals: state.retrievals?.length
-  }, '[CombineContext]: Combining context up to token cap');
+
+  log.info(
+    {
+      tokenCap: cap,
+      modelId: state.options?.modelId,
+      retrievals: state.retrievals?.length,
+    },
+    '[CombineContext]: Combining context up to token cap',
+  );
 
   try {
     /* 1 · helpers */
@@ -61,9 +61,7 @@ export async function combineContext(
     }
 
     /* 4 · fill until token cap */
-    remainder.sort(
-      (a, b) => (b.metadata.relevanceScore ?? 0) - (a.metadata.relevanceScore ?? 0),
-    );
+    remainder.sort((a, b) => (b.metadata.relevanceScore ?? 0) - (a.metadata.relevanceScore ?? 0));
 
     const docs: Document[] = [];
     let tokens = 0;
@@ -75,8 +73,8 @@ export async function combineContext(
       return true;
     };
 
-    [...topDocs].forEach(tryAdd);  // must-include
-    remainder.some(d => !tryAdd(d));            // stop when full
+    [...topDocs].forEach(tryAdd); // must-include
+    remainder.some(d => !tryAdd(d)); // stop when full
     log.info({ docCount: docs.length }, '[CombineContext] finished combining context');
 
     /* 5 · done */

@@ -200,8 +200,8 @@ export class SearchService {
     const filteredDocs = docs.filter(doc => (doc.metadata.relevanceScore || 0) >= minRelevance);
 
     // Sort by relevance score (highest first)
-    return filteredDocs.sort((a, b) =>
-      (b.metadata.relevanceScore || 0) - (a.metadata.relevanceScore || 0)
+    return filteredDocs.sort(
+      (a, b) => (b.metadata.relevanceScore || 0) - (a.metadata.relevanceScore || 0),
     );
   }
 }

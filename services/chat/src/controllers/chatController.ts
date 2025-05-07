@@ -1,4 +1,10 @@
-import { getLogger, metrics, withContext, getModelConfig, calculateContextLimits } from '@dome/common';
+import {
+  getLogger,
+  metrics,
+  withContext,
+  getModelConfig,
+  calculateContextLimits,
+} from '@dome/common';
 import { toDomeError, ValidationError } from '../utils/errors';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
 import {
@@ -115,25 +121,25 @@ export class ChatController {
   }): AgentState {
     // Build chat history from messages array
     const chatHistory: MessagePair[] = [];
-    
+
     // Process messages to create user-assistant pairs
     for (let i = 0; i < messages.length - 1; i++) {
       const current = messages[i];
       const next = messages[i + 1];
-      
+
       // If we have a user message followed by an assistant message, create a pair
       if (current.role === 'user' && next.role === 'assistant') {
         chatHistory.push({
           user: current,
           assistant: next,
           timestamp: next.timestamp || current.timestamp || Date.now(),
-          tokenCount: undefined // We could calculate this if needed
+          tokenCount: undefined, // We could calculate this if needed
         });
         // Skip the next message since we've already used it in this pair
         i++;
       }
     }
-    
+
     return {
       userId,
       messages,
@@ -146,7 +152,7 @@ export class ChatController {
       metadata: { ...metadata, startTime: performance.now(), runId },
     } as AgentState;
   }
-  
+
   /**
    * Get model-specific context limits
    *
@@ -160,14 +166,14 @@ export class ChatController {
   } {
     // Get model configuration from modelId or use default
     const modelConfig = getModelConfig(modelId);
-    
+
     // Calculate context limits
     const contextLimits = calculateContextLimits(modelConfig);
-    
+
     // Provide fallback for optional properties
-    const maxDocumentsTokens = contextLimits.maxDocumentsTokens ||
-      Math.floor(contextLimits.maxContextTokens * 0.4); // Default to 40% if not specified
-    
+    const maxDocumentsTokens =
+      contextLimits.maxDocumentsTokens || Math.floor(contextLimits.maxContextTokens * 0.4); // Default to 40% if not specified
+
     return {
       maxContextTokens: contextLimits.maxContextTokens,
       maxResponseTokens: contextLimits.maxResponseTokens,

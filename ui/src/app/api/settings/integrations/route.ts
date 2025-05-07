@@ -3,8 +3,10 @@ import type { IntegrationStatus, IntegrationPlatform } from '@/lib/oauth-types';
 
 // Mock database or state for all integrations
 // In a real app, this would come from a database and be user-specific.
-const mockUserIntegrationStatuses: Record<string, IntegrationStatus[]> = { // Changed let to const
-  'default-user': [ // Using a default user ID for simplicity in mock
+const mockUserIntegrationStatuses: Record<string, IntegrationStatus[]> = {
+  // Changed let to const
+  'default-user': [
+    // Using a default user ID for simplicity in mock
     {
       platform: 'github',
       isConnected: false,
@@ -17,9 +19,8 @@ const mockUserIntegrationStatuses: Record<string, IntegrationStatus[]> = { // Ch
         email: 'toda@example.com',
       },
     },
-  ]
+  ],
 };
-
 
 export async function GET() {
   // In a real app, you'd fetch this based on the authenticated user
@@ -29,7 +30,10 @@ export async function GET() {
 }
 
 // Helper to get a specific integration status for the mock user
-export function getMockIntegrationStatus(platform: IntegrationPlatform, userId: string = 'default-user'): IntegrationStatus | undefined {
+export function getMockIntegrationStatus(
+  platform: IntegrationPlatform,
+  userId: string = 'default-user',
+): IntegrationStatus | undefined {
   const userStatuses = mockUserIntegrationStatuses[userId];
   if (!userStatuses) {
     return undefined;
@@ -41,7 +45,7 @@ export function getMockIntegrationStatus(platform: IntegrationPlatform, userId: 
 export function updateMockIntegrationStatus(
   platform: IntegrationPlatform,
   updates: Partial<IntegrationStatus>,
-  userId: string = 'default-user'
+  userId: string = 'default-user',
 ): IntegrationStatus | undefined {
   if (!mockUserIntegrationStatuses[userId]) {
     mockUserIntegrationStatuses[userId] = [];

@@ -6,7 +6,10 @@ export async function POST(request: Request) {
     const userMessage = body.message;
 
     if (!userMessage || typeof userMessage !== 'string') {
-      return NextResponse.json({ error: 'Message is required and must be a string' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Message is required and must be a string' },
+        { status: 400 },
+      );
     }
 
     // Simulate a delay and a mock assistant response
@@ -15,10 +18,10 @@ export async function POST(request: Request) {
     const mockReplies = [
       "That's an interesting point!",
       "I'm not sure I understand, could you elaborate?",
-      "Let me think about that for a moment...",
-      "Thanks for sharing your thoughts.",
-      "Okay, I see what you mean.",
-      "Fascinating! Tell me more.",
+      'Let me think about that for a moment...',
+      'Thanks for sharing your thoughts.',
+      'Okay, I see what you mean.',
+      'Fascinating! Tell me more.',
     ];
 
     const randomReply = mockReplies[Math.floor(Math.random() * mockReplies.length)];

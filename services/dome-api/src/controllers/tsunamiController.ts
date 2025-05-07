@@ -24,7 +24,7 @@ export class TsunamiController {
    * @param c Hono context
    * @returns Response
    */
-  async registerGithubRepo(c: Context<{ Bindings: Bindings; }>) {
+  async registerGithubRepo(c: Context<{ Bindings: Bindings }>) {
     try {
       const { userId } = getIdentity();
       const schema = z.object({
@@ -74,7 +74,7 @@ export class TsunamiController {
    * @param c Hono context
    * @returns Response
    */
-  async getGithubRepoHistory(c: Context<{ Bindings: Bindings; }>) {
+  async getGithubRepoHistory(c: Context<{ Bindings: Bindings }>) {
     try {
       const { userId } = getIdentity();
       const { owner, repo } = c.req.param();
@@ -105,7 +105,7 @@ export class TsunamiController {
    * @param c Hono context
    * @returns Response
    */
-  async getUserHistory(c: Context<{ Bindings: Bindings; }>) {
+  async getUserHistory(c: Context<{ Bindings: Bindings }>) {
     try {
       const { userId } = getIdentity();
       const limit = parseInt(c.req.query('limit') || '10', 10);
@@ -135,7 +135,7 @@ export class TsunamiController {
    * @param c Hono context
    * @returns Response
    */
-  async getSyncPlanHistory(c: Context<{ Bindings: Bindings; }>) {
+  async getSyncPlanHistory(c: Context<{ Bindings: Bindings }>) {
     try {
       const { userId } = getIdentity();
       const { syncPlanId } = c.req.param();

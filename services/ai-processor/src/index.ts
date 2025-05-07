@@ -40,15 +40,13 @@ const buildServices = (env: Env) => {
   const first = {
     llm: createLlmService(env),
     silo: new SiloClient(env.SILO as unknown as SiloBinding),
-  }
+  };
 
   return {
     ...first,
     processor: new ContentProcessor(env, first),
-  }
+  };
 };
-
-
 
 /**
  * AI Processor Worker
@@ -177,14 +175,18 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           if (!metadata) {
             // This case should ideally not be reached if assertExists works as expected
             // and throws an error. Logging it as an unexpected situation.
-            logError(new Error(`Metadata unexpectedly null after assertExists for ID: ${id}`), 'Unexpected null metadata', {
-              id,
-              operation: 'reprocessById',
-              requestId,
-            });
+            logError(
+              new Error(`Metadata unexpectedly null after assertExists for ID: ${id}`),
+              'Unexpected null metadata',
+              {
+                id,
+                operation: 'reprocessById',
+                requestId,
+              },
+            );
             return { id, success: false };
           }
- 
+
           // Create a new content message and process it
           const message: NewContentMessage = {
             id: metadata.id,
@@ -192,15 +194,15 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             category: metadata.category,
             mimeType: metadata.mimeType,
           };
- 
+
           await this.services.processor.processMessage(message, requestId);
- 
+
           aiProcessorMetrics.trackOperation('reprocess_by_id', true, {
             id,
             requestId,
             contentType: metadata.category || metadata.mimeType || 'unknown',
           });
- 
+
           return { id, success: true };
         } catch (error) {
           const domeError = toDomeError(error, `Error reprocessing content with ID ${id}`, {
@@ -334,7 +336,6 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
       { requestId },
     );
   }
-
 
   /**
    * Queue handler for processing regular content messages

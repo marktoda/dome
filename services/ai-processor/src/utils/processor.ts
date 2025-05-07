@@ -8,12 +8,7 @@
 // Any worker can import this class and call `processMessage`.
 // ───────────────────────────────────────────────────────────────
 
-import {
-  getLogger,
-  logError,
-  sanitizeForLogging,
-  aiProcessorMetrics,
-} from './logging';
+import { getLogger, logError, sanitizeForLogging, aiProcessorMetrics } from './logging';
 import {
   assertExists,
   toDomeError,
@@ -31,11 +26,21 @@ import type {
 } from '@dome/common';
 // Define LlmProcessingResult based on observed llmService output
 import type { LlmService } from '../services/llmService';
-import type { NoteProcessingResult, CodeProcessingResult, ArticleProcessingResult, DefaultProcessingResult } from '../schemas';
+import type {
+  NoteProcessingResult,
+  CodeProcessingResult,
+  ArticleProcessingResult,
+  DefaultProcessingResult,
+} from '../schemas';
 import type { SiloClient } from '@dome/silo/client';
 
 // This is a generic representation. The actual 'parsed' part will be one of the *ProcessingResult types.
-export type LlmProcessingResult = (NoteProcessingResult | CodeProcessingResult | ArticleProcessingResult | DefaultProcessingResult) & {
+export type LlmProcessingResult = (
+  | NoteProcessingResult
+  | CodeProcessingResult
+  | ArticleProcessingResult
+  | DefaultProcessingResult
+) & {
   processingVersion: number;
   modelUsed: string;
   error?: string;
@@ -62,7 +67,7 @@ interface ExistingMetadata {
  * ContentProcessor – no I/O side‑effects beyond env queues.
  */
 export class ContentProcessor {
-  constructor(private readonly env: Env, private readonly services: ProcessorServices) { }
+  constructor(private readonly env: Env, private readonly services: ProcessorServices) {}
 
   /** Process a single NEW_CONTENT message (idempotent). */
   async processMessage(msg: NewContentMessage, requestId: string): Promise<void> {
@@ -85,12 +90,12 @@ export class ContentProcessor {
       const existingMetadata = this._extractExistingMetadata(doc, id, requestId);
       const llmResult = await this._invokeLlmService(body, contentType, existingMetadata);
 
-      if (!llmResult) { // LlmService already queued rate‑limited work or other issue
+      if (!llmResult) {
+        // LlmService already queued rate‑limited work or other issue
         return;
       }
 
       await this._handleSuccessfulProcessing(msg, llmResult, contentType);
-
     } catch (err) {
       if (this.isRateLimitError(err)) {
         await this.queueRateLimited(msg); // Removed err argument as it's not used
@@ -113,7 +118,11 @@ export class ContentProcessor {
   // Private refactored methods from processMessage
   // -----------------------------------------------------------------------
 
-  private _performInitialChecks(msg: NewContentMessage, contentType: string, requestId: string): boolean {
+  private _performInitialChecks(
+    msg: NewContentMessage,
+    contentType: string,
+    requestId: string,
+  ): boolean {
     const { id, userId, deleted } = msg;
     const logger = getLogger();
 
@@ -129,7 +138,11 @@ export class ContentProcessor {
     return false;
   }
 
-  private async _fetchContentDocument(id: string, userId: string | undefined | null, requestId: string): Promise<SiloContentItem | null> {
+  private async _fetchContentDocument(
+    id: string,
+    userId: string | undefined | null,
+    requestId: string,
+  ): Promise<SiloContentItem | null> {
     const logger = getLogger();
     // Assuming silo.get returns a SiloContentItem or similar that includes 'body'
     const doc: SiloContentItem | null = await this.services.silo.get(id, userId);
@@ -145,12 +158,19 @@ export class ContentProcessor {
     return { ...doc, body };
   }
 
-  private _extractExistingMetadata(doc: SiloContentItem, id: string, requestId: string): ExistingMetadata | undefined {
+  private _extractExistingMetadata(
+    doc: SiloContentItem,
+    id: string,
+    requestId: string,
+  ): ExistingMetadata | undefined {
     const logger = getLogger();
     // Assuming 'tags' might be in customMetadata if it exists
-    const tagsFromCustomMetadata = doc.customMetadata && Array.isArray(doc.customMetadata.tags) && doc.customMetadata.tags.every((tag: unknown) => typeof tag === 'string')
-      ? doc.customMetadata.tags as string[]
-      : undefined;
+    const tagsFromCustomMetadata =
+      doc.customMetadata &&
+      Array.isArray(doc.customMetadata.tags) &&
+      doc.customMetadata.tags.every((tag: unknown) => typeof tag === 'string')
+        ? (doc.customMetadata.tags as string[])
+        : undefined;
 
     const existingMetadata: ExistingMetadata = {
       title: doc.title || undefined,
@@ -158,41 +178,46 @@ export class ContentProcessor {
       tags: tagsFromCustomMetadata,
     };
 
-    const hasExistingMetadata = !!(existingMetadata.title || existingMetadata.summary ||
-      (existingMetadata.tags && existingMetadata.tags.length > 0));
+    const hasExistingMetadata = !!(
+      existingMetadata.title ||
+      existingMetadata.summary ||
+      (existingMetadata.tags && existingMetadata.tags.length > 0)
+    );
 
     if (hasExistingMetadata) {
-      logger.info({
-        id,
-        requestId,
-        hasTitle: !!existingMetadata.title,
-        hasSummary: !!existingMetadata.summary,
-        hasTags: !!(existingMetadata.tags && existingMetadata.tags.length > 0)
-      }, 'Processing with existing metadata as context');
+      logger.info(
+        {
+          id,
+          requestId,
+          hasTitle: !!existingMetadata.title,
+          hasSummary: !!existingMetadata.summary,
+          hasTags: !!(existingMetadata.tags && existingMetadata.tags.length > 0),
+        },
+        'Processing with existing metadata as context',
+      );
       return existingMetadata;
     }
     return undefined;
   }
 
-  private async _invokeLlmService(body: string, contentType: string, existingMetadata?: ExistingMetadata): Promise<LlmProcessingResult | null> {
-    return this.services.llm.processContent(
-      body,
-      contentType,
-      existingMetadata
-    );
+  private async _invokeLlmService(
+    body: string,
+    contentType: string,
+    existingMetadata?: ExistingMetadata,
+  ): Promise<LlmProcessingResult | null> {
+    return this.services.llm.processContent(body, contentType, existingMetadata);
   }
 
   private async _handleSuccessfulProcessing(
     msg: NewContentMessage,
     llmResult: LlmProcessingResult,
-    contentType: string
+    contentType: string,
   ): Promise<void> {
     const { id, userId, category, mimeType } = msg;
     const metadata = this.normalize(llmResult);
     await this.publishResult({ id, userId, category, mimeType, metadata });
     this.trackSuccess(metadata, contentType);
   }
-
 
   // -----------------------------------------------------------------------
   // Original Private helpers (some modified)
@@ -209,7 +234,10 @@ export class ContentProcessor {
       todos: 'todos' in raw && Array.isArray(raw.todos) ? raw.todos : undefined,
       reminders: 'reminders' in raw && Array.isArray(raw.reminders) ? raw.reminders : undefined,
       topics: Array.isArray(raw.topics) ? raw.topics : undefined,
-      processingVersion: typeof raw.processingVersion === 'number' ? raw.processingVersion : DEFAULT_PROCESSING_VERSION,
+      processingVersion:
+        typeof raw.processingVersion === 'number'
+          ? raw.processingVersion
+          : DEFAULT_PROCESSING_VERSION,
       modelUsed: typeof raw.modelUsed === 'string' ? raw.modelUsed : DEFAULT_MODEL_USED,
       error: typeof raw.error === 'string' ? raw.error : undefined,
     } satisfies EnrichedContentMessage['metadata'];
@@ -243,7 +271,9 @@ export class ContentProcessor {
     if (metadata.todos?.length && userId) {
       // Ensure TODOS queue exists before sending
       await this.env.TODOS?.sendBatch(
-         metadata.todos.map(todo => ({ body: { ...enriched, metadata: { ...enriched.metadata, ...todo} } }))
+        metadata.todos.map(todo => ({
+          body: { ...enriched, metadata: { ...enriched.metadata, ...todo } },
+        })),
       );
       // The original sendTodosToQueue might have more complex logic,
       // for simplicity here, directly sending. If sendTodosToQueue is complex,
@@ -251,7 +281,7 @@ export class ContentProcessor {
       // For now, assuming direct send is okay or sendTodosToQueue handles undefined queue.
       // Reverting to original call if it's safer and handles undefined queue.
       if (this.env.TODOS) {
-         await sendTodosToQueue(enriched, this.env.TODOS);
+        await sendTodosToQueue(enriched, this.env.TODOS);
       }
     }
 
@@ -279,7 +309,10 @@ export class ContentProcessor {
       await this.env.RATE_LIMIT_DLQ.send(msg);
       getLogger().info({ id: msg.id }, 'Queued rate‑limited content to RATE_LIMIT_DLQ');
     } else {
-      getLogger().warn({ id: msg.id }, 'RATE_LIMIT_DLQ not configured. Cannot queue rate-limited message.');
+      getLogger().warn(
+        { id: msg.id },
+        'RATE_LIMIT_DLQ not configured. Cannot queue rate-limited message.',
+      );
     }
   }
 

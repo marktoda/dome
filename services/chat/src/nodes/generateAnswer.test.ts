@@ -75,7 +75,8 @@ describe('generateAnswer Node', () => {
         {
           id: 'doc2',
           title: 'Quantum Algorithms',
-          content: 'Quantum algorithms can solve certain problems faster than classical algorithms...',
+          content:
+            'Quantum algorithms can solve certain problems faster than classical algorithms...',
           metadata: {
             source: 'quantum-docs',
             sourceType: 'quantum-docs',

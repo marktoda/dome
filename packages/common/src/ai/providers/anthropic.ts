@@ -1,6 +1,6 @@
 /**
  * Anthropic model configurations
- * 
+ *
  * This file defines all Anthropic (Claude) models available in the system along with
  * their capabilities, context windows, and other parameters.
  */
@@ -45,7 +45,7 @@ export const ANTHROPIC_MODELS: Record<string, BaseModelConfig> = {
     capabilities: CLAUDE_CAPABILITIES,
     productionReady: true,
   },
-  
+
   CLAUDE_2_1: {
     key: 'CLAUDE_2_1',
     id: 'claude-2.1',
@@ -57,7 +57,7 @@ export const ANTHROPIC_MODELS: Record<string, BaseModelConfig> = {
     capabilities: CLAUDE_CAPABILITIES,
     productionReady: true,
   },
-  
+
   CLAUDE_3_OPUS: {
     key: 'CLAUDE_3_OPUS',
     id: 'claude-3-opus-20240229',
@@ -69,7 +69,7 @@ export const ANTHROPIC_MODELS: Record<string, BaseModelConfig> = {
     capabilities: CLAUDE_VISION_CAPABILITIES,
     productionReady: true,
   },
-  
+
   CLAUDE_3_SONNET: {
     key: 'CLAUDE_3_SONNET',
     id: 'claude-3-sonnet-20240229',
@@ -81,7 +81,7 @@ export const ANTHROPIC_MODELS: Record<string, BaseModelConfig> = {
     capabilities: CLAUDE_VISION_CAPABILITIES,
     productionReady: true,
   },
-  
+
   CLAUDE_3_HAIKU: {
     key: 'CLAUDE_3_HAIKU',
     id: 'claude-3-haiku-20240307',

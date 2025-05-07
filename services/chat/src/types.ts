@@ -240,7 +240,6 @@ export interface ToolRoutingDecision {
   confidence: number;
 }
 
-
 /**
  * Core state interface for the RAG graph V2
  */

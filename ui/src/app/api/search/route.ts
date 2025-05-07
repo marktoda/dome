@@ -32,29 +32,37 @@ export async function GET(request: NextRequest) {
     const apiResponse = await fetch(externalApiUrl.toString(), {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
     });
 
     if (!apiResponse.ok) {
       const errorData = await apiResponse.text();
-      console.error(`External API error: ${apiResponse.status} ${apiResponse.statusText}`, errorData);
+      console.error(
+        `External API error: ${apiResponse.status} ${apiResponse.statusText}`,
+        errorData,
+      );
       return NextResponse.json(
-        { message: `Error from external search API: ${apiResponse.statusText}`, details: errorData },
-        { status: apiResponse.status }
+        {
+          message: `Error from external search API: ${apiResponse.statusText}`,
+          details: errorData,
+        },
+        { status: apiResponse.status },
       );
     }
 
     const data: SearchResponse = await apiResponse.json();
     return NextResponse.json(data);
-
   } catch (error) {
     console.error('Error calling external search API:', error);
     let errorMessage = 'Internal Server Error';
     if (error instanceof Error) {
       errorMessage = error.message;
     }
-    return NextResponse.json({ message: 'Failed to fetch search results', error: errorMessage }, { status: 500 });
+    return NextResponse.json(
+      { message: 'Failed to fetch search results', error: errorMessage },
+      { status: 500 },
+    );
   }
 }

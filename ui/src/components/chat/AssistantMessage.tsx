@@ -125,7 +125,7 @@ function extractJsonAndRemainder(text: string): { parsedJson: unknown | null, re
     const jsonPart = text.substring(firstCharIndex, endIndex + 1);
     try {
       return { parsedJson: JSON.parse(jsonPart), remainder: text.substring(endIndex + 1) };
-    } catch (_e) { /* fall through, variable _e is unused */ }
+    } catch { /* fall through, error variable removed */ }
   }
   return { parsedJson: null, remainder: text };
 }
@@ -146,18 +146,25 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
 
     if (parsedJson) {
       if (typeof parsedJson === 'object' && parsedJson !== null) {
-        if ('answer' in parsedJson && !explicitAnswerFoundJson) {
-          finalAnswerContent = parsedJson.answer;
+        // Type guard for parsedJson to safely access properties
+        const pj = parsedJson as Record<string, unknown>;
+        if ('answer' in pj && !explicitAnswerFoundJson) {
+          finalAnswerContent = (typeof pj.answer === 'string' || typeof pj.answer === 'object') ? pj.answer : String(pj.answer);
           explicitAnswerFoundJson = true;
-        } else if ('thinking' in parsedJson) {
-          thinkingSteps.push(parsedJson.thinking);
-        } else if ('error' in parsedJson) {
-          finalErrorContent = parsedJson.error; // Allow error to be set even if answer was found
+        } else if ('thinking' in pj) {
+          thinkingSteps.push(pj.thinking);
+        } else if ('error' in pj) {
+          finalErrorContent = (typeof pj.error === 'string' || typeof pj.error === 'object') ? pj.error : String(pj.error);
         } else {
-          intermediateJsonObjects.push(parsedJson);
+          intermediateJsonObjects.push(pj);
         }
-      } else { // Primitive JSON value
-        intermediateJsonObjects.push(parsedJson);
+      } else { // Primitive JSON value (string, number, boolean)
+        // Ensure it's assignable to string | object | null for finalAnswerContent or thinkingSteps
+        if (typeof parsedJson === 'string' || typeof parsedJson === 'object') {
+            intermediateJsonObjects.push(parsedJson);
+        } else {
+            intermediateJsonObjects.push(String(parsedJson)); // Convert other primitives to string
+        }
       }
       textToParse = remainder.trimStart();
     } else { // No more JSON, remainder is plain text
@@ -170,9 +177,17 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
   }
 
   if (!explicitAnswerFoundJson && intermediateJsonObjects.length > 0) {
-    finalAnswerContent = intermediateJsonObjects.pop(); // Last non-special JSON is the answer
+    const lastItem = intermediateJsonObjects.pop();
+    if (typeof lastItem === 'string' || typeof lastItem === 'object') {
+        finalAnswerContent = lastItem;
+    } else if (lastItem !== undefined && lastItem !== null) { // Check for undefined/null before String()
+        finalAnswerContent = String(lastItem);
+    }
   }
-  thinkingSteps.push(...intermediateJsonObjects); // Remaining are thinking steps
+  // Ensure all items pushed to thinkingSteps are compatible with renderGenericContent
+  thinkingSteps.push(...intermediateJsonObjects.map(item =>
+    (typeof item === 'string' || typeof item === 'object' ? item : String(item))
+  ));
 
   // If after all parsing, no answer/error/thinking steps, and original message had text, use original text as answer.
   if (finalAnswerContent === null && finalErrorContent === null && thinkingSteps.length === 0 && message.text.trim().length > 0) {
@@ -181,15 +196,19 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
 
   const customRenderedContent = (
     <div className="space-y-3">
-      {thinkingSteps.map((step, index) => (
-        <div key={`thinking-${index}`} className="p-3 bg-blue-50 dark:bg-slate-800 rounded-lg shadow-md border border-blue-200 dark:border-slate-700">
-          <div className="flex items-center text-blue-700 dark:text-blue-400 mb-1.5">
-            <Info className="h-5 w-5 mr-2 flex-shrink-0" />
-            <h3 className="text-sm font-semibold tracking-wide">Intermediate Step</h3>
+      {thinkingSteps.map((step, index) => {
+        // Ensure step is string or object before passing to renderGenericContent
+        const contentToRender = (typeof step === 'string' || (typeof step === 'object' && step !== null)) ? step : String(step);
+        return (
+          <div key={`thinking-${index}`} className="p-3 bg-blue-50 dark:bg-slate-800 rounded-lg shadow-md border border-blue-200 dark:border-slate-700">
+            <div className="flex items-center text-blue-700 dark:text-blue-400 mb-1.5">
+              <Info className="h-5 w-5 mr-2 flex-shrink-0" />
+              <h3 className="text-sm font-semibold tracking-wide">Intermediate Step</h3>
+            </div>
+            {renderGenericContent(contentToRender)}
           </div>
-          {renderGenericContent(step)}
-        </div>
-      ))}
+        );
+      })}
       {finalErrorContent && (
         <div className="p-3 bg-red-50 dark:bg-red-900/40 rounded-lg shadow-md border border-red-200 dark:border-red-700">
           <div className="flex items-center text-red-700 dark:text-red-400 mb-1.5">

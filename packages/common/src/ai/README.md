@@ -31,7 +31,7 @@ import { configureLlmSystem } from '@dome/common';
 export function initializeService(env: Env) {
   // Configure LLM models with environment variables
   configureLlmSystem(env);
-  
+
   // Rest of your service initialization
 }
 ```
@@ -57,12 +57,12 @@ const prodModels = getAllModels(true);
 ### Token Allocation
 
 ```typescript
-import { 
+import {
   calculateContextLimits,
   calculateTokenLimits,
   calculateResponseTokens,
   countTokens,
-  countMessagesTokens
+  countMessagesTokens,
 } from '@dome/common';
 
 // Calculate allocation for different components based on model
@@ -75,7 +75,7 @@ const tokenCount = countTokens('Hello, world!', 'gpt-4');
 // Count tokens in a messages array
 const messages = [
   { role: 'system', content: 'You are a helpful assistant.' },
-  { role: 'user', content: 'Hello!' }
+  { role: 'user', content: 'Hello!' },
 ];
 const messageTokens = countMessagesTokens(messages, 'gpt-4');
 
@@ -87,25 +87,18 @@ const maxResponseTokens = calculateResponseTokens('gpt-4', inputTokens);
 ### Usage in Chat Service
 
 ```typescript
-import { 
-  getModelConfig, 
-  calculateTokenLimits, 
-  countMessagesTokens 
-} from '@dome/common';
+import { getModelConfig, calculateTokenLimits, countMessagesTokens } from '@dome/common';
 
 function createChatCompletion(messages: Message[], modelId?: string) {
   // Get model configuration
   const modelConfig = getModelConfig(modelId);
-  
+
   // Count tokens in messages
   const inputTokens = countMessagesTokens(messages, modelConfig.id);
-  
+
   // Calculate token limits based on input
-  const { maxResponseTokens } = calculateTokenLimits(
-    modelConfig,
-    inputTokens
-  );
-  
+  const { maxResponseTokens } = calculateTokenLimits(modelConfig, inputTokens);
+
   // Make API call with calculated limits
   return callLlmApi({
     model: modelConfig.id,
@@ -124,15 +117,15 @@ import { getModelConfig } from '@dome/common';
 function createEmbeddings(texts: string[], modelId?: string) {
   // Get model configuration, ensuring it supports embeddings
   const modelConfig = getModelConfig(modelId || 'E5_LARGE_V2');
-  
+
   if (!modelConfig.capabilities.embeddings) {
     throw new Error(`Model ${modelConfig.id} does not support embeddings`);
   }
-  
+
   // Call embedding API with model ID
   return callEmbeddingApi({
     model: modelConfig.id,
-    texts
+    texts,
   });
 }
 ```

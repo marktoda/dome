@@ -178,7 +178,7 @@ export class MetadataService {
           getLogger().warn({ id }, 'Contents table does not exist yet, nothing to delete');
           return {
             success: true,
-            meta: { count: 0 }
+            meta: { count: 0 },
           };
         }
         throw error;

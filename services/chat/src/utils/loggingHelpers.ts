@@ -20,9 +20,11 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
       url: d.metadata.url,
       relevanceScore: d.metadata.relevanceScore,
       // Include a snippet of the document content
-      bodySnippet: d.content ?
-        (d.content.length > 100 ? `${d.content.substring(0, 100)}...` : d.content) :
-        '[No content]'
+      bodySnippet: d.content
+        ? d.content.length > 100
+          ? `${d.content.substring(0, 100)}...`
+          : d.content
+        : '[No content]',
     }));
   }
 
@@ -63,9 +65,11 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
         score: c.metadata.relevanceScore,
         rerankerScore: c.metadata.rerankerScore,
         // Include a snippet of the document content for better debugging
-        bodySnippet: c.content ?
-          (c.content.length > 100 ? `${c.content.substring(0, 100)}...` : c.content) :
-          '[No content]'
+        bodySnippet: c.content
+          ? c.content.length > 100
+            ? `${c.content.substring(0, 100)}...`
+            : c.content
+          : '[No content]',
       })),
     }));
   }
@@ -88,10 +92,12 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
               id: doc.id,
               title: doc.title || doc.metadata?.title || '[No title]',
               source: doc.metadata?.source || '[Unknown source]',
-              bodySnippet: doc.content ?
-                (doc.content.length > 80 ? `${doc.content.substring(0, 80)}...` : doc.content) :
-                '[No content]'
-            }))
+              bodySnippet: doc.content
+                ? doc.content.length > 80
+                  ? `${doc.content.substring(0, 80)}...`
+                  : doc.content
+                : '[No content]',
+            })),
           };
         }
       }

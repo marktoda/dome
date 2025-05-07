@@ -6,11 +6,11 @@
  *
  * @module config/retrieveConfig
  */
-import { 
-  ContextAllocation, 
-  DEFAULT_CONTEXT_ALLOCATION, 
-  calculateContextLimits, 
-  getModelConfig 
+import {
+  ContextAllocation,
+  DEFAULT_CONTEXT_ALLOCATION,
+  calculateContextLimits,
+  getModelConfig,
 } from '@dome/common';
 
 /**
@@ -171,7 +171,7 @@ export function calculateMinRelevanceScore(wideningAttempts: number): number {
  */
 export function getModelDocumentLimits(
   modelId?: string,
-  contextAllocation?: Partial<ContextAllocation>
+  contextAllocation?: Partial<ContextAllocation>,
 ): {
   maxDocumentTokens: number;
   maxTotalDocumentTokens: number;
@@ -179,13 +179,10 @@ export function getModelDocumentLimits(
 } {
   // Get retrieve config for document limits
   const retrieveConfig = getRetrieveConfig();
-  
+
   // Calculate context limits from the provided model using common package
-  const contextLimits = calculateContextLimits(
-    modelId || 'default',
-    contextAllocation
-  );
-  
+  const contextLimits = calculateContextLimits(modelId || 'default', contextAllocation);
+
   return {
     maxDocumentTokens: contextLimits.maxSystemPromptTokens || 0, // Fallback for possibly undefined values
     maxTotalDocumentTokens: contextLimits.maxDocumentsTokens || 0,

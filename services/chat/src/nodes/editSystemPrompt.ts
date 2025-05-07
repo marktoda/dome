@@ -116,10 +116,12 @@ export const editSystemPrompt = async (state: AgentState, env: Env): Promise<Age
     /* --------------------------------------------------------------- */
     return {
       ...state,
-      instructions: result.updatedInstructions === null ? '' : (result.updatedInstructions || ''),
+      instructions: result.updatedInstructions === null ? '' : result.updatedInstructions || '',
       reasoning: [
         ...(state.reasoning || []),
-        result.reasoning === null ? 'System prompt updated.' : (result.reasoning || 'System prompt updated.'),
+        result.reasoning === null
+          ? 'System prompt updated.'
+          : result.reasoning || 'System prompt updated.',
       ],
       // Store required tools in _filter as it accepts flexible properties
       _filter: {

@@ -1,10 +1,7 @@
 // Import from common package
 import { countTokens } from '@dome/common';
 
-export {
-  countMessageTokens,
-  countMessagesTokens,
-} from './tokenCounter';
+export { countMessageTokens, countMessagesTokens } from './tokenCounter';
 export { formatDocsForPrompt, truncateToMaxTokens, buildMessages } from './promptHelpers';
 export { transformToSSE } from './sseTransformer';
 export { scoreFilter, concatListFiles, reduceRagContext } from './ragUtils';

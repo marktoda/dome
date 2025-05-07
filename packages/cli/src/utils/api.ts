@@ -63,19 +63,27 @@ export const api = {
 
 // ---------- Convenience wrappers (unchanged signatures) -------------------------
 export const addContent = (content: string, title?: string, tags?: string[]) =>
-  api.post('/notes', {
-    content,
-    mimeType: 'text/plain',
-    title,
-    metadata: tags ? { tags } : undefined
-  }, {
-    // Add extra protection against malformed JSON
-    transformRequest: [(data, headers) => {
-      if (headers) headers['Content-Type'] = 'application/json';
-      // Use JSON.stringify directly to ensure proper escaping
-      return JSON.stringify(data);
-    }]
-  }).then(r => r.note ?? r);
+  api
+    .post(
+      '/notes',
+      {
+        content,
+        mimeType: 'text/plain',
+        title,
+        metadata: tags ? { tags } : undefined,
+      },
+      {
+        // Add extra protection against malformed JSON
+        transformRequest: [
+          (data, headers) => {
+            if (headers) headers['Content-Type'] = 'application/json';
+            // Use JSON.stringify directly to ensure proper escaping
+            return JSON.stringify(data);
+          },
+        ],
+      },
+    )
+    .then(r => r.note ?? r);
 
 export const updateContent = (id: string, content: string, title?: string, tags?: string[]) => {
   // Basic content sanitization to prevent JSON parsing errors
@@ -83,43 +91,57 @@ export const updateContent = (id: string, content: string, title?: string, tags?
     // Replace any characters that might cause issues in JSON
     // First, handle any invalid JSON escape sequences
     return str
-      .replace(/\\/g, '\\\\')  // Escape backslashes first
-      .replace(/\n/g, '\\n')   // Replace newlines with proper JSON newline escape
-      .replace(/\r/g, '\\r')   // Replace carriage returns
-      .replace(/\t/g, '\\t')   // Replace tabs
-      .replace(/\f/g, '\\f')   // Replace form feeds
-      .replace(/"/g, '\\"');   // Escape quotes
+      .replace(/\\/g, '\\\\') // Escape backslashes first
+      .replace(/\n/g, '\\n') // Replace newlines with proper JSON newline escape
+      .replace(/\r/g, '\\r') // Replace carriage returns
+      .replace(/\t/g, '\\t') // Replace tabs
+      .replace(/\f/g, '\\f') // Replace form feeds
+      .replace(/"/g, '\\"'); // Escape quotes
   };
 
   // Let axios handle JSON serialization
-  return api.put(`/notes/${id}`, {
-    body: content,
-    mimeType: 'text/plain',
-    title,
-    metadata: tags ? { tags } : undefined
-  }, {
-    // Add extra protection against malformed JSON
-    transformRequest: [(data, headers) => {
-      if (headers) headers['Content-Type'] = 'application/json';
-      // Use JSON.stringify directly to ensure proper escaping
-      return JSON.stringify(data);
-    }]
-  }).then(r => r.note ?? r);
+  return api
+    .put(
+      `/notes/${id}`,
+      {
+        body: content,
+        mimeType: 'text/plain',
+        title,
+        metadata: tags ? { tags } : undefined,
+      },
+      {
+        // Add extra protection against malformed JSON
+        transformRequest: [
+          (data, headers) => {
+            if (headers) headers['Content-Type'] = 'application/json';
+            // Use JSON.stringify directly to ensure proper escaping
+            return JSON.stringify(data);
+          },
+        ],
+      },
+    )
+    .then(r => r.note ?? r);
 };
 
 export const addNote = (context: string, content: string) =>
-  api.post('/notes', {
-    content,
-    mimeType: 'text/plain',
-    metadata: { context }
-  }, {
-    // Add extra protection against malformed JSON
-    transformRequest: [(data, headers) => {
-      if (headers) headers['Content-Type'] = 'application/json';
-      // Use JSON.stringify directly to ensure proper escaping
-      return JSON.stringify(data);
-    }]
-  });
+  api.post(
+    '/notes',
+    {
+      content,
+      mimeType: 'text/plain',
+      metadata: { context },
+    },
+    {
+      // Add extra protection against malformed JSON
+      transformRequest: [
+        (data, headers) => {
+          if (headers) headers['Content-Type'] = 'application/json';
+          // Use JSON.stringify directly to ensure proper escaping
+          return JSON.stringify(data);
+        },
+      ],
+    },
+  );
 
 export const listItems = async (type: 'notes' | 'tasks', filter?: string) => {
   const params: Record<string, any> = { fields: 'title,summary,body,tags,contentType,createdAt' };
@@ -158,17 +180,17 @@ export const search = async (query: string, limit = 10, category?: string) => {
 export type ChatMessageChunk =
   | { type: 'content' | 'thinking' | 'unknown'; content: string }
   | {
-    type: 'sources';
-    node: {
-      sources: {
-        id: string;
-        title: string;
-        source: string;
-        url?: string;
-        relevanceScore: number;
+      type: 'sources';
+      node: {
+        sources: {
+          id: string;
+          title: string;
+          source: string;
+          url?: string;
+          relevanceScore: number;
+        };
       };
     };
-  };
 
 // Extensible chunk‑type detector stack
 interface ChunkDetector {
@@ -414,7 +436,8 @@ export async function chat(
         } catch (httpErr) {
           if (opts.debug) {
             console.debug(
-              `HTTP fallback error: ${httpErr instanceof Error ? httpErr.message : String(httpErr)
+              `HTTP fallback error: ${
+                httpErr instanceof Error ? httpErr.message : String(httpErr)
               }`,
             );
           }
@@ -503,4 +526,3 @@ export type { AxiosRequestConfig } from 'axios';
 // Export search functions
 export { search as searchContent };
 export { registerGithubRepo, getGithubRepoHistory };
-

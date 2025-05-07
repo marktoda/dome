@@ -99,7 +99,7 @@ export class SearchController {
    * @param c Hono context
    * @returns Response with search results
    */
-  async search(c: Context<{ Bindings: Bindings; }>): Promise<Response> {
+  async search(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const { userId } = getIdentity();
       const parsed = SearchQuerySchema.parse(c.req.query());
@@ -199,9 +199,7 @@ export class SearchController {
    * @param c Hono context
    * @returns Streaming response with search results
    */
-  async streamSearch(
-    c: Context<{ Bindings: Bindings; }>,
-  ): Promise<Response> {
+  async streamSearch(c: Context<{ Bindings: Bindings }>): Promise<Response> {
     try {
       const { userId } = getIdentity();
       const parsed = SearchQuerySchema.parse(c.req.query());

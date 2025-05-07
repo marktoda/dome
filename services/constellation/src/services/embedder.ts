@@ -213,7 +213,10 @@ export class Embedder {
     try {
       const response = await retryAsync(
         async currentAttempt => {
-          getLogger().debug({ attempt: currentAttempt }, 'Sending batch to AI service for embedding');
+          getLogger().debug(
+            { attempt: currentAttempt },
+            'Sending batch to AI service for embedding',
+          );
           // Send the batch to the AI service
           return this.callAiService(texts);
         },
@@ -232,13 +235,21 @@ export class Embedder {
       } else if (error instanceof Error) {
         throw new EmbeddingError(
           `Failed to generate embeddings after ${this.config.retryAttempts} attempts: ${error.message}`,
-          { model: this.config.model, batchSize: texts.length, retryAttempts: this.config.retryAttempts },
+          {
+            model: this.config.model,
+            batchSize: texts.length,
+            retryAttempts: this.config.retryAttempts,
+          },
           error,
         );
       } else {
         throw new EmbeddingError(
           `Failed to generate embeddings after ${this.config.retryAttempts} attempts: Unknown error`,
-          { model: this.config.model, batchSize: texts.length, retryAttempts: this.config.retryAttempts },
+          {
+            model: this.config.model,
+            batchSize: texts.length,
+            retryAttempts: this.config.retryAttempts,
+          },
         );
       }
     }
@@ -341,7 +352,7 @@ export class Embedder {
       'Unexpected response format from AI service',
     );
   }
-// Removed handleRetryLogic and delay methods as their functionality is now in retryAsync
+  // Removed handleRetryLogic and delay methods as their functionality is now in retryAsync
 }
 
 /**

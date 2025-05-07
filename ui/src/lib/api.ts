@@ -24,7 +24,7 @@ class ApiClient {
     });
 
     this.axiosInstance.interceptors.request.use(
-      (config) => {
+      config => {
         // Attempt to get the token from localStorage
         if (typeof window !== 'undefined') {
           const token = localStorage.getItem('token');
@@ -34,9 +34,9 @@ class ApiClient {
         }
         return config;
       },
-      (error) => {
+      error => {
         return Promise.reject(error);
-      }
+      },
     );
   }
 
@@ -44,7 +44,7 @@ class ApiClient {
     method: 'get' | 'post' | 'put' | 'delete' | 'patch',
     url: string,
     dataOrParams?: unknown, // Changed any to unknown
-    config?: AxiosRequestConfig // AxiosRequestConfig is already well-typed
+    config?: AxiosRequestConfig, // AxiosRequestConfig is already well-typed
   ): Promise<T> {
     let response;
     if (method === 'get' || method === 'delete') {
@@ -55,23 +55,32 @@ class ApiClient {
     return response.data;
   }
 
-  public get<T = unknown>(url: string, params?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and params type
+  public get<T = unknown>(url: string, params?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    // Changed T default and params type
     return this.request<T>('get', url, params, config);
   }
 
-  public post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and data type
+  public post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    // Changed T default and data type
     return this.request<T>('post', url, data, config);
   }
 
-  public put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and data type
+  public put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    // Changed T default and data type
     return this.request<T>('put', url, data, config);
   }
 
-  public delete<T = unknown>(url: string, params?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and params type
+  public delete<T = unknown>(
+    url: string,
+    params?: unknown,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
+    // Changed T default and params type
     return this.request<T>('delete', url, params, config);
   }
 
-  public patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> { // Changed T default and data type
+  public patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    // Changed T default and data type
     return this.request<T>('patch', url, data, config);
   }
 }
@@ -142,7 +151,9 @@ export const notesApi = {
       return response.note;
     }
     // Handle cases where response is not as expected or success is false
-    const errorMessage = response?.note ? 'API request to get note by ID was not successful.' : 'Invalid API response structure for getNoteById.';
+    const errorMessage = response?.note
+      ? 'API request to get note by ID was not successful.'
+      : 'Invalid API response structure for getNoteById.';
     console.error(errorMessage, response);
     throw new Error(errorMessage);
   },

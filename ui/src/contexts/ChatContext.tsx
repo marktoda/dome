@@ -1,265 +1,310 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode, useCallback, useRef, useEffect } from 'react';
-import { Message as UIMessage, ChatContextType } from '@/lib/chat-types'; // Renamed to UIMessage to avoid conflict
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  ReactNode,
+} from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from './AuthContext';
+import {
+  Message as UIMessage,
+  ChatContextType,
+} from '@/lib/chat-types';
 
-// --- ChatMessageChunk and detection logic adapted from packages/cli/src/utils/api.ts ---
+/** ------------------------------------------------------------------
+ *  Chunk parsing
+ * ------------------------------------------------------------------*/
+
+export interface SourceItem {
+  id: string;
+  title: string;
+  source: string;
+  url?: string;
+  relevanceScore: number;
+}
+
 export type ChatMessageChunk =
   | { type: 'content'; content: string }
   | { type: 'thinking'; content: string }
-  | {
-      type: 'sources';
-      node: {
-        sources: Array<{
-          id: string;
-          title: string;
-          source: string;
-          url?: string;
-          relevanceScore: number;
-          // Add other fields if present in actual data, e.g., 'content' for chunk content
-        }>;
-      };
-    }
-  | { type: 'error'; content: string } // Added error type
+  | { type: 'sources'; sources: SourceItem[] }
+  | { type: 'error'; content: string }
   | { type: 'unknown'; content: string };
 
-interface ChunkDetector {
-  (raw: string, parsed: unknown): ChatMessageChunk | null; // Changed any to unknown
-}
-
-const detectors: ChunkDetector[] = [
-  // LangGraph messages node - content chunks
-  (raw, p) => {
-    if (Array.isArray(p) && p[0] === 'messages' && Array.isArray(p[1]) && p[1].length > 0 && p[1][0].kwargs?.content) {
-      return { type: 'content', content: p[1][0].kwargs.content };
+/** Detectors map raw server‑sent events → structured chunks. */
+const detectors: ((raw: string, parsed: unknown) => ChatMessageChunk | null)[] = [
+  // LangGraph “messages” node ➜ assistant content
+  (_, p) => {
+    if (
+      Array.isArray(p) &&
+      p[0] === 'messages' &&
+      Array.isArray(p[1]) &&
+      p[1][0]?.kwargs?.content
+    ) {
+      return { type: 'content', content: p[1][0].kwargs.content as string };
     }
     return null;
   },
-  // LangGraph updates - thinking (simplified)
-  (raw, p) => {
+  // LangGraph “updates” node ➜ chain reasoning
+  (_, p) => {
     if (Array.isArray(p) && p[0] === 'updates') {
-      const nodeUpdate = p[1];
-      if (typeof nodeUpdate === 'object' && nodeUpdate !== null) {
-        const firstKey = Object.keys(nodeUpdate)[0];
-        const nodeContent = nodeUpdate[firstKey];
-        if (nodeContent && typeof nodeContent.reasoning === 'string' && nodeContent.reasoning.trim() !== '') {
-          return { type: 'thinking', content: nodeContent.reasoning };
-        }
-        if (nodeContent && Array.isArray(nodeContent.reasoning) && nodeContent.reasoning.length > 0) {
-          return { type: 'thinking', content: nodeContent.reasoning[nodeContent.reasoning.length - 1] };
-        }
-      }
+      const node = p[1] as Record<string, unknown>; // Changed any to unknown
+      const first = node?.[Object.keys(node)[0]] as { reasoning?: string | string[] } | undefined; // Added type assertion for first
+      const reasoning: string | string[] | undefined = first?.reasoning;
+      if (typeof reasoning === 'string' && reasoning.trim())
+        return { type: 'thinking', content: reasoning };
+      if (Array.isArray(reasoning) && reasoning.length)
+        return { type: 'thinking', content: reasoning.at(-1)! };
     }
     return null;
   },
-  // LangGraph updates - sources (adapted for observed structure: ["updates",{"retrieve":{...}}])
-  (raw, p) => {
-    // Define a more specific type for the payload of an "updates" event with "retrieve"
-    interface UpdateRetrievePayload {
+  // LangGraph “retrieve” updates ➜ sources
+  (_, p) => {
+    // Re-using/defining a similar structure to UpdateRetrievePayload for clarity here
+    interface RetrievalPayload {
       retrieve?: {
         retrievals?: Array<{
-          chunks?: Array<Record<string, unknown>>; // Keep chunk as Record<string, unknown> for flexibility
+          chunks?: Array<Record<string, unknown>>;
+          // Add other potential properties of retrieval item if necessary
         }>;
       };
     }
 
-    // Type guard for p to ensure it has the expected structure
-    if (Array.isArray(p) && p.length > 1 && p[0] === 'updates') {
-        const updatePayload = p[1] as UpdateRetrievePayload; // Use the new interface
-        if (updatePayload?.retrieve?.retrievals) {
-            const retrievals = updatePayload.retrieve.retrievals;
-            if (Array.isArray(retrievals)) {
-                const allChunksAsSources: ChatMessageChunk['node']['sources'] = [];
-                retrievals.forEach(retrieval => {
-                    if (retrieval.chunks && Array.isArray(retrieval.chunks)) {
-                        // chunk is already Record<string, unknown> from UpdateRetrievePayload
-                        retrieval.chunks.forEach((chunk) => {
-                            allChunksAsSources.push({
-                                id: (chunk.id as string) || uuidv4(),
-                                title: (chunk.title as string) || (chunk.id as string) || 'Unknown Source',
-                            source: (chunk.source as string) || ((chunk.metadata as Record<string,unknown>)?.source as string) || 'N/A',
-                            url: (chunk.url as string) || ((chunk.metadata as Record<string,unknown>)?.url as string),
-                            relevanceScore: (chunk.relevanceScore as number) || (chunk.score as number) || 0,
-                            // content: chunk.content // Optionally include chunk content
-                        });
-                    });
-                }
-            });
-            if (allChunksAsSources.length > 0) {
-                return { type: 'sources', node: { sources: allChunksAsSources } };
-            }
-        }
+    if (
+      Array.isArray(p) &&
+      p.length > 1 && // ensure p[1] exists
+      p[0] === 'updates' &&
+      (p[1] as RetrievalPayload)?.retrieve?.retrievals
+    ) {
+      const updatePayload = p[1] as RetrievalPayload;
+      // Ensure retrievals is an array before proceeding
+      const retrievals = Array.isArray(updatePayload.retrieve?.retrievals) ? updatePayload.retrieve.retrievals : [];
+      const sources: SourceItem[] = [];
+      retrievals.forEach(r => {
+        // Ensure r.chunks is an array before forEach
+        const chunksArray = Array.isArray(r.chunks) ? r.chunks : [];
+        chunksArray.forEach((c: Record<string, unknown>) => // c is Record<string, unknown>
+          sources.push({
+            id: (c.id as string) ?? uuidv4(),
+            title: (c.title as string) ?? (c.id as string) ?? 'Untitled',
+            source:
+              (c.source as string) ?? ((c.metadata as Record<string, unknown>)?.source as string) ?? 'N/A',
+            url: (c.url as string | undefined) ?? ((c.metadata as { url?: string })?.url),
+            relevanceScore: (c.relevanceScore as number) ?? (c.score as number) ?? 0,
+          }),
+        );
+      });
+      return sources.length ? { type: 'sources', sources } : null;
     }
     return null;
   },
-  // Plain content string (if server sends simple string for content)
-  (raw, p) => {
-    if (typeof p === 'string') { // If parsed is just a string
-        return { type: 'content', content: p };
-    }
-    if (p && typeof p.content === 'string' && Object.keys(p).length === 1) { // { content: "..." }
-        return { type: 'content', content: p.content };
+  // Plain string JSON
+  (_, p) => {
+    if (typeof p === 'string') return { type: 'content', content: p };
+    if (
+      p &&
+      typeof p === 'object' &&
+      'content' in p &&
+      typeof (p as { content: unknown }).content === 'string' && // Check if content is string
+      Object.keys(p).length === 1
+    ) {
+      return { type: 'content', content: (p as { content: string }).content }; // Cast to { content: string }
     }
     return null;
-  }
+  },
 ];
 
-const detectChunk = (data: string): ChatMessageChunk => {
+/** Parse any server line into a `ChatMessageChunk`. */
+function detectChunk(data: string): ChatMessageChunk {
   try {
     const parsed = JSON.parse(data);
     for (const det of detectors) {
-      const match = det(data, parsed);
-      if (match) return match;
+      const out = det(data, parsed);
+      if (out) return out;
     }
-    // If no detector matches, but it's valid JSON, treat as unknown structured data
-    return { type: 'unknown', content: `Unknown JSON structure: ${data.substring(0,100)}...` };
+    return { type: 'unknown', content: `Unknown JSON: ${data.slice(0, 80)}…` };
   } catch {
-    // Not JSON, treat as plain text, potentially an error or simple content
-    if (data.toLowerCase().includes("error")) {
-        return { type: 'error', content: data };
-    }
-    return { type: 'content', content: data }; // Default to content if not JSON and not error-like
+    if (/error/i.test(data)) return { type: 'error', content: data };
+    return { type: 'content', content: data };
   }
-};
-// --- End of adapted CLI logic ---
+}
 
-const ChatContext = createContext<ChatContextType | undefined>(undefined);
+/** ------------------------------------------------------------------
+ *  React context
+ * ------------------------------------------------------------------*/
+
+const ChatContext = createContext<ChatContextType | null>(null);
 
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const currentAssistantId = useRef<string | null>(null);
+
   const { token } = useAuth();
-  const currentAssistantMessageIdRef = useRef<string | null>(null);
 
-  const connectAndSendMessage = useCallback((messageHistory: UIMessage[], userMessageText: string) => {
-    if (!token) {
-      console.error('[ChatContext] No auth token available for WebSocket.');
-      setMessages(prev => [...prev, { id: uuidv4(), text: "Authentication error. Cannot connect.", sender: 'assistant', timestamp: new Date() }]);
-      setIsLoading(false);
-      return;
-    }
+  /** ----------------------------------------------------------------
+   *  WebSocket helpers
+   * ----------------------------------------------------------------*/
+  const closeWs = () => {
+    wsRef.current?.close(1000, 'reset');
+    wsRef.current = null;
+  };
 
-    const wsUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/^http/, 'ws') + '/chat/ws';
-    console.log('[ChatContext] Attempting WebSocket connection to:', wsUrl);
-    console.log('[ChatContext] Using auth token:', token ? `${token.substring(0, 15)}...` : 'null');
+  const openWs = () => {
+    const url = (process.env.NEXT_PUBLIC_API_BASE_URL || '')
+      .replace(/^http/, 'ws')
+      .concat('/chat/ws');
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+    return ws;
+  };
 
-    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
-      console.log('[ChatContext] Closing existing WebSocket due to new message.');
-      wsRef.current.close(1000, "Starting new message exchange");
-    }
-    
-    // Create a new assistant message placeholder
-    const assistantMessageId = uuidv4();
-    currentAssistantMessageIdRef.current = assistantMessageId;
-    setMessages(prev => [...prev, { id: assistantMessageId, text: '', sender: 'assistant', timestamp: new Date() }]);
+  /** Send conversation + new user prompt to backend. */
+  const sendToBackend = useCallback(
+    async (history: UIMessage[], text: string): Promise<void> => {
+      if (!token) {
+        setMessages(m => [
+          ...m,
+          {
+            id: uuidv4(),
+            text: 'Authentication error – cannot connect.',
+            sender: 'assistant',
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
 
-    const newWs = new WebSocket(wsUrl);
-    wsRef.current = newWs; // Assign immediately
+      closeWs();
 
-    newWs.onopen = () => {
-      console.log('[ChatContext] WebSocket connected.');
-      setIsLoading(true); // Ensure loading is true when connection opens
+      // create stub assistant message so UI can stream
+      const assistantId = uuidv4();
+      currentAssistantId.current = assistantId;
+      setMessages(m => [
+        ...m,
+        { id: assistantId, text: '', sender: 'assistant', timestamp: new Date() },
+      ]);
 
-      const historyForApi = messageHistory.map(m => ({
-        role: m.sender,
-        content: m.text,
-      }));
-      historyForApi.push({ role: 'user', content: userMessageText });
+      const ws = openWs();
 
-      const initialMessagePayload = {
-        messages: historyForApi,
-        options: { enhanceWithContext: true, maxContextItems: 5, includeSourceInfo: true, maxTokens: 1000, temperature: 0.7 },
-        stream: true,
-        token: token,
-        auth: { token: token },
+      ws.onopen = () => {
+        const payload = {
+          messages: [...history, { role: 'user' as const, content: text }].map(
+            msg => {
+              if ('sender' in msg) {
+                // This is a UIMessage
+                return { role: msg.sender, content: msg.text };
+              } else {
+                // This is the new { role: 'user', content: text } message
+                return { role: msg.role, content: msg.content };
+              }
+            },
+          ),
+          options: {
+            enhanceWithContext: true,
+            maxContextItems: 5,
+            includeSourceInfo: true,
+            maxTokens: 1_000,
+            temperature: 0.7,
+          },
+          stream: true,
+          auth: { token },
+        };
+        ws.send(JSON.stringify(payload));
+        setIsLoading(true);
       };
-      console.log('[ChatContext] Sending initial payload:', JSON.stringify(initialMessagePayload, null, 2).substring(0, 300) + "...");
-      newWs.send(JSON.stringify(initialMessagePayload));
-    };
 
-    newWs.onmessage = (event) => {
-      const rawData = event.data as string;
-      console.log('[ChatContext] Raw message received:', rawData.substring(0,300));
-      const chunk = detectChunk(rawData);
-      console.log('[ChatContext] Detected chunk:', chunk);
+      ws.onmessage = e => {
+        const chunk = detectChunk(e.data as string);
+        switch (chunk.type) {
+          case 'content':
+            setMessages(m =>
+              m.map(msg =>
+                msg.id === currentAssistantId.current
+                  ? { ...msg, text: msg.text + chunk.content }
+                  : msg,
+              ),
+            );
+            break;
+          case 'sources':
+            setMessages(m =>
+              m.map(msg =>
+                msg.id === currentAssistantId.current
+                  ? {
+                    ...msg,
+                    text:
+                      msg.text +
+                      chunk.sources
+                        .map(
+                          (s, i) => `\n[Source ${i + 1}: ${s.title}](${s.url ?? ''})`,
+                        )
+                        .join(''),
+                  }
+                  : msg,
+              ),
+            );
+            break;
+          case 'thinking':
+          case 'unknown':
+            // ignore for now; hook UI later if desired
+            break;
+          case 'error':
+            setMessages(m =>
+              m.map(msg =>
+                msg.id === currentAssistantId.current
+                  ? {
+                    ...msg,
+                    text: msg.text + `\n[Server error] ${chunk.content}`,
+                  }
+                  : msg,
+              ),
+            );
+            break;
+        }
+      };
 
-      if (chunk.type === 'content') {
-        setMessages(prev => prev.map(msg =>
-            msg.id === currentAssistantMessageIdRef.current ? { ...msg, text: msg.text + chunk.content } : msg
-        ));
-      } else if (chunk.type === 'thinking') {
-        console.log('[ChatContext] Assistant thinking:', chunk.content);
-        // Optionally, update UI to show thinking state
-      } else if (chunk.type === 'sources') {
-        console.log('[ChatContext] Received sources:', chunk.node.sources);
-        // Optionally, append sources to the message or display them
-        const sourcesText = chunk.node.sources.map((s, i) => `\n[Source ${i+1}: ${s.title || s.id}](${s.url || ''})`).join('');
-        setMessages(prev => prev.map(msg =>
-            msg.id === currentAssistantMessageIdRef.current ? { ...msg, text: msg.text + sourcesText } : msg
-        ));
-      } else if (chunk.type === 'error') {
-        console.error('[ChatContext] Received error chunk from server:', chunk.content);
-        setMessages(prev => prev.map(msg =>
-            msg.id === currentAssistantMessageIdRef.current ? { ...msg, text: msg.text + `\n[Server Error: ${chunk.content}]` } : msg
-        ));
-      } else if (chunk.type === 'unknown') {
-        console.warn('[ChatContext] Received unknown chunk:', chunk.content);
-      }
-    };
-
-    newWs.onerror = (error) => {
-      console.error('[ChatContext] WebSocket error:', error);
-      if (wsRef.current === newWs) { // Only update if it's the current WebSocket erroring
-        setMessages(prev => prev.map(msg =>
-          msg.id === currentAssistantMessageIdRef.current ? { ...msg, text: msg.text + "\n[Chat connection error]" } : msg
-        ));
+      ws.onerror = err => {
+        console.error('WebSocket error', err);
+        setMessages(m =>
+          m.map(msg =>
+            msg.id === currentAssistantId.current
+              ? { ...msg, text: msg.text + '\n[Connection error]' }
+              : msg,
+          ),
+        );
         setIsLoading(false);
-        currentAssistantMessageIdRef.current = null;
-      }
-    };
+      };
 
-    newWs.onclose = (event) => {
-      console.log(`[ChatContext] WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}`);
-      if (wsRef.current === newWs) { // Only act if it's the current WebSocket closing
+      ws.onclose = () => {
         setIsLoading(false);
-        currentAssistantMessageIdRef.current = null;
-        wsRef.current = null; // Clear the ref if this instance is closed
-      }
-    };
-  }, [token]); // Removed messages from dependency array
+        currentAssistantId.current = null;
+      };
+    },
+    [token],
+  );
 
-  const addMessage = useCallback(async (text: string) => {
-    const userMessage: UIMessage = {
-      id: uuidv4(),
-      text,
-      sender: 'user',
-      timestamp: new Date(),
-    };
-    
-    // Important: Get history *before* adding the new user message to the state
-    // This ensures `connectAndSendMessage` gets the correct history for the API call
-    const currentMessageHistory = messages; 
-    
-    setMessages(prevMessages => [...prevMessages, userMessage]);
-    setIsLoading(true); // Set loading true when user sends a message
-    
-    connectAndSendMessage(currentMessageHistory, text);
+  /** Public helper – add a new user message. */
+  const addMessage = useCallback(
+    async (text: string): Promise<void> => {
+      const userMsg: UIMessage = {
+        id: uuidv4(),
+        text,
+        sender: 'user',
+        timestamp: new Date(),
+      };
+      setMessages(m => [...m, userMsg]);
+      sendToBackend(messages, text);
+    },
+    [sendToBackend, messages],
+  );
 
-  }, [connectAndSendMessage]); // Removed messages from dependency array
-
-  useEffect(() => {
-    // Cleanup WebSocket on component unmount
-    return () => {
-      if (wsRef.current) {
-        console.log('[ChatContext] Cleaning up WebSocket on unmount.');
-        wsRef.current.close(1000, "Component unmounting");
-        wsRef.current = null;
-      }
-    };
-  }, []);
+  /** Clean up on unmount. */
+  useEffect(() => () => closeWs(), []);
 
   return (
     <ChatContext.Provider value={{ messages, addMessage, isLoading }}>
@@ -269,9 +314,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
 };
 
 export const useChat = () => {
-  const context = useContext(ChatContext);
-  if (context === undefined) {
-    throw new Error('useChat must be used within a ChatProvider');
-  }
-  return context;
+  const ctx = useContext(ChatContext);
+  if (!ctx) throw new Error('useChat must be inside <ChatProvider>');
+  return ctx;
 };

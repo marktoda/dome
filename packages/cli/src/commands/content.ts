@@ -57,9 +57,7 @@ export function contentCommand(program: Command): void {
     });
 
   // Add GitHub commands
-  const githubCmd = contentCmd
-    .command('github')
-    .description('Manage GitHub repositories in Dome');
+  const githubCmd = contentCmd.command('github').description('Manage GitHub repositories in Dome');
 
   // Add GitHub repository
   githubCmd
@@ -110,7 +108,7 @@ export function contentCommand(program: Command): void {
     .command('update')
     .description('Update existing content in Dome')
     .argument('<contentId>', 'ID of the content to update')
-    .action(async (contentId) => {
+    .action(async contentId => {
       // Check if user is authenticated
       if (!isAuthenticated()) {
         console.log(error('You need to login first. Run `dome login` to authenticate.'));
@@ -155,7 +153,7 @@ export function contentCommand(program: Command): void {
           summary ? `Summary: ${summary}` : '',
           '',
           '<!-- Write your content below this line -->',
-          '',  // Add an extra blank line for clarity
+          '', // Add an extra blank line for clarity
           contentBody,
         ].join('\n');
 
@@ -164,7 +162,9 @@ export function contentCommand(program: Command): void {
         fs.writeFileSync(tempFilePath, fileContent);
 
         // Open in editor
-        console.log(info(`Opening content in your editor (${process.env.EDITOR || 'default editor'})...`));
+        console.log(
+          info(`Opening content in your editor (${process.env.EDITOR || 'default editor'})...`),
+        );
         console.log(info('The CLI will continue when you exit the editor.'));
 
         try {
@@ -226,7 +226,12 @@ export function contentCommand(program: Command): void {
           }
 
           // Update the content
-          const result = await updateContent(contentId, updatedContentBody, updatedTitle, updatedTags);
+          const result = await updateContent(
+            contentId,
+            updatedContentBody,
+            updatedTitle,
+            updatedTags,
+          );
 
           if (result) {
             console.log(success(`Content updated successfully!`));

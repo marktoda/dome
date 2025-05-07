@@ -2,7 +2,14 @@ import { z } from 'zod';
 import { getLogger } from '@dome/common';
 import { Document } from '../types';
 import { RetrievalTool, RetrievalInput } from '.';
-import { createTodosClient, TodosWorkerBinding, TodoStatus, TodoPriority, TodoItem, TodoFilter } from '@dome/todos/client';
+import {
+  createTodosClient,
+  TodosWorkerBinding,
+  TodoStatus,
+  TodoPriority,
+  TodoItem,
+  TodoFilter,
+} from '@dome/todos/client';
 
 /* ------------------------------------------------------------------ */
 /* Schemas                                                            */
@@ -11,9 +18,15 @@ export const todoRetrievalInput = z.object({
   /** User ID to fetch todos for */
   userId: z.string(),
   /** Filter by todo status */
-  status: z.nativeEnum(TodoStatus).or(z.array(z.nativeEnum(TodoStatus))).optional(),
+  status: z
+    .nativeEnum(TodoStatus)
+    .or(z.array(z.nativeEnum(TodoStatus)))
+    .optional(),
   /** Filter by todo priority */
-  priority: z.nativeEnum(TodoPriority).or(z.array(z.nativeEnum(TodoPriority))).optional(),
+  priority: z
+    .nativeEnum(TodoPriority)
+    .or(z.array(z.nativeEnum(TodoPriority)))
+    .optional(),
   /** Filter by category */
   category: z.string().optional(),
   /** Filter by due date (before) */
@@ -42,7 +55,7 @@ export const todoRetrievalOutput = z.object({
       updatedAt: z.number(),
       estimatedEffort: z.string().optional(),
       actionableSteps: z.string().optional(),
-    })
+    }),
   ),
   totalCount: z.number().optional(),
 });
@@ -59,7 +72,8 @@ export const todoRetrievalTool: RetrievalTool<
   ParsedTodoRetrievalInput
 > = {
   name: 'todo_retrieval',
-  description: 'Retrieves the user\'s todo list with filtering options. Always use in conjunction with user notes',
+  description:
+    "Retrieves the user's todo list with filtering options. Always use in conjunction with user notes",
 
   inputSchema: todoRetrievalInput,
   outputSchema: todoRetrievalOutput,
@@ -177,7 +191,7 @@ ${steps}
         userId: 'test-user',
         status: TodoStatus.PENDING,
         priority: TodoPriority.HIGH,
-        limit: 5
+        limit: 5,
       },
       output: {
         items: [
@@ -192,9 +206,9 @@ ${steps}
             createdAt: Date.now(),
             updatedAt: Date.now(),
             estimatedEffort: '2 hours',
-          }
+          },
         ],
-        totalCount: 1
+        totalCount: 1,
       },
       description: 'Shows high priority pending tasks with upcoming deadlines',
     },

@@ -42,7 +42,9 @@ export async function retryAsync<T>(
           error: lastError.message,
           stack: lastError.stack,
         },
-        `Attempt ${attempt} for ${operationName} failed. Retries left: ${config.attempts - attempt}`,
+        `Attempt ${attempt} for ${operationName} failed. Retries left: ${
+          config.attempts - attempt
+        }`,
       );
 
       if (attempt < config.attempts) {

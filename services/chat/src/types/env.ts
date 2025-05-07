@@ -11,7 +11,7 @@ export interface Env {
   AUTH?: any; // Auth service binding
 
   // AI binding
-  AI: any; 
+  AI: any;
 
   // Vectorize index
   VECTORIZE_INDEX: any;

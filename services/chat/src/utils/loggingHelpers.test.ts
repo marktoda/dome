@@ -19,7 +19,7 @@ describe('loggingHelpers', () => {
             source: 'test',
             sourceType: 'test',
             createdAt: '2025-01-01',
-            relevanceScore: 0.9
+            relevanceScore: 0.9,
           },
         },
         {
@@ -30,7 +30,7 @@ describe('loggingHelpers', () => {
             source: 'test',
             sourceType: 'test',
             createdAt: '2025-01-02',
-            relevanceScore: 0.8
+            relevanceScore: 0.8,
           },
         },
         {
@@ -41,7 +41,7 @@ describe('loggingHelpers', () => {
             source: 'test',
             sourceType: 'test',
             createdAt: '2025-01-03',
-            relevanceScore: 0.7
+            relevanceScore: 0.7,
           },
         },
         {
@@ -52,7 +52,7 @@ describe('loggingHelpers', () => {
             source: 'test',
             sourceType: 'test',
             createdAt: '2025-01-04',
-            relevanceScore: 0.6
+            relevanceScore: 0.6,
           },
         },
       ];

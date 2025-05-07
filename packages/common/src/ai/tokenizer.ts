@@ -1,6 +1,6 @@
 /**
  * Tokenization utilities for LLMs
- * 
+ *
  * This module provides utilities for counting tokens in text for various LLM models.
  * It uses tiktoken for OpenAI models and provides estimates for other models.
  */
@@ -13,9 +13,9 @@ const logger = getLogger().child({ component: 'Tokenizer' });
 const MODEL_ENCODING_MAP: Record<string, string> = {
   'gpt-3.5': 'cl100k_base',
   'gpt-4': 'cl100k_base',
-  'claude': 'cl100k_base', // using OpenAI's encoding as an approximation
-  'llama': 'cl100k_base',   // using OpenAI's encoding as an approximation
-  'mistral': 'cl100k_base', // using OpenAI's encoding as an approximation
+  claude: 'cl100k_base', // using OpenAI's encoding as an approximation
+  llama: 'cl100k_base', // using OpenAI's encoding as an approximation
+  mistral: 'cl100k_base', // using OpenAI's encoding as an approximation
 };
 
 /**
@@ -26,7 +26,7 @@ const MODEL_ENCODING_MAP: Record<string, string> = {
 function getEncodingForModel(modelId: string): string {
   // Default to cl100k_base (GPT-4) encoding
   let encodingName = 'cl100k_base';
-  
+
   // Match model ID to a known family
   for (const [family, encoding] of Object.entries(MODEL_ENCODING_MAP)) {
     if (modelId.includes(family)) {
@@ -34,7 +34,7 @@ function getEncodingForModel(modelId: string): string {
       break;
     }
   }
-  
+
   return encodingName;
 }
 
@@ -58,7 +58,7 @@ function estimateTokenCount(text: string): number {
  */
 export function countTokens(text: string, modelId = 'gpt-4'): number {
   if (!text) return 0;
-  
+
   try {
     // Try to use tiktoken if available (in Node.js environment)
     // Check for Node.js environment in a way that works with TypeScript
@@ -66,29 +66,26 @@ export function countTokens(text: string, modelId = 'gpt-4'): number {
       try {
         // Dynamic import to avoid bundling issues
         const { encoding_for_model } = require('@dqbd/tiktoken');
-        
+
         // Get the appropriate encoding for the model
         const encodingName = getEncodingForModel(modelId);
         const encoder = encoding_for_model(encodingName as any);
         const tokens = encoder.encode(text);
-        
+
         return tokens.length;
       } catch (error) {
         logger.warn(
           { error: (error as Error).message },
-          'Failed to use tiktoken, falling back to estimation'
+          'Failed to use tiktoken, falling back to estimation',
         );
         return estimateTokenCount(text);
       }
     }
-    
+
     // If in browser or tiktoken failed, use estimation
     return estimateTokenCount(text);
   } catch (error) {
-    logger.warn(
-      { error: (error as Error).message },
-      'Error counting tokens, using estimation'
-    );
+    logger.warn({ error: (error as Error).message }, 'Error counting tokens, using estimation');
     return estimateTokenCount(text);
   }
 }
@@ -105,11 +102,11 @@ export function countMessageTokens(
 ): number {
   // Count tokens in the message content
   const contentTokens = countTokens(message.content, modelId);
-  
+
   // Add tokens for role formatting (approximate)
   // Different models have different message formatting
   const roleFormatTokens = 4; // A reasonable approximation for most models
-  
+
   return contentTokens + roleFormatTokens;
 }
 
@@ -124,7 +121,7 @@ export function countMessagesTokens(
   modelId = 'gpt-4',
 ): number {
   if (!messages || messages.length === 0) return 0;
-  
+
   // Sum tokens for all messages
   return messages.reduce((total, message) => total + countMessageTokens(message, modelId), 0);
 }

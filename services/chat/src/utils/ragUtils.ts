@@ -2,7 +2,6 @@ import { AgentState, Document } from '../types';
 import { getLogger, getModelConfig, countTokens } from '@dome/common';
 import { DOC_METADATA_TOKENS } from './tokenConstants';
 
-
 /**
  * Filter documents by relevance score
  * @param docs The documents to filter

@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Ensure DOME_API_URL is set in your environment variables
-const DOME_API_URL = process.env.DOME_API_URL || 'http://localhost:8787'; 
+const DOME_API_URL = process.env.DOME_API_URL || 'http://localhost:8787';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const { id } = params;
+export async function GET(request: NextRequest, context: { params: { id: string } }) {
+  const { id } = context.params;
 
   if (!id) {
     return NextResponse.json({ error: 'Note ID is required' }, { status: 400 });
@@ -28,7 +25,6 @@ export async function GET(
   //   headers['x-api-key'] = process.env.DOME_API_KEY;
   // }
 
-
   try {
     const response = await fetch(`${DOME_API_URL}/notes/${id}`, {
       method: 'GET',
@@ -44,12 +40,13 @@ export async function GET(
         if (response.headers.get('content-type')?.includes('application/json')) {
           details = JSON.parse(errorData);
         }
-      } catch (_parseError) { // Prefixed unused variable with _
+      } catch {
+        // Removed unused _parseError variable
         // Ignore if not JSON, details will remain as text
       }
       return NextResponse.json(
         { error: `Failed to fetch note: ${response.statusText}`, details },
-        { status: response.status }
+        { status: response.status },
       );
     }
 
@@ -61,6 +58,9 @@ export async function GET(
     if (error instanceof Error) {
       errorMessage = error.message;
     }
-    return NextResponse.json({ error: 'Failed to proxy request to backend', details: errorMessage }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to proxy request to backend', details: errorMessage },
+      { status: 500 },
+    );
   }
 }

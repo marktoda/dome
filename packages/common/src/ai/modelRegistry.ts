@@ -106,9 +106,7 @@ export class ModelRegistry {
    * @returns Array of model configurations
    */
   getByProvider(provider: ModelProvider): BaseModelConfig[] {
-    return Array.from(this.modelsByKey.values()).filter(
-      (model) => model.provider === provider
-    );
+    return Array.from(this.modelsByKey.values()).filter(model => model.provider === provider);
   }
 
   /**
@@ -118,9 +116,7 @@ export class ModelRegistry {
    */
   getAll(productionOnly = false): BaseModelConfig[] {
     const allModels = Array.from(this.modelsByKey.values());
-    return productionOnly
-      ? allModels.filter((model) => model.productionReady)
-      : allModels;
+    return productionOnly ? allModels.filter(model => model.productionReady) : allModels;
   }
 
   /**

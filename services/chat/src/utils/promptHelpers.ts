@@ -1,10 +1,7 @@
 import { Document } from '../types';
 import { AIMessage, MessagePair } from '../types';
 import { getLogger, getDefaultModel, countTokens } from '@dome/common';
-import {
-  DEFAULT_MAX_TOTAL_DOC_TOKENS,
-  DOC_METADATA_TOKENS,
-} from './tokenConstants';
+import { DEFAULT_MAX_TOTAL_DOC_TOKENS, DOC_METADATA_TOKENS } from './tokenConstants';
 
 /**
  * Format retrieved documents for inclusion in a prompt
@@ -163,8 +160,7 @@ export function buildMessages(
       const userMsg = { role: 'user' as const, content: pair.user.content };
       const assistantMsg = { role: 'assistant' as const, content: pair.assistant.content };
 
-      const pairTokens =
-        countTokens(userMsg.content) + countTokens(assistantMsg.content);
+      const pairTokens = countTokens(userMsg.content) + countTokens(assistantMsg.content);
 
       if (used + pairTokens > budget) break;
 
@@ -177,7 +173,10 @@ export function buildMessages(
   /* ── 3 · Assemble in chronological order + current user turn ─────── */
   messages.push(...pairs);
   messages.push({ role: 'user', content: userPrompt });
-  getLogger().info({ messages, historyLength: history?.length }, '[BuildMessages] Built messages for LLM');
+  getLogger().info(
+    { messages, historyLength: history?.length },
+    '[BuildMessages] Built messages for LLM',
+  );
 
   return messages;
 }

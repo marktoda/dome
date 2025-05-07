@@ -19,7 +19,7 @@ export class ChatController {
    * Create a new chat controller
    * @param chatService Chat service instance
    */
-  constructor(private chatService: ChatClient) { }
+  constructor(private chatService: ChatClient) {}
 
   /**
    * Handle chat requests

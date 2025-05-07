@@ -19,10 +19,10 @@ export interface RequestContext {
 }
 
 export const getIdentity: () => Identity = () => {
-  const id = ctx.getStore()?.identity
+  const id = ctx.getStore()?.identity;
   if (!id) throw new Error('No identity found in context');
   return id;
-}
+};
 export const getLogger: () => Logger = () => ctx.getStore()?.logger ?? baseLogger;
 export const getRequestId: () => string | undefined = () => ctx.getStore()?.requestId;
 
@@ -31,7 +31,10 @@ type Meta = Record<string, unknown> & {
   identity?: Identity;
 };
 
-export async function withContext<T>(meta: Meta, fn: (req: RequestContext) => Promise<T> | T): Promise<T> {
+export async function withContext<T>(
+  meta: Meta,
+  fn: (req: RequestContext) => Promise<T> | T,
+): Promise<T> {
   const parent = ctx.getStore() ?? { logger: baseLogger };
 
   // 1. merge parent + overrides
