@@ -18,121 +18,141 @@ import {
 } from '@/lib/chat-types';
 
 /** ------------------------------------------------------------------
- *  Chunk parsing
+ *  Chunk parsing (aligned with CLI)
  * ------------------------------------------------------------------*/
 
-// export interface SourceItem { // Moved to chat-types.ts
-//   id: string;
-//   title: string;
-//   source: string;
-//   url?: string;
-//   relevanceScore: number;
-// }
-
-export type ChatMessageChunk =
-  | { type: 'content'; content: string }
-  | { type: 'thinking'; content: string }
-  | { type: 'sources'; sources: SourceItem[] }
-  | { type: 'error'; content: string }
-  | { type: 'unknown'; content: string };
-
-/** Detectors map raw server‑sent events → structured chunks. */
-const detectors: ((raw: string, parsed: unknown) => ChatMessageChunk | null)[] = [
-  // LangGraph “messages” node ➜ assistant content
-  (_, p) => {
-    if (
-      Array.isArray(p) &&
-      p[0] === 'messages' &&
-      Array.isArray(p[1]) &&
-      p[1][0]?.kwargs?.content
-    ) {
-      return { type: 'content', content: p[1][0].kwargs.content as string };
-    }
-    return null;
-  },
-  // LangGraph “updates” node ➜ chain reasoning
-  (_, p) => {
-    if (Array.isArray(p) && p[0] === 'updates') {
-      const node = p[1] as Record<string, unknown>; // Changed any to unknown
-      const first = node?.[Object.keys(node)[0]] as { reasoning?: string | string[] } | undefined; // Added type assertion for first
-      const reasoning: string | string[] | undefined = first?.reasoning;
-      if (typeof reasoning === 'string' && reasoning.trim())
-        return { type: 'thinking', content: reasoning };
-      if (Array.isArray(reasoning) && reasoning.length)
-        return { type: 'thinking', content: reasoning.at(-1)! };
-    }
-    return null;
-  },
-  // LangGraph “retrieve” updates ➜ sources
-  (_, p) => {
-    // Re-using/defining a similar structure to UpdateRetrievePayload for clarity here
-    interface RetrievalPayload {
-      retrieve?: {
-        retrievals?: Array<{
-          chunks?: Array<Record<string, unknown>>;
-          // Add other potential properties of retrieval item if necessary
-        }>;
+// CLI's ChatMessageChunk structure
+type CliChatMessageChunk =
+  | { type: 'content' | 'thinking' | 'unknown'; content: string }
+  | {
+      type: 'sources';
+      node: { // This 'node' is the value from p[1][nodeId] in the CLI detector
+        sources: SourceItem | SourceItem[]; // The 'sources' property itself can be one or many
       };
     }
+  | { type: 'error'; content: string }; // Added error type for completeness
 
-    if (
-      Array.isArray(p) &&
-      p.length > 1 && // ensure p[1] exists
-      p[0] === 'updates' &&
-      (p[1] as RetrievalPayload)?.retrieve?.retrievals
-    ) {
-      const updatePayload = p[1] as RetrievalPayload;
-      // Ensure retrievals is an array before proceeding
-      const retrievals = Array.isArray(updatePayload.retrieve?.retrievals) ? updatePayload.retrieve.retrievals : [];
-      const sources: SourceItem[] = [];
-      retrievals.forEach(r => {
-        // Ensure r.chunks is an array before forEach
-        const chunksArray = Array.isArray(r.chunks) ? r.chunks : [];
-        chunksArray.forEach((c: Record<string, unknown>) => // c is Record<string, unknown>
-          sources.push({
-            id: (c.id as string) ?? uuidv4(),
-            title: (c.title as string) ?? (c.id as string) ?? 'Untitled',
-            source:
-              (c.source as string) ?? ((c.metadata as Record<string, unknown>)?.source as string) ?? 'N/A',
-            url: (c.url as string | undefined) ?? ((c.metadata as { url?: string })?.url),
-            relevanceScore: (c.relevanceScore as number) ?? (c.score as number) ?? 0,
-          }),
-        );
-      });
-      return sources.length ? { type: 'sources', sources } : null;
+// Extensible chunk‑type detector stack (from CLI: packages/cli/src/utils/api.ts)
+interface ChunkDetector {
+  (raw: string, parsed: any): CliChatMessageChunk | null;
+}
+const detectors: ChunkDetector[] = [
+  // LangGraph updates - sources
+  // Extracts sources if the node ID is 'doc_to_sources'.
+  // The 'node' field in the returned chunk will contain the data from p[1]['doc_to_sources'].
+  // This data is expected to have a 'sources' property which can be a single SourceItem or SourceItem[].
+  (raw, p) => {
+    if (Array.isArray(p) && p[0] === 'updates') {
+      const nodeId: string = Object.keys(p[1])[0];
+      if (nodeId !== 'doc_to_sources') return null;
+      const node = p[1][nodeId];
+      // Ensure the node has a 'sources' property before returning
+      if (node && typeof node === 'object' && 'sources' in node) {
+        return { type: 'sources', node: node as { sources: SourceItem | SourceItem[] } };
+      }
     }
     return null;
   },
-  // Plain string JSON
-  (_, p) => {
-    if (typeof p === 'string') return { type: 'content', content: p };
-    if (
-      p &&
-      typeof p === 'object' &&
-      'content' in p &&
-      typeof (p as { content: unknown }).content === 'string' && // Check if content is string
-      Object.keys(p).length === 1
-    ) {
-      return { type: 'content', content: (p as { content: string }).content }; // Cast to { content: string }
+
+  // LangGraph update - thinking
+  // Extracts reasoning content if present in an 'updates' event.
+  (raw, p) => {
+    if (Array.isArray(p) && p[0] === 'updates') {
+      const nodeId: string = Object.keys(p[1])[0];
+      const node = p[1][nodeId];
+
+      if (node && node.reasoning && Array.isArray(node.reasoning) && node.reasoning.length > 0) {
+        const lastReasoning = node.reasoning[node.reasoning.length - 1];
+        if (typeof lastReasoning === 'string') {
+          return { type: 'thinking', content: lastReasoning };
+        }
+      }
     }
     return null;
   },
+
+  // LangGraph messages node - content chunks
+  // Specifically targets content from the 'generate_answer' node.
+  (raw, p) => {
+    if (Array.isArray(p) && p[0] === 'messages') {
+      const details = p[1]; // details is expected to be an array of message objects
+      // Check if 'details' is an array and has at least one element
+      // The actual content is in details[0].kwargs.content
+      // The node name check might be on a different part of the payload structure
+      // For langgraph, often the event name itself or a metadata field indicates the node.
+      // The CLI's `details[1].langgraph_node` was problematic.
+      // Let's assume the structure is `["messages", arrayOfMessages, {name: "node_name_here"}]`
+      // or the node name is part of the log path for run_log events.
+      // For now, we'll check if p[2] (if it exists) has a name property.
+      // This is a common pattern for 'event' type streams from LangGraph.
+      let isGenerateAnswerNode = false;
+      if (p.length > 2 && typeof p[2] === 'object' && p[2] !== null && 'name' in p[2]) {
+        if ((p[2] as {name: string}).name === 'generate_answer') {
+          isGenerateAnswerNode = true;
+        }
+      } else if (raw.includes('"generate_answer"')) { // Fallback: simple string check in raw data
+        isGenerateAnswerNode = true;
+      }
+
+
+      if (isGenerateAnswerNode && Array.isArray(details) && details.length > 0 && details[0]?.kwargs?.content) {
+        if (typeof details[0].kwargs.content === 'string') {
+          return { type: 'content', content: details[0].kwargs.content };
+        }
+      }
+    }
+    return null;
+  },
+
+  // Handle tasks object that contains a task query (from CLI)
+  (raw, p) => {
+    if (typeof p === 'object' && p !== null && p.tasks && Array.isArray(p.tasks)) {
+      if (p.instructions && typeof p.instructions === 'string') {
+        return { type: 'thinking', content: p.instructions };
+      }
+      if (p.reasoning && typeof p.reasoning === 'string') {
+        return { type: 'thinking', content: p.reasoning };
+      }
+    }
+    return null;
+  },
+  // Basic error string detection
+  (raw, p) => {
+    if (typeof p === 'string' && /error/i.test(p)) {
+        return { type: 'error', content: p };
+    }
+    if (typeof p === 'object' && p !== null && 'error' in p && typeof p.error === 'string') {
+        return { type: 'error', content: p.error };
+    }
+    return null;
+  }
 ];
 
-/** Parse any server line into a `ChatMessageChunk`. */
-function detectChunk(data: string): ChatMessageChunk {
+// detectChunk function (from CLI: packages/cli/src/utils/api.ts)
+const detectChunk = (data: string): CliChatMessageChunk => {
   try {
     const parsed = JSON.parse(data);
     for (const det of detectors) {
-      const out = det(data, parsed);
-      if (out) return out;
+      const match = det(data, parsed);
+      if (match) return match;
     }
-    return { type: 'unknown', content: `Unknown JSON: ${data.slice(0, 80)}…` };
+    // If no specific detector matches, but it's a simple JSON string like {"content": "..."}
+    if (typeof parsed === 'object' && parsed !== null && 'content' in parsed && typeof parsed.content === 'string' && Object.keys(parsed).length === 1) {
+      return { type: 'content', content: parsed.content };
+    }
+
   } catch {
+    // If JSON.parse fails, treat as plain text content, unless it looks like an error
     if (/error/i.test(data)) return { type: 'error', content: data };
-    return { type: 'content', content: data };
+    // It might be a plain string chunk which should be treated as content
+    if (data && typeof data === 'string' && data.trim() !== '') {
+        return { type: 'content', content: data };
+    }
   }
-}
+  // Fallback for unparsed or unhandled JSON structures
+  return { type: 'unknown', content: data };
+};
+
 
 /** ------------------------------------------------------------------
  *  React context
@@ -221,11 +241,49 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       };
 
       ws.onmessage = e => {
-        const chunk = detectChunk(e.data as string);
+        let chunk = detectChunk(e.data as string);
+
+        // CLI's additional processing for 'unknown' chunks
+        if (chunk.type === 'unknown' && chunk.content) {
+          const raw = chunk.content;
+          // Skip printing raw JSON for recognized LangGraph message formats
+          if (
+            raw.startsWith('["messages"') ||
+            raw.startsWith('["updates"') ||
+            raw.includes('"generatedText"') || // A common key in some LLM responses
+            raw.includes('"reasoning"') // Another common key
+          ) {
+            console.debug('[ChatContext] Skipping internal LangGraph format:', raw.substring(0, 80) + '...');
+            return; // Skip this chunk
+          }
+          try {
+            const parsed = JSON.parse(raw); // raw is chunk.content here
+            if (parsed && typeof parsed === 'object') {
+              if (typeof parsed.content === 'string') {
+                chunk = { type: 'content', content: parsed.content };
+              } else if (typeof parsed.message === 'string') {
+                chunk = { type: 'content', content: parsed.message };
+              } else if (typeof parsed.response === 'string') {
+                chunk = { type: 'content', content: parsed.response };
+              } else if (typeof parsed.answer === 'string') { // Common in RAG
+                chunk = { type: 'content', content: parsed.answer };
+              }
+            }
+          } catch (parseError) {
+            // Not JSON or not in expected format, keep as 'unknown' or treat as plain text if it's just a string
+            if (typeof raw === 'string' && raw.trim() !== '') {
+                 // If it wasn't caught by detectors but is a plain string, treat as content.
+                 // This handles cases where the stream might send un-JSONified string parts.
+                 chunk = { type: 'content', content: raw };
+            }
+          }
+        }
+
+
         switch (chunk.type) {
           case 'content':
-            setMessages(m =>
-              m.map(msg =>
+            setMessages(prevMessages =>
+              prevMessages.map(msg =>
                 msg.id === currentAssistantId.current
                   ? { ...msg, text: msg.text + chunk.content }
                   : msg,
@@ -233,29 +291,42 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             );
             break;
           case 'sources':
-            setMessages(m =>
-              m.map(msg =>
-                msg.id === currentAssistantId.current
-                  ? { ...msg, sources: chunk.sources }
-                  : msg,
-              ),
-            );
+            // Ensure chunk.node and chunk.node.sources exist
+            if (chunk.node && chunk.node.sources) {
+              const newSources = Array.isArray(chunk.node.sources)
+                ? chunk.node.sources
+                : [chunk.node.sources];
+              setMessages(prevMessages =>
+                prevMessages.map(msg =>
+                  msg.id === currentAssistantId.current
+                    ? { ...msg, sources: [...(msg.sources || []), ...newSources] } // Append sources
+                    : msg,
+                ),
+              );
+            }
             break;
           case 'thinking':
-          case 'unknown':
-            // ignore for now; hook UI later if desired
+            console.log('[ChatContext] Thinking:', chunk.content);
+            // Optionally, update UI to show thinking state
             break;
           case 'error':
-            setMessages(m =>
-              m.map(msg =>
+            console.error('[ChatContext] Error:', chunk.content);
+            setMessages(prevMessages =>
+              prevMessages.map(msg =>
                 msg.id === currentAssistantId.current
                   ? {
                     ...msg,
-                    text: msg.text + `\n[Server error] ${chunk.content}`,
+                    text: msg.text + `\n[Server Error] ${chunk.content}`,
                   }
                   : msg,
               ),
             );
+            break;
+          case 'unknown':
+            // Only log if it wasn't converted to 'content' above
+            console.log('[ChatContext] Unknown chunk:', chunk.content);
+            // Potentially append to a debug view or a less prominent part of the message
+            // For now, we won't append it to the main message text to keep it clean.
             break;
         }
       };
