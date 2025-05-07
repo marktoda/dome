@@ -22,7 +22,7 @@ export function updateMockIntegrationStatus(
   userId: string,
   platform: IntegrationPlatform,
   isConnected: boolean,
-  userData?: { name: string; email: string }
+  userData?: { name?: string; email?: string; username?: string; profileUrl?: string; } // Updated to include new optional fields
 ): IntegrationStatus[] {
   if (!mockUserIntegrationStatuses[userId]) {
     mockUserIntegrationStatuses[userId] = [];

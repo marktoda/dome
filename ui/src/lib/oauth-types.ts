@@ -18,5 +18,7 @@ export interface IntegrationStatus {
     // Optional: basic user info from the connected service
     name?: string;
     email?: string;
+    username?: string; // e.g., GitHub username
+    profileUrl?: string; // URL to the user's profile on the platform
   };
 }
