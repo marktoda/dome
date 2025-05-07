@@ -48,34 +48,6 @@ const buildServices = (env: Env) => {
   }
 };
 
-/**
- * Run a function with enhanced logging and error handling
- * @param meta Metadata for logging context
- * @param fn Function to execute
- * @returns Result of the function
- */
-const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
-  withContext(meta, async logger => {
-    try {
-      return await fn();
-    } catch (err) {
-      const requestId = typeof meta.requestId === 'string' ? meta.requestId : undefined;
-      const operation = typeof meta.op === 'string' ? meta.op : 'unknown_operation';
-
-      const errorContext = {
-        operation,
-        requestId,
-        service: 'ai-processor',
-        timestamp: new Date().toISOString(),
-        ...meta,
-      };
-
-      logError(err, `Unhandled error in ${operation}`, errorContext);
-
-      // Convert to a proper DomeError before rethrowing
-      throw toDomeError(err, `Error in ${operation}`, errorContext);
-    }
-  });
 
 
 /**
@@ -201,24 +173,34 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
             requestId,
           });
 
+          // Add this check to satisfy TypeScript's null analysis after assertExists
+          if (!metadata) {
+            // This case should ideally not be reached if assertExists works as expected
+            // and throws an error. Logging it as an unexpected situation.
+            logError(new Error(`Metadata unexpectedly null after assertExists for ID: ${id}`), 'Unexpected null metadata', {
+              id,
+              operation: 'reprocessById',
+              requestId,
+            });
+            return { id, success: false };
+          }
+ 
           // Create a new content message and process it
-          // Since we used assertExists, TypeScript should know metadata is not null
-          // But we'll add a non-null assertion to make it explicit
           const message: NewContentMessage = {
-            id: metadata!.id,
-            userId: metadata!.userId,
-            category: metadata!.category,
-            mimeType: metadata!.mimeType,
+            id: metadata.id,
+            userId: metadata.userId,
+            category: metadata.category,
+            mimeType: metadata.mimeType,
           };
-
+ 
           await this.services.processor.processMessage(message, requestId);
-
+ 
           aiProcessorMetrics.trackOperation('reprocess_by_id', true, {
             id,
             requestId,
-            contentType: metadata!.category || metadata!.mimeType || 'unknown',
+            contentType: metadata.category || metadata.mimeType || 'unknown',
           });
-
+ 
           return { id, success: true };
         } catch (error) {
           const domeError = toDomeError(error, `Error reprocessing content with ID ${id}`, {
@@ -353,7 +335,6 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
     );
   }
 
-  /* }
 
   /**
    * Queue handler for processing regular content messages
