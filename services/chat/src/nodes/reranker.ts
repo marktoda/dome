@@ -46,14 +46,14 @@ interface WorkersAiOpts extends BaseOpts {
 
 interface CohereOpts extends BaseOpts {
   implementation: 'cohere';
-  model: 'rerank-english-v2.0' | 'rerank-multilingual-v2.0' | string;
+  model: 'rerank-v3.5';
   cohereApiKey?: string;
 }
 
-const DEFAULTS: WorkersAiOpts = {
+const DEFAULTS: RerankerOptions = {
   name: 'global',
-  implementation: 'workers-ai',
-  model: '@cf/baai/bge-reranker-base',
+  implementation: 'cohere',
+  model: 'rerank-v3.5',
   scoreThreshold: 0.2,
   maxResults: 50,
   keepBelowThreshold: false,
@@ -73,11 +73,11 @@ const log = getLogger().child({ component: 'Reranker' });
 /*  Public factory                                                             */
 /* -------------------------------------------------------------------------- */
 
-export function createReranker(opts: RerankerOptions) {
+export function createReranker(opts: RerankerOptions, env: Env) {
   const cfg = { ...DEFAULTS, ...opts } as Required<RerankerOptions>;
 
   const runner =
-    cfg.implementation === 'workers-ai' ? new WorkersAIReranker(cfg) : new CohereReranker(cfg);
+    cfg.implementation === 'workers-ai' ? new WorkersAIReranker(cfg) : new CohereReranker(cfg, env);
 
   return (retrieval: RetrievalResult, query: string, env: Env, traceId: string, spanId: string) =>
     runner.rerank(retrieval, query, env, traceId, spanId);
@@ -114,13 +114,13 @@ function filterAndLimit(chunks: DocumentChunk[], cfg: Partial<BaseOpts>): Docume
   const filtered = cfg.keepBelowThreshold
     ? chunks
     : chunks.filter(c => {
-        const score =
-          (c.metadata as any).hybridScore ??
-          c.metadata.rerankerScore ??
-          c.metadata.relevanceScore ??
-          0;
-        return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
-      });
+      const score =
+        (c.metadata as any).hybridScore ??
+        c.metadata.rerankerScore ??
+        c.metadata.relevanceScore ??
+        0;
+      return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
+    });
   return filtered.slice(0, cfg.maxResults);
 }
 
@@ -129,7 +129,7 @@ function filterAndLimit(chunks: DocumentChunk[], cfg: Partial<BaseOpts>): Docume
 /* -------------------------------------------------------------------------- */
 
 abstract class BaseReranker {
-  constructor(protected readonly cfg: Required<RerankerOptions>) {}
+  constructor(protected readonly cfg: Required<RerankerOptions>) { }
 
   async rerank(
     res: RetrievalResult,
@@ -207,14 +207,17 @@ abstract class BaseReranker {
 
 class CohereReranker extends BaseReranker {
   private readonly reranker: CohereRerank;
-  constructor(cfg: Required<RerankerOptions>) {
+  constructor(cfg: Required<CohereOpts>, env: Env) {
     super(cfg);
-    this.reranker = new CohereRerank({ apiKey: (cfg as any).cohereApiKey, model: cfg.model });
+    const apiKey = env.COHERE_API_KEY || cfg.cohereApiKey;
+    this.reranker = new CohereRerank({ apiKey, model: cfg.model });
   }
 
   protected async rank(chunks: DocumentChunk[], query: string): Promise<DocumentChunk[]> {
     const docs = chunks.map(c => new Document({ pageContent: c.content, metadata: { id: c.id } }));
+    getLogger().info({ docs }, 'Cohere reranker request');
     const out = await this.reranker.rerank(docs, query);
+    getLogger().info({ out }, 'Cohere reranker response');
     return out
       .map(r => {
         const chunk = chunks[r.index];
@@ -311,7 +314,7 @@ export async function reranker(
     const query = [...(state.messages ?? [])].reverse().find(m => m.role === 'user')?.content ?? '';
     const modelOpts = pickGlobalModel(allChunks, query, env);
 
-    const globalRerank = createReranker({ ...DEFAULTS, ...modelOpts, name: 'global' });
+    const globalRerank = createReranker({ ...DEFAULTS, ...modelOpts, name: 'global' }, env);
     const res = await globalRerank(
       {
         query,
@@ -383,7 +386,7 @@ function pickGlobalModel(allChunks: DocumentChunk[], query: string, env: Env): R
   if ((env as any).COHERE_API_KEY) {
     return {
       implementation: 'cohere',
-      model: multilingual ? 'rerank-multilingual-v2.0' : 'rerank-english-v2.0',
+      model: 'rerank-v3.5'
     } as CohereOpts;
   }
   return { implementation: 'workers-ai', model: '@cf/baai/bge-reranker-base' } as WorkersAiOpts;
