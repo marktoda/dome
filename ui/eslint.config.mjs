@@ -19,6 +19,7 @@ export default [
     rules: {
       /* let me experiment without complaints */
       'no-console': 'off',
+      'no-explicit-any': 'off',
       'no-debugger': 'off',
       'no-param-reassign': 'off',
       'no-plusplus': 'off',
