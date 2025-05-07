@@ -109,3 +109,29 @@ export interface QueueMessage<T> {
 export interface CFExecutionContext extends ExecutionContext {
   run<T>(callback: () => T): Promise<T>;
 }
+
+/**
+ * Represents the known AI models that can be used with the Ai.run method.
+ * This helps in providing type safety when specifying models.
+ */
+export type KnownAiModels =
+  | '@cf/baai/bge-large-en-v1.5'
+  | '@cf/baai/bge-base-en-v1.5'
+  | '@cf/baai/bge-small-en-v1.5'
+  // Add other known models here as they are supported or used
+  | (string & {}); // Allows for other string models while providing autocompletion for known ones
+
+/**
+ * Expected structure of the input for AI text embedding models.
+ */
+export interface AiTextEmbeddingInput {
+  text: string | string[];
+}
+
+/**
+ * Expected structure of the output from AI text embedding models.
+ */
+export interface AiTextEmbeddingOutput {
+  shape: number[];
+  data: number[][];
+}

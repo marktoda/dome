@@ -1,6 +1,6 @@
 import {
   getLogger as getDomeLogger,
-  metrics,
+  // metrics, // We will use our service-specific constellationMetrics
   logError as domeLogError,
   trackOperation as domeTrackOperation,
   logOperationStart,
@@ -80,6 +80,6 @@ export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
 }
 
 /**
- * Export metrics and logging utilities from @dome/common
+ * Export logging utilities from @dome/common (excluding generic metrics)
  */
-export { metrics, logOperationStart, logOperationSuccess, logOperationFailure };
+export { logOperationStart, logOperationSuccess, logOperationFailure };

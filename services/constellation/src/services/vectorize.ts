@@ -5,10 +5,11 @@ import {
   getLogger,
   logError,
   trackOperation,
-  sanitizeForLogging,
   constellationMetrics as metrics,
 } from '../utils/logging';
 import { assertValid, VectorizeError, toDomeError } from '../utils/errors';
+import { sliceIntoBatches } from '../utils/batching';
+import { retryAsync, RetryConfig } from '../utils/retry';
 
 /* ------------------------------------------------------------------ */
 /*  configuration                                                     */
@@ -43,14 +44,6 @@ function getDimensions(d: any): number {
   return d?.dimensions ?? d?.config?.dimensions ?? 0;
 }
 
-function sliceIntoBatches<T>(arr: T[], size: number): T[][] {
-  if (arr.length <= size) return [arr];
-  const batches: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    batches.push(arr.slice(i, i + size));
-  }
-  return batches;
-}
 
 /* ------------------------------------------------------------------ */
 /*  service                                                           */
@@ -120,39 +113,45 @@ export class VectorizeService {
     requestId: string,
     { batchIndex, totalBatches }: { batchIndex: number; totalBatches: number },
   ): Promise<void> {
-    const ctx = {
+    const baseCtx = {
       requestId,
       batchIndex,
       totalBatches,
       batchSize: batch.length,
     };
 
-    for (let attempt = 1; attempt <= this.cfg.retryAttempts; attempt++) {
-      try {
-        await this.idx.upsert(
-          batch.map(v => ({
-            id: v.id,
-            values: v.values,
-            metadata: v.metadata as any,
-          })),
-        );
-        metrics.counter('vectorize.upsert.success', 1);
-        metrics.counter('vectorize.upsert.vectors_stored', batch.length);
-        getLogger().info({ ...ctx, attempt }, 'Batch upserted');
-        return;
-      } catch (err) {
-        metrics.counter('vectorize.upsert.errors', 1);
-        const domeErr = toDomeError(err, 'Vectorize upsert failed', { ...ctx, attempt });
+    const retryConfig: RetryConfig = {
+      attempts: this.cfg.retryAttempts,
+      delayMs: this.cfg.retryDelay,
+      operationName: 'vectorize-upsertBatch',
+    };
 
-        if (attempt < this.cfg.retryAttempts) {
-          const delay = this.cfg.retryDelay * attempt;
-          getLogger().warn({ ...ctx, attempt, delay }, 'Retrying upsert batch');
-          await new Promise(r => setTimeout(r, delay));
-        } else {
-          logError(domeErr, 'Upsert batch failed after retries');
-          throw domeErr;
-        }
-      }
+    try {
+      await retryAsync(
+        async currentAttempt => {
+          await this.idx.upsert(
+            batch.map(v => ({
+              id: v.id,
+              values: v.values,
+              metadata: v.metadata as any, // Reverting due to type incompatibility with VectorizeIndex
+            })),
+          );
+          getLogger().info({ ...baseCtx, attempt: currentAttempt }, 'Batch upserted');
+        },
+        retryConfig,
+        baseCtx,
+      );
+
+      metrics.counter('vectorize.upsert.success', 1);
+      metrics.counter('vectorize.upsert.vectors_stored', batch.length);
+    } catch (err) {
+      metrics.counter('vectorize.upsert.errors', 1);
+      const domeErr = toDomeError(err, 'Vectorize upsert failed after retries', {
+        ...baseCtx,
+        retryAttempts: this.cfg.retryAttempts,
+      });
+      logError(domeErr, 'Upsert batch failed definitively'); // logError is from utils/logging
+      throw domeErr;
     }
   }
 

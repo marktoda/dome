@@ -209,7 +209,7 @@ set positional-arguments := true
 cli *args:
     cmd="$1"; shift || true; \
     if [ "$cmd" = "add" ]; then \
-        pnpm --filter cli start "$cmd" "$*"; \
+        pnpm --filter cli start "content" "add" "$*"; \
     else \
         pnpm --filter cli start "$cmd" "$@"; \
     fi

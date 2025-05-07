@@ -4,13 +4,17 @@
  * Interfaces with Workers AI to generate embeddings.
  */
 
-import { getLogger, logError, metrics } from '@dome/common';
+import { getLogger, logError, constellationMetrics as metrics } from '../utils/logging';
+import { sliceIntoBatches } from '../utils/batching';
+import { EmbeddingError } from '../utils/errors';
+import { KnownAiModels, AiTextEmbeddingInput, AiTextEmbeddingOutput } from '../types';
+import { retryAsync, RetryConfig } from '../utils/retry';
 
 /**
  * Configuration for the embedding service
  */
 export interface EmbedderConfig {
-  model: string;
+  model: KnownAiModels;
   maxBatchSize: number;
   retryAttempts: number;
   retryDelay: number;
@@ -41,11 +45,6 @@ export class Embedder {
     };
   }
 
-  /**
-   * Generate embeddings for a batch of text
-   * @param texts Array of text strings to embed
-   * @returns Array of embedding vectors
-   */
   /**
    * Generate embeddings for a batch of text
    * @param texts Array of text strings to embed
@@ -83,7 +82,7 @@ export class Embedder {
    * @private
    */
   private startMetricsTracking(texts: string[]) {
-    metrics.increment('embedding.requests');
+    metrics.counter('embedding.requests', 1);
     metrics.gauge('embedding.batch_size', texts.length);
     return metrics.startTimer('embedding');
   }
@@ -117,7 +116,7 @@ export class Embedder {
     );
 
     // Split texts into batches
-    const batches = this.createBatches(texts);
+    const batches = sliceIntoBatches(texts, this.config.maxBatchSize);
 
     // Process each batch and combine results
     const results = await this.processBatches(batches);
@@ -131,20 +130,6 @@ export class Embedder {
     );
 
     return results;
-  }
-
-  /**
-   * Create batches from a large array of texts
-   * @param texts Array of text strings to split into batches
-   * @returns Array of text batches
-   * @private
-   */
-  private createBatches(texts: string[]): string[][] {
-    const batches: string[][] = [];
-    for (let i = 0; i < texts.length; i += this.config.maxBatchSize) {
-      batches.push(texts.slice(i, i + this.config.maxBatchSize));
-    }
-    return batches;
   }
 
   /**
@@ -206,8 +191,8 @@ export class Embedder {
    * @private
    */
   private handleEmbeddingError(error: unknown) {
-    metrics.increment('embedding.errors');
-    logError(error, 'Error generating embeddings');
+    metrics.counter('embedding.errors', 1);
+    logError(error, 'Error generating embeddings', { operation: 'handleEmbeddingError' });
   }
 
   /**
@@ -216,44 +201,47 @@ export class Embedder {
    * @returns Array of embedding vectors
    * @private
    */
-  /**
-   * Generate embeddings for a single batch of text (respecting max batch size)
-   * @param texts Array of text strings to embed
-   * @returns Array of embedding vectors
-   * @private
-   */
   private async embedBatch(texts: string[]): Promise<number[][]> {
-    let attempt = 0;
-    let lastError: Error | null = null;
-
     this.logBatchOperationStart(texts);
 
-    while (attempt < this.config.retryAttempts) {
-      try {
-        getLogger().debug({ attempt: attempt + 1 }, 'Sending batch to AI service for embedding');
+    const retryConfig: RetryConfig = {
+      attempts: this.config.retryAttempts,
+      delayMs: this.config.retryDelay,
+      operationName: 'embedBatch-aiCall',
+    };
 
-        // Send the batch to the AI service
-        const response = await this.callAiService(texts);
-        metrics.increment('embedding.success');
+    try {
+      const response = await retryAsync(
+        async currentAttempt => {
+          getLogger().debug({ attempt: currentAttempt }, 'Sending batch to AI service for embedding');
+          // Send the batch to the AI service
+          return this.callAiService(texts);
+        },
+        retryConfig,
+        { model: this.config.model, batchSize: texts.length },
+      );
 
-        // Process the response
-        return this.processAiResponse(response);
-      } catch (error) {
-        // Handle retry logic
-        const shouldRetry = this.handleRetryLogic(error, ++attempt);
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        if (shouldRetry) {
-          await this.delay();
-        } else {
-          break;
-        }
+      metrics.counter('embedding.success', 1);
+      // Process the response
+      return this.processAiResponse(response);
+    } catch (error) {
+      metrics.counter('embedding.failures', 1);
+      // Ensure the error is an EmbeddingError before re-throwing or handling further
+      if (error instanceof EmbeddingError) {
+        throw error;
+      } else if (error instanceof Error) {
+        throw new EmbeddingError(
+          `Failed to generate embeddings after ${this.config.retryAttempts} attempts: ${error.message}`,
+          { model: this.config.model, batchSize: texts.length, retryAttempts: this.config.retryAttempts },
+          error,
+        );
+      } else {
+        throw new EmbeddingError(
+          `Failed to generate embeddings after ${this.config.retryAttempts} attempts: Unknown error`,
+          { model: this.config.model, batchSize: texts.length, retryAttempts: this.config.retryAttempts },
+        );
       }
     }
-
-    // If we've exhausted all retries, throw the last error
-    metrics.increment('embedding.failures');
-    throw lastError || new Error('Failed to generate embeddings after multiple attempts');
   }
 
   /**
@@ -284,10 +272,29 @@ export class Embedder {
    * @returns Raw response from the AI service
    * @private
    */
-  private async callAiService(texts: string[]): Promise<any> {
-    // Note: Type casting is necessary due to the dynamic nature of AI model names
-    // A more type-safe approach would be to define a union type of supported models
-    return await this.ai.run(this.config.model as any, { text: texts });
+  private async callAiService(texts: string[]): Promise<AiTextEmbeddingOutput> {
+    const input: AiTextEmbeddingInput = { text: texts };
+    // Assuming this.ai.run is compatible with this signature.
+    // If this.ai is a more generic binding, further type refinement or casting might be needed
+    // at the binding level. For now, we cast to 'any' to match previous behavior
+    // pending a more precise AiModels type.
+    const response = await this.ai.run(this.config.model as any, input);
+
+    // Basic type guard for the response
+    if (
+      typeof response === 'object' &&
+      response !== null &&
+      'data' in response &&
+      Array.isArray((response as AiTextEmbeddingOutput).data)
+    ) {
+      return response as AiTextEmbeddingOutput;
+    }
+    // Throw an error if the response format is not as expected
+    throw new EmbeddingError('Unexpected AI service response format', {
+      model: this.config.model,
+      responseType: typeof response,
+      responseKeys: typeof response === 'object' && response !== null ? Object.keys(response) : [],
+    });
   }
 
   /**
@@ -296,16 +303,11 @@ export class Embedder {
    * @returns Array of embedding vectors
    * @private
    */
-  private processAiResponse(response: any): number[][] {
-    // Handle different response formats
-    if (typeof response === 'object' && response !== null && 'data' in response) {
-      const embeddings = response.data;
-      this.logSuccessfulResponse(embeddings);
-      return embeddings;
-    } else {
-      this.logUnexpectedResponseFormat(response);
-      return [];
-    }
+  private processAiResponse(response: AiTextEmbeddingOutput): number[][] {
+    // The callAiService method now ensures the response is in the expected format
+    const embeddings = response.data;
+    this.logSuccessfulResponse(embeddings);
+    return embeddings;
   }
 
   /**
@@ -339,32 +341,7 @@ export class Embedder {
       'Unexpected response format from AI service',
     );
   }
-
-  /**
-   * Handle retry logic for failed embedding attempts
-   * @param error Error that occurred
-   * @param attempt Current attempt number
-   * @returns Whether to retry
-   * @private
-   */
-  private handleRetryLogic(error: unknown, attempt: number): boolean {
-    const errorObj = error instanceof Error ? error : new Error(String(error));
-
-    getLogger().warn(
-      { error: errorObj, attempt, maxAttempts: this.config.retryAttempts },
-      `Embedding attempt ${attempt} failed, ${this.config.retryAttempts - attempt} retries left`,
-    );
-
-    return attempt < this.config.retryAttempts;
-  }
-
-  /**
-   * Delay execution before retrying
-   * @private
-   */
-  private async delay(): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, this.config.retryDelay));
-  }
+// Removed handleRetryLogic and delay methods as their functionality is now in retryAsync
 }
 
 /**
