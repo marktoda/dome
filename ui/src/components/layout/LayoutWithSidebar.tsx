@@ -3,16 +3,31 @@
 import React from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/sidebar/Sidebar';
-// MobileSidebar is now part of Header, so it might not be directly needed here unless used elsewhere
-// import { MobileSidebar } from '@/components/sidebar/MobileSidebar';
-import { Header } from '@/components/layout/Header'; // Import the new Header
+import { Header } from '@/components/layout/Header';
 
+/**
+ * Props for the {@link LayoutWithSidebar} component.
+ */
 interface LayoutWithSidebarProps {
+  /** The content to be rendered within the layout. */
   children: React.ReactNode;
 }
 
+/**
+ * Defines the routes that should not display the main application layout (header and sidebar).
+ * These typically include authentication pages (login, register) and the landing page.
+ */
 const AUTH_ROUTES = ['/login', '/register', '/forgot-password']; // Add other auth routes if any
 
+/**
+ * `LayoutWithSidebar` provides the main application structure, including a header and a sidebar.
+ * It conditionally renders this structure based on the current route.
+ * For authentication routes or the landing page, it renders children directly without the main layout.
+ *
+ * @param props - The props for the component.
+ * @param props.children - The child elements to render within the layout.
+ * @returns A React functional component representing the application layout.
+ */
 export function LayoutWithSidebar({ children }: LayoutWithSidebarProps) {
   const pathname = usePathname();
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));

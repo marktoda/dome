@@ -12,423 +12,363 @@ import React, {
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from './AuthContext';
 import {
-  Message as UIMessage,
+  ParsedMessage,
   ChatContextType,
-  SourceItem,
+  UserMessage,
+  AssistantErrorMessage,
+  AssistantContentMessage,
+  AssistantThinkingMessage,
+  MessageSender,
+  // SourceItem, // Keep if used directly for constructing initial messages
 } from '@/lib/chat-types';
+import { messageProcessingService } from '@/lib/message-parser';
 
-/** ------------------------------------------------------------------
- *  Chunk parsing (aligned with CLI)
- * ------------------------------------------------------------------*/
+/**
+ * @fileoverview Provides chat context for managing chat messages,
+ * WebSocket communication, loading states, errors, and message parsing.
+ */
 
-// CLI's ChatMessageChunk structure
-type CliChatMessageChunk =
-  | { type: 'content' | 'thinking' | 'unknown' | 'internal_update'; content: string } // Added internal_update
-  | {
-      type: 'sources';
-      node: { // This 'node' is the value from p[1][nodeId] in the CLI detector
-        sources: SourceItem | SourceItem[]; // The 'sources' property itself can be one or many
-      };
-    }
-  | { type: 'error'; content: string }; // Added error type for completeness
-
-// Extensible chunk‑type detector stack (from CLI: packages/cli/src/utils/api.ts)
-interface ChunkDetector {
-  (raw: string, parsed: any): CliChatMessageChunk | null;
-}
-const detectors: ChunkDetector[] = [
-  // LangGraph updates - sources
-  // Extracts sources if the node ID is 'doc_to_sources'.
-  // The 'node' field in the returned chunk will contain the data from p[1]['doc_to_sources'].
-  // This data is expected to have a 'sources' property which can be a single SourceItem or SourceItem[].
-  (raw, p) => {
-    if (Array.isArray(p) && p[0] === 'updates') {
-      const nodeId: string = Object.keys(p[1])[0];
-      if (nodeId !== 'doc_to_sources') return null;
-      const node = p[1][nodeId];
-      // Ensure the node has a 'sources' property before returning
-      if (node && typeof node === 'object' && 'sources' in node) {
-        return { type: 'sources', node: node as { sources: SourceItem | SourceItem[] } };
-      }
-    }
-    return null;
-  },
-
-  // LangGraph update - thinking
-  // Extracts reasoning content if present in an 'updates' event.
-  (raw, p) => {
-    if (Array.isArray(p) && p[0] === 'updates') {
-      const nodeId: string = Object.keys(p[1])[0];
-      const node = p[1][nodeId];
-
-      if (node && node.reasoning && Array.isArray(node.reasoning) && node.reasoning.length > 0) {
-        const lastReasoning = node.reasoning[node.reasoning.length - 1];
-        if (typeof lastReasoning === 'string') {
-          return { type: 'thinking', content: lastReasoning };
-        }
-      }
-    }
-    return null;
-  },
-
-  // Generic LangGraph updates that are not handled specifically (e.g., 'retrieve')
-  // This should come AFTER specific 'updates' handlers like 'doc_to_sources' and 'thinking' with reasoning.
-  (raw, p) => {
-    if (Array.isArray(p) && p[0] === 'updates') {
-      // If it reaches here, it wasn't 'doc_to_sources' or 'thinking' with reasoning.
-      // These are likely internal state updates we don't want to display as content.
-      const nodeId: string = Object.keys(p[1])[0];
-      // Avoid classifying 'doc_to_sources' or thinking updates if they somehow missed earlier detectors
-      // or if their specific conditions (e.g., presence of 'sources' or 'reasoning' field) weren't met.
-      if (nodeId === 'doc_to_sources' || (p[1][nodeId] && typeof p[1][nodeId] === 'object' && 'reasoning' in p[1][nodeId])) {
-        return null; // Let other detectors or unknown handling take over.
-      }
-      console.debug(`[ChatContext] Detected internal update for node: ${nodeId}`);
-      return { type: 'internal_update', content: raw }; // Store raw for debugging
-    }
-    return null;
-  },
-
-  // LangGraph messages node - content chunks
-  // Specifically targets content from the 'generate_answer' node.
-  (raw, p) => {
-    if (Array.isArray(p) && p[0] === 'messages') {
-      const details = p[1]; // details is expected to be an array of message objects
-      // Check if 'details' is an array and has at least one element
-      // The actual content is in details[0].kwargs.content
-      // The node name check might be on a different part of the payload structure
-      // For langgraph, often the event name itself or a metadata field indicates the node.
-      // The CLI's `details[1].langgraph_node` was problematic.
-      // Let's assume the structure is `["messages", arrayOfMessages, {name: "node_name_here"}]`
-      // or the node name is part of the log path for run_log events.
-      // For now, we'll check if p[2] (if it exists) has a name property.
-      // This is a common pattern for 'event' type streams from LangGraph.
-      let isGenerateAnswerNode = false;
-      if (p.length > 2 && typeof p[2] === 'object' && p[2] !== null && 'name' in p[2]) {
-        if ((p[2] as {name: string}).name === 'generate_answer') {
-          isGenerateAnswerNode = true;
-        }
-      } else if (raw.includes('"generate_answer"')) { // Fallback: simple string check in raw data
-        isGenerateAnswerNode = true;
-      }
-
-
-      if (isGenerateAnswerNode && Array.isArray(details) && details.length > 0 && details[0]?.kwargs?.content) {
-        if (typeof details[0].kwargs.content === 'string') {
-          return { type: 'content', content: details[0].kwargs.content };
-        }
-      }
-    }
-    return null;
-  },
-
-  // Handle tasks object that contains a task query (from CLI)
-  (raw, p) => {
-    if (typeof p === 'object' && p !== null && p.tasks && Array.isArray(p.tasks)) {
-      if (p.instructions && typeof p.instructions === 'string') {
-        return { type: 'thinking', content: p.instructions };
-      }
-      if (p.reasoning && typeof p.reasoning === 'string') {
-        return { type: 'thinking', content: p.reasoning };
-      }
-    }
-    return null;
-  },
-  // Basic error string detection
-  (raw, p) => {
-    if (typeof p === 'string' && /error/i.test(p)) {
-        return { type: 'error', content: p };
-    }
-    if (typeof p === 'object' && p !== null && 'error' in p && typeof p.error === 'string') {
-        return { type: 'error', content: p.error };
-    }
-    return null;
-  }
-];
-
-// detectChunk function (from CLI: packages/cli/src/utils/api.ts)
-const detectChunk = (data: string): CliChatMessageChunk => {
-  try {
-    const parsed = JSON.parse(data);
-    for (const det of detectors) {
-      const match = det(data, parsed);
-      if (match) return match;
-    }
-    // If no specific detector matches, but it's a simple JSON string like {"content": "..."}
-    if (typeof parsed === 'object' && parsed !== null && 'content' in parsed && typeof parsed.content === 'string' && Object.keys(parsed).length === 1) {
-      return { type: 'content', content: parsed.content };
-    }
-
-  } catch {
-    // If JSON.parse fails, treat as plain text content, unless it looks like an error
-    if (/error/i.test(data)) return { type: 'error', content: data };
-    // It might be a plain string chunk which should be treated as content
-    if (data && typeof data === 'string' && data.trim() !== '') {
-        return { type: 'content', content: data };
-    }
-  }
-  // Fallback for unparsed or unhandled JSON structures
-  return { type: 'unknown', content: data };
-};
-
-
-/** ------------------------------------------------------------------
- *  React context
- * ------------------------------------------------------------------*/
-
+/**
+ * React Context for chat state and actions.
+ */
 const ChatContext = createContext<ChatContextType | null>(null);
 
+/**
+ * `ChatProvider` manages the chat state, including messages, WebSocket connection,
+ * loading status, and errors. It provides these states and actions to child components
+ * via the `ChatContext`.
+ *
+ * @param props - The props for the component.
+ * @param props.children - The child components that will consume the context.
+ * @example
+ * ```tsx
+ * // In a parent component (e.g., layout or page)
+ * import { ChatProvider } from '@/contexts/ChatContext';
+ * import ChatInterface from '@/components/chat/ChatInterface'; // Example component using useChat
+ *
+ * function ChatPage() {
+ *   return (
+ *     <ChatProvider>
+ *       <ChatInterface />
+ *     </ChatProvider>
+ *   );
+ * }
+ * ```
+ */
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
-  const [messages, setMessages] = useState<UIMessage[]>([]);
+  const [messages, setMessages] = useState<ParsedMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<AssistantErrorMessage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const currentAssistantId = useRef<string | null>(null);
+  const currentAssistantMessageIdRef = useRef<string | null>(null); // Tracks the ID of the assistant message being streamed/updated
 
-  const { user } = useAuth(); // Use user object for auth status, token is HttpOnly
+  const { user, token } = useAuth(); // Get user authentication status and token
 
-  /** ----------------------------------------------------------------
-   *  WebSocket helpers
-   * ----------------------------------------------------------------*/
-  const closeWs = () => {
-    wsRef.current?.close(1000, 'reset');
-    wsRef.current = null;
-  };
+  /**
+   * Closes the WebSocket connection if it's currently open.
+   */
+  const closeWs = useCallback(() => {
+    if (wsRef.current) {
+      console.log('[ChatContext] Closing WebSocket connection.');
+      wsRef.current.close(1000, 'Client requested connection close');
+      wsRef.current = null;
+    }
+  }, []);
 
-  const openWs = () => {
-    const url = (process.env.NEXT_PUBLIC_API_BASE_URL || '')
-      .replace(/^http/, 'ws')
-      .concat('/chat/ws');
-    const ws = new WebSocket(url);
+  /**
+   * Opens a new WebSocket connection to the chat backend.
+   * Includes the authentication token as a query parameter.
+   * @returns The newly created WebSocket instance, or null if no token is available.
+   */
+  const openWs = useCallback(() => {
+    if (!token) {
+      console.error('[ChatContext] No authentication token available. Cannot open WebSocket.');
+      // Optionally, set an error state here or let sendToBackend handle it.
+      return null;
+    }
+
+    // Determine WebSocket URL based on environment or window location
+    const wsBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || window.location.origin).replace(
+      /^http/,
+      'ws',
+    );
+    // Append the token as a query parameter for WebSocket authentication
+    const wsUrl = `${wsBaseUrl}/chat/ws?token=${encodeURIComponent(token)}`;
+
+    console.log(`[ChatContext] Opening WebSocket connection to: ${wsUrl.replace(token, '[REDACTED_TOKEN]')}`); // Avoid logging token
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
     return ws;
-  };
+  }, [token]); // Add token as a dependency
 
-  /** Send conversation + new user prompt to backend. */
+  /**
+   * Clears all messages, errors, and closes the WebSocket connection.
+   */
+  const clearChat = useCallback(() => {
+    setMessages([]);
+    setError(null);
+    closeWs();
+    console.log('[ChatContext] Chat cleared.');
+  }, [closeWs]);
+
+  /**
+   * Sends the chat history and the new user message to the backend via WebSocket.
+   * Handles WebSocket connection opening, message sending, and receiving streamed responses.
+   * Updates message state based on received data (thinking, content, sources, errors).
+   *
+   * @param history - The current list of parsed messages (excluding the new user message).
+   * @param newUserMessage - The new message object sent by the user.
+   */
   const sendToBackend = useCallback(
-    async (history: UIMessage[], text: string): Promise<void> => {
-      if (!user) { // Check for user object instead of token
-        setMessages(m => [
-          ...m,
-          {
-            id: uuidv4(),
-            text: 'Authentication error – cannot connect.',
-            sender: 'assistant',
-            timestamp: new Date(),
-          },
-        ]);
+    async (history: ParsedMessage[], newUserMessage: UserMessage): Promise<void> => {
+      if (!user || !token) {
+        const errorMsg = !user ? 'User not authenticated.' : 'Authentication token not available.';
+        console.error(`[ChatContext] ${errorMsg} Cannot send message.`);
+        const authError: AssistantErrorMessage = {
+          id: uuidv4(),
+          sender: 'system', type: 'error', timestamp: new Date(),
+          error: { message: `Authentication error: ${errorMsg}`, code: 'AUTH_REQUIRED' },
+          text: `Authentication error: ${errorMsg}`,
+        };
+        setMessages(prev => [...prev, authError]);
+        setIsLoading(false);
         return;
       }
 
-      closeWs();
+      closeWs(); // Ensure any previous connection is closed before starting anew
 
-      // create stub assistant message so UI can stream
-      const assistantId = uuidv4();
-      currentAssistantId.current = assistantId;
-      setMessages(m => [
-        ...m,
-        { id: assistantId, text: '', sender: 'assistant', timestamp: new Date() },
-      ]);
+      const assistantMessagePlaceholderId = uuidv4();
+      currentAssistantMessageIdRef.current = assistantMessagePlaceholderId;
 
-      const ws = openWs();
+      // Add a 'thinking' placeholder for immediate feedback
+      const thinkingPlaceholder: AssistantThinkingMessage = {
+        id: assistantMessagePlaceholderId, sender: 'assistant', type: 'thinking',
+        timestamp: new Date(), text: 'Assistant is thinking...',
+      };
+      setMessages(prev => [...prev, thinkingPlaceholder]);
+      setIsLoading(true);
+      setError(null);
+
+      const ws = openWs(); // Establish new WebSocket connection (now includes token)
+
+      if (!ws) {
+        console.error('[ChatContext] Failed to open WebSocket connection (likely due to missing token).');
+        const wsOpenError: AssistantErrorMessage = {
+          id: assistantMessagePlaceholderId, // Use placeholder ID to replace 'thinking'
+          sender: 'system', type: 'error', timestamp: new Date(),
+          error: { message: 'Failed to establish secure connection with chat server.', code: 'WS_OPEN_FAILED' },
+          text: 'Failed to establish secure connection with chat server.',
+        };
+        setMessages(prev => {
+            const thinkingIndex = prev.findIndex(m => m.id === assistantMessagePlaceholderId);
+            if (thinkingIndex !== -1) {
+                const updated = [...prev];
+                updated[thinkingIndex] = wsOpenError;
+                return updated;
+            }
+            return [...prev, wsOpenError];
+        });
+        setError(wsOpenError);
+        setIsLoading(false);
+        return;
+      }
 
       ws.onopen = () => {
+        console.log('[ChatContext] WebSocket connection opened.');
+        // Prepare message history for the backend (user and assistant content only)
+        const backendMessages = history
+          .map(msg => {
+            if (msg.sender === 'user') return { role: 'user', content: msg.text };
+            if (msg.sender === 'assistant' && msg.type === 'content') return { role: 'assistant', content: msg.text };
+            return null;
+          })
+          .filter(Boolean);
+
+        // Construct payload for the backend
         const payload = {
-          messages: [...history, { role: 'user' as const, content: text }].map(
-            msg => {
-              if ('sender' in msg) {
-                // This is a UIMessage
-                return { role: msg.sender, content: msg.text };
-              } else {
-                // This is the new { role: 'user', content: text } message
-                return { role: msg.role, content: msg.content };
-              }
-            },
-          ),
-          options: {
-            enhanceWithContext: true,
-            maxContextItems: 5,
-            includeSourceInfo: true,
-            maxTokens: 1_000,
-            temperature: 0.7,
-          },
+          messages: backendMessages,
+          options: { /* Backend options */ },
           stream: true,
-          // Attempt to send userId, as the HttpOnly token itself isn't accessible client-side.
-          // The backend WS handler would need to use this in conjunction with the session cookie.
-          userId: user?.id, // Send user.id if user is available
         };
+        console.log('[ChatContext] Sending payload (truncated):', JSON.stringify(payload).substring(0, 300) + "...");
         ws.send(JSON.stringify(payload));
-        setIsLoading(true);
       };
 
       ws.onmessage = e => {
-        let chunk = detectChunk(e.data as string);
+        const rawData = e.data as string;
+        const parsedMessage = messageProcessingService.parseMessage(rawData, currentAssistantMessageIdRef.current || undefined);
 
-        // CLI's additional processing for 'unknown' chunks
-        if (chunk.type === 'unknown' && chunk.content) {
-          const raw = chunk.content;
-          // Skip printing raw JSON for recognized LangGraph message formats
-          if (
-            raw.startsWith('["messages"') ||
-            raw.startsWith('["updates"') ||
-            raw.includes('"generatedText"') || // A common key in some LLM responses
-            raw.includes('"reasoning"') // Another common key
-          ) {
-            console.debug('[ChatContext] Skipping internal LangGraph format:', raw.substring(0, 80) + '...');
-            return; // Skip this chunk
-          }
-          try {
-            const parsed = JSON.parse(raw); // raw is chunk.content here
-            if (parsed && typeof parsed === 'object') {
-              if (typeof parsed.content === 'string') {
-                chunk = { type: 'content', content: parsed.content };
-              } else if (typeof parsed.message === 'string') {
-                chunk = { type: 'content', content: parsed.message };
-              } else if (typeof parsed.response === 'string') {
-                chunk = { type: 'content', content: parsed.response };
-              } else if (typeof parsed.answer === 'string') { // Common in RAG
-                chunk = { type: 'content', content: parsed.answer };
+        if (parsedMessage) {
+          setMessages(prevMessages => {
+            const existingMsgIndex = prevMessages.findIndex(m => m.id === parsedMessage.id);
+
+            if (existingMsgIndex !== -1) {
+              // Update existing message (streaming content, replacing thinking, etc.)
+              const existingMsg = prevMessages[existingMsgIndex];
+              const updatedMessages = [...prevMessages];
+
+              if (existingMsg.sender === 'assistant' && parsedMessage.sender === 'assistant') {
+                if (existingMsg.type === 'content' && parsedMessage.type === 'content') {
+                  // Append streamed content
+                  updatedMessages[existingMsgIndex] = {
+                    ...parsedMessage,
+                    text: existingMsg.text + parsedMessage.text,
+                  } as AssistantContentMessage;
+                } else if (existingMsg.type === 'thinking' && (parsedMessage.type === 'content' || parsedMessage.type === 'sources' || parsedMessage.type === 'error')) {
+                  // Replace 'thinking' with the first actual response part
+                  updatedMessages[existingMsgIndex] = parsedMessage;
+                } else {
+                  // Replace with other message types (e.g., sources after content)
+                  updatedMessages[existingMsgIndex] = parsedMessage;
+                }
+              } else {
+                // Fallback: Replace if senders/types don't match expected streaming patterns
+                console.warn('[ChatContext] Unexpected message update scenario, replacing:', existingMsg, parsedMessage);
+                updatedMessages[existingMsgIndex] = parsedMessage;
               }
+              return updatedMessages;
+            } else {
+              // Add as a new message if ID doesn't exist
+              return [...prevMessages, parsedMessage];
             }
-          } catch (parseError) {
-            // Not JSON or not in expected format, keep as 'unknown' or treat as plain text if it's just a string
-            if (typeof raw === 'string' && raw.trim() !== '') {
-                 // If it wasn't caught by detectors but is a plain string, treat as content.
-                 // This handles cases where the stream might send un-JSONified string parts.
-                 chunk = { type: 'content', content: raw };
-            }
+          });
+
+          // Update global error state if an error message is received
+          if ('type' in parsedMessage && parsedMessage.type === 'error' && (parsedMessage.sender === 'assistant' || parsedMessage.sender === 'system')) {
+            setError(parsedMessage as AssistantErrorMessage);
+          } else if (error?.id === parsedMessage.id && (!('type' in parsedMessage) || parsedMessage.type !== 'error')) {
+            // Clear global error if a non-error message updates the one that caused the error
+            setError(null);
           }
-        }
-
-
-        switch (chunk.type) {
-          case 'content':
-            setMessages(prevMessages =>
-              prevMessages.map(msg =>
-                msg.id === currentAssistantId.current
-                  ? { ...msg, text: msg.text + chunk.content }
-                  : msg,
-              ),
-            );
-            break;
-          case 'sources':
-            // Ensure chunk.node and chunk.node.sources exist
-            if (chunk.node && chunk.node.sources) {
-              const newSources = Array.isArray(chunk.node.sources)
-                ? chunk.node.sources
-                : [chunk.node.sources];
-              setMessages(prevMessages =>
-                prevMessages.map(msg =>
-                  msg.id === currentAssistantId.current
-                    ? { ...msg, sources: [...(msg.sources || []), ...newSources] } // Append sources
-                    : msg,
-                ),
-              );
-            }
-            break;
-          case 'thinking':
-            console.log('[ChatContext] Thinking:', chunk.content);
-            // Add thinking steps as messages from 'system'
-            // Ensure UIMessage and rendering components can handle sender: 'system'
-            const thinkingMsg: UIMessage = {
-              id: uuidv4(),
-              text: `${chunk.content}`, // Display thinking content directly
-              sender: 'system', // Use 'system' or a dedicated 'thinking' sender type
-              timestamp: new Date(),
-              sources: [], // Ensure sources is initialized if UIMessage expects it
-            };
-            setMessages(prevMessages => [...prevMessages, thinkingMsg]);
-            break;
-          case 'internal_update':
-            // Log for debugging, but don't show in UI or append to messages
-            console.debug('[ChatContext] Internal update ignored:', chunk.content.substring(0,150) + "...");
-            break;
-          case 'error':
-            let errorMsg = chunk.content;
-            try {
-              const parsedError = JSON.parse(chunk.content);
-              if (parsedError && typeof parsedError.message === 'string' && parsedError.message.trim() !== '') {
-                errorMsg = parsedError.message;
-              } else if (parsedError && typeof parsedError.error === 'string' && parsedError.error.trim() !== '') {
-                errorMsg = parsedError.error;
-              }
-            } catch (e) {
-              // Not JSON or no specific 'message'/'error' field, use content as is
-            }
-            // Truncate if too long for console and UI
-            const shortErrorMsg = errorMsg.length > 250 ? errorMsg.substring(0, 250) + '...' : errorMsg;
-            // Log both short and full error for better debugging
-            console.error('[ChatContext] Error (short):', shortErrorMsg, '\nFull error data:', chunk.content);
-            setMessages(prevMessages =>
-              prevMessages.map(msg =>
-                msg.id === currentAssistantId.current
-                  ? {
-                    ...msg,
-                    // Append the potentially long original error to the text if it's not too disruptive,
-                    // or stick to shortErrorMsg. For now, let's use shortErrorMsg for UI.
-                    text: msg.text + `\n[Server Error] ${shortErrorMsg}`,
-                  }
-                  : msg,
-              ),
-            );
-            break;
-          case 'unknown':
-            // Only log if it wasn't converted to 'content' above
-            console.log('[ChatContext] Unknown chunk:', chunk.content);
-            // Potentially append to a debug view or a less prominent part of the message
-            // For now, we won't append it to the main message text to keep it clean.
-            break;
+        } else {
+          console.warn('[ChatContext] Failed to parse message or null returned by service:', rawData);
         }
       };
 
       ws.onerror = err => {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        // Log a concise message and the full error object for details
-        console.error('WebSocket error:', errorMessage, err);
-        setMessages(m =>
-          m.map(msg =>
-            msg.id === currentAssistantId.current
-              ? { ...msg, text: msg.text + `\n[Connection error: ${errorMessage}]` } // Provide more specific error
-              : msg,
-          ),
-        );
+        const errorMessageText = err instanceof Error ? err.message : String((err as Event).type || 'WebSocket connection error');
+        console.error('[ChatContext] WebSocket error:', errorMessageText, err);
+        const connError: AssistantErrorMessage = {
+          id: currentAssistantMessageIdRef.current || uuidv4(), // Use current ID or new one
+          sender: 'system', type: 'error', timestamp: new Date(),
+          error: { message: `WebSocket connection error: ${errorMessageText}`, code: 'WS_CONNECTION_ERROR' },
+          text: `Connection error: ${errorMessageText}`,
+        };
+        // Update or add the error message in the list
+        setMessages(prev => {
+            const existingIndex = prev.findIndex(m => m.id === connError.id);
+            if (existingIndex !== -1) {
+                const updated = [...prev];
+                updated[existingIndex] = connError; // Replace thinking/content with error
+                return updated;
+            }
+            return [...prev, connError]; // Add if no existing message with ID
+        });
+        setError(connError); // Set global error state
         setIsLoading(false);
       };
 
-      ws.onclose = () => {
-        setIsLoading(false);
-        currentAssistantId.current = null;
+      ws.onclose = (event) => {
+        console.log(`[ChatContext] WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
+        setIsLoading(false); // Stop loading indicator when connection closes
+        // Resetting currentAssistantMessageIdRef here might be premature if an error needs to update the last message.
+        // It's reset when the next message is sent via sendToBackend.
       };
     },
-    [user], // Changed from token to user
+    [user, token, closeWs, openWs], // Dependencies for the sendToBackend callback
   );
 
-  /** Public helper – add a new user message. */
+  /**
+   * Adds a message to the chat state and triggers sending it to the backend if it's a user message.
+   * Can also be used to add system or initial assistant messages directly to the state.
+   *
+   * @param text - The content of the message.
+   * @param sender - The sender of the message ('user', 'assistant', 'system'). Defaults to 'user'.
+   */
   const addMessage = useCallback(
-    async (text: string): Promise<void> => {
-      const userMsg: UIMessage = {
-        id: uuidv4(),
-        text,
-        sender: 'user',
-        timestamp: new Date(),
-      };
-      setMessages(m => [...m, userMsg]);
-      sendToBackend(messages, text);
+    async (text: string, sender: MessageSender = 'user'): Promise<void> => {
+      if (sender === 'user') {
+        if (!user || !token) { // Double-check auth before adding user message
+          console.error('[ChatContext] Cannot add user message: User not authenticated or token missing.');
+          // Optionally, show an error message to the user via setError or a toast
+          const authError: AssistantErrorMessage = {
+            id: uuidv4(), sender: 'system', type: 'error', timestamp: new Date(),
+            error: { message: 'Authentication required to send messages.', code: 'AUTH_REQUIRED_SEND' },
+            text: 'Authentication required to send messages.',
+          };
+          setMessages(prev => [...prev, authError]);
+          setError(authError);
+          return;
+        }
+        const userMsg: UserMessage = {
+          id: uuidv4(), text, sender: 'user', timestamp: new Date(),
+        };
+        // Add user message optimistically *before* calling sendToBackend
+        const currentMessages = [...messages, userMsg];
+        setMessages(currentMessages);
+        // Pass the history *including* the new user message to sendToBackend
+        sendToBackend(currentMessages, userMsg);
+      } else {
+        // Handle adding non-user messages (e.g., initial system prompts) directly
+        const rawMsg = {
+            id: uuidv4(), text, sender, timestamp: new Date(),
+            // Assign a type if it's an assistant message added manually
+            type: sender === 'assistant' ? 'content' : undefined
+        };
+        const parsed = messageProcessingService.parseMessage(rawMsg);
+        if (parsed) {
+            setMessages(m => [...m, parsed]);
+        } else {
+            console.error("[ChatContext] Failed to parse manually added message:", rawMsg);
+        }
+      }
     },
-    [sendToBackend, messages, user], // Added user to dependency array
+    [sendToBackend, messages, user, token], // Include 'messages', 'user', and 'token'
   );
 
-  /** Clean up on unmount. */
-  useEffect(() => () => closeWs(), []);
+  /** Effect hook to ensure WebSocket connection is closed on component unmount. */
+  useEffect(() => {
+    return () => {
+      closeWs();
+    };
+  }, [closeWs]);
 
   return (
-    <ChatContext.Provider value={{ messages, addMessage, isLoading }}>
+    <ChatContext.Provider value={{ messages, addMessage, isLoading, error, clearChat }}>
       {children}
     </ChatContext.Provider>
   );
 };
 
-export const useChat = () => {
-  const ctx = useContext(ChatContext);
-  if (!ctx) throw new Error('useChat must be inside <ChatProvider>');
-  return ctx;
+/**
+ * Custom hook `useChat` provides an easy way to access the chat context values.
+ *
+ * @returns The chat context containing `messages`, `addMessage`, `isLoading`, `error`, and `clearChat`.
+ * @throws Throws an error if used outside of a `ChatProvider` tree.
+ * @example
+ * ```tsx
+ * import { useChat } from '@/contexts/ChatContext';
+ *
+ * function ChatInput() {
+ *   const { addMessage, isLoading } = useChat();
+ *   const [input, setInput] = useState('');
+ *
+ *   const handleSubmit = (e) => {
+ *     e.preventDefault();
+ *     if (input.trim() && !isLoading) {
+ *       addMessage(input);
+ *       setInput('');
+ *     }
+ *   };
+ *
+ *   return <form onSubmit={handleSubmit}>...</form>;
+ * }
+ * ```
+ */
+export const useChat = (): ChatContextType => {
+  const context = useContext(ChatContext);
+  if (!context) {
+    throw new Error('useChat must be used within a ChatProvider');
+  }
+  return context;
 };

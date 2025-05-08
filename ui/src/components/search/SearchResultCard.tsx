@@ -5,20 +5,35 @@ import { useRouter } from 'next/navigation'; // Import useRouter
 import { SearchResultItem } from '@/lib/types/search';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-// ExternalLink might not be needed if we navigate internally first
-// import { ExternalLink } from 'lucide-react'; 
 
+/**
+ * Props for the {@link SearchResultCard} component.
+ */
 interface SearchResultCardProps {
+  /** The search result item data to display. */
   item: SearchResultItem;
 }
 
+/**
+ * `SearchResultCard` displays a single search result item in a card format.
+ * The card is clickable and navigates to a detailed view of the search result.
+ * It includes the item's title, category (if available), and a snippet of its description.
+ *
+ * @param props - The props for the component.
+ * @returns A React functional component representing a search result card.
+ */
 export function SearchResultCard({ item }: SearchResultCardProps) {
   const router = useRouter();
 
+  /**
+   * Handles the navigation to the full content view of the search result.
+   * It constructs query parameters from the item's details (title, description, URL, category)
+   * and navigates to `/search/view/{item.id}`.
+   */
   const handleViewFullContent = () => {
     const queryParams = new URLSearchParams({
-      title: item.title || '',
-      description: item.description || '',
+      title: item.title || 'Untitled Document', // Provide a fallback for title
+      description: item.description || 'No description available.', // Provide a fallback for description
     });
     if (item.url) {
       queryParams.set('url', item.url);
@@ -26,6 +41,8 @@ export function SearchResultCard({ item }: SearchResultCardProps) {
     if (item.category) {
       queryParams.set('category', item.category);
     }
+    // Ensure item.id is present; otherwise, this navigation will fail or be incorrect.
+    // Consider adding a check or fallback if item.id could be missing.
     router.push(`/search/view/${item.id}?${queryParams.toString()}`);
   };
 

@@ -5,11 +5,15 @@ import type { IntegrationStatus, Integration, IntegrationPlatform } from '@/lib/
 import IntegrationCard from './IntegrationCard';
 import { Github, BookText, RefreshCw, ZapOff } from 'lucide-react'; // Added ZapOff, Using BookText for Notion
 import { Skeleton } from '@/components/ui/skeleton';
-import { toast as sonnerToast } from 'sonner'; // Assuming sonner is used globally for toasts
+import { toast as sonnerToast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'; // Removed CardTitle, CardDescription
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 
-// Define your available integrations configuration
+/**
+ * Configuration for available integrations.
+ * Each object defines the properties of an integration platform like GitHub or Notion.
+ * `statusUrl` is generally not used per integration if a global status endpoint exists.
+ */
 const AVAILABLE_INTEGRATIONS_CONFIG: Omit<Integration, 'isConnected'>[] = [
   {
     platform: 'github',
@@ -31,18 +35,45 @@ const AVAILABLE_INTEGRATIONS_CONFIG: Omit<Integration, 'isConnected'>[] = [
   },
 ];
 
+/**
+ * `IntegrationsSettingsPage` provides a UI for users to manage their third-party integrations.
+ * It lists available integrations, shows their current connection status, and allows users
+ * to connect or disconnect them.
+ *
+ * Features:
+ * - Fetches and displays the status of all configured integrations.
+ * - Handles the OAuth flow initiation for connecting new integrations.
+ * - Manages disconnection requests.
+ * - Provides loading states for global status fetching and individual connect/disconnect operations.
+ * - Uses `sonner` for toast notifications.
+ * - Handles OAuth callback parameters in the URL to finalize connection and refresh status.
+ *
+ * @returns A React functional component representing the integrations settings page.
+ */
 const IntegrationsSettingsPage: React.FC = () => {
+  /** Stores the current status of each integration platform (e.g., GitHub, Notion). */
   const [integrationStatuses, setIntegrationStatuses] = useState<Record<IntegrationPlatform, IntegrationStatus | undefined>>({
     github: undefined,
     notion: undefined,
   });
+
+  /** Global loading state, true when initially fetching all integration statuses. */
   const [loadingGlobal, setLoadingGlobal] = useState<boolean>(true);
+
+  /**
+   * Stores the operational state (connecting/disconnecting) for each integration platform.
+   * Helps manage loading indicators on individual {@link IntegrationCard} components.
+   */
   const [operationStates, setOperationStates] = useState<Record<IntegrationPlatform, {isConnecting?: boolean, isDisconnecting?: boolean}>>({
     github: {},
     notion: {},
   });
-  // const { toast } = useToast(); // Replaced with sonnerToast
 
+  /**
+   * Fetches the status for all available integrations from the backend.
+   * Updates `integrationStatuses` and manages `loadingGlobal` state.
+   * @param showLoadingIndicator - If true, sets `loadingGlobal` during the fetch. Defaults to true.
+   */
   const fetchAllIntegrationStatuses = useCallback(async (showLoadingIndicator = true) => {
     if (showLoadingIndicator) {
         setLoadingGlobal(true);
@@ -50,17 +81,19 @@ const IntegrationsSettingsPage: React.FC = () => {
     try {
       const response = await fetch('/api/settings/integrations');
       if (!response.ok) {
-        throw new Error('Failed to fetch integration statuses');
+        throw new Error(`Failed to fetch integration statuses: ${response.statusText}`);
       }
       const data: IntegrationStatus[] = await response.json();
       const newStatuses: Record<IntegrationPlatform, IntegrationStatus | undefined> = { github: undefined, notion: undefined };
       data.forEach(status => {
-        newStatuses[status.platform] = status;
+        if (newStatuses.hasOwnProperty(status.platform)) { // Ensure platform is known
+           newStatuses[status.platform] = status;
+        }
       });
       setIntegrationStatuses(newStatuses);
     } catch (error) {
-      console.error("Error fetching statuses:", error);
-      sonnerToast.error("Error Loading Integrations", { // Using sonnerToast
+      console.error("Error fetching integration statuses:", error);
+      sonnerToast.error("Error Loading Integrations", {
         description: "Could not load integration statuses. Please try refreshing.",
       });
     } finally {
@@ -68,45 +101,58 @@ const IntegrationsSettingsPage: React.FC = () => {
         setLoadingGlobal(false);
       }
     }
-  }, []); // Removed toast from dependencies as sonnerToast is global
+  }, []);
 
+  /** Effect to fetch all integration statuses on component mount. */
   useEffect(() => {
     fetchAllIntegrationStatuses();
   }, [fetchAllIntegrationStatuses]);
 
+  /**
+   * Initiates the connection process for a given integration platform.
+   * Sets the connecting state for the platform and redirects the user to the OAuth connect URL.
+   * Includes a `redirect_uri` parameter to return the user to this page after OAuth.
+   * @param platform - The platform to connect (e.g., 'github', 'notion').
+   */
   const handleConnect = (platform: IntegrationPlatform) => {
     setOperationStates(prev => ({ ...prev, [platform]: { isConnecting: true, isDisconnecting: false }}));
     const connectUrl = AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform)?.connectUrl;
     if (connectUrl) {
-      // Add current path for redirect_uri to ensure user returns to the integrations page
-      const redirectUri = encodeURIComponent('/settings/integrations?oauth_callback=true&platform=' + platform);
+      const redirectUri = encodeURIComponent(`${window.location.origin}/settings/integrations?oauth_callback=true&platform=${platform}`);
       window.location.href = `${connectUrl}?redirect_uri=${redirectUri}`;
     } else {
-      sonnerToast.error("Error", { description: "Connect URL not found." }); // Using sonnerToast
+      sonnerToast.error("Connection Error", { description: `Connect URL not found for ${platform}.` });
       setOperationStates(prev => ({ ...prev, [platform]: { isConnecting: false }}));
     }
   };
 
+  /**
+   * Initiates the disconnection process for a given integration platform.
+   * Sets the disconnecting state, calls the backend disconnect API, shows a toast notification,
+   * and refreshes integration statuses upon success or failure.
+   * @param platform - The platform to disconnect.
+   */
   const handleDisconnect = async (platform: IntegrationPlatform) => {
     setOperationStates(prev => ({ ...prev, [platform]: { isDisconnecting: true, isConnecting: false }}));
     try {
       const integrationConfig = AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform);
-      if (!integrationConfig) throw new Error("Invalid integration platform");
+      if (!integrationConfig) throw new Error(`Invalid integration platform: ${platform}`);
 
       const response = await fetch(integrationConfig.disconnectUrl, { method: 'POST' });
-      const responseData = await response.json();
+      // It's good practice to check if response.json() is callable, e.g. by checking content-type
+      const responseData = await response.json().catch(() => ({ success: false, message: 'Invalid JSON response from server.' }));
 
       if (!response.ok || !responseData.success) {
         throw new Error(responseData.message || `Failed to disconnect ${integrationConfig.name}.`);
       }
-      sonnerToast.success("Success", { // Using sonnerToast
+      sonnerToast.success("Disconnected", {
         description: `${integrationConfig.name} disconnected successfully.`,
       });
-      await fetchAllIntegrationStatuses(false); // Refresh statuses without global loading
+      await fetchAllIntegrationStatuses(false); // Refresh statuses without global loading indicator
     } catch (error) {
       console.error(`Error disconnecting ${platform}:`, error);
       const integrationConfig = AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform);
-      sonnerToast.error("Error", { // Using sonnerToast
+      sonnerToast.error("Disconnection Error", {
         description: `Could not disconnect ${integrationConfig?.name || platform}. ${(error as Error).message}`,
       });
     } finally {
@@ -114,26 +160,47 @@ const IntegrationsSettingsPage: React.FC = () => {
     }
   };
   
+  /**
+   * Effect to handle OAuth callback parameters in the URL.
+   * If `oauth_callback=true` is present, it means the user is returning from an OAuth flow.
+   * It shows a success toast, refreshes integration statuses, and cleans the URL.
+   * Also resets the `isConnecting` state for the specific platform.
+   */
   useEffect(() => {
     const queryParams = new URLSearchParams(window.location.search);
     if (queryParams.get('oauth_callback') === 'true') {
       const platform = queryParams.get('platform') as IntegrationPlatform | null;
+      const errorParam = queryParams.get('error');
+      const errorDescriptionParam = queryParams.get('error_description');
+
       if (platform) {
-        // Assume success for mock, real app would check for error params from OAuth provider
-        sonnerToast.success("Connected!", { // Using sonnerToast
-          description: `${AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform)?.name || platform} connected successfully.`,
-        });
+        if (errorParam) {
+          sonnerToast.error("Connection Failed", {
+            description: `${AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform)?.name || platform} connection failed: ${errorDescriptionParam || errorParam}`,
+          });
+        } else {
+          sonnerToast.success("Connected!", {
+            description: `${AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform)?.name || platform} connected successfully.`,
+          });
+        }
         fetchAllIntegrationStatuses(false); // Refresh to get the latest status
-         // Clean up URL
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, '', newUrl);
+
+        // Clean up URL by removing oauth_callback, platform, error, and error_description query parameters
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('oauth_callback');
+        newUrl.searchParams.delete('platform');
+        newUrl.searchParams.delete('error');
+        newUrl.searchParams.delete('error_description');
+        window.history.replaceState({}, '', newUrl.toString());
       }
+
+       // Reset connecting state regardless of success or failure of OAuth
        if (platform && operationStates[platform]?.isConnecting) {
          setOperationStates(prev => ({ ...prev, [platform]: { isConnecting: false }}));
        }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchAllIntegrationStatuses]); // Removed toast from dependencies
+  }, [fetchAllIntegrationStatuses]); // operationStates is intentionally omitted to avoid loop if it changes for other reasons
 
   if (loadingGlobal) {
     return (

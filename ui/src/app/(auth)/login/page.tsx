@@ -60,13 +60,19 @@ export default function LoginPage() {
         setError(errorMessage); // Set local error state
         toast.error(errorMessage); // Show toast notification
       } else {
-        const userWithToken = {
-          ...result.user,
-          token: result.token
-        };
-        auth.login(userWithToken);
-        toast.success('Login successful! Redirecting...');
-        router.push('/chat'); 
+        // Ensure result.user and result.token exist and are valid before proceeding
+        if (result.user && typeof result.token === 'string' && result.token.trim() !== '' && result.token !== 'undefined') {
+          console.log('Login page: Token received from API:', result.token);
+          console.log('Login page: User data received from API:', result.user);
+          auth.login(result.user, result.token); // Corrected call
+          toast.success('Login successful! Redirecting...');
+          router.push('/chat'); // Or to a more appropriate post-login page
+        } else {
+          const invalidTokenMessage = `Login succeeded but token/user data is invalid. Token: ${result.token}`;
+          console.error('Login page: Invalid token or user data from API.', result);
+          setError(invalidTokenMessage);
+          toast.error(invalidTokenMessage);
+        }
       }
     } catch (err) {
       const catchMessage = 'An unexpected error occurred. Please try again.';

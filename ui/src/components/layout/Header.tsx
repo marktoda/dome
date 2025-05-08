@@ -5,20 +5,32 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation'; // Import useRouter
 import { Button } from '@/components/ui/button';
 import { LogOut, Settings } from 'lucide-react'; // Removed Menu icon
-import { useAuth } from '@/contexts/AuthContext'; // To handle logout
-import { MobileSidebar } from '@/components/sidebar/MobileSidebar'; // For mobile menu toggle
+import { useAuth } from '@/contexts/AuthContext';
+import { MobileSidebar } from '@/components/sidebar/MobileSidebar';
 
+/**
+ * Header component displayed at the top of the application.
+ * It includes the application name/logo, a mobile sidebar toggle,
+ * a link to settings, and a logout button.
+ *
+ * @returns A React functional component representing the application header.
+ */
 export function Header() {
   const { logout } = useAuth();
-  const router = useRouter(); // Initialize useRouter
+  const router = useRouter();
 
+  /**
+   * Handles the user logout process.
+   * Calls the `logout` function from `AuthContext` and redirects to the login page on success.
+   * Logs an error if logout fails.
+   */
   const handleLogout = async () => {
     try {
       await logout();
-      router.push('/login'); // Redirect to login page after logout
+      router.push('/login');
     } catch (error) {
       console.error('Logout failed:', error);
-      // Handle logout error (e.g., show a notification)
+      // TODO: Implement user-facing notification for logout failure.
     }
   };
 

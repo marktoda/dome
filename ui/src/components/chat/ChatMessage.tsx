@@ -1,16 +1,35 @@
 import React from 'react';
-import { Message } from '@/lib/chat-types';
+import { ParsedMessage } from '@/lib/chat-types'; // Updated import
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
+/**
+ * Props for the {@link ChatMessage} component.
+ */
 interface ChatMessageProps {
-  message: Message;
+  /** The message object containing sender, timestamp, and content. */
+  message: ParsedMessage;
+  /** Optional additional CSS class names for the component. */
   className?: string;
+  /** Optional URL for the avatar image. */
   avatarSrc?: string;
+  /** Fallback text for the avatar if the image fails to load or is not provided. */
   avatarFallback: string;
-  contentOverride?: React.ReactNode; // New prop for custom content rendering
+  /**
+   * Optional React node to override the default rendering of message content.
+   * Useful for complex message types like assistant messages with thinking indicators, sources, or errors.
+   */
+  contentOverride?: React.ReactNode;
 }
 
+/**
+ * Renders a single chat message, adapting its style and layout based on whether
+ * the sender is the user or another participant (e.g., assistant, system).
+ * It displays an avatar, the message content (or a custom override), and a timestamp.
+ *
+ * @param props - The props for the component.
+ * @returns A React functional component representing a chat message.
+ */
 export const ChatMessage: React.FC<ChatMessageProps> = ({
   message,
   className,
@@ -45,7 +64,11 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
         {contentOverride ? (
           contentOverride
         ) : (
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.text}</p>
+          // Only render message.text if it exists on the message type
+          // UserMessage has text. For others, contentOverride should be used.
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+            {('text' in message && typeof message.text === 'string') ? message.text : ''}
+          </p>
         )}
         <p
           className={cn(

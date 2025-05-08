@@ -5,17 +5,38 @@ import { searchApi } from '@/lib/api';
 import { SearchResultItem } from '@/lib/types/search';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Terminal } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
+/**
+ * Props for the {@link Sidebar} component.
+ */
 interface SidebarProps {
+  /** Optional additional CSS class names for the sidebar container. */
   className?: string;
 }
 
+/**
+ * `Sidebar` component provides a dedicated area for search functionality.
+ * It includes a {@link SearchInput} to enter queries and a {@link SearchResultsList}
+ * to display the results. It manages loading states, error messages, and "no results" feedback.
+ *
+ * @param props - The props for the component.
+ * @param props.className - Optional additional CSS class names for the sidebar container.
+ * @returns A React functional component representing the application sidebar.
+ */
 export function Sidebar({ className }: SidebarProps) {
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastQuery, setLastQuery] = useState<string>('');
 
+  /**
+   * Handles the search operation.
+   * If the query is empty, it clears results and errors.
+   * Otherwise, it sets loading state, calls the search API, and updates
+   * search results or error state accordingly.
+   * @param query - The search query string.
+   */
   const handleSearch = async (query: string) => {
     if (!query.trim()) {
       setSearchResults([]);
@@ -24,7 +45,7 @@ export function Sidebar({ className }: SidebarProps) {
       return;
     }
     setIsLoading(true);
-    setError(null);
+    setError(null); // Clear previous errors before new search
     setLastQuery(query);
     try {
       const response = await searchApi.search(query);
@@ -32,46 +53,42 @@ export function Sidebar({ className }: SidebarProps) {
     } catch (err) {
       console.error('Search API error:', err);
       setError('Failed to fetch search results. Please try again.');
-      setSearchResults([]);
+      setSearchResults([]); // Clear previous results on error
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <aside className={`h-full w-96 flex-col border-r bg-background p-4 md:p-5 ${className} flex flex-col`}>
-      <div className="mb-5"> {/* Increased bottom margin */}
-        <h2 className="text-xl font-semibold tracking-tight">Search</h2> {/* Enhanced title styling */}
+    <aside className={cn("h-full w-96 flex-col border-r bg-background p-4 md:p-5 flex", className)}>
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold tracking-tight">Search</h2>
       </div>
       <SearchInput onSearch={handleSearch} isLoading={isLoading} />
       
-      <div className="mt-5 flex-grow overflow-y-auto pr-1"> {/* Increased top margin, added small padding to right for scrollbar */}
+      <div className="mt-5 flex-grow overflow-y-auto pr-1">
+        {isLoading && searchResults.length === 0 && !error && (
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground">Searching for &quot;{lastQuery}&quot;...</p>
+          </div>
+        )}
         {error && (
           <Alert variant="destructive" className="mb-4">
             <Terminal className="h-4 w-4" />
-            <AlertTitle>Search Error</AlertTitle> {/* More specific title */}
+            <AlertTitle>Search Error</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
         {!isLoading && !error && searchResults.length === 0 && lastQuery && (
-          <div className="text-center py-4"> {/* Centered no results message */}
+          <div className="text-center py-4">
             <p className="text-sm text-muted-foreground">No results found for &quot;{lastQuery}&quot;.</p>
           </div>
         )}
-        <SearchResultsList results={searchResults} />
+        {/* Only render SearchResultsList if there are actual results and not in a loading/error state that implies no results yet */}
+        {!isLoading && !error && searchResults.length > 0 && (
+          <SearchResultsList results={searchResults} />
+        )}
       </div>
-
-      {/* Future navigation items can go here */}
-      {/* <nav className="mt-auto pt-4 border-t">
-        <ul>
-          Example Navigation Item
-           <li className="mb-2">
-            <a href="#" className="text-muted-foreground hover:text-foreground">
-              Dashboard
-            </a>
-          </li>
-        </ul>
-      </nav> */}
     </aside>
   );
 }

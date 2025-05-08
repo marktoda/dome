@@ -8,6 +8,10 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+/**
+ * Defines the navigation items for the application.
+ * Each item includes a path, a display label, and an icon component.
+ */
 const navItems = [
   { href: '/', label: 'Home', icon: Home },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
@@ -15,13 +19,29 @@ const navItems = [
   { href: '/settings/integrations', label: 'Settings', icon: Settings },
 ];
 
+/**
+ * `Navbar` component provides the main navigation for the application.
+ * It includes:
+ * - A mobile-responsive sheet (drawer) menu for smaller screens.
+ * - A display of the authenticated user's name and avatar.
+ * - A logout button.
+ *
+ * The navigation links are defined in the `navItems` array.
+ * Active links are highlighted based on the current pathname.
+ *
+ * @returns A React functional component representing the navigation bar.
+ */
 export function Navbar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const router = useRouter();
 
+  /**
+   * Handles the user logout process.
+   * Calls the `logout` function from `AuthContext` and redirects to the login page.
+   */
   const handleLogout = () => {
-    logout();
+    logout(); // This should ideally be an async operation if it involves API calls.
     router.push('/login');
   };
 

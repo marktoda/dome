@@ -6,6 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Sidebar } from './Sidebar';
 
+/**
+ * `MobileSidebar` provides a toggle button (hamburger menu icon) that, when clicked,
+ * opens a sheet (drawer) from the left side of the screen, displaying the main {@link Sidebar}.
+ * This component is intended for use on smaller screens (mobile and tablet) where the
+ * full sidebar is hidden by default.
+ *
+ * @returns A React functional component representing the mobile sidebar toggle and sheet.
+ */
 export function MobileSidebar() {
   return (
     <Sheet>

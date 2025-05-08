@@ -2,15 +2,28 @@ import * as React from 'react';
 import { SearchResultItem } from '@/lib/types/search';
 import { SearchResultCard } from './SearchResultCard';
 
+/**
+ * Props for the {@link SearchResultsList} component.
+ */
 interface SearchResultsListProps {
+  /** An array of search result items to display. */
   results: SearchResultItem[];
 }
 
+/**
+ * `SearchResultsList` renders a list of {@link SearchResultCard} components.
+ * If no results are provided, it renders nothing (null), as the parent component
+ * is expected to handle the "no results" message or loading states.
+ *
+ * @param props - The props for the component.
+ * @returns A React functional component displaying a list of search results, or null if results are empty.
+ */
 export function SearchResultsList({ results }: SearchResultsListProps) {
-  // The parent component (Sidebar.tsx) now handles the "no results" message based on query state.
-  // This component should only render the list if there are results.
+  // The parent component (e.g., a page or a more complex search UI container)
+  // is responsible for showing "no results" messages or loading indicators.
+  // This component's sole responsibility is to render the list if results exist.
   if (results.length === 0) {
-    return null; // Return null if there are no results to display
+    return null;
   }
 
   return (

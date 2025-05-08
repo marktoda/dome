@@ -10,20 +10,40 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { SearchIcon } from 'lucide-react';
 
+/**
+ * Defines the Zod schema for the search form.
+ * The search query must be a string with a minimum length of 2 characters.
+ */
 const formSchema = z.object({
   query: z.string().min(2, {
     message: 'Search query must be at least 2 characters.',
   }),
 });
 
+/**
+ * Type representing the values of the search form, inferred from the Zod schema.
+ */
 type SearchFormValues = z.infer<typeof formSchema>;
 
+/**
+ * Props for the {@link SearchInput} component.
+ */
 interface SearchInputProps {
+  /** Callback function invoked when a search is submitted. Receives the search query string. */
   onSearch: (query: string) => void;
+  /** Optional boolean indicating if a search operation is currently in progress. Disables the input and button if true. */
   isLoading?: boolean;
+  /** Optional initial value for the search query input field. */
   initialQuery?: string;
 }
 
+/**
+ * `SearchInput` provides a form with an input field and a submit button for performing searches.
+ * It uses `react-hook-form` for form management and `zod` for validation.
+ *
+ * @param props - The props for the component.
+ * @returns A React functional component representing the search input form.
+ */
 export function SearchInput({ onSearch, isLoading, initialQuery = '' }: SearchInputProps) {
   const form = useForm<SearchFormValues>({
     resolver: zodResolver(formSchema),
@@ -32,6 +52,11 @@ export function SearchInput({ onSearch, isLoading, initialQuery = '' }: SearchIn
     },
   });
 
+  /**
+   * Handles the form submission.
+   * Invokes the `onSearch` callback with the validated query data.
+   * @param data - The validated form data.
+   */
   function onSubmit(data: SearchFormValues) {
     onSearch(data.query);
   }

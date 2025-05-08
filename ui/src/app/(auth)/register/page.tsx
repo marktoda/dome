@@ -26,14 +26,14 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-// import { useAuth } from '@/contexts/AuthContext'; // Potentially needed if auto-login after register
+import { useAuth } from '@/contexts/AuthContext'; // Potentially needed if auto-login after register
 
 export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null); // Keep for critical form errors if needed
   // const [successMessage, setSuccessMessage] = useState<string | null>(null); // Replaced by toast
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  // const auth = useAuth(); // Potentially needed
+  const auth = useAuth(); // Potentially needed
 
   const form = useForm<RegisterFormData>({
     resolver: zodResolver(RegisterSchema),
@@ -66,10 +66,21 @@ export default function RegisterPage() {
         setError(errorMessage);
         toast.error(errorMessage);
       } else {
-        toast.success(result.message || 'Registration successful! You can now log in.');
-        // Optionally, redirect to login or auto-login
-        // auth.login(result.user); // If API returns user and auto-login is desired
-        router.push('/login'); // Redirect to login after successful registration
+        // Check if the API returns user and token for auto-login
+        if (auth && result.user && typeof result.token === 'string' && result.token.trim() !== '' && result.token !== 'undefined') {
+          console.log('Register page: Token received from API on registration:', result.token);
+          console.log('Register page: User data received from API on registration:', result.user);
+          auth.login(result.user, result.token); // Perform auto-login
+          toast.success(result.message || 'Registration successful! Redirecting...');
+          router.push('/chat'); // Redirect to main app area
+        } else {
+          // If no token/user for auto-login, or auth context not available (should not happen if imported correctly)
+          if (!auth) {
+            console.error("Register page: Auth context not available for auto-login.");
+          }
+          toast.success(result.message || 'Registration successful! Please log in.');
+          router.push('/login');
+        }
         form.reset(); // Reset form on success
       }
     } catch (err) {

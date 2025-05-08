@@ -1,36 +1,44 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest for type safety
 import { cookies } from 'next/headers';
 
-export async function POST(request: Request) {
+/**
+ * Handles POST requests to `/api/auth/logout`.
+ * Clears the `auth_token` HttpOnly cookie to log the user out.
+ *
+ * @param req - The NextRequest object (unused in this implementation but good practice to type).
+ * @returns A NextResponse object with:
+ *   - 200 OK: Success message, regardless of whether a token cookie was initially present.
+ *             The response includes instructions to clear the `auth_token` cookie.
+ *   - 500 Internal Server Error: If an unexpected error occurs during cookie handling.
+ */
+export async function POST(req: NextRequest) { // Changed type to NextRequest
   try {
-    const cookieStore = await cookies(); // Assuming cookies() is Promise-like
+    const cookieStore = await cookies(); // Add await back as TS expects a Promise here
     const tokenCookie = cookieStore.get('auth_token');
 
-    if (tokenCookie) {
-      // Clear the cookie by setting maxAge to 0 or an expiry date in the past
-      // Use the ResponseCookies API for modification if directly modifying request cookies is not allowed/working
-      // For Route Handlers, modifying cookies is typically done on the response.
-      // However, cookies().set() is available for request cookies in some contexts or for setting on response.
-      // Let's try setting it directly on the request's cookie store if allowed,
-      // otherwise, we'd set it on the response.
-      // The more standard way is to set it on the response.
-      
-      const response = NextResponse.json({ message: 'Logout successful' }, { status: 200 });
-      response.cookies.set({
-        name: 'auth_token',
-        value: '',
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 0,
-      });
-      return response;
-    }
-    // If no cookie, still a successful logout from client's perspective
-    return NextResponse.json({ message: 'Logout successful (no token found)' }, { status: 200 });
+    // Prepare the response - we always want to try clearing the cookie
+    const response = NextResponse.json(
+      { message: tokenCookie ? 'Logout successful' : 'Logout successful (no active session found)' },
+      { status: 200 }
+    );
+
+    // Instruct the browser to clear the cookie by setting its value to empty and maxAge to 0
+    response.cookies.set({
+      name: 'auth_token',
+      value: '', // Clear the value
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0, // Expire the cookie immediately
+    });
+
+    console.log('Logout request processed, clearing auth_token cookie.');
+    return response;
+
   } catch (error) {
-    console.error('Logout API error:', error);
-    return NextResponse.json({ message: 'Internal server error during logout' }, { status: 500 });
+    console.error('Logout API route error:', error);
+    // Avoid leaking internal error details to the client
+    return NextResponse.json({ message: 'An internal server error occurred during logout.' }, { status: 500 });
   }
 }

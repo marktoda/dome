@@ -7,39 +7,80 @@ import { Badge } from '@/components/ui/badge';
 import type { Integration, IntegrationStatus, IntegrationPlatform } from '@/lib/oauth-types';
 import { ExternalLink, Zap, ZapOff, RefreshCw } from 'lucide-react';
 
-interface IntegrationCardProps {
-  integrationConfig: Omit<Integration, 'isConnected'>; // Base details from a config object
-  status?: IntegrationStatus; // Current status, fetched separately
-  onConnect: (platform: IntegrationPlatform) => void; // Should initiate the API call that redirects
-  onDisconnect: (platform: IntegrationPlatform) => Promise<void>; // Should call the disconnect API
-  isLoading: boolean; // True if any operation for this card is in progress
-  isConnecting?: boolean; // Specifically for connect operation
-  isDisconnecting?: boolean; // Specifically for disconnect operation
-}
-
+/**
+ * Props for the icon elements used within the {@link IntegrationCard}.
+ * Allows specifying size and className for the integration's icon.
+ */
 interface IconProps {
+  /** The size of the icon (width and height). */
   size?: number;
+  /** Additional CSS class names for the icon. */
   className?: string;
 }
 
+/**
+ * Props for the {@link IntegrationCard} component.
+ */
+interface IntegrationCardProps {
+  /** Base configuration details for the integration (name, description, icon, platform). */
+  integrationConfig: Omit<Integration, 'isConnected'>;
+  /** Optional current status of the integration (isConnected, user details, etc.), usually fetched dynamically. */
+  status?: IntegrationStatus;
+  /**
+   * Callback function to initiate the connection process for the integration.
+   * This function is expected to trigger the OAuth flow, often by redirecting the user.
+   * @param platform - The platform identifier of the integration to connect.
+   */
+  onConnect: (platform: IntegrationPlatform) => void;
+  /**
+   * Callback function to initiate the disconnection process for the integration.
+   * This function should call the backend API to revoke the integration's access.
+   * @param platform - The platform identifier of the integration to disconnect.
+   * @returns A promise that resolves when the disconnection attempt is complete.
+   */
+  onDisconnect: (platform: IntegrationPlatform) => Promise<void>;
+  /** General loading state for any operation related to this card (connect, disconnect, status fetch). */
+  isLoading: boolean;
+  /** Specific loading state for the connection operation. */
+  isConnecting?: boolean;
+  /** Specific loading state for the disconnection operation. */
+  isDisconnecting?: boolean;
+}
+
+/**
+ * `IntegrationCard` displays information about a third-party integration and allows users to connect or disconnect it.
+ * It shows the integration's name, icon, description, and current connection status.
+ * Provides buttons to initiate connection or disconnection, with loading states.
+ *
+ * @param props - The props for the component.
+ * @returns A React functional component representing an integration card.
+ */
 const IntegrationCard: React.FC<IntegrationCardProps> = ({
   integrationConfig,
   status,
   onConnect,
   onDisconnect,
-  isLoading,
-  isConnecting,
-  isDisconnecting,
+  isLoading, // General loading state for the card
+  isConnecting, // Specific loading state for connect action
+  isDisconnecting, // Specific loading state for disconnect action
 }) => {
   const isConnected = status?.isConnected || false;
 
+  /**
+   * Handles the click event for the "Connect" button.
+   * Invokes the `onConnect` callback with the integration's platform.
+   */
   const handleConnectClick = () => {
-    // The onConnect function will typically make window.location.href change
-    // to the backend route that starts the OAuth flow.
+    if (isLoading || isConnecting) return; // Prevent action if already loading
     onConnect(integrationConfig.platform);
   };
 
+  /**
+   * Handles the click event for the "Disconnect" button.
+   * Invokes the `onDisconnect` callback with the integration's platform.
+   */
   const handleDisconnectClick = async () => {
+    if (isLoading || isDisconnecting) return; // Prevent action if already loading
     await onDisconnect(integrationConfig.platform);
   };
 

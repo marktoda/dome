@@ -6,10 +6,22 @@ import { Button } from '@/components/ui/button';
 import { Send } from 'lucide-react';
 import { useChat } from '@/contexts/ChatContext';
 
+/**
+ * ChatInput component provides a text input field and a send button for users to send messages.
+ * It uses the `useChat` context to add new messages and manage loading states.
+ * @returns A React functional component.
+ */
 export const ChatInput: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const { addMessage, isLoading } = useChat();
 
+  /**
+   * Handles the form submission event.
+   * Prevents the default form submission, trims the input value,
+   * and calls `addMessage` if the input is not empty and not currently loading.
+   * Clears the input field after the message is sent.
+   * @param e - The form event.
+   */
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (inputValue.trim() && !isLoading) {
