@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { updateMockIntegrationStatus } from '@/lib/integration-mock-db'; // Placeholder for actual DB operations
+import { cookies } from 'next/headers'; // Import cookies
+// import { updateMockIntegrationStatus } from '@/lib/integration-mock-db'; // Replaced by dome-api call
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -84,22 +85,53 @@ export async function GET(request: Request) {
 
     const githubUser = await userResponse.json();
 
-    // 3. Store integration details (using mock DB for now)
-    // In a real app, you'd store accessToken (encrypted), githubUser.id, githubUser.login, etc., in your database.
-    // And associate it with your application's user ID.
-    const userId = 'default-user'; // TODO: Replace with actual user ID from session/auth
-    updateMockIntegrationStatus(
-      userId,
-      'github',
-      true,
-      {
-        name: githubUser.name || githubUser.login,
-        email: githubUser.email, // Note: email might be null if not public or not in scopes
-        username: githubUser.login,
-        profileUrl: githubUser.html_url,
-        // Store other relevant details like githubUser.id, accessToken (encrypted)
-      }
-    );
+    // 3. Send integration details to dome-api to be stored by Tsunami
+    // const userId = 'default-user'; // userId will be derived by dome-api from the forwarded auth token
+    const domeApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+    if (!domeApiBaseUrl) {
+      console.error('NEXT_PUBLIC_API_BASE_URL is not set. Cannot store GitHub integration.');
+      const errorRedirectUrl = new URL(clientFinalRedirectPath, appBaseUrl);
+      errorRedirectUrl.searchParams.append('oauth_callback', 'true');
+      errorRedirectUrl.searchParams.append('platform', 'github');
+      errorRedirectUrl.searchParams.append('status', 'error');
+      errorRedirectUrl.searchParams.append('error_message', 'Server configuration error: API base URL missing.');
+      return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    }
+
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+    });
+    const cookieStore = await cookies(); // Assuming cookies() returns a Promise here based on previous fixes
+    const authTokenCookie = cookieStore.get('auth_token'); // TODO: Confirm cookie name
+    if (authTokenCookie?.value) {
+      headers.append('Authorization', `Bearer ${authTokenCookie.value}`);
+    }
+
+    const storeIntegrationResponse = await fetch(`${domeApiBaseUrl}/content/github/oauth/store`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        accessToken,
+        scope: tokenData.scope, // Assuming scope is in tokenData
+        tokenType: tokenData.token_type, // Assuming token_type is in tokenData
+        githubUserId: githubUser.id,
+        githubUsername: githubUser.login,
+      }),
+    });
+
+    if (!storeIntegrationResponse.ok) {
+      const errorData = await storeIntegrationResponse.json().catch(() => ({ message: 'Failed to store GitHub integration and parse error response.' }));
+      console.error('Failed to store GitHub integration via dome-api:', errorData);
+      const errorRedirectUrl = new URL(clientFinalRedirectPath, appBaseUrl);
+      errorRedirectUrl.searchParams.append('oauth_callback', 'true');
+      errorRedirectUrl.searchParams.append('platform', 'github');
+      errorRedirectUrl.searchParams.append('status', 'error');
+      errorRedirectUrl.searchParams.append('error_message', `Failed to save GitHub integration: ${errorData.message || storeIntegrationResponse.statusText}`);
+      return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    }
+
+    const storeResult = await storeIntegrationResponse.json();
+    console.log('GitHub integration stored via dome-api:', storeResult);
 
     // 4. Redirect user back to the frontend
     const finalRedirectUrl = new URL(clientFinalRedirectPath, appBaseUrl);
