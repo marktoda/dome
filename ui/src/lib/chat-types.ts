@@ -9,7 +9,7 @@ export interface SourceItem {
 export type Message = {
   id: string;
   text: string;
-  sender: 'user' | 'assistant';
+  sender: 'user' | 'assistant' | 'system'; // Added 'system'
   timestamp: Date;
   sources?: SourceItem[];
 };

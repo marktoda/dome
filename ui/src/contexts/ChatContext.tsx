@@ -23,7 +23,7 @@ import {
 
 // CLI's ChatMessageChunk structure
 type CliChatMessageChunk =
-  | { type: 'content' | 'thinking' | 'unknown'; content: string }
+  | { type: 'content' | 'thinking' | 'unknown' | 'internal_update'; content: string } // Added internal_update
   | {
       type: 'sources';
       node: { // This 'node' is the value from p[1][nodeId] in the CLI detector
@@ -67,6 +67,24 @@ const detectors: ChunkDetector[] = [
           return { type: 'thinking', content: lastReasoning };
         }
       }
+    }
+    return null;
+  },
+
+  // Generic LangGraph updates that are not handled specifically (e.g., 'retrieve')
+  // This should come AFTER specific 'updates' handlers like 'doc_to_sources' and 'thinking' with reasoning.
+  (raw, p) => {
+    if (Array.isArray(p) && p[0] === 'updates') {
+      // If it reaches here, it wasn't 'doc_to_sources' or 'thinking' with reasoning.
+      // These are likely internal state updates we don't want to display as content.
+      const nodeId: string = Object.keys(p[1])[0];
+      // Avoid classifying 'doc_to_sources' or thinking updates if they somehow missed earlier detectors
+      // or if their specific conditions (e.g., presence of 'sources' or 'reasoning' field) weren't met.
+      if (nodeId === 'doc_to_sources' || (p[1][nodeId] && typeof p[1][nodeId] === 'object' && 'reasoning' in p[1][nodeId])) {
+        return null; // Let other detectors or unknown handling take over.
+      }
+      console.debug(`[ChatContext] Detected internal update for node: ${nodeId}`);
+      return { type: 'internal_update', content: raw }; // Store raw for debugging
     }
     return null;
   },
@@ -166,7 +184,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const wsRef = useRef<WebSocket | null>(null);
   const currentAssistantId = useRef<string | null>(null);
 
-  const { token } = useAuth();
+  const { user } = useAuth(); // Use user object for auth status, token is HttpOnly
 
   /** ----------------------------------------------------------------
    *  WebSocket helpers
@@ -188,7 +206,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
   /** Send conversation + new user prompt to backend. */
   const sendToBackend = useCallback(
     async (history: UIMessage[], text: string): Promise<void> => {
-      if (!token) {
+      if (!user) { // Check for user object instead of token
         setMessages(m => [
           ...m,
           {
@@ -234,7 +252,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             temperature: 0.7,
           },
           stream: true,
-          auth: { token },
+          // auth: { token }, // Token is sent via HttpOnly cookie, not in payload
         };
         ws.send(JSON.stringify(payload));
         setIsLoading(true);
@@ -307,16 +325,45 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             break;
           case 'thinking':
             console.log('[ChatContext] Thinking:', chunk.content);
-            // Optionally, update UI to show thinking state
+            // Add thinking steps as messages from 'system'
+            // Ensure UIMessage and rendering components can handle sender: 'system'
+            const thinkingMsg: UIMessage = {
+              id: uuidv4(),
+              text: `${chunk.content}`, // Display thinking content directly
+              sender: 'system', // Use 'system' or a dedicated 'thinking' sender type
+              timestamp: new Date(),
+              sources: [], // Ensure sources is initialized if UIMessage expects it
+            };
+            setMessages(prevMessages => [...prevMessages, thinkingMsg]);
+            break;
+          case 'internal_update':
+            // Log for debugging, but don't show in UI or append to messages
+            console.debug('[ChatContext] Internal update ignored:', chunk.content.substring(0,150) + "...");
             break;
           case 'error':
-            console.error('[ChatContext] Error:', chunk.content);
+            let errorMsg = chunk.content;
+            try {
+              const parsedError = JSON.parse(chunk.content);
+              if (parsedError && typeof parsedError.message === 'string' && parsedError.message.trim() !== '') {
+                errorMsg = parsedError.message;
+              } else if (parsedError && typeof parsedError.error === 'string' && parsedError.error.trim() !== '') {
+                errorMsg = parsedError.error;
+              }
+            } catch (e) {
+              // Not JSON or no specific 'message'/'error' field, use content as is
+            }
+            // Truncate if too long for console and UI
+            const shortErrorMsg = errorMsg.length > 250 ? errorMsg.substring(0, 250) + '...' : errorMsg;
+            // Log both short and full error for better debugging
+            console.error('[ChatContext] Error (short):', shortErrorMsg, '\nFull error data:', chunk.content);
             setMessages(prevMessages =>
               prevMessages.map(msg =>
                 msg.id === currentAssistantId.current
                   ? {
                     ...msg,
-                    text: msg.text + `\n[Server Error] ${chunk.content}`,
+                    // Append the potentially long original error to the text if it's not too disruptive,
+                    // or stick to shortErrorMsg. For now, let's use shortErrorMsg for UI.
+                    text: msg.text + `\n[Server Error] ${shortErrorMsg}`,
                   }
                   : msg,
               ),
@@ -332,11 +379,13 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       };
 
       ws.onerror = err => {
-        console.error('WebSocket error', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        // Log a concise message and the full error object for details
+        console.error('WebSocket error:', errorMessage, err);
         setMessages(m =>
           m.map(msg =>
             msg.id === currentAssistantId.current
-              ? { ...msg, text: msg.text + '\n[Connection error]' }
+              ? { ...msg, text: msg.text + `\n[Connection error: ${errorMessage}]` } // Provide more specific error
               : msg,
           ),
         );
@@ -348,7 +397,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         currentAssistantId.current = null;
       };
     },
-    [token],
+    [user], // Changed from token to user
   );
 
   /** Public helper – add a new user message. */
@@ -363,7 +412,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       setMessages(m => [...m, userMsg]);
       sendToBackend(messages, text);
     },
-    [sendToBackend, messages],
+    [sendToBackend, messages, user], // Added user to dependency array
   );
 
   /** Clean up on unmount. */
