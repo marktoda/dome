@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LoginSchema } from '@/lib/validators';
 import * as jose from 'jose';
-import { cookies } from 'next/headers';
+import { cookies } from 'next/headers'; // Revert import, ResponseCookies not found
 
 // !!! SECURITY WARNING: Mock user data and plain password check !!!
 // !!! This is for demonstration ONLY. Replace with secure database lookup and password hashing (e.g., bcrypt) in production. !!!
@@ -64,18 +64,34 @@ export async function POST(req: NextRequest) {
       .sign(secret);
 
     // Set JWT in an HttpOnly cookie for security
-    const cookieStore = cookies();
-    cookieStore.set('auth_token', jwt, {
-      httpOnly: true, // Prevents client-side script access
-      secure: process.env.NODE_ENV === 'production', // Only send over HTTPS in production
-      sameSite: 'lax', // Mitigates CSRF attacks
-      path: '/', // Cookie accessible for all paths
-      maxAge: 2 * 60 * 60, // Cookie expiry in seconds (matches JWT expiration)
-    });
+    // The cookies() API from next/headers seems to have type issues in this environment.
+    // Falling back to manually setting the Set-Cookie header.
+    const { password: _password, ...userWithoutPassword } = user; // Declare userWithoutPassword first
+    const response = NextResponse.json({ user: userWithoutPassword, message: 'Login successful' });
 
-    // Return user data (excluding password) in the response body
-    const { password: _password, ...userWithoutPassword } = user;
-    return NextResponse.json({ user: userWithoutPassword, message: 'Login successful' });
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax' as 'lax' | 'strict' | 'none' | undefined, // Explicitly type sameSite
+      path: '/',
+      maxAge: 2 * 60 * 60,
+    };
+
+    // Manually construct the cookie string
+    // Note: This is a simplified version. A robust cookie serialization library might be better for complex cases.
+    let cookieString = `auth_token=${jwt}`;
+    if (cookieOptions.httpOnly) cookieString += '; HttpOnly';
+    if (cookieOptions.secure) cookieString += '; Secure';
+    if (cookieOptions.sameSite) cookieString += `; SameSite=${cookieOptions.sameSite}`;
+    if (cookieOptions.path) cookieString += `; Path=${cookieOptions.path}`;
+    if (cookieOptions.maxAge) cookieString += `; Max-Age=${cookieOptions.maxAge}`;
+    // Add Expires for older browsers if needed:
+    // const expires = new Date(Date.now() + cookieOptions.maxAge * 1000).toUTCString();
+    // cookieString += `; Expires=${expires}`;
+
+    response.headers.append('Set-Cookie', cookieString);
+
+    return response;
 
   } catch (error) {
     console.error('Login API route error:', error);
