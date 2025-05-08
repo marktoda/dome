@@ -145,7 +145,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         id: assistantMessagePlaceholderId, sender: 'assistant', type: 'thinking',
         timestamp: new Date(), text: 'Assistant is thinking...',
       };
-      setMessages(prev => [...prev, thinkingPlaceholder]);
+      // Add thinking placeholder only if no message (e.g. an error) for this ID already exists
+      setMessages(prev => {
+        if (prev.some(m => m.id === assistantMessagePlaceholderId)) {
+          // An error for this ID might have been processed already by a quick failing WebSocket.
+          // In this case, don't add the "thinking" message.
+          return prev;
+        }
+        return [...prev, thinkingPlaceholder];
+      });
       setIsLoading(true);
       setError(null);
 
@@ -159,14 +167,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           error: { message: 'Failed to establish secure connection with chat server.', code: 'WS_OPEN_FAILED' },
           text: 'Failed to establish secure connection with chat server.',
         };
+        // Ensure wsOpenError replaces any existing message with the same ID, or adds if none.
         setMessages(prev => {
-            const thinkingIndex = prev.findIndex(m => m.id === assistantMessagePlaceholderId);
-            if (thinkingIndex !== -1) {
-                const updated = [...prev];
-                updated[thinkingIndex] = wsOpenError;
-                return updated;
-            }
-            return [...prev, wsOpenError];
+            const messagesWithoutOld = prev.filter(m => m.id !== wsOpenError.id);
+            return [...messagesWithoutOld, wsOpenError];
         });
         setError(wsOpenError);
         setIsLoading(false);
@@ -255,29 +259,65 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           text: `Connection error: ${errorMessageText}`,
         };
         // Update or add the error message in the list
+        // Ensure connError replaces any existing message with the same ID, or adds if none.
         setMessages(prev => {
-            const existingIndex = prev.findIndex(m => m.id === connError.id);
-            if (existingIndex !== -1) {
-                const updated = [...prev];
-                updated[existingIndex] = connError; // Replace thinking/content with error
-                return updated;
-            }
-            return [...prev, connError]; // Add if no existing message with ID
+            const messagesWithoutOld = prev.filter(m => m.id !== connError.id);
+            return [...messagesWithoutOld, connError];
         });
         setError(connError); // Set global error state
         setIsLoading(false);
       };
-
+ 
       ws.onclose = (event) => {
-        console.log(`[ChatContext] WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
-        setIsLoading(false); // Stop loading indicator when connection closes
-        // Resetting currentAssistantMessageIdRef here might be premature if an error needs to update the last message.
-        // It's reset when the next message is sent via sendToBackend.
+        console.log(`[ChatContext] WebSocket closed. Code: ${event.code}, Reason: '${event.reason}'`);
+        setIsLoading(false);
+        wsRef.current = null; // Ensure ref is cleared on close
+
+        let connectionError: AssistantErrorMessage | null = null;
+
+        // 1000 = Normal Closure, 1001 = Going Away (e.g., server shutdown, browser navigation)
+        if (event.code !== 1000 && event.code !== 1001) {
+          let messageText = `Connection closed: ${event.reason || 'Unknown reason'}. (Code: ${event.code})`;
+          let errorCode = 'WS_CLOSED_ABNORMALLY';
+
+          const reasonLowerCase = event.reason?.toLowerCase() || '';
+          // Check for specific codes or reasons pointing to auth failure (backend-dependent)
+          if (event.code === 4001 || event.code === 4003 || // Common WebSocket unauthorized/forbidden codes
+              reasonLowerCase.includes('auth') ||
+              reasonLowerCase.includes('unauthorized') ||
+              reasonLowerCase.includes('forbidden')) {
+            messageText = `Authentication failed: ${event.reason || 'Server rejected connection due to authentication issue.'} (Code: ${event.code})`;
+            errorCode = 'WS_AUTH_FAILED';
+          } else if (event.code === 1006) { // Abnormal closure (e.g., handshake failed, server dropped)
+             messageText = `Connection failed or dropped abruptly. (Code: ${event.code}${event.reason ? `. Reason: ${event.reason}` : ''})`;
+             errorCode = 'WS_CONNECTION_DROPPED';
+          }
+
+          connectionError = {
+            id: currentAssistantMessageIdRef.current || uuidv4(), // Use current ID to replace thinking/content
+            sender: 'system',
+            type: 'error',
+            timestamp: new Date(),
+            error: { message: messageText, code: errorCode },
+            text: messageText,
+          };
+        }
+
+        if (connectionError) {
+          const finalError = connectionError;
+          // Ensure finalError replaces any existing message with the same ID, or adds if none.
+          // This robustly handles cases where the 'thinking' message's setState might not have flushed yet.
+          setMessages(prev => {
+            const messagesWithoutOld = prev.filter(m => m.id !== finalError.id);
+            return [...messagesWithoutOld, finalError];
+          });
+          setError(finalError); // Set global error
+        }
       };
     },
     [user, token, closeWs, openWs], // Dependencies for the sendToBackend callback
   );
-
+ 
   /**
    * Adds a message to the chat state and triggers sending it to the backend if it's a user message.
    * Can also be used to add system or initial assistant messages directly to the state.
@@ -332,14 +372,30 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       closeWs();
     };
   }, [closeWs]);
-
+ 
+  /** Effect to clear authentication-related errors when a new token becomes available */
+  useEffect(() => {
+    if (token && error &&
+        (error.error.code === 'AUTH_REQUIRED' ||
+         error.error.code === 'AUTH_REQUIRED_SEND' ||
+         error.error.code === 'WS_AUTH_FAILED' ||
+         error.error.code === 'WS_OPEN_FAILED' || // WS_OPEN_FAILED can occur if token in query is immediately rejected
+         error.error.code === 'WS_CONNECTION_DROPPED' // Could be due to auth
+        )) {
+      console.log('[ChatContext] New token detected or auth-related error present. Clearing previous auth-related error message from global state.');
+      setError(null); // Clear the global error state
+      // The error message will remain in the chat list, but the global error state (e.g., for a banner) is cleared.
+      // User can then retry sending a message.
+    }
+  }, [token, error]); // Rerun when token or global error state changes
+ 
   return (
     <ChatContext.Provider value={{ messages, addMessage, isLoading, error, clearChat }}>
       {children}
     </ChatContext.Provider>
   );
 };
-
+ 
 /**
  * Custom hook `useChat` provides an easy way to access the chat context values.
  *
