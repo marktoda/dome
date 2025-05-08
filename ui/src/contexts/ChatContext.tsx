@@ -315,7 +315,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         }
       };
     },
-    [user, token, closeWs, openWs], // Dependencies for the sendToBackend callback
+    [user, token, closeWs, openWs, error], // Dependencies for the sendToBackend callback
   );
  
   /**

@@ -19,9 +19,9 @@ const DOME_API_URL = process.env.DOME_API_URL ?? 'http://localhost:8787';
  */
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } } // More specific type for context
+  { params }: { params: { id: string } }
 ) {
-  const id = context.params.id;
+  const id = params.id;
 
   if (!id) {
     // This case should technically not be reachable if the route definition is correct,
