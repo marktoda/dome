@@ -28,16 +28,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // This endpoint would verify the HttpOnly cookie and return user data
     const fetchUser = async () => {
       try {
-        // TODO: Create and call /api/auth/me
-        const response = await fetch('/api/auth/me'); // Conceptual endpoint
+        // Call /api/auth/validate to check session and get user data
+        // This endpoint is POST as per user-provided backend routes
+        const response = await fetch('/api/auth/validate', { method: 'POST' });
         if (response.ok) {
-          const userData = await response.json();
-          setUser(userData.user);
+          const validationData = await response.json();
+          // Assuming the validation endpoint returns user data in a 'user' field if valid
+          // or a structure like { valid: true, user: { ... } }
+          // Adjust based on actual response structure of /api/auth/validate
+          if (validationData && validationData.user) {
+            setUser(validationData.user);
+          } else if (validationData && validationData.valid === true && validationData.data && validationData.data.user) { // Another common pattern
+            setUser(validationData.data.user);
+          }
+          // If the response is ok but doesn't contain user data directly,
+          // it might just be a validation confirmation.
+          // For now, we assume it returns user data if session is valid.
+          // If not, and it only returns {valid: true}, then setUser(null) might be incorrect here
+          // unless an invalid session explicitly returns !response.ok
+          else if (validationData && validationData.valid === false) {
+             setUser(null);
+          }
+          // If response.ok but no user data, and not explicitly invalid, what to do?
+          // For now, if ok and no user, assume not logged in or endpoint doesn't return user.
+          // Best if /api/auth/validate returns user object on successful validation.
+          else {
+            // If response is ok but no user data and not explicitly invalid,
+            // it might mean the session is valid but no user data is returned by this specific endpoint.
+            // This case needs clarification on /api/auth/validate's response.
+            // For safety, if user data isn't clearly provided upon successful validation, assume not logged in for client state.
+            console.warn('/api/auth/validate responded OK but did not provide user data as expected.');
+            setUser(null);
+          }
         } else {
+          // If response is not ok (e.g., 401 Unauthorized, 403 Forbidden), session is invalid or user not logged in.
           setUser(null);
         }
       } catch (error) {
-        console.error('Failed to fetch user:', error);
+        console.error('Failed to validate session / fetch user:', error);
         setUser(null);
       } finally {
         setIsLoading(false);
