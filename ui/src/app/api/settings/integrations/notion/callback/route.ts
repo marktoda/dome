@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers'; // Import cookies
 
 // Placeholder for actual DB operations is now replaced by dome-api call
 // import { updateMockIntegrationStatus } from '@/lib/integration-mock-db';
@@ -89,7 +90,7 @@ export async function GET(request: Request) {
     // The token response already contains workspace info and bot_id.
     
     // 3. Send integration details to dome-api to be stored by Tsunami
-    const userId = 'default-user'; // TODO: Replace with actual user ID from session/auth. This should ideally be obtained from an auth token/session.
+    // const userId = 'default-user'; // userId will be derived by dome-api from the forwarded auth token
     const domeApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
     if (!domeApiBaseUrl) {
       console.error('NEXT_PUBLIC_API_BASE_URL is not set. Cannot store Notion integration.');
@@ -102,15 +103,21 @@ export async function GET(request: Request) {
       return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
     }
 
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+    });
+
+    const cookieStore = await cookies();
+    const authTokenCookie = cookieStore.get('auth_token');
+    if (authTokenCookie?.value) {
+      headers.append('Authorization', `Bearer ${authTokenCookie.value}`);
+    }
+
     const storeIntegrationResponse = await fetch(`${domeApiBaseUrl}/content/notion/oauth/store`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // TODO: Add Authorization header if dome-api endpoint is protected
-        // 'Authorization': `Bearer YOUR_INTERNAL_AUTH_TOKEN_OR_API_KEY_FOR_DOME_API`
-      },
+      headers: headers,
       body: JSON.stringify({
-        userId, // This needs to be the actual authenticated user's ID
+        // userId will be extracted by dome-api's auth middleware from the token
         accessToken,
         workspaceId,
         workspaceName,
@@ -118,6 +125,7 @@ export async function GET(request: Request) {
         botId,
         owner,
         duplicatedTemplateId,
+        // userId is removed from here as dome-api will get it from the token
       }),
     });
 
