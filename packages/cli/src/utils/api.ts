@@ -269,22 +269,20 @@ export function connectWebSocketChat(
   { debug }: { debug?: boolean } = {},
 ): Promise<any> {
   const cfg = loadConfig();
-  // Use cleaner, more standard websocket URL with no auth in query params
-  // We'll handle auth in the connection headers and message
-  // The correct WebSocket endpoint appears to be at /chat/ws based on the 404 error
-  const wsUrl = cfg.baseUrl.replace(/^http/, 'ws') + `/chat/ws`;
+  // Construct WebSocket URL with token in query parameter
+  const token = cfg.apiKey;
+  if (!token) {
+    // This should ideally be caught by isAuthenticated() check before calling chat,
+    // but as a safeguard:
+    return Promise.reject(new Error('Authentication token not found. Please login.'));
+  }
+  const wsUrl = `${cfg.baseUrl.replace(/^http/, 'ws')}/chat/ws?token=${encodeURIComponent(token)}`;
 
   return new Promise((resolve, reject) => {
-    // Add proper auth headers to match HTTP request pattern
-    const wsOptions = {
-      headers: {
-        Authorization: `Bearer ${cfg.apiKey}`,
-        'x-api-key': cfg.apiKey,
-        // Remove hardcoded user ID to let the server resolve it from the token
-      },
-    };
-
-    const ws = new WebSocket(wsUrl, wsOptions);
+    // Custom headers for WebSocket constructor are often not reliably passed or handled,
+    // especially across different environments (Node.js ws vs browser WebSocket).
+    // Authentication via query parameter during handshake is more standard.
+    const ws = new WebSocket(wsUrl);
     let full = '';
     const log = (...a: any[]) => debug && console.debug('[WS]', ...a);
 
@@ -292,7 +290,8 @@ export function connectWebSocketChat(
       log('open');
       ws.send(
         JSON.stringify({
-          // Remove hardcoded user ID to let the server resolve it from the token
+          // Token is now sent in URL, no longer needed in payload.
+          // User ID is resolved by the server from the token.
           messages: messages,
           options: {
             enhanceWithContext: true,
@@ -302,11 +301,7 @@ export function connectWebSocketChat(
             temperature: 0.7,
           },
           stream: true,
-          token: cfg.apiKey, // Add token at top level for API authentication
-          // Keep auth object for backward compatibility with existing servers
-          auth: {
-            token: cfg.apiKey,
-          },
+          // No longer sending token or auth object in the message body
         }),
       );
     });
@@ -411,11 +406,8 @@ export async function chat(
               temperature: 0.7,
             },
             stream: false,
-            token: loadConfig().apiKey, // Add token at top level for API authentication
-            // Keep auth object for backward compatibility
-            auth: {
-              token: loadConfig().apiKey,
-            },
+            // Token is now handled by the ApiClient interceptor via Authorization header
+            // Remove token and auth from the body
           });
 
           // Extract the response text
@@ -459,11 +451,8 @@ export async function chat(
       temperature: 0.7,
     },
     stream: false,
-    token: loadConfig().apiKey, // Add token at top level for API authentication
-    // Keep auth object for backward compatibility
-    auth: {
-      token: loadConfig().apiKey,
-    },
+    // Token is now handled by the ApiClient interceptor via Authorization header
+    // Remove token and auth from the body
   });
 
   const responseText = getResponseText(res);
@@ -526,3 +515,4 @@ export type { AxiosRequestConfig } from 'axios';
 // Export search functions
 export { search as searchContent };
 export { registerGithubRepo, getGithubRepoHistory };
+

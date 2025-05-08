@@ -6,6 +6,7 @@ import {
   AssistantContentMessage,
   AssistantThinkingMessage,
   AssistantSourcesMessage,
+  AssistantReasoningMessage, // Import the new type
   AssistantErrorMessage,
   SystemMessage,
   RawAssistantMessagePayload, // Keep for type assertions within parse methods
@@ -61,6 +62,58 @@ class UserMessagePlugin implements MessageParserPlugin {
   }
 }
 
+
+/**
+ * Assistant Reasoning Message Plugin
+ * Handles messages containing intermediate reasoning steps from the assistant.
+ */
+class AssistantReasoningPlugin implements MessageParserPlugin {
+  pluginType = 'assistant_reasoning_v1';
+
+  detect(rawMessage: unknown): boolean {
+    if (typeof rawMessage === 'string') {
+      try {
+        const parsed = JSON.parse(rawMessage);
+        // Check for the specific structure with 'reasoning' field
+        return typeof parsed === 'object' && parsed !== null && typeof parsed.reasoning === 'string' && parsed.reasoning.trim() !== '';
+      } catch (e) {
+        return false; // Not valid JSON
+      }
+    }
+    // Also handle if the raw message is already an object with reasoning
+    if (typeof rawMessage === 'object' && rawMessage !== null && 'reasoning' in rawMessage && typeof (rawMessage as any).reasoning === 'string' && (rawMessage as any).reasoning.trim() !== '') {
+        return true;
+    }
+    return false;
+  }
+
+  parse(rawMessage: unknown, id: string, timestamp: Date): AssistantReasoningMessage | null {
+    try {
+      let parsed: any;
+      if (typeof rawMessage === 'string') {
+         parsed = JSON.parse(rawMessage); // Safe due to detect()
+      } else if (typeof rawMessage === 'object' && rawMessage !== null) {
+         parsed = rawMessage; // Already an object
+      } else {
+         throw new Error("Invalid rawMessage type for reasoning plugin");
+      }
+
+      // Extract reasoning text
+      const reasoningText = parsed.reasoning as string;
+
+      return {
+        id, // Use the currentAssistantMessageIdRef.current passed as `id`
+        timestamp,
+        sender: 'assistant',
+        type: 'reasoning',
+        text: reasoningText,
+      };
+    } catch (error) {
+      console.error('[AssistantReasoningPlugin] Error parsing reasoning message:', error, 'Raw:', rawMessage);
+      return null; // Parsing failed
+    }
+  }
+}
 
 /**
  * LangGraph Stream Plugin
@@ -338,7 +391,8 @@ export class MessageProcessingService {
   constructor(customPlugins?: MessageParserPlugin[]) {
     // Default plugins order: Specific types first, then fallback.
     this.plugins = customPlugins || [
-      new LangGraphStreamPlugin(), // Add LangGraph plugin with high priority
+      new AssistantReasoningPlugin(), // Handle reasoning first
+      new LangGraphStreamPlugin(),
       new UserMessagePlugin(),
       new AssistantContentPlugin(),
       new AssistantThinkingPlugin(),

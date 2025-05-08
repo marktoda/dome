@@ -1,5 +1,7 @@
 import { Hono, Context } from 'hono';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
+import type { WSContext, WSEvents } from 'hono/ws';
+import { HTTPException } from 'hono/http-exception';
 import { cors } from 'hono/cors';
 import type { ServiceInfo } from '@dome/common';
 import { chatRequestSchema } from '@dome/chat/client';
@@ -9,6 +11,7 @@ import {
   responseHandlerMiddleware,
   formatZodError,
   createDetailedLoggerMiddleware,
+  updateContext,
 } from '@dome/common';
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { createAuthController } from './controllers/authController';
@@ -178,88 +181,82 @@ app.route('/chat', chatRouter);
 // WebSocket chat endpoint
 app.get(
   '/chat/ws', // WebSocket endpoint
-  upgradeWebSocket(c => {
+  upgradeWebSocket(async (c): Promise<Omit<WSEvents<WebSocket>, 'onOpen'>> => {
+    const logger = getLogger().child({
+      component: 'WebSocketUpgradeHandler',
+      requestId: c.get('requestId') || Math.random().toString(36).substring(2, 12),
+    });
+
+    const token = c.req.query('token');
+    const authService = serviceFactory.getAuthService(c.env);
+
+    if (!token) {
+      logger.warn('Missing token in WebSocket upgrade request query parameters.');
+      throw new HTTPException(401, {
+        message: 'Authentication token missing in query.',
+        cause: { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication token missing in query.' } },
+      });
+    }
+ 
+    const authResult = await authService.validateToken(token);
+    logger.info({ authResult }, 'WebSocket upgrade auth validation result');
+
+    if (!authResult.success || !authResult.user) {
+      logger.warn('Invalid token in WebSocket upgrade request.');
+      throw new HTTPException(401, {
+        message: 'Invalid or expired token for WebSocket.',
+        cause: { success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token for WebSocket.' } },
+      });
+    }
+ 
+    const authenticatedUserId = authResult.user.id;
+    // Update context for subsequent logging within this request scope if possible,
+    // though this context is primarily for HTTP. For WebSocket messages, pass userId.
+    await updateContext({
+      identity: {
+        userId: authResult.user.id,
+        role: authResult.user.role,
+        email: authResult.user.email,
+      },
+    });
+    logger.info({ authenticatedUserId }, 'Successfully authenticated WebSocket upgrade request.');
+
     // NB: Cloudflare Workers has no `onOpen`; first client frame is where we start
     return {
-      async onMessage(event, ws) {
-        const logger = getLogger().child({
+      async onMessage(event: MessageEvent, ws: WSContext) {
+        // Use a logger specific to this message handling, potentially with the authenticatedUserId
+        const messageLogger = getLogger().child({
           component: 'WebSocketChatHandler',
-          requestId: Math.random().toString(36).substring(2, 12),
+          requestId: c.get('requestId') || Math.random().toString(36).substring(2, 12), // Reuse or generate new
+          authenticatedUserId, // Log with authenticated user
         });
 
         try {
           const chatService = serviceFactory.getChatService(c.env);
-          const authService = serviceFactory.getAuthService(c.env);
 
           // Parse the incoming data as JSON if it's a string
           let jsonData;
           if (typeof event.data === 'string') {
             try {
               jsonData = JSON.parse(event.data);
-              logger.debug('Successfully parsed WebSocket message as JSON');
+              messageLogger.debug('Successfully parsed WebSocket message as JSON');
             } catch (parseError) {
-              logger.error({ error: parseError }, 'Failed to parse WebSocket message as JSON');
-              ws.send('Error: Invalid JSON payload');
-              ws.close(1008, 'Invalid JSON payload');
+              messageLogger.error({ error: parseError }, 'Failed to parse WebSocket message as JSON');
+              ws.send(JSON.stringify({ type: 'error', error: { message: 'Invalid JSON payload', code: 'INVALID_PAYLOAD' } }));
+              // Consider closing if payload is critical: ws.close(1007, 'Invalid JSON payload');
               return;
             }
           } else {
-            jsonData = event.data;
+            // Assuming binary data is not expected or handled differently
+            messageLogger.warn('Received non-string WebSocket message, ignoring.');
+            ws.send(JSON.stringify({ type: 'error', error: { message: 'Unsupported message format (expected JSON string)', code: 'UNSUPPORTED_FORMAT' } }));
+            return;
           }
 
-          logger.debug({ jsonData }, 'Received WebSocket message');
+          messageLogger.debug({ jsonData }, 'Received WebSocket message');
 
-          // Validate authentication
-          let authenticatedUserId;
-
-          // Get token from various possible locations
-          const token =
-            jsonData.token || (jsonData.auth && jsonData.auth.token ? jsonData.auth.token : null);
-
-          logger.debug(
-            {
-              hasToken: !!token,
-              hasAuthObject: !!jsonData.auth,
-              hasAuthToken: jsonData.auth && !!jsonData.auth.token,
-              providedUserId: jsonData.userId || '[none]',
-            },
-            'WebSocket auth details',
-          );
-
-          if (token) {
-            // If token is provided, validate it
-            const authResult = await authService.validateToken(token);
-            logger.info({ authResult }, 'WebSocket auth validation result');
-
-            if (authResult.success && authResult.user) {
-              authenticatedUserId = authResult.user.id;
-              logger.info(
-                { authenticatedUserId },
-                'Successfully authenticated WebSocket connection',
-              );
-            } else {
-              logger.warn('Invalid auth token in WebSocket connection');
-              ws.send('Error: Authentication failed - invalid token');
-              ws.close(1008, 'Authentication failed');
-              return;
-            }
-          } else {
-            // For compatibility with older clients, allow CLI testing with a specific user ID
-            // ONLY IN DEVELOPMENT ENVIRONMENT
-            const isDevelopment = c.env.ENVIRONMENT === 'development';
-
-            if (isDevelopment && jsonData.userId === 'test-user-id') {
-              logger.warn('Using test user ID in development environment');
-              authenticatedUserId = 'test-user-id';
-            } else {
-              logger.warn('Missing authentication token in WebSocket connection');
-              ws.send('Error: Authentication required');
-              ws.close(1008, 'Authentication required');
-              return;
-            }
-          }
-
-          // Override any user ID in the request with the authenticated one
+          // Set the authenticated user ID from the upgrade handshake
+          // The token is no longer expected in the message payload itself.
           jsonData.userId = authenticatedUserId;
 
           // Parse with Zod schema
@@ -287,33 +284,57 @@ app.get(
 
           while (true) {
             const { value, done } = await reader.read();
-            getLogger().debug({ value }, 'streaming response');
+            messageLogger.debug({ value: td.decode(value, { stream: true }) }, 'streaming response chunk');
             if (done) break;
             ws.send(td.decode(value)); // send LangGraph chunk to the client
           }
-          ws.close(); // tell the client we're done
+          messageLogger.info('Finished streaming response to WebSocket.');
+          // ws.close(); // LangGraph stream or chatService should signal end of interaction.
+          // The client might keep the connection open for further messages or the server might close it after a timeout.
+          // For now, let's assume the stream itself signals completion and the client might send more.
+          // If it's a one-shot stream, then ws.close() here or after stream is appropriate.
         } catch (error: unknown) {
-          // Handle different error types
+          messageLogger.error({ error }, 'Error processing WebSocket message');
+          let errorCode = 'INTERNAL_SERVER_ERROR';
+          let errorMessage = 'An internal server error occurred.';
+          let closeCode = 1011; // Internal error
+
           if (error && typeof error === 'object' && 'name' in error && error.name === 'ZodError') {
-            getLogger().error({ error }, 'Zod validation error for WebSocket message');
-            const errorMessage =
-              error instanceof Error ? error.message : 'Unknown validation error';
-            ws.send(`Error: Invalid request format - ${errorMessage}`);
-            ws.close(1007, 'Invalid message format');
-          } else {
-            getLogger().error({ error }, 'Error processing WebSocket message');
-            ws.send(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            ws.close(1011, 'Internal server error');
+            errorCode = 'VALIDATION_ERROR';
+            errorMessage = `Invalid request format: ${error instanceof Error ? error.message : 'Unknown validation error'}`;
+            closeCode = 1007; // Invalid message format
+          } else if (error instanceof Error) {
+            errorMessage = error.message;
+          }
+          
+          try {
+            ws.send(JSON.stringify({ type: 'error', error: { message: errorMessage, code: errorCode } }));
+            if (ws.readyState === WebSocket.OPEN) {
+               // ws.close(closeCode, errorMessage.substring(0, 123)); // Max length for reason is 123 bytes
+            }
+          } catch (sendError) {
+            messageLogger.error({ sendError }, 'Failed to send error message over WebSocket.');
           }
         }
       },
-
-      onClose() {
+ 
+      onClose(event: CloseEvent, ws: WSContext) {
+        const closeLogger = getLogger().child({
+            component: 'WebSocketChatHandler',
+            requestId: c.get('requestId') || 'N/A',
+            authenticatedUserId: authenticatedUserId || 'N/A',
+        });
+        closeLogger.info({ code: event.code, reason: event.reason, wasClean: event.wasClean }, 'WebSocket connection closed.');
         /* metrics / cleanup */
       },
-
-      onError(err) {
-        console.error('ws error', err);
+ 
+      onError(event: Event, ws: WSContext) { // Added ws: WSContext as per WSEvents, though not used in current impl.
+        const errorLogger = getLogger().child({
+            component: 'WebSocketChatHandler',
+            requestId: c.get('requestId') || 'N/A',
+            authenticatedUserId: authenticatedUserId || 'N/A', // Ensure authenticatedUserId is accessible
+        });
+        errorLogger.error({ error: event }, 'WebSocket error event triggered.');
       },
     };
   }),

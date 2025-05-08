@@ -85,6 +85,18 @@ export interface AssistantSourcesMessage extends BaseChatMessage {
 }
 
 /**
+ * Represents an intermediate reasoning step or thought process from the assistant.
+ * This is often part of the internal processing before the final content is generated.
+ */
+export interface AssistantReasoningMessage extends BaseChatMessage {
+  sender: 'assistant';
+  /** Type identifier for reasoning messages. */
+  type: 'reasoning';
+  /** The textual content of the assistant's reasoning step. */
+  text: string;
+}
+
+/**
  * Represents an error message that occurred during chat processing.
  * Can originate from the assistant's internal logic or from the system (e.g., network issues).
  */
@@ -127,6 +139,7 @@ export type ParsedMessage =
   | AssistantContentMessage
   | AssistantThinkingMessage
   | AssistantSourcesMessage
+  | AssistantReasoningMessage // Added Reasoning type
   | AssistantErrorMessage
   | SystemMessage;
 
