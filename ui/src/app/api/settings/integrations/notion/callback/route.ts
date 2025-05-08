@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { updateMockIntegrationStatus } from '@/lib/integration-mock-db'; // Placeholder
+
+// Placeholder for actual DB operations is now replaced by dome-api call
+// import { updateMockIntegrationStatus } from '@/lib/integration-mock-db';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -73,30 +75,66 @@ export async function GET(request: Request) {
     const workspaceName = tokenData.workspace_name;
     const workspaceIcon = tokenData.workspace_icon;
     const botId = tokenData.bot_id; // The user object representing your integration
+    const workspaceId = tokenData.workspace_id;
+    const owner = tokenData.owner;
+    const duplicatedTemplateId = tokenData.duplicated_template_id;
 
-    if (!accessToken) {
-      console.error('Notion access token not found in response:', tokenData);
-      return NextResponse.json({ error: 'Access token not found in Notion response' }, { status: 500 });
+
+    if (!accessToken || !workspaceId) {
+      console.error('Notion access token or workspace_id not found in response:', tokenData);
+      return NextResponse.json({ error: 'Access token or workspace_id not found in Notion response' }, { status: 500 });
     }
 
     // 2. Notion doesn't have a separate "get user" endpoint for OAuth like GitHub.
     // The token response already contains workspace info and bot_id.
-    // You might want to store tokenData.owner which contains info about the authorizing user if available.
-    // For now, we'll use the workspace name.
+    
+    // 3. Send integration details to dome-api to be stored by Tsunami
+    const userId = 'default-user'; // TODO: Replace with actual user ID from session/auth. This should ideally be obtained from an auth token/session.
+    const domeApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+    if (!domeApiBaseUrl) {
+      console.error('NEXT_PUBLIC_API_BASE_URL is not set. Cannot store Notion integration.');
+      // Handle error appropriately, perhaps redirect with an error message
+      const errorRedirectUrl = new URL(clientFinalRedirectPath, appBaseUrl);
+      errorRedirectUrl.searchParams.append('oauth_callback', 'true');
+      errorRedirectUrl.searchParams.append('platform', 'notion');
+      errorRedirectUrl.searchParams.append('status', 'error');
+      errorRedirectUrl.searchParams.append('error_message', 'Server configuration error: API base URL missing.');
+      return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    }
 
-    // 3. Store integration details (using mock DB for now)
-    const userId = 'default-user'; // TODO: Replace with actual user ID from session/auth
-    updateMockIntegrationStatus(
-      userId,
-      'notion',
-      true,
-      {
-        name: workspaceName || 'Notion Workspace', // Use workspace name
-        // email: tokenData.owner?.user?.person?.email, // This structure might vary or not be available
-        // username: tokenData.owner?.user?.id, // Or bot_id
-        profileUrl: workspaceIcon, // Using workspace icon as a stand-in for profileUrl
-      }
-    );
+    const storeIntegrationResponse = await fetch(`${domeApiBaseUrl}/content/notion/oauth/store`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // TODO: Add Authorization header if dome-api endpoint is protected
+        // 'Authorization': `Bearer YOUR_INTERNAL_AUTH_TOKEN_OR_API_KEY_FOR_DOME_API`
+      },
+      body: JSON.stringify({
+        userId, // This needs to be the actual authenticated user's ID
+        accessToken,
+        workspaceId,
+        workspaceName,
+        workspaceIcon,
+        botId,
+        owner,
+        duplicatedTemplateId,
+      }),
+    });
+
+    if (!storeIntegrationResponse.ok) {
+      const errorData = await storeIntegrationResponse.json().catch(() => ({ message: 'Failed to store Notion integration and parse error response.' }));
+      console.error('Failed to store Notion integration via dome-api:', errorData);
+      // Redirect back to frontend with error
+      const errorRedirectUrl = new URL(clientFinalRedirectPath, appBaseUrl);
+      errorRedirectUrl.searchParams.append('oauth_callback', 'true');
+      errorRedirectUrl.searchParams.append('platform', 'notion');
+      errorRedirectUrl.searchParams.append('status', 'error');
+      errorRedirectUrl.searchParams.append('error_message', `Failed to save Notion integration: ${errorData.message || storeIntegrationResponse.statusText}`);
+      return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    }
+
+    const storeResult = await storeIntegrationResponse.json();
+    console.log('Notion integration stored via dome-api:', storeResult);
     
     // 4. Redirect user back to the frontend
     const finalRedirectUrl = new URL(clientFinalRedirectPath, appBaseUrl);
