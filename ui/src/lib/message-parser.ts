@@ -32,7 +32,9 @@ class UserMessagePlugin implements MessageParserPlugin {
    * @returns True if it's a string (assumed user input) or an object with sender 'user'.
    */
   detect(rawMessage: unknown): boolean {
-    return typeof rawMessage === 'string' || (!!rawMessage && typeof rawMessage === 'object' && 'sender' in rawMessage && rawMessage.sender === 'user' && 'text' in rawMessage && typeof rawMessage.text === 'string');
+    // User messages should be objects with sender: 'user'.
+    // Raw strings from WebSocket are not user messages.
+    return !!rawMessage && typeof rawMessage === 'object' && 'sender' in rawMessage && rawMessage.sender === 'user' && 'text' in rawMessage && typeof rawMessage.text === 'string';
   }
 
   /**
@@ -43,33 +45,101 @@ class UserMessagePlugin implements MessageParserPlugin {
    * @returns A UserMessage object or null if parsing fails.
    */
   parse(rawMessage: unknown, id: string, timestamp: Date): UserMessage | null {
-    // Type assertion is safe here because detect() passed
-    const msg = rawMessage as (string | { id?: string; timestamp?: string | number | Date; sender: 'user'; text: string; parentId?: string; metadata?: Record<string, unknown> });
+    // Type assertion is safe here because detect() passed.
+    // The `msg` variable was redundant.
+    const userMsgData = rawMessage as { id?: string; timestamp?: string | number | Date; sender: 'user'; text: string; parentId?: string; metadata?: Record<string, unknown> };
 
-    if (typeof msg === 'string') {
-      return {
-        id,
-        timestamp,
-        sender: 'user',
-        text: msg,
-      };
-    }
-    // If it's an object (already validated by detect)
     return {
-      id: msg.id || id,
-      timestamp: msg.timestamp ? new Date(msg.timestamp) : timestamp,
+      id: userMsgData.id || id,
+      timestamp: userMsgData.timestamp ? new Date(userMsgData.timestamp) : timestamp,
       sender: 'user',
-      text: msg.text,
-      parentId: msg.parentId,
-      metadata: msg.metadata,
+      text: userMsgData.text,
+      parentId: userMsgData.parentId,
+      metadata: userMsgData.metadata,
     };
     // No need for console.warn or returning null if detect guarantees the structure
   }
 }
 
+
+/**
+ * LangGraph Stream Plugin
+ * Handles raw string chunks that are part of LangGraph's streaming format.
+ * This needs to be placed before generic string handlers or fallback content handlers.
+ */
+class LangGraphStreamPlugin implements MessageParserPlugin {
+  pluginType = 'langgraph_stream_v1';
+
+  detect(rawMessage: unknown): boolean {
+    // Detects if the raw message is a string and looks like a LangGraph stream event.
+    // LangGraph events are often JSON arrays or objects serialized as strings.
+    if (typeof rawMessage === 'string') {
+      const trimmed = rawMessage.trim();
+      // Be more specific for LangGraph stream events based on observed patterns
+      return trimmed.startsWith('["messages",') || trimmed.startsWith('["updates",');
+    }
+    return false;
+  }
+
+  parse(rawMessage: unknown, id: string, timestamp: Date): ParsedMessage | null {
+    const rawString = rawMessage as string; // Safe due to detect()
+
+    // Attempt to parse the string as JSON.
+    // LangGraph streams can be complex; this is a simplified interpretation.
+    // A more robust solution would involve a stateful parser or more specific event types.
+    try {
+      const parsedEvent = JSON.parse(rawString);
+
+      // Example: Handling a common LangGraph "chunk" or "stream" event structure
+      // This is highly dependent on how your LangGraph application formats its output.
+      // The following is a placeholder for actual LangGraph event parsing logic.
+      //
+      // If it's an array like ["event_type", payload]
+      if (Array.isArray(parsedEvent) && parsedEvent.length > 0) {
+        const eventType = parsedEvent[0];
+        const payload = parsedEvent[1];
+
+        if (eventType === 'messages' && Array.isArray(payload) && payload.length > 0 && payload[0]?.kwargs?.content && typeof payload[0].kwargs.content === 'string') {
+          return {
+            id,
+            timestamp,
+            sender: 'assistant',
+            type: 'content',
+            text: payload[0].kwargs.content,
+            format: 'markdown',
+          };
+        }
+        // Placeholder for handling "updates" or other LangGraph event types
+        if (eventType === 'updates') {
+           console.log('[LangGraphStreamPlugin] Received "updates" event, specific parsing logic needed:', payload);
+           // Example: if (payload.some_thinking_indicator) return { id, timestamp, sender: 'assistant', type: 'thinking', text: '...' };
+           // Example: if (payload.some_sources_indicator) return { id, timestamp, sender: 'assistant', type: 'sources', sources: [...] };
+           return null; // Let other plugins handle or ignore if not a displayable message
+        }
+      }
+      // If JSON but not a recognized LangGraph array structure, log and let fall through
+      console.warn('[LangGraphStreamPlugin] Parsed LangGraph string, but not a recognized array event:', parsedEvent);
+    } catch (e) {
+      // Not JSON, could be a direct string chunk from assistant (less common for LangGraph but possible)
+      console.warn('[LangGraphStreamPlugin] Failed to parse as JSON, treating as raw assistant text:', rawString);
+      return {
+        id,
+        timestamp,
+        sender: 'assistant',
+        type: 'content',
+        text: rawString,
+        format: 'text',
+      };
+    }
+    return null; // Fall through if not handled
+  }
+}
+
+
 /**
  * Assistant Content Message Plugin
  * Handles standard content messages from the assistant.
+ * This is the CORRECT version. The duplicated one above this (if any) should be removed by this diff.
  */
 class AssistantContentPlugin implements MessageParserPlugin {
   pluginType = 'assistant_content_v1';
@@ -268,6 +338,7 @@ export class MessageProcessingService {
   constructor(customPlugins?: MessageParserPlugin[]) {
     // Default plugins order: Specific types first, then fallback.
     this.plugins = customPlugins || [
+      new LangGraphStreamPlugin(), // Add LangGraph plugin with high priority
       new UserMessagePlugin(),
       new AssistantContentPlugin(),
       new AssistantThinkingPlugin(),
