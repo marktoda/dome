@@ -12,6 +12,8 @@ import {
 } from '@dome/common';
 import { toDomeError, ConflictError, ValidationError } from './utils/errors';
 import { createSyncPlanService } from './services/syncPlanService';
+import { TokenService } from './services/tokenService';
+import type { NotionOAuthDetails, GithubOAuthDetails } from './client/types'; // Added GithubOAuthDetails
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { syncHistoryOperations } from './db/client';
 import { ProviderType } from './providers';
@@ -26,6 +28,7 @@ const metrics = createServiceMetrics('tsunami');
 const buildServices = (env: Env) => ({
   silo: new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE),
   syncPlan: createSyncPlanService(env),
+  token: new TokenService(env.SYNC_PLAN), // Added TokenService instantiation
 });
 
 /* ─────────── service bootstrap ─────────── */
@@ -395,5 +398,83 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
         Location: 'https://api.dome.dev',
       },
     });
+  }
+
+  /**
+   * Stores Notion OAuth details (access token, workspace info, etc.)
+   * This is called by TsunamiClient from dome-api.
+   */
+  async storeNotionOAuthDetails(
+    details: NotionOAuthDetails,
+  ): Promise<{ success: boolean; workspaceId: string }> {
+    const requestId = crypto.randomUUID();
+    logger.info(
+      {
+        event: 'store_notion_oauth_details_entrypoint',
+        userId: details.userId,
+        workspaceId: details.workspaceId,
+        botId: details.botId,
+        requestId,
+      },
+      'Tsunami service: Storing Notion OAuth details',
+    );
+
+    try {
+      // Use the lazily instantiated TokenService
+      const result = await this.services.token.storeNotionToken(details);
+      metrics.trackOperation('store_notion_oauth_details', true, { workspaceId: details.workspaceId });
+      return result;
+    } catch (error) {
+      logError(error, 'Tsunami service: Error storing Notion OAuth details', {
+        userId: details.userId,
+        workspaceId: details.workspaceId,
+        requestId,
+      });
+      metrics.trackOperation('store_notion_oauth_details', false, { workspaceId: details.workspaceId });
+      // Ensure the error is re-thrown in a way that the client (TsunamiClient) can handle it
+      // TsunamiClient already uses toDomeError, so just re-throwing should be fine.
+      throw error;
+    }
+  }
+
+  /**
+   * Stores GitHub OAuth details (access token, user info, etc.)
+   * This is called by TsunamiClient from dome-api.
+   */
+  async storeGithubOAuthDetails(
+    details: GithubOAuthDetails,
+  ): Promise<{ success: boolean; githubUserId: string }> {
+    const requestId = crypto.randomUUID();
+    logger.info(
+      {
+        event: 'store_github_oauth_details_entrypoint',
+        userId: details.userId,
+        providerAccountId: details.providerAccountId,
+        requestId,
+      },
+      'Tsunami service: Storing GitHub OAuth details',
+    );
+
+    try {
+      // TODO: Adapt TokenService.storeToken or add a specific storeGithubToken method if structure differs significantly
+      // For now, assuming storeNotionToken's structure is adaptable or a generic storeToken exists.
+      // This will likely require a new method in TokenService: storeGithubToken(details: GithubOAuthDetails)
+      // For this step, we'll call a conceptual 'storeToken' on TokenService.
+      // The actual implementation in TokenService would handle provider-specific logic or use generic fields.
+      const result = await this.services.token.storeGithubToken(details); // Corrected to use storeGithubToken
+      
+      metrics.trackOperation('store_github_oauth_details', true, { githubUserId: details.providerAccountId });
+      // The return type from a generic storeToken might need adjustment or casting.
+      // For now, assuming it can return what's needed or we adapt.
+      return { success: result.success, githubUserId: details.providerAccountId };
+    } catch (error) {
+      logError(error, 'Tsunami service: Error storing GitHub OAuth details', {
+        userId: details.userId,
+        providerAccountId: details.providerAccountId,
+        requestId,
+      });
+      metrics.trackOperation('store_github_oauth_details', false, { githubUserId: details.providerAccountId });
+      throw error;
+    }
   }
 }

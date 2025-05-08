@@ -72,6 +72,47 @@ export interface TsunamiBinding {
     userId?: string,
     cadenceSecs?: number,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }>;
+
+  /**
+   * Stores Notion OAuth details (access token, workspace info, etc.)
+   */
+  storeNotionOAuthDetails(details: NotionOAuthDetails): Promise<{ success: boolean; workspaceId: string }>;
+
+  /**
+   * Stores GitHub OAuth details (access token, user info, etc.)
+   */
+  storeGithubOAuthDetails(details: GithubOAuthDetails): Promise<{ success: boolean; githubUserId: string }>;
+}
+
+/**
+ * Details for storing Notion OAuth information.
+ */
+export interface NotionOAuthDetails {
+  userId: string; // The user ID from your application's auth system
+  accessToken: string; // The access token obtained from Notion
+  workspaceId: string;
+  workspaceName?: string | null;
+  workspaceIcon?: string | null; // URL
+  botId: string;
+  owner?: any; // Raw owner object from Notion, can be complex
+  duplicatedTemplateId?: string | null;
+}
+
+/**
+ * Details for storing GitHub OAuth information.
+ */
+export interface GithubOAuthDetails {
+  userId: string; // The user ID from your application's auth system
+  accessToken: string; // The access token obtained from GitHub
+  providerAccountId: string; // GitHub user ID (as string, though it's a number from API)
+  scope?: string | null;
+  tokenType?: string | null;
+  // refreshToken?: string | null; // If GitHub provides one and we store it
+  // expiresAt?: number | null;    // If applicable
+  metadata?: { // Store additional useful info like username
+    username: string;
+    // email?: string | null; // If fetched and needed
+  } | null;
 }
 
 /**

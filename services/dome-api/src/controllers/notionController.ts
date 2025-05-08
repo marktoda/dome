@@ -196,4 +196,72 @@ export class NotionController {
       throw error;
     }
   }
+
+  /**
+   * Stores Notion OAuth integration details (access token, workspace info).
+   * Called by the UI after it completes the OAuth token exchange with Notion.
+   *
+   * @param c Hono context
+   * @returns Response
+   */
+  async storeNotionIntegration(c: Context<{ Bindings: Bindings }>) {
+    try {
+      const { userId } = getIdentity();
+      const schema = z.object({
+        accessToken: z.string().min(1),
+        workspaceId: z.string().min(1),
+        workspaceName: z.string().nullable().optional(),
+        workspaceIcon: z.string().url().nullable().optional(),
+        botId: z.string().min(1),
+        // The 'owner' object from Notion can be complex (user or integration).
+        // We might simplify what we store or pass it through if tsunami handles it.
+        // For now, let's assume tsunami might want the raw owner object or specific parts.
+        owner: z.any().optional(),
+        duplicatedTemplateId: z.string().nullable().optional(),
+      });
+
+      const payload = await c.req.json<z.infer<typeof schema>>();
+      
+      this.logger.info({ workspaceId: payload.workspaceId, userId, botId: payload.botId }, 'Storing Notion integration details via Tsunami service');
+
+      // Call the Tsunami service to store the Notion OAuth details.
+      // The TsunamiClient's storeNotionOAuthDetails method will internally call the
+      // Tsunami worker entrypoint, which then uses TokenService to store in D1.
+      const tsunamiResult = await this.tsunamiService.storeNotionOAuthDetails({
+        userId, // This needs to be the actual authenticated user's ID
+        accessToken: payload.accessToken,
+        workspaceId: payload.workspaceId,
+        workspaceName: payload.workspaceName,
+        workspaceIcon: payload.workspaceIcon,
+        botId: payload.botId,
+        owner: payload.owner,
+        duplicatedTemplateId: payload.duplicatedTemplateId,
+      });
+
+      if (!tsunamiResult || !tsunamiResult.success) {
+        this.logger.error({ tsunamiResult, workspaceId: payload.workspaceId, userId }, 'Failed to store Notion integration details via Tsunami service');
+        // Consider throwing a specific error or returning a more detailed error response
+        return c.json({
+          success: false,
+          message: 'Failed to store Notion integration with backend service.',
+          workspaceId: payload.workspaceId,
+        }, 500);
+      }
+
+      this.logger.info(
+        { workspaceId: payload.workspaceId, userId, tsunamiResult },
+        'Notion integration details successfully stored via Tsunami service.',
+      );
+
+      return c.json({
+        success: true,
+        message: 'Notion integration successfully stored.',
+        workspaceId: payload.workspaceId,
+        details: tsunamiResult, // Optionally return details from Tsunami
+      });
+    } catch (error) {
+      this.logger.error({ error }, 'Error storing Notion integration details');
+      throw error; // Let the global error handler manage the response
+    }
+  }
 }

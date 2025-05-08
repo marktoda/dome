@@ -10,3 +10,4 @@
 export * from './syncPlanService';
 export * from './metadataHeaderService';
 export * from './ignoreFileService';
+export * from './tokenService';

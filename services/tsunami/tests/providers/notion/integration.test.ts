@@ -1,8 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, Mocked } from 'vitest'; // Added Mocked import
 import { NotionClient } from '../../../src/providers/notion/client';
-import { NotionAuthManager } from '../../../src/providers/notion/auth';
+import { NotionAuthManager, NotionOAuthTokenResponse } from '../../../src/providers/notion/auth'; // Import NotionOAuthTokenResponse from here
 import * as notionUtils from '../../../src/providers/notion/utils';
 import { ServiceError } from '@dome/common/src/errors';
+import { TokenService } from '../../../src/services/tokenService'; // Import TokenService
+import type { NotionOAuthDetails } from '../../../src/client/types'; // Corrected path for NotionOAuthDetails
+
+// /// <reference types="vitest/globals" /> // Keep or remove based on tsconfig, but Mocked import is safer
+
+// Mock TokenService
+vi.mock('../../../src/services/tokenService');
 
 // Mock external dependencies
 vi.mock('@dome/common', () => ({
@@ -40,9 +47,13 @@ class NotionProvider {
   }
 
   async registerWorkspace(code: string, userId: string) {
-    const tokenData = await this.authManager.exchangeCodeForToken(code);
-    await this.authManager.storeUserToken(userId, tokenData.workspaceId, tokenData.accessToken);
-    return tokenData;
+    const fullTokenData = await this.authManager.exchangeCodeForToken(code);
+    // The real NotionAuthManager now has storeUserNotionIntegration
+    // which takes the full token response.
+    await (this.authManager as any).storeUserNotionIntegration(userId, fullTokenData);
+    // Cast to any if the mock provider's authManager type isn't updated with the new method.
+    // Alternatively, update the mock NotionProvider's authManager type.
+    return fullTokenData; // Return the full data as exchangeCodeForToken now does
   }
 
   async syncWorkspace(userId: string, workspaceId: string, cursor: string | null) {
@@ -109,18 +120,31 @@ describe('Notion Integration', () => {
     NOTION_CLIENT_ID: 'test-client-id',
     NOTION_CLIENT_SECRET: 'test-client-secret',
     NOTION_REDIRECT_URI: 'https://example.com/callback',
+    SYNC_PLAN: {} as any, // Mock D1 binding for TokenService via NotionAuthManager
   };
 
   let client: NotionClient;
   let authManager: NotionAuthManager;
   let provider: NotionProvider;
+  let mockTokenServiceInstance: Mocked<TokenService>; // Changed to Mocked<TokenService>
 
   beforeEach(() => {
+    vi.mocked(TokenService).mockClear();
+    mockTokenServiceInstance = new TokenService(mockEnv.SYNC_PLAN) as Mocked<TokenService>; // Changed to Mocked<TokenService>
+    vi.mocked(TokenService).mockImplementation(() => mockTokenServiceInstance);
+
     authManager = new NotionAuthManager(mockEnv as any);
-    client = new NotionClient(apiKey, authManager);
+    client = new NotionClient(apiKey, authManager); // NotionClient constructor takes apiKey and optional authManager
     provider = new NotionProvider(client, authManager);
 
-    vi.clearAllMocks();
+    vi.clearAllMocks(); // Clear other mocks like fetch
+
+    // Setup default mocks for TokenService methods used by authManager
+    mockTokenServiceInstance.storeNotionToken = vi.fn().mockResolvedValue({ success: true, tokenId: 'mock-token-id', workspaceId: 'workspace-123' });
+    mockTokenServiceInstance.getToken = vi.fn().mockResolvedValue({
+      accessToken: 'test-access-token',
+      // ... other fields of OAuthTokenRecord if needed by tests
+    } as any);
 
     // Default mock for the token exchange
     mockFetch.mockImplementation(async url => {
@@ -157,16 +181,26 @@ describe('Notion Integration', () => {
 
       const result = await provider.registerWorkspace(code, userId);
 
-      expect(result).toEqual({
-        accessToken: 'test-access-token',
-        workspaceId: 'workspace-123',
-        workspaceName: 'Test Workspace',
-        botId: 'test-bot-id',
-      });
+      // exchangeCodeForToken now returns the full object from fetch mock
+      expect(result).toEqual(expect.objectContaining({
+        access_token: 'test-access-token',
+        workspace_id: 'workspace-123',
+      }));
 
-      // Verify token was stored
+      // Verify storeUserNotionIntegration was called on authManager, which calls tokenService.storeNotionToken
+      // The actual call to tokenService.storeNotionToken is mocked via mockTokenServiceInstance
+      expect(mockTokenServiceInstance.storeNotionToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          accessToken: 'test-access-token',
+          workspaceId: 'workspace-123',
+        }),
+      );
+
+      // Verify token retrieval (getUserToken now uses tokenService.getToken)
       const storedToken = await authManager.getUserToken(userId, 'workspace-123');
-      expect(storedToken).toBe('test-access-token');
+      expect(mockTokenServiceInstance.getToken).toHaveBeenCalledWith(userId, 'notion', 'workspace-123');
+      expect(storedToken).toBe('test-access-token'); // Assuming mockTokenServiceInstance.getToken is set up to return this
     });
 
     it('should handle token exchange failures', async () => {

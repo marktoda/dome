@@ -159,4 +159,71 @@ export class TsunamiController {
       throw error;
     }
   }
+
+  /**
+   * Stores GitHub OAuth integration details (access token, user info).
+   * Called by the UI after it completes the OAuth token exchange with GitHub.
+   *
+   * @param c Hono context
+   * @returns Response
+   */
+  async storeGithubIntegration(c: Context<{ Bindings: Bindings }>) {
+    try {
+      const { userId } = getIdentity(); // User ID from your application's auth system
+      const schema = z.object({
+        accessToken: z.string().min(1),
+        scope: z.string().optional(),
+        tokenType: z.string().optional(),
+        // Details fetched from GitHub's /user endpoint
+        githubUserId: z.number().int(), // Or string, depending on how GitHub API returns it
+        githubUsername: z.string().min(1),
+        // Optional fields if provided by GitHub's token response
+        // refreshToken: z.string().optional(),
+        // expiresIn: z.number().int().optional(),
+      });
+
+      const payload = await c.req.json<z.infer<typeof schema>>();
+      
+      this.logger.info({ githubUsername: payload.githubUsername, appUserId: userId }, 'Storing GitHub integration details via Tsunami service');
+
+      // TODO: Implement storeGithubOAuthDetails in TsunamiClient and Tsunami service
+      /*
+      const tsunamiResult = await this.tsunamiService.storeGithubOAuthDetails({
+        userId, // App user ID
+        accessToken: payload.accessToken,
+        scope: payload.scope,
+        tokenType: payload.tokenType,
+        providerAccountId: payload.githubUserId.toString(), // Store GitHub user ID as providerAccountId
+        metadata: JSON.stringify({
+          username: payload.githubUsername,
+          // Potentially other GitHub user details if needed
+        }),
+        // refreshToken: payload.refreshToken,
+        // expiresAt: payload.expiresIn ? Math.floor(Date.now() / 1000) + payload.expiresIn : undefined,
+      });
+
+      if (!tsunamiResult || !tsunamiResult.success) {
+        this.logger.error({ tsunamiResult, githubUsername: payload.githubUsername, appUserId: userId }, 'Failed to store GitHub integration details via Tsunami service');
+        return c.json({
+          success: false,
+          message: 'Failed to store GitHub integration with backend service.',
+        }, 500);
+      }
+      */
+
+      this.logger.info(
+        { githubUsername: payload.githubUsername, appUserId: userId /*, tsunamiResult */ },
+        'GitHub integration details successfully received (Tsunami storage pending).',
+      );
+
+      return c.json({
+        success: true,
+        message: 'GitHub integration details received (mocked storage).',
+        githubUsername: payload.githubUsername,
+      });
+    } catch (error) {
+      this.logger.error({ error }, 'Error storing GitHub integration details');
+      throw error; // Let the global error handler manage the response
+    }
+  }
 }

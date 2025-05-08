@@ -5,8 +5,8 @@
  */
 import { getLogger, logError, metrics } from '@dome/common';
 import { toDomeError } from '../utils/errors';
-import { TsunamiBinding, TsunamiService, WebsiteRegistrationConfig } from './types';
-export { TsunamiBinding, TsunamiService, WebsiteRegistrationConfig } from './types';
+import { TsunamiBinding, TsunamiService, WebsiteRegistrationConfig, NotionOAuthDetails, GithubOAuthDetails } from './types'; // Added GithubOAuthDetails
+export { TsunamiBinding, TsunamiService, WebsiteRegistrationConfig, NotionOAuthDetails, GithubOAuthDetails } from './types'; // Added GithubOAuthDetails
 
 /**
  * Client for interacting with the Tsunami service
@@ -655,6 +655,81 @@ export class TsunamiClient implements TsunamiService {
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.get_history_by_sync_plan_id.errors`);
       logError(error, 'Error getting history by sync plan ID');
+      throw toDomeError(error);
+    }
+  }
+
+  /**
+   * Stores Notion OAuth details (access token, workspace info, etc.)
+   *
+   * @param details - The Notion OAuth details to store
+   * @returns Object indicating success and the workspaceId
+   */
+  async storeNotionOAuthDetails(
+    details: NotionOAuthDetails,
+  ): Promise<{ success: boolean; workspaceId: string }> {
+    const startTime = performance.now();
+    try {
+      this.logger.info(
+        {
+          event: 'store_notion_oauth_details',
+          userId: details.userId,
+          workspaceId: details.workspaceId,
+          botId: details.botId,
+        },
+        'Storing Notion OAuth details',
+      );
+
+      // The actual call to the Tsunami Durable Object via the binding
+      // This assumes `storeNotionOAuthDetails` will be added to the TsunamiBinding interface
+      // and implemented by the Tsunami Durable Object.
+      const result = await this.binding.storeNotionOAuthDetails(details);
+
+      metrics.increment(`${this.metricsPrefix}.store_notion_oauth_details.success`);
+      metrics.timing(
+        `${this.metricsPrefix}.store_notion_oauth_details.latency_ms`,
+        performance.now() - startTime,
+      );
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.store_notion_oauth_details.error`);
+      this.logger.error(error, 'Error storing Notion OAuth details');
+      throw toDomeError(error);
+    }
+  }
+
+  /**
+   * Stores GitHub OAuth details (access token, user info, etc.)
+   *
+   * @param details - The GitHub OAuth details to store
+   * @returns Object indicating success and the GitHub user ID (as string)
+   */
+  async storeGithubOAuthDetails(
+    details: GithubOAuthDetails,
+  ): Promise<{ success: boolean; githubUserId: string }> {
+    const startTime = performance.now();
+    try {
+      this.logger.info(
+        {
+          event: 'store_github_oauth_details',
+          userId: details.userId, // App user ID
+          providerAccountId: details.providerAccountId, // GitHub user ID
+        },
+        'Storing GitHub OAuth details',
+      );
+
+      // This will call the corresponding method on the Tsunami Worker Entrypoint
+      const result = await this.binding.storeGithubOAuthDetails(details);
+
+      metrics.increment(`${this.metricsPrefix}.store_github_oauth_details.success`);
+      metrics.timing(
+        `${this.metricsPrefix}.store_github_oauth_details.latency_ms`,
+        performance.now() - startTime,
+      );
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.store_github_oauth_details.error`);
+      this.logger.error(error, 'Error storing GitHub OAuth details');
       throw toDomeError(error);
     }
   }

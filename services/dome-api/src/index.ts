@@ -382,6 +382,18 @@ contentRouter.get('/notion/oauth/url', async (c: Context<{ Bindings: Bindings }>
   return await notionController.getNotionOAuthUrl(c);
 });
 
+// Store Notion OAuth integration details (token, workspace info)
+contentRouter.post('/notion/oauth/store', async (c: Context<{ Bindings: Bindings }>) => {
+  const notionController = controllerFactory.getNotionController(c.env);
+  return await notionController.storeNotionIntegration(c);
+});
+
+// Store GitHub OAuth integration details
+contentRouter.post('/github/oauth/store', async (c: Context<{ Bindings: Bindings }>) => {
+  const tsunamiController = controllerFactory.getTsunamiController(c.env); // Assuming TsunamiController handles this
+  return await tsunamiController.storeGithubIntegration(c);
+});
+
 // Mount GitHub router under content path
 app.route('/content', contentRouter);
 

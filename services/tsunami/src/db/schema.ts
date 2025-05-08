@@ -84,9 +84,65 @@ export const syncHistory = sqliteTable('sync_history', {
 });
 
 /**
+ * OAuth Tokens Table
+ *
+ * Stores OAuth access tokens and related information for different providers.
+ * Tokens should be encrypted at rest.
+ */
+export const oauthTokens = sqliteTable('oauth_token', {
+  /** Unique identifier for the token entry (ULID or UUID) */
+  id: text('id').primaryKey(),
+
+  /** User ID from your application's authentication system */
+  userId: text('user_id').notNull(),
+
+  /** Provider type (e.g., 'notion', 'github') */
+  provider: text('provider').notNull(),
+  
+  /** The user's ID on the provider's platform (e.g. Notion bot_id, GitHub user ID) */
+  providerAccountId: text('provider_account_id').notNull(),
+
+  /** Encrypted OAuth access token */
+  accessToken: text('access_token').notNull(), // TODO: Ensure this is encrypted before storing
+
+  /** Encrypted OAuth refresh token (if applicable) */
+  refreshToken: text('refresh_token'), // TODO: Ensure this is encrypted before storing
+
+  /** Token expiration timestamp (Unix timestamp, if applicable) */
+  expiresAt: integer('expires_at'),
+
+  /** Type of token (e.g., 'bearer') */
+  tokenType: text('token_type'),
+
+  /** Scopes granted by the token (comma-separated string or JSON, if applicable) */
+  scope: text('scope'),
+
+  /** Provider-specific workspace/organization ID (e.g., Notion workspace_id) */
+  // For Notion, this is crucial as tokens are per-workspace.
+  // For GitHub, this might be null if the token is for the user account globally,
+  // or could store an org ID if the token is org-specific.
+  providerWorkspaceId: text('provider_workspace_id'),
+
+  /** Additional metadata related to the token or workspace (JSON string) */
+  // e.g., Notion workspace_name, workspace_icon, GitHub user/org login
+  metadata: text('metadata'), // Store as JSON string, e.g., { workspaceName: "...", workspaceIcon: "..." }
+
+  /** Timestamp of creation */
+  createdAt: integer('created_at')
+    .notNull()
+    .$defaultFn(() => Math.floor(Date.now() / 1000)),
+
+  /** Timestamp of last update */
+  updatedAt: integer('updated_at')
+    .notNull()
+    .$defaultFn(() => Math.floor(Date.now() / 1000)),
+});
+
+/**
  * Schema export for Drizzle ORM
  */
 export const schema = {
   syncPlans,
   syncHistory,
+  oauthTokens,
 };
