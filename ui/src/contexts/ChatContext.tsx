@@ -252,7 +252,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             temperature: 0.7,
           },
           stream: true,
-          // auth: { token }, // Token is sent via HttpOnly cookie, not in payload
+          // Attempt to send userId, as the HttpOnly token itself isn't accessible client-side.
+          // The backend WS handler would need to use this in conjunction with the session cookie.
+          userId: user?.id, // Send user.id if user is available
         };
         ws.send(JSON.stringify(payload));
         setIsLoading(true);

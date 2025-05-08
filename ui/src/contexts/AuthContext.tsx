@@ -30,7 +30,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         // Call /api/auth/validate to check session and get user data
         // This endpoint is POST as per user-provided backend routes
-        const response = await fetch('/api/auth/validate', { method: 'POST' });
+        const response = await fetch('/api/auth/validate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json', // Adding Content-Type header
+          },
+          // body: JSON.stringify({}), // Sending an empty JSON object if required by backend, otherwise remove
+        });
         if (response.ok) {
           const validationData = await response.json();
           // Assuming the validation endpoint returns user data in a 'user' field if valid
