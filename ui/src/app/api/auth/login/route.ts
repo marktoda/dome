@@ -64,32 +64,19 @@ export async function POST(req: NextRequest) {
       .sign(secret);
 
     // Set JWT in an HttpOnly cookie for security
-    // The cookies() API from next/headers seems to have type issues in this environment.
-    // Falling back to manually setting the Set-Cookie header.
-    const { password: _password, ...userWithoutPassword } = user; // Declare userWithoutPassword first
+    const { password: _password, ...userWithoutPassword } = user;
     const response = NextResponse.json({ user: userWithoutPassword, message: 'Login successful' });
 
-    const cookieOptions = {
+    // Use the cookies.set() method on the NextResponse instance
+    response.cookies.set({
+      name: 'auth_token',
+      value: jwt,
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax' as 'lax' | 'strict' | 'none' | undefined, // Explicitly type sameSite
+      sameSite: 'lax',
       path: '/',
-      maxAge: 2 * 60 * 60,
-    };
-
-    // Manually construct the cookie string
-    // Note: This is a simplified version. A robust cookie serialization library might be better for complex cases.
-    let cookieString = `auth_token=${jwt}`;
-    if (cookieOptions.httpOnly) cookieString += '; HttpOnly';
-    if (cookieOptions.secure) cookieString += '; Secure';
-    if (cookieOptions.sameSite) cookieString += `; SameSite=${cookieOptions.sameSite}`;
-    if (cookieOptions.path) cookieString += `; Path=${cookieOptions.path}`;
-    if (cookieOptions.maxAge) cookieString += `; Max-Age=${cookieOptions.maxAge}`;
-    // Add Expires for older browsers if needed:
-    // const expires = new Date(Date.now() + cookieOptions.maxAge * 1000).toUTCString();
-    // cookieString += `; Expires=${expires}`;
-
-    response.headers.append('Set-Cookie', cookieString);
+      maxAge: 2 * 60 * 60, // 2 hours in seconds
+    });
 
     return response;
 

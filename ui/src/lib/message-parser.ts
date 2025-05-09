@@ -163,15 +163,31 @@ class LangGraphStreamPlugin implements MessageParserPlugin {
           };
         }
         // Placeholder for handling "updates" or other LangGraph event types
-        if (eventType === 'updates') {
-           console.log('[LangGraphStreamPlugin] Received "updates" event, specific parsing logic needed:', payload);
-           // Example: if (payload.some_thinking_indicator) return { id, timestamp, sender: 'assistant', type: 'thinking', text: '...' };
-           // Example: if (payload.some_sources_indicator) return { id, timestamp, sender: 'assistant', type: 'sources', sources: [...] };
-           return null; // Let other plugins handle or ignore if not a displayable message
+        if (eventType === 'updates' && payload && typeof payload === 'object') {
+          // Check for routing_split and reasoning
+          if ('routing_split' in payload && typeof payload.routing_split === 'object' && payload.routing_split !== null) {
+            const routingSplit = payload.routing_split as any; // Use 'any' for easier access, or define a more specific type
+            if (Array.isArray(routingSplit.reasoning) && routingSplit.reasoning.length > 0) {
+              const reasoningText = routingSplit.reasoning.join('\n');
+              if (reasoningText.trim() !== '') {
+                console.log('[LangGraphStreamPlugin] Extracted reasoning from "updates" event:', reasoningText);
+                return {
+                  id,
+                  timestamp,
+                  sender: 'system',
+                  type: 'system_generic', // Use existing generic system message type
+                  text: `System Update: ${reasoningText}`, // Prepend to clarify context
+                } as SystemMessage; // Cast to SystemMessage
+              }
+            }
+          }
+          // If no specific reasoning found in "updates", log and let fall through
+          console.log('[LangGraphStreamPlugin] Received "updates" event, but no displayable reasoning found in routing_split:', payload);
+          return null; // Let other plugins handle or ignore
         }
       }
       // If JSON but not a recognized LangGraph array structure, log and let fall through
-      console.warn('[LangGraphStreamPlugin] Parsed LangGraph string, but not a recognized array event:', parsedEvent);
+      console.warn('[LangGraphStreamPlugin] Parsed LangGraph string, but not a recognized array event or unhandled "updates" structure:', parsedEvent);
     } catch (e) {
       // Not JSON, could be a direct string chunk from assistant (less common for LangGraph but possible)
       console.warn('[LangGraphStreamPlugin] Failed to parse as JSON, treating as raw assistant text:', rawString);
