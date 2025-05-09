@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import apiClient from '@/lib/api'; // Import the configured apiClient
+// apiClient import removed as we'll use direct fetch for auth routes
 
 const TOKEN_STORAGE_KEY = 'authToken';
 
@@ -83,24 +83,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setToken(storedToken);
         try {
           // Attempt to fetch user data using the stored token
-          console.debug('AuthContext: Attempting to validate token and fetch user with /auth/me');
-          const response = await apiClient.get<{ user: User }>('/auth/me');
-          if (response && response.user) {
-            setUser(response.user);
-            console.log('AuthContext: User session restored successfully.');
+          console.debug('AuthContext: Attempting to validate token and fetch user with /api/auth/me');
+          const fetchOptions: RequestInit = {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${storedToken}`,
+            },
+          };
+          const res = await fetch('/api/auth/me', fetchOptions);
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.user) {
+              setUser(data.user);
+              console.log('AuthContext: User session restored successfully via /api/auth/me.');
+            } else {
+              console.warn('AuthContext: /api/auth/me response malformed or no user data. Invalidating local token.');
+              localStorage.removeItem(TOKEN_STORAGE_KEY);
+              setToken(null);
+              setUser(null);
+            }
           } else {
-            console.warn('AuthContext: /auth/me response malformed or no user data. Invalidating local token.');
+            console.warn(`AuthContext: /api/auth/me request failed with status ${res.status}. Invalidating local token.`);
+            if (res.status === 401 || res.status === 403) {
+              console.log('AuthContext: Token validation failed (401/403) via /api/auth/me.');
+            }
             localStorage.removeItem(TOKEN_STORAGE_KEY);
             setToken(null);
             setUser(null);
           }
         } catch (error: any) {
-          console.warn('AuthContext: Error validating token or fetching user data with stored token.');
-          if (error.response?.status === 401 || error.response?.status === 403) {
-            console.log('AuthContext: Token validation failed (401/403). Invalid or expired token.');
-          } else {
-            console.error('AuthContext: Error details:', error.message || error);
-          }
+          console.error('AuthContext: Network or other error fetching user data via /api/auth/me:', error.message || error);
           localStorage.removeItem(TOKEN_STORAGE_KEY);
           setToken(null);
           setUser(null);
@@ -159,13 +173,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (currentToken) {
       try {
-        // The apiClient should now be configured to send the token
-        await apiClient.post('/auth/logout', {}); // Backend might invalidate the token
-        console.log('Logout successful (API call to /auth/logout succeeded).');
+        const fetchOptions: RequestInit = {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // The /api/auth/logout route in Next.js typically relies on HttpOnly cookies for auth,
+            // but if it also checks Bearer token for good measure, this would be it.
+            // If it strictly uses cookies, this header might not be necessary for this specific route.
+            // For now, we include it for consistency if the backend /api/auth/logout expects it.
+            'Authorization': `Bearer ${currentToken}`,
+          },
+          body: JSON.stringify({}), // Empty body for POST
+        };
+        const res = await fetch('/api/auth/logout', fetchOptions);
+        if (res.ok) {
+          console.log('Logout successful (API call to /api/auth/logout succeeded).');
+        } else {
+          console.warn(`Logout API call to /api/auth/logout failed with status ${res.status}.`);
+        }
       } catch (error: any) {
-        console.error('Logout API call failed:', error.message || error);
-        // Even if API fails, client-side logout is done.
-        // Backend token might remain valid until expiry if API call fails.
+        console.error('Logout API call to /api/auth/logout failed (network/other error):', error.message || error);
       }
     } else {
         console.log('No active token to invalidate on backend during logout.');
