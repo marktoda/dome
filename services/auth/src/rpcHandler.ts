@@ -77,16 +77,14 @@ export class AuthRPCHandler implements AuthBinding {
     try {
       logger.debug('RPC: validateToken');
 
-      const user = await this.authService.validateToken(token);
+      const validationResponse = await this.authService.validateToken(token);
 
       logger.debug('RPC: validateToken completed', {
-        userId: user.id,
+        userId: validationResponse.user?.id, // Access id from the nested user object
+        success: validationResponse.success,
       });
 
-      return {
-        success: true,
-        user,
-      };
+      return validationResponse; // Return the direct response from the service
     } catch (error) {
       logger.error('RPC: validateToken failed', { error });
       throw this.formatRPCError(error);
@@ -101,8 +99,10 @@ export class AuthRPCHandler implements AuthBinding {
       // Get user info before logout for logging
       let userId = 'unknown';
       try {
-        const user = await this.authService.validateToken(token);
-        userId = user.id;
+        const validationResponse = await this.authService.validateToken(token);
+        if (validationResponse.success && validationResponse.user) {
+          userId = validationResponse.user.id; // Access id from the nested user object
+        }
       } catch (e) {
         // If token is invalid, just continue with logout
       }
