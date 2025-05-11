@@ -28,6 +28,8 @@ export type Bindings = {
   ENVIRONMENT?: string; // Environment (development, staging, production)
 };
 
+export type AppEnv = { Bindings: Bindings };
+
 /**
  * Types for Notion integration
  */

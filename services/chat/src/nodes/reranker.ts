@@ -114,13 +114,13 @@ function filterAndLimit(chunks: DocumentChunk[], cfg: Partial<BaseOpts>): Docume
   const filtered = cfg.keepBelowThreshold
     ? chunks
     : chunks.filter(c => {
-      const score =
-        (c.metadata as any).hybridScore ??
-        c.metadata.rerankerScore ??
-        c.metadata.relevanceScore ??
-        0;
-      return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
-    });
+        const score =
+          (c.metadata as any).hybridScore ??
+          c.metadata.rerankerScore ??
+          c.metadata.relevanceScore ??
+          0;
+        return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
+      });
   return filtered.slice(0, cfg.maxResults);
 }
 
@@ -129,7 +129,7 @@ function filterAndLimit(chunks: DocumentChunk[], cfg: Partial<BaseOpts>): Docume
 /* -------------------------------------------------------------------------- */
 
 abstract class BaseReranker {
-  constructor(protected readonly cfg: Required<RerankerOptions>) { }
+  constructor(protected readonly cfg: Required<RerankerOptions>) {}
 
   async rerank(
     res: RetrievalResult,
@@ -386,7 +386,7 @@ function pickGlobalModel(allChunks: DocumentChunk[], query: string, env: Env): R
   if ((env as any).COHERE_API_KEY) {
     return {
       implementation: 'cohere',
-      model: 'rerank-v3.5'
+      model: 'rerank-v3.5',
     } as CohereOpts;
   }
   return { implementation: 'workers-ai', model: '@cf/baai/bge-reranker-base' } as WorkersAiOpts;

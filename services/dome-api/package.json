@@ -11,14 +11,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@dome/common": "workspace:*",
-    "@dome/silo": "workspace:*",
-    "@dome/constellation": "workspace:*",
-    "@dome/chat": "workspace:*",
     "@dome/ai-processor": "workspace:*",
     "@dome/auth": "workspace:*",
+    "@dome/chat": "workspace:*",
+    "@dome/common": "workspace:*",
+    "@dome/constellation": "workspace:*",
+    "@dome/silo": "workspace:*",
     "@dqbd/tiktoken": "^1.0.7",
     "@graphql-tools/schema": "^10.0.2",
+    "@hono/swagger-ui": "^0.5.1",
+    "@hono/zod-openapi": "^0.19.6",
     "@hono/zod-validator": "^0.1.8",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.31.0",
@@ -29,7 +31,7 @@
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "uuid": "^11.1.0",
-    "zod": "^3.21.4"
+    "zod": "^3.24.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230404.0",

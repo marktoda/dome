@@ -1,4 +1,6 @@
 import { Hono, Context } from 'hono';
+import { swaggerUI } from '@hono/swagger-ui';
+import { OpenAPIHono } from '@hono/zod-openapi';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import type { WSContext, WSEvents } from 'hono/ws';
 import { HTTPException } from 'hono/http-exception';
@@ -14,7 +16,7 @@ import {
   updateContext,
 } from '@dome/common';
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
-import { createAuthController } from './controllers/authController';
+import { buildAuthRouter } from './controllers/authController';
 import { initLogging, getLogger } from '@dome/common';
 import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
@@ -29,7 +31,7 @@ const serviceInfo: ServiceInfo = {
 };
 
 // Create Hono app
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new OpenAPIHono<{ Bindings: Bindings }>();
 
 // Create service and controller factories
 const serviceFactory = createServiceFactory();
@@ -55,31 +57,16 @@ app.use('*', createErrorMiddleware(formatZodError));
 // Replace simple auth with auth routes and protected route middleware
 app.use('*', responseHandlerMiddleware);
 
-// Auth routes (no authentication required)
-const authRouter = new Hono();
-
-authRouter.post('/login', async (c: Context<{ Bindings: Bindings }>) => {
-  const authController = createAuthController();
-  return await authController.login(c);
-});
-
-authRouter.post('/register', async (c: Context<{ Bindings: Bindings }>) => {
-  const authController = createAuthController();
-  return await authController.register(c);
-});
-
-authRouter.post('/validate', async (c: Context<{ Bindings: Bindings }>) => {
-  const authController = createAuthController();
-  return await authController.validateToken(c);
-});
-
-authRouter.post('/logout', async (c: Context<{ Bindings: Bindings }>) => {
-  const authController = createAuthController();
-  return await authController.logout(c);
+// Register global security schemes with the OpenAPI registry
+app.openAPIRegistry.registerComponent('securitySchemes', 'BearerAuth', {
+  type: 'http',
+  scheme: 'bearer',
+  bearerFormat: 'JWT', // Optional but good for documentation
+  description: 'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer {token}"'
 });
 
 // Mount auth router
-app.route('/auth', authRouter);
+app.route('/auth', buildAuthRouter());
 
 // Public routes (no authentication required)
 // Root route
@@ -197,7 +184,7 @@ app.get(
         cause: { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication token missing in query.' } },
       });
     }
- 
+
     const authResult = await authService.validateToken(token);
     logger.info({ authResult }, 'WebSocket upgrade auth validation result');
 
@@ -208,7 +195,7 @@ app.get(
         cause: { success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token for WebSocket.' } },
       });
     }
- 
+
     const authenticatedUserId = authResult.user.id;
     // Update context for subsequent logging within this request scope if possible,
     // though this context is primarily for HTTP. For WebSocket messages, pass userId.
@@ -306,33 +293,33 @@ app.get(
           } else if (error instanceof Error) {
             errorMessage = error.message;
           }
-          
+
           try {
             ws.send(JSON.stringify({ type: 'error', error: { message: errorMessage, code: errorCode } }));
             if (ws.readyState === WebSocket.OPEN) {
-               // ws.close(closeCode, errorMessage.substring(0, 123)); // Max length for reason is 123 bytes
+              // ws.close(closeCode, errorMessage.substring(0, 123)); // Max length for reason is 123 bytes
             }
           } catch (sendError) {
             messageLogger.error({ sendError }, 'Failed to send error message over WebSocket.');
           }
         }
       },
- 
+
       onClose(event: CloseEvent, ws: WSContext) {
         const closeLogger = getLogger().child({
-            component: 'WebSocketChatHandler',
-            requestId: c.get('requestId') || 'N/A',
-            authenticatedUserId: authenticatedUserId || 'N/A',
+          component: 'WebSocketChatHandler',
+          requestId: c.get('requestId') || 'N/A',
+          authenticatedUserId: authenticatedUserId || 'N/A',
         });
         closeLogger.info({ code: event.code, reason: event.reason, wasClean: event.wasClean }, 'WebSocket connection closed.');
         /* metrics / cleanup */
       },
- 
+
       onError(event: Event, ws: WSContext) { // Added ws: WSContext as per WSEvents, though not used in current impl.
         const errorLogger = getLogger().child({
-            component: 'WebSocketChatHandler',
-            requestId: c.get('requestId') || 'N/A',
-            authenticatedUserId: authenticatedUserId || 'N/A', // Ensure authenticatedUserId is accessible
+          component: 'WebSocketChatHandler',
+          requestId: c.get('requestId') || 'N/A',
+          authenticatedUserId: authenticatedUserId || 'N/A', // Ensure authenticatedUserId is accessible
         });
         errorLogger.error({ error: event }, 'WebSocket error event triggered.');
       },
@@ -502,5 +489,20 @@ app.onError((err, c) => {
     500,
   );
 });
+
+// Serve the OpenAPI JSON specification
+// Routes and registered components (like securitySchemes) will be automatically included.
+app.doc('/openapi.json', {
+  openapi: '3.0.3',
+  info: {
+    title: `${serviceInfo.name} API`,
+    version: serviceInfo.version,
+    description: `API for ${serviceInfo.name} services. Environment: ${serviceInfo.environment}.`,
+  },
+  servers: [{ url: '/', description: `Current environment (${serviceInfo.environment})` }],
+});
+
+// Serve Swagger UI
+app.get('/docs', swaggerUI({ url: '/openapi.json', title: `${serviceInfo.name} API Docs` }));
 
 export default app;

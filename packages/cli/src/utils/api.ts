@@ -515,4 +515,3 @@ export type { AxiosRequestConfig } from 'axios';
 // Export search functions
 export { search as searchContent };
 export { registerGithubRepo, getGithubRepoHistory };
-
