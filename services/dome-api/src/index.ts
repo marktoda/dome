@@ -17,6 +17,7 @@ import {
 } from '@dome/common';
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { buildAuthRouter } from './controllers/authController';
+import { buildNotesRouter, buildAiRouter } from './controllers/siloController'; // Import new router builders
 import { initLogging, getLogger } from '@dome/common';
 import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
@@ -105,36 +106,6 @@ app.get('/health', c => {
       },
     },
   });
-});
-
-// Notes API routes - protected by authentication
-const notesRouter = new Hono();
-
-// Apply authentication middleware to all note routes
-notesRouter.use('*', authenticationMiddleware);
-
-// Ingest endpoint - for adding new notes, files, etc.
-notesRouter.post('/', async (c: Context<{ Bindings: Bindings }>) => {
-  const siloController = controllerFactory.getSiloController(c.env);
-  return await siloController.ingest(c);
-});
-
-// CRUD operations for notes
-notesRouter.get('/:id', async (c: Context<{ Bindings: Bindings }>) => {
-  const siloController = controllerFactory.getSiloController(c.env);
-  return await siloController.get(c);
-});
-notesRouter.put('/:id', async (c: Context<{ Bindings: Bindings }>) => {
-  const siloController = controllerFactory.getSiloController(c.env);
-  return await siloController.updateNote(c);
-});
-notesRouter.delete('/:id', async (c: Context<{ Bindings: Bindings }>) => {
-  const siloController = controllerFactory.getSiloController(c.env);
-  return await siloController.delete(c);
-});
-notesRouter.get('/', async (c: Context<{ Bindings: Bindings }>) => {
-  const siloController = controllerFactory.getSiloController(c.env);
-  return await siloController.listNotes(c);
 });
 
 // Create a dedicated search router - protected by authentication
@@ -314,9 +285,8 @@ app.get(
 
           if (error && typeof error === 'object' && 'name' in error && error.name === 'ZodError') {
             errorCode = 'VALIDATION_ERROR';
-            errorMessage = `Invalid request format: ${
-              error instanceof Error ? error.message : 'Unknown validation error'
-            }`;
+            errorMessage = `Invalid request format: ${error instanceof Error ? error.message : 'Unknown validation error'
+              }`;
             closeCode = 1007; // Invalid message format
           } else if (error instanceof Error) {
             errorMessage = error.message;
@@ -364,8 +334,8 @@ app.get(
 // Rollout management routes have been removed as part of the Chat RAG Graph migration
 
 // Mount routers
-app.route('/notes', notesRouter);
-app.route('/search', searchRouter);
+app.route('/notes', buildNotesRouter()); // Use the new OpenAPI-enabled router
+app.route('/search', searchRouter); // searchRouter migration is a separate task
 
 const contentRouter = new Hono();
 contentRouter.use('*', authenticationMiddleware);
@@ -440,23 +410,14 @@ contentRouter.post('/github/oauth/store', async (c: Context<{ Bindings: Bindings
 app.route('/content', contentRouter);
 
 // AI endpoints - protected by authentication
-const aiRouter = new Hono();
-aiRouter.use('*', authenticationMiddleware);
-
-// Reprocess endpoint - for reprocessing failed AI metadata
-aiRouter.post('/reprocess', async (c: Context<{ Bindings: Bindings }>) => {
-  const siloController = controllerFactory.getSiloController(c.env);
-  return await siloController.reprocess(c);
-});
-
-// Bulk reprocess endpoint - for reprocessing multiple content items by IDs
-aiRouter.post('/bulk-reprocess', async (c: Context<{ Bindings: Bindings }>) => {
-  const siloController = controllerFactory.getSiloController(c.env);
-  return await siloController.bulkReprocess(c);
-});
+// The aiRouter is now an OpenAPIHono instance built by buildAiRouter
+// It already includes authentication middleware and OpenAPI route definitions for reprocess/bulkReprocess.
+// const aiRouter = new Hono(); // Old way
+// aiRouter.use('*', authenticationMiddleware); // Old way
+// ... old manual AI route definitions removed ...
 
 // Mount AI router
-app.route('/ai', aiRouter);
+app.route('/ai', buildAiRouter()); // Use the new OpenAPI-enabled router for AI
 
 // 404 handler for unknown routes
 app.notFound(c => {

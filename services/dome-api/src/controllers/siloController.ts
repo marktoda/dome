@@ -1,559 +1,374 @@
 import { Context } from 'hono';
-import type { Bindings } from '../types';
-import { z } from 'zod';
-import { SiloClient } from '@dome/silo/client';
-import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
-import { getIdentity, getLogger, metrics } from '@dome/common';
-import { ServiceError, ContentCategory, SiloSimplePutInput } from '@dome/common';
+import { z, createRoute, OpenAPIHono, RouteConfigToTypedResponse } from '@hono/zod-openapi';
+import { getLogger } from '@dome/common';
+import { createServiceFactory } from '../services/serviceFactory';
+import type { AppEnv } from '../types';
+import { authenticationMiddleware, AuthContext } from '../middleware/authenticationMiddleware';
 
-/**
- * Validation schemas for Silo endpoints
- */
-const ingestSchema = z.object({
-  content: z.string().min(1, 'Content is required'),
-  category: z.string().default('note'),
-  mimeType: z.string().default('text/markdown'),
-  title: z.string().optional(),
-  metadata: z.record(z.string(), z.any()).optional(),
-  tags: z.array(z.string()).optional(),
+// Types imported from @dome/common (effectively from packages/common/src/types/siloContent.ts)
+import {
+  SiloSimplePutInput,
+  // SiloSimplePutResponse,
+  // SiloSimplePutInput, // Removed duplicate
+  SiloBatchGetInput,
+  SiloContentBatch,
+  SiloDeleteInput,
+  SiloContentItem,
+  ContentCategoryEnum,
+  MimeTypeSchema,
+} from '@dome/common';
+
+const logger = getLogger().child({ component: 'SiloController' });
+
+// --- Generic Error Schema ---
+const ErrorDetailSchema = z.object({
+  code: z.string().openapi({ example: 'NOT_FOUND' }),
+  message: z.string().openapi({ example: 'Resource not found' }),
 });
 
-const reprocessSchema = z.object({
-  id: z.string().optional(),
+const ErrorResponseSchema = z.object({
+  success: z.literal(false).openapi({ example: false }),
+  error: ErrorDetailSchema,
+}).openapi('ErrorResponse');
+
+// --- API Specific Schemas ---
+const NoteIdParamSchema = z.object({
+  id: z.string().openapi({
+    param: { name: 'id', in: 'path' },
+    example: 'note_123abc',
+    description: 'The unique identifier for the note.',
+  }),
 });
 
-const bulkReprocessSchema = z.object({
-  contentIds: z.array(z.string()).min(1, 'At least one content ID is required'),
+// API's representation of a Note, derived from SiloContentItem
+const NoteSchema = z.object({
+  id: z.string().openapi({ example: 'note_123abc' }),
+  userId: z.string().nullable().openapi({ example: 'user_xyz' }),
+  category: ContentCategoryEnum.openapi({ example: 'note' }),
+  title: z.string().optional().nullable().openapi({ example: 'My Note Title' }),
+  content: z.string().optional().nullable().openapi({ example: 'This is the note content.' }),
+  mimeType: MimeTypeSchema.openapi({ example: 'text/markdown' }),
+  size: z.number().openapi({ example: 123 }),
+  createdAt: z.string().datetime().openapi({ example: '2023-01-01T12:00:00Z' }),
+  // updatedAt is not present in SiloContentItem and has been removed from NoteSchema.
+  url: z.string().url().optional().nullable().openapi({ description: 'URL for large content' }),
+  customMetadata: z.record(z.string(), z.any()).optional().nullable().openapi({ description: 'Custom metadata' })
+}).openapi('Note');
+
+const IngestNoteBodyAPISchema = z.object({
+  title: z.string().optional().nullable().openapi({ example: 'New Note from API' }),
+  content: z.string().openapi({ example: 'Content for the new note.' }), // For notes API, content is string
+  category: ContentCategoryEnum.optional().openapi({ example: 'note', description: "Defaults to 'note' if not provided" }),
+  mimeType: MimeTypeSchema.optional().openapi({ example: 'text/markdown', description: "Defaults to 'text/markdown' if not provided" }),
+}).openapi('IngestNoteBodyAPISchema');
+
+const ListNotesQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().optional().default(50).openapi({ example: 50 }),
+  offset: z.coerce.number().int().min(0).optional().default(0).openapi({ example: 0 }),
+  category: ContentCategoryEnum.optional().openapi({ example: 'note' })
 });
 
-const updateNoteSchema = z.object({
-  title: z.string().optional(),
-  body: z.string().optional(),
-  category: z.string().optional(),
-  mimeType: z.string().optional(),
-  metadata: z.record(z.string(), z.any()).optional(),
+const DeleteSuccessResponseSchema = z.object({
+  success: z.literal(true).openapi({ example: true }),
+  message: z.string().openapi({ example: 'Note deleted successfully' })
+}).openapi('DeleteSuccessResponse');
+
+// --- Note Route Definitions ---
+const ingestNoteRoute = createRoute({
+  method: 'post', path: '/', summary: 'Ingest a new note', security: [{ BearerAuth: [] }],
+  request: { body: { content: { 'application/json': { schema: IngestNoteBodyAPISchema } }, required: true } },
+  responses: {
+    201: { description: 'Note ingested.', content: { 'application/json': { schema: NoteSchema } } }, // Returns the full Note
+    400: { description: 'Bad request.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal server error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Notes'],
 });
 
-const listNotesSchema = z.object({
-  category: z.string().optional(),
-  limit: z.coerce.number().int().positive().optional().default(50),
-  offset: z.coerce.number().int().min(0).optional().default(0),
+const listNotesRoute = createRoute({
+  method: 'get', path: '/', summary: 'List notes', security: [{ BearerAuth: [] }],
+  request: { query: ListNotesQuerySchema },
+  responses: {
+    200: { description: 'A list of notes.', content: { 'application/json': { schema: z.array(NoteSchema) } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal server error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Notes'],
 });
 
-/**
- * Controller for Silo content operations
- * Handles all note operations using the siloService
- */
+const getNoteByIdRoute = createRoute({
+  method: 'get', path: '/{id}', summary: 'Get a note by ID', security: [{ BearerAuth: [] }],
+  request: { params: NoteIdParamSchema },
+  responses: {
+    200: { description: 'The requested note.', content: { 'application/json': { schema: NoteSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Note not found.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal server error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Notes'],
+});
+
+const deleteNoteRoute = createRoute({
+  method: 'delete', path: '/{id}', summary: 'Delete a note', security: [{ BearerAuth: [] }],
+  request: { params: NoteIdParamSchema },
+  responses: {
+    200: { description: 'Note deleted.', content: { 'application/json': { schema: DeleteSuccessResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Note not found.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal server error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Notes'],
+});
+
+// --- AI Reprocess Schemas & Routes ---
+const ReprocessBodySchema = z.object({
+  contentId: z.string().openapi({ example: 'content_abc123' }),
+}).openapi('ReprocessBody');
+
+const ReprocessResponseSchema = z.object({
+  success: z.literal(true), message: z.string(), reprocessedCount: z.number().optional(), // Changed from reprocessJobId
+}).openapi('ReprocessResponse');
+
+const BulkReprocessBodySchema = z.object({
+  contentIds: z.array(z.string()).min(1),
+}).openapi('BulkReprocessBody');
+
+const BulkReprocessResponseSchema = z.object({
+  success: z.literal(true), message: z.string(), reprocessedCount: z.number().optional(), // Changed from batchJobId
+}).openapi('BulkReprocessResponse');
+
+const reprocessRoute = createRoute({
+  method: 'post', path: '/reprocess', summary: 'Reprocess AI metadata', security: [{ BearerAuth: [] }],
+  request: { body: { content: { 'application/json': { schema: ReprocessBodySchema } }, required: true } },
+  responses: {
+    202: { description: 'Reprocessing initiated.', content: { 'application/json': { schema: ReprocessResponseSchema } } },
+    400: { description: 'Bad request.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Content not found.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal server error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['AI'],
+});
+
+const bulkReprocessRoute = createRoute({
+  method: 'post', path: '/bulk-reprocess', summary: 'Bulk reprocess AI metadata', security: [{ BearerAuth: [] }],
+  request: { body: { content: { 'application/json': { schema: BulkReprocessBodySchema } }, required: true } },
+  responses: {
+    202: { description: 'Bulk reprocessing initiated.', content: { 'application/json': { schema: BulkReprocessResponseSchema } } },
+    400: { description: 'Bad request.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal server error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['AI'],
+});
+
+// Helper to transform SiloContentItem to NoteSchema compatible object
+function transformSiloItemToNote(item: SiloContentItem): z.infer<typeof NoteSchema> {
+  return {
+    id: item.id,
+    userId: item.userId,
+    category: item.category,
+    title: item.title ?? null,
+    content: item.body ?? null,
+    mimeType: item.mimeType,
+    size: item.size,
+    createdAt: new Date(item.createdAt * 1000).toISOString(),
+    // No updatedAt in SiloContentItem
+    url: item.url ?? null,
+    customMetadata: item.customMetadata ?? null,
+  };
+}
+
 export class SiloController {
-  private logger;
-
-  constructor(private silo: SiloClient, private aiProcessor: AiProcessorClient) {
-    this.logger = getLogger();
+  private getSiloServiceClient(env: AppEnv['Bindings']) { // Corrected: Accepts env
+    return createServiceFactory().getSiloService(env);
   }
 
-  /**
-   * GET /notes/:id
-   * Get a single note by ID
-   */
-  async get(c: Context<{ Bindings: Bindings }>): Promise<Response> {
+  ingest = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    body: z.infer<typeof IngestNoteBodyAPISchema>
+  ): Promise<RouteConfigToTypedResponse<typeof ingestNoteRoute>> => {
+    const userId = c.get('auth')?.userId;
+    logger.info({ userId, title: body.title }, 'Ingest note request');
     try {
-      const { userId } = getIdentity();
-      const id = c.req.param('id');
-
-      this.logger.info(
-        {
-          userId,
-          noteId: id,
-          path: c.req.path,
-        },
-        'Get note request received',
-      );
-
-      const note = await this.silo.get(id, userId);
-
-      if (!note) {
-        return c.json(
-          {
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Note not found' },
-          },
-          404,
-        );
-      }
-
-      return c.json({ success: true, note });
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          noteId: c.req.param('id'),
-          path: c.req.path,
-        },
-        'Error getting note',
-      );
-
-      if (error instanceof ServiceError) {
-        const statusCode = error.status || 500;
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: error.code || 'NOTE_ERROR',
-              message: error.message,
-            },
-          },
-          statusCode as any,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  /**
-   * GET /notes
-   * List notes with optional filtering
-   */
-  async listNotes(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      const { userId } = getIdentity();
-
-      this.logger.info(
-        {
-          userId,
-          path: c.req.path,
-          query: c.req.query(),
-        },
-        'List notes request received',
-      );
-
-      // Validate and parse query parameters
-      const validatedParams = listNotesSchema.parse(c.req.query());
-
-      // Call the siloService to list notes
-      const result = await this.silo.batchGet(Object.assign({ userId }, validatedParams));
-
-      return c.json({
-        success: true,
-        notes: result.items,
-        count: result.items,
-        total: result.total,
-        limit: result.limit,
-        offset: result.offset,
-      });
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          path: c.req.path,
-        },
-        'Error listing notes',
-      );
-
-      if (error instanceof z.ZodError) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid query parameters',
-              details: error.errors,
-            },
-          },
-          400,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  /**
-   * GET /notes/batch
-   * Batch get notes by IDs
-   */
-  async batchGet(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      const { userId } = getIdentity();
-      const ids = c.req.query('ids')?.split(',') || [];
-
-      if (ids.length === 0) {
-        return c.json(
-          {
-            success: false,
-            error: { code: 'BAD_REQUEST', message: 'No IDs provided' },
-          },
-          400,
-        );
-      }
-
-      const notes = await this.silo.batchGet({ ids, userId });
-
-      return c.json({
-        success: true,
-        notes,
-      });
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          path: c.req.path,
-        },
-        'Error in batchGet controller',
-      );
-
-      throw error;
-    }
-  }
-
-  /**
-   * POST /notes/ingest
-   * Ingest content and create a note
-   */
-  async ingest(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      this.logger.info({ path: c.req.path, method: c.req.method }, 'Note ingestion started');
-
-      // Validate request body
-      const body = await c.req.json();
-      this.logger.info({ requestBody: body }, 'Received ingest request data');
-      const validatedData = ingestSchema.parse(body);
-      this.logger.info({ ingestRequest: validatedData }, 'Validated Ingest data');
-
-      const { userId } = getIdentity();
-
-      // Generate title if not provided
-      const title = validatedData.title || validatedData.content.split('\n')[0].substring(0, 50);
-      this.logger.debug({ generatedTitle: title }, 'Generated title for note');
-
-      // Create a message for the ingest queue
-      const message: SiloSimplePutInput = {
-        userId,
-        content: validatedData.content,
-        category: (validatedData.category || 'note') as ContentCategory,
-        mimeType: validatedData.mimeType || 'text/markdown',
-        metadata: {
-          title,
-          ...validatedData.metadata,
-        },
+      const siloServiceClient = this.getSiloServiceClient(c.env); // Corrected: Pass c.env
+      const putInput: SiloSimplePutInput = {
+        content: body.content,
+        userId: userId,
+        category: body.category || 'note',
+        mimeType: body.mimeType || 'text/markdown',
+        metadata: body.title ? { title: body.title } : {},
       };
-
-      // Send the message to the ingest queue
-      await this.silo.uploadSingle(message);
-
-      this.logger.info({ userId, category: message.category }, 'Content sent to ingest queue');
-
-      // Return the created note
-      return c.json(
-        {
-          success: true,
-        },
-        201,
-      );
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          path: c.req.path,
-          method: c.req.method,
-        },
-        'Error in ingest controller',
-      );
-
-      if (error instanceof z.ZodError) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request data',
-              details: error.errors,
-            },
-          },
-          400,
-        );
+      const uploadResponse = await siloServiceClient.uploadSingle(putInput);
+      
+      const newNoteItem = await siloServiceClient.get(uploadResponse.id, userId);
+      if (!newNoteItem) {
+        logger.error({ noteId: uploadResponse.id, userId }, "Failed to fetch newly ingested note");
+        return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to retrieve note after ingest' } }, 500);
       }
-
-      throw error;
-    }
-  }
-
-  /**
-   * PUT /notes/:id
-   * Update a note
-   */
-  async updateNote(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      const { userId } = getIdentity();
-      const noteId = c.req.param('id');
-
-      this.logger.info(
-        {
-          userId,
-          noteId,
-          path: c.req.path,
-        },
-        'Update note request received',
+      const responseNote = transformSiloItemToNote(newNoteItem);
+      return c.json(responseNote, 201);
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack, userId }, 'Ingest note failed');
+      return c.json(
+        { success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to ingest note' } },
+        500
       );
+    }
+  };
 
-      // Get the existing note
-      const existingNote = await this.silo.get(noteId, userId);
-
-      // Validate request body
-      const body = await c.req.json();
-      this.logger.debug({ requestBody: body }, 'Received update note data');
-      const validatedData = updateNoteSchema.parse(body);
-
-      // Merge existing note with updates
-      const updatedNote = {
-        ...existingNote,
-        ...validatedData,
+  listNotes = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    query: z.infer<typeof ListNotesQuerySchema>
+  ): Promise<RouteConfigToTypedResponse<typeof listNotesRoute>> => {
+    const userId = c.get('auth')?.userId;
+    logger.info({ userId, query }, 'List notes request');
+    try {
+      const siloServiceClient = this.getSiloServiceClient(c.env); // Corrected: Pass c.env
+      const batchInput: SiloBatchGetInput = {
+        userId: userId,
+        category: query.category || 'note',
+        limit: query.limit,
+        offset: query.offset,
       };
-
-      // Update the note via siloService
-      // Send directly to the ingest queue
-      await this.silo.uploadSingle({
-        id: noteId,
-        content: updatedNote.body || '',
-        category: (updatedNote.category || 'note') as ContentCategory,
-        mimeType: updatedNote.mimeType || 'text/markdown',
-        userId,
-      });
-
-      // Get the updated note
-      const note = await this.silo.get(noteId, userId);
-
-      return c.json({
-        success: true,
-        note,
-      });
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          noteId: c.req.param('id'),
-          path: c.req.path,
-        },
-        'Error updating note',
-      );
-
-      if (error instanceof z.ZodError) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request data',
-              details: error.errors,
-            },
-          },
-          400,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  /**
-   * DELETE /notes/:id
-   * Delete a note
-   */
-  async delete(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      const { userId } = getIdentity();
-      const id = c.req.param('id');
-
-      this.logger.info(
-        {
-          userId,
-          noteId: id,
-          path: c.req.path,
-        },
-        'Delete note request received',
-      );
-
-      this.silo.delete({ id, userId });
-      return c.json({ success: true });
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          noteId: c.req.param('id'),
-          path: c.req.path,
-        },
-        'Error deleting note',
-      );
-
-      if (error instanceof ServiceError) {
-        const statusCode = error.status || 500;
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: error.code || 'DELETE_ERROR',
-              message: error.message,
-            },
-          },
-          statusCode as any,
-        );
-      }
-
-      throw error;
-    }
-  }
-
-  /**
-   * POST /notes/reprocess
-   * Reprocess AI metadata for content
-   */
-  async reprocess(c: Context<{ Bindings: Bindings }>): Promise<Response> {
-    try {
-      const startTime = performance.now();
-      this.logger.info({ path: c.req.path, method: c.req.method }, 'Reprocess request received');
-
-      // Parse request body
-      let body = {};
-      try {
-        body = await c.req.json();
-      } catch (error) {
-        // If body parsing fails, assume empty body (no ID provided)
-        body = {};
-      }
-
-      // Validate request body
-      const validatedData = reprocessSchema.parse(body);
-      this.logger.info({ reprocessRequest: validatedData }, 'Validated reprocess request data');
-
-      // Call the AI processor service directly via RPC
-      const result = await this.aiProcessor.reprocess(validatedData);
-
-      // Track metrics
-      metrics.timing('api.reprocess.latency_ms', performance.now() - startTime);
-      metrics.increment('api.reprocess.success', 1);
-
-      return c.json({
-        success: true,
-        result,
-      });
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          path: c.req.path,
-          method: c.req.method,
-        },
-        'Error in reprocess controller',
-      );
-
-      metrics.increment('api.reprocess.errors', 1);
-
-      if (error instanceof z.ZodError) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request data',
-              details: error.errors,
-            },
-          },
-          400,
-        );
-      }
-
-      // Handle errors from the AI processor service
+      const batchResult: SiloContentBatch = await siloServiceClient.batchGet(batchInput);
+      const responseNotes = batchResult.items.map(transformSiloItemToNote);
+      return c.json(responseNotes, 200);
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack, userId }, 'List notes failed');
       return c.json(
-        {
-          success: false,
-          error: {
-            code: 'REPROCESS_ERROR',
-            message: 'Failed to reprocess content',
-            details: error instanceof Error ? error.message : String(error),
-          },
-        },
-        500,
+        { success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to list notes' } },
+        500
       );
     }
-  }
+  };
 
-  /**
-   * POST /notes/bulk-reprocess
-   * Reprocess multiple content items by their IDs
-   */
-  async bulkReprocess(c: Context<{ Bindings: Bindings }>): Promise<Response> {
+  get = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    params: z.infer<typeof NoteIdParamSchema>
+  ): Promise<RouteConfigToTypedResponse<typeof getNoteByIdRoute>> => {
+    const { id } = params;
+    const userId = c.get('auth')?.userId;
+    logger.info({ noteId: id, userId }, 'Get note by ID request');
     try {
-      const startTime = performance.now();
-      this.logger.info(
-        { path: c.req.path, method: c.req.method },
-        'Bulk reprocess request received',
-      );
-
-      // Parse request body
-      const body = await c.req.json();
-
-      // Validate request body
-      const validatedData = bulkReprocessSchema.parse(body);
-      this.logger.info(
-        {
-          bulkReprocessRequest: {
-            contentCount: validatedData.contentIds.length,
-            contentIds: validatedData.contentIds,
-          },
-        },
-        'Validated bulk reprocess request data',
-      );
-
-      // Call the silo service to reprocess the content
-      const result = await this.silo.reprocessContent(validatedData.contentIds);
-
-      // Track metrics
-      metrics.timing('api.bulk_reprocess.latency_ms', performance.now() - startTime);
-      metrics.increment('api.bulk_reprocess.success', 1);
-      metrics.gauge('api.bulk_reprocess.content_count', result.reprocessed);
-
-      return c.json({
-        success: true,
-        result,
-      });
-    } catch (error) {
-      this.logger.error(
-        {
-          err: error,
-          path: c.req.path,
-          method: c.req.method,
-        },
-        'Error in bulk reprocess controller',
-      );
-
-      metrics.increment('api.bulk_reprocess.errors', 1);
-
-      if (error instanceof z.ZodError) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid request data',
-              details: error.errors,
-            },
-          },
-          400,
-        );
+      const siloServiceClient = this.getSiloServiceClient(c.env); // Corrected: Pass c.env
+      const noteItem = await siloServiceClient.get(id, userId);
+      if (!noteItem) {
+        return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Note not found' } }, 404);
       }
-
-      // Handle errors from the silo service
+      const responseNote = transformSiloItemToNote(noteItem);
+      return c.json(responseNote, 200);
+    } catch (error: any) {
+      logger.error({ noteId: id, error: error.message, stack: error.stack, userId }, 'Get note by ID failed');
+      if (error.message?.includes('not found') || error.code === 'NOT_FOUND' || error.name === 'NotFoundError') {
+         return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Note not found' } }, 404);
+      }
       return c.json(
-        {
-          success: false,
-          error: {
-            code: 'BULK_REPROCESS_ERROR',
-            message: 'Failed to reprocess content items',
-            details: error instanceof Error ? error.message : String(error),
-          },
-        },
-        500,
+        { success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to get note' } },
+        500
       );
     }
-  }
+  };
+
+  // updateNote method is omitted.
+
+  removeNote = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    params: z.infer<typeof NoteIdParamSchema>
+  ): Promise<RouteConfigToTypedResponse<typeof deleteNoteRoute>> => {
+    const { id } = params;
+    const userId = c.get('auth')?.userId;
+    logger.info({ noteId: id, userId }, 'Delete note request');
+    try {
+      const siloServiceClient = this.getSiloServiceClient(c.env); // Corrected: Pass c.env
+      const deleteInput: SiloDeleteInput = { id, userId };
+      const deleteResponse = await siloServiceClient.delete(deleteInput);
+      if (deleteResponse.success) {
+        return c.json({ success: true, message: 'Note deleted successfully' }, 200);
+      } else {
+        logger.warn({ noteId: id, userId, deleteResponse }, 'Delete operation reported not successful by service.');
+        return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Note not found or delete failed' } }, 404);
+      }
+    } catch (error: any) {
+      logger.error({ noteId: id, error: error.message, stack: error.stack, userId }, 'Delete note failed');
+      if (error.message?.includes('not found') || error.code === 'NOT_FOUND' || error.name === 'NotFoundError') {
+         return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Note not found' } }, 404);
+      }
+      return c.json(
+        { success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to delete note' } },
+        500
+      );
+    }
+  };
+
+  reprocess = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    body: z.infer<typeof ReprocessBodySchema>
+  ): Promise<RouteConfigToTypedResponse<typeof reprocessRoute>> => {
+    const { contentId } = body;
+    const userId = c.get('auth')?.userId;
+    logger.info({ contentId, userId }, 'Reprocess content request');
+    try {
+      const siloServiceClient = this.getSiloServiceClient(c.env); // Corrected: Pass c.env
+      const result = await siloServiceClient.reprocessContent([contentId]);
+      
+      return c.json({ success: true, message: `Reprocessing initiated for ${result.reprocessed} item(s).`, reprocessedCount: result.reprocessed }, 202);
+    } catch (error: any) {
+      logger.error({ contentId, error: error.message, stack: error.stack, userId }, 'Reprocess content failed');
+      if (error.message?.includes('not found') || error.code === 'NOT_FOUND' || error.name === 'NotFoundError') {
+        return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Content to reprocess not found' } }, 404);
+      }
+      return c.json(
+        { success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to reprocess content' } },
+        500
+      );
+    }
+  };
+
+  bulkReprocess = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    body: z.infer<typeof BulkReprocessBodySchema>
+  ): Promise<RouteConfigToTypedResponse<typeof bulkReprocessRoute>> => {
+    const { contentIds } = body;
+    const userId = c.get('auth')?.userId;
+    logger.info({ contentIdsCount: contentIds.length, userId }, 'Bulk reprocess content request');
+    try {
+      const siloServiceClient = this.getSiloServiceClient(c.env); // Corrected: Pass c.env
+      const result = await siloServiceClient.reprocessContent(contentIds);
+      
+      return c.json({ success: true, message: `Bulk reprocessing initiated for ${result.reprocessed} item(s).`, reprocessedCount: result.reprocessed }, 202);
+    } catch (error: any) {
+      logger.error({ contentIdsCount: contentIds.length, error: error.message, stack: error.stack, userId }, 'Bulk reprocess content failed');
+      return c.json(
+        { success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to bulk reprocess content' } },
+        500
+      );
+    }
+  };
+}
+
+export function createSiloController(): SiloController {
+  return new SiloController();
+}
+
+export function buildNotesRouter(): OpenAPIHono<AppEnv & { Variables: { auth: AuthContext } }> {
+  const siloController = createSiloController();
+  const notesRouter = new OpenAPIHono<AppEnv & { Variables: { auth: AuthContext } }>();
+
+  notesRouter.use('*', authenticationMiddleware);
+
+  notesRouter.openapi(ingestNoteRoute, (c) => siloController.ingest(c, c.req.valid('json')));
+  notesRouter.openapi(listNotesRoute, (c) => siloController.listNotes(c, c.req.valid('query')));
+  notesRouter.openapi(getNoteByIdRoute, (c) => siloController.get(c, c.req.valid('param')));
+  // updateNoteRoute is omitted
+  notesRouter.openapi(deleteNoteRoute, (c) => siloController.removeNote(c, c.req.valid('param')));
+
+  return notesRouter;
+}
+
+export function buildAiRouter(): OpenAPIHono<AppEnv & { Variables: { auth: AuthContext } }> {
+  const siloController = createSiloController();
+  const aiRouter = new OpenAPIHono<AppEnv & { Variables: { auth: AuthContext } }>();
+
+  aiRouter.use('*', authenticationMiddleware);
+
+  aiRouter.openapi(reprocessRoute, c => siloController.reprocess(c, c.req.valid('json')));
+  aiRouter.openapi(bulkReprocessRoute, c => siloController.bulkReprocess(c, c.req.valid('json')));
+
+  return aiRouter;
 }
