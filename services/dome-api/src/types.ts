@@ -26,6 +26,11 @@ export type Bindings = {
   AUTH?: Fetcher; // Auth service binding
   VERSION?: string; // Version of the service
   ENVIRONMENT?: string; // Environment (development, staging, production)
+
+  // Notion specific environment variables
+  NOTION_CLIENT_ID?: string; // Optional: Notion OAuth Client ID
+  NOTION_CLIENT_SECRET?: string; // Optional: Notion OAuth Client Secret (handle with care)
+  NOTION_REDIRECT_URI?: string; // Optional: Notion OAuth Redirect URI
 };
 
 export type AppEnv = { Bindings: Bindings };

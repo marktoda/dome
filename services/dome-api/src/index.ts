@@ -17,7 +17,10 @@ import {
 } from '@dome/common';
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { buildAuthRouter } from './controllers/authController';
-import { buildNotesRouter, buildAiRouter } from './controllers/siloController'; // Import new router builders
+import { buildNotesRouter, buildAiRouter } from './controllers/siloController';
+import { buildTsunamiContentRouter } from './controllers/tsunamiController';
+import { buildNotionContentRouter } from './controllers/notionController';
+import { buildSearchRouter } from './controllers/searchController'; // Import Search router builder
 import { initLogging, getLogger } from '@dome/common';
 import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
@@ -106,22 +109,6 @@ app.get('/health', c => {
       },
     },
   });
-});
-
-// Create a dedicated search router - protected by authentication
-const searchRouter = new Hono();
-
-// Apply authentication middleware to all search routes
-searchRouter.use('*', authenticationMiddleware);
-
-// Search endpoints - for semantic search over notes
-searchRouter.get('/', async (c: Context<{ Bindings: Bindings }>) => {
-  const searchController = controllerFactory.getSearchController(c.env);
-  return await searchController.search(c);
-});
-searchRouter.get('/stream', async (c: Context<{ Bindings: Bindings }>) => {
-  const searchController = controllerFactory.getSearchController(c.env);
-  return await searchController.streamSearch(c);
 });
 
 // Chat API routes - protected by authentication
@@ -335,86 +322,15 @@ app.get(
 
 // Mount routers
 app.route('/notes', buildNotesRouter()); // Use the new OpenAPI-enabled router
-app.route('/search', searchRouter); // searchRouter migration is a separate task
 
-const contentRouter = new Hono();
-contentRouter.use('*', authenticationMiddleware);
+// Instantiate SearchController using the factory.
+// `buildSearchRouter` now creates its own SearchController instance.
+app.route('/search', buildSearchRouter()); // Mount new Search router
 
-// Register a GitHub repository
-contentRouter.post('/github', async (c: Context<{ Bindings: Bindings }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env);
-  return await tsunamiController.registerGithubRepo(c);
-});
-
-// Get GitHub repository history
-contentRouter.get('/github/:owner/:repo/history', async (c: Context<{ Bindings: Bindings }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env);
-  return await tsunamiController.getGithubRepoHistory(c);
-});
-
-// Get user sync history
-contentRouter.get('/sync/user/:userId/history', async (c: Context<{ Bindings: Bindings }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env);
-  return await tsunamiController.getUserHistory(c);
-});
-
-// Get sync plan history
-contentRouter.get('/sync/plan/:syncPlanId/history', async (c: Context<{ Bindings: Bindings }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env);
-  return await tsunamiController.getSyncPlanHistory(c);
-});
-
-// Notion workspace registration and management
-contentRouter.post('/notion', async (c: Context<{ Bindings: Bindings }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.registerNotionWorkspace(c);
-});
-
-// Get Notion workspace history
-contentRouter.get('/notion/:workspaceId/history', async (c: Context<{ Bindings: Bindings }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.getNotionWorkspaceHistory(c);
-});
-
-// Trigger Notion workspace sync
-contentRouter.post('/notion/:workspaceId/sync', async (c: Context<{ Bindings: Bindings }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.triggerNotionWorkspaceSync(c);
-});
-
-// Notion OAuth configuration
-contentRouter.post('/notion/oauth', async (c: Context<{ Bindings: Bindings }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.configureNotionOAuth(c);
-});
-
-// Get Notion OAuth URL
-contentRouter.get('/notion/oauth/url', async (c: Context<{ Bindings: Bindings }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.getNotionOAuthUrl(c);
-});
-
-// Store Notion OAuth integration details (token, workspace info)
-contentRouter.post('/notion/oauth/store', async (c: Context<{ Bindings: Bindings }>) => {
-  const notionController = controllerFactory.getNotionController(c.env);
-  return await notionController.storeNotionIntegration(c);
-});
-
-// Store GitHub OAuth integration details
-contentRouter.post('/github/oauth/store', async (c: Context<{ Bindings: Bindings }>) => {
-  const tsunamiController = controllerFactory.getTsunamiController(c.env); // Assuming TsunamiController handles this
-  return await tsunamiController.storeGithubIntegration(c);
-});
-
-// Mount GitHub router under content path
-app.route('/content', contentRouter);
-
-// AI endpoints - protected by authentication
-// The aiRouter is now an OpenAPIHono instance built by buildAiRouter
-// It already includes authentication middleware and OpenAPI route definitions for reprocess/bulkReprocess.
-// const aiRouter = new Hono(); // Old way
-// aiRouter.use('*', authenticationMiddleware); // Old way
-// ... old manual AI route definitions removed ...
+// Mount the new Tsunami-specific parts of the content router
+app.route('/content', buildTsunamiContentRouter()); // Mount Tsunami routes at /content/...
+// Mount the new Notion-specific parts of the content router under a /content/notion prefix
+app.route('/content/notion', buildNotionContentRouter()); // Mount Notion routes at /content/notion/...
 
 // Mount AI router
 app.route('/ai', buildAiRouter()); // Use the new OpenAPI-enabled router for AI
@@ -501,3 +417,4 @@ app.doc('/openapi.json', {
 app.get('/docs', swaggerUI({ url: '/openapi.json', title: `${serviceInfo.name} API Docs` }));
 
 export default app;
+

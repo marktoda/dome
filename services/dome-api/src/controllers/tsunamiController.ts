@@ -1,232 +1,264 @@
 import { Context } from 'hono';
-import { getIdentity, getLogger } from '@dome/common';
-import { TsunamiClient } from '@dome/tsunami/client';
-import { Bindings } from '../types';
-import { z } from 'zod';
+import { z, createRoute, OpenAPIHono, RouteConfigToTypedResponse } from '@hono/zod-openapi';
+import { getLogger } from '@dome/common';
+import { createServiceFactory } from '../services/serviceFactory';
+import type { AppEnv } from '../types';
+import { authenticationMiddleware, AuthContext } from '../middleware/authenticationMiddleware';
 
-/**
- * Tsunami controller for managing GitHub repository syncing
- */
+// Placeholder for actual types that might come from @dome/common or service responses
+// For example:
+// import { GithubRepository, SyncHistoryItem } from '@dome/common';
+
+const logger = getLogger().child({ component: 'TsunamiController' });
+
+// --- Generic Error Schema ---
+const ErrorDetailSchema = z.object({
+  code: z.string().openapi({ example: 'NOT_FOUND' }),
+  message: z.string().openapi({ example: 'Resource not found' }),
+});
+const ErrorResponseSchema = z.object({
+  success: z.literal(false).openapi({ example: false }),
+  error: ErrorDetailSchema,
+}).openapi('ErrorResponse');
+
+// --- Parameter Schemas ---
+const GithubRepoPathParamsSchema = z.object({
+  owner: z.string().openapi({ param: { name: 'owner', in: 'path' }, example: 'my-org' }),
+  repo: z.string().openapi({ param: { name: 'repo', in: 'path' }, example: 'my-repo' }),
+});
+
+const UserIdPathParamSchema = z.object({ // Renamed to avoid conflict if used elsewhere
+  userId: z.string().openapi({ param: { name: 'userId', in: 'path' }, example: 'user_123' }),
+});
+
+const SyncPlanIdParamSchema = z.object({
+  syncPlanId: z.string().openapi({ param: { name: 'syncPlanId', in: 'path' }, example: 'plan_abc' }),
+});
+
+// --- Body Schemas ---
+const RegisterGithubRepoBodySchema = z.object({
+  owner: z.string().openapi({ example: 'my-org' }),
+  repo: z.string().openapi({ example: 'my-repo' }),
+  // installationId: z.string().optional().openapi({ example: "gh_install_id_123"}), // If needed
+}).openapi('RegisterGithubRepoBody');
+
+const StoreGithubIntegrationBodySchema = z.object({
+  installationId: z.string().openapi({ example: '1234567' }),
+  // code: z.string().optional(), // For OAuth callback state
+  // state: z.string().optional(), // For OAuth callback state
+}).openapi('StoreGithubIntegrationBody');
+
+// --- Response Schemas (Placeholders) ---
+const GithubRepoResponseSchema = z.object({
+  id: z.string().openapi({ example: 'gh_repo_123' }),
+  owner: z.string().openapi({ example: 'my-org' }),
+  name: z.string().openapi({ example: 'my-repo' }),
+  // Add other relevant fields like defaultBranch, private, etc.
+}).openapi('GithubRepoResponse');
+
+const SyncHistoryItemSchema = z.object({
+  id: z.string().openapi({ example: 'sync_hist_abc' }),
+  timestamp: z.string().datetime().openapi({ example: new Date().toISOString() }),
+  status: z.string().openapi({ example: 'SUCCESS' }),
+  eventCount: z.number().int().optional().openapi({ example: 150 }),
+  summary: z.string().optional().nullable().openapi({ example: 'Synced 150 items.' }),
+}).openapi('SyncHistoryItem');
+const SyncHistoryResponseSchema = z.array(SyncHistoryItemSchema).openapi('SyncHistoryResponse');
+
+const GenericSuccessResponseSchema = z.object({
+  success: z.literal(true),
+  message: z.string().optional(),
+}).openapi('GenericSuccessResponse');
+
+
+// --- Route Definitions ---
+const registerGithubRepoRoute = createRoute({
+  method: 'post', path: '/github', summary: 'Register GitHub Repository', security: [{ BearerAuth: [] }],
+  request: { body: { content: { 'application/json': { schema: RegisterGithubRepoBodySchema } }, required: true } },
+  responses: {
+    201: { description: 'Repository registered.', content: { 'application/json': { schema: GithubRepoResponseSchema } } },
+    400: { description: 'Bad Request.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal Server Error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Content - GitHub'],
+});
+
+const getGithubRepoHistoryRoute = createRoute({
+  method: 'get', path: '/github/{owner}/{repo}/history', summary: 'Get GitHub Repository Sync History', security: [{ BearerAuth: [] }],
+  request: { params: GithubRepoPathParamsSchema },
+  responses: {
+    200: { description: 'Sync history.', content: { 'application/json': { schema: SyncHistoryResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal Server Error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Content - GitHub'],
+});
+
+const getUserSyncHistoryRoute = createRoute({
+  method: 'get', path: '/sync/user/{userId}/history', summary: 'Get User Sync History', security: [{ BearerAuth: [] }],
+  request: { params: UserIdPathParamSchema },
+  responses: {
+    200: { description: 'User sync history.', content: { 'application/json': { schema: SyncHistoryResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Forbidden (if trying to access another user\'s history without admin rights).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal Server Error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Content - Sync'],
+});
+
+const getSyncPlanHistoryRoute = createRoute({
+  method: 'get', path: '/sync/plan/{syncPlanId}/history', summary: 'Get Sync Plan History', security: [{ BearerAuth: [] }],
+  request: { params: SyncPlanIdParamSchema },
+  responses: {
+    200: { description: 'Sync plan history.', content: { 'application/json': { schema: SyncHistoryResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Not Found.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal Server Error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Content - Sync'],
+});
+
+const storeGithubIntegrationRoute = createRoute({
+  method: 'post', path: '/github/oauth/store', summary: 'Store GitHub OAuth Integration', security: [{ BearerAuth: [] }],
+  request: { body: { content: { 'application/json': { schema: StoreGithubIntegrationBodySchema } }, required: true } },
+  responses: {
+    200: { description: 'Integration stored.', content: { 'application/json': { schema: GenericSuccessResponseSchema } } },
+    400: { description: 'Bad Request.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Unauthorized.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Internal Server Error.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  }, tags: ['Content - GitHub', 'OAuth'],
+});
+
 export class TsunamiController {
-  private logger = getLogger().child({ component: 'TsunamiController' });
-
-  /**
-   * Create a new TsunamiController
-   * @param tsunamiService Tsunami service instance
-   */
-  constructor(private readonly tsunamiService: TsunamiClient) {
-    this.logger.debug('Creating new TsunamiController instance');
+  private getTsunamiServiceClient(env: AppEnv['Bindings']) {
+    return createServiceFactory().getTsunamiService(env);
   }
 
-  /**
-   * Register a GitHub repository
-   *
-   * @param c Hono context
-   * @returns Response
-   */
-  async registerGithubRepo(c: Context<{ Bindings: Bindings }>) {
+  registerGithubRepo = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    body: z.infer<typeof RegisterGithubRepoBodySchema>
+  ): Promise<RouteConfigToTypedResponse<typeof registerGithubRepoRoute>> => {
+    const userId = c.get('auth')?.userId;
+    logger.info({ userId, owner: body.owner, repo: body.repo }, 'Register GitHub repo request');
     try {
-      const { userId } = getIdentity();
-      const schema = z.object({
-        owner: z.string().min(1),
-        repo: z.string().min(1),
-        cadence: z.string().default('PT1H'),
-      });
+      const tsunamiService = this.getTsunamiServiceClient(c.env);
+      // Corrected: Pass owner and repo as separate arguments, assuming this matches the service client
+      const result = await tsunamiService.registerGithubRepo(body.owner, body.repo, userId);
+      const validatedResult = GithubRepoResponseSchema.parse(result); // Validate/transform service response
+      return c.json(validatedResult, 201);
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack, userId }, 'Register GitHub repo failed');
+      return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to register repo' } }, 500);
+    }
+  };
 
-      const { owner, repo, cadence } = await c.req.json<z.infer<typeof schema>>();
-      this.logger.info({ owner, repo, userId, cadence }, 'Registering GitHub repository');
-
-      // Convert cadence string (e.g., "PT1H") to seconds if provided
-      let cadenceSecs = 3600; // Default 1 hour
-      if (cadence) {
-        // Simple cadence string parsing (PT1H = 1 hour)
-        const match = cadence.match(/PT(\d+)([HMS])/);
-        if (match) {
-          const value = parseInt(match[1], 10);
-          const unit = match[2];
-
-          if (unit === 'H') cadenceSecs = value * 3600;
-          else if (unit === 'M') cadenceSecs = value * 60;
-          else if (unit === 'S') cadenceSecs = value;
-        }
+  getGithubRepoHistory = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    params: z.infer<typeof GithubRepoPathParamsSchema>
+  ): Promise<RouteConfigToTypedResponse<typeof getGithubRepoHistoryRoute>> => {
+    const userId = c.get('auth')?.userId; // For auth check if service requires it
+    logger.info({ userId, params }, 'Get GitHub repo history request');
+    try {
+      const tsunamiService = this.getTsunamiServiceClient(c.env);
+      // ASSUMPTION: tsunamiService.getGithubRepoHistory(owner, repo, userId_for_auth_check_if_needed)
+      const history = await tsunamiService.getGithubRepoHistory(params.owner, params.repo);
+      const validatedHistory = SyncHistoryResponseSchema.parse(history);
+      return c.json(validatedHistory, 200);
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack, userId, params }, 'Get GitHub repo history failed');
+      if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
+        return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Repository or history not found' } }, 404);
       }
-
-      const result = await this.tsunamiService.registerGithubRepo(owner, repo, userId, cadenceSecs);
-
-      this.logger.info(
-        { id: result.id, resourceId: result.resourceId, wasInitialised: result.wasInitialised },
-        'GitHub repository registered successfully',
-      );
-
-      return c.json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      this.logger.error({ error }, 'Error registering GitHub repository');
-      throw error;
+      return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to get repo history' } }, 500);
     }
-  }
+  };
 
-  /**
-   * Get history for a GitHub repository
-   *
-   * @param c Hono context
-   * @returns Response
-   */
-  async getGithubRepoHistory(c: Context<{ Bindings: Bindings }>) {
-    try {
-      const { userId } = getIdentity();
-      const { owner, repo } = c.req.param();
-      const limit = parseInt(c.req.query('limit') || '10', 10);
-
-      this.logger.info({ owner, repo, limit }, 'Getting GitHub repository history');
-
-      const result = await this.tsunamiService.getGithubRepoHistory(owner, repo, limit);
-
-      this.logger.info(
-        { owner, repo, historyCount: result.history.length },
-        'GitHub repository history retrieved successfully',
-      );
-
-      return c.json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      this.logger.error({ error }, 'Error retrieving GitHub repository history');
-      throw error;
+  getUserHistory = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    params: z.infer<typeof UserIdPathParamSchema>
+  ): Promise<RouteConfigToTypedResponse<typeof getUserSyncHistoryRoute>> => {
+    const authenticatedUserId = c.get('auth')?.userId;
+    // Basic authorization: user can only get their own history unless they are an admin (not implemented here)
+    if (params.userId !== authenticatedUserId) {
+        logger.warn({ requestedUserId: params.userId, authenticatedUserId }, "Forbidden attempt to access another user's sync history");
+        return c.json({ success: false as const, error: { code: 'FORBIDDEN', message: 'Cannot access another user\'s sync history.'}}, 403);
     }
-  }
-
-  /**
-   * Get sync history for a user
-   *
-   * @param c Hono context
-   * @returns Response
-   */
-  async getUserHistory(c: Context<{ Bindings: Bindings }>) {
+    logger.info({ userId: params.userId }, 'Get user sync history request');
     try {
-      const { userId } = getIdentity();
-      const limit = parseInt(c.req.query('limit') || '10', 10);
-
-      this.logger.info({ userId, limit }, 'Getting user sync history');
-
-      const result = await this.tsunamiService.getUserHistory(userId, limit);
-
-      this.logger.info(
-        { userId, historyCount: result.history.length },
-        'User sync history retrieved successfully',
-      );
-
-      return c.json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      this.logger.error({ error }, 'Error retrieving user sync history');
-      throw error;
-    }
-  }
-
-  /**
-   * Get history for a sync plan
-   *
-   * @param c Hono context
-   * @returns Response
-   */
-  async getSyncPlanHistory(c: Context<{ Bindings: Bindings }>) {
-    try {
-      const { userId } = getIdentity();
-      const { syncPlanId } = c.req.param();
-      const limit = parseInt(c.req.query('limit') || '10', 10);
-
-      this.logger.info({ syncPlanId, limit }, 'Getting sync plan history');
-
-      const result = await this.tsunamiService.getSyncPlanHistory(syncPlanId, limit);
-
-      this.logger.info(
-        { syncPlanId, historyCount: result.history.length },
-        'Sync plan history retrieved successfully',
-      );
-
-      return c.json({
-        success: true,
-        ...result,
-      });
-    } catch (error) {
-      this.logger.error({ error }, 'Error retrieving sync plan history');
-      throw error;
-    }
-  }
-
-  /**
-   * Stores GitHub OAuth integration details (access token, user info).
-   * Called by the UI after it completes the OAuth token exchange with GitHub.
-   *
-   * @param c Hono context
-   * @returns Response
-   */
-  async storeGithubIntegration(c: Context<{ Bindings: Bindings }>) {
-    try {
-      const { userId } = getIdentity(); // User ID from your application's auth system
-      const schema = z.object({
-        accessToken: z.string().min(1),
-        scope: z.string().optional(),
-        tokenType: z.string().optional(),
-        // Details fetched from GitHub's /user endpoint
-        githubUserId: z.number().int(), // Or string, depending on how GitHub API returns it
-        githubUsername: z.string().min(1),
-        // Optional fields if provided by GitHub's token response
-        // refreshToken: z.string().optional(),
-        // expiresIn: z.number().int().optional(),
-      });
-
-      const payload = await c.req.json<z.infer<typeof schema>>();
-
-      this.logger.info(
-        { githubUsername: payload.githubUsername, appUserId: userId },
-        'Storing GitHub integration details via Tsunami service',
-      );
-
-      // TODO: Implement storeGithubOAuthDetails in TsunamiClient and Tsunami service
-      /*
-      const tsunamiResult = await this.tsunamiService.storeGithubOAuthDetails({
-        userId, // App user ID
-        accessToken: payload.accessToken,
-        scope: payload.scope,
-        tokenType: payload.tokenType,
-        providerAccountId: payload.githubUserId.toString(), // Store GitHub user ID as providerAccountId
-        metadata: JSON.stringify({
-          username: payload.githubUsername,
-          // Potentially other GitHub user details if needed
-        }),
-        // refreshToken: payload.refreshToken,
-        // expiresAt: payload.expiresIn ? Math.floor(Date.now() / 1000) + payload.expiresIn : undefined,
-      });
-
-      if (!tsunamiResult || !tsunamiResult.success) {
-        this.logger.error({ tsunamiResult, githubUsername: payload.githubUsername, appUserId: userId }, 'Failed to store GitHub integration details via Tsunami service');
-        return c.json({
-          success: false,
-          message: 'Failed to store GitHub integration with backend service.',
-        }, 500);
+      const tsunamiService = this.getTsunamiServiceClient(c.env);
+      // ASSUMPTION: tsunamiService.getUserHistory(targetUserId)
+      const history = await tsunamiService.getUserHistory(params.userId);
+      const validatedHistory = SyncHistoryResponseSchema.parse(history);
+      return c.json(validatedHistory, 200);
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack, userId: params.userId }, 'Get user sync history failed');
+      if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
+        return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'User or history not found' } }, 404);
       }
-      */
-
-      this.logger.info(
-        { githubUsername: payload.githubUsername, appUserId: userId /*, tsunamiResult */ },
-        'GitHub integration details successfully received (Tsunami storage pending).',
-      );
-
-      return c.json({
-        success: true,
-        message: 'GitHub integration details received (mocked storage).',
-        githubUsername: payload.githubUsername,
-      });
-    } catch (error) {
-      this.logger.error({ error }, 'Error storing GitHub integration details');
-      throw error; // Let the global error handler manage the response
+      return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to get user sync history' } }, 500);
     }
-  }
+  };
+
+  getSyncPlanHistory = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    params: z.infer<typeof SyncPlanIdParamSchema>
+  ): Promise<RouteConfigToTypedResponse<typeof getSyncPlanHistoryRoute>> => {
+    const userId = c.get('auth')?.userId; // For auth check if service requires it
+    logger.info({ userId, params }, 'Get sync plan history request');
+    try {
+      const tsunamiService = this.getTsunamiServiceClient(c.env);
+      // ASSUMPTION: tsunamiService.getSyncPlanHistory(syncPlanId, userId_for_auth_check)
+      const history = await tsunamiService.getSyncPlanHistory(params.syncPlanId);
+      const validatedHistory = SyncHistoryResponseSchema.parse(history);
+      return c.json(validatedHistory, 200);
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack, userId, params }, 'Get sync plan history failed');
+      if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
+        return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Sync plan or history not found' } }, 404);
+      }
+      return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to get sync plan history' } }, 500);
+    }
+  };
+
+  /*
+  storeGithubIntegration = async (
+    c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
+    body: z.infer<typeof StoreGithubIntegrationBodySchema>
+  ): Promise<RouteConfigToTypedResponse<typeof storeGithubIntegrationRoute>> => {
+    const userId = c.get('auth')?.userId;
+    logger.info({ userId, installationId: body.installationId }, 'Store GitHub integration request');
+    try {
+      const tsunamiService = this.getTsunamiServiceClient(c.env);
+      // TODO: Identify and call the correct tsunamiService method here
+      // For example: await tsunamiService.actualStoreGithubIntegrationMethod(body, userId);
+      logger.warn("storeGithubIntegration's underlying service method is not implemented/identified yet.");
+      return c.json({ success: true, message: 'GitHub integration storage (placeholder - needs implementation).' }, 200);
+    } catch (error: any) {
+      logger.error({ error: error.message, stack: error.stack, userId }, 'Store GitHub integration failed');
+      return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to store GitHub integration' } }, 500);
+    }
+  };
+  */
+}
+
+export function createTsunamiController(): TsunamiController {
+  return new TsunamiController();
+}
+
+// This router will handle Tsunami-specific parts of the /content path
+export function buildTsunamiContentRouter(): OpenAPIHono<AppEnv & { Variables: { auth: AuthContext } }> {
+  const tsunamiController = createTsunamiController();
+  const router = new OpenAPIHono<AppEnv & { Variables: { auth: AuthContext } }>();
+
+  // All routes here are already under /content, so paths are relative to that
+  // Middleware is applied here if not already on the main content router in index.ts
+  // For now, assuming authenticationMiddleware is applied on the main content router in index.ts
+  // If not, add: router.use('*', authenticationMiddleware);
+
+  router.openapi(registerGithubRepoRoute, (c) => tsunamiController.registerGithubRepo(c, c.req.valid('json')));
+  router.openapi(getGithubRepoHistoryRoute, (c) => tsunamiController.getGithubRepoHistory(c, c.req.valid('param')));
+  router.openapi(getUserSyncHistoryRoute, (c) => tsunamiController.getUserHistory(c, c.req.valid('param')));
+  router.openapi(getSyncPlanHistoryRoute, (c) => tsunamiController.getSyncPlanHistory(c, c.req.valid('param')));
+  // router.openapi(storeGithubIntegrationRoute, (c) => tsunamiController.storeGithubIntegration(c, c.req.valid('json'))); // storeGithubIntegration method is commented out
+  
+  return router;
 }

@@ -1,7 +1,9 @@
 import { Context, Next } from 'hono';
 import { getLogger, logError, updateContext } from '@dome/common';
+import LRUCache from 'lru-cache';
 import type { Bindings } from '../types';
 import { createServiceFactory } from '../services/serviceFactory';
+import { incrementCounter, trackTiming } from '../utils/metrics';
 
 // Context with authenticated user
 export interface AuthContext {
@@ -10,12 +12,26 @@ export interface AuthContext {
   userEmail: string;
 }
 
+interface CachedToken {
+  user: AuthContext;
+  expiresAt: number;
+}
+
+const tokenCache = new LRUCache<string, CachedToken>({
+  max: 10000, // 10k entries
+  ttl: 300 * 1000, // 300 seconds TTL for cache entries themselves
+});
+
+const AUTH_SERVICE_CALL_METRIC = 'auth.service.call_duration';
+const CACHE_HIT_METRIC = 'auth.cache.hit';
+const CACHE_MISS_METRIC = 'auth.cache.miss';
+
 /**
  * Authentication middleware for protecting routes
  * Validates JWT tokens and adds user info to context
  */
 export const authenticationMiddleware = async (
-  c: Context<{ Bindings: Bindings; Variables: AuthContext }>,
+  c: Context<{ Bindings: Bindings; Variables: { auth: AuthContext } }>,
   next: Next,
 ) => {
   const logger = getLogger().child({ component: 'AuthMiddleware' });
@@ -38,12 +54,43 @@ export const authenticationMiddleware = async (
   try {
     const token = authHeader.slice(7);
 
+    // Check cache first
+    const cachedEntry = tokenCache.get(token);
+    if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
+      incrementCounter(CACHE_HIT_METRIC);
+      c.set('auth', cachedEntry.user);
+      logger.debug({ userId: cachedEntry.user.userId }, 'User authenticated from cache');
+      await updateContext({
+        identity: {
+          userId: cachedEntry.user.userId,
+          role: cachedEntry.user.userRole,
+          email: cachedEntry.user.userEmail,
+        },
+      });
+      // Propagate identity via baggage header
+      const baggageValue = `user=${Buffer.from(
+        JSON.stringify({
+          id: cachedEntry.user.userId,
+          role: cachedEntry.user.userRole,
+          email: cachedEntry.user.userEmail,
+        }),
+      ).toString('base64url')}`;
+      c.header('baggage', baggageValue);
+
+      await next();
+      return;
+    }
+
+    incrementCounter(CACHE_MISS_METRIC);
+
     // Use auth service client from service factory
     const serviceFactory = createServiceFactory();
     const authService = serviceFactory.getAuthService(c.env);
 
     // Validate token
-    const { success, user } = await authService.validateToken(token);
+    const trackAuthServiceCall = trackTiming(AUTH_SERVICE_CALL_METRIC);
+    const { success, user, ttl } = await trackAuthServiceCall(async () => authService.validateToken(token));
+
 
     if (!success || !user) {
       logger.warn('Invalid token');
@@ -60,11 +107,18 @@ export const authenticationMiddleware = async (
     }
 
     // Set user info in context
-    c.set('userId', user.id);
-    c.set('userRole', user.role);
-    c.set('userEmail', user.email);
+    const authContextData: AuthContext = {
+      userId: user.id,
+      userRole: user.role,
+      userEmail: user.email,
+    };
+    c.set('auth', authContextData);
 
-    logger.debug({ userId: user.id }, 'User authenticated');
+    // Store in cache with appropriate TTL (max 300s)
+    const cacheTtl = ttl && ttl > 0 ? Math.min(ttl, 300) * 1000 : 300 * 1000;
+    tokenCache.set(token, { user: authContextData, expiresAt: Date.now() + cacheTtl });
+
+    logger.debug({ userId: user.id }, 'User authenticated via service');
     await updateContext({
       identity: {
         userId: user.id,
@@ -72,6 +126,12 @@ export const authenticationMiddleware = async (
         email: user.email,
       },
     });
+
+    // Propagate identity via baggage header
+    const baggageValue = `user=${Buffer.from(
+      JSON.stringify({ id: user.id, role: user.role, email: user.email }),
+    ).toString('base64url')}`;
+    c.header('baggage', baggageValue);
 
     // Continue to next middleware/handler
     await next();
@@ -95,9 +155,9 @@ export const authenticationMiddleware = async (
  * Creates middleware that ensures user has required role
  */
 export const createRoleMiddleware = (requiredRoles: string[]) => {
-  return async (c: Context<{ Variables: AuthContext }>, next: Next) => {
+  return async (c: Context<{ Variables: { auth: AuthContext } }>, next: Next) => {
     const logger = getLogger().child({ component: 'RoleMiddleware' });
-    const userRole = c.get('userRole');
+    const userRole = c.get('auth')?.userRole;
 
     if (!userRole || !requiredRoles.includes(userRole)) {
       logger.warn({ userRole, requiredRoles }, 'Insufficient permissions');

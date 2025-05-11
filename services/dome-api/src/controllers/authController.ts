@@ -467,7 +467,7 @@ export class AuthController {
       }
       interface ValidateTokenServiceResponse {
         success: boolean;
-        user?: UserProfileData; // User data is optional
+        user?: UserProfileData | null; // User data can be UserProfileData, undefined, or null
         error?: { code: string; message: string }; // Error details are optional
       }
 

@@ -7,6 +7,7 @@ import { SearchService } from './searchService';
 import { ChatClient } from '@dome/chat/client';
 import { TsunamiClient, TsunamiBinding } from '@dome/tsunami/client';
 import { createAuthServiceFromBinding, AuthService, AuthWorkerBinding } from '@dome/auth/client';
+import { NotionService, createNotionService } from './notionService'; // Import NotionService
 
 /**
  * Service factory interface
@@ -20,6 +21,7 @@ export interface ServiceFactory {
   getChatService(env: Bindings): ChatClient;
   getTsunamiService(env: Bindings): TsunamiClient;
   getAuthService(env: Bindings): AuthService;
+  getNotionService(env: Bindings): NotionService; // Add NotionService to interface
 }
 
 /**
@@ -35,6 +37,7 @@ export class DefaultServiceFactory implements ServiceFactory {
   private siloServices: Map<Bindings, SiloClient> = new Map();
   private tsunamiServices: Map<Bindings, TsunamiClient> = new Map();
   private authServices: Map<Bindings, AuthService> = new Map();
+  private notionServices: Map<Bindings, NotionService> = new Map(); // Add map for NotionService
   private logger = getLogger();
 
   constructor() {
@@ -147,6 +150,22 @@ export class DefaultServiceFactory implements ServiceFactory {
       service = createAuthServiceFromBinding(env.AUTH as unknown as AuthWorkerBinding);
 
       this.authServices.set(env, service);
+    }
+    return service;
+  }
+
+  /**
+   * Get the notion service instance for a specific env
+   * @param env Cloudflare Workers environment bindings
+   * @returns NotionService instance
+   */
+  getNotionService(env: Bindings): NotionService {
+    let service = this.notionServices.get(env);
+    if (!service) {
+      this.logger.debug('Creating new NotionService instance');
+      // NotionService is created directly, not from a binding like other clients yet
+      service = createNotionService(env);
+      this.notionServices.set(env, service);
     }
     return service;
   }

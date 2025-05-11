@@ -48,8 +48,9 @@ export class ControllerFactory {
   getSearchController(env: Bindings): SearchController {
     if (!this.searchController) {
       this.logger.debug('Creating new SearchController instance');
-      const searchService = this.serviceFactory.getSearchService(env);
-      this.searchController = new SearchController(searchService);
+      // SearchController now has a parameterless constructor.
+      // It will get its SearchService internally using createServiceFactory() and the env from the request context.
+      this.searchController = new SearchController();
     }
     return this.searchController;
   }
@@ -77,8 +78,8 @@ export class ControllerFactory {
   getTsunamiController(env: Bindings): TsunamiController {
     if (!this.tsunamiController) {
       this.logger.debug('Creating new TsunamiController instance');
-      const tsunamiService = this.serviceFactory.getTsunamiService(env);
-      this.tsunamiController = new TsunamiController(tsunamiService);
+      // const tsunamiService = this.serviceFactory.getTsunamiService(env); // No longer needed for TsunamiController constructor
+      this.tsunamiController = new TsunamiController(); // TsunamiController now takes no arguments
     }
     return this.tsunamiController;
   }
@@ -91,8 +92,9 @@ export class ControllerFactory {
   getNotionController(env: Bindings): NotionController {
     if (!this.notionController) {
       this.logger.debug('Creating new NotionController instance');
-      const tsunamiService = this.serviceFactory.getTsunamiService(env);
-      this.notionController = new NotionController(tsunamiService);
+      // NotionController constructor does not take arguments.
+      // It will internally use the serviceFactory to get NotionService.
+      this.notionController = new NotionController();
     }
     return this.notionController;
   }

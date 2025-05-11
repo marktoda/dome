@@ -31,10 +31,12 @@
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "uuid": "^11.1.0",
-    "zod": "^3.24.3"
+    "zod": "^3.24.3",
+    "lru-cache": "^7.10.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230404.0",
+    "@types/lru-cache": "^7.10.0",
     "@types/node": "^22.14.1",
     "@typescript-eslint/eslint-plugin": "^5.57.1",
     "@typescript-eslint/parser": "^5.57.1",
