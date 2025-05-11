@@ -8,7 +8,8 @@
     "deploy": "wrangler deploy",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen:openapi": "tsx ./scripts/generate-spec.ts"
   },
   "dependencies": {
     "@dome/ai-processor": "workspace:*",
