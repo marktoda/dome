@@ -34,8 +34,8 @@ export class ControllerFactory {
   getChatController(env: Bindings): ChatController {
     if (!this.chatController) {
       this.logger.debug('Creating new ChatController instance');
-      const chatService = this.serviceFactory.getChatService(env);
-      this.chatController = new ChatController(chatService);
+      // const chatService = this.serviceFactory.getChatService(env); // No longer needed for ChatController constructor
+      this.chatController = new ChatController();
     }
     return this.chatController;
   }
