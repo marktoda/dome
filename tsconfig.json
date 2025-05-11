@@ -14,6 +14,8 @@
     "paths": {
       "@dome/common": ["packages/common/src"],
       "@dome/common/*": ["packages/common/src/*"],
+      "@dome/dome-sdk": ["packages/dome-sdk/src"],
+      "@dome/dome-sdk/*": ["packages/dome-sdk/src/*"],
       "@dome/auth": ["services/auth/src"],
       "@dome/auth/*": ["services/auth/src/*"],
       "@dome/silo": ["services/silo/src"],

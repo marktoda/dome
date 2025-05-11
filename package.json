@@ -11,7 +11,7 @@
     "lint:fix": "pnpm -r exec -- eslint src --ext .ts,.tsx --fix",
     "lint:check": "eslint .",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
-    "gen:sdk": "fern generate --local --log-level info --force",
+    "gen:sdk": "fern generate --local --log-level info --force && fern generate --group cli --local --force",
     "prepare": "husky install"
   },
   "engines": {
