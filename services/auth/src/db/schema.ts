@@ -27,3 +27,18 @@ export const tokenBlacklist = sqliteTable('token_blacklist', {
     .notNull()
     .references(() => users.id),
 });
+
+/**
+ * User authentication providers table schema
+ * Links users to their authentication methods (local or external providers like Privy)
+ */
+export const userAuthProviders = sqliteTable('user_auth_providers', {
+  id: text('id').primaryKey().notNull(),                 // UUID
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id),                         // Reference to users table
+  provider: text('provider').notNull(),                  // 'privy' | 'local'
+  providerUserId: text('provider_user_id').notNull(),    // JWT sub for Privy or user's email for local
+  email: text('email'),                                  // May be null for some providers
+  linkedAt: integer('linked_at', { mode: 'timestamp' }).notNull(),
+});

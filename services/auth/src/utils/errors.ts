@@ -12,6 +12,12 @@ export enum AuthErrorType {
   REGISTRATION_FAILED = 'registration_failed',
   LOGIN_FAILED = 'login_failed',
   INTERNAL_ERROR = 'internal_error',
+  // Privy specific errors
+  JWKS_FETCH_FAILED = 'jwks_fetch_failed',
+  JWKS_KEY_NOT_FOUND = 'jwks_key_not_found',
+  INVALID_TOKEN_FORMAT = 'invalid_token_format',
+  TOKEN_REVOKED = 'token_revoked',
+  TOKEN_NOT_YET_VALID = 'token_not_yet_valid',
 }
 
 /**

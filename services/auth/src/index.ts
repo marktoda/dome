@@ -2,8 +2,9 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getLogger, initLogging, logError } from '@dome/common';
 import { withContext } from '@dome/common';
 import { authMetrics, trackOperation } from './utils/logging';
-import { LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse } from './types';
+import { LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse, ValidatePrivyTokenResponse } from './types';
 import { AuthService } from './services/authService';
+import { PrivyAuthService } from './services/privyAuthService';
 import { AuthError, AuthErrorType } from './utils/errors';
 import { StatusCode } from 'hono/utils/http-status';
 
@@ -53,6 +54,8 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
 export default class Auth extends WorkerEntrypoint<Env> {
   /** Auth service instance */
   private _authService?: AuthService;
+  /** Privy Auth service instance */
+  private _privyAuthService?: PrivyAuthService;
 
   /** Lazily create the auth service */
   private get authService() {
@@ -60,6 +63,14 @@ export default class Auth extends WorkerEntrypoint<Env> {
       this._authService = new AuthService(this.env);
     }
     return this._authService;
+  }
+
+  /** Lazily create the privy auth service */
+  private get privyAuthService() {
+    if (!this._privyAuthService) {
+      this._privyAuthService = new PrivyAuthService(this.env);
+    }
+    return this._privyAuthService;
   }
 
   /**
@@ -217,20 +228,25 @@ export default class Auth extends WorkerEntrypoint<Env> {
           );
 
           // Validate token
-          const user = await this.authService.validateToken(token);
+          const validationResult = await this.authService.validateToken(token);
 
-          // Track success metrics
-          authMetrics.counter('rpc.validateToken.success', 1);
-
-          getLogger().info(
-            { userId: user.id, requestId, operation: 'validateToken' },
-            'Token validation successful',
-          );
-
-          return {
-            success: true,
-            user,
-          };
+          if (validationResult.success && validationResult.user) {
+            // Track success metrics
+            authMetrics.counter('rpc.validateToken.success', 1);
+            getLogger().info(
+              { userId: validationResult.user.id, requestId, operation: 'validateToken' },
+              'Token validation successful',
+            );
+          } else {
+            // Track failure metrics (already done by the catch block if an error is thrown)
+            // but good to log here if validateToken returns success:false
+            authMetrics.counter('rpc.validateToken.failure', 1);
+            getLogger().warn(
+              { requestId, operation: 'validateToken', reason: 'Validation_failed_no_error' },
+              'Token validation returned success: false',
+            );
+          }
+          return validationResult;
         } catch (error) {
           // Track failure metrics
           authMetrics.counter('rpc.validateToken.errors', 1);
@@ -274,10 +290,14 @@ export default class Auth extends WorkerEntrypoint<Env> {
           // Get user ID for logging before invalidating token
           let userId: string = 'unknown';
           try {
-            const user = await this.authService.validateToken(token);
-            userId = user.id;
+            // We call validateToken to get user.id for logging,
+            // but logout should proceed even if token is already invalid.
+            const validationResult = await this.authService.validateToken(token);
+            if (validationResult.success && validationResult.user) {
+              userId = validationResult.user.id;
+            }
           } catch (e) {
-            // Continue with logout even if token is invalid
+            // Continue with logout even if token validation throws an error
           }
 
           getLogger().info(
@@ -306,7 +326,71 @@ export default class Auth extends WorkerEntrypoint<Env> {
     );
   }
 
-  async fetch() {
-    return new Response('Hello from auth');
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const logger = getLogger();
+    const requestId = crypto.randomUUID(); // For logging within this request
+
+    // Initialize logging for the request context if needed by @dome/common setup
+    // Assuming initLogging might take env and request, or just set up a global context
+    // If ctx is needed by initLogging, this might need adjustment based on WorkerEntrypoint capabilities
+    // For now, let's assume initLogging can work with this.env and request, or is handled by withContext
+    // initLogging(this.env, request); // This call needs to be verified based on @dome/common
+
+    // It seems initLogging might be implicitly handled by withContext or a similar mechanism
+    // For direct HTTP fetch, we might need a similar wrapper or ensure logger is request-scoped.
+    // The runWithLog function is used for RPC, let's adapt its pattern or use a simpler log for now.
+
+    logger.info({ path: url.pathname, method: request.method, requestId }, 'Received HTTP request');
+
+    if (request.method === 'POST' && url.pathname === '/validate') {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        logger.warn({ requestId, path: url.pathname }, 'Missing or malformed Authorization header');
+        return new Response(JSON.stringify({ error: 'Missing or malformed Authorization header' }), {
+          status: 401, // StatusCode.UNAUTHORIZED
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const token = authHeader.substring(7); // Remove "Bearer " prefix
+
+      try {
+        // Using runWithLog to ensure consistent error handling and context logging
+        return await runWithLog({ op: 'httpValidatePrivyToken', requestId, path: url.pathname }, async () => {
+          const result = await this.privyAuthService.validatePrivyToken(token);
+          if (result.success && result.user) {
+            logger.info({ requestId, userId: result.user.id, path: url.pathname }, 'Privy token validation successful via HTTP');
+          } else {
+            logger.warn({ requestId, path: url.pathname, success: result.success }, 'Privy token validation failed via HTTP');
+          }
+          return new Response(JSON.stringify(result), {
+            status: result.success ? 200 : 401, // StatusCode.OK or StatusCode.UNAUTHORIZED
+            headers: { 'Content-Type': 'application/json' },
+          });
+        });
+      } catch (error) {
+        // runWithLog should handle logging and re-throwing AuthError
+        // This catch block is for errors not caught by runWithLog or if runWithLog itself fails
+        // but typically runWithLog converts errors to AuthError or re-throws them.
+        logger.error({ error, requestId, path: url.pathname }, 'Privy token validation failed via HTTP (outer catch)');
+        if (error instanceof AuthError) {
+          return new Response(JSON.stringify(error.toJSON()), {
+            status: error.status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({ error: 'Internal server error' }), {
+          status: 500, // StatusCode.INTERNAL_SERVER_ERROR
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    if (url.pathname === '/health') {
+      return new Response('OK', { status: 200 }); // StatusCode.OK
+    }
+    
+    logger.warn({ path: url.pathname, requestId }, 'Not found');
+    return new Response('Not found', { status: 404 }); // StatusCode.NOT_FOUND
   }
 }

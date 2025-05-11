@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as bcrypt from 'bcryptjs';
 import * as jose from 'jose';
-import { User, UserRole, UserWithPassword, TokenPayload, LoginResponse } from '../types';
+import { User, UserRole, UserWithPassword, TokenPayload, LoginResponse, ValidateTokenResponse } from '../types';
 import { users, tokenBlacklist } from '../db/schema';
 import { AuthError, AuthErrorType } from '../utils/errors';
 
@@ -131,7 +131,7 @@ export class AuthService {
   /**
    * Validate a token and return the user
    */
-  async validateToken(token: string): Promise<User> {
+  async validateToken(token: string): Promise<ValidateTokenResponse> {
     this.logger.debug('Validating auth token');
 
     try {
@@ -139,7 +139,8 @@ export class AuthService {
       const blacklisted = await this.isTokenBlacklisted(token);
 
       if (blacklisted) {
-        throw new AuthError('Token is invalid or expired', AuthErrorType.INVALID_TOKEN);
+        this.logger.warn({ token }, 'Token is blacklisted');
+        return { success: false, user: null };
       }
 
       // Verify the token
@@ -150,18 +151,33 @@ export class AuthService {
       const user = await this.getUserById(tokenPayload.userId);
 
       if (!user) {
-        throw new AuthError('User not found', AuthErrorType.USER_NOT_FOUND);
+        this.logger.warn({ userId: tokenPayload.userId }, 'User not found for token');
+        return { success: false, user: null };
       }
 
-      return user;
+      const now = Math.floor(Date.now() / 1000);
+      const ttl = tokenPayload.exp ? tokenPayload.exp - now : undefined;
+
+      if (ttl !== undefined && ttl <= 0) {
+        this.logger.warn({ userId: user.id, exp: tokenPayload.exp }, 'Token expired');
+        return { success: false, user: null, ttl: 0 };
+      }
+      
+      this.logger.debug({ userId: user.id, ttl }, 'Token validated successfully');
+      return { success: true, user, ttl };
     } catch (error) {
       this.logger.error({ error }, 'Token validation failed');
-
-      if (error instanceof AuthError) {
-        throw error;
+      // Distinguish between verification errors (expired, invalid signature) and other errors
+      if (error instanceof jose.errors.JWTExpired) {
+         return { success: false, user: null, ttl: 0 };
       }
-
-      throw new AuthError('Token validation failed', AuthErrorType.INVALID_TOKEN);
+      if (error instanceof jose.errors.JOSEError) { // Covers other JOSE errors like signature invalid
+         return { success: false, user: null };
+      }
+      // For AuthErrors or other unexpected errors, rethrow or handle as appropriate
+      // For simplicity here, we'll return a generic failure.
+      // In a real app, you might want to log more specifically or rethrow certain errors.
+      return { success: false, user: null };
     }
   }
 
