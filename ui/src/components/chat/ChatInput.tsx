@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useEffect } from 'react'; // Added useEffect
+import { toast } from 'sonner'; // Added toast import
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Send } from 'lucide-react';
@@ -25,10 +26,27 @@ export const ChatInput: React.FC = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (inputValue.trim() && !isLoading) {
-      await addMessage(inputValue.trim());
-      setInputValue('');
+      try {
+        await addMessage(inputValue.trim());
+        setInputValue('');
+        toast.success("Message sent!");
+      } catch (e) {
+        // Errors are typically handled by the ChatContext and reflected in the `error` state.
+        // This catch is a fallback, but primary error toasting is via useEffect.
+        console.error("Failed to send message directly:", e);
+        toast.error("Failed to send message. Please try again.");
+      }
     }
   };
+
+  useEffect(() => {
+    if (error) {
+      const authErrorCodes = ['AUTH_REQUIRED', 'AUTH_REQUIRED_SEND', 'WS_AUTH_FAILED'];
+      if (!authErrorCodes.includes(error.error.code || '')) {
+        toast.error(error.text || error.error.message || "An unknown error occurred.");
+      }
+    }
+  }, [error]);
 
   return (
     <div className="sticky bottom-0 border-t bg-background shadow-t-md">

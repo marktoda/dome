@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
+import { toast } from 'sonner'; // Added toast import
 import { SearchInput } from '@/components/search/SearchInput';
 import { SearchResultsList } from '@/components/search/SearchResultsList';
 import { searchApi } from '@/lib/api';
 import { SearchResultItem } from '@/lib/types/search';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Terminal } from 'lucide-react';
+import { Terminal, Loader2 } from 'lucide-react'; // Added Loader2
 import { cn } from '@/lib/utils';
 
 /**
@@ -50,9 +51,15 @@ export function Sidebar({ className }: SidebarProps) {
     try {
       const response = await searchApi.search(query);
       setSearchResults(response.results);
+      if (response.results.length === 0) {
+        // Optionally, toast if you want to notify for "no results" specifically
+        // toast.info(`No results found for "${query}"`);
+      }
     } catch (err) {
       console.error('Search API error:', err);
-      setError('Failed to fetch search results. Please try again.');
+      const errorMessage = 'Failed to fetch search results. Please try again.';
+      setError(errorMessage);
+      toast.error(errorMessage); // Add toast notification for search error
       setSearchResults([]); // Clear previous results on error
     } finally {
       setIsLoading(false);
@@ -60,15 +67,16 @@ export function Sidebar({ className }: SidebarProps) {
   };
 
   return (
-    <aside className={cn("h-full w-96 flex-col border-r bg-background p-4 md:p-5 flex", className)}>
-      <div className="mb-5">
+    <aside className={cn("h-full w-80 flex-col border-r bg-background p-4 flex", className)}>
+      <div className="mb-4">
         <h2 className="text-xl font-semibold tracking-tight">Search</h2>
       </div>
       <SearchInput onSearch={handleSearch} isLoading={isLoading} />
       
-      <div className="mt-5 flex-grow overflow-y-auto pr-1">
+      <div className="mt-4 flex-grow overflow-y-auto pr-1">
         {isLoading && searchResults.length === 0 && !error && (
-          <div className="text-center py-4">
+          <div className="flex flex-col items-center justify-center text-center py-4">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mb-2" />
             <p className="text-sm text-muted-foreground">Searching for &quot;{lastQuery}&quot;...</p>
           </div>
         )}

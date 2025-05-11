@@ -114,9 +114,26 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    scroll-behavior: smooth;
   }
+
+  /* Improved focus visibility for accessibility */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Consistent link styling */
+  a {
+    @apply text-primary underline-offset-4 hover:underline;
+  }
+
+  /* Basic heading styles for hierarchy */
+  h1 { @apply text-4xl font-bold tracking-tight lg:text-5xl; }
+  h2 { @apply text-3xl font-semibold tracking-tight; }
+  h3 { @apply text-2xl font-semibold tracking-tight; }
+  h4 { @apply text-xl font-semibold tracking-tight; }
 }

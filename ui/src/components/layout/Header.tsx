@@ -2,9 +2,10 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner'; // Added toast import
 import { Button } from '@/components/ui/button';
-import { LogOut, Settings } from 'lucide-react'; // Removed Menu icon
+import { LogOut, Settings } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { MobileSidebar } from '@/components/sidebar/MobileSidebar';
 
@@ -28,14 +29,15 @@ export function Header() {
     try {
       await logout();
       router.push('/login');
+      toast.success("Logged out successfully!");
     } catch (error) {
       console.error('Logout failed:', error);
-      // TODO: Implement user-facing notification for logout failure.
+      toast.error("Logout failed. Please try again.");
     }
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background px-4 sm:px-6">
+    <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b bg-background px-4 sm:px-6">
       <div className="flex items-center gap-4">
         {/* Mobile Menu Toggle - shown only on md and smaller screens */}
         <div className="md:hidden">

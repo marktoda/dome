@@ -169,8 +169,8 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         };
         // Ensure wsOpenError replaces any existing message with the same ID, or adds if none.
         setMessages(prev => {
-            const messagesWithoutOld = prev.filter(m => m.id !== wsOpenError.id);
-            return [...messagesWithoutOld, wsOpenError];
+          const messagesWithoutOld = prev.filter(m => m.id !== wsOpenError.id);
+          return [...messagesWithoutOld, wsOpenError];
         });
         setError(wsOpenError);
         setIsLoading(false);
@@ -245,7 +245,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             setError(null);
           }
         } else {
-          console.warn('[ChatContext] Failed to parse message or null returned by service:', rawData);
+          console.debug('[ChatContext] Failed to parse message or null returned by service:', rawData);
         }
       };
 
@@ -261,13 +261,13 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         // Update or add the error message in the list
         // Ensure connError replaces any existing message with the same ID, or adds if none.
         setMessages(prev => {
-            const messagesWithoutOld = prev.filter(m => m.id !== connError.id);
-            return [...messagesWithoutOld, connError];
+          const messagesWithoutOld = prev.filter(m => m.id !== connError.id);
+          return [...messagesWithoutOld, connError];
         });
         setError(connError); // Set global error state
         setIsLoading(false);
       };
- 
+
       ws.onclose = (event) => {
         console.log(`[ChatContext] WebSocket closed. Code: ${event.code}, Reason: '${event.reason}'`);
         setIsLoading(false);
@@ -283,14 +283,14 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
           const reasonLowerCase = event.reason?.toLowerCase() || '';
           // Check for specific codes or reasons pointing to auth failure (backend-dependent)
           if (event.code === 4001 || event.code === 4003 || // Common WebSocket unauthorized/forbidden codes
-              reasonLowerCase.includes('auth') ||
-              reasonLowerCase.includes('unauthorized') ||
-              reasonLowerCase.includes('forbidden')) {
+            reasonLowerCase.includes('auth') ||
+            reasonLowerCase.includes('unauthorized') ||
+            reasonLowerCase.includes('forbidden')) {
             messageText = `Authentication failed: ${event.reason || 'Server rejected connection due to authentication issue.'} (Code: ${event.code})`;
             errorCode = 'WS_AUTH_FAILED';
           } else if (event.code === 1006) { // Abnormal closure (e.g., handshake failed, server dropped)
-             messageText = `Connection failed or dropped abruptly. (Code: ${event.code}${event.reason ? `. Reason: ${event.reason}` : ''})`;
-             errorCode = 'WS_CONNECTION_DROPPED';
+            messageText = `Connection failed or dropped abruptly. (Code: ${event.code}${event.reason ? `. Reason: ${event.reason}` : ''})`;
+            errorCode = 'WS_CONNECTION_DROPPED';
           }
 
           connectionError = {
@@ -317,7 +317,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     },
     [user, token, closeWs, openWs, error], // Dependencies for the sendToBackend callback
   );
- 
+
   /**
    * Adds a message to the chat state and triggers sending it to the backend if it's a user message.
    * Can also be used to add system or initial assistant messages directly to the state.
@@ -351,15 +351,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       } else {
         // Handle adding non-user messages (e.g., initial system prompts) directly
         const rawMsg = {
-            id: uuidv4(), text, sender, timestamp: new Date(),
-            // Assign a type if it's an assistant message added manually
-            type: sender === 'assistant' ? 'content' : undefined
+          id: uuidv4(), text, sender, timestamp: new Date(),
+          // Assign a type if it's an assistant message added manually
+          type: sender === 'assistant' ? 'content' : undefined
         };
         const parsed = messageProcessingService.parseMessage(rawMsg);
         if (parsed) {
-            setMessages(m => [...m, parsed]);
+          setMessages(m => [...m, parsed]);
         } else {
-            console.error("[ChatContext] Failed to parse manually added message:", rawMsg);
+          console.error("[ChatContext] Failed to parse manually added message:", rawMsg);
         }
       }
     },
@@ -372,30 +372,30 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       closeWs();
     };
   }, [closeWs]);
- 
+
   /** Effect to clear authentication-related errors when a new token becomes available */
   useEffect(() => {
     if (token && error &&
-        (error.error.code === 'AUTH_REQUIRED' ||
-         error.error.code === 'AUTH_REQUIRED_SEND' ||
-         error.error.code === 'WS_AUTH_FAILED' ||
-         error.error.code === 'WS_OPEN_FAILED' || // WS_OPEN_FAILED can occur if token in query is immediately rejected
-         error.error.code === 'WS_CONNECTION_DROPPED' // Could be due to auth
-        )) {
+      (error.error.code === 'AUTH_REQUIRED' ||
+        error.error.code === 'AUTH_REQUIRED_SEND' ||
+        error.error.code === 'WS_AUTH_FAILED' ||
+        error.error.code === 'WS_OPEN_FAILED' || // WS_OPEN_FAILED can occur if token in query is immediately rejected
+        error.error.code === 'WS_CONNECTION_DROPPED' // Could be due to auth
+      )) {
       console.log('[ChatContext] New token detected or auth-related error present. Clearing previous auth-related error message from global state.');
       setError(null); // Clear the global error state
       // The error message will remain in the chat list, but the global error state (e.g., for a banner) is cleared.
       // User can then retry sending a message.
     }
   }, [token, error]); // Rerun when token or global error state changes
- 
+
   return (
     <ChatContext.Provider value={{ messages, addMessage, isLoading, error, clearChat }}>
       {children}
     </ChatContext.Provider>
   );
 };
- 
+
 /**
  * Custom hook `useChat` provides an easy way to access the chat context values.
  *

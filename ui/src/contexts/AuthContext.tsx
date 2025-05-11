@@ -1,7 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-// apiClient import removed as we'll use direct fetch for auth routes
+import React, { createContext, useContext, useEffect, useReducer, ReactNode, useCallback } from 'react';
 
 const TOKEN_STORAGE_KEY = 'authToken';
 
@@ -15,74 +14,111 @@ interface User {
 }
 
 /**
+ * Defines the shape of the authentication state.
+ */
+interface AuthState {
+  user: User | null;
+  token: string | null;
+  isLoading: boolean;
+  error: string | null;
+}
+
+/**
+ * Defines the actions that can be dispatched to update the authentication state.
+ */
+type AuthAction =
+  | { type: 'INITIALIZE_START' }
+  | { type: 'INITIALIZE_SUCCESS'; payload: { user: User | null; token: string | null } }
+  | { type: 'INITIALIZE_FAILURE'; payload: { error: string } }
+  | { type: 'LOGIN_SUCCESS'; payload: { user: User; token: string } }
+  | { type: 'LOGOUT_START' }
+  | { type: 'LOGOUT_SUCCESS' }
+  | { type: 'LOGOUT_FAILURE'; payload: { error: string } }
+  | { type: 'CLEAR_ERROR' };
+
+/**
  * Defines the shape of the authentication context.
  */
-interface AuthContextType {
-  /** The currently authenticated user, or null if no user is authenticated. */
-  user: User | null;
-  /** The authentication token, or null if not authenticated. */
-  token: string | null;
-  /** Indicates if the authentication status is currently being loaded (e.g., on initial app load). */
-  isLoading: boolean;
-  /**
-   * Updates the client-side user and token state after a successful login.
-   * @param userData The user data received after successful login.
-   * @param token The authentication token received after successful login.
-   */
+interface AuthContextType extends AuthState {
   login: (userData: User, token: string) => void;
-  /**
-   * Logs out the current user by clearing client-side state and token,
-   * and calling the backend `/api/auth/logout` endpoint.
-   */
   logout: () => Promise<void>;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const initialState: AuthState = {
+  user: null,
+  token: null,
+  isLoading: true,
+  error: null,
+};
+
 /**
- * Provides authentication state (`user`, `token`, `isLoading`) and functions (`login`, `logout`)
- * to its children components via React Context.
- *
- * It handles initializing authentication state on load by checking for a stored token
- * and fetching user details.
- * Login stores the token and user data.
- * Logout clears the token and user data, and calls the backend logout endpoint.
- *
+ * Reducer function to manage authentication state transitions.
+ * @param state - The current authentication state.
+ * @param action - The action to perform.
+ * @returns The new authentication state.
+ */
+const authReducer = (state: AuthState, action: AuthAction): AuthState => {
+  switch (action.type) {
+    case 'INITIALIZE_START':
+      return { ...state, isLoading: true, error: null };
+    case 'INITIALIZE_SUCCESS':
+      return {
+        ...state,
+        isLoading: false,
+        user: action.payload.user,
+        token: action.payload.token,
+        error: null,
+      };
+    case 'INITIALIZE_FAILURE':
+      return {
+        ...state,
+        isLoading: false,
+        user: null,
+        token: null,
+        error: action.payload.error,
+      };
+    case 'LOGIN_SUCCESS':
+      return {
+        ...state,
+        isLoading: false,
+        user: action.payload.user,
+        token: action.payload.token,
+        error: null,
+      };
+    case 'LOGOUT_START':
+      return { ...state, isLoading: true, error: null };
+    case 'LOGOUT_SUCCESS':
+      return { ...initialState, isLoading: false }; // Reset to initial on logout
+    case 'LOGOUT_FAILURE':
+      // Keep user/token null even if logout API fails, as local logout already happened.
+      return { ...state, isLoading: false, user: null, token: null, error: action.payload.error };
+    case 'CLEAR_ERROR':
+      return { ...state, error: null };
+    default:
+      return state;
+  }
+};
+
+/**
+ * Provides authentication state and functions to its children components.
+ * Uses a reducer for state management and handles token storage and validation.
  * @param props - The props for the component.
  * @param props.children - The child components that will consume the context.
- * @example
- * ```tsx
- * // In your main layout or app entry point
- * import { AuthProvider } from '@/contexts/AuthContext';
- *
- * function App({ children }) {
- *   return (
- *     <AuthProvider>
- *       {children}
- *     </AuthProvider>
- *   );
- * }
- * ```
  */
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [state, dispatch] = useReducer(authReducer, initialState);
 
   useEffect(() => {
-    /**
-     * Initializes authentication state by checking for a stored token
-     * and fetching user details if a token exists.
-     */
     const initializeAuth = async () => {
-      setIsLoading(true);
+      dispatch({ type: 'INITIALIZE_START' });
       const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
 
       if (storedToken && storedToken !== 'undefined' && storedToken.trim() !== '') {
-        console.log('AuthContext: Found stored token:', storedToken);
-        setToken(storedToken);
+        console.log('AuthContext: Found stored token.');
         try {
-          // Attempt to fetch user data using the stored token
           console.debug('AuthContext: Attempting to validate token and fetch user with /api/auth/me');
           const fetchOptions: RequestInit = {
             method: 'GET',
@@ -96,28 +132,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (res.ok) {
             const data = await res.json();
             if (data && data.user) {
-              setUser(data.user);
-              console.log('AuthContext: User session restored successfully via /api/auth/me.');
+              dispatch({ type: 'INITIALIZE_SUCCESS', payload: { user: data.user, token: storedToken } });
+              console.log('AuthContext: User session restored successfully.');
             } else {
-              console.warn('AuthContext: /api/auth/me response malformed or no user data. Invalidating local token.');
               localStorage.removeItem(TOKEN_STORAGE_KEY);
-              setToken(null);
-              setUser(null);
+              dispatch({ type: 'INITIALIZE_FAILURE', payload: { error: 'User data not found in /me response.' } });
+              console.warn('AuthContext: /api/auth/me response malformed. Invalidating local token.');
             }
           } else {
-            console.warn(`AuthContext: /api/auth/me request failed with status ${res.status}. Invalidating local token.`);
-            if (res.status === 401 || res.status === 403) {
-              console.log('AuthContext: Token validation failed (401/403) via /api/auth/me.');
-            }
             localStorage.removeItem(TOKEN_STORAGE_KEY);
-            setToken(null);
-            setUser(null);
+            const errorMsg = `/api/auth/me request failed with status ${res.status}.`;
+            dispatch({ type: 'INITIALIZE_FAILURE', payload: { error: errorMsg } });
+            console.warn(`AuthContext: ${errorMsg} Invalidating local token.`);
           }
         } catch (error: any) {
-          console.error('AuthContext: Network or other error fetching user data via /api/auth/me:', error.message || error);
           localStorage.removeItem(TOKEN_STORAGE_KEY);
-          setToken(null);
-          setUser(null);
+          const errorMsg = `Network or other error fetching user data: ${error.message || String(error)}`;
+          dispatch({ type: 'INITIALIZE_FAILURE', payload: { error: errorMsg } });
+          console.error(`AuthContext: ${errorMsg}`);
         }
       } else {
         if (storedToken === 'undefined' || (storedToken && storedToken.trim() === '')) {
@@ -126,50 +158,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } else {
           console.log('AuthContext: No valid stored token found.');
         }
-        setToken(null); // Ensure token state is null if no valid token
-        setUser(null);  // Ensure user state is null
+        dispatch({ type: 'INITIALIZE_FAILURE', payload: { error: 'No valid token found.' } }); // No user, no token
       }
-      setIsLoading(false);
     };
 
     initializeAuth();
-  }, []); // Run only once on mount
+  }, []);
 
-  /**
-   * Updates client-side user and token state after a successful login.
-   * Stores the token in localStorage.
-   * @param userData - The user data obtained from the successful login response.
-   * @param authToken - The authentication token.
-   */
-  const login = (userData: User, authToken: string) => {
+  const login = useCallback((userData: User, authToken: string) => {
     if (typeof authToken === 'string' && authToken.trim() !== '' && authToken !== 'undefined') {
       localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
-      setToken(authToken);
-      setUser(userData);
-      console.log('AuthContext: User logged in, token stored:', authToken);
+      dispatch({ type: 'LOGIN_SUCCESS', payload: { user: userData, token: authToken } });
+      console.log('AuthContext: User logged in, token stored.');
     } else {
       console.error('AuthContext: Attempted to login with an invalid token:', authToken);
-      // Optionally, clear any potentially bad state if an invalid token is provided
-      localStorage.removeItem(TOKEN_STORAGE_KEY);
-      setToken(null);
-      setUser(null);
+      localStorage.removeItem(TOKEN_STORAGE_KEY); // Ensure clean state
+      // Potentially dispatch a LOGIN_FAILURE action if defined, or set an error
+      // For now, we rely on the calling code to handle UI for login form errors.
+      // This login function is more about setting state post-successful external login.
     }
-  };
+  }, []);
 
-  /**
-   * Logs out the user. Clears client-side user state and token from localStorage.
-   * Calls the backend logout endpoint.
-   * @returns A promise that resolves when the logout attempt is complete.
-   */
-  const logout = async () => {
-    setIsLoading(true);
-    const currentToken = token; // Use state token for the logout API call
+  const logout = useCallback(async () => {
+    dispatch({ type: 'LOGOUT_START' });
+    const currentToken = state.token; // Use token from state
 
-    // Clear local state and storage first
     localStorage.removeItem(TOKEN_STORAGE_KEY);
-    setToken(null);
-    setUser(null);
-    console.log('Local token and user state cleared.');
+    console.log('AuthContext: Local token and user state cleared for logout.');
+
+    // Optimistically update local state before API call completes
+    // The reducer handles setting user/token to null on LOGOUT_SUCCESS or LOGOUT_FAILURE
 
     if (currentToken) {
       try {
@@ -177,31 +195,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            // The /api/auth/logout route in Next.js typically relies on HttpOnly cookies for auth,
-            // but if it also checks Bearer token for good measure, this would be it.
-            // If it strictly uses cookies, this header might not be necessary for this specific route.
-            // For now, we include it for consistency if the backend /api/auth/logout expects it.
             'Authorization': `Bearer ${currentToken}`,
           },
-          body: JSON.stringify({}), // Empty body for POST
+          body: JSON.stringify({}),
         };
         const res = await fetch('/api/auth/logout', fetchOptions);
         if (res.ok) {
-          console.log('Logout successful (API call to /api/auth/logout succeeded).');
+          dispatch({ type: 'LOGOUT_SUCCESS' });
+          console.log('AuthContext: Logout successful (API call to /api/auth/logout succeeded).');
         } else {
-          console.warn(`Logout API call to /api/auth/logout failed with status ${res.status}.`);
+          const errorMsg = `Logout API call to /api/auth/logout failed with status ${res.status}.`;
+          dispatch({ type: 'LOGOUT_FAILURE', payload: { error: errorMsg } });
+          console.warn(`AuthContext: ${errorMsg}`);
         }
       } catch (error: any) {
-        console.error('Logout API call to /api/auth/logout failed (network/other error):', error.message || error);
+        const errorMsg = `Logout API call failed (network/other error): ${error.message || String(error)}`;
+        dispatch({ type: 'LOGOUT_FAILURE', payload: { error: errorMsg } });
+        console.error(`AuthContext: ${errorMsg}`);
       }
     } else {
-        console.log('No active token to invalidate on backend during logout.');
+      // No token, so local logout is sufficient
+      dispatch({ type: 'LOGOUT_SUCCESS' });
+      console.log('AuthContext: No active token to invalidate on backend during logout. Local logout complete.');
     }
-    setIsLoading(false);
-  };
+  }, [state.token]);
+
+  const clearError = useCallback(() => {
+    dispatch({ type: 'CLEAR_ERROR' });
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ ...state, login, logout, clearError }}>
       {children}
     </AuthContext.Provider>
   );
@@ -209,27 +233,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 /**
  * Custom hook `useAuth` provides an easy way to access the authentication context values.
- *
- * @returns The authentication context containing `user`, `isLoading`, `login`, and `logout`.
- * @throws Throws an error if used outside of an `AuthProvider` tree.
- * @example
- * ```tsx
- * import { useAuth } from '@/contexts/AuthContext';
- *
- * function UserProfile() {
- *   const { user, logout, isLoading } = useAuth();
- *
- *   if (isLoading) return <p>Loading...</p>;
- *   if (!user) return <p>Please log in.</p>;
- *
- *   return (
- *     <div>
- *       <p>Welcome, {user.name}!</p>
- *       <button onClick={logout}>Logout</button>
- *     </div>
- *   );
- * }
- * ```
+ * @returns The authentication context.
+ * @throws Throws an error if used outside of an `AuthProvider`.
  */
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);

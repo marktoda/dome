@@ -32,7 +32,7 @@ const Card = React.forwardRef<
     ref={ref}
     data-slot="card"
     className={cn(
-      "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
+      "bg-card text-card-foreground flex flex-col gap-4 rounded-xl border p-6 shadow-sm",
       className
     )}
     {...props}
@@ -55,7 +55,7 @@ const CardHeader = React.forwardRef<
     ref={ref}
     data-slot="card-header"
     className={cn(
-      "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6",
+      "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6",
       className
     )}
     {...props}
@@ -77,7 +77,7 @@ const CardTitle = React.forwardRef<
   <h3 // Using h3 for better semantics, adjust as needed for heading hierarchy
     ref={ref}
     data-slot="card-title"
-    className={cn("leading-none font-semibold", className)}
+    className={cn("font-semibold leading-none text-2xl tracking-tight", className)}
     {...props}
   />
 ))
@@ -140,7 +140,7 @@ const CardContent = React.forwardRef<
   <div
     ref={ref}
     data-slot="card-content"
-    className={cn("px-6", className)}
+    className={cn(className)}
     {...props}
   />
 ))
@@ -160,7 +160,7 @@ const CardFooter = React.forwardRef<
   <div
     ref={ref}
     data-slot="card-footer"
-    className={cn("flex items-center px-6 [.border-t]:pt-6", className)}
+    className={cn("flex items-center [.border-t]:pt-6", className)}
     {...props}
   />
 ))

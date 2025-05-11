@@ -54,6 +54,7 @@ export interface AssistantContentMessage extends BaseChatMessage {
   sender: 'assistant';
   /** Type identifier for content messages. */
   type: 'content';
+  node: string;
   /** The textual content of the assistant's response. */
   text: string;
   /** Optional field specifying the format of the text content (e.g., markdown). */
@@ -218,6 +219,8 @@ export interface RawAssistantMessagePayload {
   sender?: MessageSender;
   /** Text content, potentially partial if streaming. */
   text?: string;
+  /** The node associated with the content, if applicable. */
+  node?: string;
   /** Format hint for the text content. */
   format?: 'markdown' | 'text';
   /** Array of source items, if applicable to this payload type. */

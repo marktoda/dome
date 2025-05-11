@@ -50,15 +50,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
             "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
         },
       }}
-      // The style prop with CSS variables might be redundant if classNames cover styling sufficiently.
-      // Keeping it for now as it was in the original code.
-      style={
-        {
-          "--normal-bg": "var(--popover)", // Example: map CSS vars if needed
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-        } as React.CSSProperties
-      }
       {...props}
     />
   )
