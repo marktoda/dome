@@ -30,13 +30,29 @@ export async function registerUser(
   name: string,
 ): Promise<AuthResponse> {
   try {
-    const response = (await api.post('/auth/register', {
+    const apiResponse = await api.post('/auth/register', {
       email,
       password,
       name,
-    })) as AuthResponse;
+    }) as any;
 
-    return response;
+    // Based on debug logs, apiResponse is { "token": "..." }
+    if (apiResponse && apiResponse.token) {
+      return {
+        success: true,
+        token: apiResponse.token,
+        // User info is not present in this flat structure from debug logs
+        user: apiResponse.user, // Keep this in case user info is sometimes present
+      };
+    } else {
+      return {
+        success: false,
+        error: {
+          code: 'REGISTRATION_ERROR',
+          message: apiResponse?.error?.message || 'Registration failed to return a token.',
+        },
+      };
+    }
   } catch (error: unknown) {
     // Handle different error scenarios
     if (axios.isAxiosError(error)) {
@@ -84,12 +100,28 @@ export async function registerUser(
  */
 export async function loginUser(email: string, password: string): Promise<AuthResponse> {
   try {
-    const response = (await api.post('/auth/login', {
+    const apiResponse = await api.post('/auth/login', {
       email,
       password,
-    })) as AuthResponse;
+    }) as any;
 
-    return response;
+    // Based on debug logs, apiResponse is { "token": "..." }
+    if (apiResponse && apiResponse.token) {
+      return {
+        success: true,
+        token: apiResponse.token,
+        // User info is not present in this flat structure from debug logs
+        user: apiResponse.user, // Keep this in case user info is sometimes present
+      };
+    } else {
+      return {
+        success: false,
+        error: {
+          code: 'LOGIN_ERROR',
+          message: apiResponse?.error?.message || 'Login failed to return a token.',
+        },
+      };
+    }
   } catch (error: unknown) {
     // Handle different error scenarios
     if (axios.isAxiosError(error)) {
@@ -140,3 +172,4 @@ export function saveAuthToken(result: AuthResponse): boolean {
   }
   return false;
 }
+
