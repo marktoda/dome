@@ -10,7 +10,9 @@
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r exec -- eslint src --ext .ts,.tsx --fix",
     "lint:check": "eslint .",
-    "format": "prettier --write \"**/*.{ts,js,json,md}\""
+    "format": "prettier --write \"**/*.{ts,js,json,md}\"",
+    "gen:sdk": "fern generate --group local --log-level info",
+    "prepare": "husky install"
   },
   "engines": {
     "node": ">=16",
@@ -21,8 +23,25 @@
     "@typescript-eslint/eslint-plugin": "^5.57.1",
     "@typescript-eslint/parser": "^5.57.1",
     "eslint": "^8.38.0",
+    "fern-api": "^0.60.29",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.0.0",
     "prettier": "^2.8.7",
     "typescript": "^5.0.4",
     "zod": "^3.21.4"
+  },
+  "lint-staged": {
+    "services/dome-api/src/**/*.{ts,tsx}": [
+      "pnpm --filter dome-api gen:openapi",
+      "git add openapi.json"
+    ],
+    "openapi.json": [
+      "pnpm run gen:sdk",
+      "git add packages/dome-sdk/"
+    ],
+    "fern/**/*.{json,yml,yaml}": [
+      "pnpm run gen:sdk",
+      "git add packages/dome-sdk/"
+    ]
   }
 }
