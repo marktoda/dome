@@ -9,7 +9,7 @@
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest run",
     "test:watch": "vitest",
-    "gen:openapi": "tsx ./scripts/generate-spec.ts"
+    "gen:openapi": "npx tsx ./scripts/generate-spec.ts"
   },
   "dependencies": {
     "@dome/ai-processor": "workspace:*",

@@ -1,32 +1,38 @@
-import { generateOpenAPI } from '@hono/zod-openapi';
-import app from '../src/index'; // Assuming your Hono app is exported from src/index.ts
+import { ctx, RequestContext } from '@dome/common/context';
+import { baseLogger } from '@dome/common/logging/base';
+// No separate import needed for spec generation, it's a method on the app
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-// Ensure 'app' is the Hono instance with routes defined using createRoute from @hono/zod-openapi
-// If your app instance is structured differently or has multiple parts, you might need to adjust.
-// For example, if your routes are in a separate variable that's then used by app.route('/', routes):
-// const spec = generateOpenAPI({ routes: yourRoutesObject.getRoutes() }, { ...openapi info... });
+// Establish a default context for the script execution
+const defaultRequestContext: RequestContext = {
+  logger: baseLogger, // Use the directly imported baseLogger
+  requestId: `generate-spec-${Date.now()}`,
+};
 
-const openapiDocument = generateOpenAPI(
-  {
+// Wrap the main logic in ctx.run
+ctx.run(defaultRequestContext, () => {
+  const app = require('../src/index').default; // Assuming default export from src/index.ts
+
+  // Call the method on the app instance to get the OpenAPI 3.1 document
+  const openapiDocument = app.getOpenAPI31Document({
+    openapi: '3.1.0',
     info: {
-      title: 'Dome API',
-      version: 'v1', // Or read from package.json
+      title: 'Dome API', // You can customize this
+      version: 'v1', // Or read from dome-api's package.json
     },
-    // Add other OpenAPI top-level fields if needed: servers, components, security, tags
-  },
-  app, // Pass the Hono app instance
-);
+    // You can add other global OpenAPI fields here if needed, e.g.,
+    // servers: [{ url: 'https://api.dome.com/v1' }],
+    // components: { securitySchemes: { ... } },
+  });
 
+  const outputPath = path.resolve(__dirname, '../../../openapi.json');
 
-// Output to the monorepo root directory
-const outputPath = path.resolve(__dirname, '../../../openapi.json'); // Adjust if script moves
-
-try {
-  writeFileSync(outputPath, JSON.stringify(openapiDocument, null, 2));
-  console.log(`OpenAPI spec generated successfully at ${outputPath}`);
-} catch (error) {
-  console.error('Failed to write OpenAPI spec:', error);
-  process.exit(1);
-}
+  try {
+    writeFileSync(outputPath, JSON.stringify(openapiDocument, null, 2));
+    console.log(`OpenAPI spec generated successfully at ${outputPath}`);
+  } catch (error) {
+    console.error('Failed to write OpenAPI spec:', error);
+    process.exit(1);
+  }
+});
