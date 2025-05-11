@@ -1,0 +1,5 @@
+#!/bin/sh
+# ^ More common shebang for simple scripts, though /usr/bin/env sh is also fine.
+# Husky v9+ no longer requires the source line.
+
+npx lint-staged

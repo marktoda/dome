@@ -9,8 +9,8 @@ interface TestEnv {
   AUTH_DB: any; // Mock D1 binding
   AUTH_TOKENS: any; // Mock KV Namespace
   PRIVY_APP_ID: string;
-  ENVIRONMENT: string; // Added
-  VERSION: string;     // Added
+  ENVIRONMENT: "development";
+  VERSION: "0.1.0"; // Corrected to specific literal type
   // Add other bindings if your worker's Env expects them
 }
 
@@ -87,8 +87,8 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
         put: vi.fn().mockResolvedValue(undefined),
       },
       PRIVY_APP_ID: 'test-privy-app-id',
-      ENVIRONMENT: 'test', // Added
-      VERSION: '0.0.1-test', // Added
+      ENVIRONMENT: 'development',
+      VERSION: '0.1.0', // Corrected
     };
     process.env.PRIVY_APP_ID = mockEnv.PRIVY_APP_ID;
 

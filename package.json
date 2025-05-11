@@ -11,7 +11,7 @@
     "lint:fix": "pnpm -r exec -- eslint src --ext .ts,.tsx --fix",
     "lint:check": "eslint .",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
-    "gen:sdk": "fern generate --group local --log-level info",
+    "gen:sdk": "fern generate --local --log-level info --force",
     "prepare": "husky install"
   },
   "engines": {
@@ -27,6 +27,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.0.0",
     "prettier": "^2.8.7",
+    "tsx": "^4.19.4",
     "typescript": "^5.0.4",
     "zod": "^3.21.4"
   },
@@ -36,8 +37,9 @@
       "git add openapi.json"
     ],
     "openapi.json": [
-      "pnpm run gen:sdk",
-      "git add packages/dome-sdk/"
+      "node ./scripts/copy-openapi-spec.js",
+      "sh -c 'pnpm run gen:sdk'",
+      "git add packages/dome-sdk/ fern/openapi/openapi.json"
     ],
     "fern/**/*.{json,yml,yaml}": [
       "pnpm run gen:sdk",

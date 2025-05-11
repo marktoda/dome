@@ -1,6 +1,7 @@
 import { Hono, Context } from 'hono';
 import { swaggerUI } from '@hono/swagger-ui';
-import { OpenAPIHono } from '@hono/zod-openapi';
+import { OpenAPIHono, createRoute } from '@hono/zod-openapi'; // Added createRoute
+import { z } from 'zod'; // Added z
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import type { WSContext, WSEvents } from 'hono/ws';
 import { HTTPException } from 'hono/http-exception';
@@ -20,7 +21,8 @@ import { buildAuthRouter } from './controllers/authController';
 import { buildNotesRouter, buildAiRouter } from './controllers/siloController';
 import { buildTsunamiContentRouter } from './controllers/tsunamiController';
 import { buildNotionContentRouter } from './controllers/notionController';
-import { buildSearchRouter } from './controllers/searchController'; // Import Search router builder
+import { buildSearchRouter } from './controllers/searchController';
+import { buildChatRouter } from './controllers/chatController'; // Import Chat router builder
 import { initLogging, getLogger } from '@dome/common';
 import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
@@ -73,58 +75,143 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'BearerAuth', {
 // Mount auth router
 app.route('/auth', buildAuthRouter());
 
-// Public routes (no authentication required)
-// Root route
-app.get('/', c => {
+// --- Public Routes (OpenAPI) ---
+
+// Schemas for Public Routes
+const RootResponseSchema = z.object({
+  message: z.string().openapi({ example: 'Welcome to the dome API' }),
+  service: z.object({
+    name: z.string().openapi({ example: serviceInfo.name }),
+    version: z.string().openapi({ example: serviceInfo.version }),
+    environment: z.string().openapi({ example: serviceInfo.environment }),
+  }),
+  description: z.string().openapi({ example: 'AI-Powered Exobrain API service' }),
+}).openapi('RootResponse');
+
+const HealthResponseSchema = z.object({
+  status: z.literal('ok').openapi({ example: 'ok' }),
+  timestamp: z.string().datetime().openapi({ example: new Date().toISOString() }),
+  service: z.string().openapi({ example: serviceInfo.name }),
+  version: z.string().openapi({ example: serviceInfo.version }),
+  metrics: z.object({
+    counters: z.object({
+      requests: z.number().int().optional().openapi({ example: 100 }),
+      errors: z.number().int().optional().openapi({ example: 5 }),
+    }),
+  }).optional(),
+}).openapi('HealthResponse');
+
+// Route Definitions for Public Routes
+const rootRoute = createRoute({
+  method: 'get',
+  path: '/',
+  summary: 'API Root',
+  description: 'Provides basic information about the API service.',
+  responses: {
+    200: {
+      description: 'Service information.',
+      content: { 'application/json': { schema: RootResponseSchema } },
+    },
+  },
+  tags: ['Public'],
+});
+
+const healthRoute = createRoute({
+  method: 'get',
+  path: '/health',
+  summary: 'Health Check',
+  description: 'Checks the health status of the API service.',
+  responses: {
+    200: {
+      description: 'Service is healthy.',
+      content: { 'application/json': { schema: HealthResponseSchema } },
+    },
+  },
+  tags: ['Public'],
+});
+
+// Register Public Routes
+app.openapi(rootRoute, c => {
   getLogger().info({ path: '/' }, 'Root endpoint accessed');
   return c.json({
     message: 'Welcome to the dome API',
     service: serviceInfo,
     description: 'AI-Powered Exobrain API service',
-  });
+  }, 200);
 });
 
-// Health check endpoint
-app.get('/health', c => {
+app.openapi(healthRoute, c => {
   getLogger().info({ path: '/health' }, 'Health check endpoint accessed');
-
-  // Start a timer for the health check
   const timer = metrics.startTimer('health.check');
-
-  // Track health check with metrics
   metrics.trackHealthCheck('ok', 0, 'api');
-
-  // Stop the timer and get the duration
-  const duration = timer.stop();
-
+  const duration = timer.stop(); // duration is not part of schema, but good to keep calculation
   return c.json({
-    status: 'ok',
+    status: 'ok' as const, // Ensure 'ok' is treated as a literal type
     timestamp: new Date().toISOString(),
     service: serviceInfo.name,
     version: serviceInfo.version,
-    metrics: {
+    metrics: { // Optional in schema, provide if available
       counters: {
         requests: metrics.getCounter('api.request'),
         errors: metrics.getCounter('api.error'),
       },
     },
-  });
+  }, 200);
 });
 
-// Chat API routes - protected by authentication
-const chatRouter = new Hono();
-// REMOVED: chatRouter.use('*', authenticationMiddleware);
+// --- Chat Routes ---
 
-// Apply authenticationMiddleware specifically to the POST /chat route
-chatRouter.post('/', authenticationMiddleware, async (c: Context<{ Bindings: Bindings }>) => {
-  const chatController = controllerFactory.getChatController(c.env);
-  return await chatController.chat(c);
+// OpenAPI definition for the WebSocket handshake
+const ChatWsUpgradeQuerySchema = z.object({
+  token: z.string().optional().openapi({
+    param: { name: 'token', in: 'query' },
+    description: 'Authentication token for WebSocket upgrade.',
+    example: 'jwt_token_here',
+  }),
 });
 
-// Mount chat router
-app.route('/chat', chatRouter);
+const chatWsUpgradeRoute = createRoute({
+  method: 'get',
+  path: '/chat/ws',
+  summary: 'Upgrade to WebSocket for Chat',
+  description:
+    'Initiates a WebSocket connection for real-time chat. Requires a valid authentication token as a query parameter. ' +
+    'Upon successful upgrade, the protocol switches to WebSocket. Messages over WebSocket should follow the documented format (e.g., JSON with type and payload).',
+  request: {
+    query: ChatWsUpgradeQuerySchema,
+  },
+  responses: {
+    101: {
+      description: 'Switching Protocols. Connection will be upgraded to WebSocket.',
+      // No content schema for 101 typically, but headers might be relevant if specified.
+    },
+    401: {
+      description: 'Unauthorized. Token missing or invalid.',
+      content: { 'application/json': { schema: z.object({ success: z.literal(false), error: z.object({ code: z.string(), message: z.string() }) }) } } // Generic error
+    },
+  },
+  tags: ['Chat', 'WebSocket'],
+});
 
-// WebSocket chat endpoint
+// Register the OpenAPI documentation for the WS handshake
+// The actual WebSocket handling is done by the app.get('/chat/ws', upgradeWebSocket(...)) below.
+// This openapi route handler doesn't need to do much, as `upgradeWebSocket` takes over.
+app.openapi(chatWsUpgradeRoute, (c) => {
+  // This handler is primarily for OpenAPI documentation generation.
+  // The actual WebSocket upgrade is handled by the `app.get('/chat/ws', upgradeWebSocket(...))` below.
+  // If the token is invalid, `upgradeWebSocket`'s logic will throw an HTTPException (resulting in a 401).
+  // If the token is valid and upgrade is successful, a 101 response is sent by the WebSocket handler.
+  // This openapi route handler is primarily for documentation.
+  // Returning c.res allows the subsequent app.get('/chat/ws', upgradeWebSocket(...)) to handle the response.
+  // The OpenAPI spec defines that a 101 is expected.
+  return c.res;
+});
+
+
+// Mount new OpenAPI-based Chat router for POST /chat
+app.route('/chat', buildChatRouter());
+
+// WebSocket chat endpoint (actual handler)
 app.get(
   '/chat/ws', // WebSocket endpoint
   upgradeWebSocket(async (c): Promise<Omit<WSEvents<WebSocket>, 'onOpen'>> => {
@@ -416,4 +503,5 @@ app.doc('/openapi.json', {
 app.get('/docs', swaggerUI({ url: '/openapi.json', title: `${serviceInfo.name} API Docs` }));
 
 export default app;
+
 

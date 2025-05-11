@@ -189,6 +189,195 @@
           "user"
         ]
       },
+      "RootResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Welcome to the dome API"
+          },
+          "service": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "example": "dome-api"
+              },
+              "version": {
+                "type": "string",
+                "example": "0.1.0"
+              },
+              "environment": {
+                "type": "string",
+                "example": "development"
+              }
+            },
+            "required": [
+              "name",
+              "version",
+              "environment"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "example": "AI-Powered Exobrain API service"
+          }
+        },
+        "required": [
+          "message",
+          "service",
+          "description"
+        ]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ],
+            "example": "ok"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2025-05-11T21:43:36.548Z"
+          },
+          "service": {
+            "type": "string",
+            "example": "dome-api"
+          },
+          "version": {
+            "type": "string",
+            "example": "0.1.0"
+          },
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "counters": {
+                "type": "object",
+                "properties": {
+                  "requests": {
+                    "type": "integer",
+                    "example": 100
+                  },
+                  "errors": {
+                    "type": "integer",
+                    "example": 5
+                  }
+                }
+              }
+            },
+            "required": [
+              "counters"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "timestamp",
+          "service",
+          "version"
+        ]
+      },
+      "ChatSource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "doc_123"
+          },
+          "type": {
+            "type": "string",
+            "example": "document"
+          },
+          "title": {
+            "type": "string",
+            "example": "Source Document Title"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "example": "https://example.com/doc_123"
+          }
+        },
+        "required": [
+          "id",
+          "type"
+        ]
+      },
+      "ChatSuccessData": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "string",
+            "example": "This is the chat bot's answer."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatSource"
+            },
+            "description": "Supporting sources for the response."
+          }
+        },
+        "required": [
+          "response"
+        ]
+      },
+      "ChatSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/ChatSuccessData"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ]
+      },
+      "ChatErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ],
+            "example": false
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "INVALID_REQUEST"
+              },
+              "message": {
+                "type": "string",
+                "example": "Invalid request format"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "success",
+          "error"
+        ]
+      },
       "Note": {
         "type": "object",
         "properties": {
@@ -650,7 +839,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-11T20:24:15.467Z"
+            "example": "2025-05-11T21:43:36.501Z"
           },
           "status": {
             "type": "string",
@@ -757,7 +946,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-11T20:24:15.472Z"
+            "example": "2025-05-11T21:43:36.509Z"
           },
           "status": {
             "type": "string",
@@ -1114,6 +1303,248 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "API Root",
+        "description": "Provides basic information about the API service.",
+        "tags": [
+          "Public"
+        ],
+        "responses": {
+          "200": {
+            "description": "Service information.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RootResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Checks the health status of the API service.",
+        "tags": [
+          "Public"
+        ],
+        "responses": {
+          "200": {
+            "description": "Service is healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/ws": {
+      "get": {
+        "summary": "Upgrade to WebSocket for Chat",
+        "description": "Initiates a WebSocket connection for real-time chat. Requires a valid authentication token as a query parameter. Upon successful upgrade, the protocol switches to WebSocket. Messages over WebSocket should follow the documented format (e.g., JSON with type and payload).",
+        "tags": [
+          "Chat",
+          "WebSocket"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Authentication token for WebSocket upgrade.",
+              "example": "jwt_token_here"
+            },
+            "required": false,
+            "name": "token",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching Protocols. Connection will be upgraded to WebSocket."
+          },
+          "401": {
+            "description": "Unauthorized. Token missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat": {
+      "post": {
+        "summary": "Send a chat message",
+        "description": "Processes a user chat message and returns a response.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stream": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "userId": {
+                    "type": "string"
+                  },
+                  "messages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant",
+                            "system"
+                          ]
+                        },
+                        "content": {
+                          "type": "string"
+                        },
+                        "timestamp": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "content"
+                      ]
+                    }
+                  },
+                  "options": {
+                    "type": "object",
+                    "properties": {
+                      "enhanceWithContext": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "maxContextItems": {
+                        "type": "number",
+                        "default": 5
+                      },
+                      "includeSourceInfo": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "maxTokens": {
+                        "type": "number",
+                        "default": 1000
+                      },
+                      "temperature": {
+                        "type": "number"
+                      },
+                      "modelId": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "runId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "userId",
+                  "messages",
+                  "options"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful chat response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request (e.g., validation error).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatErrorResponse"
                 }
               }
             }
