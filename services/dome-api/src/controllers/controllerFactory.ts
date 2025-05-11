@@ -62,9 +62,9 @@ export class ControllerFactory {
   getSiloController(env: Bindings): SiloController {
     if (!this.siloController) {
       this.logger.debug('Creating new SiloController instance');
-      const siloService = this.serviceFactory.getSiloService(env);
-      const aiProcessor = this.serviceFactory.getAiProcessorService(env);
-      this.siloController = new SiloController(siloService, aiProcessor);
+      // const siloService = this.serviceFactory.getSiloService(env); // No longer needed for SiloController constructor
+      // const aiProcessor = this.serviceFactory.getAiProcessorService(env); // No longer needed for SiloController constructor
+      this.siloController = new SiloController(); // SiloController now takes no arguments
     }
     return this.siloController;
   }
