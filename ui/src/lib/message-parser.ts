@@ -71,7 +71,8 @@ class LangGraphStreamPlugin implements MessageParserPlugin {
         if (meta.langgraph_node !== "generate_answer") return null;
 
         return {
-          id,
+          id, // This 'id' is the turnId
+          parentId: id, // Set parentId to turnId
           timestamp,
           sender: 'assistant',
           type: 'content',
@@ -120,8 +121,10 @@ class AssistantThinkingPlugin implements MessageParserPlugin {
 
     if (node.reasoning && Array.isArray(node.reasoning) && node.reasoning.length > 0) {
       // return { type: 'thinking', content: node.reasoning[node.reasoning.length - 1] };
+      // 'id' here is the turnId passed from ChatContext
       return {
-        id: `update-${nodeId}`,
+        id: `update-${nodeId}`, // Unique ID for this specific thinking step
+        parentId: id, // Link to the main assistant turn
         timestamp,
         sender: 'assistant',
         type: 'thinking',
@@ -161,8 +164,10 @@ class AssistantSourcesPlugin implements MessageParserPlugin {
     const nodeId: string = Object.keys(parsedEvent[1])[0];
     const node = parsedEvent[1][nodeId];
     const sources = node.sources;
+    // 'id' here is the turnId passed from ChatContext
     return {
-      id: `update-${nodeId}`,
+      id: `update-${nodeId}`, // Unique ID for this specific sources block
+      parentId: id, // Link to the main assistant turn
       timestamp,
       sender: 'assistant',
       type: 'sources',

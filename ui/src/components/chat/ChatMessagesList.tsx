@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useChat } from '@/contexts/ChatContext';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
-import { ParsedMessage, AssistantReasoningMessage } from '@/lib/chat-types'; // Import new type
+import { ParsedMessage, AssistantContentMessage, AssistantErrorMessage, AssistantReasoningMessage, AssistantSourcesMessage, AssistantThinkingMessage } from '@/lib/chat-types'; // Import new type
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SystemMessageDisplay } from './SystemMessageDisplay';
@@ -21,17 +21,75 @@ export const ChatMessagesList: React.FC = () => {
   const scrollAreaRootRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Define the desired order for assistant message types within a single turn
+  const assistantMessageTypeOrder: Record<
+    AssistantContentMessage['type'] |
+    AssistantThinkingMessage['type'] |
+    AssistantSourcesMessage['type'] |
+    AssistantReasoningMessage['type'] |
+    AssistantErrorMessage['type'], // Only assistant-specific types that have a 'type' property
+    number
+  > = {
+    thinking: 1,
+    reasoning: 2,
+    sources: 3,
+    content: 4,
+    error: 5, // Assistant errors related to the turn
+  };
+
+  const sortedMessages = useMemo(() => {
+    return [...messages].sort((a, b) => {
+      // Primary sort by timestamp to maintain overall conversation flow
+      const timeDiff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+
+      // If messages are part of the same assistant turn (share a parentId)
+      if (
+        a.sender === 'assistant' &&
+        b.sender === 'assistant' &&
+        a.parentId &&
+        b.parentId &&
+        a.parentId === b.parentId &&
+        'type' in a && // Type guard for a
+        'type' in b   // Type guard for b
+      ) {
+        // Now 'a.type' and 'b.type' are safe to access for assistant messages
+        // and are guaranteed to be one of the keys in assistantMessageTypeOrder
+        const orderA = assistantMessageTypeOrder[a.type as keyof typeof assistantMessageTypeOrder] || 99;
+        const orderB = assistantMessageTypeOrder[b.type as keyof typeof assistantMessageTypeOrder] || 99;
+
+        if (orderA !== orderB) {
+          return orderA - orderB;
+        }
+      }
+      // If timestamps are identical (can happen for rapidly streamed parts),
+      // and they are part of the same turn, use type order.
+      if (
+        timeDiff === 0 &&
+        a.parentId &&
+        a.parentId === b.parentId &&
+        a.sender === 'assistant' &&
+        b.sender === 'assistant' &&
+        'type' in a && // Type guard for a
+        'type' in b   // Type guard for b
+      ) {
+        const orderA = assistantMessageTypeOrder[a.type as keyof typeof assistantMessageTypeOrder] || 99;
+        const orderB = assistantMessageTypeOrder[b.type as keyof typeof assistantMessageTypeOrder] || 99;
+        return orderA - orderB;
+      }
+
+      return timeDiff;
+    });
+  }, [messages, assistantMessageTypeOrder]); // Add assistantMessageTypeOrder to dependencies
+
   useEffect(() => {
-    // Scroll to the bottom when messages change or loading state changes.
-    // 'auto' behavior is used for instant scroll without smooth animation,
-    // which is generally preferred for chat interfaces.
+    // Scroll to the bottom when sorted messages change or loading state changes.
     messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [messages, isLoading]);
+  }, [sortedMessages, isLoading]);
 
   return (
     <ScrollArea className="flex-1" ref={scrollAreaRootRef}>
       <div className="space-y-6 p-4 md:p-6">
-        {messages.map((msg: ParsedMessage) => { // Add explicit type for msg
+        {sortedMessages.map((msg: ParsedMessage) => { // Use sortedMessages
           switch (msg.sender) {
             case 'user':
               return <UserMessage key={msg.id} message={msg} />;
@@ -86,7 +144,7 @@ export const ChatMessagesList: React.FC = () => {
             For now, if `isLoading` is true, we show a generic pending response.
             The `AssistantMessage` component will replace this with a "thinking" state once an assistant message shell is created.
         */}
-        {isLoading && messages[messages.length -1]?.sender !== 'assistant' && (
+        {isLoading && sortedMessages[sortedMessages.length -1]?.sender !== 'assistant' && (
           <div className="flex items-start space-x-3 py-3 justify-start">
             <Skeleton className="h-8 w-8 rounded-full" />
             <div className="space-y-2">
