@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import AuthWorker from '../../src/index';
 import { PrivyAuthService } from '../../src/services/privyAuthService';
 import type { User, ValidateTokenResponse, PrivyClaims } from '../../src/types';
+import { AuthError, AuthErrorType } from '../../src/utils/errors';
 
 // Define a minimal Env interface for testing purposes
 interface TestEnv {
   AUTH_DB: any; // Mock D1 binding
   AUTH_TOKENS: any; // Mock KV Namespace
   PRIVY_APP_ID: string;
+  ENVIRONMENT: string; // Added
+  VERSION: string;     // Added
   // Add other bindings if your worker's Env expects them
 }
 
@@ -50,8 +53,6 @@ vi.mock('@dome/common', async (importOriginal) => {
         ...actual,
         getLogger: vi.fn(() => mockLoggerInstance),
         withContext: vi.fn((meta, fn) => fn(mockLoggerInstance)),
-        // logError: vi.fn(), // Already part of actual usually
-        // initLogging: vi.fn(), // If used
     };
 });
 
@@ -62,7 +63,6 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
   const mockPrivyDid = 'did:privy:test-user';
   const mockUserId = 'user-id-from-privy';
   const mockUserEmail = 'privy-user@example.com';
-  // ExecutionContext is not directly used by the overridden fetch, but good to have if underlying logic needs it
   let mockExecutionContext: ExecutionContext;
 
 
@@ -87,6 +87,8 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
         put: vi.fn().mockResolvedValue(undefined),
       },
       PRIVY_APP_ID: 'test-privy-app-id',
+      ENVIRONMENT: 'test', // Added
+      VERSION: '0.0.1-test', // Added
     };
     process.env.PRIVY_APP_ID = mockEnv.PRIVY_APP_ID;
 
@@ -95,30 +97,25 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
         passThroughOnException: vi.fn(),
     } as unknown as ExecutionContext;
 
-    authWorker = new AuthWorker();
-    // Manually set the env on the worker instance for testing the overridden fetch
-    (authWorker as any).env = mockEnv;
+    authWorker = new AuthWorker(mockExecutionContext, mockEnv);
 
 
     (PrivyAuthService as any).mockImplementation((envParam: TestEnv) => {
       const mockPrivyServiceInstance = {
         validatePrivyToken: vi.fn(),
       } as unknown as PrivyAuthService;
+      (mockPrivyServiceInstance as any).env = envParam;
       return mockPrivyServiceInstance;
     });
   });
 
-  // Helper to get the mocked service instance from the worker
   const getMockedPrivyService = (worker: AuthWorker) => {
-    // The service is lazily instantiated within the worker when its getter is called.
-    // The getter uses `this.env`.
     return (worker as any).privyAuthService as { validatePrivyToken: any };
   }
 
 
   it('should return 401 if Authorization header is missing', async () => {
     const request = new Request('http://localhost/validate', { method: 'POST' });
-    // Pass only request to the overridden fetch method
     const response = await authWorker.fetch(request);
     expect(response.status).toBe(401);
     const body = await response.json() as { error: string };

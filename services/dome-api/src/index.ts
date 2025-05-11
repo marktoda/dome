@@ -162,8 +162,7 @@ app.get(
     }
 
     const authenticatedUserId = authResult.user.id;
-    // Update context for subsequent logging within this request scope if possible,
-    // though this context is primarily for HTTP. For WebSocket messages, pass userId.
+    // Update context for subsequent logging within this request scope if possible
     await updateContext({
       identity: {
         userId: authResult.user.id,
