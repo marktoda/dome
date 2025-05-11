@@ -5,8 +5,20 @@
  */
 import { getLogger, logError, metrics } from '@dome/common';
 import { toDomeError } from '../utils/errors';
-import { TsunamiBinding, TsunamiService, WebsiteRegistrationConfig, NotionOAuthDetails, GithubOAuthDetails } from './types'; // Added GithubOAuthDetails
-export { TsunamiBinding, TsunamiService, WebsiteRegistrationConfig, NotionOAuthDetails, GithubOAuthDetails } from './types'; // Added GithubOAuthDetails
+import {
+  TsunamiBinding,
+  TsunamiService,
+  WebsiteRegistrationConfig,
+  NotionOAuthDetails,
+  GithubOAuthDetails,
+} from './types'; // Added GithubOAuthDetails
+export {
+  TsunamiBinding,
+  TsunamiService,
+  WebsiteRegistrationConfig,
+  NotionOAuthDetails,
+  GithubOAuthDetails,
+} from './types'; // Added GithubOAuthDetails
 
 /**
  * Client for interacting with the Tsunami service

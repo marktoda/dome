@@ -50,14 +50,19 @@ describe('NotionAuthManager', () => {
     vi.mocked(TokenService).mockClear();
     mockTokenServiceInstance = new TokenService(mockEnv.SYNC_PLAN) as Mocked<TokenService>; // Changed to Mocked
     vi.mocked(TokenService).mockImplementation(() => mockTokenServiceInstance);
-    
+
     authManager = new NotionAuthManager(mockEnv as any);
     vi.clearAllMocks(); // Clear other mocks like fetch
 
     // Re-mock TokenService methods for this instance if needed, or rely on class mock
-    mockTokenServiceInstance.storeNotionToken = vi.fn().mockResolvedValue({ success: true, tokenId: 'new-token-id', workspaceId: 'test-workspace-id' });
+    mockTokenServiceInstance.storeNotionToken = vi
+      .fn()
+      .mockResolvedValue({
+        success: true,
+        tokenId: 'new-token-id',
+        workspaceId: 'test-workspace-id',
+      });
     mockTokenServiceInstance.getToken = vi.fn().mockResolvedValue(null);
-
 
     // Default successful response for token exchange
     mockFetch.mockResolvedValue({
@@ -133,11 +138,13 @@ describe('NotionAuthManager', () => {
       });
 
       // Verify returned token data (now returns full object)
-      expect(result).toEqual(expect.objectContaining({
-        access_token: 'test-access-token',
-        workspace_id: 'test-workspace-id',
-        // ... other fields from mockFetch response
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          access_token: 'test-access-token',
+          workspace_id: 'test-workspace-id',
+          // ... other fields from mockFetch response
+        }),
+      );
     });
 
     it('should throw ServiceError on API error response', async () => {
@@ -183,12 +190,15 @@ describe('NotionAuthManager', () => {
       workspace_name: 'Test Workspace',
       workspace_icon: 'icon-url',
       bot_id: 'bot-789',
-      owner: { type: 'user', user: { id: 'user-123', name: 'Test User', avatar_url: 'avatar-url' } },
+      owner: {
+        type: 'user',
+        user: { id: 'user-123', name: 'Test User', avatar_url: 'avatar-url' },
+      },
     };
 
     it('should store user integration details via TokenService', async () => {
       const userId = 'user-123';
-      
+
       await authManager.storeUserNotionIntegration(userId, mockNotionTokenResponse);
 
       expect(mockTokenServiceInstance.storeNotionToken).toHaveBeenCalledWith(
@@ -231,15 +241,21 @@ describe('NotionAuthManager', () => {
 
     it('should handle errors from TokenService during token storage', async () => {
       const userId = 'user-123';
-      mockTokenServiceInstance.storeNotionToken = vi.fn().mockRejectedValue(new Error('TokenService storage error'));
-      
-      await expect(authManager.storeUserNotionIntegration(userId, mockNotionTokenResponse)).rejects.toThrow(ServiceError);
+      mockTokenServiceInstance.storeNotionToken = vi
+        .fn()
+        .mockRejectedValue(new Error('TokenService storage error'));
+
+      await expect(
+        authManager.storeUserNotionIntegration(userId, mockNotionTokenResponse),
+      ).rejects.toThrow(ServiceError);
     });
 
     it('should handle errors from TokenService during token retrieval', async () => {
       const userId = 'user-123';
       const workspaceId = 'workspace-456';
-      mockTokenServiceInstance.getToken = vi.fn().mockRejectedValue(new Error('TokenService retrieval error'));
+      mockTokenServiceInstance.getToken = vi
+        .fn()
+        .mockRejectedValue(new Error('TokenService retrieval error'));
 
       await expect(authManager.getUserToken(userId, workspaceId)).rejects.toThrow(ServiceError);
     });

@@ -7,7 +7,8 @@ import { eq, and } from 'drizzle-orm';
 import { ulid } from 'ulid';
 
 // Define the structure for the data to be inserted/updated, matching oauthTokens table
-export interface OAuthTokenRecord { // Exporting for potential use elsewhere, e.g. provider classes
+export interface OAuthTokenRecord {
+  // Exporting for potential use elsewhere, e.g. provider classes
   id?: string;
   userId: string;
   provider: string;
@@ -35,8 +36,13 @@ export class TokenService {
    * Stores or updates an OAuth token for a user and provider.
    * Notion tokens are workspace-specific, so providerWorkspaceId is key.
    */
-  async storeNotionToken(details: NotionOAuthDetails): Promise<{ success: boolean; tokenId: string; workspaceId: string }> {
-    this.logger.info({ userId: details.userId, workspaceId: details.workspaceId, provider: 'notion' }, 'Storing Notion token');
+  async storeNotionToken(
+    details: NotionOAuthDetails,
+  ): Promise<{ success: boolean; tokenId: string; workspaceId: string }> {
+    this.logger.info(
+      { userId: details.userId, workspaceId: details.workspaceId, provider: 'notion' },
+      'Storing Notion token',
+    );
     try {
       // TODO: Implement encryption for accessToken
       const metadataToStore = {
@@ -46,7 +52,8 @@ export class TokenService {
         duplicatedTemplateId: details.duplicatedTemplateId,
       };
 
-      const values: Omit<OAuthTokenRecord, 'id' | 'createdAt' | 'updatedAt'> = { // Use Omit for insert/update values
+      const values: Omit<OAuthTokenRecord, 'id' | 'createdAt' | 'updatedAt'> = {
+        // Use Omit for insert/update values
         userId: details.userId,
         provider: 'notion',
         providerAccountId: details.botId, // Notion's bot_id is the account ID for the integration
@@ -55,7 +62,7 @@ export class TokenService {
         metadata: JSON.stringify(metadataToStore),
         // refreshToken, expiresAt, tokenType, scope can be added if Notion provides them
       };
-      
+
       const now = Math.floor(Date.now() / 1000);
 
       // Upsert logic: Check if a token for this user, provider, and workspaceId already exists
@@ -63,31 +70,35 @@ export class TokenService {
         where: and(
           eq(oauthTokens.userId, details.userId),
           eq(oauthTokens.provider, 'notion'),
-          eq(oauthTokens.providerWorkspaceId, details.workspaceId)
+          eq(oauthTokens.providerWorkspaceId, details.workspaceId),
         ),
       });
 
       let tokenId: string;
       if (existingToken) {
         tokenId = existingToken.id;
-        await this.db.update(oauthTokens)
+        await this.db
+          .update(oauthTokens)
           .set({ ...values, updatedAt: now })
           .where(eq(oauthTokens.id, tokenId));
         this.logger.info({ tokenId }, 'Updated existing Notion token');
       } else {
         tokenId = ulid();
-        await this.db.insert(oauthTokens).values({ 
-          ...values, 
+        await this.db.insert(oauthTokens).values({
+          ...values,
           id: tokenId,
-          createdAt: now, 
-          updatedAt: now 
+          createdAt: now,
+          updatedAt: now,
         });
         this.logger.info({ tokenId }, 'Inserted new Notion token');
       }
-      
+
       return { success: true, tokenId, workspaceId: details.workspaceId };
     } catch (error) {
-      logError(error, 'Error storing Notion token', { userId: details.userId, workspaceId: details.workspaceId });
+      logError(error, 'Error storing Notion token', {
+        userId: details.userId,
+        workspaceId: details.workspaceId,
+      });
       throw error; // Re-throw for the caller to handle
     }
   }
@@ -95,18 +106,19 @@ export class TokenService {
   /**
    * Retrieves an OAuth token for a user, provider, and optionally a specific workspace.
    */
-  async getToken(userId: string, provider: string, providerWorkspaceId?: string): Promise<OAuthTokenRecord | null> {
+  async getToken(
+    userId: string,
+    provider: string,
+    providerWorkspaceId?: string,
+  ): Promise<OAuthTokenRecord | null> {
     this.logger.debug({ userId, provider, providerWorkspaceId }, 'Retrieving token');
     try {
-      const conditions = [
-        eq(oauthTokens.userId, userId),
-        eq(oauthTokens.provider, provider),
-      ];
+      const conditions = [eq(oauthTokens.userId, userId), eq(oauthTokens.provider, provider)];
       if (providerWorkspaceId) {
         // Ensure providerWorkspaceId is not null before adding to condition if the column can be null
         conditions.push(eq(oauthTokens.providerWorkspaceId, providerWorkspaceId));
       } else {
-        // If providerWorkspaceId is not given, and the column can be null, 
+        // If providerWorkspaceId is not given, and the column can be null,
         // you might need to explicitly check for null or handle cases where it's not applicable.
         // For Notion, providerWorkspaceId is expected. For GitHub user token, it might be null.
       }
@@ -131,8 +143,13 @@ export class TokenService {
    * GitHub user tokens are typically not workspace-specific in the same way Notion's are,
    * so providerWorkspaceId might be null or not used for user-level tokens.
    */
-  async storeGithubToken(details: GithubOAuthDetails): Promise<{ success: boolean; tokenId: string; githubUserId: string }> {
-    this.logger.info({ userId: details.userId, githubUserId: details.providerAccountId, provider: 'github' }, 'Storing GitHub token');
+  async storeGithubToken(
+    details: GithubOAuthDetails,
+  ): Promise<{ success: boolean; tokenId: string; githubUserId: string }> {
+    this.logger.info(
+      { userId: details.userId, githubUserId: details.providerAccountId, provider: 'github' },
+      'Storing GitHub token',
+    );
     try {
       // TODO: Implement encryption for accessToken
       const values: Omit<OAuthTokenRecord, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -154,17 +171,21 @@ export class TokenService {
         where: and(
           eq(oauthTokens.userId, details.userId),
           eq(oauthTokens.provider, 'github'),
-          eq(oauthTokens.providerAccountId, details.providerAccountId)
+          eq(oauthTokens.providerAccountId, details.providerAccountId),
         ),
       });
 
       let tokenId: string;
       if (existingToken) {
         tokenId = existingToken.id;
-        await this.db.update(oauthTokens)
+        await this.db
+          .update(oauthTokens)
           .set({ ...values, updatedAt: now })
           .where(eq(oauthTokens.id, tokenId));
-        this.logger.info({ tokenId, githubUserId: details.providerAccountId }, 'Updated existing GitHub token');
+        this.logger.info(
+          { tokenId, githubUserId: details.providerAccountId },
+          'Updated existing GitHub token',
+        );
       } else {
         tokenId = ulid();
         await this.db.insert(oauthTokens).values({
@@ -173,15 +194,21 @@ export class TokenService {
           createdAt: now,
           updatedAt: now,
         });
-        this.logger.info({ tokenId, githubUserId: details.providerAccountId }, 'Inserted new GitHub token');
+        this.logger.info(
+          { tokenId, githubUserId: details.providerAccountId },
+          'Inserted new GitHub token',
+        );
       }
 
       return { success: true, tokenId, githubUserId: details.providerAccountId };
     } catch (error) {
-      logError(error, 'Error storing GitHub token', { userId: details.userId, githubUserId: details.providerAccountId });
+      logError(error, 'Error storing GitHub token', {
+        userId: details.userId,
+        githubUserId: details.providerAccountId,
+      });
       throw error; // Re-throw for the caller to handle
     }
   }
-  
+
   // TODO: Add methods for deleting tokens, refreshing tokens (if applicable)
 }

@@ -12,7 +12,8 @@ import type { NotionOAuthDetails } from '../../client/types'; // Corrected path
 /**
  * Notion OAuth Token Response
  */
-export interface NotionOAuthTokenResponse { // Added export
+export interface NotionOAuthTokenResponse {
+  // Added export
   access_token: string;
   workspace_id: string;
   workspace_name: string;
@@ -85,7 +86,8 @@ export class NotionAuthManager {
    * @param code - The authorization code from Notion OAuth callback
    * @returns Token response with access token and workspace details
    */
-  async exchangeCodeForToken(code: string): Promise<NotionOAuthTokenResponse> { // Return full response
+  async exchangeCodeForToken(code: string): Promise<NotionOAuthTokenResponse> {
+    // Return full response
     try {
       const startTime = performance.now();
       this.log.info({ code: code.substring(0, 6) + '...' }, 'notion: exchanging code for token');
@@ -152,7 +154,10 @@ export class NotionAuthManager {
    * @param userId - User ID from your application
    * @param notionTokenResponse - The full token response from Notion after code exchange
    */
-  async storeUserNotionIntegration(userId: string, notionTokenResponse: NotionOAuthTokenResponse): Promise<void> {
+  async storeUserNotionIntegration(
+    userId: string,
+    notionTokenResponse: NotionOAuthTokenResponse,
+  ): Promise<void> {
     try {
       const details: NotionOAuthDetails = {
         userId,
@@ -167,11 +172,18 @@ export class NotionAuthManager {
 
       await this.tokenService.storeNotionToken(details);
 
-      this.log.info({ userId, workspaceId: details.workspaceId }, 'notion: integration details stored successfully via TokenService');
+      this.log.info(
+        { userId, workspaceId: details.workspaceId },
+        'notion: integration details stored successfully via TokenService',
+      );
       metrics.increment('notion.auth.integration_stored');
     } catch (error) {
       this.log.error(
-        { userId, workspaceId: notionTokenResponse.workspace_id, error: error instanceof Error ? error.message : String(error) },
+        {
+          userId,
+          workspaceId: notionTokenResponse.workspace_id,
+          error: error instanceof Error ? error.message : String(error),
+        },
         'notion: error storing integration details via TokenService',
       );
       metrics.increment('notion.auth.integration_store.errors');
@@ -192,15 +204,21 @@ export class NotionAuthManager {
   async getUserToken(userId: string, workspaceId: string): Promise<string | null> {
     try {
       const tokenRecord = await this.tokenService.getToken(userId, 'notion', workspaceId);
-      
+
       if (tokenRecord) {
-        this.log.debug({ userId, workspaceId, found: true }, 'notion: token retrieval attempt from TokenService successful');
+        this.log.debug(
+          { userId, workspaceId, found: true },
+          'notion: token retrieval attempt from TokenService successful',
+        );
         metrics.increment('notion.auth.token_retrieved');
         // TODO: Decrypt tokenRecord.accessToken if it was encrypted by TokenService
         return tokenRecord.accessToken;
       }
-      
-      this.log.debug({ userId, workspaceId, found: false }, 'notion: token not found via TokenService');
+
+      this.log.debug(
+        { userId, workspaceId, found: false },
+        'notion: token not found via TokenService',
+      );
       metrics.increment('notion.auth.token_not_found');
       return null;
     } catch (error) {

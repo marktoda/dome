@@ -19,8 +19,13 @@ const DOME_API_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
  */
 export async function GET(req: NextRequest) {
   if (!DOME_API_URL) {
-    console.error('CRITICAL: NEXT_PUBLIC_API_BASE_URL is not defined. Cannot contact backend for token verification.');
-    return NextResponse.json({ message: 'Server configuration error: API endpoint missing.' }, { status: 500 });
+    console.error(
+      'CRITICAL: NEXT_PUBLIC_API_BASE_URL is not defined. Cannot contact backend for token verification.',
+    );
+    return NextResponse.json(
+      { message: 'Server configuration error: API endpoint missing.' },
+      { status: 500 },
+    );
   }
 
   const cookieStore = await cookies(); // Re-adding await as it was in original and other files
@@ -34,12 +39,14 @@ export async function GET(req: NextRequest) {
   const token = tokenCookie.value;
 
   try {
-    console.log(`/api/auth/me: Forwarding token to ${DOME_API_URL}/auth/verify-token for verification.`);
+    console.log(
+      `/api/auth/me: Forwarding token to ${DOME_API_URL}/auth/verify-token for verification.`,
+    );
     const introspectionResponse = await fetch(`${DOME_API_URL}/auth/verify-token`, {
       method: 'GET', // Or POST, depending on your backend API design
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json',
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
       },
     });
 
@@ -47,38 +54,66 @@ export async function GET(req: NextRequest) {
       const userData = await introspectionResponse.json();
       // Assuming backend returns { user: { id, email, name } } on success
       if (userData && userData.user) {
-        console.log(`/api/auth/me: Token verified successfully by backend for user: ${userData.user.email}`);
+        console.log(
+          `/api/auth/me: Token verified successfully by backend for user: ${userData.user.email}`,
+        );
         return NextResponse.json(userData);
       } else {
-        console.error('/api/auth/me: Backend token verification successful, but response format is unexpected.', userData);
+        console.error(
+          '/api/auth/me: Backend token verification successful, but response format is unexpected.',
+          userData,
+        );
         // Treat as an error, clear cookie
-        const errResponse = NextResponse.json({ message: 'Not authenticated: Invalid token data from backend.' }, { status: 401 });
+        const errResponse = NextResponse.json(
+          { message: 'Not authenticated: Invalid token data from backend.' },
+          { status: 401 },
+        );
         errResponse.cookies.set({
-          name: 'auth_token', value: '', httpOnly: true, secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax', path: '/', maxAge: 0,
+          name: 'auth_token',
+          value: '',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 0,
         });
         return errResponse;
       }
     } else {
       // If backend says token is invalid (e.g., 401, 403)
-      console.warn(`/api/auth/me: Backend token verification failed with status ${introspectionResponse.status}.`);
-      const errorBody = await introspectionResponse.json().catch(() => ({ message: 'Invalid or expired token (backend).' }));
+      console.warn(
+        `/api/auth/me: Backend token verification failed with status ${introspectionResponse.status}.`,
+      );
+      const errorBody = await introspectionResponse
+        .json()
+        .catch(() => ({ message: 'Invalid or expired token (backend).' }));
       const errResponse = NextResponse.json(
         { message: errorBody.message || 'Not authenticated: Invalid or expired token.' },
-        { status: introspectionResponse.status } // Relay the status from backend
+        { status: introspectionResponse.status }, // Relay the status from backend
       );
       // Clear the cookie if backend indicates an auth failure (typically 401)
       if (introspectionResponse.status === 401 || introspectionResponse.status === 403) {
         errResponse.cookies.set({
-          name: 'auth_token', value: '', httpOnly: true, secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax', path: '/', maxAge: 0,
+          name: 'auth_token',
+          value: '',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 0,
         });
       }
       return errResponse;
     }
   } catch (error: any) {
-    console.error('/api/auth/me: Error during token introspection call to backend:', error.message || error);
+    console.error(
+      '/api/auth/me: Error during token introspection call to backend:',
+      error.message || error,
+    );
     // This catches network errors or other issues with the fetch call itself
-    return NextResponse.json({ message: 'Server error during authentication check.' }, { status: 500 });
+    return NextResponse.json(
+      { message: 'Server error during authentication check.' },
+      { status: 500 },
+    );
   }
 }

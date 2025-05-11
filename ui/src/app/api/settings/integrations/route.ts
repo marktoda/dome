@@ -16,8 +16,11 @@ import { getMockIntegrationStatuses } from '@/lib/integration-mock-db'; // Mock 
  *           and does not perform real authentication. Replace mock data and hardcoded `userId`
  *           with actual authentication logic (e.g., verifying JWT from cookie) and database lookups.
  */
-export async function GET(req: NextRequest) { // Add req parameter
-  console.warn("⚠️ Using MOCK /api/settings/integrations endpoint! Replace with actual implementation. ⚠️");
+export async function GET(req: NextRequest) {
+  // Add req parameter
+  console.warn(
+    '⚠️ Using MOCK /api/settings/integrations endpoint! Replace with actual implementation. ⚠️',
+  );
   try {
     // --- !!! MOCK AUTHENTICATION START !!! ---
     // In a real application, verify the user's session/token here.
@@ -35,10 +38,8 @@ export async function GET(req: NextRequest) { // Add req parameter
     const statuses = getMockIntegrationStatuses(userId);
 
     return NextResponse.json(statuses);
-
   } catch (error) {
     console.error('Error fetching integration statuses:', error);
     return NextResponse.json({ message: 'Internal Server Error' }, { status: 500 });
   }
 }
-

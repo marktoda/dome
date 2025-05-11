@@ -179,7 +179,6 @@ export interface MessageParserPlugin {
   parse: (rawMessage: unknown, id: string, timestamp: Date) => ParsedMessage | null; // Use unknown for raw input
 }
 
-
 /**
  * Defines the structure of the context value provided by `ChatProvider`.
  * It includes the current state of the chat and functions to modify that state.

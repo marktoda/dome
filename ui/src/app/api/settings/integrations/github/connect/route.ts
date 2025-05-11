@@ -24,18 +24,27 @@ import { v4 as uuidv4 } from 'uuid';
  *           to store the generated `state` and verify it upon callback. Embedding the client redirect path
  *           in the state is also less secure than storing it server-side associated with the state.
  */
-export async function GET(request: NextRequest) { // Changed type to NextRequest
+export async function GET(request: NextRequest) {
+  // Changed type to NextRequest
   const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
   const GITHUB_SCOPES = process.env.GITHUB_SCOPES; // e.g., "repo read:user user:email"
 
   if (!GITHUB_CLIENT_ID || !GITHUB_SCOPES) {
-    console.error('CRITICAL: Missing required environment variables for GitHub OAuth connect (GITHUB_CLIENT_ID, GITHUB_SCOPES).');
+    console.error(
+      'CRITICAL: Missing required environment variables for GitHub OAuth connect (GITHUB_CLIENT_ID, GITHUB_SCOPES).',
+    );
     // Avoid redirecting if config is missing, return an error directly
-    return NextResponse.json({ error: 'Server configuration error: GitHub OAuth details missing.' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Server configuration error: GitHub OAuth details missing.' },
+      { status: 500 },
+    );
   }
 
   // Determine the app's base URL for constructing the callback URL
-  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` || 'http://localhost:3000';
+  const appBaseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` ||
+    'http://localhost:3000';
   const redirect_uri = new URL('/api/settings/integrations/github/callback', appBaseUrl).toString();
 
   // --- State Generation (CSRF Protection) ---
@@ -48,7 +57,8 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
   // --- End State Generation ---
 
   // Get the desired final redirect path from the client request
-  const clientFinalRedirectPath = request.nextUrl.searchParams.get('redirect_uri') || '/settings/integrations';
+  const clientFinalRedirectPath =
+    request.nextUrl.searchParams.get('redirect_uri') || '/settings/integrations';
 
   // Combine state value and redirect path (less secure method, prefer server-side storage)
   const combinedState = `${stateValue}|${encodeURIComponent(clientFinalRedirectPath)}`;

@@ -98,7 +98,7 @@ export const oauthTokens = sqliteTable('oauth_token', {
 
   /** Provider type (e.g., 'notion', 'github') */
   provider: text('provider').notNull(),
-  
+
   /** The user's ID on the provider's platform (e.g. Notion bot_id, GitHub user ID) */
   providerAccountId: text('provider_account_id').notNull(),
 

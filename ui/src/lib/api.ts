@@ -1,5 +1,13 @@
-import axios, { AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig, AxiosError } from 'axios';
-import { SearchResponse as AppSearchResponse, SearchResultItem as AppSearchResultItem } from '@/lib/types/search'; // Import centralized types
+import axios, {
+  AxiosInstance,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+  AxiosError,
+} from 'axios';
+import {
+  SearchResponse as AppSearchResponse,
+  SearchResultItem as AppSearchResultItem,
+} from '@/lib/types/search'; // Import centralized types
 
 // It's generally better to import this from a shared constants file or AuthContext,
 // but for this focused change, we'll define it here. Ensure it matches AuthContext.tsx.
@@ -90,16 +98,23 @@ class ApiClient {
       (config: InternalAxiosRequestConfig) => {
         if (typeof window !== 'undefined' && window.localStorage) {
           const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-          console.debug('api.ts: Interceptor attempting to get token. Found:', token ? 'yes' : 'no');
+          console.debug(
+            'api.ts: Interceptor attempting to get token. Found:',
+            token ? 'yes' : 'no',
+          );
 
           if (token && token !== 'undefined' && token.trim() !== '') {
             config.headers.Authorization = `Bearer ${token}`;
             console.debug('api.ts: Authorization header set.');
           } else {
             if (token) {
-                 console.warn(`api.ts: Invalid token found in localStorage ('${token}'). Authorization header NOT set.`);
+              console.warn(
+                `api.ts: Invalid token found in localStorage ('${token}'). Authorization header NOT set.`,
+              );
             } else {
-                 console.debug('api.ts: No token found in localStorage. Authorization header NOT set.');
+              console.debug(
+                'api.ts: No token found in localStorage. Authorization header NOT set.',
+              );
             }
           }
         } else {
@@ -126,15 +141,20 @@ class ApiClient {
           // The request was made and the server responded with a status code
           // that falls out of the range of 2xx
           const { status, data } = error.response;
-          const errorMessage = (data as ApiErrorResponseData)?.message || error.message || `Request failed with status code ${status}`;
-          
+          const errorMessage =
+            (data as ApiErrorResponseData)?.message ||
+            error.message ||
+            `Request failed with status code ${status}`;
+
           console.error(
             `api.ts: API Request to ${requestMethod} ${requestUrl} resulted in ${status}. Message:`,
-            (data as ApiErrorResponseData)?.message || data || 'No specific error message.'
+            (data as ApiErrorResponseData)?.message || data || 'No specific error message.',
           );
 
           if (status === 401) {
-            console.warn('api.ts: Received 401 Unauthorized. This could be due to an invalid/expired token or missing token.');
+            console.warn(
+              'api.ts: Received 401 Unauthorized. This could be due to an invalid/expired token or missing token.',
+            );
             // AuthContext or a global event listener should handle logout/redirect.
             // Example: window.dispatchEvent(new CustomEvent('authError', { detail: { status: 401 } }));
           }
@@ -143,13 +163,16 @@ class ApiClient {
           throw new ApiError(errorMessage, status, data, requestUrl, requestMethod);
         } else if (error.request) {
           // The request was made but no response was received (e.g., network error)
-          console.error(`API Network Error: No response received for ${requestMethod} ${requestUrl}`, error.message);
+          console.error(
+            `API Network Error: No response received for ${requestMethod} ${requestUrl}`,
+            error.message,
+          );
           throw new ApiError(
             error.message || 'Network error: No response received.',
             undefined, // No HTTP status for such errors
             undefined,
             requestUrl,
-            requestMethod
+            requestMethod,
           );
         } else {
           // Something happened in setting up the request that triggered an Error (should be rare if request interceptor handles it)
@@ -159,7 +182,7 @@ class ApiClient {
             undefined,
             undefined,
             requestUrl,
-            requestMethod
+            requestMethod,
           );
         }
       },
@@ -203,7 +226,7 @@ class ApiClient {
         (error as AxiosError).response?.status,
         (error as AxiosError).response?.data,
         config?.url || url,
-        method.toUpperCase()
+        method.toUpperCase(),
       );
     }
   }
@@ -355,8 +378,12 @@ export const searchApi = {
     }
     // Assuming the actual API returns SearchResultItem with 'snippet'
     // We need to fetch this and then map it to AppSearchResultItem which expects 'description'
-    const response = await apiClient.get<{ results: { id: string; title: string; snippet: string; url?: string; category?: string }[], total: number, query: string }>('/search', params);
-    
+    const response = await apiClient.get<{
+      results: { id: string; title: string; snippet: string; url?: string; category?: string }[];
+      total: number;
+      query: string;
+    }>('/search', params);
+
     const mappedResults: AppSearchResultItem[] = response.results.map(item => ({
       ...item,
       description: item.snippet, // Map snippet to description
@@ -388,20 +415,21 @@ export const notesApi = {
     if (response?.success && response.note) {
       return response.note;
     }
-    
-    const errorMessage = response?.message || 
-                         (response?.success === false 
-                           ? `API request to get note ${id} failed (application-level).`
-                           : `Invalid API response structure when fetching note ${id}.`);
-    
+
+    const errorMessage =
+      response?.message ||
+      (response?.success === false
+        ? `API request to get note ${id} failed (application-level).`
+        : `Invalid API response structure when fetching note ${id}.`);
+
     console.error(errorMessage, 'Full Response:', response);
     // Throw an ApiError for consistency, providing details from the application-level response.
     throw new ApiError(
-        errorMessage,
-        200, // Assuming 200 OK if response object exists but indicates logical failure
-        response, // The full response data can be useful for debugging
-        `/notes/${id}`,
-        'GET'
+      errorMessage,
+      200, // Assuming 200 OK if response object exists but indicates logical failure
+      response, // The full response data can be useful for debugging
+      `/notes/${id}`,
+      'GET',
     );
   },
 };

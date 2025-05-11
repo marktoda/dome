@@ -21,7 +21,8 @@ import { cookies } from 'next/headers';
  *          Redirects include query parameters indicating the success or failure of the OAuth flow.
  *          Returns JSON errors (400, 500) only for initial validation or configuration issues.
  */
-export async function GET(request: NextRequest) { // Changed type to NextRequest
+export async function GET(request: NextRequest) {
+  // Changed type to NextRequest
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
   const stateFromNotion = searchParams.get('state');
@@ -29,9 +30,17 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
 
   // --- Determine Base URL and Redirect Path ---
   // It's better to determine these early for consistent error redirection.
-  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` || 'http://localhost:3000';
-  const [_originalStateValue, encodedClientRedirectPath] = stateFromNotion?.split('|') || [null, null];
-  const clientFinalRedirectPath = encodedClientRedirectPath ? decodeURIComponent(encodedClientRedirectPath) : '/settings/integrations';
+  const appBaseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` ||
+    'http://localhost:3000';
+  const [_originalStateValue, encodedClientRedirectPath] = stateFromNotion?.split('|') || [
+    null,
+    null,
+  ];
+  const clientFinalRedirectPath = encodedClientRedirectPath
+    ? decodeURIComponent(encodedClientRedirectPath)
+    : '/settings/integrations';
   // --- End Base URL ---
 
   // --- 1. Handle Errors from Notion ---
@@ -59,7 +68,9 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
 
   // --- 3. State Verification (CSRF Protection - Simplified) ---
   // !!! SECURITY TODO: Implement proper state verification (see GitHub callback comments) !!!
-  console.log(`Notion callback state received. Extracted redirect path: ${clientFinalRedirectPath}`);
+  console.log(
+    `Notion callback state received. Extracted redirect path: ${clientFinalRedirectPath}`,
+  );
   // --- End State Verification ---
 
   // --- Configuration Check ---
@@ -68,19 +79,29 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
   const DOME_API_URL = process.env.NEXT_PUBLIC_API_BASE_URL; // Backend API
 
   if (!NOTION_CLIENT_ID || !NOTION_CLIENT_SECRET || !DOME_API_URL) {
-    console.error('CRITICAL: Missing required environment variables for Notion OAuth callback (NOTION_CLIENT_ID, NOTION_CLIENT_SECRET, NEXT_PUBLIC_API_BASE_URL).');
+    console.error(
+      'CRITICAL: Missing required environment variables for Notion OAuth callback (NOTION_CLIENT_ID, NOTION_CLIENT_SECRET, NEXT_PUBLIC_API_BASE_URL).',
+    );
     const errorRedirectUrl = new URL(clientFinalRedirectPath, appBaseUrl);
     errorRedirectUrl.searchParams.set('oauth_callback', 'true');
     errorRedirectUrl.searchParams.set('platform', 'notion');
     errorRedirectUrl.searchParams.set('status', 'error');
-    errorRedirectUrl.searchParams.set('error_message', 'Server configuration error preventing Notion connection.');
+    errorRedirectUrl.searchParams.set(
+      'error_message',
+      'Server configuration error preventing Notion connection.',
+    );
     return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
     // return NextResponse.json({ error: 'Server configuration error for Notion OAuth.' }, { status: 500 });
   }
 
-  const redirect_uri_for_token_exchange = new URL('/api/settings/integrations/notion/callback', appBaseUrl).toString();
+  const redirect_uri_for_token_exchange = new URL(
+    '/api/settings/integrations/notion/callback',
+    appBaseUrl,
+  ).toString();
   // Basic Auth header required by Notion for token exchange
-  const authHeader = `Basic ${Buffer.from(`${NOTION_CLIENT_ID}:${NOTION_CLIENT_SECRET}`).toString('base64')}`;
+  const authHeader = `Basic ${Buffer.from(`${NOTION_CLIENT_ID}:${NOTION_CLIENT_SECRET}`).toString(
+    'base64',
+  )}`;
   // --- End Configuration Check ---
 
   try {
@@ -90,8 +111,8 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': authHeader, // Basic Auth
+        Accept: 'application/json',
+        Authorization: authHeader, // Basic Auth
         'Notion-Version': '2022-06-28', // Specify Notion API version
       },
       body: JSON.stringify({
@@ -102,9 +123,15 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
     });
 
     if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.json().catch(() => ({ message: 'Failed to parse Notion token error response.' }));
+      const errorData = await tokenResponse
+        .json()
+        .catch(() => ({ message: 'Failed to parse Notion token error response.' }));
       console.error('Notion token exchange failed:', tokenResponse.status, errorData);
-      throw new Error(`Notion token exchange failed: ${errorData.error_description || errorData.message || tokenResponse.statusText}`);
+      throw new Error(
+        `Notion token exchange failed: ${
+          errorData.error_description || errorData.message || tokenResponse.statusText
+        }`,
+      );
     }
 
     const tokenData = await tokenResponse.json();
@@ -146,9 +173,19 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
     });
 
     if (!storeIntegrationResponse.ok) {
-      const errorData = await storeIntegrationResponse.json().catch(() => ({ message: 'Failed to parse backend storage error response.' }));
-      console.error('Failed to store Notion integration via backend API:', storeIntegrationResponse.status, errorData);
-      throw new Error(`Failed to save Notion integration: ${errorData.message || storeIntegrationResponse.statusText}`);
+      const errorData = await storeIntegrationResponse
+        .json()
+        .catch(() => ({ message: 'Failed to parse backend storage error response.' }));
+      console.error(
+        'Failed to store Notion integration via backend API:',
+        storeIntegrationResponse.status,
+        errorData,
+      );
+      throw new Error(
+        `Failed to save Notion integration: ${
+          errorData.message || storeIntegrationResponse.statusText
+        }`,
+      );
     }
 
     const storeResult = await storeIntegrationResponse.json();
@@ -162,7 +199,6 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
     finalRedirectUrl.searchParams.set('status', 'success');
     console.log(`Redirecting user to success URL: ${finalRedirectUrl.toString()}`);
     return NextResponse.redirect(finalRedirectUrl.toString(), { status: 302 });
-
   } catch (error) {
     // --- Error Handling & Redirect (Failure) ---
     console.error('Notion OAuth callback processing error:', error);
@@ -170,7 +206,10 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
     errorRedirectUrl.searchParams.set('oauth_callback', 'true');
     errorRedirectUrl.searchParams.set('platform', 'notion');
     errorRedirectUrl.searchParams.set('status', 'error');
-    const errorMessage = (error instanceof Error) ? error.message : 'An unknown error occurred during Notion connection.';
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : 'An unknown error occurred during Notion connection.';
     errorRedirectUrl.searchParams.set('error_message', errorMessage);
     console.log(`Redirecting user to error URL: ${errorRedirectUrl.toString()}`);
     return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });

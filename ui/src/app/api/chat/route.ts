@@ -13,8 +13,9 @@ import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest
  *   - 400 Bad Request: If the `message` property is missing or not a string in the request body.
  *   - 500 Internal Server Error: If an unexpected error occurs.
  */
-export async function POST(req: NextRequest) { // Changed type to NextRequest
-  console.warn("⚠️ Using MOCK /api/chat endpoint! Replace with actual implementation. ⚠️");
+export async function POST(req: NextRequest) {
+  // Changed type to NextRequest
+  console.warn('⚠️ Using MOCK /api/chat endpoint! Replace with actual implementation. ⚠️');
   try {
     const body = await req.json();
     // Validate the incoming message structure more robustly if needed
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) { // Changed type to NextRequest
 
     const mockReplies = [
       "That's an interesting perspective!",
-      "Could you please elaborate on that?",
+      'Could you please elaborate on that?',
       'Processing... just kidding! This is a mock response.',
       'Thank you for your input.',
       'Understood.',
@@ -46,7 +47,6 @@ export async function POST(req: NextRequest) { // Changed type to NextRequest
 
     // Return the mock reply
     return NextResponse.json({ reply: randomReply });
-
   } catch (error) {
     console.error('Error in MOCK /api/chat:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

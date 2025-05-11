@@ -422,7 +422,9 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
     try {
       // Use the lazily instantiated TokenService
       const result = await this.services.token.storeNotionToken(details);
-      metrics.trackOperation('store_notion_oauth_details', true, { workspaceId: details.workspaceId });
+      metrics.trackOperation('store_notion_oauth_details', true, {
+        workspaceId: details.workspaceId,
+      });
       return result;
     } catch (error) {
       logError(error, 'Tsunami service: Error storing Notion OAuth details', {
@@ -430,7 +432,9 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
         workspaceId: details.workspaceId,
         requestId,
       });
-      metrics.trackOperation('store_notion_oauth_details', false, { workspaceId: details.workspaceId });
+      metrics.trackOperation('store_notion_oauth_details', false, {
+        workspaceId: details.workspaceId,
+      });
       // Ensure the error is re-thrown in a way that the client (TsunamiClient) can handle it
       // TsunamiClient already uses toDomeError, so just re-throwing should be fine.
       throw error;
@@ -462,8 +466,10 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
       // For this step, we'll call a conceptual 'storeToken' on TokenService.
       // The actual implementation in TokenService would handle provider-specific logic or use generic fields.
       const result = await this.services.token.storeGithubToken(details); // Corrected to use storeGithubToken
-      
-      metrics.trackOperation('store_github_oauth_details', true, { githubUserId: details.providerAccountId });
+
+      metrics.trackOperation('store_github_oauth_details', true, {
+        githubUserId: details.providerAccountId,
+      });
       // The return type from a generic storeToken might need adjustment or casting.
       // For now, assuming it can return what's needed or we adapt.
       return { success: result.success, githubUserId: details.providerAccountId };
@@ -473,7 +479,9 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
         providerAccountId: details.providerAccountId,
         requestId,
       });
-      metrics.trackOperation('store_github_oauth_details', false, { githubUserId: details.providerAccountId });
+      metrics.trackOperation('store_github_oauth_details', false, {
+        githubUserId: details.providerAccountId,
+      });
       throw error;
     }
   }

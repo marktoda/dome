@@ -183,8 +183,11 @@ export class TsunamiController {
       });
 
       const payload = await c.req.json<z.infer<typeof schema>>();
-      
-      this.logger.info({ githubUsername: payload.githubUsername, appUserId: userId }, 'Storing GitHub integration details via Tsunami service');
+
+      this.logger.info(
+        { githubUsername: payload.githubUsername, appUserId: userId },
+        'Storing GitHub integration details via Tsunami service',
+      );
 
       // TODO: Implement storeGithubOAuthDetails in TsunamiClient and Tsunami service
       /*

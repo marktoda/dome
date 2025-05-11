@@ -29,7 +29,10 @@ export async function POST(req: NextRequest) {
   try {
     if (!JWT_SECRET) {
       console.error('CRITICAL: JWT_SECRET is not defined in environment variables.');
-      return NextResponse.json({ message: 'Server configuration error: JWT secret missing.' }, { status: 500 });
+      return NextResponse.json(
+        { message: 'Server configuration error: JWT secret missing.' },
+        { status: 500 },
+      );
     }
 
     const body = await req.json();
@@ -37,7 +40,10 @@ export async function POST(req: NextRequest) {
 
     if (!validation.success) {
       console.log('Login validation failed:', validation.error.flatten());
-      return NextResponse.json({ message: "Invalid request body.", errors: validation.error.flatten().fieldErrors }, { status: 400 });
+      return NextResponse.json(
+        { message: 'Invalid request body.', errors: validation.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
 
     const { email, password } = validation.data;
@@ -79,9 +85,11 @@ export async function POST(req: NextRequest) {
     });
 
     return response;
-
   } catch (error) {
     console.error('Login API route error:', error);
-    return NextResponse.json({ message: 'An unexpected internal server error occurred.' }, { status: 500 });
+    return NextResponse.json(
+      { message: 'An unexpected internal server error occurred.' },
+      { status: 500 },
+    );
   }
 }

@@ -28,7 +28,7 @@ type StreamMeta = {
   ls_model_type: string;
   ls_provider: string;
   ls_temperature: number;
-}
+};
 
 /**
  * LangGraph Stream Plugin
@@ -66,9 +66,9 @@ class LangGraphStreamPlugin implements MessageParserPlugin {
         const eventType = parsedEvent[0];
         const payload = parsedEvent[1];
         const meta: StreamMeta = payload[1];
-        if (eventType !== "messages") return null;
+        if (eventType !== 'messages') return null;
         // TODO: consider retruning streamed content from other nodes too
-        if (meta.langgraph_node !== "generate_answer") return null;
+        if (meta.langgraph_node !== 'generate_answer') return null;
 
         return {
           id, // This 'id' is the turnId
@@ -82,7 +82,10 @@ class LangGraphStreamPlugin implements MessageParserPlugin {
         };
       }
       // If JSON but not a recognized LangGraph array structure, log and let fall through
-      console.warn('[LangGraphStreamPlugin] Parsed LangGraph string, but not a recognized array event or unhandled structure:', parsedEvent);
+      console.warn(
+        '[LangGraphStreamPlugin] Parsed LangGraph string, but not a recognized array event or unhandled structure:',
+        parsedEvent,
+      );
     } catch (e) {
       // Not JSON, could be a direct string chunk from assistant (less common for LangGraph but possible)
       console.warn('[LangGraphStreamPlugin] Failed to parse as JSON');
@@ -132,7 +135,6 @@ class AssistantThinkingPlugin implements MessageParserPlugin {
       };
     }
     return null;
-
   }
 }
 
@@ -185,11 +187,13 @@ class AssistantErrorPlugin implements MessageParserPlugin {
 
   detect(rawMessage: unknown): boolean {
     const msg = rawMessage as Partial<RawAssistantMessagePayload>;
-    return !!msg &&
+    return (
+      !!msg &&
       (msg.sender === 'assistant' || msg.sender === 'system') &&
       msg.type === 'error' &&
       !!msg.error &&
-      typeof msg.error.message === 'string';
+      typeof msg.error.message === 'string'
+    );
   }
 
   parse(rawMessage: unknown, id: string, timestamp: Date): AssistantErrorMessage | null {
@@ -227,13 +231,22 @@ class SystemMessagePlugin implements MessageParserPlugin {
 
   detect(rawMessage: unknown): boolean {
     const msg = rawMessage as Partial<RawAssistantMessagePayload>; // Use partial type for safety
-    return !!msg && msg.sender === 'system' && msg.type === 'system_generic' && typeof msg.text === 'string';
+    return (
+      !!msg &&
+      msg.sender === 'system' &&
+      msg.type === 'system_generic' &&
+      typeof msg.text === 'string'
+    );
   }
-
 
   parse(rawMessage: unknown, id: string, timestamp: Date): SystemMessage | null {
     // Type assertion to a structure known to have the detected fields
-    const msg = rawMessage as { id?: string; text: string; parentId?: string; metadata?: Record<string, unknown> };
+    const msg = rawMessage as {
+      id?: string;
+      text: string;
+      parentId?: string;
+      metadata?: Record<string, unknown>;
+    };
     return {
       id: msg.id || id,
       timestamp: timestamp, // Use the timestamp passed into the function
@@ -255,14 +268,21 @@ class FallbackAssistantContentPlugin implements MessageParserPlugin {
   detect(rawMessage: unknown): boolean {
     const msg = rawMessage as Partial<RawAssistantMessagePayload>;
     // Detect if it's from assistant, has text, but lacks a recognized 'type' or has an unknown 'type'
-    return !!msg && msg.sender === 'assistant' && typeof msg.text === 'string' &&
-      (msg.type === undefined || !['content', 'thinking', 'sources', 'error'].includes(msg.type));
+    return (
+      !!msg &&
+      msg.sender === 'assistant' &&
+      typeof msg.text === 'string' &&
+      (msg.type === undefined || !['content', 'thinking', 'sources', 'error'].includes(msg.type))
+    );
   }
 
   parse(rawMessage: unknown, id: string, timestamp: Date): AssistantContentMessage | null {
     // Type assertion safe after detect()
     const msg = rawMessage as RawAssistantMessagePayload;
-    console.warn(`[FallbackAssistantContentPlugin] Parsing message with unknown or missing type "${msg.type}" as content:`, msg);
+    console.warn(
+      `[FallbackAssistantContentPlugin] Parsing message with unknown or missing type "${msg.type}" as content:`,
+      msg,
+    );
     return {
       id: msg.id || id,
       timestamp,
@@ -276,7 +296,6 @@ class FallbackAssistantContentPlugin implements MessageParserPlugin {
     };
   }
 }
-
 
 /**
  * Service for processing raw messages using a chain of parser plugins.
@@ -326,7 +345,7 @@ export class MessageProcessingService {
     errorMessage: string,
     id: string,
     timestamp: Date,
-    sender: 'assistant' | 'system' = 'system'
+    sender: 'assistant' | 'system' = 'system',
   ): AssistantErrorMessage {
     return {
       id,
@@ -370,10 +389,16 @@ export class MessageProcessingService {
           if (parsed) {
             // Basic validation
             if (!parsed.id || !parsed.timestamp || !parsed.sender) {
-              console.error(`[MessageProcessingService] Plugin ${plugin.pluginType} produced an invalid message (missing core fields):`, parsed, 'Raw message:', rawMessage);
+              console.error(
+                `[MessageProcessingService] Plugin ${plugin.pluginType} produced an invalid message (missing core fields):`,
+                parsed,
+                'Raw message:',
+                rawMessage,
+              );
               return this.createFallbackError(
                 `Plugin ${plugin.pluginType} produced an invalid message structure.`,
-                id, timestamp
+                id,
+                timestamp,
               );
             }
             return parsed;
@@ -381,10 +406,16 @@ export class MessageProcessingService {
           // If parse returns null explicitly, let it fall through to the next plugin or final warning
         }
       } catch (error: any) {
-        console.error(`[MessageProcessingService] Error in plugin ${plugin.pluginType} while parsing:`, error, 'Raw message:', rawMessage);
+        console.error(
+          `[MessageProcessingService] Error in plugin ${plugin.pluginType} while parsing:`,
+          error,
+          'Raw message:',
+          rawMessage,
+        );
         return this.createFallbackError(
           `Plugin ${plugin.pluginType} encountered an error: ${error.message || 'Unknown error'}.`,
-          id, timestamp
+          id,
+          timestamp,
         );
       }
     }

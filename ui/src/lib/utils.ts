@@ -1,5 +1,5 @@
-import { type ClassValue, clsx } from "clsx" // Keep original import order if preferred
-import { twMerge } from "tailwind-merge"
+import { type ClassValue, clsx } from 'clsx'; // Keep original import order if preferred
+import { twMerge } from 'tailwind-merge';
 
 /**
  * Combines multiple class names or class name arrays into a single string,
@@ -17,6 +17,5 @@ import { twMerge } from "tailwind-merge"
  * ```
  */
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
-

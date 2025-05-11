@@ -221,8 +221,11 @@ export class NotionController {
       });
 
       const payload = await c.req.json<z.infer<typeof schema>>();
-      
-      this.logger.info({ workspaceId: payload.workspaceId, userId, botId: payload.botId }, 'Storing Notion integration details via Tsunami service');
+
+      this.logger.info(
+        { workspaceId: payload.workspaceId, userId, botId: payload.botId },
+        'Storing Notion integration details via Tsunami service',
+      );
 
       // Call the Tsunami service to store the Notion OAuth details.
       // The TsunamiClient's storeNotionOAuthDetails method will internally call the
@@ -239,13 +242,19 @@ export class NotionController {
       });
 
       if (!tsunamiResult || !tsunamiResult.success) {
-        this.logger.error({ tsunamiResult, workspaceId: payload.workspaceId, userId }, 'Failed to store Notion integration details via Tsunami service');
+        this.logger.error(
+          { tsunamiResult, workspaceId: payload.workspaceId, userId },
+          'Failed to store Notion integration details via Tsunami service',
+        );
         // Consider throwing a specific error or returning a more detailed error response
-        return c.json({
-          success: false,
-          message: 'Failed to store Notion integration with backend service.',
-          workspaceId: payload.workspaceId,
-        }, 500);
+        return c.json(
+          {
+            success: false,
+            message: 'Failed to store Notion integration with backend service.',
+            workspaceId: payload.workspaceId,
+          },
+          500,
+        );
       }
 
       this.logger.info(

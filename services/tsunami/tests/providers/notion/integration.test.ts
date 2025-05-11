@@ -140,7 +140,9 @@ describe('Notion Integration', () => {
     vi.clearAllMocks(); // Clear other mocks like fetch
 
     // Setup default mocks for TokenService methods used by authManager
-    mockTokenServiceInstance.storeNotionToken = vi.fn().mockResolvedValue({ success: true, tokenId: 'mock-token-id', workspaceId: 'workspace-123' });
+    mockTokenServiceInstance.storeNotionToken = vi
+      .fn()
+      .mockResolvedValue({ success: true, tokenId: 'mock-token-id', workspaceId: 'workspace-123' });
     mockTokenServiceInstance.getToken = vi.fn().mockResolvedValue({
       accessToken: 'test-access-token',
       // ... other fields of OAuthTokenRecord if needed by tests
@@ -182,10 +184,12 @@ describe('Notion Integration', () => {
       const result = await provider.registerWorkspace(code, userId);
 
       // exchangeCodeForToken now returns the full object from fetch mock
-      expect(result).toEqual(expect.objectContaining({
-        access_token: 'test-access-token',
-        workspace_id: 'workspace-123',
-      }));
+      expect(result).toEqual(
+        expect.objectContaining({
+          access_token: 'test-access-token',
+          workspace_id: 'workspace-123',
+        }),
+      );
 
       // Verify storeUserNotionIntegration was called on authManager, which calls tokenService.storeNotionToken
       // The actual call to tokenService.storeNotionToken is mocked via mockTokenServiceInstance
@@ -199,7 +203,11 @@ describe('Notion Integration', () => {
 
       // Verify token retrieval (getUserToken now uses tokenService.getToken)
       const storedToken = await authManager.getUserToken(userId, 'workspace-123');
-      expect(mockTokenServiceInstance.getToken).toHaveBeenCalledWith(userId, 'notion', 'workspace-123');
+      expect(mockTokenServiceInstance.getToken).toHaveBeenCalledWith(
+        userId,
+        'notion',
+        'workspace-123',
+      );
       expect(storedToken).toBe('test-access-token'); // Assuming mockTokenServiceInstance.getToken is set up to return this
     });
 

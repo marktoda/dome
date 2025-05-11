@@ -20,8 +20,11 @@ import { updateMockIntegrationStatus } from '@/lib/integration-mock-db'; // Mock
  *           for applications to programmatically revoke OAuth grants. Users must revoke access
  *           manually in their Notion settings. Your backend should still remove the stored token.
  */
-export async function POST(req: NextRequest) { // Add req parameter
-  console.warn("⚠️ Using MOCK /api/settings/integrations/notion/disconnect endpoint! Replace with actual implementation. ⚠️");
+export async function POST(req: NextRequest) {
+  // Add req parameter
+  console.warn(
+    '⚠️ Using MOCK /api/settings/integrations/notion/disconnect endpoint! Replace with actual implementation. ⚠️',
+  );
   try {
     // --- !!! MOCK AUTHENTICATION START !!! ---
     // In a real application, verify the user's session/token here.
@@ -46,7 +49,7 @@ export async function POST(req: NextRequest) { // Add req parameter
       userId,
       'notion',
       false, // isConnected: false
-      undefined // Clear user data
+      undefined, // Clear user data
     );
     // --- !!! MOCK DISCONNECT LOGIC END !!! ---
 
@@ -61,7 +64,7 @@ export async function POST(req: NextRequest) { // Add req parameter
       // Handle case where mock status update might fail
       return NextResponse.json(
         { success: false, message: 'Failed to update mock disconnection status.' },
-        { status: 500 }
+        { status: 500 },
       );
     }
   } catch (error) {

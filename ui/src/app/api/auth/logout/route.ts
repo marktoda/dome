@@ -11,15 +11,18 @@ import { cookies } from 'next/headers';
  *             The response includes instructions to clear the `auth_token` cookie.
  *   - 500 Internal Server Error: If an unexpected error occurs during cookie handling.
  */
-export async function POST(req: NextRequest) { // Changed type to NextRequest
+export async function POST(req: NextRequest) {
+  // Changed type to NextRequest
   try {
     const cookieStore = await cookies(); // Add await back as TS expects a Promise here
     const tokenCookie = cookieStore.get('auth_token');
 
     // Prepare the response - we always want to try clearing the cookie
     const response = NextResponse.json(
-      { message: tokenCookie ? 'Logout successful' : 'Logout successful (no active session found)' },
-      { status: 200 }
+      {
+        message: tokenCookie ? 'Logout successful' : 'Logout successful (no active session found)',
+      },
+      { status: 200 },
     );
 
     // Instruct the browser to clear the cookie by setting its value to empty and maxAge to 0
@@ -35,10 +38,12 @@ export async function POST(req: NextRequest) { // Changed type to NextRequest
 
     console.log('Logout request processed, clearing auth_token cookie.');
     return response;
-
   } catch (error) {
     console.error('Logout API route error:', error);
     // Avoid leaking internal error details to the client
-    return NextResponse.json({ message: 'An internal server error occurred during logout.' }, { status: 500 });
+    return NextResponse.json(
+      { message: 'An internal server error occurred during logout.' },
+      { status: 500 },
+    );
   }
 }

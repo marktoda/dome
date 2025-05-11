@@ -62,7 +62,8 @@ app.openAPIRegistry.registerComponent('securitySchemes', 'BearerAuth', {
   type: 'http',
   scheme: 'bearer',
   bearerFormat: 'JWT', // Optional but good for documentation
-  description: 'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer {token}"'
+  description:
+    'JWT Authorization header using the Bearer scheme. Example: "Authorization: Bearer {token}"',
 });
 
 // Mount auth router
@@ -181,7 +182,10 @@ app.get(
       logger.warn('Missing token in WebSocket upgrade request query parameters.');
       throw new HTTPException(401, {
         message: 'Authentication token missing in query.',
-        cause: { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication token missing in query.' } },
+        cause: {
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'Authentication token missing in query.' },
+        },
       });
     }
 
@@ -192,7 +196,10 @@ app.get(
       logger.warn('Invalid token in WebSocket upgrade request.');
       throw new HTTPException(401, {
         message: 'Invalid or expired token for WebSocket.',
-        cause: { success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token for WebSocket.' } },
+        cause: {
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token for WebSocket.' },
+        },
       });
     }
 
@@ -228,15 +235,31 @@ app.get(
               jsonData = JSON.parse(event.data);
               messageLogger.debug('Successfully parsed WebSocket message as JSON');
             } catch (parseError) {
-              messageLogger.error({ error: parseError }, 'Failed to parse WebSocket message as JSON');
-              ws.send(JSON.stringify({ type: 'error', error: { message: 'Invalid JSON payload', code: 'INVALID_PAYLOAD' } }));
+              messageLogger.error(
+                { error: parseError },
+                'Failed to parse WebSocket message as JSON',
+              );
+              ws.send(
+                JSON.stringify({
+                  type: 'error',
+                  error: { message: 'Invalid JSON payload', code: 'INVALID_PAYLOAD' },
+                }),
+              );
               // Consider closing if payload is critical: ws.close(1007, 'Invalid JSON payload');
               return;
             }
           } else {
             // Assuming binary data is not expected or handled differently
             messageLogger.warn('Received non-string WebSocket message, ignoring.');
-            ws.send(JSON.stringify({ type: 'error', error: { message: 'Unsupported message format (expected JSON string)', code: 'UNSUPPORTED_FORMAT' } }));
+            ws.send(
+              JSON.stringify({
+                type: 'error',
+                error: {
+                  message: 'Unsupported message format (expected JSON string)',
+                  code: 'UNSUPPORTED_FORMAT',
+                },
+              }),
+            );
             return;
           }
 
@@ -271,7 +294,10 @@ app.get(
 
           while (true) {
             const { value, done } = await reader.read();
-            messageLogger.debug({ value: td.decode(value, { stream: true }) }, 'streaming response chunk');
+            messageLogger.debug(
+              { value: td.decode(value, { stream: true }) },
+              'streaming response chunk',
+            );
             if (done) break;
             ws.send(td.decode(value)); // send LangGraph chunk to the client
           }
@@ -288,14 +314,18 @@ app.get(
 
           if (error && typeof error === 'object' && 'name' in error && error.name === 'ZodError') {
             errorCode = 'VALIDATION_ERROR';
-            errorMessage = `Invalid request format: ${error instanceof Error ? error.message : 'Unknown validation error'}`;
+            errorMessage = `Invalid request format: ${
+              error instanceof Error ? error.message : 'Unknown validation error'
+            }`;
             closeCode = 1007; // Invalid message format
           } else if (error instanceof Error) {
             errorMessage = error.message;
           }
 
           try {
-            ws.send(JSON.stringify({ type: 'error', error: { message: errorMessage, code: errorCode } }));
+            ws.send(
+              JSON.stringify({ type: 'error', error: { message: errorMessage, code: errorCode } }),
+            );
             if (ws.readyState === WebSocket.OPEN) {
               // ws.close(closeCode, errorMessage.substring(0, 123)); // Max length for reason is 123 bytes
             }
@@ -311,11 +341,15 @@ app.get(
           requestId: c.get('requestId') || 'N/A',
           authenticatedUserId: authenticatedUserId || 'N/A',
         });
-        closeLogger.info({ code: event.code, reason: event.reason, wasClean: event.wasClean }, 'WebSocket connection closed.');
+        closeLogger.info(
+          { code: event.code, reason: event.reason, wasClean: event.wasClean },
+          'WebSocket connection closed.',
+        );
         /* metrics / cleanup */
       },
 
-      onError(event: Event, ws: WSContext) { // Added ws: WSContext as per WSEvents, though not used in current impl.
+      onError(event: Event, ws: WSContext) {
+        // Added ws: WSContext as per WSEvents, though not used in current impl.
         const errorLogger = getLogger().child({
           component: 'WebSocketChatHandler',
           requestId: c.get('requestId') || 'N/A',

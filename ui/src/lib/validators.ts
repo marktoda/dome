@@ -44,4 +44,3 @@ export const RegisterSchema = z
  * Represents the structure of validated registration form data.
  */
 export type RegisterFormData = z.infer<typeof RegisterSchema>;
-

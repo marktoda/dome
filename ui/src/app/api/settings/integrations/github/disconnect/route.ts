@@ -18,8 +18,11 @@ import { updateMockIntegrationStatus } from '@/lib/integration-mock-db'; // Mock
  *           Replace mock logic with actual authentication, calls to your backend API
  *           (e.g., to delete stored tokens), and potentially calls to GitHub's API to revoke the grant.
  */
-export async function POST(req: NextRequest) { // Add req parameter
-  console.warn("⚠️ Using MOCK /api/settings/integrations/github/disconnect endpoint! Replace with actual implementation. ⚠️");
+export async function POST(req: NextRequest) {
+  // Add req parameter
+  console.warn(
+    '⚠️ Using MOCK /api/settings/integrations/github/disconnect endpoint! Replace with actual implementation. ⚠️',
+  );
   try {
     // --- !!! MOCK AUTHENTICATION START !!! ---
     // In a real application, verify the user's session/token here.
@@ -46,7 +49,7 @@ export async function POST(req: NextRequest) { // Add req parameter
       userId,
       'github',
       false, // isConnected: false
-      undefined // Clear user data
+      undefined, // Clear user data
     );
     // --- !!! MOCK DISCONNECT LOGIC END !!! ---
 
@@ -61,7 +64,7 @@ export async function POST(req: NextRequest) { // Add req parameter
       // Handle case where mock status update might fail (e.g., user not found in mock DB)
       return NextResponse.json(
         { success: false, message: 'Failed to update mock disconnection status.' },
-        { status: 500 }
+        { status: 500 },
       );
     }
   } catch (error) {

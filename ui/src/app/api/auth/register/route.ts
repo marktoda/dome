@@ -3,9 +3,7 @@ import { RegisterSchema } from '@/lib/validators';
 
 // !!! SECURITY WARNING: Mock user data and plain password storage !!!
 // !!! This is for demonstration ONLY. Replace with secure database storage and password hashing (e.g., bcrypt) in production. !!!
-const users = [
-  { id: '1', name: 'Test User', email: 'test@example.com', password: 'password123' },
-];
+const users = [{ id: '1', name: 'Test User', email: 'test@example.com', password: 'password123' }];
 
 /**
  * Handles POST requests to `/api/auth/register`.
@@ -31,7 +29,10 @@ export async function POST(req: NextRequest) {
 
     if (!validation.success) {
       console.log('Registration validation failed:', validation.error.flatten());
-      return NextResponse.json({ message: "Invalid request body.", errors: validation.error.flatten().fieldErrors }, { status: 400 });
+      return NextResponse.json(
+        { message: 'Invalid request body.', errors: validation.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
 
     const { name, email, password } = validation.data;
@@ -68,9 +69,11 @@ export async function POST(req: NextRequest) {
       { user: userWithoutPassword, message: 'Registration successful' },
       { status: 201 }, // 201 Created
     );
-
   } catch (error) {
     console.error('Register API route error:', error);
-    return NextResponse.json({ message: 'An unexpected internal server error occurred.' }, { status: 500 });
+    return NextResponse.json(
+      { message: 'An unexpected internal server error occurred.' },
+      { status: 500 },
+    );
   }
 }

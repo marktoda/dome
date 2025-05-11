@@ -24,16 +24,25 @@ import { v4 as uuidv4 } from 'uuid';
  *           to store the generated `state` and verify it upon callback. Embedding the client redirect path
  *           in the state is also less secure than storing it server-side associated with the state.
  */
-export async function GET(request: NextRequest) { // Changed type to NextRequest
+export async function GET(request: NextRequest) {
+  // Changed type to NextRequest
   const NOTION_CLIENT_ID = process.env.NOTION_CLIENT_ID;
 
   if (!NOTION_CLIENT_ID) {
-    console.error('CRITICAL: Missing required environment variable NOTION_CLIENT_ID for Notion OAuth connect.');
-    return NextResponse.json({ error: 'Server configuration error: Notion OAuth details missing.' }, { status: 500 });
+    console.error(
+      'CRITICAL: Missing required environment variable NOTION_CLIENT_ID for Notion OAuth connect.',
+    );
+    return NextResponse.json(
+      { error: 'Server configuration error: Notion OAuth details missing.' },
+      { status: 500 },
+    );
   }
 
   // Determine the app's base URL for constructing the callback URL
-  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` || 'http://localhost:3000';
+  const appBaseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` ||
+    'http://localhost:3000';
   const redirect_uri = new URL('/api/settings/integrations/notion/callback', appBaseUrl).toString();
 
   // --- State Generation (CSRF Protection) ---
@@ -43,7 +52,8 @@ export async function GET(request: NextRequest) { // Changed type to NextRequest
   // --- End State Generation ---
 
   // Get the desired final redirect path from the client request
-  const clientFinalRedirectPath = request.nextUrl.searchParams.get('redirect_uri') || '/settings/integrations';
+  const clientFinalRedirectPath =
+    request.nextUrl.searchParams.get('redirect_uri') || '/settings/integrations';
 
   // Combine state value and redirect path (less secure method, prefer server-side storage)
   const combinedState = `${stateValue}|${encodeURIComponent(clientFinalRedirectPath)}`;

@@ -76,12 +76,16 @@ export interface TsunamiBinding {
   /**
    * Stores Notion OAuth details (access token, workspace info, etc.)
    */
-  storeNotionOAuthDetails(details: NotionOAuthDetails): Promise<{ success: boolean; workspaceId: string }>;
+  storeNotionOAuthDetails(
+    details: NotionOAuthDetails,
+  ): Promise<{ success: boolean; workspaceId: string }>;
 
   /**
    * Stores GitHub OAuth details (access token, user info, etc.)
    */
-  storeGithubOAuthDetails(details: GithubOAuthDetails): Promise<{ success: boolean; githubUserId: string }>;
+  storeGithubOAuthDetails(
+    details: GithubOAuthDetails,
+  ): Promise<{ success: boolean; githubUserId: string }>;
 }
 
 /**
@@ -109,7 +113,8 @@ export interface GithubOAuthDetails {
   tokenType?: string | null;
   // refreshToken?: string | null; // If GitHub provides one and we store it
   // expiresAt?: number | null;    // If applicable
-  metadata?: { // Store additional useful info like username
+  metadata?: {
+    // Store additional useful info like username
     username: string;
     // email?: string | null; // If fetched and needed
   } | null;

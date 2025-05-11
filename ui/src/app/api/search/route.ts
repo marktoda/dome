@@ -28,20 +28,24 @@ export async function GET(request: NextRequest) {
 
   // Validate required query parameter
   if (!query) {
-    return NextResponse.json({ message: 'Bad Request: Query parameter "q" is required.' }, { status: 400 });
+    return NextResponse.json(
+      { message: 'Bad Request: Query parameter "q" is required.' },
+      { status: 400 },
+    );
   }
 
   // Extract and validate Authorization header
   const authorizationHeader = request.headers.get('Authorization');
   if (!authorizationHeader) {
     console.warn('/api/search: Missing Authorization header.');
-    return NextResponse.json({ message: 'Unauthorized: Authorization header required.' }, { status: 401 });
+    return NextResponse.json(
+      { message: 'Unauthorized: Authorization header required.' },
+      { status: 401 },
+    );
   }
 
   // Assuming Bearer token format
-  const token = authorizationHeader.startsWith('Bearer ')
-    ? authorizationHeader.substring(7)
-    : null;
+  const token = authorizationHeader.startsWith('Bearer ') ? authorizationHeader.substring(7) : null;
 
   if (!token) {
     console.warn('/api/search: Invalid or missing Bearer token in Authorization header.');
@@ -63,7 +67,7 @@ export async function GET(request: NextRequest) {
       method: 'GET',
       headers: {
         // Forward the original Authorization header (including 'Bearer ')
-        'Authorization': authorizationHeader,
+        Authorization: authorizationHeader,
         'Content-Type': 'application/json', // Usually not needed for GET, but common practice
         // Add other necessary headers if required by the external API
       },
@@ -79,7 +83,7 @@ export async function GET(request: NextRequest) {
         // Ignore error reading body if it fails
       }
       console.error(
-        `External search API error: ${apiResponse.status} ${apiResponse.statusText}. Details: ${errorDetails}`
+        `External search API error: ${apiResponse.status} ${apiResponse.statusText}. Details: ${errorDetails}`,
       );
       // Forward the error status and a generic message (or specific details if safe)
       return NextResponse.json(
@@ -87,7 +91,7 @@ export async function GET(request: NextRequest) {
           message: `Error from external search API: ${apiResponse.statusText}`,
           // Avoid forwarding raw errorDetails directly unless sanitized or known to be safe
         },
-        { status: apiResponse.status }
+        { status: apiResponse.status },
       );
     }
 
@@ -96,7 +100,6 @@ export async function GET(request: NextRequest) {
 
     // Return the successful response to the original client
     return NextResponse.json(data);
-
   } catch (error) {
     console.error('Error calling external search API:', error);
     let errorMessage = 'Internal Server Error';
@@ -106,7 +109,7 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json(
       { message: 'Failed to fetch search results due to an internal error.', error: errorMessage },
-      { status: 502 } // 502 Bad Gateway is often appropriate for proxy errors
+      { status: 502 }, // 502 Bad Gateway is often appropriate for proxy errors
     );
   }
 }
