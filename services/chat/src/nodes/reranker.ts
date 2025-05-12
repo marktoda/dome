@@ -10,7 +10,7 @@
 /*  Shared imports & types                                                     */
 /* -------------------------------------------------------------------------- */
 
-import { getLogger } from '@dome/common';
+import { getLogger, logError as commonLogError } from '@dome/common'; // Renamed to avoid conflict
 import {
   DocumentChunk,
   RetrievalResult,
@@ -145,7 +145,7 @@ abstract class BaseReranker {
     try {
       ranked = await this.rank(res.chunks, query, env);
     } catch (err) {
-      log.error({ err }, 'Reranking failed – fallback to vector scores');
+      commonLogError(err, 'Reranking failed – fallback to vector scores');
       ranked = this.fallback(res.chunks);
     }
 
@@ -350,7 +350,7 @@ export async function reranker(
     return finish({ ...state, retrievals: updatedTasks }, nodeId, spanId, traceId, t0, env);
   } catch (e) {
     const err = toDomeError(e);
-    log.error({ err }, 'Reranker node failed');
+    commonLogError(err, 'Reranker node failed');
     const elapsed = performance.now() - t0;
     ObservabilityService.endSpan(env, traceId, spanId, nodeId, state, state, elapsed);
     return {

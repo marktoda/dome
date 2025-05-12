@@ -1,4 +1,4 @@
-import { getLogger, getDefaultModel, countTokens } from '@dome/common';
+import { getLogger, getDefaultModel, countTokens, logError } from '@dome/common';
 import { z } from 'zod';
 import { AgentState, AIMessage, MessagePair } from '../types';
 import { getUserId } from '../utils/stateUtils';
@@ -93,7 +93,7 @@ export const rewrite = async (state: AgentState, env: Env): Promise<AgentState> 
           tasks[taskId].definition = result.rewrittenQuery;
           return result.reasoning || 'No reasoning provided';
         } catch (error) {
-          logger.error({ err: error, taskId }, 'Error rewriting task');
+          logError(error, 'Error rewriting task', { taskId });
           return `Error during rewriting: ${
             error instanceof Error ? error.message : 'Unknown error'
           }`;
@@ -132,7 +132,7 @@ export const rewrite = async (state: AgentState, env: Env): Promise<AgentState> 
       },
     };
   } catch (error) {
-    logger.error({ err: error }, 'Error in rewrite node');
+    logError(error, 'Error in rewrite node');
 
     // Handle error case
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';

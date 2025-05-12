@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { z, createRoute, OpenAPIHono, RouteConfigToTypedResponse } from '@hono/zod-openapi';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { createServiceFactory } from '../services/serviceFactory';
 import type { AppEnv } from '../types';
 import { authenticationMiddleware, AuthContext } from '../middleware/authenticationMiddleware';
@@ -146,7 +146,7 @@ export class TsunamiController {
       const validatedResult = GithubRepoResponseSchema.parse(result); // Validate/transform service response
       return c.json(validatedResult, 201);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId }, 'Register GitHub repo failed');
+      logError(error, 'Register GitHub repo failed', { userId });
       return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to register repo' } }, 500);
     }
   };
@@ -164,7 +164,7 @@ export class TsunamiController {
       const validatedHistory = SyncHistoryResponseSchema.parse(history);
       return c.json(validatedHistory, 200);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId, params }, 'Get GitHub repo history failed');
+      logError(error, 'Get GitHub repo history failed', { userId, params });
       if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
         return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Repository or history not found' } }, 404);
       }
@@ -190,7 +190,7 @@ export class TsunamiController {
       const validatedHistory = SyncHistoryResponseSchema.parse(history);
       return c.json(validatedHistory, 200);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId: params.userId }, 'Get user sync history failed');
+      logError(error, 'Get user sync history failed', { userId: params.userId });
       if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
         return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'User or history not found' } }, 404);
       }
@@ -211,7 +211,7 @@ export class TsunamiController {
       const validatedHistory = SyncHistoryResponseSchema.parse(history);
       return c.json(validatedHistory, 200);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId, params }, 'Get sync plan history failed');
+      logError(error, 'Get sync plan history failed', { userId, params });
       if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
         return c.json({ success: false as const, error: { code: 'NOT_FOUND', message: 'Sync plan or history not found' } }, 404);
       }
@@ -233,7 +233,7 @@ export class TsunamiController {
       logger.warn("storeGithubIntegration's underlying service method is not implemented/identified yet.");
       return c.json({ success: true, message: 'GitHub integration storage (placeholder - needs implementation).' }, 200);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId }, 'Store GitHub integration failed');
+      logError(error, 'Store GitHub integration failed', { userId });
       return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to store GitHub integration' } }, 500);
     }
   };

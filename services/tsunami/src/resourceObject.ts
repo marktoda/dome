@@ -190,7 +190,7 @@ export class ResourceObject extends DurableObject<Env> {
         errorMessage: err?.message,
       });
     } catch (error) {
-      this.log.error(error, 'error creating sync history');
+      logError(error, 'error creating sync history');
       throw error;
     }
   }

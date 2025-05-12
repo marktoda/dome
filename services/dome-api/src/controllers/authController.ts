@@ -1,7 +1,8 @@
 import { Context, Hono } from 'hono';
 import { z, createRoute, OpenAPIHono, RouteConfigToTypedResponse } from '@hono/zod-openapi';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { createServiceFactory } from '../services/serviceFactory';
+import { SupportedAuthProvider } from '@dome/auth/client'; // Assuming this is the correct import path
 import type { AppEnv } from '../types';
 
 // --- Generic Error Schema ---
@@ -172,6 +173,7 @@ const UserProfileSchema = z
     email: z.string().email().openapi({ example: 'user@example.com' }),
     name: z.string().nullable().openapi({ example: 'User Name' }),
     role: z.string().openapi({ example: 'user' }),
+    provider: z.nativeEnum(SupportedAuthProvider).openapi({ example: SupportedAuthProvider.LOCAL, description: 'The authentication provider used.' }),
   })
   .openapi('UserProfile');
 
@@ -255,7 +257,7 @@ export class AuthController {
       // or return a User object on success.
       // authService.register (from @dome/auth/client) returns Promise<RegisterResponse>
       // RegisterResponse (from auth/src/types.ts) is { success, user, token, ... }
-      const registrationServiceResponse = await authService.register("local", { email, password, name });
+      const registrationServiceResponse = await authService.register(SupportedAuthProvider.LOCAL, { email, password, name });
       this.logger.info({ email, registrationServiceResponse }, 'User registration processed by auth service.');
 
       if (registrationServiceResponse.success && typeof registrationServiceResponse.token === 'string') {
@@ -264,9 +266,10 @@ export class AuthController {
       }
 
       // Handle cases where registration succeeded at service level but no token, or success is false
-      this.logger.error(
-        { email, registrationServiceResponse },
+      logError(
+        new Error('Registration token missing'), // Create an error object
         'Auth service processed registration, but success was false or token was missing.',
+        { email, registrationServiceResponse },
       );
       return c.json(
         {
@@ -280,9 +283,10 @@ export class AuthController {
       );
 
     } catch (error: any) {
-      this.logger.error(
-        { errorDetail: error, message: error.message, nestedError: error.error },
+      logError(
+        error,
         'Registration failed with exception',
+        { errorDetail: error, nestedError: error.error },
       );
 
       // Check if the error came from AuthError serialization
@@ -336,7 +340,8 @@ export class AuthController {
       // The local LoginServiceResponse interface is no longer accurate for the direct service call.
       // authService.login (from @dome/auth/client) returns Promise<LoginResponse>
       // LoginResponse (from auth/src/types.ts) is { success, user, token, ... }
-      const loginServiceResponse = await authService.login("privy", { email, password });
+      // For email/password login, this should be LOCAL provider
+      const loginServiceResponse = await authService.login(SupportedAuthProvider.LOCAL, { email, password });
       this.logger.info({ email, loginServiceResponse }, 'User login processed by auth service.');
 
       if (loginServiceResponse.success && typeof loginServiceResponse.token === 'string') {
@@ -357,8 +362,8 @@ export class AuthController {
         401
       );
     } catch (error: any) {
-      this.logger.error(
-        { errorMessage: error.message, stack: error.stack },
+      logError(
+        error,
         'Login failed with exception',
       );
       return c.json(
@@ -399,12 +404,15 @@ export class AuthController {
         success: boolean;
         error?: { code: string; message: string };
       }
-      const result: LogoutServiceResponse = await authService.logout(token, "privy");
+      // Assuming logout can be generic or tied to the token's original provider.
+      // If it must be privy, this needs to be SupportedAuthProvider.LOCAL
+      // For now, let's assume it's tied to the token, so no specific provider or handle this logic in authService
+      const result: LogoutServiceResponse = await authService.logout(SupportedAuthProvider.LOCAL, token);
 
       if (result.success) {
         return c.json({ success: true, message: 'Logout successful' }, 200);
       }
-      this.logger.error({ result }, 'Logout service call failed');
+      logError(new Error('Logout service call failed'), 'Logout service call failed', { result });
       return c.json(
         {
           success: false,
@@ -416,8 +424,8 @@ export class AuthController {
         500,
       );
     } catch (error: any) {
-      this.logger.error(
-        { errorMessage: error.message, stack: error.stack },
+      logError(
+        error,
         'Logout failed with exception',
       );
       return c.json(
@@ -463,22 +471,31 @@ export class AuthController {
         email: string;
         name?: string | null; // Make name optional and nullable to match service's potential return type
         role: string;
+        // provider field removed here, as it's not part of the core User object from the service
       }
       interface ValidateTokenServiceResponse {
         success: boolean;
         user?: UserProfileData | null; // User data can be UserProfileData, undefined, or null
+        provider?: SupportedAuthProvider; // The auth service returns this
         error?: { code: string; message: string }; // Error details are optional
       }
 
-      const result: ValidateTokenServiceResponse = await authService.validateToken(token, "privy");
+      // The provider passed to validateToken might be optional if the token itself is self-contained
+      // or if the auth service can determine it. For Privy, it's often required.
+      const result: ValidateTokenServiceResponse = await authService.validateToken(token, SupportedAuthProvider.LOCAL);
 
-      if (result.success && result.user) {
-        // Validate the structure of result.user against UserProfileSchema
-        const validation = UserProfileSchema.safeParse(result.user);
+      if (result.success && result.user && result.provider) {
+        // Ensure provider is included when parsing
+        const userProfileDataWithProvider = {
+          ...result.user,
+          provider: result.provider,
+        };
+        const validation = UserProfileSchema.safeParse(userProfileDataWithProvider);
         if (!validation.success) {
-          this.logger.error(
-            { errors: validation.error.flatten(), userFromService: result.user },
+          logError(
+            new Error('User profile validation failed'),
             'User profile from authService failed Zod validation against UserProfileSchema',
+            { errors: validation.error.flatten(), userFromService: result.user },
           );
           return c.json(
             {
@@ -508,15 +525,16 @@ export class AuthController {
         401,
       );
     } catch (error: any) {
-      this.logger.error(
-        { errorMessage: error.message, stack: error.stack },
+      logError(
+        error,
         'Token validation failed with exception',
       );
       if (error instanceof z.ZodError) {
         // This case should ideally be caught by the safeParse above.
-        this.logger.error(
-          { errors: error.flatten() },
+        logError(
+          error,
           'UserProfileSchema validation failed unexpectedly during catch block.',
+          { errors: error.flatten() },
         );
         return c.json(
           {

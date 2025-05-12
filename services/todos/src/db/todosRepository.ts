@@ -33,6 +33,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { todos } from '../db/schema';
 
 const logger = getLogger();
+import { logError } from '@dome/common'; // Assuming logError is co-located or update path
 
 // Function to generate todo IDs
 const generateTodoId = () => `todo_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -109,7 +110,7 @@ export class TodosRepository {
 
       return todo;
     } catch (error) {
-      logger.error('Failed to create todo', { error, todoId: id, userId: input.userId });
+      logError(error, 'Failed to create todo', { todoId: id, userId: input.userId });
       throw this.handleDatabaseError(error);
     }
   }
@@ -127,7 +128,7 @@ export class TodosRepository {
 
       return this.mapDatabaseResultToTodo(results[0]);
     } catch (error) {
-      logger.error('Failed to get todo', { error, todoId: id });
+      logError(error, 'Failed to get todo', { todoId: id });
       throw this.handleDatabaseError(error);
     }
   }
@@ -260,7 +261,7 @@ export class TodosRepository {
         totalCount,
       };
     } catch (error) {
-      logger.error('Failed to list todos', { error, userId });
+      logError(error, 'Failed to list todos', { userId });
       throw this.handleDatabaseError(error);
     }
   }
@@ -353,7 +354,7 @@ export class TodosRepository {
 
       return true;
     } catch (error) {
-      logger.error('Failed to update todo', { error, todoId: id });
+      logError(error, 'Failed to update todo', { todoId: id });
       throw this.handleDatabaseError(error);
     }
   }
@@ -366,7 +367,7 @@ export class TodosRepository {
       await this.db.delete(todos).where(eq(todos.id, id));
       return true;
     } catch (error) {
-      logger.error('Failed to delete todo', { error, todoId: id });
+      logError(error, 'Failed to delete todo', { todoId: id });
       throw this.handleDatabaseError(error);
     }
   }
@@ -428,7 +429,7 @@ export class TodosRepository {
         updatedCount: ids.length, // Use ids length as an approximation
       };
     } catch (error) {
-      logger.error('Failed to batch update todos', { error, todoIds: ids });
+      logError(error, 'Failed to batch update todos', { todoIds: ids });
       throw this.handleDatabaseError(error);
     }
   }
@@ -561,7 +562,7 @@ export class TodosRepository {
         dueThisWeek: dueThisWeekResult[0]?.count || 0,
       };
     } catch (error) {
-      logger.error('Failed to get todo stats', { error, userId });
+      logError(error, 'Failed to get todo stats', { userId });
       throw this.handleDatabaseError(error);
     }
   }

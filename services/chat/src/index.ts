@@ -81,12 +81,10 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
       // Delegate to the controller
       return await this.controllers.chat.generateChatMessage(request);
     } catch (error) {
-      this.logger.error(
-        {
-          operation: 'generateChatMessage',
-          error,
-        },
-        'Error in RPC call',
+      logError(
+        error,
+        'Error in RPC call: generateChatMessage',
+        { operation: 'generateChatMessage' },
       );
 
       throw error;
@@ -108,12 +106,10 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
 
       return await this.controllers.admin.getCheckpointStats();
     } catch (error) {
-      this.logger.error(
-        {
-          operation: 'getCheckpointStats',
-          error,
-        },
-        'Error in RPC call',
+      logError(
+        error,
+        'Error in RPC call: getCheckpointStats',
+        { operation: 'getCheckpointStats' },
       );
 
       throw error;
@@ -135,12 +131,10 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
 
       return await this.controllers.admin.cleanupCheckpoints();
     } catch (error) {
-      this.logger.error(
-        {
-          operation: 'cleanupCheckpoints',
-          error,
-        },
-        'Error in RPC call',
+      logError(
+        error,
+        'Error in RPC call: cleanupCheckpoints',
+        { operation: 'cleanupCheckpoints' },
       );
 
       throw error;
@@ -162,12 +156,10 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
 
       return await this.controllers.admin.getDataRetentionStats();
     } catch (error) {
-      this.logger.error(
-        {
-          operation: 'getDataRetentionStats',
-          error,
-        },
-        'Error in RPC call',
+      logError(
+        error,
+        'Error in RPC call: getDataRetentionStats',
+        { operation: 'getDataRetentionStats' },
       );
 
       throw error;
@@ -189,12 +181,10 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
 
       return await this.controllers.admin.cleanupExpiredData();
     } catch (error) {
-      this.logger.error(
-        {
-          operation: 'cleanupExpiredData',
-          error,
-        },
-        'Error in RPC call',
+      logError(
+        error,
+        'Error in RPC call: cleanupExpiredData',
+        { operation: 'cleanupExpiredData' },
       );
 
       throw error;
@@ -218,13 +208,10 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
 
       return await this.controllers.admin.deleteUserData(userId);
     } catch (error) {
-      this.logger.error(
-        {
-          operation: 'deleteUserData',
-          userId,
-          error,
-        },
-        'Error in RPC call',
+      logError(
+        error,
+        'Error in RPC call: deleteUserData',
+        { operation: 'deleteUserData', userId },
       );
 
       throw error;
@@ -255,14 +242,10 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
 
       return await this.controllers.admin.recordConsent(userId, dataCategory, request);
     } catch (error) {
-      this.logger.error(
-        {
-          operation: 'recordConsent',
-          userId,
-          dataCategory,
-          error,
-        },
-        'Error in RPC call',
+      logError(
+        error,
+        'Error in RPC call: recordConsent',
+        { operation: 'recordConsent', userId, dataCategory },
       );
 
       throw error;

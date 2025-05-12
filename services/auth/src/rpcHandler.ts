@@ -1,7 +1,7 @@
 import { AuthErrorCode, AuthBinding, LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse } from './client/types';
 import { AuthService } from './services/auth-service'; // Corrected import path
 import { BaseError, UnauthorizedError, ValidationError, NotFoundError, ForbiddenError, ServiceError } from '@dome/common/errors';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { UserManager } from './services/user/user-manager';
 import { BaseAuthProvider } from './services/providers/base-auth-provider'; // Corrected path
 import { getAuthProvidersConfig } from './config/auth-config';
@@ -49,15 +49,15 @@ export class AuthRPCHandler implements AuthBinding {
     const activeProviders = new Map<string, BaseAuthProvider>();
 
     // Initialize LocalAuthProvider (Email/Password)
-    const localConfig = authProviderConfigs[SupportedAuthProvider.EMAIL];
+    const localConfig = authProviderConfigs[SupportedAuthProvider.LOCAL];
     if (localConfig?.isEnabled) {
-      logger.info(`AuthRPCHandler: Initializing LocalAuthProvider for ${SupportedAuthProvider.EMAIL}`);
+      logger.info(`AuthRPCHandler: Initializing LocalAuthProvider for ${SupportedAuthProvider.LOCAL}`);
       activeProviders.set(
-        SupportedAuthProvider.EMAIL,
+        SupportedAuthProvider.LOCAL,
         new LocalAuthProvider(localConfig, tokenManager, userManager, env),
       );
     } else {
-      logger.info(`AuthRPCHandler: LocalAuthProvider (${SupportedAuthProvider.EMAIL}) is not enabled.`);
+      logger.info(`AuthRPCHandler: LocalAuthProvider (${SupportedAuthProvider.LOCAL}) is not enabled.`);
     }
 
     // Initialize PrivyAuthProvider
@@ -101,7 +101,7 @@ export class AuthRPCHandler implements AuthBinding {
         ...(result.tokenInfo.refreshToken && { refreshToken: result.tokenInfo.refreshToken }),
       };
     } catch (error) {
-      logger.error('RPC: login failed', { error, providerName });
+      logError(error, 'RPC: login failed', { providerName });
       throw this.formatRPCError(error);
     }
   }
@@ -121,7 +121,7 @@ export class AuthRPCHandler implements AuthBinding {
         ...(result.tokenInfo.refreshToken && { refreshToken: result.tokenInfo.refreshToken }),
       };
     } catch (error) {
-      logger.error('RPC: register failed', { error, providerName });
+      logError(error, 'RPC: register failed', { providerName });
       throw this.formatRPCError(error);
     }
   }
@@ -129,7 +129,8 @@ export class AuthRPCHandler implements AuthBinding {
   async validateToken(token: string, providerName?: string): Promise<ValidateTokenResponse> {
     try {
       logger.debug('RPC: validateToken', { providerName });
-      const result = await this.authService.validateToken(token, providerName);
+      const providerEnum = providerName as SupportedAuthProvider | undefined;
+      const result = await this.authService.validateToken(token, providerEnum);
       logger.debug('RPC: validateToken completed', { userId: result.userId, provider: result.provider });
       // Assuming ttl might be part of result.details or needs to be calculated
       return {
@@ -140,7 +141,7 @@ export class AuthRPCHandler implements AuthBinding {
         // ttl: result.details?.ttl, // Example, adjust as needed
       };
     } catch (error) {
-      logger.error('RPC: validateToken failed', { error });
+      logError(error, 'RPC: validateToken failed');
       throw this.formatRPCError(error);
     }
   }
@@ -152,7 +153,7 @@ export class AuthRPCHandler implements AuthBinding {
       logger.debug('RPC: logout completed', { providerName });
       return { success: true };
     } catch (error) {
-      logger.error('RPC: logout failed', { error, providerName });
+      logError(error, 'RPC: logout failed', { providerName });
       // Logout failures might not always need to throw a formatted RPC error
       // depending on desired client behavior. For now, we format and throw.
       throw this.formatRPCError(error);

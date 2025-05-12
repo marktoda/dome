@@ -2,6 +2,7 @@ import { Context, Next } from 'hono';
 import { getLogger, logError, updateContext } from '@dome/common';
 import LRUCache from 'lru-cache';
 import type { Bindings } from '../types';
+import { SupportedAuthProvider } from '@dome/auth/client'; // Assuming this is the correct import path
 import { createServiceFactory } from '../services/serviceFactory';
 import { incrementCounter, trackTiming } from '../utils/metrics';
 
@@ -89,7 +90,7 @@ export const authenticationMiddleware = async (
 
     // Validate token
     const trackAuthServiceCall = trackTiming(AUTH_SERVICE_CALL_METRIC);
-    const response = await trackAuthServiceCall(async () => authService.validateToken(token, "privy"));
+    const response = await trackAuthServiceCall(async () => authService.validateToken(token, SupportedAuthProvider.PRIVY));
     const success = response.success;
     const user = response.user; // Corrected: access user directly
     const ttl = response.ttl;   // Corrected: access ttl directly

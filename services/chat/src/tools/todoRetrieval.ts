@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { Document } from '../types';
 import { RetrievalTool, RetrievalInput } from '.';
 import {
@@ -140,7 +140,7 @@ export const todoRetrievalTool: RetrievalTool<
         totalCount: result.totalCount,
       };
     } catch (error) {
-      logger.error({ error }, '[TodoRetrievalTool]: Error fetching todos');
+      logError(error, '[TodoRetrievalTool]: Error fetching todos');
       throw error;
     }
   },

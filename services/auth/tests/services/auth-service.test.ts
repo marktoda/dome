@@ -66,7 +66,7 @@ describe('AuthService (Unified) Unit Tests', () => {
     updatedAt: new Date(),
     password: null,
     lastLoginAt: null,
-    authProvider: SupportedAuthProvider.EMAIL,
+    authProvider: SupportedAuthProvider.LOCAL,
     providerAccountId: 'local-user-123',
   };
 
@@ -80,11 +80,11 @@ describe('AuthService (Unified) Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockLocalAuthProvider = new MockBaseAuthProvider(SupportedAuthProvider.EMAIL, mockTokenManager);
+    mockLocalAuthProvider = new MockBaseAuthProvider(SupportedAuthProvider.LOCAL, mockTokenManager);
     mockPrivyAuthProvider = new MockBaseAuthProvider('privy', mockTokenManager);
 
     mockProviderServices = new Map();
-    mockProviderServices.set(SupportedAuthProvider.EMAIL, mockLocalAuthProvider);
+    mockProviderServices.set(SupportedAuthProvider.LOCAL, mockLocalAuthProvider);
     mockProviderServices.set('privy', mockPrivyAuthProvider);
 
     authService = new AuthService({
@@ -100,7 +100,7 @@ describe('AuthService (Unified) Unit Tests', () => {
       const credentials = { email: 'test@example.com', password: 'password' };
       mockLocalAuthProvider.authenticate.mockResolvedValue(mockAuthResult);
 
-      const result = await authService.login(SupportedAuthProvider.EMAIL, credentials);
+      const result = await authService.login(SupportedAuthProvider.LOCAL, credentials);
 
       expect(mockLocalAuthProvider.authenticate).toHaveBeenCalledWith(credentials);
       expect(result.user).toEqual(mockSchemaUser);
@@ -117,8 +117,8 @@ describe('AuthService (Unified) Unit Tests', () => {
 
     it('should throw UnauthorizedError if provider authentication fails', async () => {
       mockLocalAuthProvider.authenticate.mockRejectedValue(new Error('Provider internal error'));
-      await expect(authService.login(SupportedAuthProvider.EMAIL, {})).rejects.toThrow(UnauthorizedError);
-      await expect(authService.login(SupportedAuthProvider.EMAIL, {})).rejects.toThrow('Login failed');
+      await expect(authService.login(SupportedAuthProvider.LOCAL, {})).rejects.toThrow(UnauthorizedError);
+      await expect(authService.login(SupportedAuthProvider.LOCAL, {})).rejects.toThrow('Login failed');
     });
   });
 
@@ -127,7 +127,7 @@ describe('AuthService (Unified) Unit Tests', () => {
     it('should register a user with a valid provider and details', async () => {
       mockLocalAuthProvider.register!.mockResolvedValue(mockAuthResult); // Use non-null assertion if register is defined
 
-      const result = await authService.register(SupportedAuthProvider.EMAIL, registrationData);
+      const result = await authService.register(SupportedAuthProvider.LOCAL, registrationData);
       expect(mockLocalAuthProvider.register).toHaveBeenCalledWith(registrationData);
       expect(result.user).toEqual(mockSchemaUser);
       expect(result.tokenInfo.token).toBe(mockAuthResult.accessToken);
@@ -144,8 +144,8 @@ describe('AuthService (Unified) Unit Tests', () => {
 
     it('should throw ValidationError if provider registration fails', async () => {
       mockLocalAuthProvider.register!.mockRejectedValue(new Error('Provider registration issue'));
-      await expect(authService.register(SupportedAuthProvider.EMAIL, registrationData)).rejects.toThrow(ValidationError);
-      await expect(authService.register(SupportedAuthProvider.EMAIL, registrationData)).rejects.toThrow('Registration failed');
+      await expect(authService.register(SupportedAuthProvider.LOCAL, registrationData)).rejects.toThrow(ValidationError);
+      await expect(authService.register(SupportedAuthProvider.LOCAL, registrationData)).rejects.toThrow('Registration failed');
     });
   });
 
@@ -154,10 +154,10 @@ describe('AuthService (Unified) Unit Tests', () => {
 
     it('should validate a token with a specified provider using getUserFromToken', async () => {
       mockLocalAuthProvider.getUserFromToken.mockResolvedValue(mockSchemaUser);
-      const result = await authService.validateToken(tokenToValidate, SupportedAuthProvider.EMAIL);
+      const result = await authService.validateToken(tokenToValidate, SupportedAuthProvider.LOCAL);
       expect(mockLocalAuthProvider.getUserFromToken).toHaveBeenCalledWith(tokenToValidate);
       expect(result.userId).toBe(mockSchemaUser.id);
-      expect(result.provider).toBe(SupportedAuthProvider.EMAIL);
+      expect(result.provider).toBe(SupportedAuthProvider.LOCAL);
       expect(result.user).toEqual(mockSchemaUser);
     });
 
@@ -178,8 +178,8 @@ describe('AuthService (Unified) Unit Tests', () => {
 
     it('should throw UnauthorizedError if specified provider fails validation', async () => {
       mockLocalAuthProvider.getUserFromToken.mockResolvedValue(null);
-      await expect(authService.validateToken(tokenToValidate, SupportedAuthProvider.EMAIL)).rejects.toThrow(UnauthorizedError);
-      await expect(authService.validateToken(tokenToValidate, SupportedAuthProvider.EMAIL)).rejects.toThrow('Token validation failed: Invalid or expired token for the specified provider.');
+      await expect(authService.validateToken(tokenToValidate, SupportedAuthProvider.LOCAL)).rejects.toThrow(UnauthorizedError);
+      await expect(authService.validateToken(tokenToValidate, SupportedAuthProvider.LOCAL)).rejects.toThrow('Token validation failed: Invalid or expired token for the specified provider.');
     });
 
     it('should throw UnauthorizedError if internal token validation fails (no providerName)', async () => {
@@ -193,7 +193,7 @@ describe('AuthService (Unified) Unit Tests', () => {
     const tokenToLogout = 'some-token-for-logout';
     it('should call logout on the specified provider', async () => {
       mockLocalAuthProvider.logout.mockResolvedValue(undefined);
-      await authService.logout(tokenToLogout, SupportedAuthProvider.EMAIL);
+      await authService.logout(tokenToLogout, SupportedAuthProvider.LOCAL);
       expect(mockLocalAuthProvider.logout).toHaveBeenCalledWith(tokenToLogout);
     });
 
@@ -204,8 +204,8 @@ describe('AuthService (Unified) Unit Tests', () => {
 
     it('should throw ServiceError if provider logout fails', async () => {
       mockLocalAuthProvider.logout.mockRejectedValue(new Error('Provider logout failed'));
-      await expect(authService.logout(tokenToLogout, SupportedAuthProvider.EMAIL)).rejects.toThrow(ServiceError);
-      await expect(authService.logout(tokenToLogout, SupportedAuthProvider.EMAIL)).rejects.toThrow('Logout operation encountered an issue.');
+      await expect(authService.logout(tokenToLogout, SupportedAuthProvider.LOCAL)).rejects.toThrow(ServiceError);
+      await expect(authService.logout(tokenToLogout, SupportedAuthProvider.LOCAL)).rejects.toThrow('Logout operation encountered an issue.');
     });
   });
 });

@@ -12,6 +12,7 @@ import {
   ValidateTokenResponse,
   LogoutResponse,
   AuthErrorCode,
+  SupportedAuthProvider, // Import the enum
 } from './types';
 
 /**
@@ -34,7 +35,7 @@ export class AuthClient implements AuthService {
   /**
    * Login a user
    */
-  async login(providerName: string, credentials: Record<string, unknown>): Promise<LoginResponse> {
+  async login(providerName: SupportedAuthProvider, credentials: Record<string, unknown>): Promise<LoginResponse> {
     const startTime = performance.now();
 
     try {
@@ -63,7 +64,7 @@ export class AuthClient implements AuthService {
   /**
    * Register a new user
    */
-  async register(providerName: string, registrationData: Record<string, unknown>): Promise<RegisterResponse> {
+  async register(providerName: SupportedAuthProvider, registrationData: Record<string, unknown>): Promise<RegisterResponse> {
     const startTime = performance.now();
 
     try {
@@ -92,7 +93,7 @@ export class AuthClient implements AuthService {
   /**
    * Validate a token
    */
-  async validateToken(token: string, providerName?: string): Promise<ValidateTokenResponse> {
+  async validateToken(token: string, providerName?: SupportedAuthProvider): Promise<ValidateTokenResponse> {
     const startTime = performance.now();
 
     try {
@@ -123,7 +124,7 @@ export class AuthClient implements AuthService {
   /**
    * Logout a user
    */
-  async logout(providerName: string, token: string): Promise<LogoutResponse> {
+  async logout(providerName: SupportedAuthProvider, token: string): Promise<LogoutResponse> {
     const startTime = performance.now();
 
     try {

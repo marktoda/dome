@@ -41,8 +41,10 @@ describe('handleError', () => {
         body: errorBodyWithoutMessage,
       });
       handleError(apiError, { outputFormat: OutputFormat.CLI });
+      // Assuming error.message from DomeApiError is comprehensive
+      const comprehensiveMessage = `${apiErrorMessage}\nStatus code: ${statusCode}\nBody: ${JSON.stringify(errorBodyWithoutMessage)}`;
       expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
-      expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, `Error: ${apiErrorMessage}`);
+      expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, `Error: ${comprehensiveMessage}`);
       expect(consoleErrorSpy).toHaveBeenNthCalledWith(2, `Status Code: ${statusCode}`);
     });
 
@@ -51,9 +53,11 @@ describe('handleError', () => {
         statusCode,
         body: {},
       });
+      // Assuming error.message from DomeApiError is comprehensive even with a default
+      const defaultComprehensiveMessage = `An API error occurred\nStatus code: ${statusCode}\nBody: ${JSON.stringify({})}`;
       handleError(apiError, { outputFormat: OutputFormat.CLI });
       expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
-      expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, `Error: An API error occurred`);
+      expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, `Error: ${defaultComprehensiveMessage}`);
       expect(consoleErrorSpy).toHaveBeenNthCalledWith(2, `Status Code: ${statusCode}`);
     });
 
@@ -84,7 +88,8 @@ describe('handleError', () => {
         expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
         const expectedDetails: ErrorDetails = {
           type: 'DomeApiError',
-          message: apiErrorMessage,
+          // Assuming error.message from DomeApiError (which becomes errorDetails.message) is comprehensive
+          message: `${apiErrorMessage}\nStatus code: ${statusCode}\nBody: ${JSON.stringify(errorBodyWithoutMessage)}`,
           statusCode,
           details: errorBodyWithoutMessage,
         };

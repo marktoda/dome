@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { AgentState, MessagePair } from '../types';
 import { getUserId } from '../utils/stateUtils';
 import { ObservabilityService } from '../services/observabilityService';
@@ -183,7 +183,7 @@ export const filterHistory = async (state: AgentState, env: Env): Promise<AgentS
       },
     };
   } catch (error) {
-    logger.error({ err: error }, 'Error in filterHistory');
+    logError(error, 'Error in filterHistory');
 
     // Handle error case
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';

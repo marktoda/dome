@@ -16,7 +16,7 @@
  */
 
 import { NewContentMessage } from '@dome/common';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
@@ -93,7 +93,7 @@ async function createTempFile(prefix: string, content: string): Promise<string> 
     await fs.writeFile(tempFilePath, content);
     return tempFilePath;
   } catch (error) {
-    logger.error({ error, path: tempFilePath }, `Failed to create temporary file`);
+    logError(error, `Failed to create temporary file`, { path: tempFilePath });
     throw error;
   }
 }
@@ -170,8 +170,8 @@ async function main() {
               );
               logger.debug(`Sent message to constellation queue for ID: ${item.id}`);
             } catch (queueError) {
-              logger.error(
-                { error: queueError },
+              logError(
+                queueError,
                 `Failed to send to constellation queue for ID: ${item.id}`,
               );
             }
@@ -180,7 +180,7 @@ async function main() {
               await execAsync(`wrangler queues publish new-content-ai ${tempMessageFile}`);
               logger.debug(`Sent message to AI queue for ID: ${item.id}`);
             } catch (queueError) {
-              logger.error({ error: queueError }, `Failed to send to AI queue for ID: ${item.id}`);
+              logError(queueError, `Failed to send to AI queue for ID: ${item.id}`);
             }
           } finally {
             // Clean up
@@ -193,9 +193,10 @@ async function main() {
         logger.debug(`Sent message for content ID: ${item.id}`);
         successCount++;
       } catch (error) {
-        logger.error(
-          { error, contentId: item.id },
+        logError(
+          error,
           `Failed to send message for content ID: ${item.id}`,
+          { contentId: item.id },
         );
         failureCount++;
       }
@@ -230,6 +231,6 @@ async function main() {
 
 // Execute main function
 main().catch(error => {
-  logger.error({ error }, 'Unhandled error in batch re-embedding script');
+  logError(error, 'Unhandled error in batch re-embedding script');
   process.exit(1);
 });

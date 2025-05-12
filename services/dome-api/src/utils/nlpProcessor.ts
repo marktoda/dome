@@ -1,5 +1,5 @@
 import { Bindings } from '../types';
-import { ServiceError } from '@dome/common';
+import { ServiceError, logError } from '@dome/common'; // Added logError
 
 /**
  * Content type enum
@@ -68,7 +68,7 @@ export class NlpProcessor {
       // Process with Workers AI
       return this.processInputWithAI(env, input);
     } catch (error) {
-      console.error('Error processing natural language input:', error);
+      logError(error, 'Error processing natural language input');
 
       // Fallback to rule-based processing on error
       try {
@@ -132,7 +132,7 @@ export class NlpProcessor {
         const jsonStr = jsonMatch[0];
         parsedResult = JSON.parse(jsonStr);
       } catch (parseError) {
-        console.error('Error parsing AI response:', parseError);
+        logError(parseError, 'Error parsing AI response');
         // Fallback to rule-based processing
         return this.processInputWithRules(input);
       }
@@ -148,7 +148,7 @@ export class NlpProcessor {
         reminderTime: parsedResult.reminderTime,
       };
     } catch (error) {
-      console.error('Error processing input with AI:', error);
+      logError(error, 'Error processing input with AI');
       throw error;
     }
   }

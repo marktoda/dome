@@ -12,34 +12,34 @@ import { VectorWithMetadata } from '../../src/types';
 import { VectorMeta, VectorSearchResult, PUBLIC_USER_ID } from '@dome/common';
 
 // Mock the logger and metrics
-vi.mock('@dome/common', () => ({
-  getLogger: vi.fn().mockReturnValue({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-  metrics: {
-    increment: vi.fn(),
-    gauge: vi.fn(),
-    timing: vi.fn(),
-    startTimer: vi.fn().mockReturnValue({
-      stop: vi.fn(),
-    }),
-  },
-  // Add the missing function
-  createServiceMetrics: vi.fn(serviceName => ({
-    increment: vi.fn(),
-    decrement: vi.fn(),
-    gauge: vi.fn(),
-    timing: vi.fn(),
-    startTimer: vi.fn(() => ({ stop: vi.fn(() => 100) })),
-    trackOperation: vi.fn(),
-    getCounter: vi.fn(() => 0),
-    getGauge: vi.fn(() => 0),
-    reset: vi.fn(),
-  })),
-}));
+// vi.mock('@dome/common', () => ({ // Removed local mock to use global setup.js mock
+//   getLogger: vi.fn().mockReturnValue({
+//     debug: vi.fn(),
+//     info: vi.fn(),
+//     warn: vi.fn(),
+//     error: vi.fn(),
+//   }),
+//   metrics: {
+//     increment: vi.fn(),
+//     gauge: vi.fn(),
+//     timing: vi.fn(),
+//     startTimer: vi.fn().mockReturnValue({
+//       stop: vi.fn(),
+//     }),
+//   },
+//   // Add the missing function
+//   createServiceMetrics: vi.fn(serviceName => ({
+//     increment: vi.fn(),
+//     decrement: vi.fn(),
+//     gauge: vi.fn(),
+//     timing: vi.fn(),
+//     startTimer: vi.fn(() => ({ stop: vi.fn(() => 100) })),
+//     trackOperation: vi.fn(),
+//     getCounter: vi.fn(() => 0),
+//     getGauge: vi.fn(() => 0),
+//     reset: vi.fn(),
+//   })),
+// }));
 
 vi.mock('../../src/utils/metrics', () => ({
   metrics: {
@@ -52,7 +52,7 @@ vi.mock('../../src/utils/metrics', () => ({
 }));
 
 // Temporarily skip all tests to resolve memory issues
-describe.skip('VectorizeService', () => {
+describe('VectorizeService', () => { // Unskipped this describe block
   let mockVectorize: VectorizeIndex;
 
   beforeEach(() => {
@@ -287,9 +287,12 @@ describe.skip('VectorizeService', () => {
     it('should handle empty input', async () => {
       const vectorizeService = new VectorizeService(mockVectorize);
 
-      const result = await vectorizeService.query([]);
-
-      expect(result).toEqual([]);
+      // Expect the service to throw a ValidationError (or a specific error type if defined)
+      // The actual error comes from assertValid in vectorize.ts, which might be a generic HttpError
+      // or a more specific ValidationError if @dome/common provides it and it's used.
+      // For now, let's expect it to throw an error that includes the message.
+      await expect(vectorizeService.query([])).rejects.toThrow('Vector must not be empty');
+      
       expect(mockVectorize.query).not.toHaveBeenCalled();
     });
 

@@ -6,26 +6,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Embedder, DEFAULT_EMBEDDER_CONFIG, createEmbedder } from '../../src/services/embedder';
 
 // Mock the logger and metrics
-vi.mock('@dome/common', () => ({
-  getLogger: vi.fn().mockReturnValue({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
-  metrics: {
-    increment: vi.fn(),
-    gauge: vi.fn(),
-    timing: vi.fn(),
-    startTimer: vi.fn().mockReturnValue({
-      stop: vi.fn(),
-    }),
-  },
-}));
+// vi.mock('@dome/common', () => ({ // Removed local mock to use global setup.js mock
+//   getLogger: vi.fn().mockReturnValue({
+//     debug: vi.fn(),
+//     info: vi.fn(),
+//     warn: vi.fn(),
+//     error: vi.fn(),
+//   }),
+//   metrics: {
+//     increment: vi.fn(),
+//     gauge: vi.fn(),
+//     timing: vi.fn(),
+//     startTimer: vi.fn().mockReturnValue({
+//       stop: vi.fn(),
+//     }),
+//   },
+// }));
 
 vi.mock('../../src/utils/metrics', () => ({
   metrics: {
     increment: vi.fn(),
+    counter: vi.fn(), // Added counter mock
     gauge: vi.fn(),
     startTimer: vi.fn(() => ({
       stop: vi.fn(),
@@ -188,7 +189,7 @@ describe('Embedder', () => {
       expect(embedder).toBeInstanceOf(Embedder);
     });
 
-    it('should create an embedder with custom config when provided', () => {
+    it('should create an embedder with custom config when provided', async () => { // Made test async
       const customConfig = {
         model: 'custom-model',
         maxBatchSize: 5,
@@ -198,7 +199,7 @@ describe('Embedder', () => {
 
       // We can't directly access private properties, so we'll test indirectly
       // by checking that the custom model is used
-      embedder.embed(['test']);
+      await embedder.embed(['test']); // Awaited the async call
 
       expect(mockAI.run).toHaveBeenCalledWith('custom-model', { text: ['test'] });
     });

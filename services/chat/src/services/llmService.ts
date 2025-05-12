@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { AIMessage } from '../types';
 import { ChatOpenAI } from '@langchain/openai';
 import {
@@ -188,12 +188,10 @@ export class LlmService {
         maxTokens: opts.maxTokens,
       });
     } catch (error) {
-      logger.error(
-        {
-          err: error,
-          modelId,
-        },
+      logError(
+        error,
         'Failed to create tool-bound LLM',
+        { modelId },
       );
 
       // Fall back to default model if specified model fails
@@ -299,7 +297,7 @@ export class LlmService {
 
       return result as T;
     } catch (e: any) {
-      logger.error({ err: e }, 'Structured output LLM call failed');
+      logError(e, 'Structured output LLM call failed');
       throw new Error(`Failed to get structured output: ${e?.message || 'Unknown error'}`);
     }
   }

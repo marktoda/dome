@@ -2,7 +2,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { BaseError, UnauthorizedError, ValidationError, ServiceError, NotFoundError, ForbiddenError, createServiceErrorHandler } from '@dome/common/errors';
-import { getLogger, withContext } from '@dome/common';
+import { getLogger, logError, withContext } from '@dome/common';
 import { authMetrics } from './utils/logging';
 import { LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse, SupportedAuthProvider, User } from './types'; // Added User
 import { AuthService as UnifiedAuthService } from './services/auth-service';
@@ -52,7 +52,7 @@ const runRpcWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): 
       };
 
       // Log the original error structure
-      logger.error({ error: err, ...errorContext }, `Error in RPC operation ${operation}`);
+      logError(err, `Error in RPC operation ${operation}`, { errorContext });
 
       if (err instanceof BaseError) {
         // If it's already a BaseError, it's structured for our system
@@ -97,17 +97,17 @@ export default class Auth extends WorkerEntrypoint<Env> {
     const activeProviders = new Map<SupportedAuthProvider, BaseAuthProvider>(); // Corrected Map type
 
     // Initialize LocalAuthProvider (Email/Password)
-    const localConfig = authProviderConfigs[SupportedAuthProvider.EMAIL];
+    const localConfig = authProviderConfigs[SupportedAuthProvider.LOCAL];
     if (localConfig?.isEnabled) {
-      logger.info(`Initializing LocalAuthProvider for ${SupportedAuthProvider.EMAIL}`);
+      logger.info(`Initializing LocalAuthProvider for ${SupportedAuthProvider.LOCAL}`);
       // Assuming LocalAuthProvider constructor is refactored: (config, tokenManager, userManager, env)
       // and it calls super(tokenManager) and sets its providerName.
       activeProviders.set(
-        SupportedAuthProvider.EMAIL,
+        SupportedAuthProvider.LOCAL,
         new LocalAuthProvider(localConfig, tokenManager, userManager, env),
       );
     } else {
-      logger.info(`LocalAuthProvider (${SupportedAuthProvider.EMAIL}) is not enabled.`);
+      logger.info(`LocalAuthProvider (${SupportedAuthProvider.LOCAL}) is not enabled.`);
     }
 
     // Initialize PrivyAuthProvider
@@ -224,7 +224,9 @@ export default class Auth extends WorkerEntrypoint<Env> {
       if (!body.token) {
         throw new ValidationError('token is required.');
       }
-      const result = await this.unifiedAuthService.validateToken(body.token, body.providerName);
+      // Cast the incoming string providerName to the enum type
+      const providerEnum = body.providerName as SupportedAuthProvider | undefined;
+      const result = await this.unifiedAuthService.validateToken(body.token, providerEnum);
       const response: ValidateTokenResponse = {
         success: true, // Assuming validateToken throws on failure
         userId: result.userId,
@@ -330,7 +332,8 @@ export default class Auth extends WorkerEntrypoint<Env> {
         authMetrics.counter('rpc.validateToken.requests', 1, { providerName: providerName || 'unknown' });
         getLogger().info({ providerName, requestId, operation: 'rpcValidateToken' }, 'Processing RPC validateToken request');
 
-        const result = await this.unifiedAuthService.validateToken(token, providerName);
+        const providerEnum = providerName as SupportedAuthProvider | undefined;
+        const result = await this.unifiedAuthService.validateToken(token, providerEnum);
 
         authMetrics.counter('rpc.validateToken.success', 1, { providerName: providerName || 'unknown' });
         getLogger().info({ userId: result.userId, provider: result.provider, requestId, operation: 'rpcValidateToken' }, 'RPC Token validation successful');

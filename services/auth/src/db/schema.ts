@@ -44,7 +44,7 @@ export const userAuthProviders = sqliteTable('user_auth_providers', {
   userId: text('user_id')
     .notNull()
     .references(() => users.id),                         // Reference to users table
-  provider: text('provider').notNull(),                  // 'privy' | 'local'
+  provider: text('provider').notNull(),                  // e.g., SupportedAuthProvider.PRIVY or SupportedAuthProvider.LOCAL
   providerUserId: text('provider_user_id').notNull(),    // JWT sub for Privy or user's email for local
   email: text('email'),                                  // May be null for some providers
   linkedAt: integer('linked_at', { mode: 'timestamp' }).notNull(),

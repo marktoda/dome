@@ -37,7 +37,7 @@ type DeadQueue = Env['EMBED_DEAD'];
 const buildServices = (env: Env) => ({
   preprocessor: createPreprocessor(),
   embedder: createEmbedder(env.AI),
-  vectorize: createVectorizeService(env.VECTORIZE),
+  vectorize: createVectorizeService(env.VECTORIZE), // Reverted to 'vectorize'
   silo: new SiloClient(env.SILO as unknown as SiloBinding),
 });
 

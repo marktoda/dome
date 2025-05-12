@@ -1,6 +1,6 @@
 import { Context } from 'hono';
 import { z, createRoute, OpenAPIHono, RouteConfigToTypedResponse } from '@hono/zod-openapi';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { createServiceFactory } from '../services/serviceFactory';
 import type { AppEnv } from '../types';
 import { authenticationMiddleware, AuthContext } from '../middleware/authenticationMiddleware'; // Assuming auth is needed
@@ -168,7 +168,7 @@ export class NotionController {
       // Matching one of the error responses (e.g., 500)
       return c.json({ success: false as const, error: { code: 'NOT_IMPLEMENTED', message: 'Not implemented yet' } }, 500);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId }, 'Register Notion workspace failed');
+      logError(error, 'Register Notion workspace failed', { userId });
       return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed' } }, 500);
     }
   };
@@ -188,7 +188,7 @@ export class NotionController {
       // Matching one of the error responses (e.g., 404)
       return c.json({ success: false as const, error: { code: 'NOT_IMPLEMENTED', message: 'Not implemented yet' } }, 404);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId, params }, 'Get Notion workspace history failed');
+      logError(error, 'Get Notion workspace history failed', { userId, params });
       return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed' } }, 500);
     }
   };
@@ -207,7 +207,7 @@ export class NotionController {
       // Matching one of the error responses (e.g., 404)
       return c.json({ success: false as const, error: { code: 'NOT_IMPLEMENTED', message: 'Not implemented yet' } }, 404);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId, params }, 'Trigger Notion workspace sync failed');
+      logError(error, 'Trigger Notion workspace sync failed', { userId, params });
       return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed' } }, 500);
     }
   };
@@ -227,7 +227,7 @@ export class NotionController {
       // Matching one of the error responses (e.g., 400)
       return c.json({ success: false as const, error: { code: 'NOT_IMPLEMENTED', message: 'Not implemented yet' } }, 400);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId }, 'Configure Notion OAuth failed');
+      logError(error, 'Configure Notion OAuth failed', { userId });
       return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed' } }, 500);
     }
   };
@@ -245,7 +245,7 @@ export class NotionController {
       // Matching one of the error responses (e.g., 500)
       return c.json({ success: false as const, error: { code: 'NOT_IMPLEMENTED', message: 'Not implemented yet' } }, 500);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId }, 'Get Notion OAuth URL failed');
+      logError(error, 'Get Notion OAuth URL failed', { userId });
       return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed' } }, 500);
     }
   };
@@ -264,7 +264,7 @@ export class NotionController {
       // Matching one of the error responses (e.g., 400)
       return c.json({ success: false as const, error: { code: 'NOT_IMPLEMENTED', message: 'Not implemented yet' } }, 400);
     } catch (error: any) {
-      logger.error({ error: error.message, stack: error.stack, userId }, 'Store Notion integration failed');
+      logError(error, 'Store Notion integration failed', { userId });
       return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed' } }, 500);
     }
   };

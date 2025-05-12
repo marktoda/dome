@@ -31,7 +31,7 @@ export enum UserRole {
  * Supported Authentication Providers
  */
 export enum SupportedAuthProvider {
-  EMAIL = 'email',
+  LOCAL = 'local', // Renamed from EMAIL for clarity
   PRIVY = 'privy',
   GOOGLE = 'google',
   GITHUB = 'github',
@@ -90,7 +90,7 @@ export interface ValidateTokenResponse {
   success: boolean;
   userId: string;
   user?: User; // Add the user object to the response
-  provider: string;
+  provider: SupportedAuthProvider;
   details?: any; // Additional details from the token or validation process
   ttl?: number; // Optional: Remaining time to live for the token in seconds
 }

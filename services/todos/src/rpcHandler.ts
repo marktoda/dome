@@ -9,7 +9,7 @@ import {
   Env,
 } from './types';
 import { TodosService } from './services/todosService';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common'; // Assuming logError is co-located or update path
 
 const logger = getLogger();
 
@@ -49,7 +49,7 @@ export class TodosRPCHandler implements TodosBinding {
 
       return result;
     } catch (error) {
-      logger.error('RPC: createTodo failed', { error, userId: todo.userId });
+      logError(error, 'RPC: createTodo failed', { userId: todo.userId });
       throw this.formatRPCError(error);
     }
   }
@@ -70,7 +70,7 @@ export class TodosRPCHandler implements TodosBinding {
 
       return todo;
     } catch (error) {
-      logger.error('RPC: getTodo failed', { error, todoId: id });
+      logError(error, 'RPC: getTodo failed', { todoId: id });
       throw this.formatRPCError(error);
     }
   }
@@ -91,7 +91,7 @@ export class TodosRPCHandler implements TodosBinding {
 
       return result;
     } catch (error) {
-      logger.error('RPC: listTodos failed', { error, filter });
+      logError(error, 'RPC: listTodos failed', { filter });
       throw this.formatRPCError(error);
     }
   }
@@ -112,7 +112,7 @@ export class TodosRPCHandler implements TodosBinding {
 
       return result;
     } catch (error) {
-      logger.error('RPC: updateTodo failed', { error, todoId: id });
+      logError(error, 'RPC: updateTodo failed', { todoId: id });
       throw this.formatRPCError(error);
     }
   }
@@ -133,7 +133,7 @@ export class TodosRPCHandler implements TodosBinding {
 
       return result;
     } catch (error) {
-      logger.error('RPC: deleteTodo failed', { error, todoId: id });
+      logError(error, 'RPC: deleteTodo failed', { todoId: id });
       throw this.formatRPCError(error);
     }
   }
@@ -156,7 +156,7 @@ export class TodosRPCHandler implements TodosBinding {
 
       return result;
     } catch (error) {
-      logger.error('RPC: batchUpdateTodos failed', { error, todoIds: ids });
+      logError(error, 'RPC: batchUpdateTodos failed', { todoIds: ids });
       throw this.formatRPCError(error);
     }
   }
@@ -177,7 +177,7 @@ export class TodosRPCHandler implements TodosBinding {
 
       return stats;
     } catch (error) {
-      logger.error('RPC: stats failed', { error, userId });
+      logError(error, 'RPC: stats failed', { userId });
       throw this.formatRPCError(error);
     }
   }

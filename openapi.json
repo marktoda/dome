@@ -164,13 +164,25 @@
           "role": {
             "type": "string",
             "example": "user"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "local",
+              "privy",
+              "google",
+              "github"
+            ],
+            "description": "The authentication provider used.",
+            "example": "local"
           }
         },
         "required": [
           "id",
           "email",
           "name",
-          "role"
+          "role",
+          "provider"
         ]
       },
       "ValidateTokenResponse": {
@@ -245,7 +257,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T04:14:04.274Z"
+            "example": "2025-05-12T16:17:52.810Z"
           },
           "service": {
             "type": "string",
@@ -842,7 +854,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T04:14:04.239Z"
+            "example": "2025-05-12T16:17:52.760Z"
           },
           "status": {
             "type": "string",
@@ -949,7 +961,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T04:14:04.246Z"
+            "example": "2025-05-12T16:17:52.777Z"
           },
           "status": {
             "type": "string",

@@ -27,9 +27,9 @@ class EfficientMetricsService {
   }
 
   /**
-   * Increment a counter by a specified amount
+   * Increment a counter by a specified amount (renamed from increment)
    */
-  increment(name: string, value = 1, tags: Record<string, string | number> = {}): void {
+  counter(name: string, value = 1, tags: Record<string, string | number> = {}): void {
     const currentValue = this.getCounter(name);
     const newValue = currentValue + value;
     this.counters.set(name, newValue);
@@ -88,7 +88,7 @@ class EfficientMetricsService {
     tags: Record<string, string | number> = {},
   ): void {
     const metric = success ? `${operationName}.success` : `${operationName}.failure`;
-    this.increment(metric, 1, tags);
+    this.counter(metric, 1, tags); // Changed from this.increment
   }
 
   /**

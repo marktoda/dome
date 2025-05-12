@@ -11,7 +11,7 @@ import {
   TodoJob,
 } from '../types';
 import { TodosRepository } from '../db/todosRepository';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common'; // Assuming logError is co-located or update path
 
 const logger = getLogger();
 
@@ -45,7 +45,7 @@ export class TodosService {
         success: true,
       };
     } catch (error) {
-      logger.error('Failed to create todo', { error, userId: input.userId });
+      logError(error, 'Failed to create todo', { userId: input.userId });
       throw this.handleServiceError(error, 'Failed to create todo');
     }
   }
@@ -86,8 +86,7 @@ export class TodosService {
 
       return result;
     } catch (error) {
-      logger.error('Failed to process todo job', {
-        error,
+      logError(error, 'Failed to process todo job', {
         userId: job.userId,
         sourceNoteId: job.sourceNoteId,
       });
@@ -113,7 +112,7 @@ export class TodosService {
 
       return todo;
     } catch (error) {
-      logger.error('Failed to get todo', { error, todoId: id });
+      logError(error, 'Failed to get todo', { todoId: id });
       throw this.handleServiceError(error, 'Failed to get todo');
     }
   }
@@ -138,7 +137,7 @@ export class TodosService {
 
       return result;
     } catch (error) {
-      logger.error('Failed to list todos', { error, userId: filter.userId });
+      logError(error, 'Failed to list todos', { userId: filter.userId });
       throw this.handleServiceError(error, 'Failed to list todos');
     }
   }
@@ -170,7 +169,7 @@ export class TodosService {
 
       return { success };
     } catch (error) {
-      logger.error('Failed to update todo', { error, todoId: id });
+      logError(error, 'Failed to update todo', { todoId: id });
       throw this.handleServiceError(error, 'Failed to update todo');
     }
   }
@@ -199,7 +198,7 @@ export class TodosService {
 
       return { success };
     } catch (error) {
-      logger.error('Failed to delete todo', { error, todoId: id });
+      logError(error, 'Failed to delete todo', { todoId: id });
       throw this.handleServiceError(error, 'Failed to delete todo');
     }
   }
@@ -232,7 +231,7 @@ export class TodosService {
 
       return result;
     } catch (error) {
-      logger.error('Failed to batch update todos', { error, todoIds: ids });
+      logError(error, 'Failed to batch update todos', { todoIds: ids });
       throw this.handleServiceError(error, 'Failed to batch update todos');
     }
   }
@@ -253,7 +252,7 @@ export class TodosService {
 
       return stats;
     } catch (error) {
-      logger.error('Failed to get todo stats', { error, userId });
+      logError(error, 'Failed to get todo stats', { userId });
       throw this.handleServiceError(error, 'Failed to get todo stats');
     }
   }

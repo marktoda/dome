@@ -289,7 +289,7 @@ describe.skip('Metrics Utilities', () => {
     });
 
     it('should have the expected methods', () => {
-      expect(metrics.increment).toBeDefined();
+      expect(metrics.counter).toBeDefined(); // Changed from increment to counter
       expect(metrics.decrement).toBeDefined();
       expect(metrics.gauge).toBeDefined();
       expect(metrics.timing).toBeDefined();

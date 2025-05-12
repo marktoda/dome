@@ -158,8 +158,7 @@ export default class Todos extends WorkerEntrypoint<Env> {
         queueName: batch.queue || 'unknown',
       });
     } catch (error) {
-      logger.error('Error in queue consumer:', {
-        error,
+      logError(error, 'Error in queue consumer', {
         queueName: batch.queue,
         messageCount: batch.messages.length,
       });

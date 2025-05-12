@@ -1,4 +1,4 @@
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { D1Checkpointer } from '../checkpointer/d1Checkpointer';
 import { getUserInfo, UserRole } from '@dome/common/src/middleware/enhancedAuthMiddleware';
 import { Context } from 'hono';
@@ -111,7 +111,7 @@ export class DataRetentionManager {
       // Initialize tables if they don't exist
       // This is now handled by Drizzle migrations
     } catch (error) {
-      this.logger.error({ err: error }, 'Failed to initialize data retention manager');
+      logError(error, 'Failed to initialize data retention manager');
       throw error;
     }
   }
@@ -167,13 +167,13 @@ export class DataRetentionManager {
         'User consent recorded',
       );
     } catch (error) {
-      this.logger.error(
+      logError(
+        error,
+        'Failed to record user consent',
         {
-          err: error,
           userId,
           dataCategory,
         },
-        'Failed to record user consent',
       );
       throw error;
     }
@@ -255,18 +255,18 @@ export class DataRetentionManager {
       if (error instanceof ForbiddenError) {
         throw error;
       }
-
-      this.logger.error(
-        {
-          err: error,
-          recordId,
-          userId,
-          dataCategory,
-        },
-        'Failed to register data record',
-      );
-      throw error;
-    }
+  
+        logError(
+          error,
+          'Failed to register data record',
+          {
+            recordId,
+            userId,
+            dataCategory,
+          },
+        );
+        throw error;
+      }
   }
 
   /**
@@ -336,7 +336,7 @@ export class DataRetentionManager {
 
       return { deleted, anonymized };
     } catch (error) {
-      this.logger.error({ err: error }, 'Failed to clean up expired data');
+      logError(error, 'Failed to clean up expired data');
       return { deleted: 0, anonymized: 0 };
     }
   }
@@ -411,16 +411,14 @@ export class DataRetentionManager {
       if (error instanceof ForbiddenError) {
         throw error;
       }
-
-      this.logger.error(
-        {
-          err: error,
-          userId,
-        },
-        'Failed to delete user data',
-      );
-      throw error;
-    }
+  
+        logError(
+          error,
+          'Failed to delete user data',
+          { userId },
+        );
+        throw error;
+      }
   }
 
   /**
@@ -462,13 +460,13 @@ export class DataRetentionManager {
           );
       }
     } catch (error) {
-      this.logger.error(
+      logError(
+        error,
+        'Failed to delete data',
         {
-          err: error,
           recordId,
           dataCategory,
         },
-        'Failed to delete data',
       );
       throw error;
     }
@@ -500,12 +498,12 @@ export class DataRetentionManager {
       }
     } catch (error) {
       this.logger.error(
+        error,
+        'Failed to anonymize data',
         {
-          err: error,
           recordId,
           dataCategory,
         },
-        'Failed to anonymize data',
       );
       throw error;
     }
@@ -583,7 +581,7 @@ export class DataRetentionManager {
         anonymizedRecords: Number(anonymizedResult[0]?.count || 0),
       };
     } catch (error) {
-      this.logger.error({ err: error }, 'Failed to get data retention stats');
+      logError(error, 'Failed to get data retention stats');
 
       return {
         totalRecords: 0,

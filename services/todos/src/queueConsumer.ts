@@ -1,6 +1,6 @@
 import { Env, TodoJob } from './types';
 import { TodosService } from './services/todosService';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common'; // Assuming logError is co-located or update path
 import { AiProcessorAdapter, AiExtractedTodo } from './adapters/aiProcessorAdapter';
 import { TodoQueueItem } from './client';
 
@@ -65,8 +65,7 @@ export async function processTodoQueue(
 
         return jobResults;
       } catch (error) {
-        logger.error('Failed to process todo job', {
-          error,
+        logError(error, 'Failed to process todo job', {
           messageId: message.id,
         });
 
@@ -140,8 +139,7 @@ function transformQueueMessage(message: { body: TodoQueueItem; id: string }): To
 
     return [todoJob];
   } catch (error) {
-    logger.error('Error transforming queue message', {
-      error,
+    logError(error, 'Error transforming queue message', {
       messageId: message.id,
     });
     return [];

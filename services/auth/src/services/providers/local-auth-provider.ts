@@ -31,7 +31,7 @@ export class LocalAuthProvider extends BaseAuthProvider {
     env: any, // Consider a more specific Env type
   ) {
     super(tokenManager); // BaseAuthProvider expects tokenManager
-    this.providerName = SupportedAuthProvider.EMAIL; // Set provider name
+    this.providerName = SupportedAuthProvider.LOCAL; // Set provider name
     this.config = {
       ...config,
       saltRounds: config.saltRounds || DEFAULT_SALT_ROUNDS,

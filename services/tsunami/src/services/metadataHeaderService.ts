@@ -8,7 +8,7 @@
  * @module services/metadataHeaderService
  */
 
-import { getLogger, getRequestId } from '@dome/common';
+import { getLogger, getRequestId, logError } from '@dome/common';
 import { ValidationError } from '@dome/errors';
 import { assertValid } from '../utils/errors';
 import { DomeMetadata } from '../types/metadata';
@@ -77,13 +77,13 @@ ${METADATA_END}
 
 ${content}`;
   } catch (error) {
-    logger.error(
+    logError(
+      error,
+      'Error serializing metadata',
       {
         event: 'metadata_header_error',
-        error: error instanceof Error ? error.message : String(error),
         requestId,
-      },
-      'Error serializing metadata',
+      }
     );
 
     throw new ValidationError('Failed to serialize metadata', {

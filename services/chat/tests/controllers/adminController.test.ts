@@ -1,43 +1,43 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AdminController } from '../../src/controllers/adminController';
 import { Services } from '../../src/services';
-import { getLogger, metrics } from '@dome/common';
+import { getLogger, metrics, withContext, logError } from '@dome/common';
 
-// Mock dependencies
+// Mock dependencies in a single block
 vi.mock('@dome/common', () => {
-  return {
-    withContext: vi.fn((_, fn) => fn(mockLogger)),
+  // Define mockLogger INSIDE the factory to avoid hoisting issues
+  const mockLogger: any = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn(() => mockLogger), // Reference itself
   };
-});
 
-// Create a mockLogger that can be reused
-const mockLogger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-  child: vi.fn(() => mockLogger),
-};
-
-vi.mock('@dome/common', () => {
   return {
+    // Mock functions used by the controller
     getLogger: vi.fn(() => mockLogger),
     logError: vi.fn(),
+    withContext: vi.fn((_, fn) => fn(mockLogger)), // Ensure withContext uses the mockLogger
+
+    // Mock metrics object used by controller and tests
     metrics: {
-      increment: vi.fn(),
-      timing: vi.fn(),
-      gauge: vi.fn(),
-      startTimer: vi.fn(() => ({ stop: vi.fn() })),
-      trackOperation: vi.fn(),
-    },
-    baseLogger: mockLogger,
-    createLogger: vi.fn(() => mockLogger),
-    createServiceMetrics: vi.fn(() => ({
-      counter: vi.fn(),
-      gauge: vi.fn(),
-      timing: vi.fn(),
-      startTimer: vi.fn(() => ({ stop: vi.fn() })),
-      trackOperation: vi.fn(),
+    increment: vi.fn(),
+    timing: vi.fn(),
+    gauge: vi.fn(),
+    startTimer: vi.fn(() => ({ stop: vi.fn() })),
+    trackOperation: vi.fn(),
+  },
+
+  // Mock other potentially used exports if needed, though likely not necessary for this controller
+  baseLogger: mockLogger,
+  createLogger: vi.fn(() => mockLogger),
+  createServiceMetrics: vi.fn(() => ({
+    counter: vi.fn(),
+    gauge: vi.fn(),
+    timing: vi.fn(),
+    startTimer: vi.fn(() => ({ stop: vi.fn() })),
+    trackOperation: vi.fn(),
     })),
   };
 });
@@ -46,16 +46,53 @@ describe('AdminController', () => {
   let controller: AdminController;
   let mockEnv: Env;
   let mockServices: Services;
+// No need for mockMetrics variable, use the imported 'metrics' directly
 
-  beforeEach(() => {
-    // Reset mocks
-    vi.clearAllMocks();
+beforeEach(() => {
+  // Don't clear mocks here; vi.mock implementations should persist
+  // vi.clearAllMocks(); // REMOVED
 
-    // Create mock environment
+  // Mocks defined in vi.mock are already active due to hoisting
+
+
+    // Create mock environment with all required properties
     mockEnv = {
-      CHAT_DB: {} as any,
-      AI: {} as any,
-    } as Env;
+      VERSION: '0.1.0', // Match the exact type from worker-configuration.d.ts
+      LOG_LEVEL: 'debug',
+      ENVIRONMENT: 'staging', // Use 'staging' or 'production' as defined
+      SEARCH_API_KEY: 'test-search-key',
+      OPENAI_API_KEY: 'test-openai-key',
+      COHERE_API_KEY: 'test-cohere-key',
+      CHAT_ENCRYPTION_KEY: 'test-encryption-key',
+      CHAT_DB: { // Mock D1Database methods if needed by the controller
+        prepare: vi.fn(() => ({
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn(),
+          run: vi.fn(),
+          all: vi.fn(),
+          raw: vi.fn(),
+        })),
+        dump: vi.fn(),
+        batch: vi.fn(),
+        exec: vi.fn(),
+      } as unknown as D1Database,
+      CONSTELLATION: { fetch: vi.fn() } as unknown as Fetcher,
+      SILO: { fetch: vi.fn() } as unknown as Fetcher,
+      TODOS: { fetch: vi.fn() } as unknown as Fetcher,
+      AI: { run: vi.fn() } as unknown as Ai, // Mock AI methods if needed
+      // Add missing bindings based on latest Env definition
+      ENRICHED_CONTENT: { // Mock KVNamespace methods
+        get: vi.fn(),
+        getWithMetadata: vi.fn(),
+        put: vi.fn(),
+        list: vi.fn(),
+        delete: vi.fn(),
+      } as unknown as KVNamespace,
+      RATE_LIMIT_DLQ: { // Mock Queue methods
+        send: vi.fn(),
+        sendBatch: vi.fn(),
+      } as unknown as Queue,
+    } as any as Env; // Use double assertion to bypass complex type checking
 
     // Create mock services
     mockServices = {
@@ -102,7 +139,9 @@ describe('AdminController', () => {
   });
 
   afterEach(() => {
-    vi.resetAllMocks();
+    // Restore mocks to their original state after each test
+    vi.restoreAllMocks();
+    // vi.resetAllMocks(); // Use restoreAllMocks instead of resetAllMocks
   });
 
   describe('getCheckpointStats', () => {
@@ -120,7 +159,7 @@ describe('AdminController', () => {
       });
       expect(mockServices.checkpointer.initialize).toHaveBeenCalled();
       expect(mockServices.checkpointer.getStats).toHaveBeenCalled();
-      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.checkpoint_stats', 1);
+      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.checkpoint_stats', 1); // Use imported 'metrics'
     });
 
     it('should handle errors when getting checkpoint stats', async () => {
@@ -129,10 +168,13 @@ describe('AdminController', () => {
 
       // Act & Assert
       await expect(controller.getCheckpointStats()).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith(
+      // Check that the success metric was NOT called
+      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.checkpoint_stats',
         1,
       );
+      // Optionally, check if an error metric WAS called (if implemented in controller)
+      // expect(mockMetrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.checkpoint_stats.error', 1);
     });
   });
 
@@ -145,11 +187,11 @@ describe('AdminController', () => {
       expect(result).toEqual({ deletedCount: 5 });
       expect(mockServices.checkpointer.initialize).toHaveBeenCalled();
       expect(mockServices.checkpointer.cleanup).toHaveBeenCalled();
-      expect(metrics.increment).toHaveBeenCalledWith(
+      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.checkpoint_cleanup',
         1,
       );
-      expect(metrics.increment).toHaveBeenCalledWith(
+      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.checkpoints_deleted',
         5,
       );
@@ -161,10 +203,12 @@ describe('AdminController', () => {
 
       // Act & Assert
       await expect(controller.cleanupCheckpoints()).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith(
+      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.checkpoint_cleanup',
         1,
       );
+      // Optionally check for error metric
+      // expect(mockMetrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.checkpoint_cleanup.error', 1);
     });
   });
 
@@ -184,7 +228,7 @@ describe('AdminController', () => {
       expect(mockServices.checkpointer.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.getStats).toHaveBeenCalled();
-      expect(metrics.increment).toHaveBeenCalledWith(
+      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.data_retention_stats',
         1,
       );
@@ -196,10 +240,12 @@ describe('AdminController', () => {
 
       // Act & Assert
       await expect(controller.getDataRetentionStats()).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith(
+      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.data_retention_stats',
         1,
       );
+      // Optionally check for error metric
+      // expect(mockMetrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.data_retention_stats.error', 1);
     });
   });
 
@@ -213,7 +259,7 @@ describe('AdminController', () => {
       expect(mockServices.checkpointer.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.cleanupExpiredData).toHaveBeenCalled();
-      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.data_cleanup', 1);
+      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.data_cleanup', 1); // Use imported 'metrics'
     });
 
     it('should handle errors when cleaning up expired data', async () => {
@@ -224,7 +270,9 @@ describe('AdminController', () => {
 
       // Act & Assert
       await expect(controller.cleanupExpiredData()).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith('chat_orchestrator.admin.data_cleanup', 1);
+      expect(metrics.increment).not.toHaveBeenCalledWith('chat_orchestrator.admin.data_cleanup', 1); // Use imported 'metrics'
+      // Optionally check for error metric
+      // expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.data_cleanup.error', 1);
     });
   });
 
@@ -238,14 +286,14 @@ describe('AdminController', () => {
       expect(mockServices.checkpointer.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.deleteUserData).toHaveBeenCalledWith('test-user');
-      expect(metrics.increment).toHaveBeenCalledWith(
+      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.user_data_deleted',
         1,
         {
           userId: 'test-user',
         },
       );
-      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.records_deleted', 15);
+      expect(metrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.records_deleted', 15); // Use imported 'metrics'
     });
 
     it('should handle errors when deleting user data', async () => {
@@ -256,10 +304,12 @@ describe('AdminController', () => {
 
       // Act & Assert
       await expect(controller.deleteUserData('test-user')).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith(
+      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.user_data_deleted',
         1,
       );
+      // Optionally check for error metric
+      // expect(mockMetrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.user_data_deleted.error', 1);
     });
   });
 
@@ -279,7 +329,7 @@ describe('AdminController', () => {
         'chatHistory',
         30,
       );
-      expect(metrics.increment).toHaveBeenCalledWith(
+      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.consent_recorded',
         1,
         {
@@ -297,10 +347,12 @@ describe('AdminController', () => {
       await expect(
         controller.recordConsent('test-user', 'chatHistory', { durationDays: 30 }),
       ).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith(
+      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
         'chat_orchestrator.admin.consent_recorded',
         1,
       );
+      // Optionally check for error metric
+      // expect(mockMetrics.increment).toHaveBeenCalledWith('chat_orchestrator.admin.consent_recorded.error', 1);
     });
 
     it('should validate the consent request', async () => {

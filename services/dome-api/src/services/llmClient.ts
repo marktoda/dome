@@ -1,5 +1,5 @@
 import { Bindings } from '../types';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 
 /**
  * AI message interface
@@ -139,7 +139,7 @@ export class LlmClient {
       this.logger.info({ responseLength: response.response.length }, 'Got valid AI response');
       return response.response;
     } catch (error) {
-      this.logger.error({ err: error }, 'Error from AI service');
+      logError(error, 'Error from AI service');
 
       // Provide a fallback response instead of throwing
       return "I'm sorry, but I encountered an issue while processing your request. The AI service is experiencing difficulties. Please try again later.";
@@ -206,7 +206,7 @@ export class LlmClient {
         },
       });
     } catch (error) {
-      this.logger.error({ err: error }, 'Error from AI streaming service');
+      logError(error, 'Error from AI streaming service');
       return this.createFallbackResponse();
     }
   }

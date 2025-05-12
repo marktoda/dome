@@ -1,7 +1,7 @@
 import { UserManager } from './user/user-manager';
 import { BaseAuthProvider, AuthResult } from './providers/base-auth-provider'; // Corrected import
 import { BaseError, UnauthorizedError, ValidationError, ServiceError } from '@dome/common/errors';
-import type { User as SchemaUser } from '../types'; // Corrected path
+import { SupportedAuthProvider, type User as SchemaUser } from '../types'; // Corrected path & import enum
 import { TokenManager } from './token/token-manager';
 
 // Use the schema-inferred User type
@@ -112,11 +112,11 @@ export class AuthService {
     }
   }
 
-  async validateToken(token: string, providerName?: string): Promise<{ userId: string; provider: string; details?: any; user?: User }> {
+  async validateToken(token: string, providerName?: SupportedAuthProvider): Promise<{ userId: string; provider: SupportedAuthProvider; details?: any; user?: User }> {
     try {
       // If providerName is given, use that provider.
       if (providerName) {
-        const provider = this.getProvider(providerName);
+        const provider = this.getProvider(providerName); // providerName is now enum
         // getUserFromToken is the method in BaseAuthProvider for validating and getting user
         const user = await provider.getUserFromToken(token);
         if (!user) {
@@ -124,7 +124,9 @@ export class AuthService {
         }
         // Ensure the returned user object is compatible with the expected structure.
         // The 'User' type from '../types' should be the source of truth.
-        return { userId: user.id, provider: provider.providerName, user: user as User };
+        // provider.providerName should be the string value ('local', 'privy', etc.) matching the enum
+        const returnedProvider = provider.providerName as SupportedAuthProvider; // Cast string to enum
+        return { userId: user.id, provider: returnedProvider, user: user as User };
       }
 
       // If no providerName, attempt to decode and verify with the main TokenManager (HS256)
@@ -137,11 +139,9 @@ export class AuthService {
         if (!user) {
           throw new UnauthorizedError('User not found for token.');
         }
-        // Assuming the token itself doesn't explicitly state the provider,
-        // or if it does, it's an internal "default" provider.
-        // For simplicity, if validated by TokenManager, we might not have a specific "provider" name
-        // unless it's stored in the token or inferred.
-        return { userId: user.id, provider: payload.iss || 'internal', details: payload, user: user as User };
+        // Assuming internal tokens correspond to the LOCAL provider
+        const internalProvider = SupportedAuthProvider.LOCAL;
+        return { userId: user.id, provider: internalProvider, details: payload, user: user as User };
       } catch (e) {
         // If TokenManager fails, and no providerName was given, then fail.
         throw new UnauthorizedError('Token validation failed: Invalid or expired token.');

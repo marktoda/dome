@@ -16,6 +16,7 @@ import {
   createDetailedLoggerMiddleware,
   updateContext,
 } from '@dome/common';
+import { SupportedAuthProvider } from '@dome/auth/client'; // Import the enum
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { buildAuthRouter } from './controllers/authController';
 import { buildNotesRouter, buildAiRouter } from './controllers/siloController';
@@ -23,7 +24,7 @@ import { buildTsunamiContentRouter } from './controllers/tsunamiController';
 import { buildNotionContentRouter } from './controllers/notionController';
 import { buildSearchRouter } from './controllers/searchController';
 import { buildChatRouter } from './controllers/chatController'; // Import Chat router builder
-import { initLogging, getLogger } from '@dome/common';
+import { initLogging, getLogger, logError } from '@dome/common';
 import { metricsMiddleware, initMetrics, metrics } from './middleware/metricsMiddleware';
 import type { Bindings } from './types';
 import { createServiceFactory } from './services/serviceFactory';
@@ -234,7 +235,7 @@ app.get(
       });
     }
 
-    const authResult = await authService.validateToken(token, "privy");
+    const authResult = await authService.validateToken(token, SupportedAuthProvider.PRIVY);
     logger.info({ authResult }, 'WebSocket upgrade auth validation result');
 
     if (!authResult.success || !authResult.user) {
@@ -279,9 +280,10 @@ app.get(
               jsonData = JSON.parse(event.data);
               messageLogger.debug('Successfully parsed WebSocket message as JSON');
             } catch (parseError) {
-              messageLogger.error(
-                { error: parseError },
+              logError(
+                parseError,
                 'Failed to parse WebSocket message as JSON',
+                { logger: messageLogger }, // Pass existing logger if needed or let logError create one
               );
               ws.send(
                 JSON.stringify({
@@ -351,7 +353,7 @@ app.get(
           // For now, let's assume the stream itself signals completion and the client might send more.
           // If it's a one-shot stream, then ws.close() here or after stream is appropriate.
         } catch (error: unknown) {
-          messageLogger.error({ error }, 'Error processing WebSocket message');
+          logError(error, 'Error processing WebSocket message', { logger: messageLogger });
           let errorCode = 'INTERNAL_SERVER_ERROR';
           let errorMessage = 'An internal server error occurred.';
           let closeCode = 1011; // Internal error
@@ -373,7 +375,7 @@ app.get(
               // ws.close(closeCode, errorMessage.substring(0, 123)); // Max length for reason is 123 bytes
             }
           } catch (sendError) {
-            messageLogger.error({ sendError }, 'Failed to send error message over WebSocket.');
+            logError(sendError, 'Failed to send error message over WebSocket', { logger: messageLogger });
           }
         }
       },
@@ -456,16 +458,16 @@ app.notFound(c => {
 
 // Error handler
 app.onError((err, c) => {
-  getLogger().error(
+  logError(
+    err,
+    'Unhandled error',
     {
-      err,
       path: c.req.path,
       method: c.req.method,
       errorName: err.name,
-      errorMessage: err.message,
-      stack: err.stack,
+      // errorMessage is part of err
+      // stack is part of err
     },
-    'Unhandled error',
   );
 
   // Track error with metrics

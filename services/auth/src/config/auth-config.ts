@@ -28,9 +28,9 @@ import {
 export function getAuthProvidersConfig(env: any): AuthProvidersConfig {
   const config: AuthProvidersConfig = {};
 
-  // Email Provider Configuration
-  config[SupportedAuthProvider.EMAIL] = {
-    isEnabled: env.AUTH_EMAIL_ENABLED === 'true' || false,
+  // Local Provider Configuration (Email/Password)
+  config[SupportedAuthProvider.LOCAL] = {
+    isEnabled: true, // Local provider should always be enabled
     // Email provider might not have client ID/secret but other settings
   };
 

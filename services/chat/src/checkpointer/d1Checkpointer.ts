@@ -4,7 +4,7 @@ import {
   type CheckpointMetadata,
 } from '@langchain/langgraph';
 import { RunnableConfig } from '@langchain/core/runnables';
-import { getLogger } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, lt, sql } from 'drizzle-orm';
 import { checkpoints } from '../db/schema';
@@ -39,7 +39,7 @@ export class D1Checkpointer extends BaseCheckpointSaver {
     try {
       this.logger.info('D1Checkpointer initialized successfully');
     } catch (error) {
-      this.logger.error({ err: error }, 'Failed to initialize D1Checkpointer');
+      logError(error, 'Failed to initialize D1Checkpointer');
       throw error;
     }
   }
@@ -111,7 +111,7 @@ export class D1Checkpointer extends BaseCheckpointSaver {
         parentConfig: undefined,
       };
     } catch (error) {
-      this.logger.error({ err: error, runId }, 'Error reading checkpoint');
+      logError(error, 'Error reading checkpoint', { runId });
       return null;
     }
   }
@@ -213,14 +213,14 @@ export class D1Checkpointer extends BaseCheckpointSaver {
         'Checkpoint saved',
       );
     } catch (error) {
-      this.logger.error(
+      logError(
+        error,
+        'Error writing checkpoint',
         {
-          err: error,
           runId,
           step,
           stateSize: stateJson.length,
         },
-        'Error writing checkpoint',
       );
       throw error;
     }
@@ -255,7 +255,7 @@ export class D1Checkpointer extends BaseCheckpointSaver {
 
       this.logger.info({ runId }, 'Checkpoint deleted');
     } catch (error) {
-      this.logger.error({ err: error, runId }, 'Error deleting checkpoint');
+      logError(error, 'Error deleting checkpoint', { runId });
       throw error;
     }
   }
@@ -281,7 +281,7 @@ export class D1Checkpointer extends BaseCheckpointSaver {
 
       return deletedCount;
     } catch (error) {
-      this.logger.error({ err: error, maxAgeSeconds }, 'Error cleaning up checkpoints');
+      logError(error, 'Error cleaning up checkpoints', { maxAgeSeconds });
       return 0;
     }
   }
@@ -319,7 +319,7 @@ export class D1Checkpointer extends BaseCheckpointSaver {
         averageStateSize: Math.round(stats?.avg_size || 0),
       };
     } catch (error) {
-      this.logger.error({ err: error }, 'Error getting checkpoint stats');
+      logError(error, 'Error getting checkpoint stats');
       return {
         totalCheckpoints: 0,
         oldestCheckpoint: 0,
