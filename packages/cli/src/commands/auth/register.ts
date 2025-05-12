@@ -93,7 +93,7 @@ export class RegisterCommand extends BaseCommand {
 
         try {
           const newApiClient = getApiClient();
-          const validationResponse: DomeApi.ValidateTokenResponse =
+          const validationResponse: DomeApi.DomeApiValidateTokenResponse =
             await newApiClient.auth.validateAuthenticationToken();
           if (validationResponse.success && validationResponse.user) {
             saveUserId(validationResponse.user.id);

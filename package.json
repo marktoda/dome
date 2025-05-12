@@ -36,9 +36,14 @@
   "lint-staged": {
     "services/dome-api/src/**/*.{ts,tsx}": [
       "pnpm --filter dome-api gen:openapi",
-      "git add openapi.json"
+      "git add openapi.json",
+      "node ./scripts/copy-openapi-spec.js",
+      "sh -c 'pnpm run gen:sdk'",
+      "git add packages/dome-sdk/ fern/openapi/openapi.json"
     ],
     "openapi.json": [
+      "echo 'openapi.json changed, SDK generation should have been triggered by dome-api source change if applicable.'",
+      "# If openapi.json is modified manually or by another process, still attempt to generate SDK.",
       "node ./scripts/copy-openapi-spec.js",
       "sh -c 'pnpm run gen:sdk'",
       "git add packages/dome-sdk/ fern/openapi/openapi.json"

@@ -4,7 +4,7 @@
 
 import * as DomeApi from "../index";
 
-export interface ValidateTokenResponse {
+export interface DomeApiValidateTokenResponse {
     success: boolean;
-    user: DomeApi.UserProfile;
+    user: DomeApi.DomeApiValidateTokenResponseUser;
 }

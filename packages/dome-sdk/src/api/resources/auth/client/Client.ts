@@ -320,13 +320,13 @@ export class Auth {
      */
     public validateAuthenticationToken(
         requestOptions?: Auth.RequestOptions,
-    ): core.HttpResponsePromise<DomeApi.ValidateTokenResponse> {
+    ): core.HttpResponsePromise<DomeApi.DomeApiValidateTokenResponse> {
         return core.HttpResponsePromise.fromPromise(this.__validateAuthenticationToken(requestOptions));
     }
 
     private async __validateAuthenticationToken(
         requestOptions?: Auth.RequestOptions,
-    ): Promise<core.WithRawResponse<DomeApi.ValidateTokenResponse>> {
+    ): Promise<core.WithRawResponse<DomeApi.DomeApiValidateTokenResponse>> {
         const _response = await core.fetcher({
             url: urlJoin(
                 (await core.Supplier.get(this._options.baseUrl)) ??
@@ -349,7 +349,7 @@ export class Auth {
         });
         if (_response.ok) {
             return {
-                data: serializers.ValidateTokenResponse.parseOrThrow(_response.body, {
+                data: serializers.DomeApiValidateTokenResponse.parseOrThrow(_response.body, {
                     unrecognizedObjectKeys: "passthrough",
                     allowUnrecognizedUnionMembers: true,
                     allowUnrecognizedEnumValues: true,

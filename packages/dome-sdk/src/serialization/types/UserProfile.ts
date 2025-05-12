@@ -5,20 +5,35 @@
 import * as serializers from "../index";
 import * as DomeApi from "../../api/index";
 import * as core from "../../core";
+import { UserProfileAuthProvider } from "./UserProfileAuthProvider";
 
 export const UserProfile: core.serialization.ObjectSchema<serializers.UserProfile.Raw, DomeApi.UserProfile> =
     core.serialization.object({
         id: core.serialization.string(),
         email: core.serialization.string(),
-        name: core.serialization.string(),
+        name: core.serialization.string().optional(),
         role: core.serialization.string(),
+        emailVerified: core.serialization.boolean().optional(),
+        isActive: core.serialization.boolean().optional(),
+        createdAt: core.serialization.date(),
+        updatedAt: core.serialization.date(),
+        lastLoginAt: core.serialization.date().optional(),
+        authProvider: UserProfileAuthProvider.optional(),
+        providerAccountId: core.serialization.string().optional(),
     });
 
 export declare namespace UserProfile {
     export interface Raw {
         id: string;
         email: string;
-        name: string;
+        name?: string | null;
         role: string;
+        emailVerified?: boolean | null;
+        isActive?: boolean | null;
+        createdAt: string;
+        updatedAt: string;
+        lastLoginAt?: string | null;
+        authProvider?: UserProfileAuthProvider.Raw | null;
+        providerAccountId?: string | null;
     }
 }

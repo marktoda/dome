@@ -83,7 +83,7 @@ export class LoginCommand extends BaseCommand {
 
         try {
           const newApiClient = getApiClient();
-          const validationResponse: DomeApi.ValidateTokenResponse = await newApiClient.auth.validateAuthenticationToken();
+          const validationResponse: DomeApi.DomeApiValidateTokenResponse = await newApiClient.auth.validateAuthenticationToken();
           if (validationResponse.success && validationResponse.user) {
             saveUserId(validationResponse.user.id);
             this.log(`User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`, outputFormat);
