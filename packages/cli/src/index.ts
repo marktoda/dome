@@ -4,16 +4,21 @@ import { Command } from 'commander';
 import figlet from 'figlet';
 import chalk from 'chalk';
 import { loadConfig } from './utils/config';
-import { noteCommand } from './commands/note';
-import { listCommand } from './commands/list';
-import { showCommand } from './commands/show';
-import { searchCommand } from './commands/search';
-import { chatCommand } from './commands/chat';
-import { loginCommand } from './commands/login';
-import { registerCommand } from './commands/register';
-import { logoutCommand } from './commands/logout';
-import { configCommand } from './commands/config';
-import { contentCommand } from './commands/content';
+
+// Refactored commands (import classes and group registers)
+import { ChatCommand } from './commands/session/chat';
+import { LoginCommand } from './commands/auth/login';
+import { LogoutCommand } from './commands/auth/logout';
+import { RegisterCommand } from './commands/auth/register'; // Newly refactored
+import { registerConfigGroupCommand } from './commands/config'; // Newly refactored group
+import { registerContentGroupCommand } from './commands/content'; // Newly refactored group
+
+// Unrefactored commands (should be empty if all are done, or list any remaining)
+// For now, assuming all relevant commands mentioned in the task are covered by new groups/classes.
+// If 'listCommand', 'showCommand' etc. were separate top-level commands and NOT part of 'content' group,
+// they would need to be handled or confirmed as removed/subsumed.
+// Based on the refactoring, they are now part of the 'content' group.
+
 import { startPromptTui } from './tui/index';
 
 // Load configuration
@@ -46,16 +51,20 @@ if (
 }
 
 // Register commands
-noteCommand(program);
-listCommand(program);
-showCommand(program);
-searchCommand(program);
-chatCommand(program);
-loginCommand(program);
-registerCommand(program);
-logoutCommand(program);
-configCommand(program);
-contentCommand(program);
+
+// Refactored commands
+ChatCommand.register(program);
+LoginCommand.register(program);
+LogoutCommand.register(program);
+RegisterCommand.register(program); // Newly refactored
+
+// Register command groups
+registerConfigGroupCommand(program); // Newly refactored group
+registerContentGroupCommand(program); // Newly refactored group, includes note, search, list, show, add, github
+
+// Any truly unrefactored top-level commands would be registered here.
+// e.g. if there was a `cli/src/commands/foo.ts` that wasn't touched.
+// For this task, all specified commands have been addressed.
 
 // Add a command to launch the prompt-based TUI
 program

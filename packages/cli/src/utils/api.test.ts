@@ -1,5 +1,4 @@
 // @ts-nocheck
-import axios from 'axios';
 import { describe, beforeEach, test, expect, vi, afterEach } from 'vitest';
 import {
   addContent,
