@@ -67,7 +67,7 @@
             "type": "string",
             "format": "email",
             "description": "User's email address",
-            "example": "mark@example.com"
+            "example": "markt@example.com"
           },
           "password": {
             "type": "string",
@@ -3993,3 +3993,4 @@
   },
   "webhooks": {}
 }
+

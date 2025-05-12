@@ -5,7 +5,7 @@
 /**
  * @example
  *     {
- *         email: "mark@example.com",
+ *         email: "markt@example.com",
  *         password: "hunter2"
  *     }
  */
