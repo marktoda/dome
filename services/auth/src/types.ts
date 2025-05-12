@@ -3,6 +3,17 @@ import * as jose from 'jose';
  * Auth service types
  */
 import { D1Database, KVNamespace } from '@cloudflare/workers-types';
+import type { User } from './interfaces/auth-provider.interface'; // Use schema-inferred User type
+import type { TokenPayload } from './interfaces/token-manager.interface'; // Use new TokenPayload
+
+export { User, TokenPayload }; // Re-export for convenience
+
+/**
+ * User type with password, for internal use.
+ */
+export type UserWithPassword = User & {
+  hashedPassword: string | null; // Or just string if it's always present for local accounts
+};
 
 /**
  * User role enum
@@ -12,35 +23,39 @@ export enum UserRole {
   ADMIN = 'admin',
 }
 
+// Removed User interface (lines 18-25 in original) - now imported
+// Removed UserWithPassword interface (lines 30-32 in original) - to be handled by UserManager or specific db types
+// Removed TokenPayload interface (lines 37-43 in original) - now imported
+
 /**
- * User interface for authenticated users
+ * Supported Authentication Providers
  */
-export interface User {
-  id: string;
-  email: string;
-  name?: string;
-  role: UserRole;
-  createdAt: Date;
-  updatedAt: Date;
+export enum SupportedAuthProvider {
+  EMAIL = 'email', // For traditional email/password
+  GOOGLE = 'google',
+  GITHUB = 'github',
+  // Add other providers as needed
 }
 
 /**
- * Internal user record with password
+ * Generic configuration for an authentication provider.
+ * Specific providers might extend this or have their own detailed config types.
  */
-export interface UserWithPassword extends User {
-  password: string;
+export interface ProviderConfig {
+  clientId?: string;
+  clientSecret?: string; // Should be handled securely, e.g., via environment variables
+  callbackUrl?: string;
+  scopes?: string[];
+  isEnabled: boolean;
+  [key: string]: any; // For additional provider-specific settings
 }
 
 /**
- * Auth token payload
+ * Configuration map for all authentication providers.
  */
-export interface TokenPayload {
-  userId: string;
-  email: string;
-  role: UserRole;
-  exp: number;
-  iat: number;
-}
+export type AuthProvidersConfig = {
+  [key in SupportedAuthProvider]?: ProviderConfig;
+};
 
 /**
  * Login response
@@ -49,7 +64,10 @@ export interface LoginResponse {
   success: boolean;
   user: User;
   token: string;
-  expiresIn: number;
+  tokenType: string; // e.g., 'bearer'
+  expiresAt?: number; // Timestamp or ISO string
+  expiresIn?: number; // Duration in seconds until token expiry
+  provider: string;
 }
 
 /**
@@ -58,6 +76,10 @@ export interface LoginResponse {
 export interface RegisterResponse {
   success: boolean;
   user: User;
+  token: string;
+  tokenType: string; // e.g., 'bearer'
+  expiresAt?: number; // Timestamp or ISO string
+  provider: string;
 }
 
 /**
@@ -65,8 +87,11 @@ export interface RegisterResponse {
  */
 export interface ValidateTokenResponse {
   success: boolean;
-  user: User | null; // User object if successful, null otherwise
-  ttl?: number; // Remaining time to live for the token in seconds
+  userId: string;
+  user?: User; // Add the user object to the response
+  provider: string;
+  details?: any; // Additional details from the token or validation process
+  ttl?: number; // Optional: Remaining time to live for the token in seconds
 }
 
 /**

@@ -34,19 +34,20 @@ export class AuthClient implements AuthService {
   /**
    * Login a user
    */
-  async login(email: string, password: string): Promise<LoginResponse> {
+  async login(providerName: string, credentials: Record<string, unknown>): Promise<LoginResponse> {
     const startTime = performance.now();
 
     try {
       this.logger.info(
         {
           event: 'login',
-          email,
+          provider: providerName,
+          credentials,
         },
         'User login',
       );
 
-      const result = await this.binding.login(email, password);
+      const result = await this.binding.login(providerName, credentials);
 
       metrics.gauge(`${this.metricsPrefix}.login.latency_ms`, performance.now() - startTime);
       metrics.increment(`${this.metricsPrefix}.login.success`);
@@ -54,7 +55,7 @@ export class AuthClient implements AuthService {
       return result;
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.login.error`);
-      this.logger.error({ error, email }, 'Error during login');
+      this.logger.error({ error, provider: providerName, credentials }, 'Error during login');
       throw error;
     }
   }
@@ -62,19 +63,20 @@ export class AuthClient implements AuthService {
   /**
    * Register a new user
    */
-  async register(email: string, password: string, name?: string): Promise<RegisterResponse> {
+  async register(providerName: string, registrationData: Record<string, unknown>): Promise<RegisterResponse> {
     const startTime = performance.now();
 
     try {
       this.logger.info(
         {
           event: 'register',
-          email,
+          provider: providerName,
+          registrationData,
         },
         'User registration',
       );
 
-      const result = await this.binding.register(email, password, name);
+      const result = await this.binding.register(providerName, registrationData);
 
       metrics.gauge(`${this.metricsPrefix}.register.latency_ms`, performance.now() - startTime);
       metrics.increment(`${this.metricsPrefix}.register.success`);
@@ -82,7 +84,7 @@ export class AuthClient implements AuthService {
       return result;
     } catch (error) {
       metrics.increment(`${this.metricsPrefix}.register.error`);
-      this.logger.error({ error, email }, 'Error during registration');
+      this.logger.error({ error, provider: providerName, registrationData }, 'Error during registration');
       throw error;
     }
   }
@@ -90,18 +92,19 @@ export class AuthClient implements AuthService {
   /**
    * Validate a token
    */
-  async validateToken(token: string): Promise<ValidateTokenResponse> {
+  async validateToken(token: string, providerName?: string): Promise<ValidateTokenResponse> {
     const startTime = performance.now();
 
     try {
       this.logger.info(
         {
           event: 'validate_token',
+          provider: providerName,
         },
         'Validating auth token',
       );
 
-      const result = await this.binding.validateToken(token);
+      const result = await this.binding.validateToken(token, providerName);
 
       metrics.gauge(
         `${this.metricsPrefix}.validate_token.latency_ms`,
@@ -120,18 +123,19 @@ export class AuthClient implements AuthService {
   /**
    * Logout a user
    */
-  async logout(token: string): Promise<LogoutResponse> {
+  async logout(providerName: string, token: string): Promise<LogoutResponse> {
     const startTime = performance.now();
 
     try {
       this.logger.info(
         {
           event: 'logout',
+          provider: providerName,
         },
         'User logout',
       );
 
-      const result = await this.binding.logout(token);
+      const result = await this.binding.logout(providerName, token);
 
       metrics.gauge(`${this.metricsPrefix}.logout.latency_ms`, performance.now() - startTime);
       metrics.increment(`${this.metricsPrefix}.logout.success`);

@@ -35,24 +35,32 @@ export enum AuthErrorCode {
  */
 export interface AuthBinding {
   /**
-   * Login a user
+   * Login a user with a specific provider.
+   * @param providerName The name of the authentication provider (e.g., 'email', 'google').
+   * @param credentials Provider-specific credentials.
    */
-  login(email: string, password: string): Promise<LoginResponse>;
+  login(providerName: string, credentials: Record<string, unknown>): Promise<LoginResponse>;
 
   /**
-   * Register a new user
+   * Register a new user with a specific provider.
+   * @param providerName The name of the authentication provider.
+   * @param registrationData Provider-specific registration data.
    */
-  register(email: string, password: string, name?: string): Promise<RegisterResponse>;
+  register(providerName: string, registrationData: Record<string, unknown>): Promise<RegisterResponse>;
 
   /**
-   * Validate a token
+   * Validate a token. Provider can be optionally specified.
+   * @param token The token to validate.
+   * @param providerName Optional: The name of the provider that issued the token.
    */
-  validateToken(token: string): Promise<ValidateTokenResponse>;
+  validateToken(token: string, providerName?: string): Promise<ValidateTokenResponse>;
 
   /**
-   * Logout a user (invalidate their token)
+   * Logout a user (invalidate their token) with a specific provider.
+   * @param providerName The name of the authentication provider.
+   * @param token The token to invalidate.
    */
-  logout(token: string): Promise<LogoutResponse>;
+  logout(providerName: string, token: string): Promise<LogoutResponse>;
 }
 
 /**

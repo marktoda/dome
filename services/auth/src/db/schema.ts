@@ -6,11 +6,18 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 export const users = sqliteTable('users', {
   id: text('id').primaryKey().notNull(),
   email: text('email').notNull().unique(),
-  password: text('password').notNull(),
+  password: text('password'), // Made nullable
   name: text('name'),
   role: text('role', { enum: ['user', 'admin'] })
     .default('user')
     .notNull(),
+  emailVerified: integer('email_verified', { mode: 'boolean' })
+    .default(false)
+    .notNull(),
+  lastLoginAt: integer('last_login_at', { mode: 'timestamp' }),
+  isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
+  authProvider: text('auth_provider'), // e.g., 'email', 'google', 'github'
+  providerAccountId: text('provider_account_id'), // User's ID from the external provider
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
