@@ -234,7 +234,7 @@ app.get(
       });
     }
 
-    const authResult = await authService.validateToken(token);
+    const authResult = await authService.validateToken(token, "privy");
     logger.info({ authResult }, 'WebSocket upgrade auth validation result');
 
     if (!authResult.success || !authResult.user) {

@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, SpyInstance } from 'vitest';
 import { Context, Hono } from 'hono';
 import { authenticationMiddleware, AuthContext } from '../../src/middleware/authenticationMiddleware';
 // We will mock LRUCache constructor and its instance methods
 import LRUCache from 'lru-cache';
 import type { Bindings } from '../../src/types';
+import { incrementCounter, trackTiming } from '../../src/utils/metrics'; // Import the actuals (will be mocked)
+import { logError as actualLogError } from '@dome/common'; // Import to spy on the mocked version
 
 // Define a type for the logger mock
 interface MockLogger {
@@ -30,20 +32,30 @@ const mockServiceFactory = {
   getAuthService: vi.fn(() => mockAuthService),
 };
 
-const mockMetrics = {
-  incrementCounter: vi.fn(),
-  trackTiming: vi.fn((metricName: string) => (fn: () => Promise<any>) => fn()),
-};
+// Define mockMetrics, but it won't be used in a variable reference in the vi.mock factory below
+// const mockMetrics = {
+//  incrementCounter: vi.fn(),
+//  trackTiming: vi.fn((metricName: string) => (fn: () => Promise<any>) => fn()),
+// };
 
-// Mock lru-cache
-const mockLruCacheInstance = {
-  get: vi.fn(),
-  set: vi.fn(),
-  clear: vi.fn(),
-};
-vi.mock('lru-cache', () => {
+// Mock lru-cache using vi.hoisted to ensure mock functions are initialized before the factory
+const { mockLruGet, mockLruSet, mockLruClear } = vi.hoisted(() => {
   return {
-    default: vi.fn().mockImplementation(() => mockLruCacheInstance),
+    mockLruGet: vi.fn(),
+    mockLruSet: vi.fn(),
+    mockLruClear: vi.fn(),
+  };
+});
+
+vi.mock('lru-cache', () => {
+  // This factory is for the default export of 'lru-cache', which is the LRUCache constructor.
+  // It needs to return a constructor that, when called (new LRUCache()), returns an object with get, set, clear methods.
+  return {
+    default: vi.fn().mockImplementation(() => ({
+      get: mockLruGet, // These are now from vi.hoisted, so they are initialized
+      set: mockLruSet,
+      clear: mockLruClear,
+    })),
   };
 });
 
@@ -62,7 +74,11 @@ vi.mock('../../src/services/serviceFactory', () => ({
   createServiceFactory: vi.fn(() => mockServiceFactory),
 }));
 
-vi.mock('../../src/utils/metrics', () => mockMetrics);
+vi.mock('../../src/utils/metrics', () => ({
+  incrementCounter: vi.fn(),
+  trackTiming: vi.fn((metricName: string) => (fn: () => Promise<any>) => fn()),
+  // Ensure all exports from ../../src/utils/metrics are mocked if needed by the SUT
+}));
 
 
 describe('authenticationMiddleware', () => {
@@ -80,10 +96,10 @@ describe('authenticationMiddleware', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    mockLruCacheInstance.get.mockClear();
-    mockLruCacheInstance.set.mockClear();
-    mockLruCacheInstance.clear.mockClear();
-
+    // Clear the new mock functions
+    mockLruGet.mockClear();
+    mockLruSet.mockClear();
+    mockLruClear.mockClear();
 
     mockNext = vi.fn().mockResolvedValue(undefined);
 
@@ -110,26 +126,26 @@ describe('authenticationMiddleware', () => {
   it('should return 401 if Authorization header is missing', async () => {
     (mockContext.req.header as any).mockReturnValue(undefined); // Cast to any
     await authenticationMiddleware(mockContext as any, mockNext);
-    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: { code: 'UNAUTHORIZED' } }), 401);
+    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } }), 401);
     expect(mockNext).not.toHaveBeenCalled();
   });
 
   it('should return 401 if Authorization header does not start with "Bearer "', async () => {
     (mockContext.req.header as any).mockReturnValue('Invalid token'); // Cast to any
     await authenticationMiddleware(mockContext as any, mockNext);
-    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: { code: 'UNAUTHORIZED' } }), 401);
+    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } }), 401);
     expect(mockNext).not.toHaveBeenCalled();
   });
 
   it('should authenticate from cache if token is valid and cached', async () => {
     const token = 'valid-cached-token';
     const cachedEntry = { user: mockAuthContextData, expiresAt: Date.now() + 100000 };
-    mockLruCacheInstance.get.mockReturnValue(cachedEntry);
+    mockLruGet.mockReturnValue(cachedEntry);
     (mockContext.req.header as any).mockReturnValue(`Bearer ${token}`); // Cast to any
 
     await authenticationMiddleware(mockContext as any, mockNext);
 
-    expect(mockMetrics.incrementCounter).toHaveBeenCalledWith('auth.cache.hit');
+    expect(incrementCounter).toHaveBeenCalledWith('auth.cache.hit');
     expect(mockContext.set).toHaveBeenCalledWith('auth', cachedEntry.user);
     expect(mockAuthService.validateToken).not.toHaveBeenCalled();
     expect(mockNext).toHaveBeenCalled();
@@ -140,31 +156,31 @@ describe('authenticationMiddleware', () => {
   it('should not use expired cached token and call authService', async () => {
     const token = 'expired-cached-token';
     const cachedEntry = { user: mockAuthContextData, expiresAt: Date.now() - 100000 };
-    mockLruCacheInstance.get.mockReturnValue(cachedEntry);
+    mockLruGet.mockReturnValue(cachedEntry);
     (mockContext.req.header as any).mockReturnValue(`Bearer ${token}`); // Cast to any
-    mockAuthService.validateToken.mockResolvedValue({ success: true, user: mockUser, ttl: 300 });
+    mockAuthService.validateToken.mockResolvedValue({ success: true, user: mockUser, ttl: 300, provider: "privy", userId: mockUser.id });
 
     await authenticationMiddleware(mockContext as any, mockNext);
 
-    expect(mockMetrics.incrementCounter).toHaveBeenCalledWith('auth.cache.miss');
-    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
+    expect(incrementCounter).toHaveBeenCalledWith('auth.cache.miss');
+    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token, "privy");
     expect(mockContext.set).toHaveBeenCalledWith('auth', mockAuthContextData);
     expect(mockNext).toHaveBeenCalled();
   });
 
   it('should call authService if token not in cache, then cache it and set context', async () => {
     const token = 'valid-new-token';
-    mockLruCacheInstance.get.mockReturnValue(undefined);
+    mockLruGet.mockReturnValue(undefined);
     (mockContext.req.header as any).mockReturnValue(`Bearer ${token}`); // Cast to any
-    mockAuthService.validateToken.mockResolvedValue({ success: true, user: mockUser, ttl: 300 });
+    mockAuthService.validateToken.mockResolvedValue({ success: true, user: mockUser, ttl: 300, provider: "privy", userId: mockUser.id });
 
     await authenticationMiddleware(mockContext as any, mockNext);
 
-    expect(mockMetrics.incrementCounter).toHaveBeenCalledWith('auth.cache.miss');
-    expect(mockMetrics.trackTiming).toHaveBeenCalledWith('auth.service.call_duration');
-    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
+    expect(incrementCounter).toHaveBeenCalledWith('auth.cache.miss');
+    expect(trackTiming).toHaveBeenCalledWith('auth.service.call_duration');
+    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token, "privy");
     expect(mockContext.set).toHaveBeenCalledWith('auth', mockAuthContextData);
-    expect(mockLruCacheInstance.set).toHaveBeenCalledWith(token, expect.objectContaining({ user: mockAuthContextData }));
+    expect(mockLruSet).toHaveBeenCalledWith(token, expect.objectContaining({ user: mockAuthContextData }));
     expect(mockNext).toHaveBeenCalled();
     const baggageValue = `user=${Buffer.from(JSON.stringify({id: mockUser.id, role: mockUser.role, email: mockUser.email})).toString('base64url')}`;
     expect(mockContext.header).toHaveBeenCalledWith('baggage', baggageValue);
@@ -172,64 +188,67 @@ describe('authenticationMiddleware', () => {
 
   it('should return 401 if authService returns invalid token', async () => {
     const token = 'invalid-token';
-    mockLruCacheInstance.get.mockReturnValue(undefined);
+    mockLruGet.mockReturnValue(undefined);
     (mockContext.req.header as any).mockReturnValue(`Bearer ${token}`); // Cast to any
-    mockAuthService.validateToken.mockResolvedValue({ success: false, user: null });
+    mockAuthService.validateToken.mockResolvedValue({ success: false, user: null, provider: "privy", userId: '' }); // Ensure provider and userId are present even on failure
 
     await authenticationMiddleware(mockContext as any, mockNext);
 
-    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
-    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: { code: 'UNAUTHORIZED' } }), 401);
+    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token, "privy");
+    expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token' } }), 401);
     expect(mockNext).not.toHaveBeenCalled();
   });
 
   it('should return 401 if authService throws an error', async () => {
     const token = 'error-token';
-    mockLruCacheInstance.get.mockReturnValue(undefined);
+    mockLruGet.mockReturnValue(undefined);
     (mockContext.req.header as any).mockReturnValue(`Bearer ${token}`); // Cast to any
     mockAuthService.validateToken.mockRejectedValue(new Error('Auth service unavailable'));
 
     await authenticationMiddleware(mockContext as any, mockNext);
 
-    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
+    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token, "privy");
+    // The actual middleware catches the error and logs it, then returns a generic auth failed.
+    // The specific error message from the exception might not propagate to the JSON response here
+    // if the catch block in the middleware standardizes it.
     expect(mockContext.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication failed' } }), 401);
     expect(mockNext).not.toHaveBeenCalled();
-    expect(mockLoggerInstance.error).toHaveBeenCalled();
+    expect(actualLogError).toHaveBeenCalled(); // Check if the mocked logError was called
   });
 
    it('should use default TTL for cache if authService returns no TTL', async () => {
     const token = 'no-ttl-token';
-    mockLruCacheInstance.get.mockReturnValue(undefined);
+    mockLruGet.mockReturnValue(undefined);
     (mockContext.req.header as any).mockReturnValue(`Bearer ${token}`); // Cast to any
-    mockAuthService.validateToken.mockResolvedValue({ success: true, user: mockUser, ttl: undefined });
+    mockAuthService.validateToken.mockResolvedValue({ success: true, user: mockUser, ttl: undefined, provider: "privy", userId: mockUser.id });
 
     const now = Date.now();
     dateSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
 
     await authenticationMiddleware(mockContext as any, mockNext);
 
-    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token);
-    expect(mockLruCacheInstance.set).toHaveBeenCalledWith(token, {
+    expect(mockAuthService.validateToken).toHaveBeenCalledWith(token, "privy");
+    expect(mockLruSet).toHaveBeenCalledWith(token, {
       user: mockAuthContextData,
-      expiresAt: now + 300 * 1000,
+      expiresAt: now + 300 * 1000, // Default TTL is 300s
     });
     dateSpy.mockRestore();
   });
 
   it('should use shorter of service TTL and max cache TTL (300s)', async () => {
     const token = 'long-ttl-token';
-    mockLruCacheInstance.get.mockReturnValue(undefined);
+    mockLruGet.mockReturnValue(undefined);
     (mockContext.req.header as any).mockReturnValue(`Bearer ${token}`); // Cast to any
-    mockAuthService.validateToken.mockResolvedValue({ success: true, user: mockUser, ttl: 1000 });
+    mockAuthService.validateToken.mockResolvedValue({ success: true, user: mockUser, ttl: 1000, provider: "privy", userId: mockUser.id });
 
     const now = Date.now();
     dateSpy = vi.spyOn(Date, 'now').mockReturnValue(now);
 
     await authenticationMiddleware(mockContext as any, mockNext);
 
-    expect(mockLruCacheInstance.set).toHaveBeenCalledWith(token, {
+    expect(mockLruSet).toHaveBeenCalledWith(token, {
       user: mockAuthContextData,
-      expiresAt: now + 300 * 1000,
+      expiresAt: now + 300 * 1000, // Max cache TTL is 300s
     });
     dateSpy.mockRestore();
   });

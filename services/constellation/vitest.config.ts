@@ -20,5 +20,11 @@ export default defineConfig({
     },
     // Allow garbage collector to run between tests
     teardownTimeout: 5000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'json', 'html'],
+      include: ['src/**/*.{ts,js}'],
+      exclude: ['src/**/*.d.ts', 'tests/**'],
+    },
   },
 });

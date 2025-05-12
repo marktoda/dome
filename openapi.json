@@ -155,7 +155,10 @@
             "example": "user@example.com"
           },
           "name": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "example": "User Name"
           },
           "role": {
@@ -242,7 +245,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T00:56:26.355Z"
+            "example": "2025-05-12T04:14:04.274Z"
           },
           "service": {
             "type": "string",
@@ -839,7 +842,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T00:56:26.327Z"
+            "example": "2025-05-12T04:14:04.239Z"
           },
           "status": {
             "type": "string",
@@ -946,7 +949,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T00:56:26.332Z"
+            "example": "2025-05-12T04:14:04.246Z"
           },
           "status": {
             "type": "string",

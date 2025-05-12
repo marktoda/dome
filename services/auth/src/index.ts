@@ -94,7 +94,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
     const authProviderConfigs = getAuthProvidersConfig(env);
     logger.info({ authProviderConfigs }, 'Loaded auth provider configurations.');
 
-    const activeProviders = new Map<string, BaseAuthProvider>(); // Corrected Map type
+    const activeProviders = new Map<SupportedAuthProvider, BaseAuthProvider>(); // Corrected Map type
 
     // Initialize LocalAuthProvider (Email/Password)
     const localConfig = authProviderConfigs[SupportedAuthProvider.EMAIL];
@@ -111,18 +111,17 @@ export default class Auth extends WorkerEntrypoint<Env> {
     }
 
     // Initialize PrivyAuthProvider
-    const privyProviderName = 'privy'; // Key for Privy
     // Assuming Privy config is identified by env.PRIVY_APP_ID and a general enable flag
     if (env.AUTH_PRIVY_ENABLED === 'true' && env.PRIVY_APP_ID) {
-      logger.info(`Initializing PrivyAuthProvider for ${privyProviderName}`);
+      logger.info(`Initializing PrivyAuthProvider`);
       const privyConfig = { appId: env.PRIVY_APP_ID, jwksUri: env.PRIVY_JWKS_URI }; // Construct config
       // Assuming PrivyAuthProvider constructor is refactored: (config, tokenManager, userManager, env)
       activeProviders.set(
-        privyProviderName,
+        SupportedAuthProvider.PRIVY,
         new PrivyAuthProvider(privyConfig, tokenManager, userManager, env),
       );
     } else {
-      logger.info(`PrivyAuthProvider (${privyProviderName}) is not enabled or PRIVY_APP_ID is missing.`);
+      logger.info(`PrivyAuthProvider not enabled or PRIVY_APP_ID is missing.`);
     }
 
     // TODO: Add GoogleAuthProvider and GitHubAuthProvider initialization similarly

@@ -14,8 +14,8 @@
   },
   "dependencies": {
     "@dome/common": "workspace:*",
-    "@dome/todos": "workspace:*",
     "@dome/errors": "workspace:*",
+    "@dome/todos": "workspace:*",
     "@dqbd/tiktoken": "^1.0.7",
     "@langchain/cloudflare": "^0.1.0",
     "@langchain/cohere": "^0.3.3",
@@ -34,10 +34,12 @@
     "@types/node": "^22.14.1",
     "@typescript-eslint/eslint-plugin": "^5.57.1",
     "@typescript-eslint/parser": "^5.57.1",
+    "@vitest/coverage-c8": "^0.33.0",
+    "@vitest/coverage-v8": "0.34.6",
     "drizzle-kit": "^0.31.0",
     "eslint": "^8.38.0",
     "typescript": "^5.0.4",
-    "vitest": "^0.31.0",
+    "vitest": "^0.34.6",
     "wrangler": "^4.10.0"
   }
 }

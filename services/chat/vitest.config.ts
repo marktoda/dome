@@ -6,8 +6,10 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./tests/setup.ts'],
     coverage: {
+      provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      exclude: ['node_modules/', 'tests/'],
+      include: ['src/**/*.{ts,js}'],
+      exclude: ['node_modules/', 'tests/', 'src/**/*.d.ts'],
     },
   },
 });

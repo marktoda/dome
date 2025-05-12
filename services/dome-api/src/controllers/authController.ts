@@ -170,7 +170,7 @@ const UserProfileSchema = z
   .object({
     id: z.string().openapi({ example: 'user-123' }),
     email: z.string().email().openapi({ example: 'user@example.com' }),
-    name: z.string().openapi({ example: 'User Name' }),
+    name: z.string().nullable().openapi({ example: 'User Name' }),
     role: z.string().openapi({ example: 'user' }),
   })
   .openapi('UserProfile');
@@ -253,21 +253,20 @@ export class AuthController {
       // Step 1: Register the user
       // authService.register is expected to throw AuthError on failure (e.g., user exists)
       // or return a User object on success.
-      await authService.register(email, password, name);
-      this.logger.info({ email }, 'User successfully registered, proceeding to login for token.');
+      // authService.register (from @dome/auth/client) returns Promise<RegisterResponse>
+      // RegisterResponse (from auth/src/types.ts) is { success, user, token, ... }
+      const registrationServiceResponse = await authService.register("local", { email, password, name });
+      this.logger.info({ email, registrationServiceResponse }, 'User registration processed by auth service.');
 
-      // Step 2: Login the newly registered user to get a token
-      // authService.login is expected to return an object with a token or throw.
-      const loginResult = await authService.login(email, password);
-
-      if (loginResult.success && typeof loginResult.token === 'string') {
-        return c.json({ token: loginResult.token }, 201);
+      if (registrationServiceResponse.success && typeof registrationServiceResponse.token === 'string') {
+        // Ensure the response matches local RegisterResponseSchema: { token: string }
+        return c.json({ token: registrationServiceResponse.token }, 201);
       }
-      
-      // This case should ideally not be reached if login after successful register always yields a token.
+
+      // Handle cases where registration succeeded at service level but no token, or success is false
       this.logger.error(
-        { email, loginResult },
-        'Registration successful, but login post-registration failed to return a token.',
+        { email, registrationServiceResponse },
+        'Auth service processed registration, but success was false or token was missing.',
       );
       return c.json(
         {
@@ -296,17 +295,17 @@ export class AuthController {
           409,
         );
       }
-      
+
       // Handle other errors or general errors
       // If the RPC call itself fails or returns a non-AuthError structure
       const statusCode = (error && typeof error.status === 'number') ? error.status : 400;
       const errorMessage = (error && error.error && typeof error.error.message === 'string')
-                           ? error.error.message
-                           : (error && typeof error.message === 'string' ? error.message : 'Registration processing error');
+        ? error.error.message
+        : (error && typeof error.message === 'string' ? error.message : 'Registration processing error');
       const errorCode = (error && error.error && typeof error.error.type === 'string')
-                        ? error.error.type.toUpperCase()
-                        : 'BAD_REQUEST';
-      
+        ? error.error.type.toUpperCase()
+        : 'BAD_REQUEST';
+
       return c.json(
         {
           success: false as const,
@@ -333,26 +332,29 @@ export class AuthController {
 
       const serviceFactory = createServiceFactory();
       const authService = serviceFactory.getAuthService(c.env);
-      interface LoginServiceResponse {
-        success: boolean;
-        token?: string;
-        error?: { code: string; message: string };
-      }
-      const result: LoginServiceResponse = await authService.login(email, password);
+      // authService.login now returns { user, tokenInfo } or throws.
+      // The local LoginServiceResponse interface is no longer accurate for the direct service call.
+      // authService.login (from @dome/auth/client) returns Promise<LoginResponse>
+      // LoginResponse (from auth/src/types.ts) is { success, user, token, ... }
+      const loginServiceResponse = await authService.login("privy", { email, password });
+      this.logger.info({ email, loginServiceResponse }, 'User login processed by auth service.');
 
-      if (result.success && typeof result.token === 'string') {
-        return c.json({ token: result.token }, 200);
+      if (loginServiceResponse.success && typeof loginServiceResponse.token === 'string') {
+        // Ensure the response matches local LoginResponseSchema: { token: string }
+        return c.json({ token: loginServiceResponse.token }, 200);
       }
-      this.logger.warn({ result }, 'Login service call failed or did not return token');
+
+      // Handle cases where login succeeded at service level but no token, or success is false
+      this.logger.warn({ resultFromService: loginServiceResponse }, 'Auth service processed login, but success was false or token was missing.');
       return c.json(
         {
           success: false as const,
           error: {
             code: 'UNAUTHORIZED',
-            message: String(result.error?.message) || 'Invalid credentials',
+            message: 'Login successful but failed to issue token.',
           },
         },
-        401,
+        401
       );
     } catch (error: any) {
       this.logger.error(
@@ -397,7 +399,7 @@ export class AuthController {
         success: boolean;
         error?: { code: string; message: string };
       }
-      const result: LogoutServiceResponse = await authService.logout(token);
+      const result: LogoutServiceResponse = await authService.logout(token, "privy");
 
       if (result.success) {
         return c.json({ success: true, message: 'Logout successful' }, 200);
@@ -459,7 +461,7 @@ export class AuthController {
       interface UserProfileData {
         id: string;
         email: string;
-        name?: string; // Make name optional to match service's potential return type
+        name?: string | null; // Make name optional and nullable to match service's potential return type
         role: string;
       }
       interface ValidateTokenServiceResponse {
@@ -468,7 +470,7 @@ export class AuthController {
         error?: { code: string; message: string }; // Error details are optional
       }
 
-      const result: ValidateTokenServiceResponse = await authService.validateToken(token);
+      const result: ValidateTokenServiceResponse = await authService.validateToken(token, "privy");
 
       if (result.success && result.user) {
         // Validate the structure of result.user against UserProfileSchema

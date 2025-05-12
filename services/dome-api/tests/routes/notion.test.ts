@@ -40,9 +40,10 @@ vi.mock('../../src/middleware/userIdMiddleware', () => ({
   userIdMiddleware: vi.fn().mockImplementation((c, next) => next()),
 }));
 
-// Mock logger
+// Mock logger and other common utilities from @dome/common
+// Consolidate mocks for @dome/common to avoid override issues
 vi.mock('@dome/common', () => ({
-  getLogger: () => ({
+  getLogger: () => ({ // Provide getLogger
     info: vi.fn(),
     debug: vi.fn(),
     error: vi.fn(),
@@ -54,7 +55,24 @@ vi.mock('@dome/common', () => ({
       warn: vi.fn(),
     }),
   }),
-  initLogging: vi.fn(),
+  initLogging: vi.fn(), // From first mock
+  // From second mock (lines 75-91 originally)
+  createRequestContextMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+  createErrorMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+  responseHandlerMiddleware: vi.fn().mockImplementation((c: any, next: any) => next()),
+  createSimpleAuthMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+  createDetailedLoggerMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+  formatZodError: vi.fn(),
+  ServiceError: class ServiceError extends Error { // Keep ServiceError mock if tests rely on this specific mocked class
+    code: string;
+    status: number;
+    constructor(message: string, opts: { code: string; status: number }) {
+      super(message);
+      this.code = opts.code;
+      this.status = opts.status;
+    }
+  },
+  // Add any other functions from @dome/common that were in the second mock and are needed
 }));
 
 // Mock metrics
@@ -71,24 +89,24 @@ vi.mock('../../src/middleware/metricsMiddleware', () => ({
   },
 }));
 
-// Mock middlewares
-vi.mock('@dome/common', () => ({
-  createRequestContextMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
-  createErrorMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
-  responseHandlerMiddleware: vi.fn().mockImplementation((c: any, next: any) => next()),
-  createSimpleAuthMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
-  createDetailedLoggerMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
-  formatZodError: vi.fn(),
-  ServiceError: class ServiceError extends Error {
-    code: string;
-    status: number;
-    constructor(message: string, opts: { code: string; status: number }) {
-      super(message);
-      this.code = opts.code;
-      this.status = opts.status;
-    }
-  },
-}));
+// Mock middlewares (This block is redundant as the consolidated mock above should cover these)
+// vi.mock('@dome/common', () => ({
+//   createRequestContextMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+//   createErrorMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+//   responseHandlerMiddleware: vi.fn().mockImplementation((c: any, next: any) => next()),
+//   createSimpleAuthMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+//   createDetailedLoggerMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+//   formatZodError: vi.fn(),
+//   ServiceError: class ServiceError extends Error {
+//     code: string;
+//     status: number;
+//     constructor(message: string, opts: { code: string; status: number }) {
+//       super(message);
+//       this.code = opts.code;
+//       this.status = opts.status;
+//     }
+//   },
+// }));
 
 describe('Notion API Routes', () => {
   let mockNotionController: any;

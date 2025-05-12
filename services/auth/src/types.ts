@@ -31,7 +31,8 @@ export enum UserRole {
  * Supported Authentication Providers
  */
 export enum SupportedAuthProvider {
-  EMAIL = 'email', // For traditional email/password
+  EMAIL = 'email',
+  PRIVY = 'privy',
   GOOGLE = 'google',
   GITHUB = 'github',
   // Add other providers as needed

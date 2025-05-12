@@ -29,8 +29,9 @@ const mockEnv = {
   },
 };
 
-// Mock the logger
+// Mock @dome/common (consolidated)
 vi.mock('@dome/common', () => ({
+  // From first mock
   getLogger: () => ({
     debug: vi.fn(),
     info: vi.fn(),
@@ -44,8 +45,8 @@ vi.mock('@dome/common', () => ({
     }),
   }),
   logError: vi.fn(),
-  withLogger: vi.fn().mockImplementation((_, fn) => fn()),
-  metrics: {
+  withLogger: vi.fn().mockImplementation((_, fn) => fn()), // Assuming this is a function that takes a context and a function
+  metrics: { // This was under @dome/common mock, ensure it's correct or move if it belongs to metricsMiddleware mock
     increment: vi.fn(),
     timing: vi.fn(),
     startTimer: () => ({
@@ -56,17 +57,27 @@ vi.mock('@dome/common', () => ({
     counter: vi.fn(),
   },
   initLogging: vi.fn(),
+  // From second mock
+  createRequestContextMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+  createErrorMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+  responseHandlerMiddleware: vi.fn().mockImplementation((c: any, next: any) => next()),
+  createSimpleAuthMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+  formatZodError: vi.fn(),
+  createDetailedLoggerMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
+  // Ensure ServiceError is also included if it was part of the original @dome/common and is used
+  ServiceError: class ServiceError extends Error {
+    code: string;
+    status: number;
+    constructor(message: string, opts?: { code?: string; status?: number }) {
+      super(message);
+      this.code = opts?.code || 'UNKNOWN_ERROR';
+      this.status = opts?.status || 500;
+    }
+  },
 }));
 
-// Mock the auth middleware
-vi.mock('@dome/common', () => ({
-  createRequestContextMiddleware: () => (c: any, next: any) => next(),
-  createErrorMiddleware: () => (c: any, next: any) => next(),
-  responseHandlerMiddleware: (c: any, next: any) => next(),
-  createSimpleAuthMiddleware: () => (c: any, next: any) => next(),
-  formatZodError: vi.fn(),
-  createDetailedLoggerMiddleware: () => (c: any, next: any) => next(),
-}));
+// The following vi.mock('@dome/common', ...) block is redundant and has been removed.
+// Its functionality is covered by the consolidated mock for '@dome/common' above (lines 32-77).
 
 // Mock the metrics middleware
 vi.mock('../src/middleware/metricsMiddleware', () => ({

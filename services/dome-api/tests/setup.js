@@ -2,6 +2,34 @@
  * Jest setup file for Cloudflare Worker environment
  */
 
+// Import vi from vitest for mocking
+import { vi } from 'vitest';
+
+// Global mock for @dome/common to provide a basic getLogger
+// This helps tests that indirectly depend on @dome/common via other modules (e.g., @dome/chat/client)
+// without needing to mock it in every single test file.
+// Test files that need more specific mocks for @dome/common can still define their own.
+vi.mock('@dome/common', () => {
+  // Simplified mock: If importActual is failing due to path/alias issues,
+  // this provides a basic getLogger. Other exports from @dome/common will be missing.
+  const mockLogger = {
+    warn: vi.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(() => mockLogger),
+  };
+  return {
+    getLogger: vi.fn(() => mockLogger),
+    // Explicitly mock other functions from @dome/common if they are essential globally
+    // and vi.importActual was indeed the problem.
+    // For now, focus on getLogger.
+    updateContext: vi.fn().mockResolvedValue(undefined), // Example if needed
+    logError: vi.fn(), // Example if needed
+    // Any other exports from @dome/common used by dependencies like @dome/chat/client
+    // would need to be explicitly mocked here if not spreading `actual`.
+  };
+});
 // Import Jest globals
 const { expect, describe, it, beforeEach, afterEach, beforeAll, afterAll } = global;
 

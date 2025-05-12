@@ -62,10 +62,6 @@ RegisterCommand.register(program); // Newly refactored
 registerConfigGroupCommand(program); // Newly refactored group
 registerContentGroupCommand(program); // Newly refactored group, includes note, search, list, show, add, github
 
-// Any truly unrefactored top-level commands would be registered here.
-// e.g. if there was a `cli/src/commands/foo.ts` that wasn't touched.
-// For this task, all specified commands have been addressed.
-
 // Add a command to launch the prompt-based TUI
 program
   .command('tui')

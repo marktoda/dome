@@ -5,8 +5,10 @@ export default defineConfig({
     environment: 'node',
     include: ['**/*.test.ts'],
     coverage: {
+      provider: 'v8',
       reporter: ['text', 'lcov'],
-      exclude: ['**/node_modules/**', '**/dist/**'],
+      include: ['src/**/*.{ts,js}'],
+      exclude: ['**/node_modules/**', '**/dist/**', 'src/**/*.d.ts'],
     },
   },
 });
