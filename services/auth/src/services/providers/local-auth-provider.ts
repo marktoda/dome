@@ -123,11 +123,17 @@ export class LocalAuthProvider extends BaseAuthProvider {
     };
   }
 
-  // findUserById is inherited from BaseAuthProvider if it uses this.userManager.findUserById
-  // If BaseAuthProvider's findUserById is abstract or needs specific implementation:
-  // async findUserById(userId: string): Promise<User | null> {
-  //   return this.userManager.findUserById(userId);
-  // }
+  /**
+   * Finds a user by their ID using the UserManager.
+   * This overrides the placeholder implementation in BaseAuthProvider.
+   * @param userId - The ID of the user to find.
+   * @returns A promise that resolves to the User object or null if not found.
+   */
+  protected async findUserById(userId: string): Promise<User | null> {
+    const authContext = this.getAuthContext();
+    return this.userManager.findUserById(userId, authContext);
+  }
 
   // Other methods like refreshAccessToken, logout, getUserFromToken are inherited from BaseAuthProvider
+  // getUserFromToken will now use the overridden findUserById from this class.
 }
