@@ -1,16 +1,60 @@
 import { Widgets } from 'blessed';
 import { BaseMode } from './BaseMode';
-import { chat, ChatMessageChunk } from '../../utils/api';
+import { getApiClient } from '../../utils/apiClient';
+import { loadConfig } from '../../utils/config';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk'; // SDK imports
 
-// Define source info interface for type safety
-interface SourceInfo {
-  id?: string;
-  title?: string;
-  source?: string;
-  url?: string;
-  relevanceScore?: number;
-  snippet?: string;
+// SDK's ChatSource will be used. RelevanceScore is not available.
+// interface SourceInfo { ... } // Removed, will use DomeApi.ChatSource
+
+// Type for SDK stream chunks (adapt as needed based on actual stream format)
+type SdkChatMessageChunk =
+  | { type: 'content' | 'thinking' | 'unknown'; content: string }
+  | { type: 'sources'; data: DomeApi.ChatSource[] | DomeApi.ChatSource };
+
+// Chunk detection logic (similar to what was added in commands/chat.ts)
+interface ChunkDetector {
+  (parsedJson: any): SdkChatMessageChunk | null;
 }
+const detectors: ChunkDetector[] = [
+  (parsed) => {
+    if (parsed && parsed.type === 'sources' && parsed.data) {
+      return { type: 'sources', data: parsed.data as (DomeApi.ChatSource[] | DomeApi.ChatSource) };
+    }
+    return null;
+  },
+  (parsed) => {
+    if (parsed && parsed.type === 'thinking' && typeof parsed.content === 'string') {
+      return { type: 'thinking', content: parsed.content };
+    }
+    return null;
+  },
+  (parsed) => {
+    if (parsed && parsed.type === 'content' && typeof parsed.content === 'string') {
+      return { type: 'content', content: parsed.content };
+    }
+    return null;
+  },
+];
+
+const detectSdkChunk = (jsonData: string): SdkChatMessageChunk => {
+  try {
+    const parsed = JSON.parse(jsonData);
+    for (const det of detectors) {
+      const match = det(parsed);
+      if (match) return match;
+    }
+    if (parsed && typeof parsed.content === 'string') {
+        return { type: 'content', content: parsed.content };
+    }
+    if (typeof parsed === 'string') {
+        return { type: 'content', content: parsed };
+    }
+  } catch {
+    return { type: 'content', content: jsonData };
+  }
+  return { type: 'unknown', content: jsonData };
+};
 
 type Conversation = {
   user: string;
@@ -133,98 +177,106 @@ export class ChatMode extends BaseMode {
 
     /* stream handler ------------------------------------------------- */
     let startedContent = false;
-    const onChunk = (chunk: string | ChatMessageChunk) => {
-      if (typeof chunk === 'string') {
-        // Handle plain string chunk (typically final response)
-        convo.reply += chunk;
+    let accumulatedSources: DomeApi.ChatSource[] = [];
+    const onChunk = (sdkChunk: SdkChatMessageChunk) => {
+      if (sdkChunk.type === 'thinking' && !startedContent) {
+        convo.thinking = this.thinkingProcessor.process(sdkChunk.content);
+      } else if (sdkChunk.type === 'content') {
+        if (!startedContent) this.thinkingProcessor.reset();
+        convo.reply += sdkChunk.content || '';
         startedContent = true;
-      } else if (chunk.type === 'thinking' && !startedContent) {
-        // Process thinking chunk and display it properly
-        convo.thinking = this.thinkingProcessor.process(chunk.content);
-      } else if (chunk.type === 'content') {
-        // When content starts, reset thinking processor
+      } else if (sdkChunk.type === 'sources') {
+        const newSources = Array.isArray(sdkChunk.data) ? sdkChunk.data : [sdkChunk.data];
+        accumulatedSources = accumulatedSources.concat(newSources);
+        // Sources will be displayed at the end by displaySources
+        startedContent = true; // Mark content as started so thinking stops
+      } else if (sdkChunk.type === 'unknown') {
+        // Similar logic to old unknown handling, adapt if needed
         if (!startedContent) {
-          this.thinkingProcessor.reset();
-        }
-        convo.reply += chunk.content || '';
-        startedContent = true;
-      } else if (chunk.type === 'sources') {
-        // Final chunks with sources don't need to add content to the reply
-        startedContent = true;
-      } else if (chunk.type === 'unknown') {
-        // Handle unknown chunks
-        if (!startedContent) {
-          // Try to determine if it's thinking content
           try {
-            const parsed = JSON.parse(chunk.content);
-            if (parsed && typeof parsed === 'object') {
-              // Process as thinking
-              convo.thinking = this.thinkingProcessor.process(chunk.content);
-            } else {
-              // Treat as reply content
-              convo.reply += chunk.content || '';
-              startedContent = true;
-            }
+            JSON.parse(sdkChunk.content); // Check if it's JSON that wasn't caught
+            convo.thinking = this.thinkingProcessor.process(sdkChunk.content);
           } catch {
-            // Not JSON, check if it looks like thinking or regular content
-            if (chunk.content.includes('thinking') || chunk.content.includes('Thinking')) {
-              convo.thinking = chunk.content;
-            } else {
-              convo.reply += chunk.content || '';
-              startedContent = true;
-            }
+            convo.reply += sdkChunk.content || '';
+            startedContent = true;
           }
         } else {
-          // If content already started, append to reply
-          convo.reply += chunk.content || '';
+          convo.reply += sdkChunk.content || '';
         }
       }
-
       rebuild();
     };
 
     /* api call ------------------------------------------------------- */
     try {
-      const verbose =
-        process.env.DOME_VERBOSE === 'true' ||
-        process.argv.includes('-v') ||
-        process.argv.includes('--verbose');
+      const config = loadConfig();
+      if (!config.userId) {
+        this.printBlock('{bold}{red-fg}Error:{/red-fg}{/bold}', 'User ID not found. Please login.', cw);
+        this.setStatus();
+        return;
+      }
 
-      const result = await chat(input, onChunk, { debug: verbose });
+      const apiClient = getApiClient();
+      // TODO: Integrate ChatSessionManager if TUI chat should persist history across CLI calls
+      // For now, sending only the current input as a new conversation.
+      const messages: DomeApi.PostChatRequestMessagesItem[] = [{ role: 'user', content: input }];
+
+      const request: DomeApi.PostChatRequest = {
+        userId: config.userId,
+        messages: messages,
+        options: {
+          enhanceWithContext: true, // Default options
+          maxContextItems: 5,
+          includeSourceInfo: true,
+          maxTokens: 1000,
+          temperature: 0.7,
+        },
+        stream: true,
+      };
+      
+      const stream = (await apiClient.chat.sendAChatMessage(request)) as any as ReadableStream<Uint8Array>;
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (buffer.trim()) onChunk(detectSdkChunk(buffer.trim()));
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.substring(0, newlineIndex).trim();
+          buffer = buffer.substring(newlineIndex + 1);
+          if (line) onChunk(detectSdkChunk(line));
+        }
+      }
 
       /* sources ------------------------------------------------------ */
-      // Process sources if available in multiple possible locations
-      let sources: SourceInfo[] = [];
-      if (result?.sources?.length) {
-        sources = result.sources;
-      } else if (result?.node?.sources) {
-        // Handle sources from final chunk format
-        sources = Array.isArray(result.node.sources) ? result.node.sources : [result.node.sources];
-      }
-
-      if (sources?.length) {
-        // Filter out metadata entries and other non-displayable sources
-        sources = sources.filter((source: SourceInfo) => {
+      if (accumulatedSources.length > 0) {
+        const filteredSources = accumulatedSources.filter((source: DomeApi.ChatSource) => {
           const title = source.title || '';
-          return (
-            !title.includes('---DOME-METADATA-START---') &&
-            !title.match(/^---.*---$/) &&
-            title.trim() !== ''
-          );
+          return !title.includes('---DOME-METADATA-START---') && !title.match(/^---.*---$/) && title.trim() !== '';
         });
-
-        // Sort by relevance score (highest first)
-        sources.sort(
-          (a: SourceInfo, b: SourceInfo) => (b.relevanceScore || 0) - (a.relevanceScore || 0),
-        );
-
-        // Display top sources
-        this.displaySources(sources.slice(0, ChatMode.MAX_SOURCES), cw, sources.length);
+        // No relevanceScore for sorting in DomeApi.ChatSource
+        this.displaySources(filteredSources.slice(0, ChatMode.MAX_SOURCES), cw, filteredSources.length);
         this.scrollToBottom();
       }
-    } catch (err) {
-      const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
-      this.printBlock('{bold}{red-fg}Error:{/red-fg}{/bold}', `I encountered an error: ${msg}`, cw);
+
+    } catch (err: unknown) {
+      let errorMessage = 'Chat error.';
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessage = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessage = `API Timeout Error: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessage = `Chat error: ${err.message}`;
+      }
+      this.printBlock('{bold}{red-fg}Error:{/red-fg}{/bold}', `I encountered an error: ${errorMessage.slice(0,500)}`, cw);
     } finally {
       this.setStatus(); // reset
     }
@@ -307,45 +359,16 @@ export class ChatMode extends BaseMode {
     return out;
   }
 
-  private displaySources(sources: SourceInfo[], cw: number, totalCount?: number): void {
+  private displaySources(sources: DomeApi.ChatSource[], cw: number, totalCount?: number): void {
     this.container.pushLine('{bold}Sources:{/bold}');
     sources.forEach((s, i) => {
-      // Safely handle potentially undefined title
-      const title = s.title
-        ? s.title.length > 80
-          ? s.title.slice(0, 80) + '…'
-          : s.title
-        : 'Unnamed Source';
-
-      // Display index and title
+      const title = s.title ? (s.title.length > 80 ? s.title.slice(0, 80) + '…' : s.title) : 'Unnamed Source';
       this.container.pushLine(`${i + 1}. {underline}${title}{/underline}`);
-
-      // Display source type
-      if (s.source) {
-        this.container.pushLine(`   Source: ${s.source}`);
-      }
-
-      // Display URL if available
+      this.container.pushLine(`   Type: ${s.type}, ID: ${s.id}`); // Using SDK fields
       if (s.url) {
         this.container.pushLine(`   URL: {blue-fg}${s.url}{/blue-fg}`);
       }
-
-      // Display relevance score with color coding
-      if (s.relevanceScore !== undefined) {
-        const scorePercentage = Math.round(s.relevanceScore * 100);
-        const scoreColor = scorePercentage > 70 ? 'green' : scorePercentage > 40 ? 'yellow' : 'red';
-        this.container.pushLine(
-          `   Relevance: {${scoreColor}-fg}${scorePercentage}%{/${scoreColor}-fg}`,
-        );
-      }
-
-      // Display snippet if available
-      if (s.snippet) {
-        const truncatedSnippet = s.snippet.length > 150 ? s.snippet.slice(0, 150) + '…' : s.snippet;
-        this.wrapText('   ' + truncatedSnippet, cw);
-      }
-
-      // Add space between sources (except after the last one)
+      // Snippet and relevanceScore not available in DomeApi.ChatSource
       if (i < sources.length - 1) {
         this.container.pushLine('');
       }

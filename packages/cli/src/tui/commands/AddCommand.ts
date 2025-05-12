@@ -1,5 +1,6 @@
 import { CommandHandler } from '../core/types';
-import { addContent } from '../../utils/api';
+import { getApiClient } from '../../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
 
 /**
  * Add command for quickly adding content
@@ -49,20 +50,29 @@ export class AddCommand implements CommandHandler {
       this.setStatus(' {bold}Status:{/bold} Adding content...');
 
       // Add content using the API
-      const response = await addContent(content);
+      const apiClient = getApiClient();
+      const response: DomeApi.Note = await apiClient.notes.ingestANewNote({ content });
 
       // Display success message
       this.addMessage(`{green-fg}Content added successfully!{/green-fg}`);
-      if (response && response.id) {
-        this.addMessage(`{bold}ID:{/bold} ${response.id}`);
-        this.addMessage(`{bold}Title:{/bold} ${response.title || 'Untitled'}`);
+      this.addMessage(`{bold}ID:{/bold} ${response.id}`);
+      this.addMessage(`{bold}Title:{/bold} ${response.title || '(No title)'}`);
+      if (response.category) {
+        this.addMessage(`{bold}Category:{/bold} ${response.category}`);
       }
-    } catch (err) {
-      this.addMessage(
-        `{red-fg}Error adding content: ${
-          err instanceof Error ? err.message : String(err)
-        }{/red-fg}`,
-      );
+      
+    } catch (err: unknown) {
+      let errorMessage = 'Error adding content.';
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessage = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessage = `API Timeout Error: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessage = `Error adding content: ${err.message}`;
+      }
+      this.addMessage(`{red-fg}${errorMessage}{/red-fg}`);
     }
   }
 }

@@ -1,8 +1,9 @@
 import { Command } from 'commander';
-import { addNote } from '../utils/api';
 import { createSpinner, success, error, info } from '../utils/ui';
 import { isAuthenticated } from '../utils/config';
 import readline from 'readline';
+import { getApiClient } from '../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
 
 /**
  * Register the note command
@@ -27,12 +28,17 @@ export function noteCommand(program: Command): void {
       try {
         if (options.content) {
           // Add content directly
-          const spinner = createSpinner(`Adding note to context: ${context}`);
+          const spinner = createSpinner(`Adding note to category: ${context}`);
           spinner.start();
 
-          await addNote(context, options.content);
+          const apiClient = getApiClient();
+          await apiClient.notes.ingestANewNote({
+            content: options.content,
+            category: context as DomeApi.IngestNoteBodyApiSchemaCategory, // Assuming context maps to category
+            // title: `Note in ${context}` // Optionally set a title
+          });
 
-          spinner.succeed(`Note added to context: ${context}`);
+          spinner.succeed(`Note added to category: ${context}`);
         } else {
           // Start interactive mode
           console.log(info(`Starting note session for context: ${context}`));
@@ -54,21 +60,42 @@ export function noteCommand(program: Command): void {
             }
 
             try {
-              await addNote(context, line);
+              const apiClient = getApiClient();
+              await apiClient.notes.ingestANewNote({
+                content: line,
+                category: context as DomeApi.IngestNoteBodyApiSchemaCategory, // Assuming context maps to category
+                 // title: `Note line in ${context}` // Optionally set a title
+              });
               console.log(success('Line added.'));
-            } catch (err) {
-              console.log(
-                error(`Failed to add line: ${err instanceof Error ? err.message : String(err)}`),
-              );
+            } catch (err: unknown) {
+              let errorMessage = 'Failed to add line.';
+              if (err instanceof DomeApiError) {
+                const apiError = err as DomeApiError;
+                errorMessage = `Failed to add line: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+              } else if (err instanceof DomeApiTimeoutError) {
+                const timeoutError = err as DomeApiTimeoutError;
+                errorMessage = `Failed to add line: Request timed out. ${timeoutError.message}`;
+              } else if (err instanceof Error) {
+                errorMessage = `Failed to add line: ${err.message}`;
+              }
+              console.log(error(errorMessage));
             }
 
             rl.prompt();
           });
         }
-      } catch (err) {
-        console.log(
-          error(`Failed to add note: ${err instanceof Error ? err.message : String(err)}`),
-        );
+      } catch (err: unknown) {
+        let errorMessage = 'Failed to process note command.';
+        if (err instanceof DomeApiError) {
+          const apiError = err as DomeApiError;
+          errorMessage = `Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+        } else if (err instanceof DomeApiTimeoutError) {
+          const timeoutError = err as DomeApiTimeoutError;
+          errorMessage = `Error: Request timed out. ${timeoutError.message}`;
+        } else if (err instanceof Error) {
+          errorMessage = `Error: ${err.message}`;
+        }
+        console.log(error(errorMessage));
         process.exit(1);
       }
     });

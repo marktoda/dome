@@ -1,7 +1,8 @@
 import { Widgets } from 'blessed';
 import { BaseMode } from './BaseMode';
-import { addContent, listNotes, search, showItem } from '../../utils/api';
-import { spawn } from 'child_process';
+import { getApiClient } from '../../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
+import { execSync as cpExecSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -11,14 +12,13 @@ import * as path from 'path';
  */
 export class NoteMode extends BaseMode {
   private isEditing: boolean = false;
-  private searchResults: any[] = [];
+  private searchResults: (DomeApi.Note | DomeApi.SearchResultItem)[] = [];
   private searchQuery: string = '';
   private selectedNoteIndex: number = -1;
   private viewMode: 'create' | 'search' | 'view' = 'create';
+  private currentViewedNote: DomeApi.Note | null = null;
 
-  /**
-   * Create a new note mode
-   */
+
   constructor() {
     super({
       id: 'note',
@@ -29,44 +29,30 @@ export class NoteMode extends BaseMode {
     });
   }
 
-  /**
-   * Handle mode initialization
-   */
   protected onInit(): void {
     // Nothing to initialize
   }
 
-  /**
-   * Handle mode activation
-   */
   protected onActivate(): void {
     this.container.setLabel(' Note Mode ');
     this.showMainMenu();
   }
 
-  /**
-   * Handle mode deactivation
-   */
   protected onDeactivate(): void {
-    // Reset state
     this.resetState();
   }
 
-  /**
-   * Reset state
-   */
   private resetState(): void {
     this.isEditing = false;
     this.searchResults = [];
     this.searchQuery = '';
     this.selectedNoteIndex = -1;
+    this.currentViewedNote = null;
     this.viewMode = 'create';
   }
 
-  /**
-   * Show main menu
-   */
   private showMainMenu(): void {
+    this.currentViewedNote = null; 
     this.container.setContent('');
     this.container.pushLine('{center}{bold}Note Mode{/bold}{/center}');
     this.container.pushLine('');
@@ -74,46 +60,37 @@ export class NoteMode extends BaseMode {
     this.container.pushLine('');
     this.container.pushLine('  {bold}create{/bold} - Create a new note');
     this.container.pushLine('  {bold}search{/bold} - Search existing notes');
-    this.container.pushLine('  {bold}list{/bold} - List recent notes');
+    this.container.pushLine('  {bold}list{/bold}   - List recent notes');
     this.container.pushLine('');
     this.container.pushLine('{gray-fg}Type one of the commands above to continue{/gray-fg}');
     this.screen.render();
   }
 
-  /**
-   * Get the user's preferred editor
-   */
   private getEditor(): string {
     return process.env.EDITOR || 'nvim';
   }
 
-  /**
-   * Create a temporary file with metadata
-   */
-  private createTempFileWithMetadata(title?: string): string {
+  private createTempFileWithMetadata(title?: string, existingContent?: string, existingCategory?: string, existingTagsString?: string): string {
     const tempFilePath = path.join(os.tmpdir(), `dome-note-${Date.now()}.md`);
     const date = new Date().toISOString();
 
     const metadata = [
       `# ${title || 'New Note'}`,
       `Date: ${date}`,
-      `Tags: `,
+      `Category: ${existingCategory || ''}`, 
+      `Tags: ${existingTagsString || ''}`, 
       '',
       '<!-- Write your note content below this line -->',
       '',
+      existingContent || '',
     ].join('\n');
 
     fs.writeFileSync(tempFilePath, metadata);
     return tempFilePath;
   }
 
-  /**
-   * Open editor with content
-   */
   private openEditor(filePath: string): Promise<void> {
     this.isEditing = true;
-
-    // Show status message
     this.container.setContent('');
     this.container.pushLine('{center}{bold}External Editor{/bold}{/center}');
     this.container.pushLine('');
@@ -125,65 +102,38 @@ export class NoteMode extends BaseMode {
     this.container.pushLine('{gray-fg}The TUI will resume when you exit the editor{/gray-fg}');
     this.screen.render();
 
-    // Use execSync for better terminal handling
     return new Promise((resolve, reject) => {
       try {
-        // Save the current terminal state
         const originalStdin = process.stdin.isRaw;
-
-        // Leave the alternate screen buffer temporarily
         this.screen.program.normalBuffer();
         this.screen.program.clear();
 
-        // Use execSync for better terminal handling - this blocks until editor exits
-        const { execSync } = require('child_process');
-        const editor = this.getEditor();
-
         try {
-          execSync(`${editor} "${filePath}"`, {
+          cpExecSync(`${this.getEditor()} "${filePath}"`, {
             stdio: 'inherit',
             env: process.env,
           });
-
-          // Return to the alternate screen buffer and restore the TUI
           process.nextTick(() => {
-            // Return to alternate buffer
             this.screen.program.alternateBuffer();
-
-            // Restore raw mode if it was enabled
-            if (originalStdin) {
-              process.stdin.setRawMode(true);
-            }
-
-            // Force a redraw of the screen
+            if (originalStdin) process.stdin.setRawMode(true);
             this.screen.program.clear();
             this.screen.program.cursorReset();
             this.screen.realloc();
             this.screen.render();
-
             this.isEditing = false;
             resolve();
           });
         } catch (error) {
-          // Return to the alternate screen buffer and restore the TUI even on error
           process.nextTick(() => {
-            // Return to alternate buffer
             this.screen.program.alternateBuffer();
-
-            // Restore raw mode if it was enabled
-            if (originalStdin) {
-              process.stdin.setRawMode(true);
-            }
-
-            // Force a redraw of the screen
+            if (originalStdin) process.stdin.setRawMode(true);
             this.screen.program.clear();
             this.screen.program.cursorReset();
             this.screen.realloc();
             this.screen.render();
-
             this.isEditing = false;
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            reject(new Error(`Editor exited with error: ${errorMessage}`));
+            const errorMessageText = error instanceof Error ? error.message : String(error);
+            reject(new Error(`Editor exited with error: ${errorMessageText}`));
           });
         }
       } catch (err) {
@@ -193,77 +143,58 @@ export class NoteMode extends BaseMode {
     });
   }
 
-  /**
-   * Parse note content from file
-   */
   private parseNoteContent(filePath: string): {
     title: string;
     content: string;
-    tags: string[];
+    tags: string[]; 
+    category: string; 
     summary?: string;
   } {
     const fileContent = fs.readFileSync(filePath, 'utf8');
     const lines = fileContent.split('\n');
-
     let title = 'Untitled Note';
     let tags: string[] = [];
+    let category = '';
     let summary: string | undefined = undefined;
     let contentStartIndex = 0;
 
-    // Parse metadata
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-
       if (i === 0 && line.startsWith('# ')) {
         title = line.substring(2).trim();
         continue;
       }
-
-      if (line.startsWith('Tags:')) {
-        const tagsPart = line.substring(5).trim();
-        if (tagsPart) {
-          tags = tagsPart.split(',').map(tag => tag.trim());
-        }
+      if (line.startsWith('Category:')) {
+        category = line.substring(9).trim();
         continue;
       }
-
+      if (line.startsWith('Tags:')) {
+        const tagsPart = line.substring(5).trim();
+        if (tagsPart) tags = tagsPart.split(',').map(tag => tag.trim());
+        continue;
+      }
       if (line.startsWith('Summary:')) {
         summary = line.substring(8).trim();
         continue;
       }
-
       if (line.includes('<!-- Write your note content below this line -->')) {
-        contentStartIndex = i + 1;
+        contentStartIndex = i + 2; 
         break;
       }
-
-      // If we've gone through several lines without finding the marker,
-      // assume content starts after a reasonable number of metadata lines
-      if (i >= 7) {
-        // Increased to account for possible summary line
-        contentStartIndex = i;
+      if (i >= 10) { 
+        contentStartIndex = i; 
         break;
       }
     }
-
-    const content = lines.slice(contentStartIndex).join('\n').trim();
-
-    return { title, content, tags, summary };
+    const contentBody = lines.slice(contentStartIndex).join('\n').trim();
+    return { title, content: contentBody, tags, category, summary };
   }
 
-  /**
-   * Create a new note
-   */
   private async createNewNote(): Promise<void> {
     try {
-      // Create temp file with metadata
       const tempFilePath = this.createTempFileWithMetadata();
-
-      // Open editor
       await this.openEditor(tempFilePath);
-
-      // Parse note content
-      const { title, content, tags } = this.parseNoteContent(tempFilePath);
+      const { title, content, tags, category } = this.parseNoteContent(tempFilePath);
 
       if (!content.trim()) {
         this.container.setContent('');
@@ -274,111 +205,115 @@ export class NoteMode extends BaseMode {
         return;
       }
 
-      // Save the note
       this.statusBar.setContent(' {bold}Status:{/bold} Saving note...');
       this.screen.render();
 
-      const response = await addContent(content, title, tags);
+      const apiClient = getApiClient();
 
-      // Clean up temp file
-      try {
-        fs.unlinkSync(tempFilePath);
-      } catch (err) {
-        // Ignore errors when deleting temp file
+      // Assuming DomeApi.IngestNoteBodyApiSchemaCategory is an enum.
+      // We get its string values for validation.
+      // This part might need adjustment if the enum structure is different,
+      // or if it's a union of string literals (in which case the original error is odd).
+      const validCategoryStrings: string[] = Object.values(DomeApi.IngestNoteBodyApiSchemaCategory || {});
+      let finalCategory: DomeApi.IngestNoteBodyApiSchemaCategory | undefined = undefined;
+      
+      const parsedCategoryString = category; // from parseNoteContent
+      const firstTag = tags.length > 0 ? tags[0] : undefined;
+
+      if (parsedCategoryString && validCategoryStrings.includes(parsedCategoryString)) {
+        finalCategory = parsedCategoryString as DomeApi.IngestNoteBodyApiSchemaCategory;
+      } else if (firstTag && validCategoryStrings.includes(firstTag)) {
+        finalCategory = firstTag as DomeApi.IngestNoteBodyApiSchemaCategory;
+      } else if (tags.length > 0) {
+        const foundTagCategory = tags.find(t => validCategoryStrings.includes(t));
+        if (foundTagCategory) {
+          finalCategory = foundTagCategory as DomeApi.IngestNoteBodyApiSchemaCategory;
+        }
       }
+      // If no valid category found, it remains undefined. Or, set a default:
+      // if (!finalCategory && validCategoryStrings.includes("general")) {
+      //   finalCategory = "general" as DomeApi.IngestNoteBodyApiSchemaCategory;
+      // }
+      
+      const noteToIngest: DomeApi.IngestNoteBodyApiSchema = {
+        content,
+        title,
+        category: finalCategory,
+      };
+      // customMetadata field was confirmed not to exist on IngestNoteBodyApiSchema.
+      // If cliTags (from the parsed `tags` array) need to be stored,
+      // they must be part of the note's content string or a separate mechanism if the API supports it.
+      // For now, only the `finalCategory` (derived from parsed `category` or first valid tag) is used.
 
-      // Show success message
+      const response: DomeApi.Note = await apiClient.notes.ingestANewNote(noteToIngest);
+      try { fs.unlinkSync(tempFilePath); } catch (errUnlink) { /* ignore */ }
+
       this.container.setContent('');
       this.container.pushLine('{center}{bold}Note Saved{/bold}{/center}');
       this.container.pushLine('');
-      this.container.pushLine(
-        `{green-fg}Your note "${title}" has been saved successfully!{/green-fg}`,
-      );
-      if (response && response.id) {
-        this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
-        this.container.pushLine(
-          `{bold}Content Type:{/bold} ${response.contentType || 'text/plain'}`,
-        );
-
-        // Show that the note will be processed for title and summary
-        this.container.pushLine(
-          '{gray-fg}Note will be processed to generate title and summary.{/gray-fg}',
-        );
-      }
+      this.container.pushLine(`{green-fg}Your note "${response.title || title}" has been saved successfully!{/green-fg}`);
+      this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
+      this.container.pushLine(`{bold}Category:{/bold} ${response.category || '(none)'}`);
+      this.container.pushLine(`{bold}MIME Type:{/bold} ${response.mimeType}`);
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-
-      // Reset status
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
+      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
       this.screen.render();
-    } catch (err) {
+    } catch (err: unknown) {
+      let errorMessageText = 'Error creating note.';
+      if (err instanceof DomeApiError) { const apiError = err as DomeApiError; errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
+      else if (err instanceof DomeApiTimeoutError) { const timeoutError = err as DomeApiTimeoutError; errorMessageText = `API Timeout Error: ${timeoutError.message}`; }
+      else if (err instanceof Error) { errorMessageText = `Error creating note: ${err.message}`; }
       this.container.setContent('');
-      this.container.pushLine(
-        `{red-fg}Error creating note: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-      );
+      this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
+      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
       this.screen.render();
     }
   }
 
-  /**
-   * Show search prompt
-   */
   private showSearchPrompt(): void {
     this.viewMode = 'search';
+    this.currentViewedNote = null;
     this.container.setContent('');
     this.container.pushLine('{center}{bold}Search Notes{/bold}{/center}');
     this.container.pushLine('');
     this.container.pushLine('Enter search query:');
-    if (this.searchQuery) {
-      this.container.pushLine(`Current: ${this.searchQuery}`);
-    }
+    if (this.searchQuery) this.container.pushLine(`Current: ${this.searchQuery}`);
     this.container.pushLine('');
-    this.container.pushLine(
-      '{gray-fg}(Type {bold}menu{/bold} to return to the main menu){/gray-fg}',
-    );
+    this.container.pushLine('{gray-fg}(Type {bold}menu{/bold} to return to the main menu){/gray-fg}');
     this.screen.render();
   }
 
-  /**
-   * Search for notes
-   */
   private async searchNotes(query: string): Promise<void> {
     try {
       this.searchQuery = query;
       this.statusBar.setContent(' {bold}Status:{/bold} Searching notes...');
       this.screen.render();
 
-      const response = await search(query, 20);
-      this.searchResults = response.results || [];
-
+      const apiClient = getApiClient();
+      const searchRequest: DomeApi.GetSearchRequest = { q: query, limit: 20 };
+      const response: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
+      
+      this.searchResults = response.success ? (response.results || []) : [];
       this.showSearchResults();
-    } catch (err) {
+    } catch (err: unknown) {
+      let errorMessageText = 'Error searching notes.';
+      if (err instanceof DomeApiError) { const apiError = err as DomeApiError; errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
+      else if (err instanceof DomeApiTimeoutError) { const timeoutError = err as DomeApiTimeoutError; errorMessageText = `API Timeout Error: ${timeoutError.message}`; }
+      else if (err instanceof Error) { errorMessageText = `Error searching notes: ${err.message}`; }
       this.container.setContent('');
-      this.container.pushLine(
-        `{red-fg}Error searching notes: ${
-          err instanceof Error ? err.message : String(err)
-        }{/red-fg}`,
-      );
+      this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
+      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
       this.screen.render();
     }
   }
 
-  /**
-   * Show search results
-   */
   private showSearchResults(): void {
+    this.currentViewedNote = null;
     this.container.setContent('');
     this.container.pushLine('{center}{bold}Search Results{/bold}{/center}');
     this.container.pushLine('');
@@ -390,48 +325,35 @@ export class NoteMode extends BaseMode {
     } else {
       this.container.pushLine(`Found ${this.searchResults.length} results:`);
       this.container.pushLine('');
-
-      this.searchResults.forEach((result, index) => {
-        const title = result.title || 'Untitled Note';
-        const date = result.createdAt
-          ? new Date(result.createdAt).toLocaleString()
-          : 'Unknown date';
-        this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (${date})`);
-
-        // Display summary if available
-        if (result.summary) {
-          this.container.pushLine(
-            `   {gray-fg}${result.summary.substring(0, 80)}${
-              result.summary.length > 80 ? '...' : ''
-            }{/gray-fg}`,
-          );
+      (this.searchResults as DomeApi.SearchResultItem[]).forEach((resultItem: DomeApi.SearchResultItem, index: number) => {
+        const title = resultItem.title || 'Untitled Note';
+        const date = resultItem.createdAt ? new Date(resultItem.createdAt).toLocaleString() : 'Unknown date';
+        // Ensure score is a number before calling toFixed
+        const score = typeof resultItem.score === 'number' ? resultItem.score.toFixed(2) : 'N/A';
+        this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (Score: ${score})`);
+        this.container.pushLine(`   {gray-fg}ID: ${resultItem.id} | Category: ${resultItem.category} | Created: ${date}{/gray-fg}`);
+        if (resultItem.summary) {
+          this.container.pushLine(`   {gray-fg}Summary: ${resultItem.summary.substring(0, 80)}${resultItem.summary.length > 80 ? '...' : ''}{/gray-fg}`);
         }
       });
-
       this.container.pushLine('');
       this.container.pushLine('Enter the number of the note to view/edit, or:');
     }
-
-    this.container.pushLine(
-      '{gray-fg}Type {bold}search{/bold} to search again or {bold}menu{/bold} to return to the main menu{/gray-fg}',
-    );
-
-    this.statusBar.setContent(
-      ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-    );
+    this.container.pushLine('{gray-fg}Type {bold}search{/bold} to search again or {bold}menu{/bold} to return to the main menu{/gray-fg}');
+    this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
     this.screen.render();
   }
 
-  /**
-   * List recent notes
-   */
   private async listRecentNotes(): Promise<void> {
     try {
       this.statusBar.setContent(' {bold}Status:{/bold} Loading recent notes...');
       this.screen.render();
 
-      const response = await listNotes();
-      this.searchResults = response.items || [];
+      const apiClient = getApiClient();
+      const notesListed: DomeApi.Note[] = await apiClient.notes.listNotes({ limit: 20 }); 
+      this.searchResults = notesListed || []; 
+      this.viewMode = 'search'; 
+      this.currentViewedNote = null;
 
       this.container.setContent('');
       this.container.pushLine('{center}{bold}Recent Notes{/bold}{/center}');
@@ -440,53 +362,37 @@ export class NoteMode extends BaseMode {
       if (this.searchResults.length === 0) {
         this.container.pushLine('{yellow-fg}No notes found.{/yellow-fg}');
       } else {
-        this.container.pushLine(`Found ${this.searchResults.length} notes:`);
+        this.container.pushLine(`Displaying ${this.searchResults.length} recent notes:`);
         this.container.pushLine('');
-
-        this.searchResults.forEach((note, index) => {
-          const title = note.title || 'Untitled Note';
-          const date = note.createdAt ? new Date(note.createdAt).toLocaleString() : 'Unknown date';
-          this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (${date})`);
-
-          // Display summary if available
-          if (note.summary) {
-            this.container.pushLine(
-              `   {gray-fg}${note.summary.substring(0, 80)}${
-                note.summary.length > 80 ? '...' : ''
-              }{/gray-fg}`,
-            );
+        (this.searchResults as DomeApi.Note[]).forEach((noteItem: DomeApi.Note, index: number) => {
+          const title = noteItem.title || 'Untitled Note';
+          const date = noteItem.createdAt ? new Date(noteItem.createdAt).toLocaleString() : 'Unknown date';
+          this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (ID: ${noteItem.id})`);
+          this.container.pushLine(`   {gray-fg}Category: ${noteItem.category || '(none)'} | Created: ${date}{/gray-fg}`);
+          if (noteItem.content) {
+             this.container.pushLine(`   {gray-fg}${noteItem.content.substring(0, 80)}${noteItem.content.length > 80 ? '...' : ''}{/gray-fg}`);
           }
         });
-
         this.container.pushLine('');
         this.container.pushLine('Enter the number of the note to view/edit, or:');
       }
-
-      this.container.pushLine(
-        '{gray-fg}Type {bold}menu{/bold} to return to the main menu{/gray-fg}',
-      );
-
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
+      this.container.pushLine('{gray-fg}Type {bold}menu{/bold} to return to the main menu{/gray-fg}');
+      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
       this.screen.render();
-    } catch (err) {
+    } catch (err: unknown) {
+      let errorMessageText = 'Error listing notes.';
+      if (err instanceof DomeApiError) { const apiError = err as DomeApiError; errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
+      else if (err instanceof DomeApiTimeoutError) { const timeoutError = err as DomeApiTimeoutError; errorMessageText = `API Timeout Error: ${timeoutError.message}`; }
+      else if (err instanceof Error) { errorMessageText = `Error listing notes: ${err.message}`; }
       this.container.setContent('');
-      this.container.pushLine(
-        `{red-fg}Error listing notes: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-      );
+      this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
+      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
       this.screen.render();
     }
   }
 
-  /**
-   * View and edit a note
-   */
   private async viewAndEditNote(index: number): Promise<void> {
     try {
       if (index < 0 || index >= this.searchResults.length) {
@@ -495,165 +401,85 @@ export class NoteMode extends BaseMode {
         return;
       }
 
-      const note = this.searchResults[index];
-      this.selectedNoteIndex = index;
-
-      this.statusBar.setContent(' {bold}Status:{/bold} Loading note...');
-      this.screen.render();
-
-      // Get full note content if needed
-      let fullNote = note;
-      if (!note.content) {
-        fullNote = await showItem(note.id);
+      const itemSummary = this.searchResults[index] as (DomeApi.SearchResultItem | DomeApi.Note);
+      if (!itemSummary || !itemSummary.id) {
+        this.container.pushLine('{red-fg}Error: Selected item has no ID.{/red-fg}');
+        this.screen.render();
+        return;
       }
+      this.selectedNoteIndex = index; 
 
-      const title = fullNote.title || 'Untitled Note';
-      const content = fullNote.content || '';
-
-      // Create temp file with note content
-      const tempFilePath = path.join(os.tmpdir(), `dome-note-${Date.now()}.md`);
-
-      // Format the content with metadata
-      const date = fullNote.createdAt
-        ? new Date(fullNote.createdAt).toISOString()
-        : new Date().toISOString();
-      const tags = fullNote.tags ? fullNote.tags.join(', ') : '';
-
-      // Include summary in the metadata if available
-      const summary = fullNote.summary || '';
-
-      const fileContent = [
-        `# ${title}`,
-        `Date: ${date}`,
-        `Tags: ${tags}`,
-        summary ? `Summary: ${summary}` : '',
-        '',
-        '<!-- Write your note content below this line -->',
-        content,
-      ].join('\n');
-
-      fs.writeFileSync(tempFilePath, fileContent);
-
-      // Open editor
-      await this.openEditor(tempFilePath);
-
-      // Parse updated content
-      const updatedNote = this.parseNoteContent(tempFilePath);
-
-      // Clean up temp file
+      this.statusBar.setContent(' {bold}Status:{/bold} Loading note details...');
+      this.screen.render();
+      
+      let noteToView: DomeApi.Note;
       try {
-        fs.unlinkSync(tempFilePath);
-      } catch (err) {
-        // Ignore errors when deleting temp file
+        const apiClient = getApiClient();
+        noteToView = await apiClient.notes.getANoteById(itemSummary.id);
+        this.currentViewedNote = noteToView; 
+      } catch (fetchErr: unknown) {
+        let errMessage = 'Error fetching note details.';
+        if (fetchErr instanceof DomeApiError) { const apiError = fetchErr as DomeApiError; errMessage = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
+        else if (fetchErr instanceof DomeApiTimeoutError) { const timeoutError = fetchErr as DomeApiTimeoutError; errMessage = `API Timeout Error: ${timeoutError.message}`; }
+        else if (fetchErr instanceof Error) { errMessage = `Error fetching note details: ${fetchErr.message}`; }
+        this.container.pushLine(`{red-fg}${errMessage}{/red-fg}`);
+        this.screen.render();
+        return;
+      }
+      
+      this.viewMode = 'view'; 
+      this.container.setContent('');
+      this.container.pushLine(`{center}{bold}View Note: ${noteToView.title || 'Untitled'}{/bold}{/center}`);
+      this.container.pushLine('');
+      this.container.pushLine(`{bold}ID:{/bold} ${noteToView.id}`);
+      this.container.pushLine(`{bold}Title:{/bold} ${noteToView.title || 'Untitled'}`);
+      this.container.pushLine(`{bold}Category:{/bold} ${noteToView.category || '(none)'}`);
+      this.container.pushLine(`{bold}MIME Type:{/bold} ${noteToView.mimeType}`);
+      this.container.pushLine(`{bold}Created:{/bold} ${new Date(noteToView.createdAt).toLocaleString()}`);
+      if (noteToView.customMetadata?.cliTags) { 
+         const tags = Array.isArray(noteToView.customMetadata.cliTags) ? noteToView.customMetadata.cliTags.join(', ') : String(noteToView.customMetadata.cliTags);
+         this.container.pushLine(`{bold}Tags (custom):{/bold} ${tags}`);
       }
 
-      // Save the updated note
-      this.statusBar.setContent(' {bold}Status:{/bold} Saving updated note...');
+      this.container.pushLine('');
+      this.container.pushLine('{bold}Content:{/bold}');
+      this.container.pushLine(noteToView.content || '(No content)');
+      this.container.pushLine('');
+      this.container.pushLine('{gray-fg}Type {bold}edit{/bold} to edit, {bold}delete{/bold} to delete, or {bold}menu{/bold} to return.{/gray-fg}');
+      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | Viewing Note (ID: ${noteToView.id})`);
       this.screen.render();
 
-      // For now, we'll create a new note with the updated content
-      // In a real implementation, you'd want to update the existing note
-      const response = await addContent(updatedNote.content, updatedNote.title, updatedNote.tags);
-
-      // Show success message
-      this.container.setContent('');
-      this.container.pushLine('{center}{bold}Note Updated{/bold}{/center}');
-      this.container.pushLine('');
-      this.container.pushLine(
-        `{green-fg}Your note "${updatedNote.title}" has been updated successfully!{/green-fg}`,
-      );
-      if (response && response.id) {
-        this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
-
-        // Show that the note will be processed for title and summary
-        this.container.pushLine(
-          '{gray-fg}Note will be processed to generate title and summary.{/gray-fg}',
-        );
-      }
-      this.container.pushLine('');
-      this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-
-      // Reset status
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
-      this.screen.render();
-    } catch (err) {
-      this.container.setContent('');
-      this.container.pushLine(
-        `{red-fg}Error editing note: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-      );
-      this.container.pushLine('');
-      this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-      this.statusBar.setContent(
-        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
-      );
+    } catch (err: unknown) {
+      let errorMessageText = 'Error processing note view.';
+       if (err instanceof DomeApiError) { const apiError = err as DomeApiError; errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
+      else if (err instanceof DomeApiTimeoutError) { const timeoutError = err as DomeApiTimeoutError; errorMessageText = `API Timeout Error: ${timeoutError.message}`; }
+      else if (err instanceof Error) { errorMessageText = `Error processing note view: ${err.message}`; }
+      this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.screen.render();
     }
   }
 
-  /**
-   * Handle input in this mode
-   * @param input The input to handle
-   */
   async handleInput(input: string): Promise<void> {
-    // Don't process input while editing
-    if (this.isEditing) {
-      return;
-    }
+    if (this.isEditing) return; 
 
-    // Trim input and convert to lowercase for command matching
     const trimmedInput = input.trim();
-    if (!trimmedInput) return; // Ignore empty input
-
     const lowerInput = trimmedInput.toLowerCase();
 
-    // Handle menu command from anywhere - process this first for responsiveness
-    if (lowerInput === 'menu') {
-      this.resetState();
-      this.showMainMenu();
-      return;
-    }
-
-    // Use a more direct approach to handle commands for better performance
     try {
-      // Handle input based on current view mode
       switch (this.viewMode) {
         case 'create':
           if (lowerInput === 'create') {
-            // Update UI immediately to show we're processing
-            this.statusBar.setContent(' {bold}Status:{/bold} Creating new note...');
-            this.screen.render();
-
-            // Process in next tick to allow UI to update
             process.nextTick(async () => {
-              try {
-                await this.createNewNote();
-              } catch (err) {
-                this.container.pushLine(
-                  `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-                );
-                this.screen.render();
-              }
+              try { await this.createNewNote(); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
             });
           } else if (lowerInput === 'search') {
             this.showSearchPrompt();
           } else if (lowerInput === 'list') {
-            // Update UI immediately
-            this.statusBar.setContent(' {bold}Status:{/bold} Loading notes...');
-            this.screen.render();
-
-            // Process in next tick
             process.nextTick(async () => {
-              try {
-                await this.listRecentNotes();
-              } catch (err) {
-                this.container.pushLine(
-                  `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-                );
-                this.screen.render();
-              }
+              try { await this.listRecentNotes(); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
             });
+          } else if (lowerInput === 'menu') {
+             this.showMainMenu();
           }
           break;
 
@@ -661,61 +487,129 @@ export class NoteMode extends BaseMode {
           if (lowerInput === 'search') {
             this.showSearchPrompt();
           } else if (this.searchResults.length > 0) {
-            // Check if input is a number
             const noteNumber = parseInt(trimmedInput, 10);
             if (!isNaN(noteNumber) && noteNumber > 0 && noteNumber <= this.searchResults.length) {
-              // Update UI immediately
               this.statusBar.setContent(' {bold}Status:{/bold} Loading note...');
               this.screen.render();
-
-              // Process in next tick
               process.nextTick(async () => {
-                try {
-                  await this.viewAndEditNote(noteNumber - 1);
-                } catch (err) {
-                  this.container.pushLine(
-                    `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-                  );
-                  this.screen.render();
-                }
+                try { await this.viewAndEditNote(noteNumber - 1); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
               });
+            } else if (trimmedInput && lowerInput !== 'menu') { 
+                 this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
+                 this.screen.render();
+                 process.nextTick(async () => {
+                    try { await this.searchNotes(trimmedInput); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
+                 });
+            } else if (lowerInput === 'menu') {
+                this.resetState();
+                this.showMainMenu();
             }
-          } else if (trimmedInput && lowerInput !== 'menu') {
-            // Update UI immediately
-            this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
-            this.screen.render();
-
-            // Process in next tick
-            process.nextTick(async () => {
-              try {
-                await this.searchNotes(trimmedInput);
-              } catch (err) {
-                this.container.pushLine(
-                  `{red-fg}Error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-                );
-                this.screen.render();
-              }
-            });
+          } else if (trimmedInput && lowerInput !== 'menu') { 
+             this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
+             this.screen.render();
+             process.nextTick(async () => {
+                try { await this.searchNotes(trimmedInput); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
+             });
+          } else if (lowerInput === 'menu') {
+            this.resetState();
+            this.showMainMenu();
           }
           break;
 
-        case 'view':
-          // This mode is not used currently
-          this.showMainMenu();
+        case 'view': {
+          const noteToActOn = this.currentViewedNote; 
+
+          if (!noteToActOn || !noteToActOn.id) {
+            this.container.pushLine('{red-fg}Error: No note selected or note ID is missing.{/red-fg}');
+            this.showMainMenu();
+            break;
+          }
+
+          if (lowerInput === 'edit') {
+            process.nextTick(async () => {
+              try {
+                const tempFilePath = this.createTempFileWithMetadata(
+                    noteToActOn.title, 
+                    noteToActOn.content, 
+                    noteToActOn.category, 
+                    noteToActOn.customMetadata?.cliTags ? 
+                        (Array.isArray(noteToActOn.customMetadata.cliTags) ? noteToActOn.customMetadata.cliTags.join(', ') : String(noteToActOn.customMetadata.cliTags)) 
+                        : ''
+                );
+                
+                await this.openEditor(tempFilePath);
+                const updatedNoteParsed = this.parseNoteContent(tempFilePath);
+                fs.unlinkSync(tempFilePath);
+
+                this.statusBar.setContent(' {bold}Status:{/bold} Processing edited note...');
+                this.screen.render();
+                
+                this.container.setContent('');
+                this.container.pushLine('{center}{bold}Note Edited (Locally Parsed){/bold}{/center}');
+                this.container.pushLine(`{yellow-fg}Update/Save functionality via SDK is pending.{/yellow-fg}`);
+                this.container.pushLine(`{yellow-fg}To save changes, manually delete original (ID: ${noteToActOn.id}) and create new.{/yellow-fg}`);
+                this.container.pushLine(`{bold}Original ID:{/bold} ${noteToActOn.id}`);
+                this.container.pushLine(`{bold}Parsed Title:{/bold} ${updatedNoteParsed.title}`);
+                this.container.pushLine(`{bold}Parsed Category:{/bold} ${updatedNoteParsed.category}`);
+                this.container.pushLine(`{bold}Parsed Tags:{/bold} ${updatedNoteParsed.tags.join(', ')}`);
+                this.container.pushLine(`{bold}Parsed Content Snippet:{/bold} ${(updatedNoteParsed.content || '').substring(0, 50)}...`);
+                this.container.pushLine('');
+                this.container.pushLine('Type {bold}menu{/bold} to return.');
+                this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | Note processed locally`);
+                this.screen.render();
+              } catch (editErr: unknown) {
+                let errMsgText = "Error during edit process.";
+                if (editErr instanceof DomeApiError) { const apiError = editErr as DomeApiError; errMsgText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
+                else if (editErr instanceof DomeApiTimeoutError) { const timeoutError = editErr as DomeApiTimeoutError; errMsgText = `API Timeout: ${timeoutError.message}`; }
+                else if (editErr instanceof Error) { errMsgText = `Error during edit process: ${editErr.message}`; }
+                this.container.pushLine(`{red-fg}${errMsgText}{/red-fg}`);
+                this.screen.render();
+              }
+            });
+          } else if (lowerInput === 'delete') {
+            this.statusBar.setContent(' {bold}Status:{/bold} Deleting note...');
+            this.screen.render();
+            process.nextTick(async () => {
+              try {
+                const apiClient = getApiClient();
+                await apiClient.notes.deleteANote(noteToActOn.id); 
+                this.container.setContent('');
+                this.container.pushLine('{center}{bold}Note Deleted{/bold}{/center}');
+                this.container.pushLine('');
+                this.container.pushLine(`{green-fg}Note "${noteToActOn.title || noteToActOn.id}" has been deleted.{/green-fg}`);
+                this.searchResults = this.searchResults.filter(n => n.id !== noteToActOn.id);
+                this.selectedNoteIndex = -1;
+                this.currentViewedNote = null;
+                this.viewMode = 'search'; 
+                this.showSearchResults(); 
+              } catch (deleteErr: unknown) {
+                let errMsgText = "Failed to delete note.";
+                if (deleteErr instanceof DomeApiError) { const apiError = deleteErr as DomeApiError; errMsgText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
+                else if (deleteErr instanceof DomeApiTimeoutError) { const timeoutError = deleteErr as DomeApiTimeoutError; errMsgText = `API Timeout: ${timeoutError.message}`; }
+                else if (deleteErr instanceof Error) { errMsgText = `Failed to delete note: ${deleteErr.message}`; }
+                this.container.pushLine(`{red-fg}${errMsgText}{/red-fg}`);
+              } finally {
+                 this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+                 this.screen.render();
+              }
+            });
+          } else if (lowerInput === 'menu') {
+            this.resetState();
+            this.showMainMenu();
+          }
           break;
+        }
       }
-    } catch (err) {
-      // Catch any unexpected errors to prevent the UI from freezing
-      this.container.pushLine(
-        `{red-fg}Unexpected error: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-      );
+    } catch (err: unknown) { 
+      let errorMessageText = 'Error in Note Mode input handler.';
+      if (err instanceof Error) {
+        errorMessageText = `Error in Note Mode input handler: ${err.message}`;
+      }
+      this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.screen.render();
     }
   }
 
-  /**
-   * Get help text for this mode
-   */
   getHelpText(): string {
     return `
 {bold}Note Mode Help{/bold}
@@ -724,13 +618,20 @@ In Note Mode, you can create and edit notes using your preferred text editor.
 
 {bold}Commands:{/bold}
 - {bold}create{/bold} - Create a new note in your editor
-- {bold}search{/bold} - Search for existing notes
-- {bold}list{/bold} - List recent notes
-- {bold}menu{/bold} - Return to the main menu
+- {bold}search{/bold} [query] - Search for existing notes
+- {bold}list{/bold}   - List recent notes
+- {bold}menu{/bold}   - Return to the main menu
+
+When viewing search results or a list:
+- Enter a {bold}number{/bold} to view/edit that note.
+
+When viewing a single note:
+- {bold}edit{/bold}   - Edit the current note
+- {bold}delete{/bold} - Delete the current note
+- {bold}menu{/bold}   - Return to the main menu / previous view
 
 {bold}Editor:{/bold}
-The note mode uses your $EDITOR environment variable (defaults to neovim).
-When you exit the editor, the note will be saved automatically.
+The note mode uses your $EDITOR environment variable (defaults to nvim).
 
 {bold}Shortcuts:{/bold}
 - {cyan-fg}${this.config.shortcut}{/cyan-fg} - Switch to Note Mode

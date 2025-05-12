@@ -1,6 +1,7 @@
 import { Widgets } from 'blessed';
 import { BaseMode } from './BaseMode';
-import { listNotes, search } from '../../utils/api';
+import { getApiClient } from '../../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
 
 /**
  * Explore mode for browsing and searching content
@@ -63,14 +64,19 @@ export class ExploreMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Loading notes...');
       this.screen.render();
 
-      // Extract the items array from the listNotes response
-      const response = await listNotes();
-      this.notes = response.items || [];
-
-      // Calculate total pages
+      const apiClient = getApiClient();
+      // Fetch with a limit for pagination; TUI will handle pages
+      const notesResponse: DomeApi.Note[] = await apiClient.notes.listNotes({
+        limit: 1000, // Fetch a large number, TUI will paginate locally for now
+        offset: 0,
+        // category: undefined // Potentially add category filter later
+      });
+      this.notes = notesResponse || [];
+      
+      // Calculate total pages based on fetched notes and pageSize
       this.totalPages = Math.ceil(this.notes.length / this.pageSize);
+      this.currentPage = 0; // Reset to first page
 
-      // Display notes
       this.displayNotes();
 
       // Reset status
@@ -78,12 +84,20 @@ export class ExploreMode extends BaseMode {
         ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
       );
       this.screen.render();
-    } catch (err) {
+    } catch (err: unknown) {
       this.container.setContent('');
       this.container.pushLine('{center}{bold}Explore Mode{/bold}{/center}');
-      this.container.pushLine(
-        `{red-fg}Error loading notes: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-      );
+      let errorMessage = 'Error loading notes.';
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessage = `API Error loading notes: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessage = `API Timeout loading notes: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessage = `Error loading notes: ${err.message}`;
+      }
+      this.container.pushLine(`{red-fg}${errorMessage}{/red-fg}`);
       this.statusBar.setContent(
         ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
       );
@@ -112,32 +126,17 @@ export class ExploreMode extends BaseMode {
 
     // Display notes
     pageNotes.forEach((note, index) => {
-      const title = note.title || 'Untitled';
-      const content = note.body || '';
-      const date = new Date(note.createdAt).toLocaleString();
-
-      // Try to extract tags from metadata if available
-      let tags: string[] = [];
-      if (note.metadata) {
-        try {
-          const metadata =
-            typeof note.metadata === 'string' ? JSON.parse(note.metadata) : note.metadata;
-
-          if (metadata.tags && Array.isArray(metadata.tags)) {
-            tags = metadata.tags;
-          }
-        } catch (e) {
-          // Ignore parsing errors
-        }
-      }
+      const noteItem = note as DomeApi.Note; // Cast to SDK type
+      const title = noteItem.title || 'Untitled';
+      const content = noteItem.content || '';
+      const date = new Date(noteItem.createdAt).toLocaleString();
+      const category = noteItem.category || '(No category)';
 
       this.container.pushLine(`{bold}${start + index + 1}. ${title}{/bold}`);
       this.container.pushLine(
-        `{gray-fg}Created: ${date} | Type: ${note.contentType || 'text/plain'}{/gray-fg}`,
+        `{gray-fg}ID: ${noteItem.id} | Category: ${category} | Created: ${date}{/gray-fg}`,
       );
-      if (tags.length > 0) {
-        this.container.pushLine(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
-      }
+      // Tags are not directly available in DomeApi.Note
       this.container.pushLine(`${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
       this.container.pushLine('');
     });
@@ -170,47 +169,30 @@ export class ExploreMode extends BaseMode {
     }
 
     // Display results
-    results.results.forEach((match: any, index: number) => {
+    results.results.forEach((matchItem: DomeApi.SearchResultItem, index: number) => {
+      const match = matchItem as DomeApi.SearchResultItem; // Cast to SDK type
       this.container.pushLine(
         `{bold}${index + 1}. ${match.title || 'Untitled'}{/bold} (Score: ${
           match.score?.toFixed(2) || 'N/A'
         })`,
       );
-
+      this.container.pushLine(
+         `{gray-fg}ID: ${match.id} | Category: ${match.category} | MIME: ${match.mimeType}{/gray-fg}`
+      );
       if (match.createdAt) {
         this.container.pushLine(
-          `{gray-fg}Created: ${new Date(match.createdAt).toLocaleString()} | Type: ${
-            match.contentType || 'text/plain'
-          }{/gray-fg}`,
+          `{gray-fg}Created: ${new Date(match.createdAt).toLocaleString()}{/gray-fg}`,
         );
       }
+      // Tags are not directly available in DomeApi.SearchResultItem
 
-      // Try to extract tags from metadata if available
-      let tags: string[] = [];
-      if (match.metadata) {
-        try {
-          const metadata =
-            typeof match.metadata === 'string' ? JSON.parse(match.metadata) : match.metadata;
-
-          if (metadata.tags && Array.isArray(metadata.tags)) {
-            tags = metadata.tags;
-          }
-        } catch (e) {
-          // Ignore parsing errors
-        }
+      if (match.summary) {
+          this.container.pushLine(`{bold}Summary:{/bold} ${match.summary}`);
       }
-
-      if (tags.length > 0) {
-        this.container.pushLine(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
-      }
-
-      // Display content - use body field from new API
+      
       if (match.body) {
-        // Show a more generous excerpt in the TUI
-        const excerpt = match.body.length > 300 ? match.body.substring(0, 300) + '...' : match.body;
-
-        // Add a label for clarity
-        this.container.pushLine('{bold}Content:{/bold}');
+        const excerpt = match.body.length > 200 ? match.body.substring(0, 200) + '...' : match.body;
+        this.container.pushLine('{bold}Body Snippet:{/bold}');
         this.container.pushLine(excerpt);
       }
 
@@ -263,18 +245,31 @@ export class ExploreMode extends BaseMode {
         this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
         this.screen.render();
 
-        const results = await search(input);
-        this.searchResults = results;
-        this.displaySearchResults(results);
+        const apiClient = getApiClient();
+        const searchRequest: DomeApi.GetSearchRequest = { q: input, limit: 10 }; // Default limit for TUI
+        const sdkResults: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
+        
+        // Adapt sdkResults to the structure displaySearchResults expects or update displaySearchResults
+        // For now, assuming displaySearchResults can handle sdkResults.results and sdkResults.pagination
+        this.searchResults = sdkResults; // Store the whole SDK response
+        this.displaySearchResults(sdkResults);
 
         this.statusBar.setContent(
           ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
         );
         this.screen.render();
-      } catch (err) {
-        this.container.pushLine(
-          `{red-fg}Error searching: ${err instanceof Error ? err.message : String(err)}{/red-fg}`,
-        );
+      } catch (err: unknown) {
+        let errorMessage = 'Error searching.';
+        if (err instanceof DomeApiError) {
+          const apiError = err as DomeApiError;
+          errorMessage = `API Error searching: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+        } else if (err instanceof DomeApiTimeoutError) {
+          const timeoutError = err as DomeApiTimeoutError;
+          errorMessage = `API Timeout searching: ${timeoutError.message}`;
+        } else if (err instanceof Error) {
+          errorMessage = `Error searching: ${err.message}`;
+        }
+        this.container.pushLine(`{red-fg}${errorMessage}{/red-fg}`);
         this.statusBar.setContent(
           ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
         );

@@ -2,10 +2,11 @@ import { Command } from 'commander';
 import readline from 'readline';
 import chalk from 'chalk';
 
-import { chat, ChatMessageChunk } from '../utils/api';
-import { isAuthenticated } from '../utils/config';
+import { isAuthenticated, loadConfig } from '../utils/config'; // Added loadConfig
 import { heading, info, error, success, subheading, formatTable, formatDate } from '../utils/ui';
-import { getChatSession, ChatSession, ChatSessionManager } from '../utils/chatSession';
+import { getChatSession, ChatSessionManager } from '../utils/chatSession';
+import { getApiClient } from '../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk'; // SDK imports
 
 /* ------------------------------------------------------------------ */
 /*  helpers                                                           */
@@ -16,116 +17,219 @@ function fatal(msg: string): never {
   process.exit(1);
 }
 
-/** Accumulates stream chunks until a valid JSON object can be parsed. */
-class ThinkingBuffer {
-  private buf = '';
+// TODO: Define a type for SDK stream chunks if they are structured, e.g., DomeApi.StreamingChatEvent
+// For now, we'll assume chunks are JSON strings that can be parsed into something like the old ChatMessageChunk.
+// The old ChatMessageChunk type for reference:
+type OldChatMessageChunk =
+  | { type: 'content' | 'thinking' | 'unknown'; content: string }
+  | {
+      type: 'sources';
+      node: { // This 'node' structure might differ with the SDK
+        sources: DomeApi.ChatSource[] | DomeApi.ChatSource; // Assuming ChatSource is the SDK type for sources
+      };
+    };
 
-  tryPush(fragment: string): string {
-    this.buf += fragment;
-    return this.buf;
-  }
 
-  reset(): void {
-    this.buf = '';
-  }
+// Extensible chunk‑type detector stack (adapted from old api.ts)
+// This will need to be verified against the actual stream format from the SDK.
+interface ChunkDetector {
+  (parsedJson: any): OldChatMessageChunk | null;
 }
+const detectors: ChunkDetector[] = [
+  // Example: Adapt for SDK's 'sources' event if it's structured differently
+  (parsed) => {
+    // This is a placeholder. Actual detection logic depends on SDK stream format.
+    // For instance, if the SDK sends { type: "sources", data: [...] }
+    if (parsed && parsed.type === 'sources' && parsed.data) {
+      // Ensure parsed.data matches the expected structure for sources
+      // This might involve checking if parsed.data is an array or single object of DomeApi.ChatSource
+      return { type: 'sources', node: { sources: parsed.data as (DomeApi.ChatSource[] | DomeApi.ChatSource) } };
+    }
+    return null;
+  },
+  // Example: Adapt for SDK's 'thinking' event
+  (parsed) => {
+    if (parsed && parsed.type === 'thinking' && typeof parsed.content === 'string') {
+      return { type: 'thinking', content: parsed.content };
+    }
+    return null;
+  },
+  // Example: Adapt for SDK's 'content' event
+  (parsed) => {
+    if (parsed && parsed.type === 'content' && typeof parsed.content === 'string') {
+      return { type: 'content', content: parsed.content };
+    }
+    return null;
+  },
+];
+
+const detectSdkChunk = (jsonData: string): OldChatMessageChunk => {
+  try {
+    const parsed = JSON.parse(jsonData);
+    for (const det of detectors) {
+      const match = det(parsed);
+      if (match) return match;
+    }
+    // If no specific detector matches, but it's a JSON object with a 'content' string, treat as content
+    if (parsed && typeof parsed.content === 'string') {
+        return { type: 'content', content: parsed.content };
+    }
+    // If it's a simple string after parsing (e.g. server sends "raw text chunk" as JSON string literal)
+    if (typeof parsed === 'string') {
+        return { type: 'content', content: parsed };
+    }
+
+  } catch {
+    // If JSON.parse fails, it's likely a raw string chunk (or part of one)
+    return { type: 'content', content: jsonData }; // Treat non-JSON as content directly
+  }
+  // Fallback for unparsed or unrecognized JSON
+  return { type: 'unknown', content: jsonData };
+};
+
 
 type StreamOptions = { verbose: boolean };
 
 /** Shared streaming printer used by both "single message" and REPL modes. */
 async function streamChatResponse(
-  userMessage: string,
+  userMessage: string, // userMessage is the latest message from the user
   opts: StreamOptions,
   session: ChatSessionManager,
 ): Promise<void> {
-  const thinking = new ThinkingBuffer();
+  const config = loadConfig();
+  if (!config.userId) {
+    console.log(error('User ID not found. Please login again.'));
+    return;
+  }
 
-  // Don't add the user message here since the chat() function already does this
-  // Buffer for accumulating the assistant's complete response
+  session.addUserMessage(userMessage); // Add user message to session history
+  const messages = session.getMessages(); // Get all messages for the request
+
+  const apiClient = getApiClient();
   let assistantResponse = '';
 
-  await chat(
-    userMessage,
-    (chunk: ChatMessageChunk | string) => {
-      // Handle non-structured responses (should no longer occur after our fix)
-      if (typeof chunk === 'string') {
-        if (opts.verbose) {
-          console.debug('[Debug] Received raw string chunk (unexpected)');
+  try {
+    const request: DomeApi.PostChatRequest = {
+      userId: config.userId,
+      messages: messages.map(m => ({ role: m.role as DomeApi.PostChatRequestMessagesItemRole, content: m.content })),
+      options: { // Default options, similar to old implementation
+        enhanceWithContext: true,
+        maxContextItems: 5,
+        includeSourceInfo: true,
+        maxTokens: 1000,
+        temperature: 0.7,
+      },
+      stream: true, // Enable streaming
+    };
+
+    // The actual response type when stream: true might be ReadableStream<Uint8Array>
+    // We cast to `any` to handle this, as the .d.ts file shows Promise<DomeApi.ChatSuccessResponse>
+    const stream = (await apiClient.chat.sendAChatMessage(request)) as any as ReadableStream<Uint8Array>;
+
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (buffer.trim()) { // Process any remaining data in the buffer
+            const chunk = detectSdkChunk(buffer.trim());
+            handleChunk(chunk, opts);
+            if (chunk.type === 'content') assistantResponse += chunk.content;
         }
-        // process.stdout.write(chunk);
-        return;
+        break;
       }
 
-      // structured chunk
-      if (chunk.type === 'thinking') {
-        const content = thinking.tryPush(chunk.content);
-        if (content) {
-          // Only show thinking output in verbose mode
-          console.log(); // line break before the block
-          console.log(chalk.gray('Thinking:'));
-          console.log(chalk.gray(chunk.content));
-          console.log(); // trailing blank line
+      buffer += decoder.decode(value, { stream: true });
+      
+      // Process line by line, assuming NDJSON or similar line-delimited JSON chunks
+      let newlineIndex;
+      while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.substring(0, newlineIndex).trim();
+        buffer = buffer.substring(newlineIndex + 1);
+        if (line) {
+          const chunk = detectSdkChunk(line);
+          handleChunk(chunk, opts);
+          if (chunk.type === 'content') assistantResponse += chunk.content;
         }
-      } else if (chunk.type === 'content') {
-        // Prevent duplicate content printing
+      }
+    }
+  } catch (err: unknown) {
+    let errorMessage = 'Chat stream failed.';
+    if (err instanceof DomeApiError) {
+      const apiError = err as DomeApiError;
+      const status = apiError.statusCode ?? 'N/A';
+      let detailMessage = apiError.message;
+       if (apiError.body && typeof apiError.body === 'object' && apiError.body !== null && 'message' in apiError.body && typeof (apiError.body as any).message === 'string') {
+        detailMessage = (apiError.body as { message: string }).message;
+      }
+      errorMessage = `Chat error: ${detailMessage} (Status: ${status})`;
+    } else if (err instanceof DomeApiTimeoutError) {
+      const timeoutError = err as DomeApiTimeoutError;
+      errorMessage = `Chat error: Request timed out. ${timeoutError.message}`;
+    } else if (err instanceof Error) {
+      errorMessage = `Chat error: ${err.message}`;
+    }
+    console.error(error(errorMessage));
+  } finally {
+    if (assistantResponse) {
+      session.addAssistantMessage(assistantResponse);
+    }
+    console.log(); // Ensure a newline after the full response or error
+  }
+}
+
+// Helper function to process a detected chunk
+function handleChunk(chunk: OldChatMessageChunk, opts: StreamOptions) {
+    if (chunk.type === 'thinking') {
+        if (opts.verbose) { // Only show thinking output in verbose mode
+            console.log();
+            console.log(chalk.gray('Thinking:'));
+            console.log(chalk.gray(chunk.content));
+            console.log();
+        }
+    } else if (chunk.type === 'content') {
         process.stdout.write(chunk.content);
-        // Accumulate the assistant's response
-        assistantResponse += chunk.content;
-      } else if (chunk.type === 'sources') {
+    } else if (chunk.type === 'sources') {
         if (chunk.node.sources) {
-          console.log(); // Empty line before sources
-          console.log(chalk.bold.yellow('Sources:'));
+            console.log();
+            console.log(chalk.bold.yellow('Sources:'));
+            
+            let sources = Array.isArray(chunk.node.sources)
+                ? chunk.node.sources
+                : [chunk.node.sources];
 
-          // Get sources as array and filter out metadata entries
-          let sources = Array.isArray(chunk.node.sources)
-            ? chunk.node.sources
-            : [chunk.node.sources];
+            // Filter out metadata and empty titles
+            sources = sources.filter(source => {
+                const title = source.title || '';
+                return (
+                    !title.includes('---DOME-METADATA-START---') &&
+                    !title.match(/^---.*---$/) &&
+                    title.trim() !== ''
+                );
+            });
 
-          // Filter out metadata entries and other non-displayable sources
-          sources = sources.filter(source => {
-            const title = source.title || '';
-            return (
-              !title.includes('---DOME-METADATA-START---') &&
-              !title.match(/^---.*---$/) &&
-              title.trim() !== ''
-            );
-          });
+            // sources.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0)); // RelevanceScore not available in SDK ChatSource
 
-          // Sort sources by relevance score (highest first)
-          sources.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
-
-          // Display sources with correct numbering
-          sources.forEach((source, index) => {
-            console.log(chalk.yellow(`[${index + 1}] ${source.title || 'Unnamed Source'}`));
-            if (source.source) console.log(chalk.gray(`    Source: ${source.source}`));
-            if (source.url) console.log(chalk.blue(`    URL: ${source.url}`));
-            if (source.relevanceScore !== undefined) {
-              // Format relevance score as percentage
-              const scorePercentage = Math.round(source.relevanceScore * 100);
-              const scoreColor =
-                scorePercentage > 70
-                  ? chalk.green
-                  : scorePercentage > 40
-                  ? chalk.yellow
-                  : chalk.red;
-              console.log(scoreColor(`    Relevance: ${scorePercentage}%`));
-            }
-            if (index < sources.length - 1) console.log(); // Add space between sources
-          });
+            sources.forEach((source, index) => {
+                console.log(chalk.yellow(`[${index + 1}] ${source.title || 'Unnamed Source'}`));
+                // SDK ChatSource has 'type' and 'id', 'url', 'title'
+                console.log(chalk.gray(`    Type: ${source.type}, ID: ${source.id}`));
+                if (source.url) console.log(chalk.blue(`    URL: ${source.url}`));
+                // Relevance score display removed
+                if (index < sources.length - 1) console.log();
+            });
         }
-      } else {
-        // any other content chunk
-        thinking.reset(); // discard partial thinking on normal output
-        // process.stdout.write(chunk.content); // Uncommented to handle unknown chunk types
-      }
-    },
-    { retryNonStreaming: true, debug: opts.verbose },
-  );
-
-  console.log(); // newline after full response
-
-  // We don't need to save the assistant's response here because
-  // the chat() function in api.ts already does this
+    } else if (chunk.type === 'unknown') {
+        if (opts.verbose) {
+            console.debug(chalk.red(`[Debug] Received unknown chunk: ${chunk.content}`));
+        }
+        // Optionally print unknown chunks if they are not just empty strings or whitespace
+        if (chunk.content.trim()) {
+             process.stdout.write(chunk.content);
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */

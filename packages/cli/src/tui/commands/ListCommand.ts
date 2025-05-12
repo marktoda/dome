@@ -1,5 +1,6 @@
 import { CommandHandler } from '../core/types';
-import { listNotes, listTasks } from '../../utils/api';
+import { getApiClient } from '../../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
 
 /**
  * List command for listing notes and tasks
@@ -39,125 +40,62 @@ export class ListCommand implements CommandHandler {
   async handle(args: string[]): Promise<void> {
     const type = args[0] || 'notes';
 
-    if (type !== 'notes' && type !== 'tasks') {
-      this.addMessage('{red-fg}Error: Invalid list type. Usage: /list [notes|tasks]{/red-fg}');
+    if (type !== 'notes') {
+      this.addMessage('{red-fg}Error: Invalid list type. Usage: /list notes [category]{/red-fg}');
       return;
     }
+    const category = args[1]; // Optional category filter
 
-    this.addMessage(`{bold}Listing ${type}:{/bold}`);
+    this.addMessage(`{bold}Listing notes${category ? ` (category: ${category})` : ''}:{/bold}`);
 
     try {
-      this.setStatus(` {bold}Status:{/bold} Loading ${type}...`);
+      this.setStatus(` {bold}Status:{/bold} Loading notes...`);
+      this.addMessage(`{gray-fg}Fetching notes from the server...{/gray-fg}`);
 
-      // Show a loading message
-      this.addMessage(`{gray-fg}Fetching ${type} from the server...{/gray-fg}`);
+      const apiClient = getApiClient();
+      const requestParams: DomeApi.GetNotesRequest = { limit: 50, offset: 0 }; // Default limit/offset
+      if (category) {
+        requestParams.category = category as DomeApi.GetNotesRequestCategory;
+      }
 
-      const response = type === 'notes' ? await listNotes() : await listTasks();
+      const notes: DomeApi.Note[] = await apiClient.notes.listNotes(requestParams);
+      
+      this.setStatus(` {bold}Status:{/bold} Processing notes...`);
 
-      // Debug logging to help diagnose response structure issues
-      this.addMessage(
-        `{gray-fg}Response received: ${JSON.stringify(response, null, 2).substring(
-          0,
-          100,
-        )}...{/gray-fg}`,
-      );
-
-      // Update status to show we're processing the data
-      this.setStatus(` {bold}Status:{/bold} Processing ${type}...`);
-
-      // Extract items from the response based on type
-      const items =
-        type === 'notes'
-          ? response.notes || response.items || []
-          : response.tasks || response.items || [];
-
-      if (items.length === 0) {
-        this.addMessage(`No ${type} found.`);
+      if (notes.length === 0) {
+        this.addMessage(`No notes found${category ? ` in category "${category}"` : ''}.`);
       } else {
-        this.addMessage(`Found ${items.length} ${type}:`);
+        this.addMessage(`Found ${notes.length} notes:`);
         this.addMessage('');
 
-        items.forEach((item: any, index: number) => {
-          if (type === 'notes') {
-            // Handle note item structure with new API format
-            const title = item.title || 'Untitled';
-            const content = item.body || '';
-            const date = new Date(item.createdAt).toLocaleString();
+        notes.forEach((note: DomeApi.Note, index: number) => {
+          const title = note.title || '(No title)';
+          const content = note.content || '';
+          const date = new Date(note.createdAt).toLocaleString();
+          const noteCategory = note.category || '(No category)';
 
-            // Try to extract tags from metadata if available
-            let tags: string[] = [];
-            if (item.metadata) {
-              try {
-                const metadata =
-                  typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
-
-                if (metadata.tags && Array.isArray(metadata.tags)) {
-                  tags = metadata.tags;
-                }
-              } catch (e) {
-                // Ignore parsing errors
-              }
-            }
-
-            this.addMessage(`{bold}${index + 1}. ${title}{/bold}`);
-            this.addMessage(
-              `{gray-fg}Created: ${date} | Type: ${item.contentType || 'text/plain'}{/gray-fg}`,
-            );
-            if (tags.length > 0) {
-              this.addMessage(`{gray-fg}Tags: ${tags.join(', ')}{/gray-fg}`);
-            }
-            this.addMessage(`${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
-            this.addMessage('');
-          } else {
-            // Handle task item structure with new API format
-            const title = item.title || 'Untitled task';
-            const description = item.description || '';
-            const status = item.status || 'pending';
-            const priority = item.priority || 'medium';
-            const date = item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Unknown';
-            const dueDate = item.dueDate ? new Date(item.dueDate).toLocaleString() : 'None';
-
-            this.addMessage(`{bold}${index + 1}. ${title}{/bold}`);
-            this.addMessage(
-              `{gray-fg}Status: ${status} | Priority: ${priority} | Due: ${dueDate}{/gray-fg}`,
-            );
-            this.addMessage(`{gray-fg}Created: ${date}{/gray-fg}`);
-            if (description) {
-              this.addMessage(
-                description.substring(0, 100) + (description.length > 100 ? '...' : ''),
-              );
-            }
-            this.addMessage('');
-          }
+          this.addMessage(`{bold}${index + 1}. ${title}{/bold}`);
+          this.addMessage(
+            `{gray-fg}ID: ${note.id} | Category: ${noteCategory} | Created: ${date}{/gray-fg}`,
+          );
+          this.addMessage(`${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
+          this.addMessage('');
         });
       }
-
-      // Update status to show completion
-      this.setStatus(` {bold}Status:{/bold} ${items.length} ${type} listed successfully`);
-    } catch (err) {
-      // Provide more detailed error information for debugging
-      this.addMessage(`{red-fg}Error listing ${type}:{/red-fg}`);
-
-      if (err instanceof Error) {
-        this.addMessage(`{red-fg}Message: ${err.message}{/red-fg}`);
-        if (err.stack) {
-          this.addMessage(`{gray-fg}Stack: ${err.stack.split('\n')[0]}{/gray-fg}`);
-        }
-      } else {
-        this.addMessage(`{red-fg}${String(err)}{/red-fg}`);
+      this.setStatus(` {bold}Status:{/bold} ${notes.length} notes listed successfully`);
+    } catch (err: unknown) {
+      let errorMessage = 'Error listing notes.';
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessage = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessage = `API Timeout Error: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessage = `Error listing notes: ${err.message}`;
       }
-
-      // Add more detailed debugging information
-      this.addMessage(`{yellow-fg}Debug info:{/yellow-fg}`);
-      this.addMessage(`{gray-fg}Type: ${type}{/gray-fg}`);
-      this.addMessage(`{gray-fg}API endpoint: ${type === 'notes' ? '/notes' : '/tasks'}{/gray-fg}`);
-
-      this.addMessage(
-        '{yellow-fg}Try again later or contact support if the issue persists.{/yellow-fg}',
-      );
-
-      // Update status to show error
-      this.setStatus(` {bold}Status:{/bold} {red-fg}Error listing ${type}{/red-fg}`);
+      this.addMessage(`{red-fg}${errorMessage}{/red-fg}`);
+      this.setStatus(` {bold}Status:{/bold} {red-fg}Error listing notes{/red-fg}`);
     }
   }
 }

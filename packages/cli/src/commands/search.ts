@@ -1,7 +1,8 @@
 import { Command } from 'commander';
-import { search } from '../utils/api';
 import { createSpinner, error, heading, subheading, formatKeyValue } from '../utils/ui';
 import { isAuthenticated } from '../utils/config';
+import { getApiClient } from '../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
 
 /**
  * Register the search command
@@ -33,12 +34,22 @@ export function searchCommand(program: Command): void {
         const spinner = createSpinner(searchMessage);
         spinner.start();
 
-        const results = await search(query, limit, category);
+        const apiClient = getApiClient();
+        const searchRequest: DomeApi.GetSearchRequest = {
+          q: query,
+          limit,
+        };
+        if (category) {
+          searchRequest.category = category;
+        }
+
+        const searchResponse: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
 
         spinner.stop();
 
-        if (!results.results || results.results.length === 0) {
-          console.log(`No results found for query: "${query}"`);
+        if (!searchResponse.success || !searchResponse.results || searchResponse.results.length === 0) {
+          const message = searchResponse.message || `No results found for query: "${query}"`;
+          console.log(message);
           return;
         }
 
@@ -47,34 +58,32 @@ export function searchCommand(program: Command): void {
           : `Search Results for: "${query}"`;
 
         console.log(heading(headerText));
-        console.log(`Found ${results.results.length} results.\n`);
+        console.log(`Found ${searchResponse.results.length} results for query: "${searchResponse.query}"`);
+        if (searchResponse.pagination) {
+            const { total, limit, offset, hasMore } = searchResponse.pagination;
+            console.log(`Total results: ${total}, Showing: ${searchResponse.results.length} (Limit: ${limit}, Offset: ${offset}), Has more: ${hasMore}`);
+        }
+        console.log('');
+
 
         // Display results
-        results.results.slice(0, limit).forEach((match: any, index: number) => {
-          // Ensure score is a number and has a valid value
+        searchResponse.results.forEach((match: DomeApi.SearchResultItem, index: number) => {
           const score = typeof match.score === 'number' ? match.score : 0;
           console.log(subheading(`Result ${index + 1} (Score: ${score.toFixed(2)})`));
           console.log(formatKeyValue('ID', match.id));
-          console.log(formatKeyValue('Type', match.contentType || 'text/plain'));
-
-          if (match.title) {
-            console.log(formatKeyValue('Title', match.title));
-          }
-
-          if (match.summary) {
-            console.log(formatKeyValue('Summary', match.summary));
-          }
-
-          if (match.tags && match.tags.length > 0) {
-            console.log(formatKeyValue('Tags', match.tags.join(', ')));
-          }
-
+          console.log(formatKeyValue('Title', match.title));
+          console.log(formatKeyValue('Category', match.category));
+          console.log(formatKeyValue('MIME Type', match.mimeType));
+          console.log(formatKeyValue('Summary', match.summary));
           console.log(formatKeyValue('Created', new Date(match.createdAt).toLocaleString()));
+          if (match.updatedAt) {
+            console.log(formatKeyValue('Updated', new Date(match.updatedAt).toLocaleString()));
+          }
+
 
           // Display content body
           if (match.body) {
-            console.log('\nContent:');
-            // Limit the content to a reasonable length for display
+            console.log('\nContent Snippet:');
             const maxLength = 200;
             const content =
               match.body.length > maxLength
@@ -85,15 +94,29 @@ export function searchCommand(program: Command): void {
 
           console.log('\n' + '-'.repeat(50) + '\n');
         });
+        
+        // Pagination info is now part of searchResponse.pagination
+        // The current CLI logic for "Showing X of Y results" might need adjustment
+        // if we want to strictly adhere to the pagination object from the API.
+        // For now, the message above `Found ${searchResponse.results.length} results` and pagination details cover this.
 
-        // Show message if results were limited
-        if (results.results.length > limit) {
-          console.log(
-            `Showing ${limit} of ${results.results.length} results. Use --limit option to see more.`,
-          );
+      } catch (err: unknown) {
+        let errorMessage = 'Failed to search.';
+        if (err instanceof DomeApiError) {
+          const apiError = err as DomeApiError;
+          const status = apiError.statusCode ?? 'N/A';
+          let detailMessage = apiError.message;
+          if (apiError.body && typeof apiError.body === 'object' && apiError.body !== null && 'message' in apiError.body && typeof (apiError.body as any).message === 'string') {
+            detailMessage = (apiError.body as { message: string }).message;
+          }
+          errorMessage = `Search error: ${detailMessage} (Status: ${status})`;
+        } else if (err instanceof DomeApiTimeoutError) {
+          const timeoutError = err as DomeApiTimeoutError;
+          errorMessage = `Search error: Request timed out. ${timeoutError.message}`;
+        } else if (err instanceof Error) {
+          errorMessage = `Search error: ${err.message}`;
         }
-      } catch (err) {
-        console.log(error(`Failed to search: ${err instanceof Error ? err.message : String(err)}`));
+        console.log(error(errorMessage));
         process.exit(1);
       }
     });

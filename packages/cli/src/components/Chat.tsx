@@ -1,8 +1,65 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Added useEffect
 import { Box, Text } from 'ink';
 import TextInput from 'ink-text-input';
-import { chat, ChatMessageChunk } from '../utils/api';
 import Loading from './Loading';
+import { getApiClient } from '../utils/apiClient';
+import { loadConfig } from '../utils/config';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk'; // SDK imports
+import chalk from 'chalk'; // For styling sources, if needed
+
+// Assuming ChatSource is the SDK type for sources
+// This might need adjustment based on actual SDK stream chunk structure
+type SdkChatMessageChunk =
+  | { type: 'content' | 'thinking' | 'unknown'; content: string }
+  | {
+      type: 'sources';
+      data: DomeApi.ChatSource[] | DomeApi.ChatSource; // Changed 'node.sources' to 'data' to match a common SDK pattern
+    };
+
+// Adapted from commands/chat.ts - this needs to be verified against actual SDK stream format
+interface ChunkDetector {
+  (parsedJson: any): SdkChatMessageChunk | null;
+}
+const detectors: ChunkDetector[] = [
+  (parsed) => {
+    if (parsed && parsed.type === 'sources' && parsed.data) {
+      return { type: 'sources', data: parsed.data as (DomeApi.ChatSource[] | DomeApi.ChatSource) };
+    }
+    return null;
+  },
+  (parsed) => {
+    if (parsed && parsed.type === 'thinking' && typeof parsed.content === 'string') {
+      return { type: 'thinking', content: parsed.content };
+    }
+    return null;
+  },
+  (parsed) => {
+    if (parsed && parsed.type === 'content' && typeof parsed.content === 'string') {
+      return { type: 'content', content: parsed.content };
+    }
+    return null;
+  },
+];
+
+const detectSdkChunk = (jsonData: string): SdkChatMessageChunk => {
+  try {
+    const parsed = JSON.parse(jsonData);
+    for (const det of detectors) {
+      const match = det(parsed);
+      if (match) return match;
+    }
+    if (parsed && typeof parsed.content === 'string') {
+        return { type: 'content', content: parsed.content };
+    }
+    if (typeof parsed === 'string') {
+        return { type: 'content', content: parsed };
+    }
+  } catch {
+    return { type: 'content', content: jsonData };
+  }
+  return { type: 'unknown', content: jsonData };
+};
+
 
 interface Message {
   role: 'user' | 'assistant';
@@ -26,219 +83,183 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
   const [isStreaming, setIsStreaming] = useState(false);
 
   // Send initial message if provided
-  React.useEffect(() => {
+  useEffect(() => {
     if (initialMessage) {
       sendMessage(initialMessage);
     }
-  }, []);
+  }, [initialMessage]); // Added initialMessage to dependency array
+
+  // Helper to update the assistant's message with actual content or append to it
+  const updateAssistantMessage = (contentChunk: string, replace: boolean = false) => {
+    setMessages((prevMessages) => {
+      const newMessages = [...prevMessages];
+      let assistantMsgIndex = newMessages.findIndex(
+        (msg, idx) => msg.role === 'assistant' && idx === newMessages.length -1 && !msg.content.startsWith('[Thinking]')
+      );
+
+      if (assistantMsgIndex === -1 || newMessages[assistantMsgIndex].content.startsWith('[Thinking]')) {
+        // If no suitable assistant message found at the end, or if it's a thinking message, add a new one
+        newMessages.push({ role: 'assistant', content: contentChunk });
+      } else {
+        // Append to existing or replace
+        newMessages[assistantMsgIndex] = {
+          ...newMessages[assistantMsgIndex],
+          content: replace ? contentChunk : newMessages[assistantMsgIndex].content + contentChunk,
+        };
+      }
+      return newMessages;
+    });
+  };
+  
+  // Helper to show thinking content
+  const showThinkingMessage = (thinkingContent: string) => {
+    setMessages((prevMessages) => {
+        const newMessages = [...prevMessages];
+        // Add or update a dedicated thinking message
+        const thinkingMsgIndex = newMessages.findIndex(m => m.role === 'assistant' && m.content.startsWith('[Thinking]'));
+        const formattedThinking = `[Thinking] ${thinkingContent.substring(0,100)}${thinkingContent.length > 100 ? '...' : ''}`;
+        if(thinkingMsgIndex !== -1){
+            newMessages[thinkingMsgIndex].content = formattedThinking;
+        } else {
+            // Add new thinking message, potentially replacing an empty assistant message placeholder
+            const lastMsg = newMessages[newMessages.length -1];
+            if(lastMsg && lastMsg.role === 'assistant' && lastMsg.content === ''){
+                newMessages[newMessages.length -1] = {role: 'assistant', content: formattedThinking};
+            } else {
+                 newMessages.push({ role: 'assistant', content: formattedThinking });
+            }
+        }
+        // Ensure there's an empty placeholder for the actual content if not already present
+        const lastMessage = newMessages[newMessages.length - 1];
+        if (!lastMessage || lastMessage.content.startsWith('[Thinking]') || lastMessage.content !== '') {
+             newMessages.push({role: 'assistant', content: ''});
+        }
+        return newMessages;
+    });
+  };
+
+  const handleSdkChunk = (chunk: SdkChatMessageChunk) => {
+    if (chunk.type === 'thinking') {
+      showThinkingMessage(chunk.content);
+    } else if (chunk.type === 'content') {
+      // Clear any persistent "Thinking" message once real content starts
+      setMessages(prev => prev.filter(m => !m.content.startsWith('[Thinking]')));
+      updateAssistantMessage(chunk.content);
+    } else if (chunk.type === 'sources') {
+      // In TUI, sources might be displayed differently or logged.
+      // For this component, we can append a formatted string of sources.
+      let sourcesText = "\nSources:\n";
+      const sources = Array.isArray(chunk.data) ? chunk.data : [chunk.data];
+      sources.forEach((source, index) => {
+        sourcesText += `[${index + 1}] ${source.title || 'Unnamed Source'} (${source.type}, ID: ${source.id})${source.url ? ` - ${source.url}` : ''}\n`;
+      });
+      updateAssistantMessage(sourcesText);
+    } else if (chunk.type === 'unknown' && chunk.content.trim()) {
+      updateAssistantMessage(chunk.content); // Display unknown content
+    }
+  };
+
 
   const sendMessage = async (content: string) => {
+    const config = loadConfig();
+    if (!config.userId) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Error: User ID not found. Please login again.' }]);
+      return;
+    }
+
+    setIsLoading(true);
+    if (!initialMessage || messages.length > 0) {
+         setMessages((prev) => [...prev, { role: 'user', content }]);
+    }
+    // Add an empty placeholder for assistant's response immediately
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+    setIsStreaming(true);
+
     try {
-      setIsLoading(true);
+      const apiClient = getApiClient();
+      const currentMessages: DomeApi.PostChatRequestMessagesItem[] = messages
+        .filter(m => m.role === 'user' || (m.role === 'assistant' && !m.content.startsWith('[Thinking]') && m.content !== '')) // Exclude placeholder/thinking for history
+        .map(m => ({
+          role: m.role as DomeApi.PostChatRequestMessagesItemRole,
+          content: m.content,
+        }));
+      // Add the new user message to the history being sent
+      currentMessages.push({role: 'user', content});
 
-      // Add user message to the list
-      if (!initialMessage || messages.length > 0) {
-        setMessages((prev) => [...prev, { role: 'user', content }]);
-      }
 
-      // Create a placeholder for the assistant's response
-      const assistantMessageIndex = messages.length + ((!initialMessage || messages.length > 0) ? 1 : 0);
-      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-      setIsStreaming(true);
+      const request: DomeApi.PostChatRequest = {
+        userId: config.userId,
+        messages: currentMessages,
+        options: {
+          enhanceWithContext: true,
+          maxContextItems: 5,
+          includeSourceInfo: true,
+          maxTokens: 1000,
+          temperature: 0.7,
+        },
+        stream: true,
+      };
 
-      // Create a function to handle streaming chunks
-      const handleChunk = (chunk: string | ChatMessageChunk) => {
-        // Handle structured chunks or plain strings
-        if (typeof chunk === 'string') {
-          // Plain text handling
-          updateAssistantMessage(chunk);
-        } else {
-          // Structured message handling
-          if (chunk.type === 'thinking') {
-            // For thinking content, show in a separate thinking message
-            showThinkingMessage(chunk.content);
-          } else if (chunk.type === 'sources') {
-            // Final chunks with sources don't have content property
-            // Sources are displayed in the CLI version, we don't need to do anything here
-          } else {
-            // Normal content
-            updateAssistantMessage(chunk.content);
+      const stream = (await apiClient.chat.sendAChatMessage(request)) as any as ReadableStream<Uint8Array>;
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (buffer.trim()) {
+            const sdkChunk = detectSdkChunk(buffer.trim());
+            handleSdkChunk(sdkChunk);
+          }
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.substring(0, newlineIndex).trim();
+          buffer = buffer.substring(newlineIndex + 1);
+          if (line) {
+            const sdkChunk = detectSdkChunk(line);
+            handleSdkChunk(sdkChunk);
           }
         }
-      };
-
-      // Helper to show thinking content in a separate message
-      const showThinkingMessage = (content: string) => {
-        setMessages((prev) => {
-          // Find the index of the last assistant message
-          const lastAssistantIndex = prev.length - 1;
-          const newMessages = [...prev];
-
-          // Check if the last message is already a thinking message
-          if (lastAssistantIndex >= 0 &&
-            newMessages[lastAssistantIndex].role === 'assistant' &&
-            newMessages[lastAssistantIndex].content.startsWith('[Thinking]')) {
-            // Update existing thinking message
-            try {
-              // Try to parse as JSON for better formatting
-              const jsonObj = JSON.parse(content);
-              newMessages[lastAssistantIndex] = {
-                ...newMessages[lastAssistantIndex],
-                content: `[Thinking] ${JSON.stringify(jsonObj, null, 2)}`
-              };
-            } catch (e) {
-              // Not JSON, just use as is
-              newMessages[lastAssistantIndex] = {
-                ...newMessages[lastAssistantIndex],
-                content: `[Thinking] ${content}`
-              };
-            }
-          } else {
-            // Create a new thinking message (removing any empty assistant message)
-            if (lastAssistantIndex >= 0 &&
-              newMessages[lastAssistantIndex].role === 'assistant' &&
-              newMessages[lastAssistantIndex].content === '') {
-              // Replace the empty message
-              try {
-                const jsonObj = JSON.parse(content);
-                newMessages[lastAssistantIndex] = {
-                  ...newMessages[lastAssistantIndex],
-                  content: `[Thinking] ${JSON.stringify(jsonObj, null, 2)}`
-                };
-              } catch (e) {
-                newMessages[lastAssistantIndex] = {
-                  ...newMessages[lastAssistantIndex],
-                  content: `[Thinking] ${content}`
-                };
-              }
-            } else {
-              // Add as a new message
-              try {
-                const jsonObj = JSON.parse(content);
-                newMessages.push({
-                  role: 'assistant',
-                  content: `[Thinking] ${JSON.stringify(jsonObj, null, 2)}`
-                });
-              } catch (e) {
-                newMessages.push({
-                  role: 'assistant',
-                  content: `[Thinking] ${content}`
-                });
-              }
-            }
-
-            // Ensure we have an empty assistant message ready for the actual response
-            newMessages.push({
-              role: 'assistant',
-              content: ''
-            });
-          }
-
-          return newMessages;
-        });
-      };
-
-      // Helper to update the assistant's message with actual content
-      const updateAssistantMessage = (content: string) => {
-        // Use a callback to ensure we're working with the latest state
-        setMessages((prev) => {
-          // Get the latest state of messages
-          const newMessages = [...prev];
-
-          // Find the last non-thinking assistant message
-          let lastAssistantIndex = -1;
-          for (let i = newMessages.length - 1; i >= 0; i--) {
-            if (newMessages[i].role === 'assistant' &&
-              !newMessages[i].content.startsWith('[Thinking]')) {
-              lastAssistantIndex = i;
-              break;
-            }
-          }
-
-          // If we found an assistant message, update it
-          if (lastAssistantIndex >= 0) {
-            newMessages[lastAssistantIndex] = {
-              ...newMessages[lastAssistantIndex],
-              content: newMessages[lastAssistantIndex].content + content
-            };
-          } else {
-            // Otherwise create a new assistant message
-            newMessages.push({
-              role: 'assistant',
-              content
-            });
-          }
-
-          return newMessages;
-        });
-      };
-
-      // Send message to API with WebSocket streaming
-      try {
-        // Check for verbose mode in environment variables or command line
-        const isVerbose = process.env.DOME_VERBOSE === 'true' ||
-          (typeof process !== 'undefined' && process.argv &&
-            (process.argv.includes('--verbose') || process.argv.includes('-v')));
-
-        const response = await chat(content, handleChunk, {
-          retryNonStreaming: true,
-          debug: isVerbose
-        });
-
-        // If the streaming didn't work for some reason, ensure we have the complete response
-        if (response && typeof response === 'object' && response.response) {
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            if (newMessages[assistantMessageIndex]) {
-              // Replace with the complete response if needed
-              if (newMessages[assistantMessageIndex].content === '') {
-                newMessages[assistantMessageIndex] = {
-                  ...newMessages[assistantMessageIndex],
-                  content: response.response
-                };
-              }
-            }
-            return newMessages;
-          });
-        }
-
-        setIsLoading(false);
-        setIsStreaming(false);
-      } catch (chatError) {
-        // Handle chat-specific errors
-        const errorMessage = chatError instanceof Error ? chatError.message : String(chatError);
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          if (newMessages[assistantMessageIndex]) {
-            newMessages[assistantMessageIndex] = {
-              ...newMessages[assistantMessageIndex],
-              content: `Error: ${errorMessage}`
-            };
-          }
-          return newMessages;
-        });
-        setIsLoading(false);
-        setIsStreaming(false);
       }
-    } catch (err) {
-      // Handle general errors
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : String(err)}` },
-      ]);
+    } catch (err: unknown) {
+      let errorMessageText = 'An error occurred during chat.';
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessageText = `API Timeout Error: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessageText = err.message;
+      }
+      updateAssistantMessage(`Error: ${errorMessageText}`, true);
+    } finally {
       setIsLoading(false);
       setIsStreaming(false);
     }
   };
 
+  // Effect for initial message (if any)
+  useEffect(() => {
+    if (initialMessage && messages.length === 0) { // Ensure it only runs once for initial message
+      sendMessage(initialMessage);
+    }
+  }, [initialMessage]);
+
+
   const handleSubmit = (value: string) => {
-    if (value.trim() === '/exit') {
+    if (value.trim().toLowerCase() === '/exit') {
       onExit();
       return;
     }
-
-    sendMessage(value);
-    setInput('');
+    if (value.trim()) {
+      sendMessage(value);
+    }
+    setInput(''); // Clear input after sending
   };
 
   return (

@@ -1,7 +1,8 @@
 import { Command } from 'commander';
-import { listItems } from '../utils/api';
-import { createSpinner, error, formatTable, heading } from '../utils/ui';
+import { createSpinner, error, formatTable, heading, info } from '../utils/ui';
 import { isAuthenticated } from '../utils/config';
+import { getApiClient } from '../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
 
 /**
  * Register the list command
@@ -10,88 +11,92 @@ import { isAuthenticated } from '../utils/config';
 export function listCommand(program: Command): void {
   program
     .command('list')
-    .description('List notes or tasks')
-    .argument('<type>', 'Type of items to list (notes or tasks)')
-    .option('-f, --filter <filter>', 'Filter criteria (e.g., "tag:work", "date:today")')
-    .action(async (type: string, options: { filter?: string }) => {
-      // Check if user is authenticated
+    .description('List notes')
+    .argument('[type]', 'Type of items to list (currently only "notes" is supported)', 'notes')
+    .option('-c, --category <category>', 'Filter by category')
+    .option('--limit <limit>', 'Number of notes to retrieve', '50')
+    .option('--offset <offset>', 'Offset for pagination', '0')
+    .action(async (type: string, options: { category?: string, limit?: string, offset?: string }) => {
       if (!isAuthenticated()) {
         console.log(error('You need to login first. Run `dome login` to authenticate.'));
         process.exit(1);
       }
 
-      // Validate type
-      if (type !== 'notes' && type !== 'tasks') {
-        console.log(error('Type must be either "notes" or "tasks".'));
+      if (type !== 'notes') {
+        console.log(error('Invalid type. Currently, only "notes" are supported for listing.'));
+        console.log(info('Example: dome list notes --category "meetings"'));
         process.exit(1);
       }
 
       try {
         const spinner = createSpinner(
-          `Listing ${type}${options.filter ? ` (filter: ${options.filter})` : ''}`,
+          `Listing notes${options.category ? ` (category: ${options.category})` : ''}`,
         );
         spinner.start();
 
-        const result = await listItems(type as 'notes' | 'tasks', options.filter);
+        const apiClient = getApiClient();
+        const limit = parseInt(options.limit || '50', 10);
+        const offset = parseInt(options.offset || '0', 10);
+
+        const requestParams: DomeApi.GetNotesRequest = {
+          limit,
+          offset,
+        };
+
+        if (options.category) {
+          requestParams.category = options.category as DomeApi.GetNotesRequestCategory;
+        }
+
+        const notes: DomeApi.Note[] = await apiClient.notes.listNotes(requestParams);
 
         spinner.stop();
 
-        // Handle different response formats based on type
-        const items = type === 'notes' ? result.notes : result.items;
-
-        if (!items || items.length === 0) {
-          console.log(`No ${type} found.`);
+        if (!notes || notes.length === 0) {
+          console.log(`No notes found${options.category ? ` in category "${options.category}"` : ''}.`);
           return;
         }
+        
+        // The SDK's listNotes returns Note[], not an object with total.
+        // We can only show the count of notes received.
+        console.log(`Showing ${notes.length} notes.`);
 
-        // Display pagination info if available
-        if (result.total !== undefined) {
-          console.log(`Showing ${items.length} of ${result.total} total ${type}`);
+
+        console.log(heading('Notes'));
+
+        const headers = ['ID', 'Title', 'Category', 'Content Snippet', 'Created'];
+        const rows = notes.map((note: DomeApi.Note) => {
+          const content = note.content || '';
+          const truncatedContent =
+            content.length > 50 ? content.substring(0, 47) + '...' : content;
+
+          return [
+            note.id,
+            note.title || '(No title)',
+            note.category || '(No category)',
+            truncatedContent,
+            new Date(note.createdAt).toLocaleString(),
+          ];
+        });
+
+        console.log(formatTable(headers, rows));
+        
+      } catch (err: unknown) {
+        let errorMessage = 'Failed to list notes.';
+        if (err instanceof DomeApiError) {
+          const apiError = err as DomeApiError;
+          const status = apiError.statusCode ?? 'N/A';
+          let detailMessage = apiError.message;
+          if (apiError.body && typeof apiError.body === 'object' && apiError.body !== null && 'message' in apiError.body && typeof (apiError.body as any).message === 'string') {
+            detailMessage = (apiError.body as { message: string }).message;
+          }
+          errorMessage = `Error listing notes: ${detailMessage} (Status: ${status})`;
+        } else if (err instanceof DomeApiTimeoutError) {
+          const timeoutError = err as DomeApiTimeoutError;
+          errorMessage = `Error listing notes: Request timed out. ${timeoutError.message}`;
+        } else if (err instanceof Error) {
+          errorMessage = `Error listing notes: ${err.message}`;
         }
-
-        console.log(heading(`${type.charAt(0).toUpperCase() + type.slice(1)}`));
-
-        if (type === 'notes') {
-          // Format notes as a table
-          const headers = ['ID', 'Title', 'Summary', 'Content', 'Created', 'Tags'];
-          const rows = items.map((note: any) => {
-            // Truncate content if it's too long
-            const content = note.body || '';
-            const truncatedContent =
-              content.length > 50 ? content.substring(0, 47) + '...' : content;
-
-            // Truncate summary if it's too long
-            const summary = note.summary || '';
-            const truncatedSummary =
-              summary.length > 50 ? summary.substring(0, 47) + '...' : summary;
-
-            return [
-              note.id,
-              note.title || '(No title)',
-              truncatedSummary || '(No summary)',
-              truncatedContent,
-              new Date(note.createdAt).toLocaleString(),
-              (note.tags || []).join(', '),
-            ];
-          });
-
-          console.log(formatTable(headers, rows));
-        } else {
-          // Format tasks as a table
-          const headers = ['ID', 'Description', 'Due Date', 'Status'];
-          const rows = items.map((task: any) => [
-            task.id,
-            task.description || '(No description)',
-            task.dueDate ? new Date(task.dueDate).toLocaleString() : 'No due date',
-            task.status,
-          ]);
-
-          console.log(formatTable(headers, rows));
-        }
-      } catch (err) {
-        console.log(
-          error(`Failed to list ${type}: ${err instanceof Error ? err.message : String(err)}`),
-        );
+        console.log(error(errorMessage));
         process.exit(1);
       }
     });

@@ -1,8 +1,9 @@
 import { Command } from 'commander';
-import { registerUser, saveAuthToken } from '../utils/auth';
 import { success, error, info } from '../utils/ui';
 import readline from 'readline';
-import { isAuthenticated } from '../utils/config';
+import { isAuthenticated, saveApiKey, saveUserId } from '../utils/config';
+import { getApiClient, clearApiClientInstance } from '../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
 
 /**
  * Register the register command
@@ -81,26 +82,63 @@ export function registerCommand(program: Command): void {
 
         // Register the user
         console.log(info('Registering user...'));
-        const result = await registerUser(email, password, name);
+        const apiClient = getApiClient();
+        const result: DomeApi.RegisterResponse = await apiClient.auth.userRegistration({
+          email,
+          password,
+          name,
+        });
 
-        if (result.success) {
-          // Save token and show success message
-          saveAuthToken(result);
+        if (result.token) {
+          saveApiKey(result.token);
+          clearApiClientInstance(); // Ensure next apiClient call uses the new token
           console.log(success('Registration successful. You are now logged in.'));
 
-          // Show user info
-          if (result.user) {
-            console.log(info(`User: ${result.user.name} (${result.user.email})`));
+          // Fetch and display user info
+          try {
+            const newApiClient = getApiClient(); // Gets client with the new token
+            const validationResponse: DomeApi.ValidateTokenResponse =
+              await newApiClient.auth.validateAuthenticationToken();
+            if (validationResponse.success && validationResponse.user) {
+              saveUserId(validationResponse.user.id); // Save userId
+              console.log(
+                info(`User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`),
+              );
+            } else {
+              console.log(error('Could not retrieve user details after registration. Chat functionality might be affected.'));
+            }
+          } catch (validationErr) {
+            console.log(error('Registration was successful, but failed to retrieve user details. Chat functionality might be affected.'));
           }
         } else {
-          // Show error message
-          console.log(error(`Registration failed: ${result.error?.message || 'Unknown error'}`));
+          console.log(error('Registration failed: No token received.'));
           process.exit(1);
         }
-      } catch (err) {
-        console.log(
-          error(`Registration failed: ${err instanceof Error ? err.message : String(err)}`),
-        );
+      } catch (err: unknown) {
+        let errorMessage = 'An unknown error occurred during registration.';
+        if (err instanceof DomeApiError) {
+          const apiError = err as DomeApiError;
+          const status = apiError.statusCode ?? 'N/A';
+          let detailMessage = apiError.message;
+          // Check if body exists and has a more specific message
+          if (apiError.body && typeof apiError.body === 'object' && apiError.body !== null) {
+            const body = apiError.body as any; // Cast to any to check for common error structures
+            if (body.error && typeof body.error.message === 'string') {
+              detailMessage = body.error.message;
+            } else if (typeof body.message === 'string') { // Sometimes error is directly in body.message
+              detailMessage = body.message;
+            } else if (typeof apiError.body === 'string') { // If body is just a string
+                detailMessage = apiError.body;
+            }
+          }
+          errorMessage = `Registration failed: ${detailMessage} (Status: ${status})`;
+        } else if (err instanceof DomeApiTimeoutError) {
+          const timeoutError = err as DomeApiTimeoutError;
+          errorMessage = `Registration failed: The request timed out. ${timeoutError.message}`;
+        } else if (err instanceof Error) {
+          errorMessage = `Registration failed: ${err.message}`;
+        }
+        console.log(error(errorMessage));
         process.exit(1);
       }
     });

@@ -1,4 +1,6 @@
 packages:
+  - 'packages/common'
+  - 'packages/dome-sdk'
   - 'packages/*'
   - 'services/*'
   - 'infrastructure'

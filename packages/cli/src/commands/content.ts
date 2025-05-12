@@ -1,7 +1,8 @@
 import { Command } from 'commander';
-import { registerGithubRepo, showItem, updateContent, addContent } from '../utils/api';
 import { error, info, success } from '../utils/ui';
 import { isAuthenticated } from '../utils/config';
+import { getApiClient } from '../utils/apiClient';
+import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -36,22 +37,39 @@ export function contentCommand(program: Command): void {
           const fileContent = fs.readFileSync(content, 'utf-8');
 
           // Add file content
-          await addContent(fileContent);
-
+          const apiClient = getApiClient();
+          await apiClient.notes.ingestANewNote({
+            content: fileContent,
+            title: fileName, // Use filename as title
+            // category: 'file', // Optional: set a category
+          });
           console.log(success(`Added file: ${fileName}`));
         } else {
           // Add text content
+          const apiClient = getApiClient();
           const contentPreview = content.length > 40 ? `${content.substring(0, 40)}...` : content;
           console.log(info(`Adding: "${contentPreview}"`));
 
-          await addContent(content);
-
+          await apiClient.notes.ingestANewNote({ content });
           console.log(success('Added to dome'));
         }
-      } catch (err) {
-        console.log(
-          error(`Failed to add content: ${err instanceof Error ? err.message : String(err)}`),
-        );
+      } catch (err: unknown) {
+        let errorMessage = 'Failed to add content.';
+        if (err instanceof DomeApiError) {
+          const apiError = err as DomeApiError;
+          const status = apiError.statusCode ?? 'N/A';
+          let detailMessage = apiError.message;
+          if (apiError.body && typeof apiError.body === 'object' && apiError.body !== null && 'message' in apiError.body && typeof (apiError.body as any).message === 'string') {
+            detailMessage = (apiError.body as { message: string }).message;
+          }
+          errorMessage = `Error adding content: ${detailMessage} (Status: ${status})`;
+        } else if (err instanceof DomeApiTimeoutError) {
+          const timeoutError = err as DomeApiTimeoutError;
+          errorMessage = `Error adding content: Request timed out. ${timeoutError.message}`;
+        } else if (err instanceof Error) {
+          errorMessage = `Error adding content: ${err.message}`;
+        }
+        console.log(error(errorMessage));
         process.exit(1);
       }
     });
@@ -83,22 +101,34 @@ export function contentCommand(program: Command): void {
         console.log(info(`Registering GitHub repository: ${owner}/${repo}`));
         console.log(info(`Sync cadence: ${options.cadence}`));
 
-        const result = await registerGithubRepo(owner, repo, options.cadence);
-
-        if (result.success) {
-          console.log(success(`Repository ${owner}/${repo} registered successfully!`));
-          console.log(info(`Sync plan ID: ${result.id}`));
-          console.log(info(`Resource ID: ${result.resourceId}`));
-          console.log(
-            info(`Repository ${result.wasInitialised ? 'was' : 'was not'} newly initialized.`),
-          );
-        } else {
-          console.log(error('Failed to register repository.'));
-          console.log(error(JSON.stringify(result, null, 2)));
+        const apiClient = getApiClient();
+        // Cadence option is not supported by the SDK's registerGitHubRepository method directly
+        if (options.cadence !== 'PT1H') { // PT1H is the old default
+            console.log(info(`Note: Custom sync cadence ('${options.cadence}') is not directly settable via this SDK version. Default server cadence will be used.`));
         }
-      } catch (err) {
-        console.log(error('An error occurred while registering the repository:'));
-        console.log(error(err instanceof Error ? err.message : String(err)));
+        const result: DomeApi.GithubRepoResponse = await apiClient.contentGitHub.registerGitHubRepository({ owner, repo });
+
+        console.log(success(`Repository ${result.owner}/${result.name} registered successfully!`));
+        console.log(info(`ID: ${result.id}`));
+        // resourceId and wasInitialised are not available in SDK response
+        
+      } catch (err: unknown) {
+        let errorMessage = 'An error occurred while registering the repository.';
+        if (err instanceof DomeApiError) {
+          const apiError = err as DomeApiError;
+          const status = apiError.statusCode ?? 'N/A';
+          let detailMessage = apiError.message;
+          if (apiError.body && typeof apiError.body === 'object' && apiError.body !== null && 'message' in apiError.body && typeof (apiError.body as any).message === 'string') {
+            detailMessage = (apiError.body as { message: string }).message;
+          }
+          errorMessage = `Error registering repo: ${detailMessage} (Status: ${status})`;
+        } else if (err instanceof DomeApiTimeoutError) {
+          const timeoutError = err as DomeApiTimeoutError;
+          errorMessage = `Error registering repo: Request timed out. ${timeoutError.message}`;
+        } else if (err instanceof Error) {
+          errorMessage = `Error registering repo: ${err.message}`;
+        }
+        console.log(error(errorMessage));
         process.exit(1);
       }
     });
@@ -118,42 +148,45 @@ export function contentCommand(program: Command): void {
       try {
         // Fetch the content
         console.log(info(`Fetching content with ID: ${contentId}`));
-        const content = await showItem(contentId);
-
-        if (!content) {
-          console.log(error(`Content with ID ${contentId} not found.`));
-          process.exit(1);
+        const apiClient = getApiClient();
+        let noteToUpdate: DomeApi.Note;
+        try {
+            noteToUpdate = await apiClient.notes.getANoteById(contentId);
+        } catch (fetchErr: unknown) {
+            let fetchErrorMessage = `Failed to fetch note with ID ${contentId}.`;
+            if (fetchErr instanceof DomeApiError) {
+                const apiFetchError = fetchErr as DomeApiError;
+                if (apiFetchError.statusCode === 404) {
+                    fetchErrorMessage = `Note with ID ${contentId} not found.`;
+                } else {
+                    fetchErrorMessage = `Error fetching note: ${apiFetchError.message} (Status: ${apiFetchError.statusCode || 'N/A'})`;
+                }
+            } else if (fetchErr instanceof DomeApiTimeoutError) {
+                fetchErrorMessage = `Timeout fetching note: ${(fetchErr as DomeApiTimeoutError).message}`;
+            } else if (fetchErr instanceof Error) {
+                fetchErrorMessage = `Failed to fetch note: ${fetchErr.message}`;
+            }
+            console.log(error(fetchErrorMessage));
+            process.exit(1);
         }
+
 
         // Create temp file with content
         const tempFilePath = path.join(os.tmpdir(), `dome-content-${Date.now()}.md`);
 
-        // Format the content with metadata
-        const title = content.title || 'Untitled Content';
-        // Try different property names that might contain the content
-        let contentBody = '';
-        if (content.body) {
-          contentBody = content.body;
-        } else if (content.content) {
-          contentBody = content.content;
-        } else if (typeof content === 'string') {
-          contentBody = content;
-        } else if (content.text) {
-          contentBody = content.text;
-        } else {
-          console.log(info('Content body not found in expected properties. Using empty string.'));
-        }
-
-        const tags = content.tags ? content.tags.join(', ') : '';
-        const summary = content.summary || '';
+        // Format the content with metadata from DomeApi.Note
+        const title = noteToUpdate.title || 'Untitled Content';
+        const contentBody = noteToUpdate.content || '';
+        const category = noteToUpdate.category || '';
+        // Tags and summary are not directly available in DomeApi.Note, use category or customMetadata if applicable
 
         const fileContent = [
           `# ${title}`,
-          `Tags: ${tags}`,
-          summary ? `Summary: ${summary}` : '',
+          `Category: ${category}`,
+          // `Summary: ${summary}`, // Summary not directly available
           '',
           '<!-- Write your content below this line -->',
-          '', // Add an extra blank line for clarity
+          '',
           contentBody,
         ].join('\n');
 
@@ -226,20 +259,29 @@ export function contentCommand(program: Command): void {
           }
 
           // Update the content
-          const result = await updateContent(
-            contentId,
-            updatedContentBody,
-            updatedTitle,
-            updatedTags,
-          );
+          // TODO: Implement update logic. The SDK does not currently have a direct 'updateNote' method.
+          // This might involve deleting the old note and ingesting a new one,
+          // or a specific API endpoint for updates if available.
+          console.log(info('Update functionality for notes via SDK is pending.'));
+          console.log(info('Updated title (local): ' + updatedTitle));
+          console.log(info('Updated content (local): ' + updatedContentBody.substring(0, 50) + '...'));
+          // console.log(info('Updated tags (local): ' + updatedTags.join(', ')));
 
-          if (result) {
-            console.log(success(`Content updated successfully!`));
-            console.log(info(`Title: ${result.title || updatedTitle}`));
-            console.log(info(`Content will be reprocessed automatically.`));
-          } else {
-            console.log(error('Failed to update content.'));
-          }
+
+          // const result = await updateContent( // This function is from the old API utils
+          //   contentId,
+          //   updatedContentBody,
+          //   updatedTitle,
+          //   updatedTags,
+          // );
+
+          // if (result) {
+          //   console.log(success(`Content updated successfully!`));
+          //   console.log(info(`Title: ${result.title || updatedTitle}`));
+          //   console.log(info(`Content will be reprocessed automatically.`));
+          // } else {
+          //   console.log(error('Failed to update content.'));
+          // }
         } catch (err) {
           console.log(error('An error occurred while editing the content:'));
           console.log(error(err instanceof Error ? err.message : String(err)));
@@ -253,9 +295,13 @@ export function contentCommand(program: Command): void {
 
           process.exit(1);
         }
-      } catch (err) {
-        console.log(error('An error occurred while updating the content:'));
-        console.log(error(err instanceof Error ? err.message : String(err)));
+      } catch (mainUpdateErr: unknown) { // Renamed to avoid conflict with inner err
+        let updateErrorMessage = 'An error occurred while updating the content.';
+        if (mainUpdateErr instanceof Error) { // Basic check for generic errors in the overall update process
+            updateErrorMessage = mainUpdateErr.message;
+        }
+        // More specific error handling for DomeApiError etc. could be added here if main try block could throw them
+        console.log(error(updateErrorMessage));
         process.exit(1);
       }
     });

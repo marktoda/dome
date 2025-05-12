@@ -6,6 +6,7 @@ import fs from 'fs';
 // Define the configuration schema
 export interface ConfigSchema {
   apiKey?: string;
+  userId?: string; // Added userId
   baseUrl: string;
   environment: 'development' | 'production';
   theme?: 'light' | 'dark';
@@ -16,6 +17,7 @@ const defaultConfig: ConfigSchema = {
   baseUrl: 'http://localhost:8787',
   environment: 'development',
   theme: 'light',
+  // userId is not set by default
 };
 
 // Create the configuration directory if it doesn't exist
@@ -29,6 +31,10 @@ const config = new Conf<ConfigSchema>({
   projectName: 'dome',
   schema: {
     apiKey: {
+      type: 'string',
+      default: undefined,
+    },
+    userId: { // Added userId schema
       type: 'string',
       default: undefined,
     },
@@ -64,6 +70,7 @@ export function loadConfig(): ConfigSchema {
 
   return {
     apiKey: config.get('apiKey'),
+    userId: config.get('userId'), // Get userId
     baseUrl: config.get('baseUrl'),
     environment: config.get('environment'),
     theme: config.get('theme'),
@@ -79,10 +86,19 @@ export function saveApiKey(apiKey: string): void {
 }
 
 /**
+ * Save the User ID to the configuration
+ * @param userId The User ID to save
+ */
+export function saveUserId(userId: string): void {
+  config.set('userId', userId);
+}
+
+/**
  * Clear the API key from the configuration
  */
 export function clearApiKey(): void {
   config.delete('apiKey');
+  config.delete('userId'); // Also clear userId on logout
 }
 
 /**
@@ -121,7 +137,7 @@ export function getConfigStore(): Conf<ConfigSchema> {
  * @returns True if the user is authenticated, false otherwise
  */
 export function isAuthenticated(): boolean {
-  return !!config.get('apiKey');
+  return !!config.get('apiKey') && !!config.get('userId'); // Check for userId too
 }
 
 /**
@@ -131,6 +147,9 @@ export function isAuthenticated(): boolean {
 export function saveConfig(configData: ConfigSchema): void {
   if (configData.apiKey) {
     config.set('apiKey', configData.apiKey);
+  }
+  if (configData.userId) { // Save userId
+    config.set('userId', configData.userId);
   }
 
   if (configData.baseUrl) {

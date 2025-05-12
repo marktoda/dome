@@ -11,7 +11,7 @@
     "lint:fix": "pnpm -r exec -- eslint src --ext .ts,.tsx --fix",
     "lint:check": "eslint .",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
-    "gen:sdk": "fern generate --local --log-level info --force && fern generate --group cli --local --force",
+    "gen:sdk": "fern generate --local --log-level info --force && cp templates/sdk-package/template.package.json packages/dome-sdk/package.json && cp templates/sdk-package/template.tsconfig.json packages/dome-sdk/tsconfig.json",
     "prepare": "husky install"
   },
   "engines": {
@@ -42,7 +42,7 @@
       "git add packages/dome-sdk/ fern/openapi/openapi.json"
     ],
     "fern/**/*.{json,yml,yaml}": [
-      "pnpm run gen:sdk",
+      "sh -c 'pnpm run gen:sdk'",
       "git add packages/dome-sdk/"
     ]
   }
