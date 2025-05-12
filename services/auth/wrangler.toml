@@ -1,7 +1,7 @@
 name = "auth"
 main = "src/index.ts"
 compatibility_date = "2025-04-15"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_als"]
 
 [vars]
 ENVIRONMENT = "development"

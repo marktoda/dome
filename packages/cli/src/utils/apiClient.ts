@@ -19,7 +19,7 @@ export function getApiClient(): DomeApiClient {
 
   const options: DomeApiClient.Options = {
     environment: config.baseUrl, // Use the resolved baseUrl from CLI config
-    token: config.apiKey ? `Bearer ${config.apiKey}` : undefined,
+    token: config.apiKey, // Let the SDK handle the "Bearer" prefix if needed
   };
 
   apiClientInstance = new DomeApiClient(options);

@@ -73,6 +73,7 @@ export function loginCommand(program: Command): void {
 
         // Save token and show success message
         if (result.token) {
+          console.log(`CLI LOGIN: Received token: ${result.token}`); // DEBUG LOG
           saveApiKey(result.token);
           // Clear any cached API client that might have been initialized without a token
           clearApiClientInstance();

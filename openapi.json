@@ -242,7 +242,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-11T23:05:25.540Z"
+            "example": "2025-05-12T00:56:26.355Z"
           },
           "service": {
             "type": "string",
@@ -839,7 +839,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-11T23:05:25.480Z"
+            "example": "2025-05-12T00:56:26.327Z"
           },
           "status": {
             "type": "string",
@@ -946,7 +946,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-11T23:05:25.495Z"
+            "example": "2025-05-12T00:56:26.332Z"
           },
           "status": {
             "type": "string",

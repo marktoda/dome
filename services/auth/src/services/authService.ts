@@ -135,16 +135,21 @@ export class AuthService {
     this.logger.debug('Validating auth token');
 
     try {
-      // Check if token is blacklisted
-      const blacklisted = await this.isTokenBlacklisted(token);
+      // Defensively remove "Bearer " prefix if present
+      const cleanToken = token.startsWith('Bearer ') ? token.slice(7) : token;
+      this.logger.debug({ originalToken: token, cleanedToken: cleanToken }, 'Cleaning token for validation');
+
+      // Check if token is blacklisted (use the cleaned token for this check)
+      const blacklisted = await this.isTokenBlacklisted(cleanToken);
 
       if (blacklisted) {
-        this.logger.warn({ token }, 'Token is blacklisted');
+        this.logger.warn({ token: cleanToken }, 'Token is blacklisted'); // Log the token that was checked
         return { success: false, user: null };
       }
 
-      // Verify the token
-      const { payload } = await jose.jwtVerify(token, this.jwtSecret);
+      // Verify the token (use the cleaned token)
+      this.logger.debug({ tokenFromValidateMethod: cleanToken }, 'AUTH SERVICE: Token being verified'); // DEBUG LOG (now logs cleaned token)
+      const { payload } = await jose.jwtVerify(cleanToken, this.jwtSecret);
       const tokenPayload = payload as unknown as TokenPayload;
 
       // Get the user
@@ -162,17 +167,17 @@ export class AuthService {
         this.logger.warn({ userId: user.id, exp: tokenPayload.exp }, 'Token expired');
         return { success: false, user: null, ttl: 0 };
       }
-      
+
       this.logger.debug({ userId: user.id, ttl }, 'Token validated successfully');
       return { success: true, user, ttl };
     } catch (error) {
       this.logger.error({ error }, 'Token validation failed');
       // Distinguish between verification errors (expired, invalid signature) and other errors
       if (error instanceof jose.errors.JWTExpired) {
-         return { success: false, user: null, ttl: 0 };
+        return { success: false, user: null, ttl: 0 };
       }
       if (error instanceof jose.errors.JOSEError) { // Covers other JOSE errors like signature invalid
-         return { success: false, user: null };
+        return { success: false, user: null };
       }
       // For AuthErrors or other unexpected errors, rethrow or handle as appropriate
       // For simplicity here, we'll return a generic failure.
@@ -188,18 +193,39 @@ export class AuthService {
     this.logger.debug({ userId }, 'Logging out user');
 
     try {
-      // Add token to blacklist
-      const { payload } = await jose.jwtVerify(token, this.jwtSecret);
+      // Defensively remove "Bearer " prefix if present, similar to validateToken
+      const cleanToken = token.startsWith('Bearer ') ? token.slice(7) : token;
+      this.logger.debug({ originalToken: token, cleanedToken: cleanToken }, 'Cleaning token for logout');
+
+      // Verify the cleaned token
+      const { payload } = await jose.jwtVerify(cleanToken, this.jwtSecret);
       const tokenPayload = payload as unknown as TokenPayload;
 
+      // Security check: Ensure the userId from the token matches the userId parameter
+      // This prevents misuse if the caller provides an inconsistent userId.
+      if (tokenPayload.userId !== userId) {
+        this.logger.error(
+          { tokenUserId: tokenPayload.userId, paramUserId: userId },
+          'User ID in token does not match user ID in logout parameter.',
+        );
+        throw new AuthError('User ID mismatch during logout', AuthErrorType.INVALID_TOKEN);
+      }
+
       const now = new Date();
+      // Ensure tokenPayload.exp is a number (seconds since epoch)
+      if (typeof tokenPayload.exp !== 'number') {
+        this.logger.error({ payloadExp: tokenPayload.exp }, 'Invalid expiration time in token payload.');
+        throw new AuthError('Invalid token expiration', AuthErrorType.INVALID_TOKEN);
+      }
       const expiresAt = new Date(tokenPayload.exp * 1000);
 
+      // Blacklist the cleaned token for consistency with validateToken's blacklist check
+      // The `isTokenBlacklisted` method (called by `validateToken`) checks against the cleaned token.
       await this.db.insert(tokenBlacklist).values({
-        token,
+        token: cleanToken, // Use the cleaned token
         expiresAt,
         revokedAt: now,
-        userId,
+        userId, // userId from parameter, now verified against token's userId
       });
 
       return true;
@@ -263,6 +289,9 @@ export class AuthService {
     const blacklisted = await this.db
       .select()
       .from(tokenBlacklist)
+      // isTokenBlacklisted receives a token string. It should check against this exact string.
+      // If called from validateToken, `token` here will be `cleanToken`.
+      // If called from elsewhere with a prefixed token, it would check that.
       .where(eq(tokenBlacklist.token, token))
       .get();
 

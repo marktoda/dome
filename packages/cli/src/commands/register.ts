@@ -90,6 +90,7 @@ export function registerCommand(program: Command): void {
         });
 
         if (result.token) {
+          console.log(`CLI REGISTER: Received token: ${result.token}`); // DEBUG LOG
           saveApiKey(result.token);
           clearApiClientInstance(); // Ensure next apiClient call uses the new token
           console.log(success('Registration successful. You are now logged in.'));

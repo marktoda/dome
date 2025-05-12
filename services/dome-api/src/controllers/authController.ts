@@ -250,75 +250,72 @@ export class AuthController {
       const serviceFactory = createServiceFactory();
       const authService = serviceFactory.getAuthService(c.env);
 
-      // Define an expected interface for the service response to help with type checking
-      interface RegisterServiceResponse {
-        success: boolean;
-        token?: string; // Assuming token is optional and string
-        error?: { code: string; message: string };
+      // Step 1: Register the user
+      // authService.register is expected to throw AuthError on failure (e.g., user exists)
+      // or return a User object on success.
+      await authService.register(email, password, name);
+      this.logger.info({ email }, 'User successfully registered, proceeding to login for token.');
+
+      // Step 2: Login the newly registered user to get a token
+      // authService.login is expected to return an object with a token or throw.
+      const loginResult = await authService.login(email, password);
+
+      if (loginResult.success && typeof loginResult.token === 'string') {
+        return c.json({ token: loginResult.token }, 201);
       }
-
-      const result: RegisterServiceResponse = await authService.register(email, password, name);
-
-      if (result.success && typeof result.token === 'string') {
-        return c.json({ token: result.token }, 201);
-      }
-
-      if (result.error?.code === 'USER_ALREADY_EXISTS') {
-        // Assuming this specific code from service
-        this.logger.warn(
-          { email, errorCode: result.error.code },
-          'Registration attempt for existing user',
-        );
-        return c.json(
-          {
-            success: false as const,
-            error: { code: 'CONFLICT', message: result.error.message || 'User already exists' },
-          },
-          409,
-        );
-      }
-
+      
+      // This case should ideally not be reached if login after successful register always yields a token.
       this.logger.error(
-        { result },
-        'Registration service call failed, did not return token, or returned unexpected error',
+        { email, loginResult },
+        'Registration successful, but login post-registration failed to return a token.',
       );
       return c.json(
         {
           success: false as const,
           error: {
             code: 'INTERNAL_SERVER_ERROR',
-            message:
-              result.error?.message ||
-              'Registration failed to produce a token or encountered an unknown issue.',
+            message: 'Registration successful, but failed to issue token.',
           },
         },
         500,
       );
+
     } catch (error: any) {
       this.logger.error(
-        { errorMessage: error.message, stack: error.stack, code: error.code },
+        { errorDetail: error, message: error.message, nestedError: error.error },
         'Registration failed with exception',
       );
-      // If the caught error has a structure that indicates a specific business logic failure (e.g. user exists)
-      if (error.code === 'USER_ALREADY_EXISTS') {
-        // Check if service throws custom errors
+
+      // Check if the error came from AuthError serialization
+      if (error && error.error && typeof error.error.type === 'string' && error.error.type === 'user_exists') {
         return c.json(
           {
             success: false as const,
-            error: { code: 'CONFLICT', message: String(error.message) || 'User already exists' },
+            error: { code: 'CONFLICT', message: error.error.message || 'User already exists' },
           },
           409,
         );
       }
+      
+      // Handle other errors or general errors
+      // If the RPC call itself fails or returns a non-AuthError structure
+      const statusCode = (error && typeof error.status === 'number') ? error.status : 400;
+      const errorMessage = (error && error.error && typeof error.error.message === 'string')
+                           ? error.error.message
+                           : (error && typeof error.message === 'string' ? error.message : 'Registration processing error');
+      const errorCode = (error && error.error && typeof error.error.type === 'string')
+                        ? error.error.type.toUpperCase()
+                        : 'BAD_REQUEST';
+      
       return c.json(
         {
           success: false as const,
           error: {
-            code: 'BAD_REQUEST',
-            message: String(error.message) || 'Registration processing error',
+            code: errorCode,
+            message: errorMessage,
           },
         },
-        400,
+        statusCode,
       );
     }
   };

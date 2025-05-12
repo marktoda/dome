@@ -228,6 +228,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
           );
 
           // Validate token
+          getLogger().info({ tokenAtRpcBoundary: token, requestId, op: 'validateToken' }, 'AUTH WORKER: Token received at RPC boundary'); // DEBUG LOG
           const validationResult = await this.authService.validateToken(token);
 
           if (validationResult.success && validationResult.user) {
@@ -389,7 +390,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
     if (url.pathname === '/health') {
       return new Response('OK', { status: 200 }); // StatusCode.OK
     }
-    
+
     logger.warn({ path: url.pathname, requestId }, 'Not found');
     return new Response('Not found', { status: 404 }); // StatusCode.NOT_FOUND
   }
