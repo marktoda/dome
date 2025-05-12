@@ -42,7 +42,7 @@ export class Auth {
      *
      * @example
      *     await client.auth.userLogin({
-     *         email: "markt@example.com",
+     *         email: "mark@example.com",
      *         password: "hunter2"
      *     })
      */
