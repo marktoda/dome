@@ -1,4 +1,4 @@
-import { DomeApiError, DomeApiTimeoutError } from '../../../dome-sdk/errors';
+import { DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk'; // Use package import
 
 /**
  * Defines the output format for error messages.
