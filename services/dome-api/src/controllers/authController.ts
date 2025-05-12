@@ -2,7 +2,8 @@ import { Context, Hono } from 'hono';
 import { z, createRoute, OpenAPIHono, RouteConfigToTypedResponse } from '@hono/zod-openapi';
 import { getLogger, logError } from '@dome/common';
 import { createServiceFactory } from '../services/serviceFactory';
-import { SupportedAuthProvider } from '@dome/auth/client'; // Assuming this is the correct import path
+// Import User and ValidateTokenResponse from the auth client types
+import { SupportedAuthProvider, User as AuthUser, ValidateTokenResponse as AuthValidateTokenResponse } from '@dome/auth/client';
 import type { AppEnv } from '../types';
 
 // --- Generic Error Schema ---
@@ -167,22 +168,38 @@ const logoutRoute = createRoute({
 });
 
 // --- Validate Token Schemas and Route ---
+// This UserProfileSchema defines the shape of the user object in dome-api's /validate response.
+// It should be compatible with AuthUser but can be a subset or include transformations (e.g., Date to string).
 const UserProfileSchema = z
   .object({
     id: z.string().openapi({ example: 'user-123' }),
     email: z.string().email().openapi({ example: 'user@example.com' }),
-    name: z.string().nullable().openapi({ example: 'User Name' }),
-    role: z.string().openapi({ example: 'user' }),
-    provider: z.nativeEnum(SupportedAuthProvider).openapi({ example: SupportedAuthProvider.LOCAL, description: 'The authentication provider used.' }),
+    name: z.string().nullable().optional().openapi({ example: 'User Name' }),
+    role: z.string().openapi({ example: 'user' }), // AuthUser role is "user" | "admin"
+    emailVerified: z.boolean().optional().openapi({ example: true }),
+    isActive: z.boolean().optional().openapi({ example: true }),
+    // Dates from AuthUser are Date objects; here we expect ISO strings for the API response.
+    createdAt: z.string().datetime().openapi({ example: '2023-01-01T00:00:00.000Z' }),
+    updatedAt: z.string().datetime().openapi({ example: '2023-01-01T00:00:00.000Z' }),
+    lastLoginAt: z.string().datetime().nullable().optional().openapi({ example: '2023-01-01T00:00:00.000Z' }),
+    authProvider: z.nativeEnum(SupportedAuthProvider).nullable().optional().openapi({ example: SupportedAuthProvider.LOCAL }),
+    providerAccountId: z.string().nullable().optional().openapi({ example: 'user@example.com' }),
+    // The 'provider' field for the response user object will come from the top-level AuthValidateTokenResponse
   })
   .openapi('UserProfile');
 
-const ValidateTokenResponseSchema = z
+// This is the schema for the dome-api's /auth/validate endpoint's response body
+const DomeApiValidateTokenResponseSchema = z
   .object({
     success: z.literal(true).openapi({ example: true }),
-    user: UserProfileSchema,
+    // The user object in the response includes the provider
+    user: UserProfileSchema.extend({
+        provider: z.nativeEnum(SupportedAuthProvider).openapi({ example: SupportedAuthProvider.LOCAL, description: 'The authentication provider used.' })
+    }),
   })
-  .openapi('ValidateTokenResponse');
+  .openapi('DomeApiValidateTokenResponse');
+
+// const ValidateTokenResponseSchema = z // This was the old local definition
 
 const validateTokenRoute = createRoute({
   method: 'post', // Or GET, depending on preference. POST is fine.
@@ -193,7 +210,7 @@ const validateTokenRoute = createRoute({
   responses: {
     200: {
       description: 'Token is valid.',
-      content: { 'application/json': { schema: ValidateTokenResponseSchema } },
+      content: { 'application/json': { schema: DomeApiValidateTokenResponseSchema } }, // Use the new schema
     },
     401: {
       description: 'Unauthorized (e.g., missing, invalid, or expired token).',
@@ -465,61 +482,67 @@ export class AuthController {
       const serviceFactory = createServiceFactory();
       const authService = serviceFactory.getAuthService(c.env);
 
-      // Define an expected interface for the service response
-      interface UserProfileData {
-        id: string;
-        email: string;
-        name?: string | null; // Make name optional and nullable to match service's potential return type
-        role: string;
-        // provider field removed here, as it's not part of the core User object from the service
-      }
-      interface ValidateTokenServiceResponse {
-        success: boolean;
-        user?: UserProfileData | null; // User data can be UserProfileData, undefined, or null
-        provider?: SupportedAuthProvider; // The auth service returns this
-        error?: { code: string; message: string }; // Error details are optional
-      }
-
-      // The provider passed to validateToken might be optional if the token itself is self-contained
-      // or if the auth service can determine it. For Privy, it's often required.
-      const result: ValidateTokenServiceResponse = await authService.validateToken(token, SupportedAuthProvider.LOCAL);
+      // Use the imported AuthValidateTokenResponse type from @dome/auth/client
+      // This type expects result.user to be an AuthUser object (which includes Date objects)
+      const result: AuthValidateTokenResponse = await authService.validateToken(token, SupportedAuthProvider.LOCAL);
 
       if (result.success && result.user && result.provider) {
-        // Ensure provider is included when parsing
-        const userProfileDataWithProvider = {
-          ...result.user,
-          provider: result.provider,
+        // result.user is of type AuthUser.
+        // DomeApiValidateTokenResponseSchema.shape.user is UserProfileSchema.extend({ provider: ... })
+        // UserProfileSchema expects dates as ISO strings.
+
+        // Construct the object to be validated by DomeApiValidateTokenResponseSchema.shape.user
+        const apiUserPayload = {
+            id: result.user.id,
+            email: result.user.email,
+            name: result.user.name, // AuthUser.name is string | null; UserProfileSchema.name is string().nullable().optional()
+            role: result.user.role, // AuthUser.role is "user" | "admin"; UserProfileSchema.role is string()
+            emailVerified: result.user.emailVerified, // AuthUser.emailVerified is boolean; UserProfileSchema.emailVerified is boolean().optional()
+            isActive: result.user.isActive, // AuthUser.isActive is boolean; UserProfileSchema.isActive is boolean().optional()
+            createdAt: result.user.createdAt.toISOString(), // AuthUser.createdAt is Date; UserProfileSchema.createdAt is string().datetime()
+            updatedAt: result.user.updatedAt.toISOString(), // AuthUser.updatedAt is Date; UserProfileSchema.updatedAt is string().datetime()
+            lastLoginAt: result.user.lastLoginAt ? result.user.lastLoginAt.toISOString() : null, // AuthUser.lastLoginAt is Date | null
+            authProvider: result.user.authProvider, // AuthUser.authProvider is string | null
+            providerAccountId: result.user.providerAccountId, // AuthUser.providerAccountId is string | null
+            provider: result.provider, // This comes from the top level of AuthValidateTokenResponse
         };
-        const validation = UserProfileSchema.safeParse(userProfileDataWithProvider);
+        
+        // Validate this constructed object against the schema for the 'user' part of the API response
+        const apiUserResponseSchema = DomeApiValidateTokenResponseSchema.shape.user;
+        const validation = apiUserResponseSchema.safeParse(apiUserPayload);
+
         if (!validation.success) {
           logError(
-            new Error('User profile validation failed'),
-            'User profile from authService failed Zod validation against UserProfileSchema',
-            { errors: validation.error.flatten(), userFromService: result.user },
+            new Error('User profile data for API response failed Zod validation'),
+            'Constructed user profile data failed Zod validation against DomeApiValidateTokenResponseSchema.shape.user.',
+            { errors: validation.error.flatten(), rawAuthUser: result.user, constructedForApi: apiUserPayload },
           );
           return c.json(
             {
               success: false,
-              error: {
-                code: 'INTERNAL_SERVER_ERROR',
-                message: 'Invalid user data structure received from authentication service.',
-              },
+              error: { code: 'INTERNAL_SERVER_ERROR', message: 'Invalid user profile structure after processing for API response.' },
             },
             500,
           );
         }
+        // validation.data now conforms to UserProfileSchema.extend({ provider: ... })
+        // and should have the 'provider' field.
         return c.json({ success: true, user: validation.data }, 200);
       }
+      
       this.logger.warn(
-        { result },
-        'Token validation service call failed or did not return user profile',
+        { resultFromAuthService: result }, // Log the actual result from the auth service
+        'Token validation service call failed, did not return user profile, or success was false.',
       );
       return c.json(
         {
           success: false,
           error: {
             code: 'UNAUTHORIZED',
-            message: String(result.error?.message) || 'Invalid or expired token',
+            // Access result.error safely if it exists, otherwise provide a generic message
+            message: (result && (result as any).error && typeof (result as any).error.message === 'string')
+                     ? (result as any).error.message
+                     : 'Invalid or expired token, or user data missing.',
           },
         },
         401,

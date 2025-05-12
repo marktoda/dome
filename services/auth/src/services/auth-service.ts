@@ -1,4 +1,4 @@
-import { UserManager } from './user/user-manager';
+import { IUserManager, UserManager } from './user/user-manager'; // Import IUserManager
 import { BaseAuthProvider, AuthResult } from './providers/base-auth-provider'; // Corrected import
 import { BaseError, UnauthorizedError, ValidationError, ServiceError } from '@dome/common/errors';
 import { SupportedAuthProvider, type User as SchemaUser } from '../types'; // Corrected path & import enum
@@ -15,14 +15,14 @@ type UserRegistrationData = any; // e.g., { email, password, name }
 // AuthToken is part of AuthResult from BaseAuthProvider
 
 export interface AuthServiceDependencies {
-  userManager: UserManager;
+  userManager: IUserManager; // Use IUserManager interface
   providerServices: Map<string, BaseAuthProvider>; // Use the simpler BaseAuthProvider type
   tokenManager: TokenManager; // Added tokenManager
   env: any; // Added env
 }
 
 export class AuthService {
-  private userManager: UserManager;
+  private userManager: IUserManager; // Use IUserManager interface
   private providerServices: Map<string, BaseAuthProvider>;
   private tokenManager: TokenManager;
   private env: any;
@@ -113,12 +113,23 @@ export class AuthService {
   }
 
   async validateToken(token: string, providerName?: SupportedAuthProvider): Promise<{ userId: string; provider: SupportedAuthProvider; details?: any; user?: User }> {
+    // Log the received token at the entry point of validation
+    console.log(`AuthService.validateToken: Received token (first 30 chars): ${token.substring(0, 30)}...`);
+    console.log(`AuthService.validateToken: Received token length: ${token.length}`);
+    console.log(`AuthService.validateToken: Received providerName: ${providerName}`);
+
+    let processedToken = token;
+    if (token.toLowerCase().startsWith('bearer ')) {
+      processedToken = token.slice(7);
+      console.log(`AuthService.validateToken: Stripped "Bearer " prefix. Token for verification (first 30 chars): ${processedToken.substring(0, 30)}...`);
+    }
+
     try {
       // If providerName is given, use that provider.
       if (providerName) {
         const provider = this.getProvider(providerName); // providerName is now enum
         // getUserFromToken is the method in BaseAuthProvider for validating and getting user
-        const user = await provider.getUserFromToken(token);
+        const user = await provider.getUserFromToken(processedToken); // Use processedToken
         if (!user) {
           throw new UnauthorizedError('Token validation failed: Invalid or expired token for the specified provider.');
         }
@@ -132,7 +143,7 @@ export class AuthService {
       // If no providerName, attempt to decode and verify with the main TokenManager (HS256)
       // This assumes internal tokens are HS256 and external (like Privy) would need providerName.
       try {
-        const payload = await this.tokenManager.verifyAccessToken(token);
+        const payload = await this.tokenManager.verifyAccessToken(processedToken); // Use processedToken
         // Construct AuthContext for userManager
         const authContext = { env: this.env, db: this.env.AUTH_DB, waitUntil: (p: Promise<any>) => {} };
         const user = await this.userManager.findUserById(payload.userId, authContext);

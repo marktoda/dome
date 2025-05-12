@@ -123,10 +123,22 @@ export class JwtTokenManager implements TokenManager {
 
   async verifyAccessToken(token: string): Promise<TokenPayload> {
     const secretKey = await this.getAccessTokenSecretKey();
+
+    try {
+      // Log the decoded protected header to inspect its content before verification
+      const decodedProtectedHeader = jose.decodeProtectedHeader(token);
+      console.log('TokenManager: Decoded Protected Header for verification:', JSON.stringify(decodedProtectedHeader));
+    } catch (decodeError) {
+      // Log if decoding the header itself fails, as this indicates a malformed token
+      console.error('TokenManager: Failed to decode protected header before verification:', decodeError);
+      // Decide if to throw here or let jwtVerify handle the malformed token
+    }
+
     try {
       const { payload } = await jose.jwtVerify(token, secretKey, {
         issuer: this.tokenSettings.issuer,
         audience: this.tokenSettings.audience,
+        algorithms: ['HS256'], // Explicitly state the expected algorithm
       });
       return payload as TokenPayload;
     } catch (error) {

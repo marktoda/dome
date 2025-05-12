@@ -1,196 +1,222 @@
-import { User } from '../../interfaces/auth-provider.interface'; // Use the schema-inferred User type
+import { drizzle } from 'drizzle-orm/d1';
+import { eq, and } from 'drizzle-orm'; // Import and
+import * as schema from '../../db/schema';
+// Use the Drizzle-inferred type directly for DbUser
+type DbUser = typeof schema.users.$inferSelect;
 
-// Placeholder for AuthContext, should be defined in a shared location or passed appropriately
+// Define AuthContext with D1Database type for db
 export interface AuthContext {
   env: {
     PRIVY_APP_ID?: string;
     MOCK_USER?: boolean;
     [key: string]: any;
   };
-  db: any; // Database client
+  db: D1Database; // Use D1Database type
   waitUntil?: (promise: Promise<any>) => void;
 }
 
-// BaseAuthProvider might also be imported from a shared location if used here directly,
-// or this UserManager might not need direct knowledge of it.
-// For now, keeping a simplified local version if it's only for type context within this file.
-// If UserManager interacts with BaseAuthProvider instances, it should import the proper one.
-abstract class PlaceholderBaseAuthProvider<TConfig = any, TCredentials = any, TAuthResult = User> {
-  readonly providerId: string;
-  protected config: TConfig;
-
-  constructor(providerId: string, config: TConfig) {
-    this.providerId = providerId;
-    this.config = config;
-  }
-
-  abstract authenticate(credentials: TCredentials, context: AuthContext): Promise<TAuthResult | null>;
-  abstract createUser?(credentials: TCredentials, context: AuthContext): Promise<TAuthResult | null>;
-  abstract findUserById(userId: string, context: AuthContext): Promise<User | null>; // Now returns schema User
-}
-
-
+// Using DbUser which should be equivalent to typeof schema.users.$inferSelect
 export interface IUserManager {
-  createUser(userData: Partial<User>, context: AuthContext, providerInfo?: { providerId: string; providerUserId: string; providerDetails?: any }): Promise<User>;
-  findUserById(userId: string, context: AuthContext): Promise<User | null>; // Returns schema User
-  findUserByEmail(email: string, context: AuthContext): Promise<User | null>; // Returns schema User
-  findUserByProvider(providerId: string, providerUserId: string, context: AuthContext): Promise<User | null>; // Returns schema User
-  updateUser(userId: string, updates: Partial<User>, context: AuthContext): Promise<User | null>; // Returns schema User
+  createUser(userData: Partial<DbUser>, context: AuthContext, providerInfo?: { providerId: string; providerUserId: string; providerDetails?: any }): Promise<DbUser>;
+  findUserById(userId: string, context: AuthContext): Promise<DbUser | null>;
+  findUserByEmail(email: string, context: AuthContext): Promise<DbUser | null>;
+  findUserByProvider(providerId: string, providerUserId: string, context: AuthContext): Promise<DbUser | null>;
+  updateUser(userId: string, updates: Partial<DbUser>, context: AuthContext): Promise<DbUser | null>;
   deleteUser(userId: string, context: AuthContext): Promise<boolean>;
-  linkProviderToUser(userId: string, providerId: string, providerUserId: string, providerDetails: any, context: AuthContext): Promise<User | null>; // Returns schema User
-  unlinkProviderFromUser(userId: string, providerId: string, context: AuthContext): Promise<User | null>; // Returns schema User
+  linkProviderToUser(userId: string, providerId: string, providerUserId: string, providerDetails: any, context: AuthContext): Promise<DbUser | null>;
+  unlinkProviderFromUser(userId: string, providerId: string, context: AuthContext): Promise<DbUser | null>;
 }
 
 export class UserManager implements IUserManager {
   constructor() {
-    // Dependencies like a specific DB schema accessor could be injected here
+    // No specific dependencies needed in constructor if db connection is passed via context
+  }
+
+  private getDb(context: AuthContext) {
+    return drizzle(context.db, { schema });
   }
 
   async createUser(
-    userData: Partial<User>,
+    userData: Partial<DbUser>, // Use DbUser (schema inferred)
     context: AuthContext,
     providerInfo?: { providerId: string; providerUserId: string; providerDetails?: any }
-  ): Promise<User> {
-    const newId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`; // Placeholder ID
+  ): Promise<DbUser> {
+    const db = this.getDb(context);
+    const newId = crypto.randomUUID();
     const now = new Date();
 
-    // Note: The placeholder User type defined earlier in this file is now removed.
-    // All User type annotations will refer to the imported schema-inferred User.
-    // The createUser method needs to construct an object that satisfies the schema User type.
-    // const now = new Date(); // Redundant declaration
-    // const newId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`; // Redundant declaration
-
-    // Construct the user object ensuring all non-nullable fields from the schema are present.
-    // Fields like 'password', 'name', 'authProvider', 'providerAccountId' can be null/undefined
-    // based on the schema, so they are optional in Partial<User>.
-    // Required fields like 'id', 'email', 'role', 'emailVerified', 'isActive', 'createdAt', 'updatedAt'
-    // must be provided.
-    const userToCreate: User = {
+    const userToInsert: typeof schema.users.$inferInsert = {
       id: newId,
-      email: userData.email || `generated-${newId}@example.com`, // Ensure email is present
-      role: userData.role || 'user', // Default role
-      emailVerified: userData.emailVerified || false, // Default
-      isActive: userData.isActive !== undefined ? userData.isActive : true, // Default
-      createdAt: userData.createdAt || now,
-      updatedAt: userData.updatedAt || now,
-      // Nullable fields from schema, can be part of userData or undefined
-      password: userData.password || null,
-      name: userData.name || null,
-      lastLoginAt: userData.lastLoginAt || null,
-      authProvider: null, // Will be set if providerInfo is present
-      providerAccountId: null, // Will be set if providerInfo is present
-      ...userData, // Apply other initial data, overriding defaults if present in userData
+      email: userData.email!, // Assuming email is always provided for new users
+      password: userData.password, // Will be hashed by the provider
+      name: userData.name,
+      role: userData.role || 'user',
+      emailVerified: userData.emailVerified || false,
+      isActive: userData.isActive !== undefined ? userData.isActive : true,
+      authProvider: providerInfo?.providerId,
+      providerAccountId: providerInfo?.providerUserId,
+      createdAt: now,
+      updatedAt: now,
+      lastLoginAt: userData.lastLoginAt,
     };
+
+    const result = await db.insert(schema.users).values(userToInsert).returning().get();
     
-    // The 'providers' property is not directly in the 'users' table schema.
-    // It was part of the local placeholder User. If this concept is still needed,
-    // it should be handled differently, perhaps via a related table or by adjusting
-    // the User type if it's meant to be a composite object.
-    // For now, assuming `userToCreate` directly maps to `users` table.
-    // If `providerInfo` is used to set `authProvider` and `providerAccountId`:
+    if (!result) {
+        throw new Error('Failed to create user in database.');
+    }
+
+    // If providerInfo is present, also create an entry in userAuthProviders
     if (providerInfo) {
-        userToCreate.authProvider = providerInfo.providerId;
-        userToCreate.providerAccountId = providerInfo.providerUserId;
-        // If 'privyDid' was a concept tied to the old placeholder 'providers' array,
-        // and it maps to 'providerAccountId' for 'privy' provider:
-        if (providerInfo.providerId === 'privy') {
-            // userToCreate.privyDid = providerInfo.providerUserId; // 'privyDid' is not in schema User
-        }
+        await db.insert(schema.userAuthProviders).values({
+            id: crypto.randomUUID(),
+            userId: newId,
+            provider: providerInfo.providerId,
+            providerUserId: providerInfo.providerUserId,
+            email: userData.email, // Store email if available
+            linkedAt: now,
+        }).execute();
     }
-
-    console.log(`Placeholder: Creating user in DB:`, userToCreate);
-    context.db._users = context.db._users || {};
-    context.db._users[newId] = userToCreate;
-    return userToCreate;
+    
+    // Ensure the returned object matches DbUser (which should be typeof schema.users.$inferSelect)
+    // The 'result' from .get() should already be of the correct select type.
+    return result as DbUser;
   }
 
-  async findUserById(userId: string, context: AuthContext): Promise<User | null> {
-    console.log(`Placeholder: Searching for user by ID: ${userId} in DB`);
-    return context.db._users?.[userId] || null;
+  async findUserById(userId: string, context: AuthContext): Promise<DbUser | null> {
+    const db = this.getDb(context);
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.id, userId),
+    });
+    return user || null;
   }
 
-  async findUserByEmail(email: string, context: AuthContext): Promise<User | null> {
-    console.log(`Placeholder: Searching for user by email: ${email} in DB`);
-    if (!context.db._users) return null;
-    // Ensure the object being iterated is compatible with User type
-    return Object.values(context.db._users as Record<string, User>).find(u => u.email === email) || null;
+  async findUserByEmail(email: string, context: AuthContext): Promise<DbUser | null> {
+    const db = this.getDb(context);
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.email, email),
+    });
+    return user || null;
   }
 
-  async findUserByProvider(providerId: string, providerUserId: string, context: AuthContext): Promise<User | null> {
-    console.log(`Placeholder: Searching for user by provider: ${providerId} - ${providerUserId} in DB`);
-    if (!context.db._users) return null;
-    // This relies on authProvider and providerAccountId fields in the User (schema) object
-    return Object.values(context.db._users as Record<string, User>).find(u =>
-      u.authProvider === providerId && u.providerAccountId === providerUserId
-    ) || null;
-  }
+  async findUserByProvider(providerId: string, providerUserId: string, context: AuthContext): Promise<DbUser | null> {
+    const db = this.getDb(context);
+    // First, find the link in userAuthProviders
+    const authProviderLink = await db.query.userAuthProviders.findFirst({
+        where: (fields, { and }) => and(
+            eq(fields.provider, providerId),
+            eq(fields.providerUserId, providerUserId)
+        ),
+    });
 
-  async updateUser(userId: string, updates: Partial<User>, context: AuthContext): Promise<User | null> {
-    console.log(`Placeholder: Updating user ${userId} in DB with:`, updates);
-    if (context.db._users?.[userId]) {
-      // Ensure the stored user and updates are compatible with User type
-      const currentUser = context.db._users[userId] as User;
-      context.db._users[userId] = { ...currentUser, ...updates, updatedAt: new Date() } as User;
-      return context.db._users[userId] as User;
+    if (authProviderLink && authProviderLink.userId) {
+        // Then, fetch the user using the userId from the link
+        return this.findUserById(authProviderLink.userId, context);
     }
-    return null;
+    
+    // Fallback: Check the primary authProvider fields on the users table directly
+    // This is useful if 'local' provider details are stored directly on the users table
+    // and not necessarily in userAuthProviders.
+     const user = await db.query.users.findFirst({
+        where: (fields, { and }) => and(
+            eq(fields.authProvider, providerId),
+            eq(fields.providerAccountId, providerUserId)
+        ),
+    });
+    return user || null;
+  }
+
+  async updateUser(userId: string, updates: Partial<DbUser>, context: AuthContext): Promise<DbUser | null> {
+    const db = this.getDb(context);
+    const currentTimestamp = new Date();
+    
+    const updateData: Partial<typeof schema.users.$inferInsert> = {
+        ...updates,
+        updatedAt: currentTimestamp,
+    };
+    // Remove id from updates if present, as it shouldn't be changed
+    if ('id' in updateData) delete updateData.id;
+
+
+    const result = await db.update(schema.users)
+      .set(updateData)
+      .where(eq(schema.users.id, userId))
+      .returning()
+      .get();
+    return result || null;
   }
 
   async deleteUser(userId: string, context: AuthContext): Promise<boolean> {
-    console.log(`Placeholder: Deleting user ${userId} from DB`);
-    if (context.db._users?.[userId]) {
-      delete context.db._users[userId];
-      return true;
-    }
-    return false;
-  }
-
-  async linkProviderToUser(userId: string, providerId: string, providerUserId: string, providerDetails: any = {}, context: AuthContext): Promise<User | null> {
-    const user = await this.findUserById(userId, context);
-    if (!user) {
-      throw new Error(`User with ID ${userId} not found.`);
-    }
-
-    // This method needs to be re-evaluated. The schema User doesn't have a 'providers' array.
-    // Linking now means setting/updating authProvider and providerAccountId on the user record itself,
-    // or managing this in the 'userAuthProviders' table.
-    // For simplicity, let's assume we are updating the main user record if it's their primary/first provider.
-    // Or, if this is for multiple providers, userAuthProviders table should be used.
-
-    // If user already has a provider and it's different, this might be an error or a new link.
-    if (user.authProvider && user.authProvider !== providerId) {
-        console.warn(`User ${userId} already linked to ${user.authProvider}. Linking to new provider ${providerId}. This might require userAuthProviders table logic.`);
-        // Here you would typically insert into userAuthProviders table.
-        // For now, we'll just update the primary authProvider on the user for simplicity.
-    }
+    const db = this.getDb(context);
+    // Consider transaction if deleting from multiple tables (e.g., userAuthProviders)
+    // D1 .run() returns D1Result, check meta.changes for affected rows
+    const userAuthProvidersDeleteResult = await db.delete(schema.userAuthProviders).where(eq(schema.userAuthProviders.userId, userId)).run();
+    const usersDeleteResult = await db.delete(schema.users).where(eq(schema.users.id, userId)).run();
     
-    const updates: Partial<User> = {
-        authProvider: providerId,
-        providerAccountId: providerUserId,
-        // 'privyDid' is not on schema User. If it's providerAccountId for privy:
-        // privyDid: providerId === 'privy' ? providerUserId : user.privyDid,
-    };
-
-    return this.updateUser(userId, updates, context);
+    // Return true if any rows were deleted from the users table
+    return (usersDeleteResult.meta.changes ?? 0) > 0;
   }
 
-  async unlinkProviderFromUser(userId: string, providerId: string, context: AuthContext): Promise<User | null> {
+  async linkProviderToUser(userId: string, providerId: string, providerUserId: string, providerDetails: any = {}, context: AuthContext): Promise<DbUser | null> {
+    const db = this.getDb(context);
     const user = await this.findUserById(userId, context);
     if (!user) {
       throw new Error(`User with ID ${userId} not found.`);
     }
 
-    // If unlinking means clearing the primary provider fields on the user record:
-    if (user.authProvider === providerId) {
-        const updates: Partial<User> = {
-            authProvider: null,
-            providerAccountId: null,
-        };
-        return this.updateUser(userId, updates, context);
-    } else {
-        // If using userAuthProviders table, you'd delete the specific entry.
-        console.warn(`Provider ${providerId} not the primary for user ${userId}, or not found. No changes to primary auth fields.`);
+    // Check if this provider link already exists for the user
+    const existingLink = await db.query.userAuthProviders.findFirst({
+        where: (fields, { and }) => and(
+            eq(fields.userId, userId),
+            eq(fields.provider, providerId),
+            eq(fields.providerUserId, providerUserId)
+        ),
+    });
+
+    if (existingLink) {
+        // Link already exists, return the user
         return user;
     }
+
+    // Create new link
+    await db.insert(schema.userAuthProviders).values({
+        id: crypto.randomUUID(),
+        userId: userId,
+        provider: providerId,
+        providerUserId: providerUserId,
+        email: user.email, // Or providerDetails.email if available and preferred
+        linkedAt: new Date(),
+    }).execute();
+    
+    // If this is the first external provider, or if logic dictates updating user's primary authProvider fields:
+    if (!user.authProvider) {
+        return this.updateUser(userId, { authProvider: providerId, providerAccountId: providerUserId }, context);
+    }
+
+    return user; // Return the original user object, now linked
+  }
+
+  async unlinkProviderFromUser(userId: string, providerId: string, context: AuthContext): Promise<DbUser | null> {
+    const db = this.getDb(context);
+    const user = await this.findUserById(userId, context);
+    if (!user) {
+      throw new Error(`User with ID ${userId} not found.`);
+    }
+
+    // Delete from userAuthProviders table
+    await db.delete(schema.userAuthProviders)
+        .where(
+            and( // Use and() operator
+                eq(schema.userAuthProviders.userId, userId),
+                eq(schema.userAuthProviders.provider, providerId)
+            )
+        ).run(); // Use .run() for delete if not returning
+
+    // If the unlinked provider was the primary one on the user record, clear those fields
+    if (user.authProvider === providerId) {
+      return this.updateUser(userId, { authProvider: null, providerAccountId: null }, context);
+    }
+    
+    return user; // Return the user, possibly with primary fields unchanged if they were for a different provider
   }
 }

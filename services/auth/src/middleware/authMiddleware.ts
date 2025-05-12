@@ -4,27 +4,13 @@ import { getLogger } from '@dome/common'; // Corrected: getLogger from @dome/com
 import { AuthService as UnifiedAuthService } from '../services/auth-service'; // Use new UnifiedAuthService
 import { UserManager } from '../services/user/user-manager'; // For fetching full user if needed
 // Import the schema-inferred User type to ensure userFromDb matches this.
-import type { User as SchemaUser } from '../interfaces/auth-provider.interface';
+import type { User as SchemaUser } from '../types/user'; // Corrected import path
 
 
 // Define the shape of the context variables set by this middleware.
-// The User type here is defined explicitly to match Hono's expected structure from the error.
 export interface AuthenticatedContextEnv {
   Variables: {
-    user?: {
-      id: string;
-      email: string;
-      password?: string | null; // Adjusted to match schema more closely (nullable)
-      name?: string | null;     // Adjusted to match schema
-      role: "user" | "admin";
-      emailVerified: boolean;
-      lastLoginAt?: Date | null; // Adjusted to match schema
-      isActive: boolean;
-      authProvider?: string | null; // Adjusted to match schema
-      providerAccountId?: string | null; // Adjusted to match schema
-      createdAt: Date;
-      updatedAt: Date;
-    };
+    user?: SchemaUser; // Use the schema-derived User type
     tokenPayload?: { userId: string; provider: string; details?: any }; // Raw validated token payload
   };
 }
@@ -72,8 +58,9 @@ export function createAuthMiddleware(
       
       // userFromDb is of type SchemaUser (inferred from DB).
       // The context variable `user` is now typed explicitly.
-      // Casting to 'any' then to the expected context type to bypass potential subtle type mismatches.
-      c.set('user', userFromDb as any as AuthenticatedContextEnv['Variables']['user']);
+      // userFromDb is already of type SchemaUser | null.
+      // If userFromDb is not null, it matches SchemaUser, which is the type for c.set('user', ...)
+      c.set('user', userFromDb); // No need for complex casting if types align
 
       await next();
     } catch (error) {

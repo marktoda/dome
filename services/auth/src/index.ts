@@ -343,6 +343,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
           userId: result.userId,
           provider: result.provider,
           details: result.details,
+          user: result.user, // Include the full user object
           // ttl needs to be derived
         };
       },

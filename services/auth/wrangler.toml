@@ -14,7 +14,7 @@ ENVIRONMENT = "development"
 [[d1_databases]]
 binding = "AUTH_DB"
 database_name = "auth-db"
-database_id = "6d3180e0-cd8b-434e-9fb1-b1af9c8b3c3c"
+database_id = "69a22f1e-a230-4b1a-8bdf-db0c7beb1502"
 
 # KV namespace for storing tokens (optional blacklisted tokens)
 [[kv_namespaces]]

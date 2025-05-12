@@ -212,7 +212,21 @@ export abstract class BaseAuthProvider implements AuthProvider {
     );
     // Simulate a user lookup
     if (userId === "mock-user-id") { // Example
-        return { id: userId, email: "user@example.com", username: "mockuser" };
+        // Align with the User schema (which uses 'name', not 'username', and has other required fields)
+        return {
+            id: userId,
+            email: "user@example.com",
+            name: "mockuser", // Changed from username to name
+            role: "user",
+            emailVerified: false,
+            isActive: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            password: null, // Or a mock hash if needed for other placeholder logic
+            lastLoginAt: null,
+            authProvider: null,
+            providerAccountId: null,
+        };
     }
     return null;
   }

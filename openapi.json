@@ -165,27 +165,62 @@
             "type": "string",
             "example": "user"
           },
-          "provider": {
+          "emailVerified": {
+            "type": "boolean",
+            "example": true
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          },
+          "createdAt": {
             "type": "string",
+            "format": "date-time",
+            "example": "2023-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2023-01-01T00:00:00.000Z"
+          },
+          "lastLoginAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2023-01-01T00:00:00.000Z"
+          },
+          "authProvider": {
+            "type": [
+              "string",
+              "null"
+            ],
             "enum": [
               "local",
               "privy",
               "google",
               "github"
             ],
-            "description": "The authentication provider used.",
             "example": "local"
+          },
+          "providerAccountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "user@example.com"
           }
         },
         "required": [
           "id",
           "email",
-          "name",
           "role",
-          "provider"
+          "createdAt",
+          "updatedAt"
         ]
       },
-      "ValidateTokenResponse": {
+      "DomeApiValidateTokenResponse": {
         "type": "object",
         "properties": {
           "success": {
@@ -196,7 +231,30 @@
             "example": true
           },
           "user": {
-            "$ref": "#/components/schemas/UserProfile"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserProfile"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "local",
+                      "privy",
+                      "google",
+                      "github"
+                    ],
+                    "description": "The authentication provider used.",
+                    "example": "local"
+                  }
+                },
+                "required": [
+                  "provider"
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -257,7 +315,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T16:17:52.810Z"
+            "example": "2025-05-12T19:43:50.739Z"
           },
           "service": {
             "type": "string",
@@ -854,7 +912,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T16:17:52.760Z"
+            "example": "2025-05-12T19:43:50.708Z"
           },
           "status": {
             "type": "string",
@@ -961,7 +1019,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-12T16:17:52.777Z"
+            "example": "2025-05-12T19:43:50.717Z"
           },
           "status": {
             "type": "string",
@@ -1297,7 +1355,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidateTokenResponse"
+                  "$ref": "#/components/schemas/DomeApiValidateTokenResponse"
                 }
               }
             }
