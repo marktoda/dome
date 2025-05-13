@@ -10,7 +10,7 @@
 /*  Shared imports & types                                                     */
 /* -------------------------------------------------------------------------- */
 
-import { getLogger, logError as commonLogError } from '@dome/common'; // Renamed to avoid conflict
+import { getLogger, logError } from '@dome/common'; // Renamed to avoid conflict
 import {
   DocumentChunk,
   RetrievalResult,
@@ -114,13 +114,13 @@ function filterAndLimit(chunks: DocumentChunk[], cfg: Partial<BaseOpts>): Docume
   const filtered = cfg.keepBelowThreshold
     ? chunks
     : chunks.filter(c => {
-        const score =
-          (c.metadata as any).hybridScore ??
-          c.metadata.rerankerScore ??
-          c.metadata.relevanceScore ??
-          0;
-        return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
-      });
+      const score =
+        (c.metadata as any).hybridScore ??
+        c.metadata.rerankerScore ??
+        c.metadata.relevanceScore ??
+        0;
+      return score >= thresholdFor(c, cfg.scoreThreshold || DEFAULTS.scoreThreshold || 0.1);
+    });
   return filtered.slice(0, cfg.maxResults);
 }
 
@@ -129,7 +129,7 @@ function filterAndLimit(chunks: DocumentChunk[], cfg: Partial<BaseOpts>): Docume
 /* -------------------------------------------------------------------------- */
 
 abstract class BaseReranker {
-  constructor(protected readonly cfg: Required<RerankerOptions>) {}
+  constructor(protected readonly cfg: Required<RerankerOptions>) { }
 
   async rerank(
     res: RetrievalResult,
@@ -145,7 +145,7 @@ abstract class BaseReranker {
     try {
       ranked = await this.rank(res.chunks, query, env);
     } catch (err) {
-      commonLogError(err, 'Reranking failed – fallback to vector scores');
+      logError(err, 'Reranking failed – fallback to vector scores');
       ranked = this.fallback(res.chunks);
     }
 
@@ -215,9 +215,7 @@ class CohereReranker extends BaseReranker {
 
   protected async rank(chunks: DocumentChunk[], query: string): Promise<DocumentChunk[]> {
     const docs = chunks.map(c => new Document({ pageContent: c.content, metadata: { id: c.id } }));
-    getLogger().info({ docs }, 'Cohere reranker request');
     const out = await this.reranker.rerank(docs, query);
-    getLogger().info({ out }, 'Cohere reranker response');
     return out
       .map(r => {
         const chunk = chunks[r.index];
@@ -350,7 +348,7 @@ export async function reranker(
     return finish({ ...state, retrievals: updatedTasks }, nodeId, spanId, traceId, t0, env);
   } catch (e) {
     const err = toDomeError(e);
-    commonLogError(err, 'Reranker node failed');
+    logError(err, 'Reranker node failed');
     const elapsed = performance.now() - t0;
     ObservabilityService.endSpan(env, traceId, spanId, nodeId, state, state, elapsed);
     return {

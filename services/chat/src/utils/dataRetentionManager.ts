@@ -1,8 +1,6 @@
-import { getLogger, logError } from '@dome/common';
+import { getLogger, logError, getUserInfo, UserRole, ForbiddenError } from '@dome/common';
 import { D1Checkpointer } from '../checkpointer/d1Checkpointer';
-import { getUserInfo, UserRole } from '@dome/common/src/middleware/enhancedAuthMiddleware';
 import { Context } from 'hono';
-import { ForbiddenError } from '@dome/common/src/errors/ServiceError';
 import { drizzle } from 'drizzle-orm/d1';
 import { dataRetentionConsents, dataRetentionRecords } from '../db/schema';
 import { and, eq, gt, gte, isNull, lte, or, sql } from 'drizzle-orm';

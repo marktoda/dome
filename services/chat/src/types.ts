@@ -353,6 +353,7 @@ export interface SourceMetadata {
   source: string;
   url?: string | undefined;
   relevanceScore: number;
+  type?: string; // Type of the source (document, web, code, etc.)
 }
 
 /**

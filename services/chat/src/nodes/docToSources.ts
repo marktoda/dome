@@ -43,6 +43,7 @@ export async function docToSources(state: AgentState): Promise<Partial<AgentStat
     source: doc.metadata.source,
     url: doc.metadata.url || undefined,
     relevanceScore: doc.metadata.relevanceScore || 0,
+    type: doc.metadata.sourceType || 'document', // Add type field for CLI compatibility
   }));
 
   const elapsed = performance.now() - t0;

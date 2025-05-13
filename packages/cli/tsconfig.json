@@ -7,7 +7,8 @@
     "resolveJsonModule": true,
     "declaration": true,
     "sourceMap": true,
-    "moduleResolution": "bundler",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "isolatedModules": true
   },
   "include": ["src/**/*"],

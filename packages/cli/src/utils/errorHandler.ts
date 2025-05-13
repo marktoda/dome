@@ -36,6 +36,29 @@ export function handleError(error: unknown, options: HandleErrorOptions = {}): v
   const { outputFormat = OutputFormat.CLI } = options;
   let errorDetails: ErrorDetails;
 
+  // Enhanced debugging - always log the raw error object
+  console.error('DEBUG - Raw error:');
+  console.error('Type:', typeof error);
+  
+  if (typeof error === 'object' && error !== null) {
+    console.error('Properties:');
+    for (const key in error) {
+      try {
+        console.error(`- ${key}:`, (error as any)[key]);
+      } catch (e) {
+        console.error(`- ${key}: [Error accessing property]`);
+      }
+    }
+    
+    if (error instanceof Error) {
+      console.error('Name:', error.name);
+      console.error('Message:', error.message);
+      console.error('Stack:', error.stack);
+    }
+  } else {
+    console.error('Value:', error);
+  }
+
   if (error instanceof DomeApiError) {
     const statusCode = error.statusCode;
     // Attempt to get a more specific message from the error body
@@ -61,13 +84,14 @@ export function handleError(error: unknown, options: HandleErrorOptions = {}): v
       type: 'GenericError',
       message: error.message,
       details: {
+        name: error.name,
         stack: error.stack, // Include stack for generic errors in JSON
       },
     };
   } else {
     errorDetails = {
       type: 'UnknownError',
-      message: 'An unknown error occurred. Please check the details.',
+      message: typeof error === 'string' ? error : 'An unknown error occurred. Please check the details.',
       details: error, // Store the original unknown error
     };
   }

@@ -1,6 +1,5 @@
-import { getLogger } from '@dome/common';
+import { getLogger, ForbiddenError } from '@dome/common';
 import { filterLlmOutput } from './inputValidator';
-import { ForbiddenError } from '@dome/common/src/errors/ServiceError';
 import { Role } from '../types';
 
 /**

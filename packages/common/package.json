@@ -7,15 +7,25 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./package.json": "./package.json",
+    "./errors/ServiceError": {
+      "types": "./dist/errors/ServiceError.d.ts",
+      "import": "./dist/errors/ServiceError.js",
+      "require": "./dist/errors/ServiceError.js"
+    },
+    "./middleware/enhancedAuthMiddleware": {
+      "types": "./dist/middleware/enhancedAuthMiddleware.d.ts",
+      "import": "./dist/middleware/enhancedAuthMiddleware.js",
+      "require": "./dist/middleware/enhancedAuthMiddleware.js"
+    },
     "./*": {
+      "types": "./dist/*.d.ts",
       "import": "./dist/*.js",
-      "require": "./dist/*.js",
-      "types": "./dist/types/*.d.ts"
+      "require": "./dist/*.js"
     }
   },
   "scripts": {

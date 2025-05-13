@@ -2,123 +2,101 @@ import { BaseCommand, CommandArgs } from '../base';
 import readline from 'readline';
 import chalk from 'chalk';
 import { Command } from 'commander';
-import WebSocket from 'ws'; // Added for WebSocket client
+import WebSocket from 'ws';
 
 import { isAuthenticated, loadConfig } from '../../utils/config';
-import { heading, info, success, subheading, formatDate } from '../../utils/ui';
+import { heading, info, success, formatDate } from '../../utils/ui';
 import { getChatSession, ChatSessionManager } from '../../utils/chatSession';
-import { getApiClient, getApiBaseUrl } from '../../utils/apiClient'; // Added getApiBaseUrl
-import { DomeApi } from '@dome/dome-sdk';
 import { OutputFormat } from '../../utils/errorHandler';
+import { getApiBaseUrl } from '../../utils/apiClient';
 
-// SDK-aligned streaming event types for chat
-interface SdkChatContentEvent {
-  type: "chat_content";
-  text: string;
+/**
+ * Types for chat message chunks received from the WebSocket API
+ */
+interface ChatMessageChunk {
+  type: 'thinking' | 'content' | 'sources' | 'error' | 'end'; // Added 'end' type
+  content?: string;
+  sources?: Array<{ // Changed from node.sources to sources directly
+    id: string;
+    title: string;
+    type: string;
+    url?: string;
+    [key: string]: any; // Allow other properties
+  }>;
+  error?: {
+    message: string;
+    code: string;
+  };
 }
 
-interface SdkChatSourcesEvent {
-  type: "chat_sources";
-  sources: DomeApi.ChatSource[];
-}
-
-interface SdkChatThinkingEvent {
-  type: "chat_thinking";
-  message: string; // Or status: boolean, to be confirmed by actual SDK stream
-}
-
-interface SdkChatMetadataEvent extends DomeApi.StreamingMetadata {
-  type: "chat_metadata";
-  // Example: could include thinking status if not a separate event
-  // thinking?: boolean;
-}
-
-interface SdkChatErrorEvent extends DomeApi.StreamingErrorData {
-  type: "chat_error";
-}
-
-interface SdkUnknownEvent {
-    type: "unknown_event";
-    data: any;
-    originalJson: string;
-}
-
-export type SdkStreamingChatEvent =
-  | SdkChatContentEvent
-  | SdkChatSourcesEvent
-  | SdkChatThinkingEvent
-  | SdkChatMetadataEvent
-  | SdkChatErrorEvent
-  | SdkUnknownEvent;
-
-
-const parseChatStreamEvent = (jsonData: string): SdkStreamingChatEvent => {
-  try {
-    const parsed = JSON.parse(jsonData);
-
-    if (parsed && typeof parsed === 'object' && parsed !== null && typeof parsed.type === 'string') {
-      switch (parsed.type) {
-        case 'chat_content':
-          if (typeof parsed.text === 'string') {
-            return parsed as SdkChatContentEvent;
-          }
-          break;
-        case 'chat_sources':
-          if (Array.isArray(parsed.sources)) {
-            return parsed as SdkChatSourcesEvent;
-          }
-          break;
-        case 'chat_thinking':
-          if (typeof parsed.message === 'string') {
-            return parsed as SdkChatThinkingEvent;
-          }
-          break;
-        case 'chat_metadata':
-          // Basic check, specific StreamingMetadata fields can be validated if needed
-          return parsed as SdkChatMetadataEvent;
-        case 'chat_error':
-          // Basic check, specific StreamingErrorData fields can be validated if needed
-          return parsed as SdkChatErrorEvent;
-      }
-    }
-    // Fallback for direct content string or unhandled structured data
-    if (typeof parsed === 'string') {
-        return { type: 'chat_content', text: parsed };
-    }
-    if (parsed && typeof parsed.content === 'string') { // Legacy compatibility attempt
-        return { type: 'chat_content', text: parsed.content };
-    }
-    // If it's JSON but doesn't match known types
-    return { type: 'unknown_event', data: parsed, originalJson: jsonData };
-  } catch (e) {
-    // If JSON parsing fails, treat as a simple content string
-    return { type: 'chat_content', text: jsonData };
-  }
-};
-
-type StreamOptions = { verbose: boolean, outputFormat: OutputFormat };
+type StreamOptions = { verbose: boolean, outputFormat: OutputFormat, interactiveRl?: readline.Interface };
 
 async function streamChatResponse(
   userMessage: string,
   opts: StreamOptions,
   session: ChatSessionManager,
-  commandInstance: ChatCommand // Pass the command instance for logging/error handling
+  commandInstance: ChatCommand
 ): Promise<void> {
   const config = loadConfig();
   if (!config.userId) {
     commandInstance.error('User ID not found. Please login again.', { outputFormat: opts.outputFormat });
     return;
   }
+  if (!config.apiKey) {
+    commandInstance.error('API key not found. Please login again.', { outputFormat: opts.outputFormat });
+    return;
+  }
 
   session.addUserMessage(userMessage);
   const messages = session.getMessages();
-  const apiClient = getApiClient();
   let assistantResponse = '';
+  const thinkingIndicator = '.';
+  let thinkingInterval: NodeJS.Timeout | null = null;
 
-  try {
-    const chatRequestPayload: DomeApi.PostChatRequest = { // Renamed to avoid conflict with DomeApi.ChatRequest if it exists
-      userId: config.userId!, // Assert userId is present due to check above
-      messages: messages.map(m => ({ role: m.role as DomeApi.PostChatRequestMessagesItemRole, content: m.content })),
+  const startThinkingIndicator = () => {
+    if (thinkingInterval) clearInterval(thinkingInterval);
+    let dots = 0;
+    thinkingInterval = setInterval(() => {
+      process.stdout.write(thinkingIndicator);
+      dots++;
+      if (dots > 3) { // Reset dots after 3
+        process.stdout.write('\b\b\b   \b\b\b'); // Erase dots
+        dots = 0;
+      }
+    }, 500);
+  };
+
+  const stopThinkingIndicator = () => {
+    if (thinkingInterval) {
+      clearInterval(thinkingInterval);
+      thinkingInterval = null;
+      // Clear any written dots
+      process.stdout.write('\r' + ' '.repeat(process.stdout.columns) + '\r');
+      process.stdout.write(chalk.bold.blue('Dome: ')); // Rewrite prompt
+    }
+  };
+
+
+  const baseUrl = getApiBaseUrl();
+  // Construct WebSocket URL, ensuring ws or wss protocol
+  const wsProtocol = baseUrl.startsWith('https://') ? 'wss' : 'ws';
+  const httpBase = baseUrl.replace(/^https?:\/\//, '');
+  const wsUrl = `${wsProtocol}://${httpBase}/chat/ws?token=${config.apiKey}`;
+
+  if (opts.verbose) {
+    console.log(chalk.gray(`[DEBUG] Connecting to WebSocket: ${wsUrl}`));
+  }
+
+  const ws = new WebSocket(wsUrl);
+  const td = new TextDecoder();
+
+  ws.onopen = () => {
+    if (opts.verbose) {
+      console.log(chalk.gray('[DEBUG] WebSocket connection established.'));
+    }
+    const chatRequestPayload = {
+      userId: config.userId,
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
       options: {
         enhanceWithContext: true,
         maxContextItems: 5,
@@ -126,205 +104,156 @@ async function streamChatResponse(
         maxTokens: 1000,
         temperature: 0.7,
       },
-      stream: true, // This flag is in the schema, used by server for WS/SSE logic
+      stream: true, // Enable streaming for WebSocket
     };
-
-    // CONSOLE DEBUG: Log the stream flag value
-    console.log(chalk.yellow(`[CONSOLE DEBUG] chatRequestPayload.stream is: ${chatRequestPayload.stream}`));
-
-    // If stream is true (which it defaults to in chatRequestSchema), use WebSocket
-    if (chatRequestPayload.stream) {
-      console.log(chalk.yellow('[CONSOLE DEBUG] Attempting WebSocket connection...'));
-      const wsBaseUrl = getApiBaseUrl().replace(/^http/, 'ws');
-      const wsUrl = `${wsBaseUrl}/chat/ws?token=${config.apiKey}`;
-      console.log(chalk.cyan(`[CONSOLE DEBUG] Constructed WebSocket URL: ${wsUrl}`));
-      
-      if (opts.outputFormat === OutputFormat.CLI && opts.verbose) {
-        // Using console.log for verbose debug too to ensure visibility
-        console.log(chalk.gray(`[VERBOSE CONSOLE DEBUG] Connecting to WebSocket: ${wsUrl}`));
-      }
-
-      try {
-        console.log(chalk.yellow('[CONSOLE DEBUG] PRE: new WebSocket()'));
-        const ws = new WebSocket(wsUrl);
-        console.log(chalk.green('[CONSOLE DEBUG] POST: new WebSocket() - instance created'));
-
-        ws.on('open', () => {
-          console.log(chalk.green('[CONSOLE DEBUG] WebSocket connection OPENED.'));
-          if (opts.outputFormat === OutputFormat.CLI && opts.verbose) {
-            console.log(chalk.gray('[VERBOSE CONSOLE DEBUG] WebSocket connection established. Sending message...'));
-          }
-          // Send the chat request as the first message
-          ws.send(JSON.stringify(chatRequestPayload));
-        });
-
-        ws.on('message', (data: WebSocket.RawData) => {
-          const messageStr = data.toString();
-          // Each message from the WebSocket is a stream event (chunk)
-          const event = parseChatStreamEvent(messageStr);
-          handleChatStreamEvent(event, opts, commandInstance);
-          if (event.type === 'chat_content') assistantResponse += event.text;
-        });
-
-        ws.on('error', (error: Error) => {
-          console.log(chalk.red(`[CONSOLE DEBUG] WebSocket ERROR: ${error.message}`));
-          commandInstance.error(new Error(`WebSocket error: ${error.message}`), { outputFormat: opts.outputFormat });
-          // Ensure readline prompt is restored if in interactive mode
-          if (opts.outputFormat === OutputFormat.CLI && (commandInstance as any).rl) {
-              (commandInstance as any).rl.prompt();
-          }
-        });
-
-        ws.on('close', (code: number, reason: Buffer) => {
-          console.log(chalk.magenta(`[CONSOLE DEBUG] WebSocket CLOSED. Code: ${code}, Reason: ${reason.toString()}`));
-          if (opts.outputFormat === OutputFormat.CLI && opts.verbose) {
-            console.log(chalk.gray(`[VERBOSE CONSOLE DEBUG] WebSocket connection closed. Code: ${code}, Reason: ${reason.toString()}`));
-          }
-          if (assistantResponse) {
-            session.addAssistantMessage(assistantResponse);
-          }
-          if (opts.outputFormat === OutputFormat.CLI) {
-              console.log(); // Ensure a newline
-               if ((commandInstance as any).rl && !(commandInstance as any).rl.closed) { // Check if rl exists and not closed
-                  (commandInstance as any).rl.prompt();
-              }
-          }
-        });
-        // Keep the function alive until WebSocket closes, or handle via a Promise
-        await new Promise<void>((resolve, reject) => {
-          ws.on('close', () => resolve());
-          ws.on('error', (err: Error) => reject(err)); // Reject promise on WS error to propagate
-        });
-      } catch (e: any) {
-        console.log(chalk.red(`[CONSOLE DEBUG] CRITICAL ERROR during new WebSocket() or attaching handlers: ${e.message}`));
-        // Fall through to the else block might happen if this error isn't rethrown or process exited
-        // For now, this log will tell us if this specific block is the problem.
-        // To ensure fallback is hit if this try fails, we might need to re-evaluate control flow or rethrow.
-        // However, the current structure will likely fall through if an error here isn't caught by the outer try/catch for streamChatResponse
-        // or if the promise from new Promise is not awaited properly in case of an early error.
-        // For now, let's see if this catch is hit.
-        console.log(chalk.red('[CONSOLE DEBUG] Error in WebSocket setup try-catch, may proceed to fallback.'));
-        // To explicitly go to fallback, we could: throw e; (if outer catch handles it for fallback)
-        // or set chatRequestPayload.stream = false; here, but that's messy.
-        // The current structure might implicitly fall to the outer catch if this promise rejects.
-      }
-
-    } else {
-      console.log(chalk.red('[CONSOLE DEBUG] Entering FALLBACK non-streaming HTTP POST path.'));
-      // Fallback to non-streaming HTTP POST (though schema defaults stream to true)
-      // This part remains similar to original if direct HTTP POST for non-streaming is still desired
-      const stream = (await apiClient.chat.sendAChatMessage(chatRequestPayload)) as any as ReadableStream<Uint8Array>;
-      const reader = stream.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          if (buffer.trim()) {
-              const event = parseChatStreamEvent(buffer.trim());
-              handleChatStreamEvent(event, opts, commandInstance);
-              if (event.type === 'chat_content') assistantResponse += event.text;
-          }
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        let newlineIndex;
-        while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.substring(0, newlineIndex).trim();
-          buffer = buffer.substring(newlineIndex + 1);
-          if (line) {
-            const event = parseChatStreamEvent(line);
-            handleChatStreamEvent(event, opts, commandInstance);
-            if (event.type === 'chat_content') assistantResponse += event.text;
-          }
-        }
-      }
-      // After loop, if non-streaming and response was collected
-      if (assistantResponse) {
-        session.addAssistantMessage(assistantResponse);
-      }
+    if (opts.verbose) {
+      console.log(chalk.gray(`[DEBUG] Sending chat request: ${JSON.stringify(chatRequestPayload, null, 2)}`));
     }
-  } catch (err: unknown) {
-    commandInstance.error(err, { outputFormat: opts.outputFormat });
-  } finally {
+    ws.send(JSON.stringify(chatRequestPayload));
+    startThinkingIndicator();
+  };
+
+  ws.onmessage = (event) => {
+    stopThinkingIndicator(); // Stop thinking indicator once first message arrives
+    
+    // Function to handle the parsed chunk
+    const handleChunk = (chunk: ChatMessageChunk) => {
+      if (opts.verbose) {
+        console.log(chalk.gray(`[DEBUG] Parsed chunk: ${JSON.stringify(chunk)}`));
+      }
+
+      if (chunk.type === 'content' && chunk.content) {
+        process.stdout.write(chunk.content);
+        assistantResponse += chunk.content;
+      } else if (chunk.type === 'sources' && chunk.sources) {
+        console.log(); // Add newline before sources
+        console.log(chalk.bold.yellow('Sources:'));
+        const filteredSources = chunk.sources.filter((source: any) => {
+          const title = source.title || '';
+          return !title.includes('---DOME-METADATA-START---') && !title.match(/^---.*---$/) && title.trim() !== '';
+        });
+        
+        filteredSources.forEach((source: any, index: number) => {
+          console.log(chalk.yellow(`[${index + 1}] ${source.title || 'Unnamed Source'}`));
+          console.log(chalk.gray(`    Type: ${source.type}, ID: ${source.id}`));
+          if (source.url) console.log(chalk.blue(`    URL: ${source.url}`));
+          if (index < filteredSources.length - 1) console.log();
+        });
+        console.log(); // Add newline after sources
+      } else if (chunk.type === 'error' && chunk.error) {
+        commandInstance.error(`Chat error: ${chunk.error.message} (Code: ${chunk.error.code})`, { outputFormat: opts.outputFormat });
+        ws.close();
+      } else if (chunk.type === 'thinking') {
+        startThinkingIndicator();
+      } else if (chunk.type === 'end') {
+        if (opts.verbose) {
+           console.log(chalk.gray('[DEBUG] Received end of stream signal.'));
+        }
+        ws.close();
+      }
+    };
+    
+    try {
+      // Handle different possible data formats from WebSocket
+      if (typeof event.data === 'string') {
+        // String data (most common)
+        if (opts.verbose) {
+          console.log(chalk.gray(`[DEBUG] Received string data: ${event.data.substring(0, 100)}...`));
+        }
+        const chunk = JSON.parse(event.data);
+        handleChunk(chunk);
+      } else if (event.data instanceof ArrayBuffer) {
+        // ArrayBuffer data
+        const messageData = td.decode(event.data);
+        if (opts.verbose) {
+          console.log(chalk.gray(`[DEBUG] Received ArrayBuffer data: ${messageData.substring(0, 100)}...`));
+        }
+        const chunk = JSON.parse(messageData);
+        handleChunk(chunk);
+      } else if (event.data instanceof Blob) {
+        // Blob data (common in browsers)
+        if (opts.verbose) {
+          console.log(chalk.gray(`[DEBUG] Received Blob data, size: ${event.data.size}`));
+        }
+        
+        // Read the Blob as text
+        event.data.text().then((text) => {
+          try {
+            const chunk = JSON.parse(text);
+            handleChunk(chunk);
+          } catch (e) {
+            commandInstance.error(`Error parsing WebSocket Blob message: ${(e as Error).message}`, { outputFormat: opts.outputFormat });
+            ws.close();
+          }
+        }).catch((error) => {
+          commandInstance.error(`Error reading WebSocket Blob data: ${error.message}`, { outputFormat: opts.outputFormat });
+          ws.close();
+        });
+      } else if (typeof event.data === 'object' && event.data !== null) {
+        // Handle other object types, could be a ReadableStream or custom format
+        if (opts.verbose) {
+          console.log(chalk.gray(`[DEBUG] Received data of type: ${event.data.constructor.name}`));
+        }
+        
+        // If it's a ReadableStream-like object but just missing the .getReader() method
+        if ('getReader' in event.data) {
+          // Use the standard stream processing approach
+          if (opts.verbose) {
+            console.log(chalk.gray(`[DEBUG] Data appears to be a ReadableStream`));
+          }
+          commandInstance.error(`WebSocket stream processing not yet implemented`, { outputFormat: opts.outputFormat });
+          ws.close();
+          return;
+        }
+        
+        // Try to stringify and parse as fallback
+        try {
+          const jsonString = JSON.stringify(event.data);
+          const chunk = JSON.parse(jsonString);
+          handleChunk(chunk);
+        } catch (e) {
+          commandInstance.error(`Unsupported WebSocket message format: ${(e as Error).message}`, { outputFormat: opts.outputFormat });
+          ws.close();
+        }
+      } else {
+        // Unknown data format
+        commandInstance.error(`Unsupported WebSocket message format`, { outputFormat: opts.outputFormat });
+        ws.close();
+      }
+    } catch (e) {
+      commandInstance.error(`Error processing WebSocket message: ${(e as Error).message}`, { outputFormat: opts.outputFormat });
+      ws.close();
+    }
+  };
+
+  ws.onerror = (error) => {
+    stopThinkingIndicator();
+    commandInstance.error(`WebSocket error: ${error.message}`, { outputFormat: opts.outputFormat });
+    if (opts.interactiveRl) { // Removed .closed check
+        opts.interactiveRl.prompt();
+    }
+  };
+
+  ws.onclose = (event) => {
+    stopThinkingIndicator();
+    if (opts.verbose) {
+      console.log(chalk.gray(`[DEBUG] WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`));
+    }
     if (assistantResponse) {
-      session.addAssistantMessage(assistantResponse);
+      session.addAssistantMessage(assistantResponse.trim());
     }
     if (opts.outputFormat === OutputFormat.CLI) {
-        console.log(); // Ensure a newline for CLI after the full response or error
+      // Ensure a newline after the response, unless it's an error that already printed.
+      if (!event.wasClean && event.code !== 1000) { // 1000 is normal closure
+        // Error already handled by onerror or onmessage for chunk.type === 'error'
+      } else {
+         process.stdout.write('\n'); // Ensure newline after assistant response
+      }
     }
-  }
-}
-
-function handleChatStreamEvent(event: SdkStreamingChatEvent, opts: StreamOptions, commandInstance: ChatCommand) {
-    if (opts.outputFormat === OutputFormat.JSON) {
-        console.log(JSON.stringify(event));
-        return;
+    if (opts.interactiveRl) { // Removed .closed check
+      opts.interactiveRl.prompt();
     }
-
-    // CLI Output
-    switch (event.type) {
-        case 'chat_thinking':
-            if (opts.verbose && event.message) {
-                console.log();
-                console.log(chalk.gray('Thinking:'));
-                console.log(chalk.gray(event.message));
-                console.log();
-            }
-            break;
-        case 'chat_content':
-            if (event.text) {
-                process.stdout.write(event.text);
-            }
-            break;
-        case 'chat_sources':
-            if (event.sources && event.sources.length > 0) {
-                console.log(); // Newline before sources
-                console.log(chalk.bold.yellow('Sources:'));
-                const filteredSources = event.sources.filter(source => {
-                    const title = source.title || '';
-                    return !title.includes('---DOME-METADATA-START---') && !title.match(/^---.*---$/) && title.trim() !== '';
-                });
-                filteredSources.forEach((source, index) => {
-                    console.log(chalk.yellow(`[${index + 1}] ${source.title || 'Unnamed Source'}`));
-                    console.log(chalk.gray(`    Type: ${source.type}, ID: ${source.id}`));
-                    if (source.url) console.log(chalk.blue(`    URL: ${source.url}`));
-                    if (index < filteredSources.length - 1) console.log();
-                });
-            }
-            break;
-        case 'chat_metadata':
-            if (opts.verbose) {
-                commandInstance.log(chalk.cyan(`[Metadata] Received: ${JSON.stringify(event)}`), opts.outputFormat);
-            }
-            // Potentially handle thinking indicators if they come via metadata
-            // if (event.thinking === true) { console.log(chalk.gray('Thinking...')); }
-            // else if (event.thinking === false) { /* Potentially clear thinking message */ }
-            break;
-        case 'chat_error':
-            // Pass the full event as the error object. handleError will process it.
-            // The message for CLI will be extracted by handleError if it's a known error type,
-            // or a generic message will be used. For JSON, the full event details will be logged.
-            commandInstance.error(event, { outputFormat: opts.outputFormat });
-            // For CLI, we might still want to log the specific message if available and not handled by default
-            if (opts.outputFormat === OutputFormat.CLI) {
-                 console.error(chalk.red(`[Stream Error Details] Code: ${event.error.code}, Message: ${event.error.message}`));
-            }
-            break;
-        case 'unknown_event':
-            if (opts.verbose) {
-                commandInstance.log(chalk.magenta(`[Debug] Received unknown event: ${event.originalJson}`), opts.outputFormat);
-            }
-            // Attempt to display content if it looks like a simple string was intended
-            if (typeof event.data === 'string') {
-                process.stdout.write(event.data);
-            } else if (event.data && typeof event.data.content === 'string') { // Legacy compatibility
-                process.stdout.write(event.data.content);
-            }
-            break;
-    }
+  };
 }
 
 export class ChatCommand extends BaseCommand {
@@ -401,15 +330,10 @@ export class ChatCommand extends BaseCommand {
         console.log(chalk.bold.green('You: ') + args.message);
         process.stdout.write(chalk.bold.blue('Dome: '));
       }
+      
       await streamChatResponse(args.message, { verbose, outputFormat }, session, this);
-      return;
-    }
-
-    // Interactive REPL (only for CLI output)
-    if (outputFormat === OutputFormat.CLI) {
-        this.startInteractiveMode(session, verbose, outputFormat);
     } else {
-        this.log("Interactive mode is only available for CLI output format. Use --message for JSON output.", outputFormat);
+      this.startInteractiveMode(session, verbose, outputFormat);
     }
   }
 
@@ -486,8 +410,14 @@ export class ChatCommand extends BaseCommand {
         this.handleDeleteCommand(trimmed, session, outputFormat, rl);
         promptAfterCommand = false; // Prompt handled by delete or exit
       } else if (trimmed) {
+        console.log(chalk.bold.green('You: ') + trimmed);
         process.stdout.write(chalk.bold.blue('Dome: '));
-        await streamChatResponse(trimmed, { verbose, outputFormat }, session, this);
+        
+        try {
+        await streamChatResponse(trimmed, { verbose, outputFormat, interactiveRl: rl }, session, this);
+        } catch (error) {
+          console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+        }
       }
       
       if (promptAfterCommand) { // Removed !rl.closed check
@@ -502,113 +432,126 @@ export class ChatCommand extends BaseCommand {
         console.log(JSON.stringify(historyMessages, null, 2));
         return;
     }
-    if (historyMessages.length === 0) {
-      this.log('No chat history.', outputFormat);
-    } else {
-      console.log(heading('Chat History:'));
-      historyMessages.forEach((msg, i) => {
-        const role = msg.role === 'user' ? chalk.bold.green('You: ') : chalk.bold.blue('Dome: ');
-        console.log(`${role}${msg.content}`);
-        if (i < historyMessages.length - 1) console.log();
-      });
-    }
-  }
 
-  private handleSwitchCommand(trimmed: string, session: ChatSessionManager, outputFormat: OutputFormat): void {
-    const parts = trimmed.split(' ');
-    const sessionIdOrIndex = parts[1]?.trim();
-    if (!sessionIdOrIndex) {
-      this.error('Session ID or index required. Usage: /switch <id|index>', {outputFormat});
+    if (historyMessages.length === 0) {
+      this.log('No chat history available.', outputFormat);
       return;
     }
-    if (/^\d+$/.test(sessionIdOrIndex)) {
-      const index = parseInt(sessionIdOrIndex, 10);
-      const sessions = session.listSessions();
-      if (index < 1 || index > sessions.length) {
-        this.error(`Invalid session index: ${index}. Valid range: 1-${sessions.length}`, {outputFormat});
-        return;
+
+    console.log(heading('Chat History'));
+    historyMessages.forEach((message, index) => {
+      const isUser = message.role === 'user';
+      const prefix = isUser ? chalk.bold.green('You: ') : chalk.bold.blue('Dome: ');
+      console.log(`${prefix}${message.content}`);
+      if (index < historyMessages.length - 1) {
+        console.log(); // Add a blank line between messages
       }
-      const targetSessionId = sessions[index - 1].id;
-      if (session.switchSession(targetSessionId)) {
-        this.log(`Switched to session: ${session.getSessionName()}`, outputFormat);
-      } else {
-        this.error(`Failed to switch to session at index ${index}`, {outputFormat});
-      }
-    } else {
-      if (session.switchSession(sessionIdOrIndex)) {
-        this.log(`Switched to session: ${session.getSessionName()}`, outputFormat);
-      } else {
-        this.error(`Session not found: ${sessionIdOrIndex}`, {outputFormat});
-      }
-    }
+    });
+    console.log();
   }
 
-  private handleDeleteCommand(trimmed: string, session: ChatSessionManager, outputFormat: OutputFormat, rl: readline.Interface): void {
-    const parts = trimmed.split(' ');
-    const sessionIdOrIndex = parts.length > 1 ? parts.slice(1).join(' ').trim() : null;
-    let targetSessionId = session.getSessionId();
-    let targetSessionName = session.getSessionName();
-    let isCurrentSession = true;
-
-    if (sessionIdOrIndex) {
-        isCurrentSession = false;
-        if (/^\d+$/.test(sessionIdOrIndex)) {
-            const index = parseInt(sessionIdOrIndex, 10);
-            const sessions = session.listSessions();
-            if (index < 1 || index > sessions.length) {
-                this.error(`Invalid session index: ${index}. Valid range: 1-${sessions.length}`, {outputFormat});
-                rl.prompt();
-                return;
-            }
-            targetSessionId = sessions[index - 1].id;
-            targetSessionName = sessions[index - 1].name;
-            if (targetSessionId === session.getSessionId()) isCurrentSession = true;
-        } else {
-            const foundSession = session.listSessions().find(s => s.id === sessionIdOrIndex || s.name === sessionIdOrIndex);
-            if (!foundSession) {
-                this.error(`Session not found: ${sessionIdOrIndex}`, {outputFormat});
-                rl.prompt();
-                return;
-            }
-            targetSessionId = foundSession.id;
-            targetSessionName = foundSession.name;
-            if (targetSessionId === session.getSessionId()) isCurrentSession = true;
-        }
+  private handleSwitchCommand(command: string, session: ChatSessionManager, outputFormat: OutputFormat): void {
+    const parts = command.split(' ');
+    const idOrIndex = parts[1]?.trim();
+    
+    if (!idOrIndex) {
+      this.error('Session ID or index required. Usage: /switch <id|index>', { outputFormat });
+      return;
     }
     
-    // Confirmation
-    const promptMessage = `Are you sure you want to delete session "${targetSessionName}" (ID: ${targetSessionId})? (yes/no): `;
-    rl.question(promptMessage, (answer) => {
-        if (answer.trim().toLowerCase() === 'yes') {
-            const deleted = session.deleteSession(targetSessionId);
-            if (deleted) {
-                this.log(`Session "${targetSessionName}" deleted.`, outputFormat);
-                if (isCurrentSession) {
-                    this.log('Current session was deleted. Starting a new session.', outputFormat);
-                    session.clearSession(); // Start a new one
-                    session.setSessionName(`Chat Session ${new Date().toLocaleString()}`);
-                    this.log(`Active session is now: ${session.getSessionName()}`, outputFormat);
-                }
+    // Try to parse as index (1-based for user, 0-based internally)
+    const index = parseInt(idOrIndex, 10);
+    if (!isNaN(index) && index > 0) {
+      const sessions = session.listSessions();
+      if (index <= sessions.length) {
+        const targetSession = sessions[index - 1];
+        if (session.switchSession(targetSession.id)) {
+          this.log(`Switched to session: ${session.getSessionName()}`, outputFormat);
+        return;
+      }
+      }
+      this.error(`Invalid session index: ${index}`, { outputFormat });
+      return;
+    }
+    
+    // Try as direct ID
+    if (session.switchSession(idOrIndex)) {
+      this.log(`Switched to session: ${session.getSessionName()}`, outputFormat);
+    } else {
+      this.error(`Session not found: ${idOrIndex}`, { outputFormat });
+    }
+  }
+
+  private handleDeleteCommand(command: string, session: ChatSessionManager, outputFormat: OutputFormat, rl: readline.Interface): void {
+    const parts = command.split(' ');
+    const idOrIndex = parts[1]?.trim();
+    
+    // If no ID/index provided, confirm deletion of current session
+    if (!idOrIndex) {
+      const currentId = session.getSessionId();
+      const currentName = session.getSessionName();
+      
+      console.log(chalk.yellow(`Are you sure you want to delete the current session "${currentName}"? (y/N)`));
+      
+      const originalPrompt = rl.getPrompt();
+      rl.setPrompt('> ');
+                rl.prompt();
+      
+      const onDeleteLine = (line: string) => {
+        const response = line.trim().toLowerCase();
+        if (response === 'y' || response === 'yes') {
+          if (session.deleteSession(currentId)) {
+            this.log(`Deleted session: ${currentName}`, outputFormat);
+            // Switch to another session or create new one
+            if (session.getSessionId() === currentId) { // If still on deleted session
+              this.log('Creating new session...', outputFormat);
+            }
+          } else {
+            this.error('Failed to delete session.', { outputFormat });
+          }
+        } else {
+          this.log('Deletion cancelled.', outputFormat);
+        }
+        
+        rl.setPrompt(originalPrompt);
+                rl.prompt();
+        rl.removeListener('line', onDeleteLine);
+      };
+      
+      rl.on('line', onDeleteLine);
+                return;
+            }
+    
+    // Try to parse as index (1-based for user, 0-based internally)
+    const index = parseInt(idOrIndex, 10);
+    if (!isNaN(index) && index > 0) {
+      const sessions = session.listSessions();
+      if (index <= sessions.length) {
+        const targetSession = sessions[index - 1];
+        if (session.deleteSession(targetSession.id)) {
+          this.log(`Deleted session: ${targetSession.name}`, outputFormat);
+          rl.prompt();
+          return;
+        }
+      }
+      this.error(`Invalid session index: ${index}`, { outputFormat });
+      rl.prompt();
+      return;
+    }
+    
+    // Try as direct ID
+    const sessions = session.listSessions();
+    const targetSession = sessions.find(s => s.id === idOrIndex);
+    if (targetSession) {
+      if (session.deleteSession(idOrIndex)) {
+        this.log(`Deleted session: ${targetSession.name}`, outputFormat);
             } else {
-                this.error(`Failed to delete session "${targetSessionName}". It might not exist.`, {outputFormat});
+        this.error(`Failed to delete session: ${idOrIndex}`, { outputFormat });
             }
         } else {
-            this.log('Deletion cancelled.', outputFormat);
+      this.error(`Session not found: ${idOrIndex}`, { outputFormat });
         }
-        // rl.prompt() is called here to ensure it's called after the async question callback.
-        // If rl.close() was called (e.g. in /exit), this prompt might be a no-op or could error
-        // depending on readline version and state. It's generally safe to call.
+    
         rl.prompt();
-    });
   }
 }
-
-// Remove old main test function
-// async function main() {
-//   const command = new ChatCommand();
-//   await command.execute(process.argv.slice(2));
-// }
-
-// if (require.main === module) {
-//   main();
-// }
