@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ContentCategory, MimeType } from './siloContent';
+import { ContentCategory, MimeType } from './siloContent.js';
 
 /**
  * Schema for messages sent to the new-content queue

@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createServiceWrapper, createProcessChain } from '../../src/utils/functionWrapper';
 
 // Mock dependencies
+// IMPORTANT: Mock paths for ESM need to be exact, including extensions if applicable.
+// However, for external packages like '@dome/errors' or '@dome/common',
+// the .js extension is usually not needed in the mock path itself, as Node's
+// resolution (even under NodeNext) will handle it based on the package's "exports" or "main".
+// The critical part is that the *imported* modules from these packages are ESM compatible.
 vi.mock('@dome/errors', () => ({
   toDomeError: vi.fn((error, message, details) => ({
     message: message || (error instanceof Error ? error.message : 'Unknown error'),
@@ -28,6 +32,10 @@ vi.mock('@dome/common', () => ({
   trackOperation: vi.fn((name, fn, meta) => fn()),
 }));
 
+// Now import the module to be tested, with .js extension
+import { createServiceWrapper, createProcessChain } from '../../src/utils/functionWrapper.js';
+// Mock dependencies are already at the top
+
 describe('Function Wrapper Utilities', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,7 +57,10 @@ describe('Function Wrapper Utilities', () => {
     });
 
     it('should add service name to context metadata', async () => {
-      const { withContext } = require('@dome/common');
+      // For ESM, dynamic require is not standard. Mocks are hoisted.
+      // We need to import `withContext` from the mocked `@dome/common` at the top.
+      // However, since it's already mocked, we can directly access it.
+      const { withContext } = await vi.importActual<typeof import('@dome/common')>('@dome/common');
       const wrap = createServiceWrapper('test-service');
       const fn = vi.fn().mockResolvedValue('test-result');
 
@@ -62,7 +73,7 @@ describe('Function Wrapper Utilities', () => {
     });
 
     it('should use trackOperation for named operations', async () => {
-      const { trackOperation } = require('@dome/common');
+      const { trackOperation } = await vi.importActual<typeof import('@dome/common')>('@dome/common');
       const wrap = createServiceWrapper('test-service');
       const fn = vi.fn().mockResolvedValue('test-result');
 
@@ -76,7 +87,7 @@ describe('Function Wrapper Utilities', () => {
     });
 
     it('should skip tracking if skipTracking is true', async () => {
-      const { trackOperation } = require('@dome/common');
+      const { trackOperation } = await vi.importActual<typeof import('@dome/common')>('@dome/common');
       const wrap = createServiceWrapper('test-service');
       const fn = vi.fn().mockResolvedValue('test-result');
 
@@ -86,7 +97,7 @@ describe('Function Wrapper Utilities', () => {
     });
 
     it('should handle and log errors', async () => {
-      const { logError } = require('@dome/common');
+      const { logError } = await vi.importActual<typeof import('@dome/common')>('@dome/common');
       const wrap = createServiceWrapper('test-service');
       const error = new Error('Test error');
       const fn = vi.fn().mockRejectedValue(error);

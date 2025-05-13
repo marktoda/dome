@@ -6,7 +6,7 @@
  * These types are shared between the service and its clients.
  */
 
-import { ContentCategory, MimeType } from './siloContent';
+import { ContentCategory, MimeType } from './siloContent.js';
 
 /**
  * Vector metadata structure

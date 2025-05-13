@@ -4,7 +4,7 @@
  */
 
 // Base error class
-export { BaseError } from './BaseError';
+export { BaseError } from './BaseError.js';
 
 // Validation errors
 import {
@@ -12,7 +12,7 @@ import {
   SchemaValidationError,
   MessageFormatError,
   BatchValidationError,
-} from './ValidationError';
+} from './ValidationError.js';
 
 export { ValidationError, SchemaValidationError, MessageFormatError, BatchValidationError };
 
@@ -26,7 +26,7 @@ import {
   UnauthorizedError,
   ForbiddenError,
   NotImplementedError,
-} from './ServiceError';
+} from './ServiceError.js';
 
 export {
   ServiceError,
@@ -41,7 +41,7 @@ export {
 
 // For backward compatibility
 // TODO: Remove this export after verifying it's not used anywhere
-export { BaseError as AppError } from './BaseError';
+export { BaseError as AppError } from './BaseError.js';
 
 /**
  * Extended error interface with additional properties
@@ -58,4 +58,4 @@ export {
   createServiceErrorHandler,
   createEnhancedAssertValid,
   createServiceErrorMiddleware,
-} from './errorUtils';
+} from './errorUtils.js';

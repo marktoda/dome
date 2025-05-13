@@ -5,7 +5,7 @@
  * their capabilities, context windows, and other parameters.
  */
 
-import { BaseModelConfig, ModelProvider, ModelCapabilities } from '../types';
+import { BaseModelConfig, ModelProvider, ModelCapabilities } from '../types.js';
 
 // Common capabilities for Claude models
 const CLAUDE_CAPABILITIES: ModelCapabilities = {

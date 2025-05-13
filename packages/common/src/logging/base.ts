@@ -1,4 +1,4 @@
-import pino, { Logger as PinoLogger } from 'pino';
+import { pino as pinoFactory, Logger as PinoLogger, stdTimeFunctions } from 'pino';
 
 /**
  * Global base logger – heavy Pino internals are initialised once per isolate.
@@ -16,10 +16,10 @@ export const logWriter = {
   },
 };
 
-export const baseLogger = pino({
+export const baseLogger = pinoFactory({
   level: (globalThis as any).LOG_LEVEL ?? 'info',
 
-  timestamp: pino.stdTimeFunctions.isoTime,
+  timestamp: stdTimeFunctions.isoTime,
 
   // Ensure exactly one JSON object per line for Cloudflare to parse correctly
   browser: {

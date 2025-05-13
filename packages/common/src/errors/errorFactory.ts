@@ -2,8 +2,10 @@ import {
   createErrorFactory as originalCreateErrorFactory,
   DomeError,
   toDomeError as baseToDomeError,
+  assertValid as originalAssertValid,
 } from '@dome/errors';
-import { getLogger } from '../context';
+import { getLogger } from '../context/index.js';
+import { ValidationError } from './ValidationError.js';
 
 /**
  * Creates a service-specific error factory with default context
@@ -55,8 +57,7 @@ export function assertValid(
   message: string,
   details: Record<string, any> = {},
 ): void {
-  // Import dynamically to avoid circular dependencies
-  const { assertValid: originalAssertValid } = require('@dome/errors');
+  // originalAssertValid is now imported from '@dome/errors'
 
   // Explicitly convert string expressions to boolean
   const boolCondition =

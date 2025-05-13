@@ -3,22 +3,22 @@
  */
 
 // Export message types
-export * from './message';
+export * from './message.js';
 
 // Export event types
-export * from './events';
+export * from './events.js';
 
 // Export embedding types
-export * from './embedding';
+export * from './embedding.js';
 
 // Export silo content types
-export * from './siloContent';
+export * from './siloContent.js';
 
 // Export queue message types
-export * from './queueMessages';
+export * from './queueMessages.js';
 
 // Export enriched content types
-export * from './enrichedContent';
+export * from './enrichedContent.js';
 
 /**
  * Service information interface

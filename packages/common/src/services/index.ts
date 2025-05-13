@@ -2,4 +2,4 @@
  * Common services for the Dome project
  */
 
-export * from './queueService';
+export * from './queueService.js';

@@ -1,5 +1,5 @@
 import type { Logger } from 'pino';
-import { baseLogger } from '../logging/base'; // Import directly from base.ts
+import { baseLogger } from '../logging/base.js'; // Import directly from base.ts
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export const ctx = new AsyncLocalStorage<RequestContext>();

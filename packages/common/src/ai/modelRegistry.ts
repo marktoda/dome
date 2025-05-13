@@ -9,8 +9,8 @@
  * - Configure the default model
  */
 
-import { getLogger } from '../context';
-import { BaseModelConfig, ModelProvider, isModelConfig } from './types';
+import { getLogger } from '../context/index.js';
+import { BaseModelConfig, ModelProvider, isModelConfig } from './types.js';
 
 export class ModelRegistry {
   /** Map of model key to model config */

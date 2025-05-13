@@ -1,15 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  createAuthPropagationMiddleware,
-  getCurrentIdentity,
-  addBaggageHeader,
-} from '../../src/middleware/authPropagationMiddleware';
-import { als, Identity } from '../../src/context/context';
-import { UnauthorizedError } from '../../src/errors/ServiceError';
-
-// Mock the verifyJwt function
-vi.mock('../../src/middleware/authPropagationMiddleware', async () => {
-  const actual = await vi.importActual('../../src/middleware/authPropagationMiddleware');
+// Mock the verifyJwt function - MOVED TO TOP FOR HOISTING
+// Mock the verifyJwt function - MOVED TO TOP FOR HOISTING
+// Ensure the mock path uses .js extension for ESM
+// For mocks of internal modules, the relative path is usually fine.
+vi.mock('@dome/common/middleware/authPropagationMiddleware.js', async () => {
+  // When mocking using an alias, importActual should also use the alias.
+  const actual = await vi.importActual<typeof import('@dome/common/middleware/authPropagationMiddleware.js')>('@dome/common/middleware/authPropagationMiddleware.js');
   return {
     ...(actual as object),
     // Mock the internal verifyJwt function
@@ -20,6 +15,15 @@ vi.mock('../../src/middleware/authPropagationMiddleware', async () => {
     }),
   };
 });
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  createAuthPropagationMiddleware,
+  getCurrentIdentity,
+  addBaggageHeader,
+} from '@dome/common/middleware/authPropagationMiddleware.js'; // Use alias
+import { als, Identity } from '@dome/common/context.js'; // Use alias
+import { UnauthorizedError } from '@dome/common/errors/ServiceError.js'; // Use alias
 
 describe('Auth Propagation Middleware', () => {
   // Mock Hono context

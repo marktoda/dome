@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, SpyInstance } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Context, Hono } from 'hono';
 import { authenticationMiddleware, AuthContext } from '../../src/middleware/authenticationMiddleware';
 // We will mock LRUCache constructor and its instance methods
@@ -91,7 +91,7 @@ describe('authenticationMiddleware', () => {
     userRole: mockUser.role,
     userEmail: mockUser.email,
   };
-  let dateSpy: any; // vi.SpyInstance<[], number>;
+  let dateSpy: ReturnType<typeof vi.spyOn>;
 
 
   beforeEach(async () => {

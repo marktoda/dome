@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, Mocked, Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, Mocked } from 'vitest';
+import type { MockedFunction } from 'vitest';
 import { AuthService } from '../../src/services/auth-service';
 import { IUserManager } from '../../src/services/user/user-manager';
 import { BaseAuthProvider, AuthResult } from '../../src/services/providers/base-auth-provider';
@@ -30,12 +31,12 @@ const mockTokenManager: Mocked<TokenManager> = {
 // Mock Provider Classes
 class MockBaseAuthProvider extends BaseAuthProvider {
   public providerName: string;
-  public authenticate = vi.fn() as Mock<[credentials: Record<string, any>], Promise<AuthResult>>;
-  public register = vi.fn() as Mock<[registrationData: Record<string, any>], Promise<AuthResult>> | undefined;
-  public getUserFromToken = vi.fn() as Mock<[accessToken: string], Promise<SchemaUser | null>>;
-  public override logout = vi.fn() as Mock<[token: string], Promise<void>>; // Override to make it a mock
-  public override refreshAccessToken = vi.fn() as Mock<[refreshToken: string], Promise<AuthResult>>;
-  public override findUserById = vi.fn() as Mock<[userId: string], Promise<SchemaUser | null>>; // Override to make it a mock
+  public authenticate = vi.fn() as MockedFunction<(credentials: Record<string, any>) => Promise<AuthResult>>;
+  public register = vi.fn() as MockedFunction<(registrationData: Record<string, any>) => Promise<AuthResult>> | undefined;
+  public getUserFromToken = vi.fn() as MockedFunction<(accessToken: string) => Promise<SchemaUser | null>>;
+  public override logout = vi.fn() as MockedFunction<(token: string) => Promise<void>>; // Override to make it a mock
+  public override refreshAccessToken = vi.fn() as MockedFunction<(refreshToken: string) => Promise<AuthResult>>;
+  public override findUserById = vi.fn() as MockedFunction<(userId: string) => Promise<SchemaUser | null>>; // Override to make it a mock
 
   constructor(providerName: string, tokenManager: TokenManager) {
     super(tokenManager);

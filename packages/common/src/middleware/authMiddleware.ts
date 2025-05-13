@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import { UnauthorizedError } from '../errors/ServiceError';
+import { UnauthorizedError } from '../errors/ServiceError.js';
 
 /**
  * Authentication middleware options

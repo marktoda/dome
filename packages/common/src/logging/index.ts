@@ -1,7 +1,7 @@
-import { getLogger, getRequestId } from '../context';
-import { metrics } from './metrics';
-export { baseLogger } from './base';
-export * from './metrics';
+import { getLogger, getRequestId } from '../context/index.js';
+import { metrics } from './metrics.js';
+export { baseLogger } from './base.js';
+export * from './metrics.js';
 
 /**
  * Helper function to properly extract detailed error information for logging

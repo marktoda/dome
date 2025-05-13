@@ -1,12 +1,13 @@
 import { BaseCommand, CommandArgs } from '../base';
 import readline from 'readline';
 import chalk from 'chalk';
-import { Command } from 'commander'; // Added import
+import { Command } from 'commander';
+import WebSocket from 'ws'; // Added for WebSocket client
 
 import { isAuthenticated, loadConfig } from '../../utils/config';
-import { heading, info, success, subheading, formatDate } from '../../utils/ui'; // `error` from ui might not be needed if BaseCommand.error is used
+import { heading, info, success, subheading, formatDate } from '../../utils/ui';
 import { getChatSession, ChatSessionManager } from '../../utils/chatSession';
-import { getApiClient } from '../../utils/apiClient';
+import { getApiClient, getApiBaseUrl } from '../../utils/apiClient'; // Added getApiBaseUrl
 import { DomeApi } from '@dome/dome-sdk';
 import { OutputFormat } from '../../utils/errorHandler';
 
@@ -115,8 +116,8 @@ async function streamChatResponse(
   let assistantResponse = '';
 
   try {
-    const request: DomeApi.PostChatRequest = {
-      userId: config.userId,
+    const chatRequestPayload: DomeApi.PostChatRequest = { // Renamed to avoid conflict with DomeApi.ChatRequest if it exists
+      userId: config.userId!, // Assert userId is present due to check above
       messages: messages.map(m => ({ role: m.role as DomeApi.PostChatRequestMessagesItemRole, content: m.content })),
       options: {
         enhanceWithContext: true,
@@ -125,35 +126,124 @@ async function streamChatResponse(
         maxTokens: 1000,
         temperature: 0.7,
       },
-      stream: true,
+      stream: true, // This flag is in the schema, used by server for WS/SSE logic
     };
 
-    const stream = (await apiClient.chat.sendAChatMessage(request)) as any as ReadableStream<Uint8Array>;
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    // CONSOLE DEBUG: Log the stream flag value
+    console.log(chalk.yellow(`[CONSOLE DEBUG] chatRequestPayload.stream is: ${chatRequestPayload.stream}`));
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        if (buffer.trim()) {
-            const event = parseChatStreamEvent(buffer.trim());
-            handleChatStreamEvent(event, opts, commandInstance);
-            if (event.type === 'chat_content') assistantResponse += event.text;
-        }
-        break;
+    // If stream is true (which it defaults to in chatRequestSchema), use WebSocket
+    if (chatRequestPayload.stream) {
+      console.log(chalk.yellow('[CONSOLE DEBUG] Attempting WebSocket connection...'));
+      const wsBaseUrl = getApiBaseUrl().replace(/^http/, 'ws');
+      const wsUrl = `${wsBaseUrl}/chat/ws?token=${config.apiKey}`;
+      console.log(chalk.cyan(`[CONSOLE DEBUG] Constructed WebSocket URL: ${wsUrl}`));
+      
+      if (opts.outputFormat === OutputFormat.CLI && opts.verbose) {
+        // Using console.log for verbose debug too to ensure visibility
+        console.log(chalk.gray(`[VERBOSE CONSOLE DEBUG] Connecting to WebSocket: ${wsUrl}`));
       }
 
-      buffer += decoder.decode(value, { stream: true });
-      let newlineIndex;
-      while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.substring(0, newlineIndex).trim();
-        buffer = buffer.substring(newlineIndex + 1);
-        if (line) {
-          const event = parseChatStreamEvent(line);
+      try {
+        console.log(chalk.yellow('[CONSOLE DEBUG] PRE: new WebSocket()'));
+        const ws = new WebSocket(wsUrl);
+        console.log(chalk.green('[CONSOLE DEBUG] POST: new WebSocket() - instance created'));
+
+        ws.on('open', () => {
+          console.log(chalk.green('[CONSOLE DEBUG] WebSocket connection OPENED.'));
+          if (opts.outputFormat === OutputFormat.CLI && opts.verbose) {
+            console.log(chalk.gray('[VERBOSE CONSOLE DEBUG] WebSocket connection established. Sending message...'));
+          }
+          // Send the chat request as the first message
+          ws.send(JSON.stringify(chatRequestPayload));
+        });
+
+        ws.on('message', (data: WebSocket.RawData) => {
+          const messageStr = data.toString();
+          // Each message from the WebSocket is a stream event (chunk)
+          const event = parseChatStreamEvent(messageStr);
           handleChatStreamEvent(event, opts, commandInstance);
           if (event.type === 'chat_content') assistantResponse += event.text;
+        });
+
+        ws.on('error', (error: Error) => {
+          console.log(chalk.red(`[CONSOLE DEBUG] WebSocket ERROR: ${error.message}`));
+          commandInstance.error(new Error(`WebSocket error: ${error.message}`), { outputFormat: opts.outputFormat });
+          // Ensure readline prompt is restored if in interactive mode
+          if (opts.outputFormat === OutputFormat.CLI && (commandInstance as any).rl) {
+              (commandInstance as any).rl.prompt();
+          }
+        });
+
+        ws.on('close', (code: number, reason: Buffer) => {
+          console.log(chalk.magenta(`[CONSOLE DEBUG] WebSocket CLOSED. Code: ${code}, Reason: ${reason.toString()}`));
+          if (opts.outputFormat === OutputFormat.CLI && opts.verbose) {
+            console.log(chalk.gray(`[VERBOSE CONSOLE DEBUG] WebSocket connection closed. Code: ${code}, Reason: ${reason.toString()}`));
+          }
+          if (assistantResponse) {
+            session.addAssistantMessage(assistantResponse);
+          }
+          if (opts.outputFormat === OutputFormat.CLI) {
+              console.log(); // Ensure a newline
+               if ((commandInstance as any).rl && !(commandInstance as any).rl.closed) { // Check if rl exists and not closed
+                  (commandInstance as any).rl.prompt();
+              }
+          }
+        });
+        // Keep the function alive until WebSocket closes, or handle via a Promise
+        await new Promise<void>((resolve, reject) => {
+          ws.on('close', () => resolve());
+          ws.on('error', (err: Error) => reject(err)); // Reject promise on WS error to propagate
+        });
+      } catch (e: any) {
+        console.log(chalk.red(`[CONSOLE DEBUG] CRITICAL ERROR during new WebSocket() or attaching handlers: ${e.message}`));
+        // Fall through to the else block might happen if this error isn't rethrown or process exited
+        // For now, this log will tell us if this specific block is the problem.
+        // To ensure fallback is hit if this try fails, we might need to re-evaluate control flow or rethrow.
+        // However, the current structure will likely fall through if an error here isn't caught by the outer try/catch for streamChatResponse
+        // or if the promise from new Promise is not awaited properly in case of an early error.
+        // For now, let's see if this catch is hit.
+        console.log(chalk.red('[CONSOLE DEBUG] Error in WebSocket setup try-catch, may proceed to fallback.'));
+        // To explicitly go to fallback, we could: throw e; (if outer catch handles it for fallback)
+        // or set chatRequestPayload.stream = false; here, but that's messy.
+        // The current structure might implicitly fall to the outer catch if this promise rejects.
+      }
+
+    } else {
+      console.log(chalk.red('[CONSOLE DEBUG] Entering FALLBACK non-streaming HTTP POST path.'));
+      // Fallback to non-streaming HTTP POST (though schema defaults stream to true)
+      // This part remains similar to original if direct HTTP POST for non-streaming is still desired
+      const stream = (await apiClient.chat.sendAChatMessage(chatRequestPayload)) as any as ReadableStream<Uint8Array>;
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (buffer.trim()) {
+              const event = parseChatStreamEvent(buffer.trim());
+              handleChatStreamEvent(event, opts, commandInstance);
+              if (event.type === 'chat_content') assistantResponse += event.text;
+          }
+          break;
         }
+
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.substring(0, newlineIndex).trim();
+          buffer = buffer.substring(newlineIndex + 1);
+          if (line) {
+            const event = parseChatStreamEvent(line);
+            handleChatStreamEvent(event, opts, commandInstance);
+            if (event.type === 'chat_content') assistantResponse += event.text;
+          }
+        }
+      }
+      // After loop, if non-streaming and response was collected
+      if (assistantResponse) {
+        session.addAssistantMessage(assistantResponse);
       }
     }
   } catch (err: unknown) {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { QueueService, Queue } from './queueService';
-import { QueueError } from '../errors/ServiceError';
-import { Event } from '../types/events';
+import { QueueService, Queue } from './queueService.js';
+import { QueueError } from '../errors/ServiceError.js';
+import { Event } from '../types/events.js';
 
 // Mock Queue implementation
 const createMockQueue = (): Queue => ({

@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import { RateLimitError } from '../errors';
+import { RateLimitError } from '../errors/index.js';
 
 /**
  * Simple in-memory rate limiter

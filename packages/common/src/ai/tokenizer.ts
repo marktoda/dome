@@ -5,7 +5,7 @@
  * It uses tiktoken for OpenAI models and provides estimates for other models.
  */
 
-import { getLogger } from '../context';
+import { getLogger } from '../context/index.js';
 
 const logger = getLogger().child({ component: 'Tokenizer' });
 

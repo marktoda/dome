@@ -1,8 +1,8 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import { nanoid } from 'nanoid';
 import pino from 'pino';
-import { getLogger, ctx, withContext } from '../context';
-import { logError } from '../logging';
+import { getLogger, ctx, withContext } from '../context/index.js';
+import { logError } from '../logging/index.js';
 import { getPath } from 'hono/utils/url';
 
 /**

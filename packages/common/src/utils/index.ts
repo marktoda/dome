@@ -4,10 +4,10 @@
  */
 
 // Zod utilities
-export { formatZodError } from './zodUtils';
+export { formatZodError } from './zodUtils.js';
 
 // Function wrappers
-export { createServiceWrapper, createProcessChain } from './functionWrapper';
+export { createServiceWrapper, createProcessChain } from './functionWrapper.js';
 
 // Content sanitization
 export {
@@ -16,4 +16,4 @@ export {
   createPatternDetector,
   isThinkingContent,
   processThinkingContent,
-} from './contentSanitizers';
+} from './contentSanitizers.js';

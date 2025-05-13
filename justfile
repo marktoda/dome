@@ -43,7 +43,7 @@ test:
 
 # Run tests for a specific package
 test-pkg PACKAGE:
-    pnpm --filter {{ PACKAGE }} test
+    pnpm --filter {{ PACKAGE }} test -- --test-timeout 10000 --run --reporter verbose
 
 # Run linting for all packages
 lint:
@@ -74,6 +74,7 @@ setup-local: install build
     @echo "Local development environment setup complete!"
 
 # Pulumi commands
+
 # Preview infrastructure changes without deploying
 pulumi-preview ENV="dev":
     cd infra && pnpm exec pulumi preview --stack {{ ENV }}

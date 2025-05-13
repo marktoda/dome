@@ -6,8 +6,8 @@
  * system prompts, user messages, retrieved documents, and response generation.
  */
 
-import { ContextAllocation, TokenLimits, BaseModelConfig } from './types';
-import { modelRegistry } from '.';
+import { ContextAllocation, TokenLimits, BaseModelConfig } from './types.js';
+import { modelRegistry } from './index.js';
 
 /**
  * Default context allocation strategy

@@ -12,23 +12,23 @@
  * configurations across different services.
  */
 
-import { getLogger } from '../context';
-import { ModelRegistry } from './modelRegistry';
-import { ALL_MODELS_ARRAY, MODELS } from './providers';
+import { getLogger } from '../context/index.js';
+import { ModelRegistry } from './modelRegistry.js';
+import { ALL_MODELS_ARRAY, MODELS } from './providers/index.js';
 import {
   BaseModelConfig,
   ContextAllocation,
   LlmEnvironment,
   ModelProvider,
   TokenLimits,
-} from './types';
+} from './types.js';
 import {
   DEFAULT_CONTEXT_ALLOCATION,
   calculateContextLimits,
   calculateResponseTokens,
   calculateTokenLimits,
   truncateToTokenLimit,
-} from './contextAllocation';
+} from './contextAllocation.js';
 
 const logger = getLogger().child({ component: 'LlmConfigSystem' });
 
@@ -83,7 +83,7 @@ export function getModelIdMap(): Record<string, BaseModelConfig> {
 }
 
 // Import tokenizer functions
-import { countTokens, countMessageTokens, countMessagesTokens } from './tokenizer';
+import { countTokens, countMessageTokens, countMessagesTokens } from './tokenizer.js';
 
 // Export everything from this module
 export {
@@ -109,4 +109,4 @@ export {
 export { defaultModelRegistry as modelRegistry, ModelRegistry };
 
 // Re-export everything from providers
-export * from './providers';
+export * from './providers/index.js';

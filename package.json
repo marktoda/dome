@@ -12,6 +12,7 @@
     "lint:check": "eslint .",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
     "gen:sdk": "fern generate --local --log-level info --force && cp templates/sdk-package/template.package.json packages/dome-sdk/package.json && cp templates/sdk-package/template.tsconfig.json packages/dome-sdk/tsconfig.json",
+    "gen:docs": "fern generate --docs --local",
     "prepare": "husky install"
   },
   "engines": {

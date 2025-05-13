@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import { UnauthorizedError, ForbiddenError } from '../errors/ServiceError';
+import { UnauthorizedError, ForbiddenError } from '../errors/ServiceError.js';
 
 /**
  * User role enum

@@ -6,4 +6,4 @@
  * it explicitly as parameters.
  */
 
-export * from './withContext';
+export * from './withContext.js';

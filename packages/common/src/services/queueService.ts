@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { Event, EventSchema } from '../types/events';
-import { QueueError } from '../errors/ServiceError';
+import { Event, EventSchema } from '../types/events.js';
+import { QueueError } from '../errors/ServiceError.js';
 
 /**
  * Cloudflare Queue type definitions

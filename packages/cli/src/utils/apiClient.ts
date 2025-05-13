@@ -56,3 +56,18 @@ export function clearApiClientInstance(): void {
   apiClientInstance = null;
   lastUsedConfig = null;
 }
+
+/**
+ * Returns the configured API base URL.
+ * @returns The API base URL string.
+ * @throws Error if baseUrl is not configured.
+ */
+export function getApiBaseUrl(): string {
+  const currentConfig = loadConfig();
+  if (!currentConfig.baseUrl) {
+    throw new Error(
+      'API base URL is not configured. Please run `dome config set --base-url <your_api_url>` or ensure DOME_ENV is set.',
+    );
+  }
+  return currentConfig.baseUrl;
+}

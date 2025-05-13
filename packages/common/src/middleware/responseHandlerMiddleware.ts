@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler, Next } from 'hono';
-import type { ApiResponse } from '../types';
+import type { ApiResponse } from '../types/index.js';
 
 /**
  * Type for a response with status

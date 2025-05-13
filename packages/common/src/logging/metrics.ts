@@ -4,7 +4,7 @@
  * Provides standardized metrics tracking across services.
  */
 
-import { getLogger } from '../context';
+import { getLogger } from '../context/index.js';
 import type { Logger } from 'pino';
 
 /**
