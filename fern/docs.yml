@@ -1,0 +1,29 @@
+instances:
+  - url: dome.docs.buildwithfern.com
+
+title: Dome
+
+layout:
+  searchbar-placement: header
+  page-width: full
+
+navigation:
+  - section: Get Started
+    contents:
+      - page: Welcome
+        path: docs/pages/welcome.mdx
+      - page: Concepts
+        path: docs/pages/concepts.mdx
+      - page: SDKs
+        path: docs/pages/sdks.mdx
+        slug: sdks
+  - api: API Reference
+
+navbar-links:
+  - type: github
+    value: https://github.com/marktoda/dome
+
+colors:
+  accentPrimary:
+    dark: "#81C784"
+    light: "#1B5E20"
