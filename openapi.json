@@ -262,6 +262,44 @@
           "user"
         ]
       },
+      "RefreshResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "New access token",
+            "example": "ey..."
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "New refresh token",
+            "example": "ey..."
+          },
+          "expiresAt": {
+            "type": "number",
+            "description": "Expiry (unix seconds)",
+            "example": 1717171717
+          }
+        },
+        "required": [
+          "token",
+          "refreshToken",
+          "expiresAt"
+        ]
+      },
+      "RefreshBody": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "description": "Valid refresh token",
+            "example": "ey..."
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
       "RootResponse": {
         "type": "object",
         "properties": {
@@ -315,7 +353,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-13T16:30:35.503Z"
+            "example": "2025-05-14T00:02:52.412Z"
           },
           "service": {
             "type": "string",
@@ -912,7 +950,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-13T16:30:35.479Z"
+            "example": "2025-05-14T00:02:52.388Z"
           },
           "status": {
             "type": "string",
@@ -1019,7 +1057,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-13T16:30:35.483Z"
+            "example": "2025-05-14T00:02:52.393Z"
           },
           "status": {
             "type": "string",
@@ -1372,6 +1410,47 @@
           },
           "500": {
             "description": "Internal server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "summary": "Refresh JWT tokens",
+        "description": "Exchanges a refresh token for a new access/refresh token pair.",
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New token pair issued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or expired refresh token.",
             "content": {
               "application/json": {
                 "schema": {

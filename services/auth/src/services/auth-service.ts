@@ -177,5 +177,19 @@ export class AuthService {
     }
   }
 
+  async refreshTokens(refreshToken: string): Promise<{user: User; accessToken: string; refreshToken: string; expiresAt: number}> {
+    // Verify refresh token
+    const payload = await this.tokenManager.verifyRefreshToken(refreshToken);
+    const userId = payload.userId;
+    const user = await this.userManager.findUserById(userId, { env: this.env, db: this.env.AUTH_DB, waitUntil: (p: Promise<any>) => {} });
+    if (!user) {
+      throw new UnauthorizedError('Invalid refresh token – user not found');
+    }
+    const accessToken = await this.tokenManager.generateAccessToken({ userId });
+    const newRefreshToken = await this.tokenManager.generateRefreshToken({ userId });
+    const decoded = this.tokenManager.decodeToken(accessToken);
+    return { user: user as User, accessToken, refreshToken: newRefreshToken, expiresAt: decoded.exp as number };
+  }
+
   // Potentially add other methods like refreshToken, forgotPassword, resetPassword etc.
 }

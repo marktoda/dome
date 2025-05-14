@@ -391,6 +391,93 @@ export class Auth {
         }
     }
 
+    /**
+     * Exchanges a refresh token for a new access/refresh token pair.
+     *
+     * @param {DomeApi.RefreshBody} request
+     * @param {Auth.RequestOptions} requestOptions - Request-specific configuration.
+     *
+     * @throws {@link DomeApi.UnauthorizedError}
+     *
+     * @example
+     *     await client.auth.refreshJwtTokens({
+     *         refreshToken: "ey..."
+     *     })
+     */
+    public refreshJwtTokens(
+        request: DomeApi.RefreshBody,
+        requestOptions?: Auth.RequestOptions,
+    ): core.HttpResponsePromise<DomeApi.RefreshResponse> {
+        return core.HttpResponsePromise.fromPromise(this.__refreshJwtTokens(request, requestOptions));
+    }
+
+    private async __refreshJwtTokens(
+        request: DomeApi.RefreshBody,
+        requestOptions?: Auth.RequestOptions,
+    ): Promise<core.WithRawResponse<DomeApi.RefreshResponse>> {
+        const _response = await core.fetcher({
+            url: urlJoin(
+                (await core.Supplier.get(this._options.baseUrl)) ??
+                    (await core.Supplier.get(this._options.environment)),
+                "auth/refresh",
+            ),
+            method: "POST",
+            headers: {
+                Authorization: await this._getAuthorizationHeader(),
+                "X-Fern-Language": "JavaScript",
+                "X-Fern-Runtime": core.RUNTIME.type,
+                "X-Fern-Runtime-Version": core.RUNTIME.version,
+                ...requestOptions?.headers,
+            },
+            contentType: "application/json",
+            requestType: "json",
+            body: serializers.RefreshBody.jsonOrThrow(request, { unrecognizedObjectKeys: "strip" }),
+            timeoutMs: requestOptions?.timeoutInSeconds != null ? requestOptions.timeoutInSeconds * 1000 : 60000,
+            maxRetries: requestOptions?.maxRetries,
+            abortSignal: requestOptions?.abortSignal,
+        });
+        if (_response.ok) {
+            return {
+                data: serializers.RefreshResponse.parseOrThrow(_response.body, {
+                    unrecognizedObjectKeys: "passthrough",
+                    allowUnrecognizedUnionMembers: true,
+                    allowUnrecognizedEnumValues: true,
+                    breadcrumbsPrefix: ["response"],
+                }),
+                rawResponse: _response.rawResponse,
+            };
+        }
+
+        if (_response.error.reason === "status-code") {
+            switch (_response.error.statusCode) {
+                case 401:
+                    throw new DomeApi.UnauthorizedError(_response.error.body, _response.rawResponse);
+                default:
+                    throw new errors.DomeApiError({
+                        statusCode: _response.error.statusCode,
+                        body: _response.error.body,
+                        rawResponse: _response.rawResponse,
+                    });
+            }
+        }
+
+        switch (_response.error.reason) {
+            case "non-json":
+                throw new errors.DomeApiError({
+                    statusCode: _response.error.statusCode,
+                    body: _response.error.rawBody,
+                    rawResponse: _response.rawResponse,
+                });
+            case "timeout":
+                throw new errors.DomeApiTimeoutError("Timeout exceeded when calling POST /auth/refresh.");
+            case "unknown":
+                throw new errors.DomeApiError({
+                    message: _response.error.errorMessage,
+                    rawResponse: _response.rawResponse,
+                });
+        }
+    }
+
     protected async _getAuthorizationHeader(): Promise<string | undefined> {
         const bearer = await core.Supplier.get(this._options.token);
         if (bearer != null) {

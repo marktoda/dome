@@ -224,6 +224,42 @@ const validateTokenRoute = createRoute({
   tags: ['Auth'],
 });
 
+// --- Refresh Token Schemas and Route ---
+const RefreshBodySchema = z
+  .object({
+    refreshToken: z.string().openapi({ example: 'ey...', description: 'Valid refresh token' }),
+  })
+  .openapi('RefreshBody');
+
+const RefreshResponseSchema = z
+  .object({
+    token: z.string().openapi({ example: 'ey...', description: 'New access token' }),
+    refreshToken: z.string().openapi({ example: 'ey...', description: 'New refresh token' }),
+    expiresAt: z.number().openapi({ example: 1717171717, description: 'Expiry (unix seconds)' }),
+  })
+  .openapi('RefreshResponse');
+
+const refreshRoute = createRoute({
+  method: 'post',
+  path: '/refresh',
+  summary: 'Refresh JWT tokens',
+  description: 'Exchanges a refresh token for a new access/refresh token pair.',
+  request: {
+    body: { content: { 'application/json': { schema: RefreshBodySchema } }, required: true },
+  },
+  responses: {
+    200: {
+      description: 'New token pair issued.',
+      content: { 'application/json': { schema: RefreshResponseSchema } },
+    },
+    401: {
+      description: 'Invalid or expired refresh token.',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+  tags: ['Auth'],
+});
+
 export function buildAuthRouter(): OpenAPIHono<AppEnv> {
   const authController = createAuthController();
   const authRouter = new OpenAPIHono<AppEnv>();
@@ -244,6 +280,11 @@ export function buildAuthRouter(): OpenAPIHono<AppEnv> {
 
   authRouter.openapi(validateTokenRoute, async c => {
     return authController.validateToken(c);
+  });
+
+  authRouter.openapi(refreshRoute, async c => {
+    const validatedBody = c.req.valid('json');
+    return authController.refreshToken(c, validatedBody);
   });
 
   return authRouter;
@@ -576,6 +617,62 @@ export class AuthController {
           error: {
             code: 'UNAUTHORIZED',
             message: String(error.message) || 'Token validation processing error',
+          },
+        },
+        401,
+      );
+    }
+  };
+
+  /**
+   * Refresh a token
+   */
+  refreshToken = async (
+    c: Context<AppEnv>,
+    body: z.infer<typeof RefreshBodySchema>,
+  ): Promise<RouteConfigToTypedResponse<typeof refreshRoute>> => {
+    try {
+      const { refreshToken } = body; // Already validated
+      this.logger.debug({ refreshToken }, 'Token refresh request');
+
+      const serviceFactory = createServiceFactory();
+      interface AuthServiceWithRefresh { refreshToken(token: string): Promise<{ success: boolean; token: string; refreshToken: string; expiresAt: number; }>; }
+      const authService = serviceFactory.getAuthService(c.env) as unknown as AuthServiceWithRefresh;
+      const refreshServiceResponse = await authService.refreshToken(refreshToken);
+      this.logger.info({ refreshToken, refreshServiceResponse }, 'Token refresh processed by auth service.');
+
+      if (refreshServiceResponse && refreshServiceResponse.success) {
+        const resp = {
+          token: refreshServiceResponse.token,
+          refreshToken: refreshServiceResponse.refreshToken,
+          expiresAt: refreshServiceResponse.expiresAt,
+        } satisfies z.infer<typeof RefreshResponseSchema>;
+        return c.json(resp, 200);
+      }
+
+      // Handle cases where refresh succeeded at service level but no token, or success is false
+      this.logger.warn({ resultFromService: refreshServiceResponse }, 'Auth service processed refresh, but success was false or token was missing.');
+      return c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Refresh successful but failed to issue token.',
+          },
+        },
+        401
+      );
+    } catch (error: any) {
+      logError(
+        error,
+        'Refresh token failed with exception',
+      );
+      return c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: String(error.message) || 'Refresh processing error',
           },
         },
         401,

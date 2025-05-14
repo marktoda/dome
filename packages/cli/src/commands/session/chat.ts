@@ -2,34 +2,16 @@ import { BaseCommand, CommandArgs } from '../base';
 import readline from 'readline';
 import chalk from 'chalk';
 import { Command } from 'commander';
-import WebSocket from 'ws';
 
 import { isAuthenticated, loadConfig } from '../../utils/config';
 import { heading, info, success, formatDate } from '../../utils/ui';
 import { getChatSession, ChatSessionManager } from '../../utils/chatSession';
 import { OutputFormat } from '../../utils/errorHandler';
 import { getApiBaseUrl } from '../../utils/apiClient';
+import { ChatWebSocketClient, ChatMessageChunk } from '../../utils/chatWebSocket';
+import { ThinkingIndicator } from '../../utils/indicator';
 
-/**
- * Types for chat message chunks received from the WebSocket API
- */
-interface ChatMessageChunk {
-  type: 'thinking' | 'content' | 'sources' | 'error' | 'end'; // Added 'end' type
-  content?: string;
-  sources?: Array<{ // Changed from node.sources to sources directly
-    id: string;
-    title: string;
-    type: string;
-    url?: string;
-    [key: string]: any; // Allow other properties
-  }>;
-  error?: {
-    message: string;
-    code: string;
-  };
-}
-
-type StreamOptions = { verbose: boolean, outputFormat: OutputFormat, interactiveRl?: readline.Interface };
+type StreamOptions = { verbose: boolean; outputFormat: OutputFormat; interactiveRl?: readline.Interface };
 
 async function streamChatResponse(
   userMessage: string,
@@ -38,47 +20,16 @@ async function streamChatResponse(
   commandInstance: ChatCommand
 ): Promise<void> {
   const config = loadConfig();
-  if (!config.userId) {
-    commandInstance.error('User ID not found. Please login again.', { outputFormat: opts.outputFormat });
-    return;
-  }
-  if (!config.apiKey) {
-    commandInstance.error('API key not found. Please login again.', { outputFormat: opts.outputFormat });
+  if (!config.userId || !config.apiKey) {
+    commandInstance.error('Missing credentials. Please login again.', { outputFormat: opts.outputFormat });
     return;
   }
 
   session.addUserMessage(userMessage);
   const messages = session.getMessages();
-  let assistantResponse = '';
-  const thinkingIndicator = '.';
-  let thinkingInterval: NodeJS.Timeout | null = null;
 
-  const startThinkingIndicator = () => {
-    if (thinkingInterval) clearInterval(thinkingInterval);
-    let dots = 0;
-    thinkingInterval = setInterval(() => {
-      process.stdout.write(thinkingIndicator);
-      dots++;
-      if (dots > 3) { // Reset dots after 3
-        process.stdout.write('\b\b\b   \b\b\b'); // Erase dots
-        dots = 0;
-      }
-    }, 500);
-  };
-
-  const stopThinkingIndicator = () => {
-    if (thinkingInterval) {
-      clearInterval(thinkingInterval);
-      thinkingInterval = null;
-      // Clear any written dots
-      process.stdout.write('\r' + ' '.repeat(process.stdout.columns) + '\r');
-      process.stdout.write(chalk.bold.blue('Dome: ')); // Rewrite prompt
-    }
-  };
-
-
+  const indicator = new ThinkingIndicator();
   const baseUrl = getApiBaseUrl();
-  // Construct WebSocket URL, ensuring ws or wss protocol
   const wsProtocol = baseUrl.startsWith('https://') ? 'wss' : 'ws';
   const httpBase = baseUrl.replace(/^https?:\/\//, '');
   const wsUrl = `${wsProtocol}://${httpBase}/chat/ws?token=${config.apiKey}`;
@@ -87,173 +38,81 @@ async function streamChatResponse(
     console.log(chalk.gray(`[DEBUG] Connecting to WebSocket: ${wsUrl}`));
   }
 
-  const ws = new WebSocket(wsUrl);
-  const td = new TextDecoder();
-
-  ws.onopen = () => {
-    if (opts.verbose) {
-      console.log(chalk.gray('[DEBUG] WebSocket connection established.'));
-    }
-    const chatRequestPayload = {
-      userId: config.userId,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
-      options: {
-        enhanceWithContext: true,
-        maxContextItems: 5,
-        includeSourceInfo: true,
-        maxTokens: 1000,
-        temperature: 0.7,
-      },
-      stream: true, // Enable streaming for WebSocket
-    };
-    if (opts.verbose) {
-      console.log(chalk.gray(`[DEBUG] Sending chat request: ${JSON.stringify(chatRequestPayload, null, 2)}`));
-    }
-    ws.send(JSON.stringify(chatRequestPayload));
-    startThinkingIndicator();
+  const requestPayload = {
+    userId: config.userId,
+    messages: messages.map(m => ({ role: m.role, content: m.content })),
+    options: {
+      enhanceWithContext: true,
+      maxContextItems: 5,
+      includeSourceInfo: true,
+      maxTokens: 1000,
+      temperature: 0.7,
+    },
+    stream: true,
   };
 
-  ws.onmessage = (event) => {
-    stopThinkingIndicator(); // Stop thinking indicator once first message arrives
-    
-    // Function to handle the parsed chunk
-    const handleChunk = (chunk: ChatMessageChunk) => {
-      if (opts.verbose) {
-        console.log(chalk.gray(`[DEBUG] Parsed chunk: ${JSON.stringify(chunk)}`));
-      }
+  const wsClient = new ChatWebSocketClient(wsUrl, requestPayload, { verbose: opts.verbose });
 
-      if (chunk.type === 'content' && chunk.content) {
-        process.stdout.write(chunk.content);
-        assistantResponse += chunk.content;
-      } else if (chunk.type === 'sources' && chunk.sources) {
-        console.log(); // Add newline before sources
-        console.log(chalk.bold.yellow('Sources:'));
-        const filteredSources = chunk.sources.filter((source: any) => {
-          const title = source.title || '';
-          return !title.includes('---DOME-METADATA-START---') && !title.match(/^---.*---$/) && title.trim() !== '';
-        });
-        
-        filteredSources.forEach((source: any, index: number) => {
-          console.log(chalk.yellow(`[${index + 1}] ${source.title || 'Unnamed Source'}`));
-          console.log(chalk.gray(`    Type: ${source.type}, ID: ${source.id}`));
-          if (source.url) console.log(chalk.blue(`    URL: ${source.url}`));
-          if (index < filteredSources.length - 1) console.log();
-        });
-        console.log(); // Add newline after sources
-      } else if (chunk.type === 'error' && chunk.error) {
-        commandInstance.error(`Chat error: ${chunk.error.message} (Code: ${chunk.error.code})`, { outputFormat: opts.outputFormat });
-        ws.close();
-      } else if (chunk.type === 'thinking') {
-        startThinkingIndicator();
-      } else if (chunk.type === 'end') {
-        if (opts.verbose) {
-           console.log(chalk.gray('[DEBUG] Received end of stream signal.'));
-        }
-        ws.close();
-      }
-    };
-    
-    try {
-      // Handle different possible data formats from WebSocket
-      if (typeof event.data === 'string') {
-        // String data (most common)
-        if (opts.verbose) {
-          console.log(chalk.gray(`[DEBUG] Received string data: ${event.data.substring(0, 100)}...`));
-        }
-        const chunk = JSON.parse(event.data);
-        handleChunk(chunk);
-      } else if (event.data instanceof ArrayBuffer) {
-        // ArrayBuffer data
-        const messageData = td.decode(event.data);
-        if (opts.verbose) {
-          console.log(chalk.gray(`[DEBUG] Received ArrayBuffer data: ${messageData.substring(0, 100)}...`));
-        }
-        const chunk = JSON.parse(messageData);
-        handleChunk(chunk);
-      } else if (event.data instanceof Blob) {
-        // Blob data (common in browsers)
-        if (opts.verbose) {
-          console.log(chalk.gray(`[DEBUG] Received Blob data, size: ${event.data.size}`));
-        }
-        
-        // Read the Blob as text
-        event.data.text().then((text) => {
-          try {
-            const chunk = JSON.parse(text);
-            handleChunk(chunk);
-          } catch (e) {
-            commandInstance.error(`Error parsing WebSocket Blob message: ${(e as Error).message}`, { outputFormat: opts.outputFormat });
-            ws.close();
-          }
-        }).catch((error) => {
-          commandInstance.error(`Error reading WebSocket Blob data: ${error.message}`, { outputFormat: opts.outputFormat });
-          ws.close();
-        });
-      } else if (typeof event.data === 'object' && event.data !== null) {
-        // Handle other object types, could be a ReadableStream or custom format
-        if (opts.verbose) {
-          console.log(chalk.gray(`[DEBUG] Received data of type: ${event.data.constructor.name}`));
-        }
-        
-        // If it's a ReadableStream-like object but just missing the .getReader() method
-        if ('getReader' in event.data) {
-          // Use the standard stream processing approach
-          if (opts.verbose) {
-            console.log(chalk.gray(`[DEBUG] Data appears to be a ReadableStream`));
-          }
-          commandInstance.error(`WebSocket stream processing not yet implemented`, { outputFormat: opts.outputFormat });
-          ws.close();
-          return;
-        }
-        
-        // Try to stringify and parse as fallback
-        try {
-          const jsonString = JSON.stringify(event.data);
-          const chunk = JSON.parse(jsonString);
-          handleChunk(chunk);
-        } catch (e) {
-          commandInstance.error(`Unsupported WebSocket message format: ${(e as Error).message}`, { outputFormat: opts.outputFormat });
-          ws.close();
-        }
-      } else {
-        // Unknown data format
-        commandInstance.error(`Unsupported WebSocket message format`, { outputFormat: opts.outputFormat });
-        ws.close();
-      }
-    } catch (e) {
-      commandInstance.error(`Error processing WebSocket message: ${(e as Error).message}`, { outputFormat: opts.outputFormat });
-      ws.close();
-    }
-  };
+  return new Promise<void>((resolve) => {
+    let assistantResponse = '';
 
-  ws.onerror = (error) => {
-    stopThinkingIndicator();
-    commandInstance.error(`WebSocket error: ${error.message}`, { outputFormat: opts.outputFormat });
-    if (opts.interactiveRl) { // Removed .closed check
+    indicator.start();
+
+    wsClient.on('chunk', (chunk: ChatMessageChunk) => {
+      switch (chunk.type) {
+        case 'thinking':
+          // keep spinner running
+          break;
+        case 'content':
+          indicator.stop();
+          if (chunk.content) {
+            process.stdout.write(chunk.content);
+            assistantResponse += chunk.content;
+          }
+          break;
+        case 'sources':
+          indicator.stop();
+          console.log();
+          console.log(chalk.bold.yellow('Sources:'));
+          chunk.sources?.forEach((s, i) => {
+            console.log(chalk.yellow(`[${i + 1}] ${s.title || 'Untitled'}`));
+            console.log(chalk.gray(`    Type: ${s.type}, ID: ${s.id}`));
+            if (s.url) console.log(chalk.blue(`    URL: ${s.url}`));
+            if (i < (chunk.sources!.length - 1)) console.log();
+          });
+          console.log();
+          break;
+        case 'error':
+          indicator.stop();
+          commandInstance.error(`Chat error: ${chunk.error?.message} (Code: ${chunk.error?.code})`, { outputFormat: opts.outputFormat });
+          wsClient.close();
+          break;
+        case 'end':
+          wsClient.close();
+          break;
+        default:
+          // ignore unknown types
+          break;
+      }
+    });
+
+    wsClient.on('error', (err: Error) => {
+      indicator.stop();
+      commandInstance.error(err.message, { outputFormat: opts.outputFormat });
+      resolve();
+    });
+
+    wsClient.on('close', () => {
+      indicator.stop(chalk.bold.blue('Dome: '));
+      if (assistantResponse) {
+        session.addAssistantMessage(assistantResponse.trim());
+      }
+      if (opts.interactiveRl) {
         opts.interactiveRl.prompt();
-    }
-  };
-
-  ws.onclose = (event) => {
-    stopThinkingIndicator();
-    if (opts.verbose) {
-      console.log(chalk.gray(`[DEBUG] WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`));
-    }
-    if (assistantResponse) {
-      session.addAssistantMessage(assistantResponse.trim());
-    }
-    if (opts.outputFormat === OutputFormat.CLI) {
-      // Ensure a newline after the response, unless it's an error that already printed.
-      if (!event.wasClean && event.code !== 1000) { // 1000 is normal closure
-        // Error already handled by onerror or onmessage for chunk.type === 'error'
-      } else {
-         process.stdout.write('\n'); // Ensure newline after assistant response
       }
-    }
-    if (opts.interactiveRl) { // Removed .closed check
-      opts.interactiveRl.prompt();
-    }
-  };
+      resolve();
+    });
+  });
 }
 
 export class ChatCommand extends BaseCommand {

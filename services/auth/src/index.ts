@@ -373,6 +373,38 @@ export default class Auth extends WorkerEntrypoint<Env> {
     );
   }
 
+  /**
+   * RPC method: Refresh tokens
+   *
+   * @param refreshToken existing (still-valid) refresh token
+   * @returns new access & refresh token pair plus user info
+   */
+  public async refreshToken(refreshToken: string): Promise<LoginResponse> {
+    const requestId = crypto.randomUUID();
+    return runRpcWithLog(
+      { service: 'auth', op: 'rpcRefresh', requestId },
+      async () => {
+        authMetrics.counter('rpc.refresh.requests', 1);
+        getLogger().info({ requestId, operation: 'rpcRefresh' }, 'Processing RPC refreshToken request');
+
+        const result = await this.unifiedAuthService.refreshTokens(refreshToken);
+
+        authMetrics.counter('rpc.refresh.success', 1);
+        getLogger().info({ requestId, userId: result.user.id, operation: 'rpcRefresh' }, 'Token refresh successful');
+
+        return {
+          success: true,
+          user: result.user,
+          token: result.accessToken,
+          refreshToken: result.refreshToken,
+          tokenType: 'Bearer',
+          expiresAt: result.expiresAt,
+          provider: 'refresh',
+        } as any;
+      },
+    );
+  }
+
   // fetch method signature must match WorkerEntrypoint
   async fetch(request: Request): Promise<Response> {
     // Env and ctx are available as this.env and this.ctx due to WorkerEntrypoint constructor

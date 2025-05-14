@@ -18,6 +18,7 @@ export * from "./UserProfile";
 export * from "./DomeApiValidateTokenResponseUserProvider";
 export * from "./DomeApiValidateTokenResponseUser";
 export * from "./DomeApiValidateTokenResponse";
+export * from "./RefreshResponse";
 export * from "./RootResponseService";
 export * from "./RootResponse";
 export * from "./HealthResponseMetricsCounters";
