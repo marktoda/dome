@@ -17,7 +17,8 @@ import { getLogger } from '@dome/common';
 import { D1Checkpointer } from '../checkpointer/d1Checkpointer';
 import { ToolRegistry } from '../tools';
 import * as nodes from '../nodes';
-import { AgentState, GraphStateAnnotation } from '../types';
+import { AgentState } from '../types';
+import { GraphStateAnnotationV3 as GraphStateAnnotation } from '../types/graphStateV3';
 import { createStateSummary } from '../utils/loggingHelpers';
 import { IChatGraph, ChatBuilder } from '.';
 

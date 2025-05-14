@@ -21,13 +21,15 @@ import { secureMessages } from '../utils/securePromptHandler';
 import { validateInitialState } from '../utils/inputValidator';
 
 export class ChatController {
-  private logger = getLogger().child({ component: 'ChatController' });
+  private logger: ReturnType<typeof getLogger>;
 
   constructor(
     private readonly env: Env,
     private readonly services: Services,
     private readonly ctx: ExecutionContext,
-  ) {}
+  ) {
+    this.logger = getLogger().child({ component: 'ChatController' });
+  }
 
   /* ---------------------------------------------------------------------- */
   /*  Public API                                                            */
@@ -63,10 +65,10 @@ export class ChatController {
   /* ---------------------------------------------------------------------- */
 
   private async buildInitialState(req: ChatRequest): Promise<AgentState> {
-    getLogger().info({ req }, 'ChatController buildInitialState');
+    this.logger.info({ req }, 'ChatController buildInitialState');
     // Input validation & basic sanitation
     const parsed = chatRequestSchema.parse(req);
-    getLogger().info({ parsed }, 'ChatController buildInitialState - parsed');
+    this.logger.info({ parsed }, 'ChatController buildInitialState - parsed');
     const validated = validateInitialState(parsed);
 
     // Data‑retention bookkeeping

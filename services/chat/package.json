@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "generate-migrations": "drizzle-kit generate",
-    "migrate": "wrangler d1 execute CHAT_DB --local --file=./migrations/0000_create_checkpoints_table.sql"
+    "migrate": "wrangler d1 execute CHAT_DB --local --file=./migrations/0000_create_checkpoints_table.sql",
+    "ts-node": "ts-node",
+    "state-usage": "node scripts/stateUsage.js"
   },
   "dependencies": {
     "@dome/common": "workspace:*",
@@ -40,6 +42,8 @@
     "eslint": "^8.38.0",
     "typescript": "^5.0.4",
     "vitest": "^3.1.3",
-    "wrangler": "^4.10.0"
+    "wrangler": "^4.10.0",
+    "fast-glob": "^3.3.2",
+    "ts-node": "^10.9.1"
   }
 }

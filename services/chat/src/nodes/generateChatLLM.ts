@@ -6,11 +6,12 @@ import {
   calculateTokenLimits,
 } from '@dome/common';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
-import { AgentState } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { getChatLLMPrompt } from '../config/promptsConfig';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /**
  * Simple Chat LLM Node
@@ -23,11 +24,13 @@ import { getChatLLMPrompt } from '../config/promptsConfig';
  * @param env Environment variables
  * @returns Updated agent state with generated answer
  */
+export type GenerateChatLLMUpdate = SliceUpdate<'generatedText'>;
+
 export async function generateChatLLM(
   state: AgentState,
   cfg: LangGraphRunnableConfig,
   env: Env,
-): Promise<Partial<AgentState>> {
+): Promise<GenerateChatLLMUpdate> {
   const t0 = performance.now();
   const logger = getLogger().child({ component: 'generateChatLLM' });
   logger.info({ messageCount: state.messages.length }, 'Starting simple chat generation');

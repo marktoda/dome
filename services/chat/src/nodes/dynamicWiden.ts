@@ -1,7 +1,9 @@
 import { getLogger } from '@dome/common';
-import { AgentState, Document, QueryAnalysis } from '../types';
+import { Document, QueryAnalysis } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /**
  * Widening strategy types
@@ -30,11 +32,16 @@ export interface WideningParams extends Record<string, unknown> {
   reasonForWidening?: string;
 }
 
+export type DynamicWidenUpdate = SliceUpdate<'taskEntities'>;
+
 /**
  * Dynamically widen search parameters for better retrieval with intelligent parameter adjustment
  * Implements safeguards for maximum iterations and tracks effectiveness of widening strategies
  */
-export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentState> => {
+export const dynamicWiden = async (
+  state: AgentState,
+  env: Env,
+): Promise<DynamicWidenUpdate> => {
   const logger = getLogger().child({ node: 'dynamicWiden' });
   const startTime = performance.now();
 
@@ -65,7 +72,6 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
     const executionTime = endTime - startTime;
 
     return {
-      ...state,
       metadata: {
         ...state.metadata,
         nodeTimings: {
@@ -80,10 +86,7 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
   const MAX_WIDENING_ATTEMPTS = 3;
 
   // Create an updated state we'll modify
-  const updatedState = {
-    ...state,
-    taskEntities: { ...taskEntities },
-  };
+  const updatedTaskEntities: typeof taskEntities = { ...taskEntities };
 
   // Process each task that needs widening
   for (const taskId of tasksToWiden) {
@@ -106,8 +109,8 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
       );
 
       // Update task with no further widening
-      updatedState.taskEntities[taskId] = {
-        ...updatedState.taskEntities[taskId],
+      updatedTaskEntities[taskId] = {
+        ...updatedTaskEntities[taskId],
         needsWidening: false,
         wideningAttempts,
         wideningStrategy: WideningStrategy.HYBRID,
@@ -163,8 +166,8 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
       );
 
       // Update task with widening parameters
-      updatedState.taskEntities[taskId] = {
-        ...updatedState.taskEntities[taskId],
+      updatedTaskEntities[taskId] = {
+        ...updatedTaskEntities[taskId],
         wideningAttempts,
         wideningStrategy: wideningParams.strategy,
         wideningParams,
@@ -199,8 +202,8 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
       };
 
       // Update task with default widening parameters
-      updatedState.taskEntities[taskId] = {
-        ...updatedState.taskEntities[taskId],
+      updatedTaskEntities[taskId] = {
+        ...updatedTaskEntities[taskId],
         wideningAttempts,
         wideningStrategy: defaultParams.strategy,
         wideningParams: defaultParams,
@@ -227,18 +230,19 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<AgentSt
     spanId,
     'dynamicWiden',
     state,
-    updatedState,
+    { ...state, taskEntities: updatedTaskEntities },
     executionTime,
   );
 
   return {
-    ...updatedState,
+    taskEntities: updatedTaskEntities,
     metadata: {
-      ...updatedState.metadata,
+      ...state.metadata,
       nodeTimings: {
-        ...updatedState.metadata?.nodeTimings,
+        ...state.metadata?.nodeTimings,
         dynamicWiden: executionTime,
       },
+      currentNode: 'dynamicWiden',
     },
   };
 };

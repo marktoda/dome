@@ -3,7 +3,9 @@ import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { buildMessages } from '../utils';
 import { ContentCategory, ContentCategoryEnum } from '@dome/common';
 import { RETRIEVAL_TOOLS } from '../tools';
-import { RetrievalToolType, AgentState, Message } from '../types';
+import { RetrievalToolType, Message } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
+import type { SliceUpdate } from '../types/stateSlices';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
@@ -39,11 +41,13 @@ type RetrievalTasks = z.infer<typeof retrievalTasksSchema>;
  * @param env Environment variables
  * @returns Updated agent state with retrieval selections
  */
+export type RetrievalSelectorUpdate = SliceUpdate<'retrievals' | 'reasoning'>;
+
 export async function retrievalSelector(
   state: AgentState,
   cfg: LangGraphRunnableConfig,
   env: Env,
-): Promise<Partial<AgentState>> {
+): Promise<RetrievalSelectorUpdate> {
   const t0 = performance.now();
   const logger = getLogger().child({ component: 'retrievalSelector' });
   const lastUserMsg = [...state.messages].reverse().find(m => m.role === 'user');

@@ -1,16 +1,20 @@
 import { getLogger, logError } from '@dome/common';
 import { ObservabilityService } from '../services/observabilityService';
-import { AgentState, Document, ToolResult } from '../types';
+import { Document } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { toDomeError } from '../utils/errors';
 import { countTokens } from '../utils/tokenCounter';
 import { getModelDocumentLimits } from '../config/retrieveConfig';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /* ────────────────────────────────────────────────────────────────
  * combineContext
  *   1. take top doc per retrieval
  *   3. back-fill best remaining docs until token cap
  * ──────────────────────────────────────────────────────────────── */
-export async function combineContext(state: AgentState, env: Env): Promise<Partial<AgentState>> {
+export type CombineContextUpdate = SliceUpdate<'docs' | 'reasoning'>;
+
+export async function combineContext(state: AgentState, env: Env): Promise<CombineContextUpdate> {
   const log = getLogger().child({ node: 'combineContext' });
   const t0 = performance.now();
   const trace = state.metadata?.traceId ?? '';

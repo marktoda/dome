@@ -1,10 +1,12 @@
 import { getLogger } from '@dome/common';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
-import { AgentState, DocumentChunk, RetrievalEvaluation, RetrievalTask } from '../types';
+import { DocumentChunk, RetrievalEvaluation, RetrievalTask } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { toDomeError } from '../utils/errors';
 import { getRetrievalEvaluationPrompt } from '../config/promptsConfig';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /**
  * Retrieval Evaluator LLM Node
@@ -27,11 +29,13 @@ import { getRetrievalEvaluationPrompt } from '../config/promptsConfig';
  * @param env Environment bindings
  * @returns Updated agent state with retrieval evaluation results
  */
+export type RetrievalEvalUpdate = SliceUpdate<'retrievalEvaluation'>;
+
 export async function retrievalEvaluatorLLM(
   state: AgentState,
   cfg: LangGraphRunnableConfig,
   env: Env,
-): Promise<Partial<AgentState>> {
+): Promise<RetrievalEvalUpdate> {
   const t0 = performance.now();
   const logger = getLogger().child({ component: 'retrievalEvaluatorLLM' });
 
@@ -42,6 +46,12 @@ export async function retrievalEvaluatorLLM(
   if (!Array.isArray(retrievals) || retrievals.length === 0) {
     logger.info('No retrieval tasks found to evaluate');
     return {
+      retrievalEvaluation: {
+        overallScore: 0.5,
+        isAdequate: false,
+        reasoning: '',
+        suggestedAction: 'use_tools',
+      },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: 0,
@@ -59,6 +69,12 @@ export async function retrievalEvaluatorLLM(
   if (retrievalTasks.length === 0) {
     logger.info('No retrieval tasks with chunks found');
     return {
+      retrievalEvaluation: {
+        overallScore: 0.5,
+        isAdequate: false,
+        reasoning: '',
+        suggestedAction: 'use_tools',
+      },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: 0,
@@ -75,6 +91,12 @@ export async function retrievalEvaluatorLLM(
   if (!lastUserMessage) {
     logger.warn('No user message found for evaluation context');
     return {
+      retrievalEvaluation: {
+        overallScore: 0.5,
+        isAdequate: false,
+        reasoning: '',
+        suggestedAction: 'use_tools',
+      },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: 0,
@@ -243,6 +265,12 @@ export async function retrievalEvaluatorLLM(
     );
 
     return {
+      retrievalEvaluation: {
+        overallScore: 0.5,
+        isAdequate: false,
+        reasoning: '',
+        suggestedAction: 'use_tools',
+      },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: elapsed,

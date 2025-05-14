@@ -241,82 +241,6 @@ export interface ToolRoutingDecision {
 }
 
 /**
- * Core state interface for the RAG graph V2
- */
-export interface AgentState {
-  // User information
-  userId: string;
-
-  // Conversation history
-  messages: Message[];
-  chatHistory?: MessagePair[];
-
-  retrievals?: RetrievalTask[];
-
-  // Task ids
-  taskIds?: string[];
-
-  // Multi-task entities
-  taskEntities?: Record<string, UserTaskEntity>;
-
-  // Configuration options
-  options: {
-    enhanceWithContext: boolean;
-    maxContextItems: number;
-    includeSourceInfo: boolean;
-    maxTokens: number;
-    temperature?: number;
-    modelId?: string;
-  };
-
-  // Retrieved documents and results
-  docs?: Document[];
-  sources?: SourceMetadata[];
-
-  // Reasoning and instructions
-  reasoning?: string[];
-  instructions?: string;
-
-  // File management
-  files?: string;
-
-  // Tool tracking
-  tool?: string;
-
-  // Generated content
-  generatedText?: string;
-
-  // Filters for document retrieval and processing
-  _filter?: Record<string, any>;
-  // Retrieval evaluation results
-  retrievalEvaluation?: RetrievalEvaluation;
-
-  // Tool necessity classification
-  toolNecessityClassification?: ToolNecessityClassification;
-
-  // Tool routing decisions
-  toolRoutingDecision?: ToolRoutingDecision;
-
-  // Metadata for tracking and debugging
-  metadata: {
-    startTime?: number;
-    nodeTimings?: Record<string, number>;
-    tokenCounts?: Record<string, number>;
-    currentNode?: string;
-    isFinalState?: boolean;
-    errors?: Array<{
-      node: string;
-      message: string;
-      timestamp: number;
-    }>;
-    traceId?: string;
-    spanId?: string;
-    executionTimeMs?: number;
-    route?: string; // Added for routing control in the graph
-  };
-}
-
-/**
  * AI message interface (alias for Message for compatibility with LLM service)
  */
 export type AIMessage = Message;
@@ -447,34 +371,5 @@ export const merge = <T extends object>() =>
 /*  2.  Graph-state definition that matches your AgentState           */
 /* ------------------------------------------------------------------ */
 
-export const GraphStateAnnotation = Annotation.Root({
-  /* ---------- required / scalar ----------------------------------- */
-  userId: Annotation<string>(),
-
-  /* ---------- conversation history -------------------------------- */
-  messages: Annotation<Message[]>(), // Changed from concat to simple annotation
-  chatHistory: Annotation<MessagePair[]>(),
-
-  /* ---------- static config --------------------------------------- */
-  options: Annotation<AgentState['options']>(),
-
-  /* ---------- working area for nodes ------------------------------ */
-  taskIds: Annotation<string[]>(),
-  taskEntities: merge<Record<string, UserTaskEntity>>(),
-  docs: Annotation<Document[]>(), // Changed from concat to simple annotation
-  sources: Annotation<SourceMetadata[]>(), // Changed from concat to simple annotation
-  reasoning: Annotation<string[]>(), // Changed from concat to simple annotation
-  instructions: Annotation<string>(),
-  files: Annotation<string>(),
-  generatedText: Annotation<string>(),
-  tool: Annotation<string>(),
-
-  /* ---------- meta / tracing -------------------------------------- */
-  metadata: merge<NonNullable<AgentState['metadata']>>(),
-
-  /* ---------- filtering ------------------------------------------- */
-  _filter: merge<Record<string, any>>(),
-
-  /* ---------- retrieval and reranking ----------------------------- */
-  retrievals: Annotation<RetrievalTask[]>(),
-});
+export { AgentStateV3 as AgentState } from './types/stateSlices';
+export { GraphStateAnnotationV3 as GraphStateAnnotation } from './types/graphStateV3';

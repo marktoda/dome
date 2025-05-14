@@ -1,7 +1,9 @@
 import { getLogger, logError } from '@dome/common';
 import { ObservabilityService } from '../services/observabilityService';
 import { ToolRegistry } from '../tools';
-import { AgentState, Document, ToolResult } from '../types';
+import { Document, ToolResult } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
+import type { SliceUpdate } from '../types/stateSlices';
 import { toDomeError } from '../utils/errors';
 
 /**
@@ -31,11 +33,13 @@ import { toDomeError } from '../utils/errors';
 /* ------------------------------------------------------------------ *
  * main node                                                           *
  * ------------------------------------------------------------------ */
+export type RunToolUpdate = SliceUpdate<'taskEntities' | 'docs'>;
+
 export async function runTool(
   state: AgentState,
   env: Env,
   registry: ToolRegistry,
-): Promise<Partial<AgentState>> {
+): Promise<RunToolUpdate> {
   const log = getLogger().child({ node: 'runTool' });
   const started = performance.now();
   const traceId = state.metadata?.traceId ?? '';

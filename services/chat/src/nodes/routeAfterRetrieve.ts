@@ -1,5 +1,6 @@
 import { getLogger } from '@dome/common';
-import { AgentState, Document } from '../types';
+import { Document } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { ObservabilityService } from '../services/observabilityService';
 
 /**

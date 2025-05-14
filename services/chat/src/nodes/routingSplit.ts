@@ -6,6 +6,7 @@ import { buildMessages } from '../utils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { getSplitTaskPrompt } from '../config/promptsConfig';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /**
  * Zod schema for task extraction
@@ -35,7 +36,12 @@ type SplittedInput = z.infer<typeof splitInputSchema>;
  * 2. Create UserTaskEntity objects for each identified task
  * 3. Return enriched state with reasoning and task entities
  */
-export const routingSplit = async (state: AgentState, env: Env): Promise<AgentState> => {
+export type RoutingSplitUpdate = SliceUpdate<'taskIds' | 'taskEntities' | 'instructions' | 'reasoning'>;
+
+export const routingSplit = async (
+  state: AgentState,
+  env: Env,
+): Promise<RoutingSplitUpdate> => {
   const logger = getLogger().child({ node: 'routingSplit' });
   const t0 = performance.now();
 
@@ -46,8 +52,11 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<AgentSt
   if (!lastUserMsg) {
     logger.warn('No user message found');
     return {
-      ...state,
       reasoning: [...(state.reasoning || []), 'No user message found to process.'],
+      metadata: {
+        ...state.metadata,
+        currentNode: 'routing_split',
+      },
     };
   }
 
@@ -161,7 +170,6 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<AgentSt
     /*  8. Return updated state                                        */
     /* --------------------------------------------------------------- */
     return {
-      ...state,
       taskIds,
       taskEntities,
       instructions,
@@ -210,7 +218,7 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<AgentSt
     if (error instanceof Error) {
       errorMsg = `Error processing query: ${error.message}`;
     }
-    const elapsed = performance.now() - t0;
+    const elapsed2 = performance.now() - t0;
 
     // Add error to metadata before ending span
     const stateWithError = {
@@ -235,7 +243,7 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<AgentSt
       'routingSplit',
       state,
       stateWithError,
-      elapsed,
+      elapsed2,
     );
 
     // Create a default task as fallback
@@ -255,9 +263,9 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<AgentSt
     const taskIds = [defaultTaskId];
 
     return {
-      ...state,
-      taskIds, // Adding default task ID to maintain ordering
-      taskEntities, // Adding default task for error cases
+      taskIds,
+      taskEntities,
+      instructions: '',
       reasoning: [...(state.reasoning || []), `Error processing query: ${errorMsg}`],
       metadata: {
         ...state.metadata,
@@ -266,7 +274,7 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<AgentSt
         currentNode: 'routing_split',
         nodeTimings: {
           ...state.metadata?.nodeTimings,
-          routingSplit: elapsed,
+          routingSplit: elapsed2,
         },
         errors: [
           ...(state.metadata?.errors || []),
@@ -279,4 +287,4 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<AgentSt
       },
     };
   }
-};
+}

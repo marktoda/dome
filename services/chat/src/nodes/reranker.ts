@@ -12,17 +12,18 @@
 
 import { getLogger, logError } from '@dome/common'; // Renamed to avoid conflict
 import {
+  RetrievalToolType,
   DocumentChunk,
   RetrievalResult,
   RetrievalTask,
-  RetrievalToolType,
-  AgentState,
 } from '../types';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
 import { CohereRerank } from '@langchain/cohere';
 import { Document } from '@langchain/core/documents';
 import type { LangGraphRunnableConfig } from '@langchain/langgraph';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /* -------------------------------------------------------------------------- */
 /*  Configuration                                                              */
@@ -282,11 +283,13 @@ class WorkersAIReranker extends BaseReranker {
 /*  Global‑aware reranker node                                                 */
 /* -------------------------------------------------------------------------- */
 
+export type RerankerUpdate = SliceUpdate<'retrievals'>;
+
 export async function reranker(
   state: AgentState,
   _cfg: LangGraphRunnableConfig,
   env: Env,
-): Promise<Partial<AgentState>> {
+): Promise<RerankerUpdate> {
   const t0 = performance.now();
   const nodeId = 'reranker';
   const traceId = state.metadata?.traceId ?? crypto.randomUUID();
@@ -397,7 +400,7 @@ function finish(
   traceId: string,
   t0: number,
   env: Env,
-): Partial<AgentState> {
+): RerankerUpdate {
   const elapsed = performance.now() - t0;
   ObservabilityService.endSpan(env, traceId, spanId, nodeId, newState, newState, elapsed);
   return {

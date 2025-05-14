@@ -1,5 +1,7 @@
 import { getLogger } from '@dome/common';
-import { AgentState, Document, SourceMetadata } from '../types';
+import { Document, SourceMetadata } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /**
  * Document-to-Sources Mapping Node
@@ -11,7 +13,9 @@ import { AgentState, Document, SourceMetadata } from '../types';
  * @param state Current agent state
  * @returns Updated agent state with sources derived from docs
  */
-export async function docToSources(state: AgentState): Promise<Partial<AgentState>> {
+export type DocToSourcesUpdate = SliceUpdate<'sources'>;
+
+export async function docToSources(state: AgentState): Promise<DocToSourcesUpdate> {
   const t0 = performance.now();
   const logger = getLogger().child({ component: 'docToSources' });
 

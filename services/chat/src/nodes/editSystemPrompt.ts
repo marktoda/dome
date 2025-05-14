@@ -1,7 +1,9 @@
 import { getLogger } from '@dome/common';
+import type { SliceUpdate } from '../types/stateSlices';
 import { NodeError, toDomeError } from '../utils/errors';
 import { z } from 'zod';
-import { AgentState, AIMessage } from '../types';
+import { AIMessage } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
@@ -29,7 +31,12 @@ type PromptUpdateResult = z.infer<typeof promptUpdateSchema>;
  * This node enhances the system prompt based on the current conversation
  * context and any task-specific requirements identified.
  */
-export const editSystemPrompt = async (state: AgentState, env: Env): Promise<AgentState> => {
+export type EditSystemPromptUpdate = SliceUpdate<'instructions' | 'reasoning' | '_filter'>;
+
+export const editSystemPrompt = async (
+  state: AgentState,
+  env: Env,
+): Promise<EditSystemPromptUpdate> => {
   const logger = getLogger().child({ node: 'editSystemPrompt' });
   const t0 = performance.now();
 
@@ -112,10 +119,9 @@ export const editSystemPrompt = async (state: AgentState, env: Env): Promise<Age
     );
 
     /* --------------------------------------------------------------- */
-    /*  5. Return updated state                                        */
+    /*  5. Return updated slices                                       */
     /* --------------------------------------------------------------- */
     return {
-      ...state,
       instructions: result.updatedInstructions === null ? '' : result.updatedInstructions || '',
       reasoning: [
         ...(state.reasoning || []),
@@ -181,7 +187,6 @@ export const editSystemPrompt = async (state: AgentState, env: Env): Promise<Age
     );
 
     return {
-      ...state,
       reasoning: [...(state.reasoning || []), `Error updating system prompt: ${errorMsg}`],
       metadata: {
         ...state.metadata,

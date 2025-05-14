@@ -1,11 +1,13 @@
 import { getLogger, getDefaultModel, countTokens, logError } from '@dome/common';
 import { z } from 'zod';
-import { AgentState, AIMessage, MessagePair } from '../types';
+import { AIMessage, MessagePair } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
 import { buildMessages } from '../utils';
 import { ObservabilityService } from '../services/observabilityService';
 import { getCondenseTaskPrompt } from '../config/promptsConfig';
+import type { SliceUpdate } from '../types/stateSlices';
 
 const rewrittenTaskSchema = z.object({
   rewrittenQuery: z.string(),
@@ -23,7 +25,12 @@ type RewrittenTask = z.infer<typeof rewrittenTaskSchema>;
  * This node condenses verbose user queries into clearer, more focused task
  * definitions to improve downstream processing.
  */
-export const rewrite = async (state: AgentState, env: Env): Promise<AgentState> => {
+export type RewriteUpdate = SliceUpdate<'taskEntities' | 'reasoning'>;
+
+export const rewrite = async (
+  state: AgentState,
+  env: Env,
+): Promise<RewriteUpdate> => {
   const logger = getLogger().child({ node: 'rewrite' });
   const t0 = performance.now();
 
@@ -46,7 +53,6 @@ export const rewrite = async (state: AgentState, env: Env): Promise<AgentState> 
     ObservabilityService.endSpan(env, traceId, spanId, 'rewrite', state, state, elapsed);
 
     return {
-      ...state,
       reasoning: [...(state.reasoning || []), 'No tasks to rewrite.'],
       metadata: {
         ...state.metadata,
@@ -117,7 +123,6 @@ export const rewrite = async (state: AgentState, env: Env): Promise<AgentState> 
     /*  5. Return updated state                                        */
     /* --------------------------------------------------------------- */
     return {
-      ...state,
       taskEntities: tasks,
       reasoning: [...(state.reasoning || []), ...reasons],
       metadata: {
@@ -157,7 +162,6 @@ export const rewrite = async (state: AgentState, env: Env): Promise<AgentState> 
     ObservabilityService.endSpan(env, traceId, spanId, 'rewrite', state, stateWithError, elapsed);
 
     return {
-      ...state,
       reasoning: [...(state.reasoning || []), `Error rewriting tasks: ${errorMsg}`],
       metadata: {
         ...state.metadata,

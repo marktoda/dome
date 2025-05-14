@@ -3,7 +3,8 @@ import { LlmService, MODEL_REGISTRY } from '../services/llmService';
 import { toDomeError } from '../utils/errors';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { formatDocsForPrompt } from '../utils/promptHelpers';
-import { AgentState } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
+import type { SliceUpdate } from '../types/stateSlices';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { buildMessages } from '../utils';
@@ -31,11 +32,13 @@ import { getGenerateAnswerPrompt } from '../config/promptsConfig';
  * @param env Environment variables
  * @returns Updated agent state with generated answer
  */
+export type GenerateAnswerUpdate = SliceUpdate<'generatedText'>;
+
 export async function generateAnswer(
   state: AgentState,
   cfg: LangGraphRunnableConfig,
   env: Env,
-): Promise<Partial<AgentState>> {
+): Promise<GenerateAnswerUpdate> {
   const t0 = performance.now();
   const logger = getLogger().child({ node: 'generateAnswer' });
   logger.info({ messageCount: state.messages.length }, 'Starting answer generation');

@@ -1,0 +1,138 @@
+{
+  "metadata": {
+    "reads": 91,
+    "writes": 0,
+    "files": [
+      "src/nodes/combineContext.ts",
+      "src/nodes/dynamicWiden.ts",
+      "src/nodes/editSystemPrompt.ts",
+      "src/nodes/filterHistory.ts",
+      "src/nodes/generateAnswer.ts",
+      "src/nodes/generateChatLLM.ts",
+      "src/nodes/reranker.ts",
+      "src/nodes/retrievalEvaluatorLLM.ts",
+      "src/nodes/retrievalSelector.ts",
+      "src/nodes/retrieve.ts",
+      "src/nodes/rewrite.ts",
+      "src/nodes/routingSplit.ts",
+      "src/nodes/runTool.ts",
+      "src/nodes/toolNecessityClassifier.ts",
+      "src/nodes/toolRouter.ts"
+    ]
+  },
+  "taskEntities": {
+    "reads": 15,
+    "writes": 2,
+    "files": [
+      "src/nodes/dynamicWiden.ts",
+      "src/nodes/editSystemPrompt.ts",
+      "src/nodes/rewrite.ts",
+      "src/nodes/routeAfterRetrieve.ts",
+      "src/nodes/runTool.ts",
+      "src/nodes/toolRouter.ts"
+    ]
+  },
+  "chatHistory": {
+    "reads": 14,
+    "writes": 0,
+    "files": [
+      "src/nodes/filterHistory.ts",
+      "src/nodes/generateAnswer.ts",
+      "src/nodes/retrievalSelector.ts",
+      "src/nodes/rewrite.ts",
+      "src/nodes/routingSplit.ts",
+      "src/nodes/toolRouter.ts"
+    ]
+  },
+  "reasoning": {
+    "reads": 12,
+    "writes": 0,
+    "files": [
+      "src/nodes/editSystemPrompt.ts",
+      "src/nodes/filterHistory.ts",
+      "src/nodes/retrievalSelector.ts",
+      "src/nodes/rewrite.ts",
+      "src/nodes/routingSplit.ts"
+    ]
+  },
+  "messages": {
+    "reads": 11,
+    "writes": 0,
+    "files": [
+      "src/nodes/generateAnswer.ts",
+      "src/nodes/generateChatLLM.ts",
+      "src/nodes/reranker.ts",
+      "src/nodes/retrievalEvaluatorLLM.ts",
+      "src/nodes/retrievalSelector.ts",
+      "src/nodes/routingSplit.ts",
+      "src/nodes/toolNecessityClassifier.ts"
+    ]
+  },
+  "docs": {
+    "reads": 10,
+    "writes": 0,
+    "files": [
+      "src/nodes/docToSources.ts",
+      "src/nodes/dynamicWiden.ts",
+      "src/nodes/generateAnswer.ts",
+      "src/nodes/routeAfterRetrieve.ts",
+      "src/nodes/runTool.ts"
+    ]
+  },
+  "options": {
+    "reads": 9,
+    "writes": 0,
+    "files": [
+      "src/nodes/combineContext.ts",
+      "src/nodes/generateAnswer.ts",
+      "src/nodes/generateChatLLM.ts"
+    ]
+  },
+  "retrievals": {
+    "reads": 6,
+    "writes": 0,
+    "files": [
+      "src/nodes/combineContext.ts",
+      "src/nodes/reranker.ts",
+      "src/nodes/retrieve.ts"
+    ]
+  },
+  "taskIds": {
+    "reads": 5,
+    "writes": 0,
+    "files": [
+      "src/nodes/dynamicWiden.ts",
+      "src/nodes/routeAfterRetrieve.ts",
+      "src/nodes/runTool.ts",
+      "src/nodes/toolRouter.ts"
+    ]
+  },
+  "instructions": {
+    "reads": 2,
+    "writes": 0,
+    "files": [
+      "src/nodes/editSystemPrompt.ts"
+    ]
+  },
+  "retrievalEvaluation": {
+    "reads": 2,
+    "writes": 0,
+    "files": [
+      "src/nodes/toolNecessityClassifier.ts"
+    ]
+  },
+  "_filter": {
+    "reads": 1,
+    "writes": 0,
+    "files": [
+      "src/nodes/editSystemPrompt.ts"
+    ]
+  },
+  "userId": {
+    "reads": 1,
+    "writes": 0,
+    "files": [
+      "src/nodes/retrieve.ts"
+    ]
+  }
+}

@@ -1,9 +1,11 @@
 import { getLogger } from '@dome/common';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
-import { AgentState, ToolNecessityClassification } from '../types';
+import { ToolNecessityClassification } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { ObservabilityService } from '../services/observabilityService';
 import { ModelFactory } from '../services/modelFactory';
 import { toDomeError } from '../utils/errors';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /**
  * Tool Necessity Classifier Node
@@ -26,11 +28,13 @@ import { toDomeError } from '../utils/errors';
  * @param env Environment bindings
  * @returns Updated agent state with tool necessity classification
  */
+export type ToolNecessityUpdate = SliceUpdate<'toolNecessityClassification' | 'reasoning'>;
+
 export async function toolNecessityClassifier(
   state: AgentState,
   cfg: LangGraphRunnableConfig,
   env: Env,
-): Promise<Partial<AgentState>> {
+): Promise<ToolNecessityUpdate> {
   const t0 = performance.now();
   const logger = getLogger().child({ component: 'toolNecessityClassifier' });
 

@@ -6,18 +6,23 @@ import { LlmService } from '../services/llmService';
 import { buildMessages } from '../utils';
 import { getToolRoutingPrompt } from '../config/promptsConfig';
 import { ToolRegistry } from '../tools';
-import { AgentState, UserTaskEntity, MessagePair, AIMessage } from '../types';
+import { ToolRoutingDecision, ToolNecessityClassification } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
+import { UserTaskEntity, MessagePair, AIMessage } from '../types';
+import type { SliceUpdate } from '../types/stateSlices';
 
 const NONE_TOOL_NAME = 'none';
 
 /* ------------------------------------------------------------------ *
  * main node                                                           *
  * ------------------------------------------------------------------ */
+export type ToolRouterUpdate = SliceUpdate<'taskEntities'>;
+
 export async function toolRouter(
   state: AgentState,
   env: Env,
   registry: ToolRegistry,
-): Promise<Partial<AgentState>> {
+): Promise<ToolRouterUpdate> {
   const log = getLogger().child({ node: 'toolRouter' });
   const started = performance.now();
   const traceId = state.metadata?.traceId ?? '';
@@ -28,7 +33,7 @@ export async function toolRouter(
   const routerSchema = registry.toolUnionSchema();
   if (registry.list().length === 0) {
     log.info('Tool registry is empty, skipping routing');
-    return {};
+    return { taskEntities: {} };
   }
 
   const promptTemplate = getToolRoutingPrompt().replace(
@@ -77,6 +82,7 @@ export async function toolRouter(
         ...state.metadata,
         nodeTimings: { ...state.metadata?.nodeTimings, toolRouter: elapsed },
       },
+      taskEntities: {},
     };
   }
 
@@ -90,7 +96,7 @@ export async function toolRouter(
     };
   }
 
-  const nextStateFragment: Partial<AgentState> = {
+  const nextStateFragment: ToolRouterUpdate = {
     taskEntities: newEntities,
     metadata: {
       ...state.metadata,

@@ -1,8 +1,10 @@
 import { getLogger, logError } from '@dome/common';
-import { AgentState, MessagePair } from '../types';
+import { MessagePair } from '../types';
+import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { getUserId } from '../utils/stateUtils';
 import { ObservabilityService } from '../services/observabilityService';
 import { countMessagesTokens } from '../utils/tokenCounter';
+import type { SliceUpdate } from '../types/stateSlices';
 
 /**
  * Node: filter_history
@@ -14,7 +16,12 @@ import { countMessagesTokens } from '../utils/tokenCounter';
  * This node helps manage the token count in the conversation history
  * by removing older messages when needed to stay within limits.
  */
-export const filterHistory = async (state: AgentState, env: Env): Promise<AgentState> => {
+export type FilterHistoryUpdate = SliceUpdate<'chatHistory' | 'reasoning'>;
+
+export const filterHistory = async (
+  state: AgentState,
+  env: Env,
+): Promise<FilterHistoryUpdate> => {
   const logger = getLogger().child({ node: 'filterHistory' });
   const t0 = performance.now();
 
@@ -38,7 +45,6 @@ export const filterHistory = async (state: AgentState, env: Env): Promise<AgentS
     ObservabilityService.endSpan(env, traceId, spanId, 'filterHistory', state, state, elapsed);
 
     return {
-      ...state,
       metadata: {
         ...state.metadata,
         traceId,
@@ -85,7 +91,6 @@ export const filterHistory = async (state: AgentState, env: Env): Promise<AgentS
       ObservabilityService.endSpan(env, traceId, spanId, 'filterHistory', state, state, elapsed);
 
       return {
-        ...state,
         metadata: {
           ...state.metadata,
           traceId,
@@ -158,7 +163,6 @@ export const filterHistory = async (state: AgentState, env: Env): Promise<AgentS
     /*  6. Return updated state                                        */
     /* --------------------------------------------------------------- */
     return {
-      ...state,
       chatHistory: trimmedHistory,
       reasoning: [
         ...(state.reasoning || []),
@@ -216,7 +220,6 @@ export const filterHistory = async (state: AgentState, env: Env): Promise<AgentS
     );
 
     return {
-      ...state,
       reasoning: [...(state.reasoning || []), `Error filtering chat history: ${errorMsg}`],
       metadata: {
         ...state.metadata,
