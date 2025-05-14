@@ -52,7 +52,7 @@ export class ListCommand implements CommandHandler {
       this.setStatus(` {bold}Status:{/bold} Loading notes...`);
       this.addMessage(`{gray-fg}Fetching notes from the server...{/gray-fg}`);
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const requestParams: DomeApi.GetNotesRequest = { limit: 50, offset: 0 }; // Default limit/offset
       if (category) {
         requestParams.category = category as DomeApi.GetNotesRequestCategory;

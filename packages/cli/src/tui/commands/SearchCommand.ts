@@ -50,7 +50,7 @@ export class SearchCommand implements CommandHandler {
       this.setStatus(' {bold}Status:{/bold} Searching...');
 
       // Perform search using the API
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       // TUI search might have different defaults for limit, or pass args for category etc.
       // For now, using a default limit.
       const searchRequest: DomeApi.GetSearchRequest = { q: query, limit: 5 };

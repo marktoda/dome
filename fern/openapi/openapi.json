@@ -353,7 +353,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-14T00:02:52.412Z"
+            "example": "2025-05-14T00:40:00.073Z"
           },
           "service": {
             "type": "string",
@@ -950,7 +950,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-14T00:02:52.388Z"
+            "example": "2025-05-14T00:40:00.041Z"
           },
           "status": {
             "type": "string",
@@ -1057,7 +1057,7 @@
           "timestamp": {
             "type": "string",
             "format": "date-time",
-            "example": "2025-05-14T00:02:52.393Z"
+            "example": "2025-05-14T00:40:00.046Z"
           },
           "status": {
             "type": "string",
@@ -1497,70 +1497,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/chat/ws": {
-      "get": {
-        "summary": "Upgrade to WebSocket for Chat",
-        "description": "Initiates a WebSocket connection for real-time chat. Requires a valid authentication token as a query parameter. Upon successful upgrade, the protocol switches to WebSocket. Messages over WebSocket should follow the documented format (e.g., JSON with type and payload).",
-        "tags": [
-          "Chat",
-          "WebSocket"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "description": "Authentication token for WebSocket upgrade.",
-              "example": "jwt_token_here"
-            },
-            "required": false,
-            "name": "token",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "101": {
-            "description": "Switching Protocols. Connection will be upgraded to WebSocket."
-          },
-          "401": {
-            "description": "Unauthorized. Token missing or invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string"
-                        },
-                        "message": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success",
-                    "error"
-                  ]
                 }
               }
             }

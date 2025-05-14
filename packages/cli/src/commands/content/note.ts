@@ -57,7 +57,7 @@ export class NoteCommand extends BaseCommand {
         // spinner.start();
         this.log(`Adding note to category: ${context}...`, outputFormat);
 
-        const apiClient = getApiClient();
+        const apiClient = await getApiClient();
         await apiClient.notes.ingestANewNote({
           content: content,
           category: context as DomeApi.IngestNoteBodyApiSchemaCategory,
@@ -85,7 +85,7 @@ export class NoteCommand extends BaseCommand {
           }
 
           try {
-            const apiClient = getApiClient();
+            const apiClient = await getApiClient();
             await apiClient.notes.ingestANewNote({
               content: line,
               category: context as DomeApi.IngestNoteBodyApiSchemaCategory,

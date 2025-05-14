@@ -6,6 +6,8 @@ import fs from 'fs';
 // Define the configuration schema
 export interface ConfigSchema {
   apiKey?: string;
+  refreshToken?: string;
+  accessTokenExpiresAt?: number;
   userId?: string; // Added userId
   baseUrl: string;
   environment: 'development' | 'production';
@@ -32,6 +34,14 @@ const config = new Conf<ConfigSchema>({
   schema: {
     apiKey: {
       type: 'string',
+      default: undefined,
+    },
+    refreshToken: {
+      type: 'string',
+      default: undefined,
+    },
+    accessTokenExpiresAt: {
+      type: 'number',
       default: undefined,
     },
     userId: { // Added userId schema
@@ -70,6 +80,8 @@ export function loadConfig(): ConfigSchema {
 
   return {
     apiKey: config.get('apiKey'),
+    refreshToken: config.get('refreshToken'),
+    accessTokenExpiresAt: config.get('accessTokenExpiresAt'),
     userId: config.get('userId'), // Get userId
     baseUrl: config.get('baseUrl'),
     environment: config.get('environment'),
@@ -98,6 +110,8 @@ export function saveUserId(userId: string): void {
  */
 export function clearApiKey(): void {
   config.delete('apiKey');
+  config.delete('refreshToken');
+  config.delete('accessTokenExpiresAt');
   config.delete('userId'); // Also clear userId on logout
 }
 
@@ -147,6 +161,12 @@ export function isAuthenticated(): boolean {
 export function saveConfig(configData: ConfigSchema): void {
   if (configData.apiKey) {
     config.set('apiKey', configData.apiKey);
+  }
+  if (configData.refreshToken) {
+    config.set('refreshToken', configData.refreshToken);
+  }
+  if (configData.accessTokenExpiresAt) {
+    config.set('accessTokenExpiresAt', configData.accessTokenExpiresAt);
   }
   if (configData.userId) { // Save userId
     config.set('userId', configData.userId);

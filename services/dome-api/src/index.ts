@@ -194,20 +194,10 @@ const chatWsUpgradeRoute = createRoute({
   tags: ['Chat', 'WebSocket'],
 });
 
-// Register the OpenAPI documentation for the WS handshake
-// The actual WebSocket handling is done by the app.get('/chat/ws', upgradeWebSocket(...)) below.
-// This openapi route handler doesn't need to do much, as `upgradeWebSocket` takes over.
-app.openapi(chatWsUpgradeRoute, (c) => {
-  // This handler is primarily for OpenAPI documentation generation.
-  // The actual WebSocket upgrade is handled by the `app.get('/chat/ws', upgradeWebSocket(...))` below.
-  // If the token is invalid, `upgradeWebSocket`'s logic will throw an HTTPException (resulting in a 401).
-  // If the token is valid and upgrade is successful, a 101 response is sent by the WebSocket handler.
-  // This openapi route handler is primarily for documentation.
-  // Returning c.res allows the subsequent app.get('/chat/ws', upgradeWebSocket(...)) to handle the response.
-  // The OpenAPI spec defines that a 101 is expected.
-  return c.res;
-});
-
+// NOTE: OpenAPI route for /chat/ws temporarily disabled because it intercepted
+// the request before the WebSocket upgrade handler, resulting in 404.
+// TODO: Re-enable with proper pass-through once Hono supports layered WS docs.
+// app.openapi(chatWsUpgradeRoute, (c) => c.res);
 
 // Mount new OpenAPI-based Chat router for POST /chat
 app.route('/chat', buildChatRouter());

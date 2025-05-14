@@ -1,0 +1,154 @@
+---
+title: Chat WebSocket Streaming
+sidebar_position: 4
+---
+
+# Real-time Chat Streaming over WebSocket
+
+The **/chat/ws** endpoint gives you a low-latency stream of chunks from the RAG pipeline.  It is the 
+interface used by the Dome CLI and the web dashboard.  This page shows how to establish the
+connection, what authentication is required, and how to parse the framed messages.
+
+> ℹ️  The streaming protocol is intentionally lightweight – a vanilla JSON payload in the first
+> frame and then JSON chunks in subsequent frames.  No exotic binary protocol, no GraphQL, no
+> Server-Sent-Events: just WebSockets.
+
+---
+
+## 1. Endpoint
+
+```
+GET /chat/ws?token=<JWT>
+```
+
+* **Protocol**: WebSocket upgrade.
+* **Host**: same as the REST API (e.g. `https://dome-api.chatter-9999.workers.dev`).  Switch the
+  scheme to **wss://** for TLS.
+* **Query params**
+  * `token` – **required**.  The access-token you received from `/auth/login` or `/auth/refresh`.
+    Pass exactly the same JWT string.  The refresh-token is **not** accepted.
+
+If the token is missing or invalid the server replies with **401**.  If the path is wrong you'll get
+**404**.  A successful upgrade returns the standard **101 Switching Protocols** response.
+
+---
+
+## 2. Client handshake payload
+
+After the socket is open, **the client must immediately send a JSON object** describing the chat
+request:
+
+```json5
+{
+  "userId": "fe96f0df-8810-44ee-af6c-3a7f824dc73c",   // your userId (from /auth/validate)
+  "messages": [
+    { "role": "user", "content": "How does Uniswap v4 work?" }
+  ],
+  "options": {
+    "enhanceWithContext": true,
+    "maxContextItems": 5,
+    "includeSourceInfo": true,
+    "maxTokens": 1000,
+    "temperature": 0.7
+  },
+  "stream": true
+}
+```
+
+Same schema as the REST `/chat` endpoint – we reuse the [ChatRequest](/docs/reference/openapi.yaml)
+model.
+
+---
+
+## 3. Streaming chunk format
+
+Every text frame after the first one is a **UTF-8 JSON chunk**.  It will always contain a `type`
+field so you can switch on it:
+
+| `type`   | Description                             |
+|----------|-----------------------------------------|
+| thinking | Bot is still thinking – no content yet   |
+| content  | Partial assistant text                  |
+| sources  | Array of knowledge-base sources          |
+| error    | Recoverable error                       |
+| end      | Conversation finished                   |
+
+Example partial stream:
+
+```json
+{"type":"thinking"}
+{"type":"content","content":"Uniswap v4 introduces the 'Singleton' contract…"}
+{"type":"content","content":"In v4 custom hooks can be used to…"}
+{"type":"sources","sources":[{"id":"eth:erc20:UNI","title":"UNI token","type":"token"}]}
+{"type":"end"}
+```
+
+The server closes the socket after `end`.
+
+---
+
+## 4. Quick-start – TypeScript
+
+```ts
+import WebSocket from 'ws';
+
+const baseUrl = 'wss://dome-api.chatter-9999.workers.dev';
+const token   = process.env.DOME_TOKEN!; // ← store from /auth/login
+const ws = new WebSocket(`${baseUrl}/chat/ws?token=${token}`);
+
+ws.on('open', () => {
+  const payload = {
+    userId: process.env.DOME_USER_ID,
+    messages: [ { role: 'user', content: 'Hello!' } ],
+    options: { enhanceWithContext: true },
+    stream: true,
+  };
+  ws.send(JSON.stringify(payload));
+});
+
+ws.on('message', data => {
+  const chunk = JSON.parse(data.toString());
+  switch (chunk.type) {
+    case 'content':   process.stdout.write(chunk.content); break;
+    case 'sources':   console.dir(chunk.sources);          break;
+    case 'error':     console.error(chunk.error);          break;
+  }
+});
+```
+
+---
+
+## 5. Quick-start – Python (asyncio-websockets)
+
+```python
+import asyncio, json, os, websockets, sys
+
+BASE = 'wss://dome-api.chatter-9999.workers.dev'
+TOKEN = os.environ['DOME_TOKEN']
+USER  = os.environ['DOME_USER_ID']
+
+async def main():
+    uri = f"{BASE}/chat/ws?token={TOKEN}"
+    async with websockets.connect(uri) as ws:
+        payload = {
+            'userId': USER,
+            'messages': [{'role': 'user', 'content': 'Ping?'}],
+            'options': {'enhanceWithContext': True},
+            'stream': True,
+        }
+        await ws.send(json.dumps(payload))
+        async for msg in ws:
+            chunk = json.loads(msg)
+            if chunk['type'] == 'content':
+                sys.stdout.write(chunk['content'])
+            elif chunk['type'] == 'end':
+                break
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+
+---
+
+That's it – happy streaming! If anything is unclear or you spot an issue in this doc, please open an
+issue or PR. 

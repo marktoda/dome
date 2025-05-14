@@ -1,10 +1,11 @@
 import { BaseCommand, CommandArgs } from '../base';
-import { isAuthenticated, saveApiKey, saveUserId } from '../../utils/config';
-import { getApiClient, clearApiClientInstance } from '../../utils/apiClient';
+import { isAuthenticated, saveApiKey, saveUserId, saveConfig, loadConfig } from '../../utils/config';
+import { getApiClient, clearApiClientInstance, getApiBaseUrl } from '../../utils/apiClient';
 import { DomeApi } from '@dome/dome-sdk';
 import readline from 'readline';
 import { OutputFormat } from '../../utils/errorHandler';
 import { Command } from 'commander'; // Added import
+import * as jose from 'jose';
 
 export class LoginCommand extends BaseCommand {
   constructor() {
@@ -72,26 +73,58 @@ export class LoginCommand extends BaseCommand {
       }
 
       this.log('Logging in...', outputFormat);
-      const apiClient = getApiClient();
-      const result: DomeApi.LoginResponse = await apiClient.auth.userLogin({ email, password });
+
+      // Call login endpoint directly to avoid issues with stale tokens during login
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        throw new Error(`Login failed: ${res.status} ${res.statusText}`);
+      }
+      const result: any = await res.json();
 
       if (result.token) {
         this.log(`CLI LOGIN: Received token: ${result.token}`, outputFormat); // DEBUG LOG
         saveApiKey(result.token);
+
+        // Extract userId from JWT if possible
+        try {
+          const payload = jose.decodeJwt(result.token) as { userId?: string };
+          if (payload.userId) {
+            saveUserId(payload.userId);
+          }
+        } catch {
+          // Ignore decode errors – fallback to validation call later
+        }
+
+        // Persist refresh token and expiry if provided
+        if (result.refreshToken || result.expiresAt) {
+          saveConfig({
+            refreshToken: result.refreshToken,
+            accessTokenExpiresAt: result.expiresAt,
+          } as any);
+        }
         clearApiClientInstance();
         this.log('Login successful. You can now use the dome CLI.', outputFormat);
 
-        try {
-          const newApiClient = getApiClient();
-          const validationResponse: DomeApi.DomeApiValidateTokenResponse = await newApiClient.auth.validateAuthenticationToken();
-          if (validationResponse.success && validationResponse.user) {
-            saveUserId(validationResponse.user.id);
-            this.log(`User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`, outputFormat);
-          } else {
-            this.error('Could not retrieve user details after login. Chat functionality might be affected.', { outputFormat });
+        // Only attempt validation if userId still missing (older token format)
+        const cfgAfterSave = loadConfig();
+        if (!cfgAfterSave.userId) {
+          try {
+            const newApiClient = await getApiClient();
+            const validationResponse: DomeApi.DomeApiValidateTokenResponse = await newApiClient.auth.validateAuthenticationToken();
+            if (validationResponse.success && validationResponse.user) {
+              saveUserId(validationResponse.user.id);
+              this.log(`User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`, outputFormat);
+            } else {
+              this.log('Warning: logged in but unable to fetch user profile. You can still use the CLI.', outputFormat);
+            }
+          } catch {
+            this.log('Warning: logged in but unable to fetch user profile. You can still use the CLI.', outputFormat);
           }
-        } catch (validationErr) {
-          this.error('Login was successful, but failed to retrieve user details. Chat functionality might be affected.', { outputFormat });
         }
       } else {
         this.error('Login failed: No token received despite successful response.', { outputFormat });

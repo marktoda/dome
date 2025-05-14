@@ -64,7 +64,7 @@ export class AddCommand extends BaseCommand {
         this.log(`Adding text: "${contentPreview}"...`, outputFormat);
       }
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const ingestPayload: { content: string; title?: string; category?: DomeApi.IngestNoteBodyApiSchemaCategory | undefined } = {
         content: contentToAdd,
       };

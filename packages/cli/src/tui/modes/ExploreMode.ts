@@ -64,7 +64,7 @@ export class ExploreMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Loading notes...');
       this.screen.render();
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       // Fetch with a limit for pagination; TUI will handle pages
       const notesResponse: DomeApi.Note[] = await apiClient.notes.listNotes({
         limit: 1000, // Fetch a large number, TUI will paginate locally for now
@@ -245,7 +245,7 @@ export class ExploreMode extends BaseMode {
         this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
         this.screen.render();
 
-        const apiClient = getApiClient();
+        const apiClient = await getApiClient();
         const searchRequest: DomeApi.GetSearchRequest = { q: input, limit: 10 }; // Default limit for TUI
         const sdkResults: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
         

@@ -216,7 +216,7 @@ export class ChatMode extends BaseMode {
         return;
       }
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       // TODO: Integrate ChatSessionManager if TUI chat should persist history across CLI calls
       // For now, sending only the current input as a new conversation.
       const messages: DomeApi.PostChatRequestMessagesItem[] = [{ role: 'user', content: input }];

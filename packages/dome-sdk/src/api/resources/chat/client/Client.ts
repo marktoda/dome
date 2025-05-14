@@ -4,9 +4,9 @@
 
 import * as core from "../../../../core";
 import * as DomeApi from "../../../index";
+import * as serializers from "../../../../serialization/index";
 import urlJoin from "url-join";
 import * as errors from "../../../../errors/index";
-import * as serializers from "../../../../serialization/index";
 
 export declare namespace Chat {
     export interface Options {
@@ -30,91 +30,6 @@ export declare namespace Chat {
 
 export class Chat {
     constructor(protected readonly _options: Chat.Options) {}
-
-    /**
-     * Initiates a WebSocket connection for real-time chat. Requires a valid authentication token as a query parameter. Upon successful upgrade, the protocol switches to WebSocket. Messages over WebSocket should follow the documented format (e.g., JSON with type and payload).
-     *
-     * @param {DomeApi.GetChatWsRequest} request
-     * @param {Chat.RequestOptions} requestOptions - Request-specific configuration.
-     *
-     * @throws {@link DomeApi.UnauthorizedError}
-     *
-     * @example
-     *     await client.chat.upgradeToWebSocketForChat({
-     *         token: "jwt_token_here"
-     *     })
-     */
-    public upgradeToWebSocketForChat(
-        request: DomeApi.GetChatWsRequest = {},
-        requestOptions?: Chat.RequestOptions,
-    ): core.HttpResponsePromise<void> {
-        return core.HttpResponsePromise.fromPromise(this.__upgradeToWebSocketForChat(request, requestOptions));
-    }
-
-    private async __upgradeToWebSocketForChat(
-        request: DomeApi.GetChatWsRequest = {},
-        requestOptions?: Chat.RequestOptions,
-    ): Promise<core.WithRawResponse<void>> {
-        const { token } = request;
-        const _queryParams: Record<string, string | string[] | object | object[] | null> = {};
-        if (token != null) {
-            _queryParams["token"] = token;
-        }
-
-        const _response = await core.fetcher({
-            url: urlJoin(
-                (await core.Supplier.get(this._options.baseUrl)) ??
-                    (await core.Supplier.get(this._options.environment)),
-                "chat/ws",
-            ),
-            method: "GET",
-            headers: {
-                Authorization: await this._getAuthorizationHeader(),
-                "X-Fern-Language": "JavaScript",
-                "X-Fern-Runtime": core.RUNTIME.type,
-                "X-Fern-Runtime-Version": core.RUNTIME.version,
-                ...requestOptions?.headers,
-            },
-            contentType: "application/json",
-            queryParameters: _queryParams,
-            requestType: "json",
-            timeoutMs: requestOptions?.timeoutInSeconds != null ? requestOptions.timeoutInSeconds * 1000 : 60000,
-            maxRetries: requestOptions?.maxRetries,
-            abortSignal: requestOptions?.abortSignal,
-        });
-        if (_response.ok) {
-            return { data: undefined, rawResponse: _response.rawResponse };
-        }
-
-        if (_response.error.reason === "status-code") {
-            switch (_response.error.statusCode) {
-                case 401:
-                    throw new DomeApi.UnauthorizedError(_response.error.body, _response.rawResponse);
-                default:
-                    throw new errors.DomeApiError({
-                        statusCode: _response.error.statusCode,
-                        body: _response.error.body,
-                        rawResponse: _response.rawResponse,
-                    });
-            }
-        }
-
-        switch (_response.error.reason) {
-            case "non-json":
-                throw new errors.DomeApiError({
-                    statusCode: _response.error.statusCode,
-                    body: _response.error.rawBody,
-                    rawResponse: _response.rawResponse,
-                });
-            case "timeout":
-                throw new errors.DomeApiTimeoutError("Timeout exceeded when calling GET /chat/ws.");
-            case "unknown":
-                throw new errors.DomeApiError({
-                    message: _response.error.errorMessage,
-                    rawResponse: _response.rawResponse,
-                });
-        }
-    }
 
     /**
      * Processes a user chat message and returns a response.

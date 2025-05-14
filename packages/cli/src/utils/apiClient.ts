@@ -1,5 +1,6 @@
 import { DomeApiClient } from '@dome/dome-sdk';
 import { loadConfig } from './config';
+import { ensureValidAccessToken } from './auth';
 
 let apiClientInstance: DomeApiClient | null = null;
 let lastUsedConfig: { baseUrl?: string; apiKey?: string } | null = null;
@@ -14,7 +15,7 @@ let lastUsedConfig: { baseUrl?: string; apiKey?: string } | null = null;
  * @returns An instance of DomeApiClient.
  * @throws Error if baseUrl is not configured.
  */
-export function getApiClient(): DomeApiClient {
+export async function getApiClient(): Promise<DomeApiClient> {
   const currentConfig = loadConfig();
 
   if (
@@ -34,10 +35,16 @@ export function getApiClient(): DomeApiClient {
     );
   }
 
-  const options: DomeApiClient.Options = {
-    environment: currentConfig.baseUrl, // Use the resolved baseUrl from CLI config
-    token: currentConfig.apiKey, // Let the SDK handle the "Bearer" prefix
-  };
+  // Determine token (if logged in). If no API key yet (e.g., during login/register),
+  // create an unauthenticated client.
+  let accessToken: string | undefined;
+  if (currentConfig.apiKey) {
+    accessToken = await ensureValidAccessToken();
+  }
+
+  const options: DomeApiClient.Options = accessToken
+    ? { environment: currentConfig.baseUrl, token: accessToken }
+    : { environment: currentConfig.baseUrl };
 
   apiClientInstance = new DomeApiClient(options);
   lastUsedConfig = {

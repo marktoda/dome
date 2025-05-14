@@ -62,7 +62,7 @@ export class AddGitHubRepoCommand extends BaseCommand {
         this.log(`Note: Custom sync cadence ('${cadence}') might not be fully supported by the current SDK version for setting. Default server cadence may apply.`, outputFormat);
       }
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const result: DomeApi.GithubRepoResponse = await apiClient.contentGitHub.registerGitHubRepository({ owner, repo });
       
       if (outputFormat === OutputFormat.JSON) {

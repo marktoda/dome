@@ -50,7 +50,7 @@ export class ShowCommand extends BaseCommand {
     this.log(`Fetching note with ID: ${id}...`, outputFormat);
 
     try {
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const note: DomeApi.Note = await apiClient.notes.getANoteById(id);
 
       if (outputFormat === OutputFormat.JSON) {

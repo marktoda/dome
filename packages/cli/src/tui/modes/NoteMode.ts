@@ -208,7 +208,7 @@ export class NoteMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Saving note...');
       this.screen.render();
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
 
       // Assuming DomeApi.IngestNoteBodyApiSchemaCategory is an enum.
       // We get its string values for validation.
@@ -292,7 +292,7 @@ export class NoteMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Searching notes...');
       this.screen.render();
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const searchRequest: DomeApi.GetSearchRequest = { q: query, limit: 20 };
       const response: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
       
@@ -349,7 +349,7 @@ export class NoteMode extends BaseMode {
       this.statusBar.setContent(' {bold}Status:{/bold} Loading recent notes...');
       this.screen.render();
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const notesListed: DomeApi.Note[] = await apiClient.notes.listNotes({ limit: 20 }); 
       this.searchResults = notesListed || []; 
       this.viewMode = 'search'; 
@@ -414,7 +414,7 @@ export class NoteMode extends BaseMode {
       
       let noteToView: DomeApi.Note;
       try {
-        const apiClient = getApiClient();
+        const apiClient = await getApiClient();
         noteToView = await apiClient.notes.getANoteById(itemSummary.id);
         this.currentViewedNote = noteToView; 
       } catch (fetchErr: unknown) {
@@ -571,7 +571,7 @@ export class NoteMode extends BaseMode {
             this.screen.render();
             process.nextTick(async () => {
               try {
-                const apiClient = getApiClient();
+                const apiClient = await getApiClient();
                 await apiClient.notes.deleteANote(noteToActOn.id); 
                 this.container.setContent('');
                 this.container.pushLine('{center}{bold}Note Deleted{/bold}{/center}');

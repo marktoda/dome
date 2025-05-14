@@ -62,7 +62,7 @@ export class UpdateContentCommand extends BaseCommand {
 
     try {
       this.log(`Fetching content with ID: ${contentId} for update...`, outputFormat);
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       let noteToUpdate: DomeApi.Note;
       try {
           noteToUpdate = await apiClient.notes.getANoteById(contentId);

@@ -54,7 +54,7 @@ export class ListCommand extends BaseCommand {
     try {
       this.log(`Listing notes${category ? ` (category: ${category})` : ''}...`, outputFormat);
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const requestParams: DomeApi.GetNotesRequest = { limit, offset };
       if (category) {
         requestParams.category = category as DomeApi.GetNotesRequestCategory;

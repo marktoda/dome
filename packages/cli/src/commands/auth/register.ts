@@ -1,10 +1,11 @@
 import { BaseCommand, CommandArgs } from '../base';
-import { isAuthenticated, saveApiKey, saveUserId } from '../../utils/config';
-import { getApiClient, clearApiClientInstance } from '../../utils/apiClient';
+import { isAuthenticated, saveApiKey, saveUserId, saveConfig, loadConfig } from '../../utils/config';
+import { getApiClient, clearApiClientInstance, getApiBaseUrl } from '../../utils/apiClient';
 import { DomeApi } from '@dome/dome-sdk';
 import readline from 'readline';
 import { OutputFormat } from '../../utils/errorHandler';
 import { Command } from 'commander';
+import * as jose from 'jose';
 
 export class RegisterCommand extends BaseCommand {
   constructor() {
@@ -78,34 +79,57 @@ export class RegisterCommand extends BaseCommand {
       }
 
       this.log('Registering user...', outputFormat);
-      const apiClient = getApiClient();
-      const result: DomeApi.RegisterResponse = await apiClient.auth.userRegistration({
-        email,
-        password,
-        name,
+
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name }),
       });
+      if (!res.ok) {
+        throw new Error(`Registration failed: ${res.status} ${res.statusText}`);
+      }
+      const result: any = await res.json();
 
       if (result.token) {
         this.log(`CLI REGISTER: Received token: ${result.token}`, outputFormat); // DEBUG LOG
         saveApiKey(result.token);
+        // Extract userId from token
+        try {
+          const payload = jose.decodeJwt(result.token) as { userId?: string };
+          if (payload.userId) {
+            saveUserId(payload.userId);
+          }
+        } catch {
+          // ignore decode error
+        }
+        // Persist refresh token and expiry if provided
+        if (result.refreshToken || result.expiresAt) {
+          saveConfig({
+            refreshToken: result.refreshToken,
+            accessTokenExpiresAt: result.expiresAt,
+          } as any);
+        }
         clearApiClientInstance();
         this.log('Registration successful. You are now logged in.', outputFormat);
 
-        try {
-          const newApiClient = getApiClient();
-          const validationResponse: DomeApi.DomeApiValidateTokenResponse =
-            await newApiClient.auth.validateAuthenticationToken();
-          if (validationResponse.success && validationResponse.user) {
-            saveUserId(validationResponse.user.id);
-            this.log(
-              `User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`,
-              outputFormat
-            );
-          } else {
-            this.error('Could not retrieve user details after registration. Chat functionality might be affected.', { outputFormat });
+        const cfgAfterSave = loadConfig();
+        if (!cfgAfterSave.userId) {
+          try {
+            const newApiClient = await getApiClient();
+            const validationResponse: DomeApi.DomeApiValidateTokenResponse = await newApiClient.auth.validateAuthenticationToken();
+            if (validationResponse.success && validationResponse.user) {
+              saveUserId(validationResponse.user.id);
+              this.log(
+                `User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`,
+                outputFormat
+              );
+            } else {
+              this.error('Could not retrieve user details after registration. Chat functionality might be affected.', { outputFormat });
+            }
+          } catch {
+            // silent
           }
-        } catch (validationErr) {
-          this.error('Registration was successful, but failed to retrieve user details. Chat functionality might be affected.', { outputFormat });
         }
       } else {
         // This case implies the API response for successful registration *might* not have a token,

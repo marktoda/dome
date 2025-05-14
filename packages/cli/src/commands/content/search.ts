@@ -63,7 +63,7 @@ export class SearchCommand extends BaseCommand {
       // spinner.start();
       this.log(searchMessage + "...", outputFormat);
 
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const searchRequest: DomeApi.GetSearchRequest = {
         q: query,
         limit,

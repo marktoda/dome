@@ -176,7 +176,7 @@ export const Chat: React.FC<ChatProps> = ({ initialMessage, onExit }) => {
     setIsStreaming(true);
 
     try {
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const currentMessages: DomeApi.PostChatRequestMessagesItem[] = messages
         .filter(m => m.role === 'user' || (m.role === 'assistant' && !m.content.startsWith('[Thinking]') && m.content !== '')) // Exclude placeholder/thinking for history
         .map(m => ({

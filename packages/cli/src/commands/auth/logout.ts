@@ -30,19 +30,25 @@ export class LogoutCommand extends BaseCommand {
         return;
       }
 
-      const apiClient = getApiClient();
+      let attemptedServerLogout = false;
       try {
+        const apiClient = await getApiClient();
+        attemptedServerLogout = true;
         const logoutResult = await apiClient.auth.userLogout();
         if (logoutResult.success) {
           this.log('Successfully logged out from server.', outputFormat);
-        } else {
-          this.log(`Server logout message: ${logoutResult.message}. Clearing local session.`, outputFormat);
+        } else if (logoutResult.message) {
+          this.log(`Server logout: ${logoutResult.message}`, outputFormat);
         }
       } catch (serverLogoutError: unknown) {
-        // Use the base command's error handler for server logout errors
-        // but continue with local logout regardless.
-        this.error(serverLogoutError, { outputFormat });
-        this.log('Proceeding with local logout despite server error.', outputFormat);
+        if (attemptedServerLogout) {
+          // We reached the server but the call failed – log and continue.
+          this.error(serverLogoutError, { outputFormat });
+          this.log('Continuing with local logout.', outputFormat);
+        } else {
+          // Failed before contacting server (likely due to expired tokens).
+          this.log('Session already expired. Performing local logout.', outputFormat);
+        }
       }
 
       clearApiKey(); 

@@ -50,7 +50,7 @@ export class AddCommand implements CommandHandler {
       this.setStatus(' {bold}Status:{/bold} Adding content...');
 
       // Add content using the API
-      const apiClient = getApiClient();
+      const apiClient = await getApiClient();
       const response: DomeApi.Note = await apiClient.notes.ingestANewNote({ content });
 
       // Display success message
