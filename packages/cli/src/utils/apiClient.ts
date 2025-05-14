@@ -40,6 +40,9 @@ export async function getApiClient(): Promise<DomeApiClient> {
   let accessToken: string | undefined;
   if (currentConfig.apiKey) {
     accessToken = await ensureValidAccessToken();
+    // If ensureValidAccessToken() refreshed, cache the fresh token in-memory so
+    // client-reuse logic won't think the token changed on the next call.
+    currentConfig.apiKey = accessToken;
   }
 
   const options: DomeApiClient.Options = accessToken

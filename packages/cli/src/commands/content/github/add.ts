@@ -63,7 +63,7 @@ export class AddGitHubRepoCommand extends BaseCommand {
       }
 
       const apiClient = await getApiClient();
-      const result: DomeApi.GithubRepoResponse = await apiClient.contentGitHub.registerGitHubRepository({ owner, repo });
+      const result: DomeApi.GithubRepoResponse = await apiClient.contentGitHub.registerGitHubRepository({ owner, name: repo } as any);
       
       if (outputFormat === OutputFormat.JSON) {
         console.log(JSON.stringify(result, null, 2));

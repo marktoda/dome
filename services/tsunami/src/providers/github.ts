@@ -12,15 +12,14 @@ import {
   getLanguageFromPath,
   injectMetadataHeader,
 } from '../services/metadataHeaderService';
-import { IgnorePatternProcessor } from '../utils/ignorePatternProcessor';
 import { IgnoreFileService } from '../services/ignoreFileService';
-import { DEFAULT_FILTER_CONFIG } from '../config/filterConfig';
+import { BaseProvider } from './base';
 
 /* ─── constants ────────────────────────────────────────────────────────── */
 
 const API = 'https://api.github.com';
 const UA = 'Tsunami-Service/1.0.0 (+https://github.com/dome/tsunami)';
-const MAX = 1 * 1024 * 1024; // 1 MiB
+const MAX = 1 * 1024 * 1024; // 1 MiB
 
 const MIME: Record<string, MimeType> = {
   '.js': 'application/javascript',
@@ -58,14 +57,12 @@ type FilesResp = { files?: GitFile[] };
 type GitFile = { filename: string; status: string; changes: number };
 type ContentResp = { content?: string; encoding?: string; size: number };
 
-export class GithubProvider implements Provider {
-  private log = getLogger();
+export class GithubProvider extends BaseProvider implements Provider {
   private headers: Record<string, string>;
-  private ignorePatternProcessor: IgnorePatternProcessor;
   private ignoreFileService: IgnoreFileService;
-  private filterConfig = DEFAULT_FILTER_CONFIG;
 
   constructor(env: Env) {
+    super();
     const token = (env as any).GITHUB_TOKEN ?? '';
     this.headers = {
       Accept: 'application/vnd.github.v3+json',
@@ -75,7 +72,6 @@ export class GithubProvider implements Provider {
     };
 
     // Initialize file filtering components
-    this.ignorePatternProcessor = new IgnorePatternProcessor();
     this.ignoreFileService = new IgnoreFileService(token);
   }
 
@@ -92,12 +88,12 @@ export class GithubProvider implements Provider {
     if (!commits.length) return { contents: [], newCursor: null };
 
     // Reset the ignore pattern processor for this pull operation
-    this.ignorePatternProcessor.clearPatterns();
+    this.resetIgnorePatterns();
 
     // Fetch ignore patterns for this repository
     const ignorePatterns = await this.ignoreFileService.getIgnorePatterns(owner, repo);
     if (ignorePatterns.length > 0) {
-      this.ignorePatternProcessor.addPatterns(ignorePatterns);
+      this.addIgnorePatterns(ignorePatterns);
       this.log.info(
         { owner, repo, patternCount: ignorePatterns.length },
         'Loaded ignore patterns for repository',
@@ -112,7 +108,7 @@ export class GithubProvider implements Provider {
       const files = await this.getFiles(owner, repo, c.sha);
       for (const f of files) {
         // Check if file should be filtered based on ignore patterns
-        if (this.ignorePatternProcessor.shouldIgnore(f.filename)) {
+        if (this.isIgnored(f.filename)) {
           if (this.filterConfig.logFilteredFiles) {
             this.log.debug({ path: f.filename }, 'File filtered by ignore pattern');
           }
@@ -183,15 +179,15 @@ export class GithubProvider implements Provider {
   private async json<T>(url: string): Promise<T> {
     const res = await fetch(url, { headers: this.headers });
     if (!res.ok) {
-      const body = await res.text().catch(() => '<no‑body>');
+      const body = await res.text().catch(() => '<no-body>');
       this.log.error({ url, status: res.status, body }, 'github: request failed');
       throw new Error(`GitHub ${res.status}: ${res.statusText}`);
     }
 
-    // log rate‑limit once per response
+    // log rate-limit once per response
     const left = res.headers.get('x-ratelimit-remaining');
     const reset = res.headers.get('x-ratelimit-reset');
-    if (left) this.log.debug({ left, reset, url }, 'github: rate‑limit');
+    if (left) this.log.debug({ left, reset, url }, 'github: rate-limit');
 
     return res.json() as Promise<T>;
   }

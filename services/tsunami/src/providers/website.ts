@@ -6,9 +6,8 @@
  */
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
-import { getLogger, logError, metrics } from '@dome/common';
-import { DEFAULT_FILTER_CONFIG } from '../config/filterConfig';
-import { IgnorePatternProcessor } from '../utils/ignorePatternProcessor';
+import { logError, metrics } from '@dome/common';
+import { BaseProvider } from './base';
 import { RobotsChecker } from './website/robotsChecker';
 import { WebsiteCrawler } from './website/websiteCrawler';
 import { ContentExtractor } from './website/contentExtractor';
@@ -48,17 +47,14 @@ type WebsitePage = {
 
 /* ─── WebsiteProvider class ────────────────────────────────────────────── */
 
-export class WebsiteProvider implements Provider {
-  private log = getLogger();
-  private ignorePatternProcessor: IgnorePatternProcessor;
+export class WebsiteProvider extends BaseProvider implements Provider {
   private robotsChecker: RobotsChecker;
   private crawler: WebsiteCrawler;
   private extractor: ContentExtractor;
-  private filterConfig = DEFAULT_FILTER_CONFIG;
 
   constructor(env: Env) {
+    super(); // initialise BaseProvider
     // Initialize components
-    this.ignorePatternProcessor = new IgnorePatternProcessor();
     this.robotsChecker = new RobotsChecker(UA);
     this.crawler = new WebsiteCrawler(UA);
     this.extractor = new ContentExtractor();

@@ -6,7 +6,7 @@
  */
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '..';
-import { getLogger, metrics } from '@dome/common';
+import { metrics } from '@dome/common';
 import {
   createNotionMetadata,
   determineCategory,
@@ -15,8 +15,7 @@ import {
   shouldIgnorePage,
 } from './utils';
 import { injectMetadataHeader } from '../../services/metadataHeaderService';
-import { IgnorePatternProcessor } from '../../utils/ignorePatternProcessor';
-import { DEFAULT_FILTER_CONFIG } from '../../config/filterConfig';
+import { BaseProvider } from '../base';
 import { NotionClient } from './client';
 import { NotionAuthManager } from './auth';
 
@@ -24,18 +23,15 @@ import { NotionAuthManager } from './auth';
  * Notion Provider implementation
  * Implements the Provider interface to pull content from Notion workspaces
  */
-export class NotionProvider implements Provider {
-  private log = getLogger();
+export class NotionProvider extends BaseProvider implements Provider {
   private notionClient: NotionClient;
   private authManager: NotionAuthManager;
-  private ignorePatternProcessor: IgnorePatternProcessor;
-  private filterConfig = DEFAULT_FILTER_CONFIG;
 
   constructor(env: Env) {
     const apiKey = (env as any).NOTION_API_KEY ?? '';
+    super();
     this.authManager = new NotionAuthManager(env);
     this.notionClient = new NotionClient(apiKey, this.authManager);
-    this.ignorePatternProcessor = new IgnorePatternProcessor();
   }
 
   /**

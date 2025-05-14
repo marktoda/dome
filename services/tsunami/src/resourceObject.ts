@@ -10,6 +10,7 @@ import {
 } from './providers';
 import { syncHistoryOperations, syncPlanOperations } from './db/client';
 import { ulid } from 'ulid';
+import { z } from 'zod';
 
 /* ------------------------------------------------------------------ */
 /*  config                                                            */
@@ -31,6 +32,15 @@ const DEFAULT_CFG: Config = {
   cursor: '',
   resourceId: '',
 };
+
+// Zod schema for run-time validation & future-proofing
+const ConfigSchema = z.object({
+  userIds: z.array(z.string()),
+  cadenceSecs: z.number().int().positive(),
+  providerType: z.nativeEnum(ProviderType),
+  cursor: z.string(),
+  resourceId: z.string(),
+});
 
 /* ------------------------------------------------------------------ */
 /*  durable object                                                    */
@@ -123,47 +133,45 @@ export class ResourceObject extends DurableObject<Env> {
   }
 
   private validate(cfg: Config) {
-    if (cfg.providerType === ProviderType.GITHUB) {
-      if (!cfg.resourceId) throw new Error('GitHub provider requires resourceId');
-      const [owner, repo] = cfg.resourceId.split('/');
-      if (!owner || !repo)
-        throw new Error(`Invalid resourceId "${cfg.resourceId}" – use "owner/repo"`);
-    } else if (cfg.providerType === ProviderType.NOTION) {
-      if (!cfg.resourceId) throw new Error('Notion provider requires resourceId');
-      // Notion workspaceId should be a UUID-like string (typically 32 chars with hyphens)
-      const uuidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
-      if (!uuidPattern.test(cfg.resourceId)) {
-        throw new Error(
-          `Invalid Notion resourceId "${cfg.resourceId}" – must be a valid workspace ID`,
-        );
+    const parsed = ConfigSchema.safeParse(cfg);
+    if (!parsed.success) {
+      throw new Error(`Invalid configuration: ${parsed.error.message}`);
+    }
+
+    // provider-specific resourceId validation
+    switch (cfg.providerType) {
+      case ProviderType.GITHUB: {
+        const [owner, repo] = cfg.resourceId.split('/');
+        if (!owner || !repo) {
+          throw new Error(`Invalid GitHub resourceId "${cfg.resourceId}" – use "owner/repo"`);
+        }
+        break;
       }
-    } else if (cfg.providerType === ProviderType.WEBSITE) {
-      if (!cfg.resourceId) throw new Error('Website provider requires resourceId');
-      try {
-        const websiteConfig = JSON.parse(cfg.resourceId);
-        if (!websiteConfig.url) {
-          throw new Error('Website configuration must include a URL property');
+      case ProviderType.NOTION: {
+        const uuidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+        if (cfg.resourceId && !uuidPattern.test(cfg.resourceId)) {
+          throw new Error(
+            `Invalid Notion resourceId "${cfg.resourceId}" – expected a workspace UUID`,
+          );
         }
-      } catch (error) {
-        if (error instanceof Error) {
-          throw new Error(`Invalid website configuration: ${error.message}`);
+        break;
+      }
+      case ProviderType.WEBSITE: {
+        try {
+          const websiteConfig = JSON.parse(cfg.resourceId);
+          if (!websiteConfig.url) throw new Error('property "url" missing');
+        } catch (err) {
+          throw new Error(`Invalid website resourceId: ${(err as Error).message}`);
         }
-        throw new Error('Invalid website configuration: Unable to parse JSON');
+        break;
       }
     }
   }
 
   private makeProvider(pt: ProviderType): Provider {
-    switch (pt) {
-      case ProviderType.GITHUB:
-        return new GithubProvider(this.env);
-      case ProviderType.NOTION:
-        return new NotionProvider(this.env);
-      case ProviderType.WEBSITE:
-        return new WebsiteProvider(this.env);
-      default:
-        throw new Error(`Provider ${pt} not implemented`);
-    }
+    const factory = PROVIDERS[pt];
+    if (!factory) throw new Error(`Provider ${pt} not implemented`);
+    return factory(this.env);
   }
 
   private async recordHistory(
@@ -245,3 +253,14 @@ export class ResourceObject extends DurableObject<Env> {
     });
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  provider factory                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Map provider-type → factory so we don't need a switch every time. */
+const PROVIDERS: Record<ProviderType, (env: Env) => Provider> = {
+  [ProviderType.GITHUB]: env => new GithubProvider(env),
+  [ProviderType.NOTION]: env => new NotionProvider(env),
+  [ProviderType.WEBSITE]: env => new WebsiteProvider(env),
+};

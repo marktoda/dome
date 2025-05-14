@@ -175,13 +175,91 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
   }
 
   /**
-   * Register and initialize a GitHub repository for syncing
-   *
-   * @param owner - GitHub repository owner
-   * @param repo - GitHub repository name
-   * @param userId - Optional user ID to associate with the sync plan
-   * @param cadenceSecs - Optional sync frequency in seconds (defaults to 3600 - 1 hour)
-   * @returns Object containing the ID, resourceId, and initialization status
+   * Generic helper to register and initialize a resource for syncing.
+   * Consolidates shared logic across provider-specific registration methods.
+   */
+  private async _registerResource(
+    providerType: ProviderType,
+    resourceId: string,
+    userId?: string,
+    cadenceSecs: number = 3600,
+  ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
+    const requestId = crypto.randomUUID();
+
+    logger.info(
+      {
+        event: 'resource_registration_start',
+        providerType,
+        resourceId,
+        userId,
+        requestId,
+      },
+      `Starting ${providerType} resource registration`,
+    );
+
+    // Create or lookup sync-plan
+    let syncPlanId: string;
+    try {
+      syncPlanId = await this.createSyncPlan(providerType.toLowerCase(), resourceId, userId);
+      logger.info(
+        { event: 'sync_plan_created', syncPlanId, resourceId, providerType, requestId },
+        'Sync-plan created successfully',
+      );
+    } catch (err) {
+      if (err instanceof ConflictError) {
+        const plan = await this.getSyncPlan(resourceId);
+        syncPlanId = plan.id;
+        logger.info(
+          { event: 'sync_plan_exists', syncPlanId, resourceId, providerType, requestId },
+          'Sync-plan already exists',
+        );
+      } else {
+        throw toDomeError(err, 'Failed to create or retrieve sync plan', {
+          providerType,
+          resourceId,
+          userId,
+          requestId,
+        });
+      }
+    }
+
+    // Attach user if provided (idempotent)
+    if (userId) {
+      await this.attachUser(syncPlanId, userId);
+      logger.info(
+        { event: 'user_attached', syncPlanId, userId, providerType, requestId },
+        'User attached to sync-plan successfully',
+      );
+    }
+
+    // Initialize resource via Durable Object (creates initial sync)
+    const wasInitialised = await this.initializeResource(
+      { resourceId, providerType, userId },
+      cadenceSecs,
+    );
+
+    logger.info(
+      {
+        event: 'resource_initialized',
+        syncPlanId,
+        resourceId,
+        providerType,
+        wasInitialised,
+        requestId,
+      },
+      `${providerType} resource initialised & synced successfully`,
+    );
+
+    metrics.trackOperation(`${providerType.toLowerCase()}_resource_registration`, true, {
+      created: String(wasInitialised),
+    });
+
+    return { id: syncPlanId, resourceId, wasInitialised };
+  }
+
+  /**
+   * Register and initialize a GitHub repository for syncing.
+   * Delegates to the generic _registerResource helper.
    */
   async registerGithubRepo(
     owner: string,
@@ -190,197 +268,19 @@ export default class Tsunami extends WorkerEntrypoint<Env> {
     cadenceSecs: number = 3600,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
     const resourceId = `${owner}/${repo}`;
-    const requestId = crypto.randomUUID();
-
-    logger.info(
-      {
-        event: 'github_repo_registration_start',
-        owner,
-        repo,
-        resourceId,
-        userId,
-        requestId,
-      },
-      'Starting GitHub repository registration',
-    );
-
-    // Try to create a brand‑new sync‑plan or get existing one
-    let syncPlanId: string;
-    try {
-      // Try to create a brand‑new sync‑plan
-      syncPlanId = await this.createSyncPlan('github', resourceId, userId);
-      logger.info(
-        {
-          event: 'sync_plan_created',
-          syncPlanId,
-          resourceId,
-          requestId,
-        },
-        'Sync‑plan created successfully',
-      );
-    } catch (err) {
-      if (err instanceof ConflictError) {
-        // Plan exists – fetch its id
-        const plan = await this.getSyncPlan(resourceId);
-        syncPlanId = plan.id;
-        logger.info(
-          {
-            event: 'sync_plan_exists',
-            syncPlanId,
-            resourceId,
-            requestId,
-          },
-          'Sync‑plan already exists',
-        );
-      } else {
-        throw toDomeError(err, 'Failed to create or retrieve sync plan', {
-          resourceId,
-          userId,
-          requestId,
-        });
-      }
-    }
-
-    // Always attach the user if supplied (idempotent if already attached)
-    if (userId) {
-      await this.attachUser(syncPlanId, userId);
-      logger.info(
-        {
-          event: 'user_attached',
-          syncPlanId,
-          userId,
-          requestId,
-        },
-        'User attached to sync‑plan successfully',
-      );
-    }
-
-    const created = await this.initializeResource(
-      { resourceId, providerType: 'GITHUB', userId },
-      cadenceSecs,
-    );
-
-    logger.info(
-      {
-        event: 'github_repo_initialized',
-        syncPlanId,
-        resourceId,
-        created,
-        requestId,
-      },
-      'GitHub repository initialised & synced successfully',
-    );
-
-    metrics.trackOperation('github_repo_registration', true, { created: String(created) });
-
-    return {
-      id: syncPlanId,
-      resourceId,
-      wasInitialised: created,
-    };
+    return this._registerResource(ProviderType.GITHUB, resourceId, userId, cadenceSecs);
   }
 
   /**
-   * Register and initialize a Notion workspace for syncing
-   *
-   * @param workspaceId - Notion workspace ID
-   * @param userId - Optional user ID to associate with the sync plan
-   * @param cadenceSecs - Optional sync frequency in seconds (defaults to 3600 - 1 hour)
-   * @returns Object containing the ID, resourceId, and initialization status
+   * Register and initialize a Notion workspace for syncing.
+   * Delegates to the generic _registerResource helper.
    */
   async registerNotionWorkspace(
     workspaceId: string,
     userId?: string,
     cadenceSecs: number = 3600,
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
-    const resourceId = workspaceId;
-    const requestId = crypto.randomUUID();
-
-    logger.info(
-      {
-        event: 'notion_workspace_registration_start',
-        workspaceId,
-        resourceId,
-        userId,
-        requestId,
-      },
-      'Starting Notion workspace registration',
-    );
-
-    // Try to create a brand‑new sync‑plan or get existing one
-    let syncPlanId: string;
-    try {
-      // Try to create a brand‑new sync‑plan
-      syncPlanId = await this.createSyncPlan('notion', resourceId, userId);
-      logger.info(
-        {
-          event: 'sync_plan_created',
-          syncPlanId,
-          resourceId,
-          requestId,
-        },
-        'Sync‑plan created successfully',
-      );
-    } catch (err) {
-      if (err instanceof ConflictError) {
-        // Plan exists – fetch its id
-        const plan = await this.getSyncPlan(resourceId);
-        syncPlanId = plan.id;
-        logger.info(
-          {
-            event: 'sync_plan_exists',
-            syncPlanId,
-            resourceId,
-            requestId,
-          },
-          'Sync‑plan already exists',
-        );
-      } else {
-        throw toDomeError(err, 'Failed to create or retrieve sync plan', {
-          resourceId,
-          userId,
-          requestId,
-        });
-      }
-    }
-
-    // Always attach the user if supplied (idempotent if already attached)
-    if (userId) {
-      await this.attachUser(syncPlanId, userId);
-      logger.info(
-        {
-          event: 'user_attached',
-          syncPlanId,
-          userId,
-          requestId,
-        },
-        'User attached to sync‑plan successfully',
-      );
-    }
-
-    const created = await this.initializeResource(
-      { resourceId, providerType: 'NOTION', userId },
-      cadenceSecs,
-    );
-
-    logger.info(
-      {
-        event: 'notion_workspace_initialized',
-        syncPlanId,
-        resourceId,
-        created,
-        requestId,
-      },
-      'Notion workspace initialised & synced successfully',
-    );
-
-    metrics.trackOperation('notion_workspace_registration', true, { created: String(created) });
-
-    return {
-      id: syncPlanId,
-      resourceId,
-      wasInitialised: created,
-    };
+    return this._registerResource(ProviderType.NOTION, workspaceId, userId, cadenceSecs);
   }
 
   /**

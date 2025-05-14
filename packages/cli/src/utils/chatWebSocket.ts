@@ -68,6 +68,18 @@ const detectors: DetectorFn[] = [
     }
     return null;
   },
+  // Tasks structure
+  (_raw, p) => {
+    if (p && p.tasks && Array.isArray(p.tasks)) {
+      if (p.instructions && typeof p.instructions === 'string') {
+        return { type: 'thinking', content: p.instructions };
+      }
+      if (p.reasoning && typeof p.reasoning === 'string') {
+        return { type: 'thinking', content: p.reasoning };
+      }
+    }
+    return null;
+  },
 ];
 
 function detectChunk(raw: string, parsed: AnyJson): ChatMessageChunk | null {
