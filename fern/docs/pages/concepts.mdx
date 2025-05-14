@@ -1,22 +1,33 @@
 ---
 title: Key Concepts
-subtitle: Resources that will help you get started using the Plant Store API
+subtitle: Understanding the core components of the Dome API
 slug: concepts
-description: Learn about the Plant, Store, and User resources that comprise the Plant Store API.
+description: Learn about Users, Notes, Chat Sessions, Content, and other fundamental resources within the Dome API.
 ---
 
-### Plant
-
-A plant can be bought from the store. It has a name, a category, a status, and a list of photo URLs.
-
-### Store
-
-A store has a collection of plants. It is responsible for managing the inventory of plants. Users place orders for plants from the store.
+The Dome API revolves around several key concepts that enable its AI-powered exobrain functionalities. Understanding these will help you effectively integrate with our services.
 
 ### User
 
-A user is a person who buys plants from the store. Also known as plant parents.
-Highlight connections
-0 connections found
-Actions
+A **User** represents an individual interacting with the Dome API. Each user has a unique identifier, authentication credentials, and associated data such as notes and chat history. User authentication is managed via JWTs (JSON Web Tokens).
 
+### Note
+
+A **Note** is a piece of textual information stored by a user. Notes can be created, retrieved, updated, deleted, and searched. They form a core part of the user's personal knowledge base within the exobrain.
+
+### Chat Session
+
+A **Chat Session** facilitates real-time, AI-powered conversations. Users can initiate chat sessions, send messages, and receive intelligent responses. Chat interactions can leverage the user's notes and other ingested content for context-aware replies. Communication primarily occurs over WebSockets.
+
+### Content & Ingestion
+
+**Content** refers to external data that can be brought into the Dome system to enrich the user's exobrain. This can include documents, web pages, or data from other platforms (e.g., Notion).
+**Ingestion** is the process of importing and processing this external content, making it searchable and available for AI interactions.
+
+### Search
+
+The **Search** functionality allows users to query across their notes and ingested content. The search is designed to be intelligent, understanding natural language queries and providing relevant results from the user's exobrain.
+
+### Authentication
+
+**Authentication** is handled via Bearer Tokens (JWTs). Most endpoints require a valid token to be included in the `Authorization` header. The API provides endpoints for login, registration, token validation, and token refresh.

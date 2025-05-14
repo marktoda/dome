@@ -7,7 +7,7 @@ const TOKEN_STORAGE_KEY = 'authToken';
 /**
  * Represents the structure of a user object.
  */
-interface User {
+export interface User {
   id: string;
   name: string;
   email: string;
@@ -121,27 +121,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
           console.debug('AuthContext: Attempting to validate token and fetch user with /api/auth/me');
           const fetchOptions: RequestInit = {
-            method: 'GET',
+            method: 'POST', // Changed to POST
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${storedToken}`,
             },
+            // POST to /auth/validate does not require a body, but sending an empty one is harmless
+            body: JSON.stringify({}),
           };
-          const res = await fetch('/api/auth/me', fetchOptions);
+          // Use NEXT_PUBLIC_API_BASE_URL if available, otherwise fallback to relative path
+          const validateApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL
+            ? `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/validate`
+            : '/api/auth/validate'; // Changed to /auth/validate
+
+          const res = await fetch(validateApiUrl, fetchOptions);
 
           if (res.ok) {
             const data = await res.json();
-            if (data && data.user) {
+            // The /auth/validate endpoint returns { success: true, user: { ... } }
+            if (data && data.success && data.user) {
               dispatch({ type: 'INITIALIZE_SUCCESS', payload: { user: data.user, token: storedToken } });
-              console.log('AuthContext: User session restored successfully.');
+              console.log('AuthContext: User session restored successfully from /auth/validate.');
             } else {
               localStorage.removeItem(TOKEN_STORAGE_KEY);
-              dispatch({ type: 'INITIALIZE_FAILURE', payload: { error: 'User data not found in /me response.' } });
-              console.warn('AuthContext: /api/auth/me response malformed. Invalidating local token.');
+              dispatch({ type: 'INITIALIZE_FAILURE', payload: { error: 'User data not found in /auth/validate response or success was false.' } });
+              console.warn('AuthContext: /auth/validate response malformed or unsuccessful. Invalidating local token.', data);
             }
           } else {
             localStorage.removeItem(TOKEN_STORAGE_KEY);
-            const errorMsg = `/api/auth/me request failed with status ${res.status}.`;
+            const errorMsg = `/auth/validate request failed with status ${res.status}.`;
             dispatch({ type: 'INITIALIZE_FAILURE', payload: { error: errorMsg } });
             console.warn(`AuthContext: ${errorMsg} Invalidating local token.`);
           }

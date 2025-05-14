@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LoginSchema, LoginFormData } from '@/lib/validators';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth, User } from '@/contexts/AuthContext'; // Import User
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from "sonner";
@@ -60,16 +60,60 @@ export default function LoginPage() {
         setError(errorMessage); // Set local error state
         toast.error(errorMessage); // Show toast notification
       } else {
-        // Ensure result.user and result.token exist and are valid before proceeding
-        if (result.user && typeof result.token === 'string' && result.token.trim() !== '' && result.token !== 'undefined') {
-          console.log('Login page: Token received from API:', result.token);
-          console.log('Login page: User data received from API:', result.user);
-          auth.login(result.user, result.token); // Corrected call
-          toast.success('Login successful! Redirecting...');
-          router.push('/chat'); // Or to a more appropriate post-login page
+        // Step 1: Check if token is valid
+        if (typeof result.token === 'string' && result.token.trim() !== '' && result.token !== 'undefined') {
+          const token = result.token;
+          console.log('Login page: Token received from API:', token);
+
+          // Step 2: Fetch user data using the token
+          try {
+            const userApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL ? `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/validate` : '/api/auth/validate'; // Changed to /auth/validate
+            const userResponse = await fetch(userApiUrl, {
+              method: 'POST', // validateTokenRoute is a POST route
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!userResponse.ok) {
+              const userErrorResult = await userResponse.json();
+              let userErrorMessage = 'Failed to fetch user details after login.';
+              if (userErrorResult && userErrorResult.error && typeof userErrorResult.error.message === 'string') {
+                userErrorMessage = userErrorResult.error.message;
+              } else if (userErrorResult && typeof userErrorResult.message === 'string') {
+                userErrorMessage = userErrorResult.message;
+              }
+              console.error('Login page: Failed to fetch user data.', userErrorResult);
+              setError(userErrorMessage);
+              toast.error(userErrorMessage);
+              return; // Stop further execution
+            }
+
+            const userDataResult = await userResponse.json();
+            // Ensure userDataResult.user exists and is a valid User object
+            // This check might need to be more robust depending on your API's User structure
+            if (userDataResult && userDataResult.user && typeof userDataResult.user.id === 'string') {
+              const user: User = userDataResult.user;
+              console.log('Login page: User data received from /auth/me:', user);
+              auth.login(user, token);
+              toast.success('Login successful! Redirecting...');
+              router.push('/chat'); // Or to a more appropriate post-login page
+            } else {
+              const invalidUserDataMessage = 'Login token obtained, but user data from /auth/me is invalid.';
+              console.error('Login page: Invalid user data from /auth/me.', userDataResult);
+              setError(invalidUserDataMessage);
+              toast.error(invalidUserDataMessage);
+            }
+          } catch (userFetchErr) {
+            const userFetchCatchMessage = 'An error occurred while fetching user details. Please try again.';
+            setError(userFetchCatchMessage);
+            toast.error(userFetchCatchMessage);
+            console.error('Login page: Error fetching user details:', userFetchErr);
+          }
         } else {
-          const invalidTokenMessage = `Login succeeded but token/user data is invalid. Token: ${result.token}`;
-          console.error('Login page: Invalid token or user data from API.', result);
+          const invalidTokenMessage = `Login succeeded but token is invalid. Token: ${result.token}`;
+          console.error('Login page: Invalid token from API.', result);
           setError(invalidTokenMessage);
           toast.error(invalidTokenMessage);
         }

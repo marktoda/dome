@@ -1,29 +1,43 @@
 instances:
-  - url: dome.docs.buildwithfern.com
+  - url: dome.docs.buildwithfern.com # Updated to reflect Dome, if this is the intended domain
 
-title: Dome
+title: Dome API Documentation # Updated title
+logo: # Optional: Add a path to your logo if you have one, e.g., /logo.png
 
 layout:
   searchbar-placement: header
   page-width: full
 
 navigation:
-  - section: Get Started
+  - section: Introduction
     contents:
       - page: Welcome
         path: docs/pages/welcome.mdx
-      - page: Concepts
+        slug: welcome # Matches slug in welcome.mdx
+      - page: Key Concepts
         path: docs/pages/concepts.mdx
-      - page: SDKs
+        slug: concepts # Matches slug in concepts.mdx
+  - section: Guides
+    contents:
+      - page: Chat & WebSocket Streaming
+        path: docs/pages/chat-websocket.mdx
+        slug: chat-websocket # Ensure this slug matches the one in chat-websocket.mdx if set, or Fern will use filename
+      - page: Using SDKs
         path: docs/pages/sdks.mdx
-        slug: sdks
+        slug: sdks # Matches slug in sdks.mdx
   - api: API Reference
+    # Ensure your openapi.json path is correct in fern.config.json or generators.yml
 
 navbar-links:
   - type: github
-    value: https://github.com/marktoda/dome
+    value: https://github.com/marktoda/dome # This seems correct based on previous context
 
 colors:
   accentPrimary:
-    dark: "#81C784"
-    light: "#1B5E20"
+    # Consider adjusting colors to match your project's branding
+    dark: "#81C784" # Example: A pleasant green
+    light: "#1B5E20" # Example: A darker green
+  # You can also define background colors, etc.
+  # background:
+  #   dark: "#121212"
+  #   light: "#FFFFFF"

@@ -5,13 +5,9 @@ sidebar_position: 4
 
 # Real-time Chat Streaming over WebSocket
 
-The **/chat/ws** endpoint gives you a low-latency stream of chunks from the RAG pipeline.  It is the 
-interface used by the Dome CLI and the web dashboard.  This page shows how to establish the
-connection, what authentication is required, and how to parse the framed messages.
+The Dome API's **/chat/ws** endpoint provides a low-latency stream of response chunks from our RAG (Retrieval Augmented Generation) pipeline. This is the primary interface used by the Dome CLI and our web dashboard for real-time chat interactions. This page details how to establish the WebSocket connection, the authentication requirements, and the format of the streamed messages.
 
-> ℹ️  The streaming protocol is intentionally lightweight – a vanilla JSON payload in the first
-> frame and then JSON chunks in subsequent frames.  No exotic binary protocol, no GraphQL, no
-> Server-Sent-Events: just WebSockets.
+> ℹ️ The streaming protocol is intentionally lightweight: a vanilla JSON payload in the first client frame, followed by JSON chunks in subsequent server frames. No exotic binary protocols, GraphQL, or Server-Sent Events—just standard WebSockets.
 
 ---
 
@@ -21,134 +17,196 @@ connection, what authentication is required, and how to parse the framed message
 GET /chat/ws?token=<JWT>
 ```
 
-* **Protocol**: WebSocket upgrade.
-* **Host**: same as the REST API (e.g. `https://dome-api.chatter-9999.workers.dev`).  Switch the
-  scheme to **wss://** for TLS.
-* **Query params**
-  * `token` – **required**.  The access-token you received from `/auth/login` or `/auth/refresh`.
-    Pass exactly the same JWT string.  The refresh-token is **not** accepted.
+*   **Protocol**: WebSocket upgrade (RFC 6455).
+*   **Host**: The same host as the REST API (e.g., `https://dome-api.chatter-9999.workers.dev`). Remember to switch the scheme to **wss://** for secure connections over TLS.
+*   **Query Parameters**:
+    *   `token` – **Required**. This is the JWT access token you received from the `/auth/login` or `/auth/refresh` endpoints. Pass the exact JWT string. Refresh tokens are **not** accepted here.
 
-If the token is missing or invalid the server replies with **401**.  If the path is wrong you'll get
-**404**.  A successful upgrade returns the standard **101 Switching Protocols** response.
+If the `token` is missing, invalid, or expired, the server will respond with an HTTP **401 Unauthorized** error. If the path is incorrect, you'll receive a **404 Not Found**. A successful upgrade request will return the standard HTTP **101 Switching Protocols** response, after which the connection transitions to the WebSocket protocol.
 
 ---
 
-## 2. Client handshake payload
+## 2. Client Handshake Payload
 
-After the socket is open, **the client must immediately send a JSON object** describing the chat
-request:
+Immediately after the WebSocket connection is established (i.e., the 'open' event fires on the client), **the client must send a single JSON object** as its first message. This object describes the chat request:
 
 ```json5
 {
-  "userId": "fe96f0df-8810-44ee-af6c-3a7f824dc73c",   // your userId (from /auth/validate)
+  // The userId obtained after successful authentication (e.g., from /auth/validate response)
+  "userId": "fe96f0df-8810-44ee-af6c-3a7f824dc73c",
   "messages": [
     { "role": "user", "content": "How does Uniswap v4 work?" }
+    // You can include previous assistant messages for context as well
   ],
   "options": {
-    "enhanceWithContext": true,
-    "maxContextItems": 5,
-    "includeSourceInfo": true,
-    "maxTokens": 1000,
-    "temperature": 0.7
+    "enhanceWithContext": true, // Whether to use RAG to enhance the context
+    "maxContextItems": 5,     // Max number of context items (e.g., notes, documents) to retrieve
+    "includeSourceInfo": true,  // Whether to include source information in the response
+    "maxTokens": 1000,          // Max tokens for the generated response (model-dependent)
+    "temperature": 0.7          // Sampling temperature for the LLM
   },
-  "stream": true
+  "stream": true // Must be true for WebSocket streaming
 }
 ```
 
-Same schema as the REST `/chat` endpoint – we reuse the [ChatRequest](/docs/reference/openapi.yaml)
-model.
+This schema is identical to the one used by the REST API's `/chat` endpoint. It reuses the [ChatRequest model](/api-reference/chat/schemas/ChatRequest) from our OpenAPI specification.
 
 ---
 
-## 3. Streaming chunk format
+## 3. Streaming Chunk Format
 
-Every text frame after the first one is a **UTF-8 JSON chunk**.  It will always contain a `type`
-field so you can switch on it:
+Every subsequent text frame sent by the server (after the client's initial handshake payload) is a **UTF-8 encoded JSON chunk**. Each chunk will always contain a `type` field, allowing your client to easily parse and handle different kinds of messages:
 
-| `type`   | Description                             |
-|----------|-----------------------------------------|
-| thinking | Bot is still thinking – no content yet   |
-| content  | Partial assistant text                  |
-| sources  | Array of knowledge-base sources          |
-| error    | Recoverable error                       |
-| end      | Conversation finished                   |
+| `type`    | Description                                                                 |
+| :-------- | :-------------------------------------------------------------------------- |
+| `thinking`| The AI is processing the request; no content is available yet.              |
+| `content` | A partial segment of the assistant's text response. Append these segments.  |
+| `sources` | An array of source documents or context items used to generate the response. |
+| `error`   | A recoverable error occurred during processing. The stream may continue.    |
+| `end`     | The conversation stream has concluded.                                      |
 
-Example partial stream:
+Example of a partial stream:
 
 ```json
 {"type":"thinking"}
-{"type":"content","content":"Uniswap v4 introduces the 'Singleton' contract…"}
-{"type":"content","content":"In v4 custom hooks can be used to…"}
-{"type":"sources","sources":[{"id":"eth:erc20:UNI","title":"UNI token","type":"token"}]}
+{"type":"content","content":"Uniswap v4 introduces the 'Singleton' contract, which consolidates all pools into a single contract, "}
+{"type":"content","content":"and 'hooks', which are external contracts that can execute logic at various points in a pool action's lifecycle."}
+{"type":"sources","sources":[{"id":"eth:erc20:UNI","title":"UNI token whitepaper","type":"document"}]}
 {"type":"end"}
 ```
 
-The server closes the socket after `end`.
+The server will typically close the WebSocket connection after sending the `end` message, or it may keep it open if further interactions are expected on the same connection.
 
 ---
 
 ## 4. Quick-start – TypeScript
 
-```ts
-import WebSocket from 'ws';
+```typescript
+import WebSocket from 'ws'; // Or use the browser's native WebSocket
 
-const baseUrl = 'wss://dome-api.chatter-9999.workers.dev';
-const token   = process.env.DOME_TOKEN!; // ← store from /auth/login
-const ws = new WebSocket(`${baseUrl}/chat/ws?token=${token}`);
+const WSS_BASE_URL = 'wss://dome-api.chatter-9999.workers.dev'; // Your API base URL with wss://
+const authToken = process.env.DOME_ACCESS_TOKEN!; // Store securely after /auth/login
+const currentUserId = process.env.DOME_USER_ID!; // Typically obtained from /auth/validate
+
+const ws = new WebSocket(`${WSS_BASE_URL}/chat/ws?token=${authToken}`);
 
 ws.on('open', () => {
-  const payload = {
-    userId: process.env.DOME_USER_ID,
-    messages: [ { role: 'user', content: 'Hello!' } ],
-    options: { enhanceWithContext: true },
+  console.log('WebSocket connection established.');
+  const initialPayload = {
+    userId: currentUserId, // Ensure this is the authenticated user's ID
+    messages: [ { role: 'user', content: 'Hello, Dome API!' } ],
+    options: {
+      enhanceWithContext: true,
+      includeSourceInfo: true,
+    },
     stream: true,
   };
-  ws.send(JSON.stringify(payload));
+  ws.send(JSON.stringify(initialPayload));
 });
 
-ws.on('message', data => {
-  const chunk = JSON.parse(data.toString());
-  switch (chunk.type) {
-    case 'content':   process.stdout.write(chunk.content); break;
-    case 'sources':   console.dir(chunk.sources);          break;
-    case 'error':     console.error(chunk.error);          break;
+ws.on('message', (data) => {
+  try {
+    const chunk = JSON.parse(data.toString());
+    // console.log('Received chunk:', chunk); // For debugging
+    switch (chunk.type) {
+      case 'thinking':
+        console.log('Assistant is thinking...');
+        break;
+      case 'content':
+        process.stdout.write(chunk.content);
+        break;
+      case 'sources':
+        console.log('\nSources:', JSON.stringify(chunk.sources, null, 2));
+        break;
+      case 'error':
+        console.error('\nStream Error:', chunk.error);
+        break;
+      case 'end':
+        console.log('\nStream ended.');
+        ws.close(); // Close the connection once the stream ends
+        break;
+      default:
+        console.warn('\nUnknown chunk type:', chunk.type);
+    }
+  } catch (e) {
+    console.error('Failed to parse message or handle chunk:', e);
   }
 });
+
+ws.on('error', (error) => {
+  console.error('WebSocket error:', error);
+});
+
+ws.on('close', (code, reason) => {
+  console.log(`WebSocket connection closed. Code: ${code}, Reason: ${reason}`);
+});
 ```
 
 ---
 
-## 5. Quick-start – Python (asyncio-websockets)
+## 5. Quick-start – Python (using `websockets` library)
 
 ```python
-import asyncio, json, os, websockets, sys
+import asyncio
+import json
+import os
+import websockets
+import sys
 
-BASE = 'wss://dome-api.chatter-9999.workers.dev'
-TOKEN = os.environ['DOME_TOKEN']
-USER  = os.environ['DOME_USER_ID']
+API_BASE_WSS = 'wss://dome-api.chatter-9999.workers.dev' # Your API base URL with wss://
+ACCESS_TOKEN = os.environ.get('DOME_ACCESS_TOKEN')    # Store securely after /auth/login
+USER_ID = os.environ.get('DOME_USER_ID')              # Typically obtained from /auth/validate
 
-async def main():
-    uri = f"{BASE}/chat/ws?token={TOKEN}"
-    async with websockets.connect(uri) as ws:
-        payload = {
-            'userId': USER,
-            'messages': [{'role': 'user', 'content': 'Ping?'}],
-            'options': {'enhanceWithContext': True},
-            'stream': True,
-        }
-        await ws.send(json.dumps(payload))
-        async for msg in ws:
-            chunk = json.loads(msg)
-            if chunk['type'] == 'content':
-                sys.stdout.write(chunk['content'])
-            elif chunk['type'] == 'end':
-                break
+async def chat_stream():
+    if not ACCESS_TOKEN or not USER_ID:
+        print("Error: DOME_ACCESS_TOKEN and DOME_USER_ID environment variables must be set.")
+        return
+
+    uri = f"{API_BASE_WSS}/chat/ws?token={ACCESS_TOKEN}"
+    
+    try:
+        async with websockets.connect(uri) as websocket:
+            print("WebSocket connection established.")
+            initial_payload = {
+                'userId': USER_ID, # Ensure this is the authenticated user's ID
+                'messages': [{'role': 'user', 'content': 'Tell me about Dome API.'}],
+                'options': {'enhanceWithContext': True, 'includeSourceInfo': True},
+                'stream': True,
+            }
+            await websocket.send(json.dumps(initial_payload))
+            print("Sent initial payload. Waiting for stream...")
+
+            async for message in websocket:
+                try:
+                    chunk = json.loads(message)
+                    # print(f"Received chunk: {chunk}") # For debugging
+                    
+                    if chunk.get('type') == 'content':
+                        sys.stdout.write(chunk.get('content', ''))
+                        sys.stdout.flush()
+                    elif chunk.get('type') == 'sources':
+                        print(f"\nSources: {json.dumps(chunk.get('sources'), indent=2)}")
+                    elif chunk.get('type') == 'thinking':
+                        print("\nAssistant is thinking...")
+                    elif chunk.get('type') == 'error':
+                        print(f"\nStream Error: {chunk.get('error')}")
+                    elif chunk.get('type') == 'end':
+                        print("\nStream ended.")
+                        break 
+                except json.JSONDecodeError:
+                    print(f"\nError decoding JSON: {message}")
+                except Exception as e:
+                    print(f"\nError processing chunk: {e}")
+            
+    except websockets.exceptions.ConnectionClosed as e:
+        print(f"WebSocket connection closed: {e}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(chat_stream())
 ```
 
 ---
 
-That's it – happy streaming! If anything is unclear or you spot an issue in this doc, please open an
-issue or PR. 
+That's it – happy streaming! If anything is unclear or you spot an issue in this documentation, please open an issue or submit a pull request on our project's GitHub repository.
