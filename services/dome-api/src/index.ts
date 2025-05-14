@@ -248,28 +248,37 @@ app.get(
       });
     }
 
-    // Allow authService to determine provider from token
-    const authResult = await authService.validateToken(token);
-    logger.info({ authResult }, 'WebSocket upgrade auth validation result');
-
-    if (!authResult.success || !authResult.user) {
-      logger.warn('Invalid token in WebSocket upgrade request.');
-      throw new HTTPException(401, {
-        message: 'Invalid or expired token for WebSocket.',
-        cause: {
-          success: false,
-          error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token for WebSocket.' },
-        },
-      });
+    // Allow authService to determine provider from token. Convert auth failures to 401.
+    let authResult;
+    try {
+      authResult = await authService.validateToken(token);
+    } catch (err) {
+      // Map known auth errors to HTTP 401 instead of generic 500
+      const unauthorizedCodes = ['UNAUTHORIZED', 'UNAUTHORIZED_ERROR'];
+      const code = (err as any)?.code ?? (err as any)?.errorCode;
+      if (
+        err instanceof Error &&
+        (err.name === 'UnauthorizedError' || unauthorizedCodes.includes(code))
+      ) {
+        logger.warn({ err }, 'Token validation failed – unauthorized');
+        throw new HTTPException(401, {
+          message: 'Invalid or expired token for WebSocket.',
+          cause: {
+            success: false,
+            error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token.' },
+          },
+        });
+      }
+      throw err; // Unknown error – handled by outer middleware
     }
 
-    const authenticatedUserId = authResult.user.id;
+    const authenticatedUserId = authResult.user!.id;
     // Update context for subsequent logging within this request scope if possible
     await updateContext({
       identity: {
-        userId: authResult.user.id,
-        role: authResult.user.role,
-        email: authResult.user.email,
+        userId: authResult.user!.id,
+        role: authResult.user!.role,
+        email: authResult.user!.email,
       },
     });
     logger.info({ authenticatedUserId }, 'Successfully authenticated WebSocket upgrade request.');
