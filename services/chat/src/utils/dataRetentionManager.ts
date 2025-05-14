@@ -165,14 +165,10 @@ export class DataRetentionManager {
         'User consent recorded',
       );
     } catch (error) {
-      logError(
-        error,
-        'Failed to record user consent',
-        {
-          userId,
-          dataCategory,
-        },
-      );
+      logError(error, 'Failed to record user consent', {
+        userId,
+        dataCategory,
+      });
       throw error;
     }
   }
@@ -253,18 +249,14 @@ export class DataRetentionManager {
       if (error instanceof ForbiddenError) {
         throw error;
       }
-  
-        logError(
-          error,
-          'Failed to register data record',
-          {
-            recordId,
-            userId,
-            dataCategory,
-          },
-        );
-        throw error;
-      }
+
+      logError(error, 'Failed to register data record', {
+        recordId,
+        userId,
+        dataCategory,
+      });
+      throw error;
+    }
   }
 
   /**
@@ -409,14 +401,10 @@ export class DataRetentionManager {
       if (error instanceof ForbiddenError) {
         throw error;
       }
-  
-        logError(
-          error,
-          'Failed to delete user data',
-          { userId },
-        );
-        throw error;
-      }
+
+      logError(error, 'Failed to delete user data', { userId });
+      throw error;
+    }
   }
 
   /**
@@ -458,14 +446,10 @@ export class DataRetentionManager {
           );
       }
     } catch (error) {
-      logError(
-        error,
-        'Failed to delete data',
-        {
-          recordId,
-          dataCategory,
-        },
-      );
+      logError(error, 'Failed to delete data', {
+        recordId,
+        dataCategory,
+      });
       throw error;
     }
   }
@@ -495,14 +479,10 @@ export class DataRetentionManager {
           );
       }
     } catch (error) {
-      this.logger.error(
-        error,
-        'Failed to anonymize data',
-        {
-          recordId,
-          dataCategory,
-        },
-      );
+      this.logger.error(error, 'Failed to anonymize data', {
+        recordId,
+        dataCategory,
+      });
       throw error;
     }
   }

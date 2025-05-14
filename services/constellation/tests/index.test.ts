@@ -114,10 +114,12 @@ interface TestMessageBatch<T> {
 
 // Mock cloudflare:workers
 vi.mock('cloudflare:workers', () => ({
-  WorkerEntrypoint: class WorkerEntrypoint<E = any> { // Make generic to align with actual
+  WorkerEntrypoint: class WorkerEntrypoint<E = any> {
+    // Make generic to align with actual
     env: E;
     ctx: any; // ExecutionContext
-    constructor(env?: E, ctx?: any) { // Add env and ctx to constructor
+    constructor(env?: E, ctx?: any) {
+      // Add env and ctx to constructor
       this.env = env as E;
       this.ctx = ctx;
     }
@@ -204,7 +206,8 @@ vi.mock('@dome/silo/client', () => ({
 }));
 
 // Temporarily skip all tests to resolve memory issues
-describe('Constellation', () => { // Unskipped this describe block
+describe('Constellation', () => {
+  // Unskipped this describe block
   let constellation: Constellation;
   let mockEnv: Env;
 
@@ -251,7 +254,7 @@ describe('Constellation', () => { // Unskipped this describe block
     const mockCtx: ExecutionContext = {
       waitUntil: vi.fn(),
       passThroughOnException: vi.fn(),
-      props: {}
+      props: {},
     };
     // Instantiate with env and ctx. The WorkerEntrypoint mock constructor should set this.env.
     // Cast both to 'any' to force bypass of TS2345 error at this call site.
@@ -259,7 +262,7 @@ describe('Constellation', () => { // Unskipped this describe block
     // The line `(constellation as any).env = mockEnv;` should ideally be redundant
     // if the WorkerEntrypoint mock constructor works as expected.
     // Let's keep it for now as a safeguard.
-     (constellation as any).env = mockEnv;
+    (constellation as any).env = mockEnv;
     // Reset memoized services to ensure buildServices is called with the correct mockEnv
     (constellation as any)._services = undefined; // Force re-evaluation of services getter if accessed
 
@@ -346,11 +349,7 @@ describe('Constellation', () => { // Unskipped this describe block
 
       // Assert
       const vectorizeInstance = (constellation as any).services.vectorize; // Access through services
-      expect(vectorizeInstance.query).toHaveBeenCalledWith(
-        expect.any(Array),
-        testFilter,
-        10
-      );
+      expect(vectorizeInstance.query).toHaveBeenCalledWith(expect.any(Array), testFilter, 10);
     });
 
     it('should handle empty query text after preprocessing', async () => {
@@ -411,7 +410,7 @@ describe('Constellation', () => { // Unskipped this describe block
       const vectorizeInstance = (constellation as any).services.vectorize; // Access through services
       // Ensure the instance and method exist before mocking
       if (!vectorizeInstance || typeof vectorizeInstance.getStats !== 'function') {
-         throw new Error('Vectorize service or getStats method not initialized for test');
+        throw new Error('Vectorize service or getStats method not initialized for test');
       }
       vectorizeInstance.getStats.mockRejectedValueOnce(error);
 
@@ -428,7 +427,8 @@ describe('Constellation', () => { // Unskipped this describe block
 
   describe('queue', () => {
     // Skip this test for now as the queue implementation/inheritance is unclear
-    it.skip('should process a batch of embedding jobs', async () => { // Keep skipped
+    it.skip('should process a batch of embedding jobs', async () => {
+      // Keep skipped
       // Arrange
       const mockBatch = {
         messages: [
@@ -464,7 +464,6 @@ describe('Constellation', () => { // Unskipped this describe block
       // Given the class structure, embedBatch is a real method.
       embedBatchSpy.mockResolvedValueOnce(2); // Ensure the spy has the desired mock behavior for this call.
 
-
       // Act
       // Pass only the batch, as queue likely takes 1 argument
       await constellation.queue(mockBatch);
@@ -472,7 +471,7 @@ describe('Constellation', () => { // Unskipped this describe block
       // Assert
       expect(embedBatchSpy).toHaveBeenCalledWith(
         [mockBatch.messages[0].body, mockBatch.messages[1].body],
-        expect.any(Function) // This is the sendToDeadLetter function passed by Constellation.queue
+        expect.any(Function), // This is the sendToDeadLetter function passed by Constellation.queue
       );
       embedBatchSpy.mockRestore(); // Clean up spy
     });
@@ -496,7 +495,9 @@ describe('Constellation', () => { // Unskipped this describe block
       } as any; // Use type assertion to any to bypass type checking
 
       // Spy on embedBatch and make it reject for this test
-      const embedBatchSpy = vi.spyOn(constellation as any, 'embedBatch').mockRejectedValueOnce(new Error('Batch error'));
+      const embedBatchSpy = vi
+        .spyOn(constellation as any, 'embedBatch')
+        .mockRejectedValueOnce(new Error('Batch error'));
 
       // Act
       // Pass only the batch
@@ -529,14 +530,13 @@ describe('Constellation', () => { // Unskipped this describe block
       const originalProcessMock = preprocessorInstance.process;
       preprocessorInstance.process = vi.fn().mockReturnValueOnce([]);
 
-
       // Act
       const successCount = await (constellation as any).embedBatch([testJob]);
 
       // Assert
       expect(successCount).toBe(0); // If process returns [], embedBatch skips it, successCount should be 0 for this job.
-                                   // The original test expected 1, which might be incorrect if an empty process means no successful embedding.
-                                   // Let's assume 0 successful embeddings if preprocessor returns empty.
+      // The original test expected 1, which might be incorrect if an empty process means no successful embedding.
+      // Let's assume 0 successful embeddings if preprocessor returns empty.
       expect(getLogger().warn).toHaveBeenCalled();
       preprocessorInstance.process = originalProcessMock; // Restore
     });
@@ -548,27 +548,31 @@ describe('Constellation', () => { // Unskipped this describe block
       expect(embedderInstance).toBeDefined(); // Ensure instance exists before mocking method
 
       // Save the original implementation if it exists and is a function
-      const originalEmbedImplementation = typeof embedderInstance?.embed === 'function' ? embedderInstance.embed : undefined;
+      const originalEmbedImplementation =
+        typeof embedderInstance?.embed === 'function' ? embedderInstance.embed : undefined;
 
       // Mock embed to reject for this specific test
       if (embedderInstance) {
         embedderInstance.embed = vi.fn().mockRejectedValueOnce(error);
       } else {
-         throw new Error("Embedder instance not found to mock");
+        throw new Error('Embedder instance not found to mock');
       }
 
       const sendToDeadLetter = vi.fn(); // Declare sendToDeadLetter once
 
       // Act
       const successCount = await (constellation as any).embedBatch([testJob], sendToDeadLetter);
-      
+
       // Assert
       expect(successCount).toBe(0);
-      expect(sendToDeadLetter).toHaveBeenCalledWith(testJob, expect.stringContaining(error.message)); // DLQ includes reason
+      expect(sendToDeadLetter).toHaveBeenCalledWith(
+        testJob,
+        expect.stringContaining(error.message),
+      ); // DLQ includes reason
 
       // Restore the original mock implementation for embedderInstance.embed
       if (embedderInstance && originalEmbedImplementation) {
-         embedderInstance.embed = originalEmbedImplementation;
+        embedderInstance.embed = originalEmbedImplementation;
       }
     });
   });

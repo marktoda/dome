@@ -59,7 +59,7 @@ export class ListCommand implements CommandHandler {
       }
 
       const notes: DomeApi.Note[] = await apiClient.notes.listNotes(requestParams);
-      
+
       this.setStatus(` {bold}Status:{/bold} Processing notes...`);
 
       if (notes.length === 0) {

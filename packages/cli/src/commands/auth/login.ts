@@ -1,5 +1,11 @@
 import { BaseCommand, CommandArgs } from '../base';
-import { isAuthenticated, saveApiKey, saveUserId, saveConfig, loadConfig } from '../../utils/config';
+import {
+  isAuthenticated,
+  saveApiKey,
+  saveUserId,
+  saveConfig,
+  loadConfig,
+} from '../../utils/config';
 import { getApiClient, clearApiClientInstance, getApiBaseUrl } from '../../utils/apiClient';
 import { DomeApi } from '@dome/dome-sdk';
 import readline from 'readline';
@@ -13,13 +19,14 @@ export class LoginCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('login')
+    const cmd = program
+      .command('login')
       .description('Login to the Dome API')
       .option('-e, --email <email>', 'Email address')
       .option('-p, --password <password>', 'Password')
       .option('--output-format <format>', 'Output format (cli, json), e.g., json or cli');
-    
-    cmd.action(async (optionsFromCommander) => {
+
+    cmd.action(async optionsFromCommander => {
       const commandInstance = new LoginCommand();
       // Commander's options are directly compatible with CommandArgs structure here
       await commandInstance.executeRun(optionsFromCommander as CommandArgs);
@@ -30,7 +37,10 @@ export class LoginCommand extends BaseCommand {
     const outputFormat = args.outputFormat || OutputFormat.CLI;
     try {
       if (isAuthenticated()) {
-        this.log('You are already logged in. To use a different API key, run `dome logout` first.', outputFormat);
+        this.log(
+          'You are already logged in. To use a different API key, run `dome logout` first.',
+          outputFormat,
+        );
         return;
       }
 
@@ -39,27 +49,30 @@ export class LoginCommand extends BaseCommand {
         output: process.stdout,
       });
 
-      const email = args.email || (await new Promise<string>(resolve => {
-        rl.question('Enter your email: ', answer => resolve(answer.trim()));
-      }));
+      const email =
+        args.email ||
+        (await new Promise<string>(resolve => {
+          rl.question('Enter your email: ', answer => resolve(answer.trim()));
+        }));
 
-      const password = args.password || (await new Promise<string>(resolve => {
-        rl.question('Enter your password: ', answer => {
-          // It's important to close the readline interface only once.
-          // If email was provided but password wasn't, rl might be closed prematurely.
-          // This logic ensures it's closed after the last prompt.
-          if (!args.email || !args.password) {
-            rl.close();
-          }
-          resolve(answer.trim());
-        });
-      }));
-      
+      const password =
+        args.password ||
+        (await new Promise<string>(resolve => {
+          rl.question('Enter your password: ', answer => {
+            // It's important to close the readline interface only once.
+            // If email was provided but password wasn't, rl might be closed prematurely.
+            // This logic ensures it's closed after the last prompt.
+            if (!args.email || !args.password) {
+              rl.close();
+            }
+            resolve(answer.trim());
+          });
+        }));
+
       // If both email and password were provided as args, rl was never used for prompting, close it.
       if (args.email && args.password) {
         rl.close();
       }
-
 
       if (!email) {
         this.error('Email is required.', { outputFormat });
@@ -115,19 +128,31 @@ export class LoginCommand extends BaseCommand {
         if (!cfgAfterSave.userId) {
           try {
             const newApiClient = await getApiClient();
-            const validationResponse: DomeApi.DomeApiValidateTokenResponse = await newApiClient.auth.validateAuthenticationToken();
+            const validationResponse: DomeApi.DomeApiValidateTokenResponse =
+              await newApiClient.auth.validateAuthenticationToken();
             if (validationResponse.success && validationResponse.user) {
               saveUserId(validationResponse.user.id);
-              this.log(`User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`, outputFormat);
+              this.log(
+                `User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`,
+                outputFormat,
+              );
             } else {
-              this.log('Warning: logged in but unable to fetch user profile. You can still use the CLI.', outputFormat);
+              this.log(
+                'Warning: logged in but unable to fetch user profile. You can still use the CLI.',
+                outputFormat,
+              );
             }
           } catch {
-            this.log('Warning: logged in but unable to fetch user profile. You can still use the CLI.', outputFormat);
+            this.log(
+              'Warning: logged in but unable to fetch user profile. You can still use the CLI.',
+              outputFormat,
+            );
           }
         }
       } else {
-        this.error('Login failed: No token received despite successful response.', { outputFormat });
+        this.error('Login failed: No token received despite successful response.', {
+          outputFormat,
+        });
         process.exitCode = 1;
       }
     } catch (err: unknown) {

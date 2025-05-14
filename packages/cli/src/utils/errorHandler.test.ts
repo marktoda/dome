@@ -42,7 +42,9 @@ describe('handleError', () => {
       });
       handleError(apiError, { outputFormat: OutputFormat.CLI });
       // Assuming error.message from DomeApiError is comprehensive
-      const comprehensiveMessage = `${apiErrorMessage}\nStatus code: ${statusCode}\nBody: ${JSON.stringify(errorBodyWithoutMessage)}`;
+      const comprehensiveMessage = `${apiErrorMessage}\nStatus code: ${statusCode}\nBody: ${JSON.stringify(
+        errorBodyWithoutMessage,
+      )}`;
       expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
       expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, `Error: ${comprehensiveMessage}`);
       expect(consoleErrorSpy).toHaveBeenNthCalledWith(2, `Status Code: ${statusCode}`);
@@ -54,7 +56,9 @@ describe('handleError', () => {
         body: {},
       });
       // Assuming error.message from DomeApiError is comprehensive even with a default
-      const defaultComprehensiveMessage = `An API error occurred\nStatus code: ${statusCode}\nBody: ${JSON.stringify({})}`;
+      const defaultComprehensiveMessage = `An API error occurred\nStatus code: ${statusCode}\nBody: ${JSON.stringify(
+        {},
+      )}`;
       handleError(apiError, { outputFormat: OutputFormat.CLI });
       expect(consoleErrorSpy).toHaveBeenCalledTimes(2);
       expect(consoleErrorSpy).toHaveBeenNthCalledWith(1, `Error: ${defaultComprehensiveMessage}`);
@@ -79,22 +83,24 @@ describe('handleError', () => {
     });
 
     it('should output in JSON format with primary error message if error.body.message is not available', () => {
-        const apiError = new DomeApiError({
-          message: apiErrorMessage,
-          statusCode,
-          body: errorBodyWithoutMessage,
-        });
-        handleError(apiError, { outputFormat: OutputFormat.JSON });
-        expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-        const expectedDetails: ErrorDetails = {
-          type: 'DomeApiError',
-          // Assuming error.message from DomeApiError (which becomes errorDetails.message) is comprehensive
-          message: `${apiErrorMessage}\nStatus code: ${statusCode}\nBody: ${JSON.stringify(errorBodyWithoutMessage)}`,
-          statusCode,
-          details: errorBodyWithoutMessage,
-        };
-        expect(JSON.parse(consoleErrorSpy.mock.calls[0][0])).toEqual(expectedDetails);
+      const apiError = new DomeApiError({
+        message: apiErrorMessage,
+        statusCode,
+        body: errorBodyWithoutMessage,
       });
+      handleError(apiError, { outputFormat: OutputFormat.JSON });
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      const expectedDetails: ErrorDetails = {
+        type: 'DomeApiError',
+        // Assuming error.message from DomeApiError (which becomes errorDetails.message) is comprehensive
+        message: `${apiErrorMessage}\nStatus code: ${statusCode}\nBody: ${JSON.stringify(
+          errorBodyWithoutMessage,
+        )}`,
+        statusCode,
+        details: errorBodyWithoutMessage,
+      };
+      expect(JSON.parse(consoleErrorSpy.mock.calls[0][0])).toEqual(expectedDetails);
+    });
   });
 
   // Test cases for DomeApiTimeoutError
@@ -181,22 +187,22 @@ describe('handleError', () => {
     });
 
     it('should handle string as unknown error in CLI format', () => {
-        const stringError = "Just a string error";
-        handleError(stringError, { outputFormat: OutputFormat.CLI });
-        expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-        expect(consoleErrorSpy).toHaveBeenCalledWith(`Error: ${defaultUnknownMessage}`);
+      const stringError = 'Just a string error';
+      handleError(stringError, { outputFormat: OutputFormat.CLI });
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(`Error: ${defaultUnknownMessage}`);
     });
 
     it('should handle string as unknown error in JSON format', () => {
-        const stringError = "Just a string error";
-        handleError(stringError, { outputFormat: OutputFormat.JSON });
-        expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-        const expectedDetails: ErrorDetails = {
-          type: 'UnknownError',
-          message: defaultUnknownMessage,
-          details: stringError,
-        };
-        expect(JSON.parse(consoleErrorSpy.mock.calls[0][0])).toEqual(expectedDetails);
+      const stringError = 'Just a string error';
+      handleError(stringError, { outputFormat: OutputFormat.JSON });
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      const expectedDetails: ErrorDetails = {
+        type: 'UnknownError',
+        message: defaultUnknownMessage,
+        details: stringError,
+      };
+      expect(JSON.parse(consoleErrorSpy.mock.calls[0][0])).toEqual(expectedDetails);
     });
   });
 

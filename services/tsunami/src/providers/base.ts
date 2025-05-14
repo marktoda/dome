@@ -37,4 +37,4 @@ export abstract class BaseProvider implements Provider {
   protected resetIgnorePatterns(): void {
     this.ignorePatternProcessor.clearPatterns();
   }
-} 
+}

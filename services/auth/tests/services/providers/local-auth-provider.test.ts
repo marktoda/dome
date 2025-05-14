@@ -35,7 +35,7 @@ const mockPasswordManager = {
 class LocalAuthProvider {
   constructor(
     private userManager: any, // UserManager
-    private passwordManager: any // PasswordManager
+    private passwordManager: any, // PasswordManager
   ) {}
 
   getProviderType() {
@@ -45,12 +45,18 @@ class LocalAuthProvider {
   async register(details: any) {
     const { email, password, ...otherDetails } = details;
     if (!email || !password) {
-      throw new AuthError('Email and password are required for registration.', AuthErrorType.VALIDATION_ERROR);
+      throw new AuthError(
+        'Email and password are required for registration.',
+        AuthErrorType.VALIDATION_ERROR,
+      );
     }
 
     let existingUser = await this.userManager.findUserByEmail(email);
     if (existingUser) {
-      throw new AuthError('User with this email already exists.', AuthErrorType.USER_ALREADY_EXISTS);
+      throw new AuthError(
+        'User with this email already exists.',
+        AuthErrorType.USER_ALREADY_EXISTS,
+      );
     }
 
     const hashedPassword = await this.passwordManager.hashPassword(password);
@@ -68,16 +74,23 @@ class LocalAuthProvider {
   async login(credentials: any) {
     const { email, password } = credentials;
     if (!email || !password) {
-      throw new AuthError('Email and password are required for login.', AuthErrorType.VALIDATION_ERROR);
+      throw new AuthError(
+        'Email and password are required for login.',
+        AuthErrorType.VALIDATION_ERROR,
+      );
     }
 
     const user = await this.userManager.findUserByEmail(email);
-    if (!user || user.provider !== 'local') { // Ensure user is a local account
+    if (!user || user.provider !== 'local') {
+      // Ensure user is a local account
       throw new AuthError('Invalid email or password.', AuthErrorType.INVALID_CREDENTIALS);
     }
 
     // Assuming user object stores hashedPassword
-    const isValidPassword = await this.passwordManager.comparePassword(password, user.hashedPassword);
+    const isValidPassword = await this.passwordManager.comparePassword(
+      password,
+      user.hashedPassword,
+    );
     if (!isValidPassword) {
       throw new AuthError('Invalid email or password.', AuthErrorType.INVALID_CREDENTIALS);
     }
@@ -94,19 +107,31 @@ class LocalAuthProvider {
     const user = await this.userManager.findUserByEmail(email);
     if (!user || user.provider !== 'local') return null;
 
-    const isValidPassword = await this.passwordManager.comparePassword(password, user.hashedPassword);
+    const isValidPassword = await this.passwordManager.comparePassword(
+      password,
+      user.hashedPassword,
+    );
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { hashedPassword: _, ...userToReturn } = user;
     return isValidPassword ? { user: userToReturn } : null;
   }
 }
 
-
 describe('LocalAuthProvider Unit Tests', () => {
   let localAuthProvider: LocalAuthProvider;
-  const mockUser = { id: 'user-123', email: 'test@example.com', name: 'Test User', hashedPassword: 'hashed_password_string', provider: 'local' };
-  const mockCleanUser = { id: 'user-123', email: 'test@example.com', name: 'Test User', provider: 'local' };
-
+  const mockUser = {
+    id: 'user-123',
+    email: 'test@example.com',
+    name: 'Test User',
+    hashedPassword: 'hashed_password_string',
+    provider: 'local',
+  };
+  const mockCleanUser = {
+    id: 'user-123',
+    email: 'test@example.com',
+    name: 'Test User',
+    provider: 'local',
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -134,7 +159,11 @@ describe('LocalAuthProvider Unit Tests', () => {
         };
       });
 
-      const result = await localAuthProvider.register({ email: 'new@example.com', password: 'password123', name: 'New User' });
+      const result = await localAuthProvider.register({
+        email: 'new@example.com',
+        password: 'password123',
+        name: 'New User',
+      });
 
       expect(mockUserManager.findUserByEmail).toHaveBeenCalledWith('new@example.com');
       expect(mockPasswordManager.hashPassword).toHaveBeenCalledWith('password123');
@@ -144,18 +173,34 @@ describe('LocalAuthProvider Unit Tests', () => {
         provider: 'local',
         name: 'New User',
       });
-      expect(result.user).toEqual(expect.objectContaining({ email: 'new@example.com', name: 'New User' }));
+      expect(result.user).toEqual(
+        expect.objectContaining({ email: 'new@example.com', name: 'New User' }),
+      );
       expect(result.user).not.toHaveProperty('hashedPassword');
     });
 
     it('should throw VALIDATION_ERROR if email or password is not provided', async () => {
-      await expect(localAuthProvider.register({ email: 'test@example.com' })).rejects.toThrowError(new AuthError('Email and password are required for registration.', AuthErrorType.VALIDATION_ERROR));
-      await expect(localAuthProvider.register({ password: 'password123' })).rejects.toThrowError(new AuthError('Email and password are required for registration.', AuthErrorType.VALIDATION_ERROR));
+      await expect(localAuthProvider.register({ email: 'test@example.com' })).rejects.toThrowError(
+        new AuthError(
+          'Email and password are required for registration.',
+          AuthErrorType.VALIDATION_ERROR,
+        ),
+      );
+      await expect(localAuthProvider.register({ password: 'password123' })).rejects.toThrowError(
+        new AuthError(
+          'Email and password are required for registration.',
+          AuthErrorType.VALIDATION_ERROR,
+        ),
+      );
     });
 
     it('should throw USER_ALREADY_EXISTS if user with email already exists', async () => {
       mockUserManager.findUserByEmail.mockResolvedValue(mockUser);
-      await expect(localAuthProvider.register({ email: 'test@example.com', password: 'password123' })).rejects.toThrowError(new AuthError('User with this email already exists.', AuthErrorType.USER_ALREADY_EXISTS));
+      await expect(
+        localAuthProvider.register({ email: 'test@example.com', password: 'password123' }),
+      ).rejects.toThrowError(
+        new AuthError('User with this email already exists.', AuthErrorType.USER_ALREADY_EXISTS),
+      );
     });
   });
 
@@ -164,32 +209,52 @@ describe('LocalAuthProvider Unit Tests', () => {
       mockUserManager.findUserByEmail.mockResolvedValue(mockUser);
       mockPasswordManager.comparePassword.mockResolvedValue(true);
 
-      const result = await localAuthProvider.login({ email: 'test@example.com', password: 'password123' });
+      const result = await localAuthProvider.login({
+        email: 'test@example.com',
+        password: 'password123',
+      });
 
       expect(mockUserManager.findUserByEmail).toHaveBeenCalledWith('test@example.com');
-      expect(mockPasswordManager.comparePassword).toHaveBeenCalledWith('password123', mockUser.hashedPassword);
+      expect(mockPasswordManager.comparePassword).toHaveBeenCalledWith(
+        'password123',
+        mockUser.hashedPassword,
+      );
       expect(result.user).toEqual(mockCleanUser);
       expect(result.user).not.toHaveProperty('hashedPassword');
     });
 
     it('should throw VALIDATION_ERROR if email or password is not provided for login', async () => {
-      await expect(localAuthProvider.login({ email: 'test@example.com' })).rejects.toThrowError(new AuthError('Email and password are required for login.', AuthErrorType.VALIDATION_ERROR));
+      await expect(localAuthProvider.login({ email: 'test@example.com' })).rejects.toThrowError(
+        new AuthError('Email and password are required for login.', AuthErrorType.VALIDATION_ERROR),
+      );
     });
 
     it('should throw INVALID_CREDENTIALS if user is not found', async () => {
       mockUserManager.findUserByEmail.mockResolvedValue(null);
-      await expect(localAuthProvider.login({ email: 'nonexistent@example.com', password: 'password123' })).rejects.toThrowError(new AuthError('Invalid email or password.', AuthErrorType.INVALID_CREDENTIALS));
+      await expect(
+        localAuthProvider.login({ email: 'nonexistent@example.com', password: 'password123' }),
+      ).rejects.toThrowError(
+        new AuthError('Invalid email or password.', AuthErrorType.INVALID_CREDENTIALS),
+      );
     });
 
     it('should throw INVALID_CREDENTIALS if user is not a local provider user', async () => {
       mockUserManager.findUserByEmail.mockResolvedValue({ ...mockUser, provider: 'privy' });
-      await expect(localAuthProvider.login({ email: 'test@example.com', password: 'password123' })).rejects.toThrowError(new AuthError('Invalid email or password.', AuthErrorType.INVALID_CREDENTIALS));
+      await expect(
+        localAuthProvider.login({ email: 'test@example.com', password: 'password123' }),
+      ).rejects.toThrowError(
+        new AuthError('Invalid email or password.', AuthErrorType.INVALID_CREDENTIALS),
+      );
     });
 
     it('should throw INVALID_CREDENTIALS for incorrect password', async () => {
       mockUserManager.findUserByEmail.mockResolvedValue(mockUser);
       mockPasswordManager.comparePassword.mockResolvedValue(false);
-      await expect(localAuthProvider.login({ email: 'test@example.com', password: 'wrongpassword' })).rejects.toThrowError(new AuthError('Invalid email or password.', AuthErrorType.INVALID_CREDENTIALS));
+      await expect(
+        localAuthProvider.login({ email: 'test@example.com', password: 'wrongpassword' }),
+      ).rejects.toThrowError(
+        new AuthError('Invalid email or password.', AuthErrorType.INVALID_CREDENTIALS),
+      );
     });
   });
 
@@ -198,27 +263,39 @@ describe('LocalAuthProvider Unit Tests', () => {
       mockUserManager.findUserByEmail.mockResolvedValue(mockUser);
       mockPasswordManager.comparePassword.mockResolvedValue(true);
 
-      const result = await localAuthProvider.validateCredentials({ email: 'test@example.com', password: 'password123' });
+      const result = await localAuthProvider.validateCredentials({
+        email: 'test@example.com',
+        password: 'password123',
+      });
       expect(result?.user).toEqual(mockCleanUser);
       expect(result?.user).not.toHaveProperty('hashedPassword');
     });
 
     it('should return null if user not found', async () => {
       mockUserManager.findUserByEmail.mockResolvedValue(null);
-      const result = await localAuthProvider.validateCredentials({ email: 'nonexistent@example.com', password: 'password123' });
+      const result = await localAuthProvider.validateCredentials({
+        email: 'nonexistent@example.com',
+        password: 'password123',
+      });
       expect(result).toBeNull();
     });
 
     it('should return null if user is not a local provider user', async () => {
       mockUserManager.findUserByEmail.mockResolvedValue({ ...mockUser, provider: 'privy' });
-      const result = await localAuthProvider.validateCredentials({ email: 'test@example.com', password: 'password123' });
+      const result = await localAuthProvider.validateCredentials({
+        email: 'test@example.com',
+        password: 'password123',
+      });
       expect(result).toBeNull();
     });
 
     it('should return null for incorrect password', async () => {
       mockUserManager.findUserByEmail.mockResolvedValue(mockUser);
       mockPasswordManager.comparePassword.mockResolvedValue(false);
-      const result = await localAuthProvider.validateCredentials({ email: 'test@example.com', password: 'wrongpassword' });
+      const result = await localAuthProvider.validateCredentials({
+        email: 'test@example.com',
+        password: 'wrongpassword',
+      });
       expect(result).toBeNull();
     });
   });

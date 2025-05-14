@@ -170,10 +170,7 @@ async function main() {
               );
               logger.debug(`Sent message to constellation queue for ID: ${item.id}`);
             } catch (queueError) {
-              logError(
-                queueError,
-                `Failed to send to constellation queue for ID: ${item.id}`,
-              );
+              logError(queueError, `Failed to send to constellation queue for ID: ${item.id}`);
             }
 
             try {
@@ -193,11 +190,9 @@ async function main() {
         logger.debug(`Sent message for content ID: ${item.id}`);
         successCount++;
       } catch (error) {
-        logError(
-          error,
-          `Failed to send message for content ID: ${item.id}`,
-          { contentId: item.id },
-        );
+        logError(error, `Failed to send message for content ID: ${item.id}`, {
+          contentId: item.id,
+        });
         failureCount++;
       }
 

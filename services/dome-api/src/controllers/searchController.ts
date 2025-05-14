@@ -2,7 +2,11 @@ import { Context } from 'hono';
 import { z } from 'zod';
 import { createRoute, OpenAPIHono, RouteConfigToTypedResponse } from '@hono/zod-openapi';
 import { AppEnv, Bindings } from '../types';
-import { SearchService, PaginatedSearchResults, SearchResult as SearchResultInterface } from '../services/searchService';
+import {
+  SearchService,
+  PaginatedSearchResults,
+  SearchResult as SearchResultInterface,
+} from '../services/searchService';
 import { createServiceFactory } from '../services/serviceFactory'; // Import createServiceFactory
 import { trackTiming, trackOperation, incrementCounter, getMetrics } from '../utils/metrics';
 import { getLogger, getIdentity, ServiceError } from '@dome/common';
@@ -14,71 +18,94 @@ import { AuthContext, authenticationMiddleware } from '../middleware/authenticat
 const SearchErrorDetailSchema = z.object({
   code: z.string().openapi({ example: 'VALIDATION_ERROR' }),
   message: z.string().openapi({ example: 'Invalid search parameters' }),
-  details: z.any().optional().openapi({ example: [{ path: ['q'], message: 'Search query is required' }] }),
+  details: z
+    .any()
+    .optional()
+    .openapi({ example: [{ path: ['q'], message: 'Search query is required' }] }),
 });
-const SearchErrorResponseSchema = z.object({
-  success: z.literal(false).openapi({ example: false }),
-  error: SearchErrorDetailSchema,
-}).openapi('SearchErrorResponse');
-
+const SearchErrorResponseSchema = z
+  .object({
+    success: z.literal(false).openapi({ example: false }),
+    error: SearchErrorDetailSchema,
+  })
+  .openapi('SearchErrorResponse');
 
 // Request Schema (already defined, just for reference here)
 // const SearchQuerySchema = z.object({ ... }); // Lines 13-22
 
 // Response Schemas for GET /search
-const SearchResultItemSchema = z.object({
-  id: z.string().openapi({ example: 'content_id_123' }),
-  title: z.string().openapi({ example: 'My Search Result' }),
-  summary: z.string().openapi({ example: 'A brief summary of the result.' }),
-  body: z.string().optional().openapi({ example: 'The full body content (can be large)...' }), // Optional for list view
-  category: z.string().openapi({ example: 'note' }),
-  mimeType: z.string().openapi({ example: 'text/markdown' }),
-  createdAt: z.number().int().openapi({ example: 1678886400000, description: 'Unix timestamp (milliseconds)' }),
-  updatedAt: z.number().int().optional().openapi({ example: 1678886400000, description: 'Unix timestamp (milliseconds)' }), // Make optional if not always present
-  score: z.number().openapi({ example: 0.85 }),
-}).openapi('SearchResultItem');
+const SearchResultItemSchema = z
+  .object({
+    id: z.string().openapi({ example: 'content_id_123' }),
+    title: z.string().openapi({ example: 'My Search Result' }),
+    summary: z.string().openapi({ example: 'A brief summary of the result.' }),
+    body: z.string().optional().openapi({ example: 'The full body content (can be large)...' }), // Optional for list view
+    category: z.string().openapi({ example: 'note' }),
+    mimeType: z.string().openapi({ example: 'text/markdown' }),
+    createdAt: z
+      .number()
+      .int()
+      .openapi({ example: 1678886400000, description: 'Unix timestamp (milliseconds)' }),
+    updatedAt: z
+      .number()
+      .int()
+      .optional()
+      .openapi({ example: 1678886400000, description: 'Unix timestamp (milliseconds)' }), // Make optional if not always present
+    score: z.number().openapi({ example: 0.85 }),
+  })
+  .openapi('SearchResultItem');
 
-const PaginationSchema = z.object({
-  total: z.number().int().openapi({ example: 100 }),
-  limit: z.number().int().openapi({ example: 10 }),
-  offset: z.number().int().openapi({ example: 0 }),
-  hasMore: z.boolean().openapi({ example: true }),
-}).openapi('Pagination');
+const PaginationSchema = z
+  .object({
+    total: z.number().int().openapi({ example: 100 }),
+    limit: z.number().int().openapi({ example: 10 }),
+    offset: z.number().int().openapi({ example: 0 }),
+    hasMore: z.boolean().openapi({ example: true }),
+  })
+  .openapi('Pagination');
 
-const SearchResponseDataSchema = z.object({
-  success: z.literal(true).openapi({ example: true }),
-  results: z.array(SearchResultItemSchema),
-  pagination: PaginationSchema,
-  query: z.string().openapi({ example: 'test query' }),
-  message: z.string().optional().openapi({ example: 'Use at least 3 characters for better results.' }),
-}).openapi('SearchResponse');
+const SearchResponseDataSchema = z
+  .object({
+    success: z.literal(true).openapi({ example: true }),
+    results: z.array(SearchResultItemSchema),
+    pagination: PaginationSchema,
+    query: z.string().openapi({ example: 'test query' }),
+    message: z
+      .string()
+      .optional()
+      .openapi({ example: 'Use at least 3 characters for better results.' }),
+  })
+  .openapi('SearchResponse');
 
 // Response Schemas for GET /search/stream (NDJSON)
-const StreamingMetadataSchema = z.object({
-  type: z.literal('metadata'),
-  pagination: PaginationSchema,
-  query: z.string(),
-}).openapi('StreamingMetadata');
+const StreamingMetadataSchema = z
+  .object({
+    type: z.literal('metadata'),
+    pagination: PaginationSchema,
+    query: z.string(),
+  })
+  .openapi('StreamingMetadata');
 
-const StreamingResultDataSchema = z.object({
-  type: z.literal('result'),
-  data: SearchResultItemSchema,
-}).openapi('StreamingResultData');
+const StreamingResultDataSchema = z
+  .object({
+    type: z.literal('result'),
+    data: SearchResultItemSchema,
+  })
+  .openapi('StreamingResultData');
 
-const StreamingErrorDataSchema = z.object({
-  type: z.literal('error'),
-  error: z.object({
-    code: z.string().openapi({ example: 'SEARCH_ERROR' }),
-    message: z.string().openapi({ example: 'An error occurred during streaming.' }),
-  }),
-}).openapi('StreamingErrorData');
+const StreamingErrorDataSchema = z
+  .object({
+    type: z.literal('error'),
+    error: z.object({
+      code: z.string().openapi({ example: 'SEARCH_ERROR' }),
+      message: z.string().openapi({ example: 'An error occurred during streaming.' }),
+    }),
+  })
+  .openapi('StreamingErrorData');
 
-const StreamingSearchEventSchema = z.union([
-  StreamingMetadataSchema,
-  StreamingResultDataSchema,
-  StreamingErrorDataSchema,
-]).openapi('StreamingSearchEvent');
-
+const StreamingSearchEventSchema = z
+  .union([StreamingMetadataSchema, StreamingResultDataSchema, StreamingErrorDataSchema])
+  .openapi('StreamingSearchEvent');
 
 /* -------------------------------------------------------------------------- */
 /*                             Validation Schema                              */
@@ -207,8 +234,8 @@ const streamSearchRoute = createRoute({
           // OpenAPI spec for NDJSON is tricky. We describe the events.
           // The actual response is a stream of JSON objects, each on a new line.
           schema: StreamingSearchEventSchema, // Describes one possible event in the stream
-        }
-      }
+        },
+      },
     },
     400: {
       description: 'Bad Request (e.g., validation error).',
@@ -257,7 +284,7 @@ export class SearchController {
    */
   async search(
     c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
-    params: z.infer<typeof SearchQuerySchema>
+    params: z.infer<typeof SearchQuerySchema>,
   ): Promise<RouteConfigToTypedResponse<typeof searchRoute>> {
     try {
       const userId = c.get('auth').userId;
@@ -307,7 +334,8 @@ export class SearchController {
         error_type: error instanceof Error ? error.name : 'unknown',
       });
 
-      if (error instanceof z.ZodError) { // Should ideally be caught by Hono's OpenAPI validation if c.req.valid is used
+      if (error instanceof z.ZodError) {
+        // Should ideally be caught by Hono's OpenAPI validation if c.req.valid is used
         incrementCounter('search.validation_error', 1);
         return c.json(
           {
@@ -329,12 +357,12 @@ export class SearchController {
           status: statusCode.toString(),
         });
         const errorPayload = {
-            success: false as const,
-            error: {
-              code: error.code || 'SEARCH_ERROR',
-              message: error.message,
-            },
-          };
+          success: false as const,
+          error: {
+            code: error.code || 'SEARCH_ERROR',
+            message: error.message,
+          },
+        };
         if (statusCode === 400) return c.json(errorPayload, 400);
         if (statusCode === 401) return c.json(errorPayload, 401);
         // Default to 500 or map other specific service error statuses
@@ -363,8 +391,9 @@ export class SearchController {
    */
   async streamSearch(
     c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
-    params: z.infer<typeof SearchQuerySchema>
-  ): Promise<Response> { // Return type remains Promise<Response> for direct stream handling
+    params: z.infer<typeof SearchQuerySchema>,
+  ): Promise<Response> {
+    // Return type remains Promise<Response> for direct stream handling
     try {
       const userId = c.get('auth').userId;
       const parsed = params; // Use validated params
@@ -391,7 +420,7 @@ export class SearchController {
               // details: emptyResults(parsed.q) // Optionally include for context
             },
           },
-          400
+          400,
         );
       }
 
@@ -479,7 +508,8 @@ export class SearchController {
         error_type: error instanceof Error ? error.name : 'unknown',
       });
 
-      if (error instanceof z.ZodError) { // Should be caught by Hono if c.req.valid('query') is used
+      if (error instanceof z.ZodError) {
+        // Should be caught by Hono if c.req.valid('query') is used
         incrementCounter('search.stream_validation_error', 1);
         return c.json(
           {
@@ -518,12 +548,12 @@ export function buildSearchRouter(): OpenAPIHono<AppEnv & { Variables: { auth: A
   // Apply authentication middleware to all routes in this router
   router.use('*', authenticationMiddleware);
 
-  router.openapi(searchRoute, (c) => {
+  router.openapi(searchRoute, c => {
     const validatedParams = c.req.valid('query');
     return searchController.search(c, validatedParams);
   });
 
-  router.openapi(streamSearchRoute, (c) => {
+  router.openapi(streamSearchRoute, c => {
     const validatedParams = c.req.valid('query');
     // Cast to `any` for stream response to satisfy openapi wrapper, as it expects typed JSON.
     // The actual response is a correctly formatted NDJSON stream.
@@ -532,4 +562,3 @@ export function buildSearchRouter(): OpenAPIHono<AppEnv & { Variables: { auth: A
 
   return router;
 }
-

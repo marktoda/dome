@@ -67,26 +67,32 @@ describe('API wrapper functions', () => {
     // 3. Reset modules: This clears the cache, so the next import of './api' will be fresh
     //    and will use the mocks we've just configured for its dependencies.
     vi.resetModules();
-        
+
     // 4. Dynamically import the module under test. It will now use the fresh mocks.
-    apiModule = await import('./api'); 
-    
+    apiModule = await import('./api');
+
     // 5. Set up resolved values for the methods on mockDomeApiClient for this test
     //    apiModule.api should now BE mockDomeApiClient due to the mocking of getApiClient.
     if (!apiModule || !apiModule.api) {
-      throw new Error('apiModule or apiModule.api is not defined after dynamic import. Check mocks for ./apiClient and export of api in ./api.ts');
+      throw new Error(
+        'apiModule or apiModule.api is not defined after dynamic import. Check mocks for ./apiClient and export of api in ./api.ts',
+      );
     }
     // Ensure the methods on the mock client are configured for this test
     mockDomeApiClient.notes.ingestANewNote.mockResolvedValue({ data: { success: true } } as any);
     mockDomeApiClient.notes.listNotes.mockResolvedValue({ data: { items: [] } } as any);
     mockDomeApiClient.notes.getANoteById.mockResolvedValue({ data: { id: '123' } } as any);
     mockDomeApiClient.search.searchContent.mockResolvedValue({ data: { matches: [] } } as any);
-    mockDomeApiClient.chat.sendAChatMessage.mockResolvedValue({ data: { message: 'response' } } as any);
-    
+    mockDomeApiClient.chat.sendAChatMessage.mockResolvedValue({
+      data: { message: 'response' },
+    } as any);
+
     // 6. Call resetApiInstance from the dynamically imported module.
     //    This should call the mocked clearApiClientInstance.
     if (typeof apiModule.resetApiInstance !== 'function') {
-      throw new Error ("apiModule.resetApiInstance is not a function or apiModule is not loaded correctly");
+      throw new Error(
+        'apiModule.resetApiInstance is not a function or apiModule is not loaded correctly',
+      );
     }
     apiModule.resetApiInstance();
   });

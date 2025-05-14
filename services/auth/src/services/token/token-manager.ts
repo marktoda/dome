@@ -39,14 +39,13 @@ export interface TokenManager {
    */
   verifyAccessToken(token: string): Promise<TokenPayload>;
 
-    /**
+  /**
    * Verifies a refresh token.
    * @param token - The refresh token string to verify.
    * @returns A promise that resolves to the verified token payload.
    * @throws Error if the token is invalid or expired.
    */
   verifyRefreshToken(token: string): Promise<Pick<TokenPayload, 'userId'>>;
-
 
   /**
    * Decodes a token without verifying its signature.
@@ -81,18 +80,14 @@ export class JwtTokenManager implements TokenManager {
 
   private async getAccessTokenSecretKey(): Promise<Uint8Array> {
     if (!this.accessTokenSecretKey) {
-      this.accessTokenSecretKey = new TextEncoder().encode(
-        this.tokenSettings.accessTokenSecret,
-      );
+      this.accessTokenSecretKey = new TextEncoder().encode(this.tokenSettings.accessTokenSecret);
     }
     return this.accessTokenSecretKey;
   }
 
   private async getRefreshTokenSecretKey(): Promise<Uint8Array> {
     if (!this.refreshTokenSecretKey) {
-      this.refreshTokenSecretKey = new TextEncoder().encode(
-        this.tokenSettings.refreshTokenSecret,
-      );
+      this.refreshTokenSecretKey = new TextEncoder().encode(this.tokenSettings.refreshTokenSecret);
     }
     return this.refreshTokenSecretKey;
   }
@@ -127,10 +122,16 @@ export class JwtTokenManager implements TokenManager {
     try {
       // Log the decoded protected header to inspect its content before verification
       const decodedProtectedHeader = jose.decodeProtectedHeader(token);
-      console.log('TokenManager: Decoded Protected Header for verification:', JSON.stringify(decodedProtectedHeader));
+      console.log(
+        'TokenManager: Decoded Protected Header for verification:',
+        JSON.stringify(decodedProtectedHeader),
+      );
     } catch (decodeError) {
       // Log if decoding the header itself fails, as this indicates a malformed token
-      console.error('TokenManager: Failed to decode protected header before verification:', decodeError);
+      console.error(
+        'TokenManager: Failed to decode protected header before verification:',
+        decodeError,
+      );
       // Decide if to throw here or let jwtVerify handle the malformed token
     }
 

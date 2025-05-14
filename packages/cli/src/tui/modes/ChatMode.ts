@@ -17,19 +17,19 @@ interface ChunkDetector {
   (parsedJson: any): SdkChatMessageChunk | null;
 }
 const detectors: ChunkDetector[] = [
-  (parsed) => {
+  parsed => {
     if (parsed && parsed.type === 'sources' && parsed.data) {
-      return { type: 'sources', data: parsed.data as (DomeApi.ChatSource[] | DomeApi.ChatSource) };
+      return { type: 'sources', data: parsed.data as DomeApi.ChatSource[] | DomeApi.ChatSource };
     }
     return null;
   },
-  (parsed) => {
+  parsed => {
     if (parsed && parsed.type === 'thinking' && typeof parsed.content === 'string') {
       return { type: 'thinking', content: parsed.content };
     }
     return null;
   },
-  (parsed) => {
+  parsed => {
     if (parsed && parsed.type === 'content' && typeof parsed.content === 'string') {
       return { type: 'content', content: parsed.content };
     }
@@ -45,10 +45,10 @@ const detectSdkChunk = (jsonData: string): SdkChatMessageChunk => {
       if (match) return match;
     }
     if (parsed && typeof parsed.content === 'string') {
-        return { type: 'content', content: parsed.content };
+      return { type: 'content', content: parsed.content };
     }
     if (typeof parsed === 'string') {
-        return { type: 'content', content: parsed };
+      return { type: 'content', content: parsed };
     }
   } catch {
     return { type: 'content', content: jsonData };
@@ -211,7 +211,11 @@ export class ChatMode extends BaseMode {
     try {
       const config = loadConfig();
       if (!config.userId) {
-        this.printBlock('{bold}{red-fg}Error:{/red-fg}{/bold}', 'User ID not found. Please login.', cw);
+        this.printBlock(
+          '{bold}{red-fg}Error:{/red-fg}{/bold}',
+          'User ID not found. Please login.',
+          cw,
+        );
         this.setStatus();
         return;
       }
@@ -233,8 +237,10 @@ export class ChatMode extends BaseMode {
         },
         stream: true,
       };
-      
-      const stream = (await apiClient.chat.sendAChatMessage(request)) as any as ReadableStream<Uint8Array>;
+
+      const stream = (await apiClient.chat.sendAChatMessage(
+        request,
+      )) as any as ReadableStream<Uint8Array>;
       const reader = stream.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -258,13 +264,20 @@ export class ChatMode extends BaseMode {
       if (accumulatedSources.length > 0) {
         const filteredSources = accumulatedSources.filter((source: DomeApi.ChatSource) => {
           const title = source.title || '';
-          return !title.includes('---DOME-METADATA-START---') && !title.match(/^---.*---$/) && title.trim() !== '';
+          return (
+            !title.includes('---DOME-METADATA-START---') &&
+            !title.match(/^---.*---$/) &&
+            title.trim() !== ''
+          );
         });
         // No relevanceScore for sorting in DomeApi.ChatSource
-        this.displaySources(filteredSources.slice(0, ChatMode.MAX_SOURCES), cw, filteredSources.length);
+        this.displaySources(
+          filteredSources.slice(0, ChatMode.MAX_SOURCES),
+          cw,
+          filteredSources.length,
+        );
         this.scrollToBottom();
       }
-
     } catch (err: unknown) {
       let errorMessage = 'Chat error.';
       if (err instanceof DomeApiError) {
@@ -276,7 +289,11 @@ export class ChatMode extends BaseMode {
       } else if (err instanceof Error) {
         errorMessage = `Chat error: ${err.message}`;
       }
-      this.printBlock('{bold}{red-fg}Error:{/red-fg}{/bold}', `I encountered an error: ${errorMessage.slice(0,500)}`, cw);
+      this.printBlock(
+        '{bold}{red-fg}Error:{/red-fg}{/bold}',
+        `I encountered an error: ${errorMessage.slice(0, 500)}`,
+        cw,
+      );
     } finally {
       this.setStatus(); // reset
     }
@@ -362,7 +379,11 @@ export class ChatMode extends BaseMode {
   private displaySources(sources: DomeApi.ChatSource[], cw: number, totalCount?: number): void {
     this.container.pushLine('{bold}Sources:{/bold}');
     sources.forEach((s, i) => {
-      const title = s.title ? (s.title.length > 80 ? s.title.slice(0, 80) + '…' : s.title) : 'Unnamed Source';
+      const title = s.title
+        ? s.title.length > 80
+          ? s.title.slice(0, 80) + '…'
+          : s.title
+        : 'Unnamed Source';
       this.container.pushLine(`${i + 1}. {underline}${title}{/underline}`);
       this.container.pushLine(`   Type: ${s.type}, ID: ${s.id}`); // Using SDK fields
       if (s.url) {

@@ -39,7 +39,7 @@ export function handleError(error: unknown, options: HandleErrorOptions = {}): v
   // Enhanced debugging - always log the raw error object
   console.error('DEBUG - Raw error:');
   console.error('Type:', typeof error);
-  
+
   if (typeof error === 'object' && error !== null) {
     console.error('Properties:');
     for (const key in error) {
@@ -49,7 +49,7 @@ export function handleError(error: unknown, options: HandleErrorOptions = {}): v
         console.error(`- ${key}: [Error accessing property]`);
       }
     }
-    
+
     if (error instanceof Error) {
       console.error('Name:', error.name);
       console.error('Message:', error.message);
@@ -63,7 +63,10 @@ export function handleError(error: unknown, options: HandleErrorOptions = {}): v
     const statusCode = error.statusCode;
     // Attempt to get a more specific message from the error body
     const message =
-      (typeof error.body === 'object' && error.body !== null && 'message' in error.body && typeof error.body.message === 'string'
+      (typeof error.body === 'object' &&
+      error.body !== null &&
+      'message' in error.body &&
+      typeof error.body.message === 'string'
         ? error.body.message
         : error.message) || 'An API error occurred';
 
@@ -77,7 +80,7 @@ export function handleError(error: unknown, options: HandleErrorOptions = {}): v
     errorDetails = {
       type: 'DomeApiTimeoutError',
       message: error.message || 'The API request timed out.',
-      details: {} // No body property on DomeApiTimeoutError
+      details: {}, // No body property on DomeApiTimeoutError
     };
   } else if (error instanceof Error) {
     errorDetails = {
@@ -91,7 +94,8 @@ export function handleError(error: unknown, options: HandleErrorOptions = {}): v
   } else {
     errorDetails = {
       type: 'UnknownError',
-      message: typeof error === 'string' ? error : 'An unknown error occurred. Please check the details.',
+      message:
+        typeof error === 'string' ? error : 'An unknown error occurred. Please check the details.',
       details: error, // Store the original unknown error
     };
   }
@@ -106,16 +110,28 @@ export function handleError(error: unknown, options: HandleErrorOptions = {}): v
       console.error(`Status Code: ${errorDetails.statusCode}`);
     }
     // Optionally, provide a hint for more details if available and not too verbose
-    if (errorDetails.type === 'DomeApiError' && errorDetails.details && Object.keys(errorDetails.details).length > 0) {
+    if (
+      errorDetails.type === 'DomeApiError' &&
+      errorDetails.details &&
+      Object.keys(errorDetails.details).length > 0
+    ) {
       // console.error(`Details: ${JSON.stringify(errorDetails.details)}`); // Could be too verbose
       // For CLI, a simpler message or specific fields might be better
-      if (typeof errorDetails.details === 'object' && errorDetails.details !== null && 'error' in errorDetails.details) {
-         const specificError = (errorDetails.details as any).error;
-         if (typeof specificError === 'object' && specificError !== null && 'message' in specificError) {
-            // console.error(`API Detail: ${specificError.message}`);
-         } else if (typeof specificError === 'string') {
-            // console.error(`API Detail: ${specificError}`);
-         }
+      if (
+        typeof errorDetails.details === 'object' &&
+        errorDetails.details !== null &&
+        'error' in errorDetails.details
+      ) {
+        const specificError = (errorDetails.details as any).error;
+        if (
+          typeof specificError === 'object' &&
+          specificError !== null &&
+          'message' in specificError
+        ) {
+          // console.error(`API Detail: ${specificError.message}`);
+        } else if (typeof specificError === 'string') {
+          // console.error(`API Detail: ${specificError}`);
+        }
       }
     }
   }

@@ -94,10 +94,14 @@ export const authenticationMiddleware = async (
     const response = await trackAuthServiceCall(async () => authService.validateToken(token));
     const success = response.success;
     const user = response.user; // Corrected: access user directly
-    const ttl = response.ttl;   // Corrected: access ttl directly
+    const ttl = response.ttl; // Corrected: access ttl directly
 
-    if (!success || !user) { // user can be undefined as per ValidateTokenResponse
-      logger.warn({ responseFromAuthService: response }, 'Invalid token based on auth service response');
+    if (!success || !user) {
+      // user can be undefined as per ValidateTokenResponse
+      logger.warn(
+        { responseFromAuthService: response },
+        'Invalid token based on auth service response',
+      );
       return c.json(
         {
           success: false,

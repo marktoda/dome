@@ -35,7 +35,7 @@ const mockPrivyClient = {
 class PrivyAuthProvider {
   constructor(
     private userManager: any, // UserManager
-    private privyClient: any // PrivyClient
+    private privyClient: any, // PrivyClient
   ) {}
 
   getProviderType() {
@@ -51,8 +51,12 @@ class PrivyAuthProvider {
     }
 
     const privyUserData = await this.privyClient.validateTokenAndGetUser(privyToken);
-    if (!privyUserData || !privyUserData.id) { // Assuming Privy user data has an 'id' (e.g., DID)
-      throw new AuthError('Invalid Privy token or failed to fetch user data.', AuthErrorType.PRIVY_VALIDATION_FAILED);
+    if (!privyUserData || !privyUserData.id) {
+      // Assuming Privy user data has an 'id' (e.g., DID)
+      throw new AuthError(
+        'Invalid Privy token or failed to fetch user data.',
+        AuthErrorType.PRIVY_VALIDATION_FAILED,
+      );
     }
 
     // Map Privy user data to your application's user schema
@@ -66,7 +70,10 @@ class PrivyAuthProvider {
 
     const user = await this.userManager.findOrCreateUser(userToCreateOrFind);
     if (!user) {
-      throw new AuthError('Failed to find or create user based on Privy data.', AuthErrorType.USER_CREATION_FAILED);
+      throw new AuthError(
+        'Failed to find or create user based on Privy data.',
+        AuthErrorType.USER_CREATION_FAILED,
+      );
     }
 
     return { user };
@@ -80,12 +87,11 @@ class PrivyAuthProvider {
     return this.login(details);
   }
 
-
   // Validate credentials might not be directly applicable in the same way as local,
   // as Privy handles the primary credential (its token).
   // This could be a re-validation of a Privy token if needed.
   async validateCredentials(credentials: { privyToken: string }) {
-     const { privyToken } = credentials;
+    const { privyToken } = credentials;
     if (!privyToken) {
       return null; // Or throw validation error
     }
@@ -103,11 +109,16 @@ class PrivyAuthProvider {
   }
 }
 
-
 describe('PrivyAuthProvider Unit Tests', () => {
   let privyAuthProvider: PrivyAuthProvider;
   const mockPrivyUser = { id: 'did:privy:123', email: 'privyuser@example.com', name: 'Privy User' };
-  const mockAppUser = { id: 'app-user-456', externalId: 'did:privy:123', email: 'privyuser@example.com', name: 'Privy User', provider: 'privy' as const };
+  const mockAppUser = {
+    id: 'app-user-456',
+    externalId: 'did:privy:123',
+    email: 'privyuser@example.com',
+    name: 'Privy User',
+    provider: 'privy' as const,
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -138,29 +149,44 @@ describe('PrivyAuthProvider Unit Tests', () => {
     it('should throw VALIDATION_ERROR if Privy token is not provided', async () => {
       // Need to cast to any because privyToken is expected
       await expect(privyAuthProvider.login({ privyToken: undefined as any })).rejects.toThrowError(
-        new AuthError('Privy token is required.', AuthErrorType.VALIDATION_ERROR)
+        new AuthError('Privy token is required.', AuthErrorType.VALIDATION_ERROR),
       );
     });
 
     it('should throw PRIVY_VALIDATION_FAILED if Privy token is invalid or user data fetch fails', async () => {
       mockPrivyClient.validateTokenAndGetUser.mockResolvedValue(null);
-      await expect(privyAuthProvider.login({ privyToken: 'invalid-privy-token' })).rejects.toThrowError(
-        new AuthError('Invalid Privy token or failed to fetch user data.', AuthErrorType.PRIVY_VALIDATION_FAILED)
+      await expect(
+        privyAuthProvider.login({ privyToken: 'invalid-privy-token' }),
+      ).rejects.toThrowError(
+        new AuthError(
+          'Invalid Privy token or failed to fetch user data.',
+          AuthErrorType.PRIVY_VALIDATION_FAILED,
+        ),
       );
     });
 
-     it('should throw PRIVY_VALIDATION_FAILED if Privy user data does not contain an id', async () => {
+    it('should throw PRIVY_VALIDATION_FAILED if Privy user data does not contain an id', async () => {
       mockPrivyClient.validateTokenAndGetUser.mockResolvedValue({ email: 'no_id_user@privy.io' }); // No 'id'
-      await expect(privyAuthProvider.login({ privyToken: 'token-for-user-without-id' })).rejects.toThrowError(
-        new AuthError('Invalid Privy token or failed to fetch user data.', AuthErrorType.PRIVY_VALIDATION_FAILED)
+      await expect(
+        privyAuthProvider.login({ privyToken: 'token-for-user-without-id' }),
+      ).rejects.toThrowError(
+        new AuthError(
+          'Invalid Privy token or failed to fetch user data.',
+          AuthErrorType.PRIVY_VALIDATION_FAILED,
+        ),
       );
     });
 
     it('should throw USER_CREATION_FAILED if findOrCreateUser fails', async () => {
       mockPrivyClient.validateTokenAndGetUser.mockResolvedValue(mockPrivyUser);
       mockUserManager.findOrCreateUser.mockResolvedValue(null); // Simulate failure
-      await expect(privyAuthProvider.login({ privyToken: 'valid-privy-token' })).rejects.toThrowError(
-        new AuthError('Failed to find or create user based on Privy data.', AuthErrorType.USER_CREATION_FAILED)
+      await expect(
+        privyAuthProvider.login({ privyToken: 'valid-privy-token' }),
+      ).rejects.toThrowError(
+        new AuthError(
+          'Failed to find or create user based on Privy data.',
+          AuthErrorType.USER_CREATION_FAILED,
+        ),
       );
     });
   });
@@ -182,7 +208,9 @@ describe('PrivyAuthProvider Unit Tests', () => {
       mockPrivyClient.validateTokenAndGetUser.mockResolvedValue(mockPrivyUser);
       mockUserManager.findUserByExternalId.mockResolvedValue(mockAppUser);
 
-      const result = await privyAuthProvider.validateCredentials({ privyToken: 'valid-privy-token' });
+      const result = await privyAuthProvider.validateCredentials({
+        privyToken: 'valid-privy-token',
+      });
       expect(mockPrivyClient.validateTokenAndGetUser).toHaveBeenCalledWith('valid-privy-token');
       expect(mockUserManager.findUserByExternalId).toHaveBeenCalledWith(mockPrivyUser.id, 'privy');
       expect(result?.user).toEqual(mockAppUser);
@@ -190,7 +218,9 @@ describe('PrivyAuthProvider Unit Tests', () => {
 
     it('should return null if Privy token is invalid', async () => {
       mockPrivyClient.validateTokenAndGetUser.mockResolvedValue(null);
-      const result = await privyAuthProvider.validateCredentials({ privyToken: 'invalid-privy-token' });
+      const result = await privyAuthProvider.validateCredentials({
+        privyToken: 'invalid-privy-token',
+      });
       expect(result).toBeNull();
       expect(mockUserManager.findUserByExternalId).not.toHaveBeenCalled();
     });
@@ -198,21 +228,24 @@ describe('PrivyAuthProvider Unit Tests', () => {
     it('should return null if Privy token is missing', async () => {
       const result = await privyAuthProvider.validateCredentials({ privyToken: undefined as any });
       expect(result).toBeNull();
-       expect(mockPrivyClient.validateTokenAndGetUser).not.toHaveBeenCalled();
+      expect(mockPrivyClient.validateTokenAndGetUser).not.toHaveBeenCalled();
     });
-
 
     it('should return null if Privy user data is valid but app user not found', async () => {
       mockPrivyClient.validateTokenAndGetUser.mockResolvedValue(mockPrivyUser);
       mockUserManager.findUserByExternalId.mockResolvedValue(null); // User not in our DB
 
-      const result = await privyAuthProvider.validateCredentials({ privyToken: 'valid-privy-token-no-app-user' });
+      const result = await privyAuthProvider.validateCredentials({
+        privyToken: 'valid-privy-token-no-app-user',
+      });
       expect(result).toBeNull();
     });
 
-     it('should return null if privyClient throws an error', async () => {
-      mockPrivyClient.validateTokenAndGetUser.mockRejectedValue(new Error("Privy API error"));
-      const result = await privyAuthProvider.validateCredentials({ privyToken: 'token-causing-error' });
+    it('should return null if privyClient throws an error', async () => {
+      mockPrivyClient.validateTokenAndGetUser.mockRejectedValue(new Error('Privy API error'));
+      const result = await privyAuthProvider.validateCredentials({
+        privyToken: 'token-causing-error',
+      });
       expect(result).toBeNull();
     });
   });

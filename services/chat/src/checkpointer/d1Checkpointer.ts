@@ -213,15 +213,11 @@ export class D1Checkpointer extends BaseCheckpointSaver {
         'Checkpoint saved',
       );
     } catch (error) {
-      logError(
-        error,
-        'Error writing checkpoint',
-        {
-          runId,
-          step,
-          stateSize: stateJson.length,
-        },
-      );
+      logError(error, 'Error writing checkpoint', {
+        runId,
+        step,
+        stateSize: stateJson.length,
+      });
       throw error;
     }
   }

@@ -18,7 +18,6 @@ export class NoteMode extends BaseMode {
   private viewMode: 'create' | 'search' | 'view' = 'create';
   private currentViewedNote: DomeApi.Note | null = null;
 
-
   constructor() {
     super({
       id: 'note',
@@ -52,7 +51,7 @@ export class NoteMode extends BaseMode {
   }
 
   private showMainMenu(): void {
-    this.currentViewedNote = null; 
+    this.currentViewedNote = null;
     this.container.setContent('');
     this.container.pushLine('{center}{bold}Note Mode{/bold}{/center}');
     this.container.pushLine('');
@@ -70,15 +69,20 @@ export class NoteMode extends BaseMode {
     return process.env.EDITOR || 'nvim';
   }
 
-  private createTempFileWithMetadata(title?: string, existingContent?: string, existingCategory?: string, existingTagsString?: string): string {
+  private createTempFileWithMetadata(
+    title?: string,
+    existingContent?: string,
+    existingCategory?: string,
+    existingTagsString?: string,
+  ): string {
     const tempFilePath = path.join(os.tmpdir(), `dome-note-${Date.now()}.md`);
     const date = new Date().toISOString();
 
     const metadata = [
       `# ${title || 'New Note'}`,
       `Date: ${date}`,
-      `Category: ${existingCategory || ''}`, 
-      `Tags: ${existingTagsString || ''}`, 
+      `Category: ${existingCategory || ''}`,
+      `Tags: ${existingTagsString || ''}`,
       '',
       '<!-- Write your note content below this line -->',
       '',
@@ -146,8 +150,8 @@ export class NoteMode extends BaseMode {
   private parseNoteContent(filePath: string): {
     title: string;
     content: string;
-    tags: string[]; 
-    category: string; 
+    tags: string[];
+    category: string;
     summary?: string;
   } {
     const fileContent = fs.readFileSync(filePath, 'utf8');
@@ -178,11 +182,11 @@ export class NoteMode extends BaseMode {
         continue;
       }
       if (line.includes('<!-- Write your note content below this line -->')) {
-        contentStartIndex = i + 2; 
+        contentStartIndex = i + 2;
         break;
       }
-      if (i >= 10) { 
-        contentStartIndex = i; 
+      if (i >= 10) {
+        contentStartIndex = i;
         break;
       }
     }
@@ -214,9 +218,11 @@ export class NoteMode extends BaseMode {
       // We get its string values for validation.
       // This part might need adjustment if the enum structure is different,
       // or if it's a union of string literals (in which case the original error is odd).
-      const validCategoryStrings: string[] = Object.values(DomeApi.IngestNoteBodyApiSchemaCategory || {});
+      const validCategoryStrings: string[] = Object.values(
+        DomeApi.IngestNoteBodyApiSchemaCategory || {},
+      );
       let finalCategory: DomeApi.IngestNoteBodyApiSchemaCategory | undefined = undefined;
-      
+
       const parsedCategoryString = category; // from parseNoteContent
       const firstTag = tags.length > 0 ? tags[0] : undefined;
 
@@ -234,7 +240,7 @@ export class NoteMode extends BaseMode {
       // if (!finalCategory && validCategoryStrings.includes("general")) {
       //   finalCategory = "general" as DomeApi.IngestNoteBodyApiSchemaCategory;
       // }
-      
+
       const noteToIngest: DomeApi.IngestNoteBodyApiSchema = {
         content,
         title,
@@ -246,29 +252,47 @@ export class NoteMode extends BaseMode {
       // For now, only the `finalCategory` (derived from parsed `category` or first valid tag) is used.
 
       const response: DomeApi.Note = await apiClient.notes.ingestANewNote(noteToIngest);
-      try { fs.unlinkSync(tempFilePath); } catch (errUnlink) { /* ignore */ }
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (errUnlink) {
+        /* ignore */
+      }
 
       this.container.setContent('');
       this.container.pushLine('{center}{bold}Note Saved{/bold}{/center}');
       this.container.pushLine('');
-      this.container.pushLine(`{green-fg}Your note "${response.title || title}" has been saved successfully!{/green-fg}`);
+      this.container.pushLine(
+        `{green-fg}Your note "${response.title || title}" has been saved successfully!{/green-fg}`,
+      );
       this.container.pushLine(`{bold}ID:{/bold} ${response.id}`);
       this.container.pushLine(`{bold}Category:{/bold} ${response.category || '(none)'}`);
       this.container.pushLine(`{bold}MIME Type:{/bold} ${response.mimeType}`);
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     } catch (err: unknown) {
       let errorMessageText = 'Error creating note.';
-      if (err instanceof DomeApiError) { const apiError = err as DomeApiError; errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
-      else if (err instanceof DomeApiTimeoutError) { const timeoutError = err as DomeApiTimeoutError; errorMessageText = `API Timeout Error: ${timeoutError.message}`; }
-      else if (err instanceof Error) { errorMessageText = `Error creating note: ${err.message}`; }
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessageText = `API Error: ${apiError.message} (Status: ${
+          apiError.statusCode || 'N/A'
+        })`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessageText = `API Timeout Error: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessageText = `Error creating note: ${err.message}`;
+      }
       this.container.setContent('');
       this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     }
   }
@@ -282,7 +306,9 @@ export class NoteMode extends BaseMode {
     this.container.pushLine('Enter search query:');
     if (this.searchQuery) this.container.pushLine(`Current: ${this.searchQuery}`);
     this.container.pushLine('');
-    this.container.pushLine('{gray-fg}(Type {bold}menu{/bold} to return to the main menu){/gray-fg}');
+    this.container.pushLine(
+      '{gray-fg}(Type {bold}menu{/bold} to return to the main menu){/gray-fg}',
+    );
     this.screen.render();
   }
 
@@ -295,19 +321,29 @@ export class NoteMode extends BaseMode {
       const apiClient = await getApiClient();
       const searchRequest: DomeApi.GetSearchRequest = { q: query, limit: 20 };
       const response: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
-      
-      this.searchResults = response.success ? (response.results || []) : [];
+
+      this.searchResults = response.success ? response.results || [] : [];
       this.showSearchResults();
     } catch (err: unknown) {
       let errorMessageText = 'Error searching notes.';
-      if (err instanceof DomeApiError) { const apiError = err as DomeApiError; errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
-      else if (err instanceof DomeApiTimeoutError) { const timeoutError = err as DomeApiTimeoutError; errorMessageText = `API Timeout Error: ${timeoutError.message}`; }
-      else if (err instanceof Error) { errorMessageText = `Error searching notes: ${err.message}`; }
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessageText = `API Error: ${apiError.message} (Status: ${
+          apiError.statusCode || 'N/A'
+        })`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessageText = `API Timeout Error: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessageText = `Error searching notes: ${err.message}`;
+      }
       this.container.setContent('');
       this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     }
   }
@@ -325,22 +361,36 @@ export class NoteMode extends BaseMode {
     } else {
       this.container.pushLine(`Found ${this.searchResults.length} results:`);
       this.container.pushLine('');
-      (this.searchResults as DomeApi.SearchResultItem[]).forEach((resultItem: DomeApi.SearchResultItem, index: number) => {
-        const title = resultItem.title || 'Untitled Note';
-        const date = resultItem.createdAt ? new Date(resultItem.createdAt).toLocaleString() : 'Unknown date';
-        // Ensure score is a number before calling toFixed
-        const score = typeof resultItem.score === 'number' ? resultItem.score.toFixed(2) : 'N/A';
-        this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (Score: ${score})`);
-        this.container.pushLine(`   {gray-fg}ID: ${resultItem.id} | Category: ${resultItem.category} | Created: ${date}{/gray-fg}`);
-        if (resultItem.summary) {
-          this.container.pushLine(`   {gray-fg}Summary: ${resultItem.summary.substring(0, 80)}${resultItem.summary.length > 80 ? '...' : ''}{/gray-fg}`);
-        }
-      });
+      (this.searchResults as DomeApi.SearchResultItem[]).forEach(
+        (resultItem: DomeApi.SearchResultItem, index: number) => {
+          const title = resultItem.title || 'Untitled Note';
+          const date = resultItem.createdAt
+            ? new Date(resultItem.createdAt).toLocaleString()
+            : 'Unknown date';
+          // Ensure score is a number before calling toFixed
+          const score = typeof resultItem.score === 'number' ? resultItem.score.toFixed(2) : 'N/A';
+          this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (Score: ${score})`);
+          this.container.pushLine(
+            `   {gray-fg}ID: ${resultItem.id} | Category: ${resultItem.category} | Created: ${date}{/gray-fg}`,
+          );
+          if (resultItem.summary) {
+            this.container.pushLine(
+              `   {gray-fg}Summary: ${resultItem.summary.substring(0, 80)}${
+                resultItem.summary.length > 80 ? '...' : ''
+              }{/gray-fg}`,
+            );
+          }
+        },
+      );
       this.container.pushLine('');
       this.container.pushLine('Enter the number of the note to view/edit, or:');
     }
-    this.container.pushLine('{gray-fg}Type {bold}search{/bold} to search again or {bold}menu{/bold} to return to the main menu{/gray-fg}');
-    this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+    this.container.pushLine(
+      '{gray-fg}Type {bold}search{/bold} to search again or {bold}menu{/bold} to return to the main menu{/gray-fg}',
+    );
+    this.statusBar.setContent(
+      ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+    );
     this.screen.render();
   }
 
@@ -350,9 +400,9 @@ export class NoteMode extends BaseMode {
       this.screen.render();
 
       const apiClient = await getApiClient();
-      const notesListed: DomeApi.Note[] = await apiClient.notes.listNotes({ limit: 20 }); 
-      this.searchResults = notesListed || []; 
-      this.viewMode = 'search'; 
+      const notesListed: DomeApi.Note[] = await apiClient.notes.listNotes({ limit: 20 });
+      this.searchResults = notesListed || [];
+      this.viewMode = 'search';
       this.currentViewedNote = null;
 
       this.container.setContent('');
@@ -366,29 +416,51 @@ export class NoteMode extends BaseMode {
         this.container.pushLine('');
         (this.searchResults as DomeApi.Note[]).forEach((noteItem: DomeApi.Note, index: number) => {
           const title = noteItem.title || 'Untitled Note';
-          const date = noteItem.createdAt ? new Date(noteItem.createdAt).toLocaleString() : 'Unknown date';
+          const date = noteItem.createdAt
+            ? new Date(noteItem.createdAt).toLocaleString()
+            : 'Unknown date';
           this.container.pushLine(`{bold}${index + 1}.{/bold} ${title} (ID: ${noteItem.id})`);
-          this.container.pushLine(`   {gray-fg}Category: ${noteItem.category || '(none)'} | Created: ${date}{/gray-fg}`);
+          this.container.pushLine(
+            `   {gray-fg}Category: ${noteItem.category || '(none)'} | Created: ${date}{/gray-fg}`,
+          );
           if (noteItem.content) {
-             this.container.pushLine(`   {gray-fg}${noteItem.content.substring(0, 80)}${noteItem.content.length > 80 ? '...' : ''}{/gray-fg}`);
+            this.container.pushLine(
+              `   {gray-fg}${noteItem.content.substring(0, 80)}${
+                noteItem.content.length > 80 ? '...' : ''
+              }{/gray-fg}`,
+            );
           }
         });
         this.container.pushLine('');
         this.container.pushLine('Enter the number of the note to view/edit, or:');
       }
-      this.container.pushLine('{gray-fg}Type {bold}menu{/bold} to return to the main menu{/gray-fg}');
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.container.pushLine(
+        '{gray-fg}Type {bold}menu{/bold} to return to the main menu{/gray-fg}',
+      );
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     } catch (err: unknown) {
       let errorMessageText = 'Error listing notes.';
-      if (err instanceof DomeApiError) { const apiError = err as DomeApiError; errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
-      else if (err instanceof DomeApiTimeoutError) { const timeoutError = err as DomeApiTimeoutError; errorMessageText = `API Timeout Error: ${timeoutError.message}`; }
-      else if (err instanceof Error) { errorMessageText = `Error listing notes: ${err.message}`; }
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessageText = `API Error: ${apiError.message} (Status: ${
+          apiError.statusCode || 'N/A'
+        })`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessageText = `API Timeout Error: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessageText = `Error listing notes: ${err.message}`;
+      }
       this.container.setContent('');
       this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.container.pushLine('');
       this.container.pushLine('Type {bold}menu{/bold} to return to the main menu.');
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+      );
       this.screen.render();
     }
   }
@@ -401,66 +473,89 @@ export class NoteMode extends BaseMode {
         return;
       }
 
-      const itemSummary = this.searchResults[index] as (DomeApi.SearchResultItem | DomeApi.Note);
+      const itemSummary = this.searchResults[index] as DomeApi.SearchResultItem | DomeApi.Note;
       if (!itemSummary || !itemSummary.id) {
         this.container.pushLine('{red-fg}Error: Selected item has no ID.{/red-fg}');
         this.screen.render();
         return;
       }
-      this.selectedNoteIndex = index; 
+      this.selectedNoteIndex = index;
 
       this.statusBar.setContent(' {bold}Status:{/bold} Loading note details...');
       this.screen.render();
-      
+
       let noteToView: DomeApi.Note;
       try {
         const apiClient = await getApiClient();
         noteToView = await apiClient.notes.getANoteById(itemSummary.id);
-        this.currentViewedNote = noteToView; 
+        this.currentViewedNote = noteToView;
       } catch (fetchErr: unknown) {
         let errMessage = 'Error fetching note details.';
-        if (fetchErr instanceof DomeApiError) { const apiError = fetchErr as DomeApiError; errMessage = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
-        else if (fetchErr instanceof DomeApiTimeoutError) { const timeoutError = fetchErr as DomeApiTimeoutError; errMessage = `API Timeout Error: ${timeoutError.message}`; }
-        else if (fetchErr instanceof Error) { errMessage = `Error fetching note details: ${fetchErr.message}`; }
+        if (fetchErr instanceof DomeApiError) {
+          const apiError = fetchErr as DomeApiError;
+          errMessage = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+        } else if (fetchErr instanceof DomeApiTimeoutError) {
+          const timeoutError = fetchErr as DomeApiTimeoutError;
+          errMessage = `API Timeout Error: ${timeoutError.message}`;
+        } else if (fetchErr instanceof Error) {
+          errMessage = `Error fetching note details: ${fetchErr.message}`;
+        }
         this.container.pushLine(`{red-fg}${errMessage}{/red-fg}`);
         this.screen.render();
         return;
       }
-      
-      this.viewMode = 'view'; 
+
+      this.viewMode = 'view';
       this.container.setContent('');
-      this.container.pushLine(`{center}{bold}View Note: ${noteToView.title || 'Untitled'}{/bold}{/center}`);
+      this.container.pushLine(
+        `{center}{bold}View Note: ${noteToView.title || 'Untitled'}{/bold}{/center}`,
+      );
       this.container.pushLine('');
       this.container.pushLine(`{bold}ID:{/bold} ${noteToView.id}`);
       this.container.pushLine(`{bold}Title:{/bold} ${noteToView.title || 'Untitled'}`);
       this.container.pushLine(`{bold}Category:{/bold} ${noteToView.category || '(none)'}`);
       this.container.pushLine(`{bold}MIME Type:{/bold} ${noteToView.mimeType}`);
-      this.container.pushLine(`{bold}Created:{/bold} ${new Date(noteToView.createdAt).toLocaleString()}`);
-      if (noteToView.customMetadata?.cliTags) { 
-         const tags = Array.isArray(noteToView.customMetadata.cliTags) ? noteToView.customMetadata.cliTags.join(', ') : String(noteToView.customMetadata.cliTags);
-         this.container.pushLine(`{bold}Tags (custom):{/bold} ${tags}`);
+      this.container.pushLine(
+        `{bold}Created:{/bold} ${new Date(noteToView.createdAt).toLocaleString()}`,
+      );
+      if (noteToView.customMetadata?.cliTags) {
+        const tags = Array.isArray(noteToView.customMetadata.cliTags)
+          ? noteToView.customMetadata.cliTags.join(', ')
+          : String(noteToView.customMetadata.cliTags);
+        this.container.pushLine(`{bold}Tags (custom):{/bold} ${tags}`);
       }
 
       this.container.pushLine('');
       this.container.pushLine('{bold}Content:{/bold}');
       this.container.pushLine(noteToView.content || '(No content)');
       this.container.pushLine('');
-      this.container.pushLine('{gray-fg}Type {bold}edit{/bold} to edit, {bold}delete{/bold} to delete, or {bold}menu{/bold} to return.{/gray-fg}');
-      this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | Viewing Note (ID: ${noteToView.id})`);
+      this.container.pushLine(
+        '{gray-fg}Type {bold}edit{/bold} to edit, {bold}delete{/bold} to delete, or {bold}menu{/bold} to return.{/gray-fg}',
+      );
+      this.statusBar.setContent(
+        ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | Viewing Note (ID: ${noteToView.id})`,
+      );
       this.screen.render();
-
     } catch (err: unknown) {
       let errorMessageText = 'Error processing note view.';
-       if (err instanceof DomeApiError) { const apiError = err as DomeApiError; errorMessageText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
-      else if (err instanceof DomeApiTimeoutError) { const timeoutError = err as DomeApiTimeoutError; errorMessageText = `API Timeout Error: ${timeoutError.message}`; }
-      else if (err instanceof Error) { errorMessageText = `Error processing note view: ${err.message}`; }
+      if (err instanceof DomeApiError) {
+        const apiError = err as DomeApiError;
+        errorMessageText = `API Error: ${apiError.message} (Status: ${
+          apiError.statusCode || 'N/A'
+        })`;
+      } else if (err instanceof DomeApiTimeoutError) {
+        const timeoutError = err as DomeApiTimeoutError;
+        errorMessageText = `API Timeout Error: ${timeoutError.message}`;
+      } else if (err instanceof Error) {
+        errorMessageText = `Error processing note view: ${err.message}`;
+      }
       this.container.pushLine(`{red-fg}${errorMessageText}{/red-fg}`);
       this.screen.render();
     }
   }
 
   async handleInput(input: string): Promise<void> {
-    if (this.isEditing) return; 
+    if (this.isEditing) return;
 
     const trimmedInput = input.trim();
     const lowerInput = trimmedInput.toLowerCase();
@@ -470,16 +565,34 @@ export class NoteMode extends BaseMode {
         case 'create':
           if (lowerInput === 'create') {
             process.nextTick(async () => {
-              try { await this.createNewNote(); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
+              try {
+                await this.createNewNote();
+              } catch (errCatch: unknown) {
+                this.container.pushLine(
+                  `{red-fg}Error: ${
+                    errCatch instanceof Error ? errCatch.message : String(errCatch)
+                  }{/red-fg}`,
+                );
+                this.screen.render();
+              }
             });
           } else if (lowerInput === 'search') {
             this.showSearchPrompt();
           } else if (lowerInput === 'list') {
             process.nextTick(async () => {
-              try { await this.listRecentNotes(); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
+              try {
+                await this.listRecentNotes();
+              } catch (errCatch: unknown) {
+                this.container.pushLine(
+                  `{red-fg}Error: ${
+                    errCatch instanceof Error ? errCatch.message : String(errCatch)
+                  }{/red-fg}`,
+                );
+                this.screen.render();
+              }
             });
           } else if (lowerInput === 'menu') {
-             this.showMainMenu();
+            this.showMainMenu();
           }
           break;
 
@@ -492,24 +605,51 @@ export class NoteMode extends BaseMode {
               this.statusBar.setContent(' {bold}Status:{/bold} Loading note...');
               this.screen.render();
               process.nextTick(async () => {
-                try { await this.viewAndEditNote(noteNumber - 1); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
+                try {
+                  await this.viewAndEditNote(noteNumber - 1);
+                } catch (errCatch: unknown) {
+                  this.container.pushLine(
+                    `{red-fg}Error: ${
+                      errCatch instanceof Error ? errCatch.message : String(errCatch)
+                    }{/red-fg}`,
+                  );
+                  this.screen.render();
+                }
               });
-            } else if (trimmedInput && lowerInput !== 'menu') { 
-                 this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
-                 this.screen.render();
-                 process.nextTick(async () => {
-                    try { await this.searchNotes(trimmedInput); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
-                 });
+            } else if (trimmedInput && lowerInput !== 'menu') {
+              this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
+              this.screen.render();
+              process.nextTick(async () => {
+                try {
+                  await this.searchNotes(trimmedInput);
+                } catch (errCatch: unknown) {
+                  this.container.pushLine(
+                    `{red-fg}Error: ${
+                      errCatch instanceof Error ? errCatch.message : String(errCatch)
+                    }{/red-fg}`,
+                  );
+                  this.screen.render();
+                }
+              });
             } else if (lowerInput === 'menu') {
-                this.resetState();
-                this.showMainMenu();
+              this.resetState();
+              this.showMainMenu();
             }
-          } else if (trimmedInput && lowerInput !== 'menu') { 
-             this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
-             this.screen.render();
-             process.nextTick(async () => {
-                try { await this.searchNotes(trimmedInput); } catch (errCatch: unknown) { this.container.pushLine(`{red-fg}Error: ${errCatch instanceof Error ? errCatch.message : String(errCatch)}{/red-fg}`); this.screen.render(); }
-             });
+          } else if (trimmedInput && lowerInput !== 'menu') {
+            this.statusBar.setContent(' {bold}Status:{/bold} Searching...');
+            this.screen.render();
+            process.nextTick(async () => {
+              try {
+                await this.searchNotes(trimmedInput);
+              } catch (errCatch: unknown) {
+                this.container.pushLine(
+                  `{red-fg}Error: ${
+                    errCatch instanceof Error ? errCatch.message : String(errCatch)
+                  }{/red-fg}`,
+                );
+                this.screen.render();
+              }
+            });
           } else if (lowerInput === 'menu') {
             this.resetState();
             this.showMainMenu();
@@ -517,10 +657,12 @@ export class NoteMode extends BaseMode {
           break;
 
         case 'view': {
-          const noteToActOn = this.currentViewedNote; 
+          const noteToActOn = this.currentViewedNote;
 
           if (!noteToActOn || !noteToActOn.id) {
-            this.container.pushLine('{red-fg}Error: No note selected or note ID is missing.{/red-fg}');
+            this.container.pushLine(
+              '{red-fg}Error: No note selected or note ID is missing.{/red-fg}',
+            );
             this.showMainMenu();
             break;
           }
@@ -529,39 +671,65 @@ export class NoteMode extends BaseMode {
             process.nextTick(async () => {
               try {
                 const tempFilePath = this.createTempFileWithMetadata(
-                    noteToActOn.title, 
-                    noteToActOn.content, 
-                    noteToActOn.category, 
-                    noteToActOn.customMetadata?.cliTags ? 
-                        (Array.isArray(noteToActOn.customMetadata.cliTags) ? noteToActOn.customMetadata.cliTags.join(', ') : String(noteToActOn.customMetadata.cliTags)) 
-                        : ''
+                  noteToActOn.title,
+                  noteToActOn.content,
+                  noteToActOn.category,
+                  noteToActOn.customMetadata?.cliTags
+                    ? Array.isArray(noteToActOn.customMetadata.cliTags)
+                      ? noteToActOn.customMetadata.cliTags.join(', ')
+                      : String(noteToActOn.customMetadata.cliTags)
+                    : '',
                 );
-                
+
                 await this.openEditor(tempFilePath);
                 const updatedNoteParsed = this.parseNoteContent(tempFilePath);
                 fs.unlinkSync(tempFilePath);
 
                 this.statusBar.setContent(' {bold}Status:{/bold} Processing edited note...');
                 this.screen.render();
-                
+
                 this.container.setContent('');
-                this.container.pushLine('{center}{bold}Note Edited (Locally Parsed){/bold}{/center}');
-                this.container.pushLine(`{yellow-fg}Update/Save functionality via SDK is pending.{/yellow-fg}`);
-                this.container.pushLine(`{yellow-fg}To save changes, manually delete original (ID: ${noteToActOn.id}) and create new.{/yellow-fg}`);
+                this.container.pushLine(
+                  '{center}{bold}Note Edited (Locally Parsed){/bold}{/center}',
+                );
+                this.container.pushLine(
+                  `{yellow-fg}Update/Save functionality via SDK is pending.{/yellow-fg}`,
+                );
+                this.container.pushLine(
+                  `{yellow-fg}To save changes, manually delete original (ID: ${noteToActOn.id}) and create new.{/yellow-fg}`,
+                );
                 this.container.pushLine(`{bold}Original ID:{/bold} ${noteToActOn.id}`);
                 this.container.pushLine(`{bold}Parsed Title:{/bold} ${updatedNoteParsed.title}`);
-                this.container.pushLine(`{bold}Parsed Category:{/bold} ${updatedNoteParsed.category}`);
-                this.container.pushLine(`{bold}Parsed Tags:{/bold} ${updatedNoteParsed.tags.join(', ')}`);
-                this.container.pushLine(`{bold}Parsed Content Snippet:{/bold} ${(updatedNoteParsed.content || '').substring(0, 50)}...`);
+                this.container.pushLine(
+                  `{bold}Parsed Category:{/bold} ${updatedNoteParsed.category}`,
+                );
+                this.container.pushLine(
+                  `{bold}Parsed Tags:{/bold} ${updatedNoteParsed.tags.join(', ')}`,
+                );
+                this.container.pushLine(
+                  `{bold}Parsed Content Snippet:{/bold} ${(
+                    updatedNoteParsed.content || ''
+                  ).substring(0, 50)}...`,
+                );
                 this.container.pushLine('');
                 this.container.pushLine('Type {bold}menu{/bold} to return.');
-                this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | Note processed locally`);
+                this.statusBar.setContent(
+                  ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | Note processed locally`,
+                );
                 this.screen.render();
               } catch (editErr: unknown) {
-                let errMsgText = "Error during edit process.";
-                if (editErr instanceof DomeApiError) { const apiError = editErr as DomeApiError; errMsgText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
-                else if (editErr instanceof DomeApiTimeoutError) { const timeoutError = editErr as DomeApiTimeoutError; errMsgText = `API Timeout: ${timeoutError.message}`; }
-                else if (editErr instanceof Error) { errMsgText = `Error during edit process: ${editErr.message}`; }
+                let errMsgText = 'Error during edit process.';
+                if (editErr instanceof DomeApiError) {
+                  const apiError = editErr as DomeApiError;
+                  errMsgText = `API Error: ${apiError.message} (Status: ${
+                    apiError.statusCode || 'N/A'
+                  })`;
+                } else if (editErr instanceof DomeApiTimeoutError) {
+                  const timeoutError = editErr as DomeApiTimeoutError;
+                  errMsgText = `API Timeout: ${timeoutError.message}`;
+                } else if (editErr instanceof Error) {
+                  errMsgText = `Error during edit process: ${editErr.message}`;
+                }
                 this.container.pushLine(`{red-fg}${errMsgText}{/red-fg}`);
                 this.screen.render();
               }
@@ -572,25 +740,39 @@ export class NoteMode extends BaseMode {
             process.nextTick(async () => {
               try {
                 const apiClient = await getApiClient();
-                await apiClient.notes.deleteANote(noteToActOn.id); 
+                await apiClient.notes.deleteANote(noteToActOn.id);
                 this.container.setContent('');
                 this.container.pushLine('{center}{bold}Note Deleted{/bold}{/center}');
                 this.container.pushLine('');
-                this.container.pushLine(`{green-fg}Note "${noteToActOn.title || noteToActOn.id}" has been deleted.{/green-fg}`);
+                this.container.pushLine(
+                  `{green-fg}Note "${
+                    noteToActOn.title || noteToActOn.id
+                  }" has been deleted.{/green-fg}`,
+                );
                 this.searchResults = this.searchResults.filter(n => n.id !== noteToActOn.id);
                 this.selectedNoteIndex = -1;
                 this.currentViewedNote = null;
-                this.viewMode = 'search'; 
-                this.showSearchResults(); 
+                this.viewMode = 'search';
+                this.showSearchResults();
               } catch (deleteErr: unknown) {
-                let errMsgText = "Failed to delete note.";
-                if (deleteErr instanceof DomeApiError) { const apiError = deleteErr as DomeApiError; errMsgText = `API Error: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`; }
-                else if (deleteErr instanceof DomeApiTimeoutError) { const timeoutError = deleteErr as DomeApiTimeoutError; errMsgText = `API Timeout: ${timeoutError.message}`; }
-                else if (deleteErr instanceof Error) { errMsgText = `Failed to delete note: ${deleteErr.message}`; }
+                let errMsgText = 'Failed to delete note.';
+                if (deleteErr instanceof DomeApiError) {
+                  const apiError = deleteErr as DomeApiError;
+                  errMsgText = `API Error: ${apiError.message} (Status: ${
+                    apiError.statusCode || 'N/A'
+                  })`;
+                } else if (deleteErr instanceof DomeApiTimeoutError) {
+                  const timeoutError = deleteErr as DomeApiTimeoutError;
+                  errMsgText = `API Timeout: ${timeoutError.message}`;
+                } else if (deleteErr instanceof Error) {
+                  errMsgText = `Failed to delete note: ${deleteErr.message}`;
+                }
                 this.container.pushLine(`{red-fg}${errMsgText}{/red-fg}`);
               } finally {
-                 this.statusBar.setContent(` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`);
-                 this.screen.render();
+                this.statusBar.setContent(
+                  ` {bold}Mode:{/bold} {${this.config.color}-fg}${this.config.name}{/${this.config.color}-fg} | ${this.config.description}`,
+                );
+                this.screen.render();
               }
             });
           } else if (lowerInput === 'menu') {
@@ -600,7 +782,7 @@ export class NoteMode extends BaseMode {
           break;
         }
       }
-    } catch (err: unknown) { 
+    } catch (err: unknown) {
       let errorMessageText = 'Error in Note Mode input handler.';
       if (err instanceof Error) {
         errorMessageText = `Error in Note Mode input handler: ${err.message}`;

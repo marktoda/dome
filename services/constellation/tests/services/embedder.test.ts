@@ -189,7 +189,8 @@ describe('Embedder', () => {
       expect(embedder).toBeInstanceOf(Embedder);
     });
 
-    it('should create an embedder with custom config when provided', async () => { // Made test async
+    it('should create an embedder with custom config when provided', async () => {
+      // Made test async
       const customConfig = {
         model: 'custom-model',
         maxBatchSize: 5,

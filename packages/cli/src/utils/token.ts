@@ -8,4 +8,4 @@ export function isExpired(token: string, leewaySeconds = 30): boolean {
   } catch {
     return true;
   }
-} 
+}

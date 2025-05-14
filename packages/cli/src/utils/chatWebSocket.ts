@@ -47,7 +47,9 @@ const detectors: DetectorFn[] = [
       const nodeId = Object.keys(p[1])[0];
       const node = p[1][nodeId];
       if (node?.reasoning) {
-        const last = Array.isArray(node.reasoning) ? node.reasoning[node.reasoning.length - 1] : node.reasoning;
+        const last = Array.isArray(node.reasoning)
+          ? node.reasoning[node.reasoning.length - 1]
+          : node.reasoning;
         if (typeof last === 'string') {
           return { type: 'thinking', content: last };
         }
@@ -152,9 +154,12 @@ export class ChatWebSocketClient extends EventEmitter {
       this.debug(`incoming Buffer (${event.data.length} bytes)`);
       this.processChunk(event.data.toString('utf-8'));
     } else if (typeof Blob !== 'undefined' && event.data instanceof Blob) {
-      event.data.text().then(txt => this.processChunk(txt)).catch(err => {
-        this.emit('error', err instanceof Error ? err : new Error(String(err)));
-      });
+      event.data
+        .text()
+        .then(txt => this.processChunk(txt))
+        .catch(err => {
+          this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        });
     } else if (typeof event.data === 'object' && event.data !== null) {
       // Fallback – try stringify then parse
       try {
@@ -199,7 +204,9 @@ export class ChatWebSocketClient extends EventEmitter {
           this.emit('chunk', mapped);
           if (mapped.type === 'end') this.close();
         }
-      } catch {/* ignore until we have full line */ }
+      } catch {
+        /* ignore until we have full line */
+      }
     }
   }
 

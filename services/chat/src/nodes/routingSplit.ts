@@ -1,6 +1,6 @@
 import { getLogger } from '@dome/common';
 import { z } from 'zod';
-import { AgentState, UserTaskEntity, AIMessage } from '../types';
+import { AgentState, UserTaskEntity } from '../types';
 import { getUserId } from '../utils/stateUtils';
 import { buildMessages } from '../utils';
 import { LlmService } from '../services/llmService';
@@ -36,12 +36,11 @@ type SplittedInput = z.infer<typeof splitInputSchema>;
  * 2. Create UserTaskEntity objects for each identified task
  * 3. Return enriched state with reasoning and task entities
  */
-export type RoutingSplitUpdate = SliceUpdate<'taskIds' | 'taskEntities' | 'instructions' | 'reasoning'>;
+export type RoutingSplitUpdate = SliceUpdate<
+  'taskIds' | 'taskEntities' | 'instructions' | 'reasoning'
+>;
 
-export const routingSplit = async (
-  state: AgentState,
-  env: Env,
-): Promise<RoutingSplitUpdate> => {
+export const routingSplit = async (state: AgentState, env: Env): Promise<RoutingSplitUpdate> => {
   const logger = getLogger().child({ node: 'routingSplit' });
   const t0 = performance.now();
 
@@ -287,4 +286,4 @@ export const routingSplit = async (
       },
     };
   }
-}
+};

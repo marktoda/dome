@@ -4,7 +4,9 @@
 // For mocks of internal modules, the relative path is usually fine.
 vi.mock('@dome/common/middleware/authPropagationMiddleware.js', async () => {
   // When mocking using an alias, importActual should also use the alias.
-  const actual = await vi.importActual<typeof import('@dome/common/middleware/authPropagationMiddleware.js')>('@dome/common/middleware/authPropagationMiddleware.js');
+  const actual = await vi.importActual<
+    typeof import('@dome/common/middleware/authPropagationMiddleware.js')
+  >('@dome/common/middleware/authPropagationMiddleware.js');
   return {
     ...(actual as object),
     // Mock the internal verifyJwt function

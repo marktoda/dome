@@ -188,11 +188,7 @@ export class LlmService {
         maxTokens: opts.maxTokens,
       });
     } catch (error) {
-      logError(
-        error,
-        'Failed to create tool-bound LLM',
-        { modelId },
-      );
+      logError(error, 'Failed to create tool-bound LLM', { modelId });
 
       // Fall back to default model if specified model fails
       if (modelId !== getDefaultModel().id) {

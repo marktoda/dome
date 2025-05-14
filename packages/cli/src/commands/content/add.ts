@@ -13,13 +13,14 @@ export class AddCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('add')
+    const cmd = program
+      .command('add')
       .description('Add new content to dome (text or file path)')
       .argument('<content>', 'Content to add (text or file path)')
       .option('--title <title>', 'Optional title for the content')
       .option('--category <category>', 'Optional category for the content')
       .option('--output-format <format>', 'Output format (cli, json)');
-    
+
     cmd.action(async (contentValue: string, optionsFromCommander: any) => {
       const commandInstance = new AddCommand();
       const combinedArgs: CommandArgs = {
@@ -43,11 +44,11 @@ export class AddCommand extends BaseCommand {
     }
 
     if (!contentArg) {
-        this.error('Content argument is required.', { outputFormat });
-        process.exitCode = 1;
-        return;
+      this.error('Content argument is required.', { outputFormat });
+      process.exitCode = 1;
+      return;
     }
-    
+
     try {
       let contentToAdd = contentArg;
       let title = titleArg;
@@ -56,16 +57,22 @@ export class AddCommand extends BaseCommand {
         const fileName = path.basename(contentArg);
         this.log(`Adding file: ${fileName}...`, outputFormat);
         contentToAdd = fs.readFileSync(contentArg, 'utf-8');
-        if (!title) { // Use filename as title if no title provided
+        if (!title) {
+          // Use filename as title if no title provided
           title = fileName;
         }
       } else {
-        const contentPreview = contentArg.length > 40 ? `${contentArg.substring(0, 40)}...` : contentArg;
+        const contentPreview =
+          contentArg.length > 40 ? `${contentArg.substring(0, 40)}...` : contentArg;
         this.log(`Adding text: "${contentPreview}"...`, outputFormat);
       }
 
       const apiClient = await getApiClient();
-      const ingestPayload: { content: string; title?: string; category?: DomeApi.IngestNoteBodyApiSchemaCategory | undefined } = {
+      const ingestPayload: {
+        content: string;
+        title?: string;
+        category?: DomeApi.IngestNoteBodyApiSchemaCategory | undefined;
+      } = {
         content: contentToAdd,
       };
       if (title) {
@@ -79,9 +86,8 @@ export class AddCommand extends BaseCommand {
       // Using ingestANewNote, assuming it's the generic endpoint.
       // Adjust if a different SDK method is more appropriate.
       await apiClient.notes.ingestANewNote(ingestPayload);
-      
-      this.log('Content successfully added to dome.', outputFormat);
 
+      this.log('Content successfully added to dome.', outputFormat);
     } catch (err) {
       // BaseCommand's executeRun will catch this
       throw err;

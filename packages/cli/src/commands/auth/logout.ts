@@ -12,11 +12,12 @@ export class LogoutCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('logout')
+    const cmd = program
+      .command('logout')
       .description('Log out from the Dome API')
       .option('--output-format <format>', 'Output format (cli, json)');
-    
-    cmd.action(async (optionsFromCommander) => {
+
+    cmd.action(async optionsFromCommander => {
       const commandInstance = new LogoutCommand();
       await commandInstance.executeRun(optionsFromCommander as CommandArgs);
     });
@@ -51,7 +52,7 @@ export class LogoutCommand extends BaseCommand {
         }
       }
 
-      clearApiKey(); 
+      clearApiKey();
       clearApiClientInstance();
 
       this.log('Successfully logged out locally.', outputFormat);

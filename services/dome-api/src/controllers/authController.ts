@@ -3,7 +3,11 @@ import { z, createRoute, OpenAPIHono, RouteConfigToTypedResponse } from '@hono/z
 import { getLogger, logError } from '@dome/common';
 import { createServiceFactory } from '../services/serviceFactory';
 // Import User and ValidateTokenResponse from the auth client types
-import { SupportedAuthProvider, User as AuthUser, ValidateTokenResponse as AuthValidateTokenResponse } from '@dome/auth/client';
+import {
+  SupportedAuthProvider,
+  User as AuthUser,
+  ValidateTokenResponse as AuthValidateTokenResponse,
+} from '@dome/auth/client';
 import type { AppEnv } from '../types';
 
 // --- Generic Error Schema ---
@@ -78,13 +82,10 @@ const RegisterBodySchema = z
       .string()
       .email()
       .openapi({ example: 'newuser@example.com', description: "New user's email address" }),
-    password: z
-      .string()
-      .min(8)
-      .openapi({
-        example: 'securepassword123',
-        description: "New user's password (min 8 characters)",
-      }),
+    password: z.string().min(8).openapi({
+      example: 'securepassword123',
+      description: "New user's password (min 8 characters)",
+    }),
     name: z.string().min(1).openapi({ example: 'New User', description: "New user's full name" }),
   })
   .openapi('RegisterBody');
@@ -92,12 +93,10 @@ const RegisterBodySchema = z
 // Assuming registration also returns a token, similar to login
 const RegisterResponseSchema = z
   .object({
-    token: z
-      .string()
-      .openapi({
-        example: 'eyJhbGciOiJIUzI1NiIs…',
-        description: 'JWT authentication token after registration',
-      }),
+    token: z.string().openapi({
+      example: 'eyJhbGciOiJIUzI1NiIs…',
+      description: 'JWT authentication token after registration',
+    }),
   })
   .openapi('RegisterResponse');
 
@@ -181,8 +180,17 @@ const UserProfileSchema = z
     // Dates from AuthUser are Date objects; here we expect ISO strings for the API response.
     createdAt: z.string().datetime().openapi({ example: '2023-01-01T00:00:00.000Z' }),
     updatedAt: z.string().datetime().openapi({ example: '2023-01-01T00:00:00.000Z' }),
-    lastLoginAt: z.string().datetime().nullable().optional().openapi({ example: '2023-01-01T00:00:00.000Z' }),
-    authProvider: z.nativeEnum(SupportedAuthProvider).nullable().optional().openapi({ example: SupportedAuthProvider.LOCAL }),
+    lastLoginAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .openapi({ example: '2023-01-01T00:00:00.000Z' }),
+    authProvider: z
+      .nativeEnum(SupportedAuthProvider)
+      .nullable()
+      .optional()
+      .openapi({ example: SupportedAuthProvider.LOCAL }),
     providerAccountId: z.string().nullable().optional().openapi({ example: 'user@example.com' }),
     // The 'provider' field for the response user object will come from the top-level AuthValidateTokenResponse
   })
@@ -194,7 +202,12 @@ const DomeApiValidateTokenResponseSchema = z
     success: z.literal(true).openapi({ example: true }),
     // The user object in the response includes the provider
     user: UserProfileSchema.extend({
-        provider: z.nativeEnum(SupportedAuthProvider).openapi({ example: SupportedAuthProvider.LOCAL, description: 'The authentication provider used.' })
+      provider: z
+        .nativeEnum(SupportedAuthProvider)
+        .openapi({
+          example: SupportedAuthProvider.LOCAL,
+          description: 'The authentication provider used.',
+        }),
     }),
   })
   .openapi('DomeApiValidateTokenResponse');
@@ -315,10 +328,20 @@ export class AuthController {
       // or return a User object on success.
       // authService.register (from @dome/auth/client) returns Promise<RegisterResponse>
       // RegisterResponse (from auth/src/types.ts) is { success, user, token, ... }
-      const registrationServiceResponse = await authService.register(SupportedAuthProvider.LOCAL, { email, password, name });
-      this.logger.info({ email, registrationServiceResponse }, 'User registration processed by auth service.');
+      const registrationServiceResponse = await authService.register(SupportedAuthProvider.LOCAL, {
+        email,
+        password,
+        name,
+      });
+      this.logger.info(
+        { email, registrationServiceResponse },
+        'User registration processed by auth service.',
+      );
 
-      if (registrationServiceResponse.success && typeof registrationServiceResponse.token === 'string') {
+      if (
+        registrationServiceResponse.success &&
+        typeof registrationServiceResponse.token === 'string'
+      ) {
         // Ensure the response matches local RegisterResponseSchema: { token: string }
         return c.json({ token: registrationServiceResponse.token }, 201);
       }
@@ -339,16 +362,19 @@ export class AuthController {
         },
         500,
       );
-
     } catch (error: any) {
-      logError(
-        error,
-        'Registration failed with exception',
-        { errorDetail: error, nestedError: error.error },
-      );
+      logError(error, 'Registration failed with exception', {
+        errorDetail: error,
+        nestedError: error.error,
+      });
 
       // Check if the error came from AuthError serialization
-      if (error && error.error && typeof error.error.type === 'string' && error.error.type === 'user_exists') {
+      if (
+        error &&
+        error.error &&
+        typeof error.error.type === 'string' &&
+        error.error.type === 'user_exists'
+      ) {
         return c.json(
           {
             success: false as const,
@@ -360,13 +386,17 @@ export class AuthController {
 
       // Handle other errors or general errors
       // If the RPC call itself fails or returns a non-AuthError structure
-      const statusCode = (error && typeof error.status === 'number') ? error.status : 400;
-      const errorMessage = (error && error.error && typeof error.error.message === 'string')
-        ? error.error.message
-        : (error && typeof error.message === 'string' ? error.message : 'Registration processing error');
-      const errorCode = (error && error.error && typeof error.error.type === 'string')
-        ? error.error.type.toUpperCase()
-        : 'BAD_REQUEST';
+      const statusCode = error && typeof error.status === 'number' ? error.status : 400;
+      const errorMessage =
+        error && error.error && typeof error.error.message === 'string'
+          ? error.error.message
+          : error && typeof error.message === 'string'
+          ? error.message
+          : 'Registration processing error';
+      const errorCode =
+        error && error.error && typeof error.error.type === 'string'
+          ? error.error.type.toUpperCase()
+          : 'BAD_REQUEST';
 
       return c.json(
         {
@@ -399,7 +429,10 @@ export class AuthController {
       // authService.login (from @dome/auth/client) returns Promise<LoginResponse>
       // LoginResponse (from auth/src/types.ts) is { success, user, token, ... }
       // For email/password login, this should be LOCAL provider
-      const loginServiceResponse = await authService.login(SupportedAuthProvider.LOCAL, { email, password });
+      const loginServiceResponse = await authService.login(SupportedAuthProvider.LOCAL, {
+        email,
+        password,
+      });
       this.logger.info({ email, loginServiceResponse }, 'User login processed by auth service.');
 
       if (loginServiceResponse.success && typeof loginServiceResponse.token === 'string') {
@@ -408,7 +441,10 @@ export class AuthController {
       }
 
       // Handle cases where login succeeded at service level but no token, or success is false
-      this.logger.warn({ resultFromService: loginServiceResponse }, 'Auth service processed login, but success was false or token was missing.');
+      this.logger.warn(
+        { resultFromService: loginServiceResponse },
+        'Auth service processed login, but success was false or token was missing.',
+      );
       return c.json(
         {
           success: false as const,
@@ -417,13 +453,10 @@ export class AuthController {
             message: 'Login successful but failed to issue token.',
           },
         },
-        401
+        401,
       );
     } catch (error: any) {
-      logError(
-        error,
-        'Login failed with exception',
-      );
+      logError(error, 'Login failed with exception');
       return c.json(
         {
           success: false as const,
@@ -465,7 +498,10 @@ export class AuthController {
       // Assuming logout can be generic or tied to the token's original provider.
       // If it must be privy, this needs to be SupportedAuthProvider.LOCAL
       // For now, let's assume it's tied to the token, so no specific provider or handle this logic in authService
-      const result: LogoutServiceResponse = await authService.logout(SupportedAuthProvider.LOCAL, token);
+      const result: LogoutServiceResponse = await authService.logout(
+        SupportedAuthProvider.LOCAL,
+        token,
+      );
 
       if (result.success) {
         return c.json({ success: true, message: 'Logout successful' }, 200);
@@ -482,10 +518,7 @@ export class AuthController {
         500,
       );
     } catch (error: any) {
-      logError(
-        error,
-        'Logout failed with exception',
-      );
+      logError(error, 'Logout failed with exception');
       return c.json(
         {
           success: false,
@@ -525,7 +558,10 @@ export class AuthController {
 
       // Use the imported AuthValidateTokenResponse type from @dome/auth/client
       // This type expects result.user to be an AuthUser object (which includes Date objects)
-      const result: AuthValidateTokenResponse = await authService.validateToken(token, SupportedAuthProvider.LOCAL);
+      const result: AuthValidateTokenResponse = await authService.validateToken(
+        token,
+        SupportedAuthProvider.LOCAL,
+      );
 
       if (result.success && result.user && result.provider) {
         // result.user is of type AuthUser.
@@ -534,20 +570,20 @@ export class AuthController {
 
         // Construct the object to be validated by DomeApiValidateTokenResponseSchema.shape.user
         const apiUserPayload = {
-            id: result.user.id,
-            email: result.user.email,
-            name: result.user.name, // AuthUser.name is string | null; UserProfileSchema.name is string().nullable().optional()
-            role: result.user.role, // AuthUser.role is "user" | "admin"; UserProfileSchema.role is string()
-            emailVerified: result.user.emailVerified, // AuthUser.emailVerified is boolean; UserProfileSchema.emailVerified is boolean().optional()
-            isActive: result.user.isActive, // AuthUser.isActive is boolean; UserProfileSchema.isActive is boolean().optional()
-            createdAt: result.user.createdAt.toISOString(), // AuthUser.createdAt is Date; UserProfileSchema.createdAt is string().datetime()
-            updatedAt: result.user.updatedAt.toISOString(), // AuthUser.updatedAt is Date; UserProfileSchema.updatedAt is string().datetime()
-            lastLoginAt: result.user.lastLoginAt ? result.user.lastLoginAt.toISOString() : null, // AuthUser.lastLoginAt is Date | null
-            authProvider: result.user.authProvider, // AuthUser.authProvider is string | null
-            providerAccountId: result.user.providerAccountId, // AuthUser.providerAccountId is string | null
-            provider: result.provider, // This comes from the top level of AuthValidateTokenResponse
+          id: result.user.id,
+          email: result.user.email,
+          name: result.user.name, // AuthUser.name is string | null; UserProfileSchema.name is string().nullable().optional()
+          role: result.user.role, // AuthUser.role is "user" | "admin"; UserProfileSchema.role is string()
+          emailVerified: result.user.emailVerified, // AuthUser.emailVerified is boolean; UserProfileSchema.emailVerified is boolean().optional()
+          isActive: result.user.isActive, // AuthUser.isActive is boolean; UserProfileSchema.isActive is boolean().optional()
+          createdAt: result.user.createdAt.toISOString(), // AuthUser.createdAt is Date; UserProfileSchema.createdAt is string().datetime()
+          updatedAt: result.user.updatedAt.toISOString(), // AuthUser.updatedAt is Date; UserProfileSchema.updatedAt is string().datetime()
+          lastLoginAt: result.user.lastLoginAt ? result.user.lastLoginAt.toISOString() : null, // AuthUser.lastLoginAt is Date | null
+          authProvider: result.user.authProvider, // AuthUser.authProvider is string | null
+          providerAccountId: result.user.providerAccountId, // AuthUser.providerAccountId is string | null
+          provider: result.provider, // This comes from the top level of AuthValidateTokenResponse
         };
-        
+
         // Validate this constructed object against the schema for the 'user' part of the API response
         const apiUserResponseSchema = DomeApiValidateTokenResponseSchema.shape.user;
         const validation = apiUserResponseSchema.safeParse(apiUserPayload);
@@ -556,12 +592,19 @@ export class AuthController {
           logError(
             new Error('User profile data for API response failed Zod validation'),
             'Constructed user profile data failed Zod validation against DomeApiValidateTokenResponseSchema.shape.user.',
-            { errors: validation.error.flatten(), rawAuthUser: result.user, constructedForApi: apiUserPayload },
+            {
+              errors: validation.error.flatten(),
+              rawAuthUser: result.user,
+              constructedForApi: apiUserPayload,
+            },
           );
           return c.json(
             {
               success: false,
-              error: { code: 'INTERNAL_SERVER_ERROR', message: 'Invalid user profile structure after processing for API response.' },
+              error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Invalid user profile structure after processing for API response.',
+              },
             },
             500,
           );
@@ -570,7 +613,7 @@ export class AuthController {
         // and should have the 'provider' field.
         return c.json({ success: true, user: validation.data }, 200);
       }
-      
+
       this.logger.warn(
         { resultFromAuthService: result }, // Log the actual result from the auth service
         'Token validation service call failed, did not return user profile, or success was false.',
@@ -581,25 +624,21 @@ export class AuthController {
           error: {
             code: 'UNAUTHORIZED',
             // Access result.error safely if it exists, otherwise provide a generic message
-            message: (result && (result as any).error && typeof (result as any).error.message === 'string')
-                     ? (result as any).error.message
-                     : 'Invalid or expired token, or user data missing.',
+            message:
+              result && (result as any).error && typeof (result as any).error.message === 'string'
+                ? (result as any).error.message
+                : 'Invalid or expired token, or user data missing.',
           },
         },
         401,
       );
     } catch (error: any) {
-      logError(
-        error,
-        'Token validation failed with exception',
-      );
+      logError(error, 'Token validation failed with exception');
       if (error instanceof z.ZodError) {
         // This case should ideally be caught by the safeParse above.
-        logError(
-          error,
-          'UserProfileSchema validation failed unexpectedly during catch block.',
-          { errors: error.flatten() },
-        );
+        logError(error, 'UserProfileSchema validation failed unexpectedly during catch block.', {
+          errors: error.flatten(),
+        });
         return c.json(
           {
             success: false,
@@ -636,10 +675,17 @@ export class AuthController {
       this.logger.debug({ refreshToken }, 'Token refresh request');
 
       const serviceFactory = createServiceFactory();
-      interface AuthServiceWithRefresh { refreshToken(token: string): Promise<{ success: boolean; token: string; refreshToken: string; expiresAt: number; }>; }
+      interface AuthServiceWithRefresh {
+        refreshToken(
+          token: string,
+        ): Promise<{ success: boolean; token: string; refreshToken: string; expiresAt: number }>;
+      }
       const authService = serviceFactory.getAuthService(c.env) as unknown as AuthServiceWithRefresh;
       const refreshServiceResponse = await authService.refreshToken(refreshToken);
-      this.logger.info({ refreshToken, refreshServiceResponse }, 'Token refresh processed by auth service.');
+      this.logger.info(
+        { refreshToken, refreshServiceResponse },
+        'Token refresh processed by auth service.',
+      );
 
       if (refreshServiceResponse && refreshServiceResponse.success) {
         const resp = {
@@ -651,7 +697,10 @@ export class AuthController {
       }
 
       // Handle cases where refresh succeeded at service level but no token, or success is false
-      this.logger.warn({ resultFromService: refreshServiceResponse }, 'Auth service processed refresh, but success was false or token was missing.');
+      this.logger.warn(
+        { resultFromService: refreshServiceResponse },
+        'Auth service processed refresh, but success was false or token was missing.',
+      );
       return c.json(
         {
           success: false as const,
@@ -660,13 +709,10 @@ export class AuthController {
             message: 'Refresh successful but failed to issue token.',
           },
         },
-        401
+        401,
       );
     } catch (error: any) {
-      logError(
-        error,
-        'Refresh token failed with exception',
-      );
+      logError(error, 'Refresh token failed with exception');
       return c.json(
         {
           success: false as const,

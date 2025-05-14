@@ -156,11 +156,9 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               // Acknowledge the message
               message.ack();
             } catch (error) {
-              logError(
-                error,
-                'Error processing enriched content message',
-                { messageId: message.id },
-              );
+              logError(error, 'Error processing enriched content message', {
+                messageId: message.id,
+              });
 
               // For validation errors, send to DLQ immediately
               if (error instanceof z.ZodError) {
@@ -200,11 +198,7 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               // Acknowledge the message
               message.ack();
             } catch (error) {
-              logError(
-                error,
-                'Error processing ingest queue message',
-                { messageId: message.id },
-              );
+              logError(error, 'Error processing ingest queue message', { messageId: message.id });
 
               // For validation errors, send to DLQ immediately
               if (error instanceof z.ZodError) {

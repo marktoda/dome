@@ -2,7 +2,12 @@ import type { Context, MiddlewareHandler, Next } from 'hono';
 import { ZodError } from 'zod';
 import type { ApiResponse } from '../types/index.js';
 import type { ExtendedError } from '../errors/index.js';
-import { BaseError, ValidationError, SchemaValidationError, ServiceError } from '../errors/index.js';
+import {
+  BaseError,
+  ValidationError,
+  SchemaValidationError,
+  ServiceError,
+} from '../errors/index.js';
 
 /**
  * Error handling middleware for Hono

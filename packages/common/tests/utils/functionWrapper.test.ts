@@ -73,7 +73,9 @@ describe('Function Wrapper Utilities', () => {
     });
 
     it('should use trackOperation for named operations', async () => {
-      const { trackOperation } = await vi.importActual<typeof import('@dome/common')>('@dome/common');
+      const { trackOperation } = await vi.importActual<typeof import('@dome/common')>(
+        '@dome/common',
+      );
       const wrap = createServiceWrapper('test-service');
       const fn = vi.fn().mockResolvedValue('test-result');
 
@@ -87,7 +89,9 @@ describe('Function Wrapper Utilities', () => {
     });
 
     it('should skip tracking if skipTracking is true', async () => {
-      const { trackOperation } = await vi.importActual<typeof import('@dome/common')>('@dome/common');
+      const { trackOperation } = await vi.importActual<typeof import('@dome/common')>(
+        '@dome/common',
+      );
       const wrap = createServiceWrapper('test-service');
       const fn = vi.fn().mockResolvedValue('test-result');
 

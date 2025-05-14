@@ -9,18 +9,18 @@ interface TestEnv {
   AUTH_DB: any; // Mock D1 binding
   AUTH_TOKENS: any; // Mock KV Namespace
   PRIVY_APP_ID: string;
-  ENVIRONMENT: "development";
-  VERSION: "0.1.0"; // Corrected to specific literal type
+  ENVIRONMENT: 'development';
+  VERSION: '0.1.0'; // Corrected to specific literal type
   // Add other bindings if your worker's Env expects them
 }
 
 // Define a type for the logger mock
 interface MockLogger {
-    child: any;
-    info: any;
-    error: any;
-    warn: any;
-    debug: any;
+  child: any;
+  info: any;
+  error: any;
+  warn: any;
+  debug: any;
 }
 
 vi.mock('../../src/services/providers/privy-auth-provider');
@@ -41,21 +41,20 @@ vi.mock('drizzle-orm/d1', () => ({
 }));
 
 const mockLoggerInstance: MockLogger = {
-    child: vi.fn(() => mockLoggerInstance),
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
+  child: vi.fn(() => mockLoggerInstance),
+  info: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  debug: vi.fn(),
 };
-vi.mock('@dome/common', async (importOriginal) => {
-    const actual = await importOriginal() as any;
-    return {
-        ...actual,
-        getLogger: vi.fn(() => mockLoggerInstance),
-        withContext: vi.fn((meta, fn) => fn(mockLoggerInstance)),
-    };
+vi.mock('@dome/common', async importOriginal => {
+  const actual = (await importOriginal()) as any;
+  return {
+    ...actual,
+    getLogger: vi.fn(() => mockLoggerInstance),
+    withContext: vi.fn((meta, fn) => fn(mockLoggerInstance)),
+  };
 });
-
 
 describe('Privy Auth Integration (/validate endpoint)', () => {
   let authWorker: AuthWorker;
@@ -64,7 +63,6 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
   const mockUserId = 'user-id-from-privy';
   const mockUserEmail = 'privy-user@example.com';
   let mockExecutionContext: ExecutionContext;
-
 
   const mockUser: User = {
     id: mockUserId,
@@ -100,28 +98,31 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
     process.env.PRIVY_APP_ID = mockEnv.PRIVY_APP_ID;
 
     mockExecutionContext = {
-        waitUntil: vi.fn(),
-        passThroughOnException: vi.fn(),
+      waitUntil: vi.fn(),
+      passThroughOnException: vi.fn(),
     } as unknown as ExecutionContext;
 
     authWorker = new AuthWorker(mockExecutionContext, mockEnv);
 
-
-    (PrivyAuthProvider as any).mockImplementation((config: any, tokenManager: any, userManager: any, envParam: TestEnv) => {
-      const mockPrivyServiceInstance = {
-        validatePrivyToken: vi.fn(), // This method might not exist on PrivyAuthProvider directly
-                                     // It might be part of authenticate or getUserFromToken
-        // Mock other methods of BaseAuthProvider if needed by the test logic using privyAuthService
-        authenticate: vi.fn(),
-        getUserFromToken: vi.fn(),
-        providerName: 'privy',
-      } as unknown as PrivyAuthProvider;
-      // (mockPrivyServiceInstance as any).env = envParam; // Env is usually passed to constructor
-      return mockPrivyServiceInstance;
-    });
+    (PrivyAuthProvider as any).mockImplementation(
+      (config: any, tokenManager: any, userManager: any, envParam: TestEnv) => {
+        const mockPrivyServiceInstance = {
+          validatePrivyToken: vi.fn(), // This method might not exist on PrivyAuthProvider directly
+          // It might be part of authenticate or getUserFromToken
+          // Mock other methods of BaseAuthProvider if needed by the test logic using privyAuthService
+          authenticate: vi.fn(),
+          getUserFromToken: vi.fn(),
+          providerName: 'privy',
+        } as unknown as PrivyAuthProvider;
+        // (mockPrivyServiceInstance as any).env = envParam; // Env is usually passed to constructor
+        return mockPrivyServiceInstance;
+      },
+    );
   });
 
-  const getMockedPrivyService = (worker: AuthWorker): { validatePrivyToken: any, authenticate: any, getUserFromToken: any } => {
+  const getMockedPrivyService = (
+    worker: AuthWorker,
+  ): { validatePrivyToken: any; authenticate: any; getUserFromToken: any } => {
     // The worker instance itself (AuthWorker from index.ts) initializes AuthService,
     // which in turn initializes providers. We need to access the mocked PrivyAuthProvider
     // instance from the authService.providerServices map.
@@ -186,12 +187,12 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
 
     const unifiedAuthService = (worker as any).unifiedAuthService;
     if (unifiedAuthService && unifiedAuthService.providerServices) {
-        const privyProviderInstance = unifiedAuthService.providerServices.get('privy');
-        if (privyProviderInstance) {
-            // We need to ensure the methods on this instance are the vi.fn() mocks.
-            // The mockImplementation should handle this.
-            return privyProviderInstance as any; // Cast to any to access mocked methods
-        }
+      const privyProviderInstance = unifiedAuthService.providerServices.get('privy');
+      if (privyProviderInstance) {
+        // We need to ensure the methods on this instance are the vi.fn() mocks.
+        // The mockImplementation should handle this.
+        return privyProviderInstance as any; // Cast to any to access mocked methods
+      }
     }
     // Fallback or error if the provider isn't found, though the mock should ensure it is.
     // This part of the test might need significant refactoring if the above doesn't work.
@@ -220,17 +221,16 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
     // So, `authWorker.unifiedAuthService.providerServices.get('privy')` is the instance.
     const service = (authWorker as any).unifiedAuthService?.providerServices?.get('privy');
     if (!service) {
-        throw new Error("Mocked PrivyAuthProvider not found in worker's services. Test setup error.");
+      throw new Error("Mocked PrivyAuthProvider not found in worker's services. Test setup error.");
     }
     return service as any; // It should have the mocked methods.
-  }
-
+  };
 
   it('should return 401 if Authorization header is missing', async () => {
     const request = new Request('http://localhost/validate', { method: 'POST' });
     const response = await authWorker.fetch(request);
     expect(response.status).toBe(401);
-    const body = await response.json() as { error: string };
+    const body = (await response.json()) as { error: string };
     expect(body.error).toBe('Missing or malformed Authorization header');
   });
 
@@ -259,7 +259,7 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
     const response = await authWorker.fetch(request);
 
     expect(response.status).toBe(200);
-    const body = await response.json() as ValidateTokenResponse;
+    const body = (await response.json()) as ValidateTokenResponse;
     expect(body.success).toBe(true);
     expect(body.user).toEqual(expect.objectContaining({ id: mockUser.id, email: mockUser.email }));
     expect(validatePrivyTokenMock).toHaveBeenCalledWith(mockToken);
@@ -281,7 +281,7 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
     const response = await authWorker.fetch(request);
 
     expect(response.status).toBe(200);
-    const body = await response.json() as ValidateTokenResponse;
+    const body = (await response.json()) as ValidateTokenResponse;
     expect(body.success).toBe(true);
     expect(body.user).toEqual(expect.objectContaining({ id: mockUser.id }));
     expect(validatePrivyTokenMock).toHaveBeenCalledWith(mockToken);
@@ -303,7 +303,7 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
     const response = await authWorker.fetch(request);
 
     expect(response.status).toBe(401);
-    const body = await response.json() as ValidateTokenResponse;
+    const body = (await response.json()) as ValidateTokenResponse;
     expect(body.success).toBe(false);
     expect(body.user).toBeNull();
     expect(validatePrivyTokenMock).toHaveBeenCalledWith(mockToken);
@@ -322,7 +322,7 @@ describe('Privy Auth Integration (/validate endpoint)', () => {
     const response = await authWorker.fetch(request);
 
     expect(response.status).toBe(500);
-    const body = await response.json() as { error: { type: string, message: string }};
+    const body = (await response.json()) as { error: { type: string; message: string } };
     expect(body.error).toEqual(authError.toJSON().error);
     expect(validatePrivyTokenMock).toHaveBeenCalledWith(mockToken);
   });

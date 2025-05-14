@@ -372,4 +372,3 @@ export const merge = <T extends object>() =>
 /* ------------------------------------------------------------------ */
 
 export { AgentStateV3 as AgentState } from './types/stateSlices';
-export { GraphStateAnnotationV3 as GraphStateAnnotation } from './types/graphStateV3';

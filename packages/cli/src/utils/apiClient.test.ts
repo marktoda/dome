@@ -61,7 +61,9 @@ describe('apiClient', () => {
 
     it('should reuse the client instance if config is unchanged', async () => {
       mockLoadConfig.mockReturnValue({ baseUrl: 'https://api.example.com', apiKey: 'secret-key' });
-      (ensureValidAccessToken as unknown as ReturnType<typeof vi.fn>).mockResolvedValue('refreshed-token-1');
+      (ensureValidAccessToken as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+        'refreshed-token-1',
+      );
 
       const client1 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(1);
@@ -78,14 +80,19 @@ describe('apiClient', () => {
       mockLoadConfig.mockReturnValue(config1);
       const client1 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(1);
-      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({ environment: config1.baseUrl, token: config1.apiKey });
-
+      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({
+        environment: config1.baseUrl,
+        token: config1.apiKey,
+      });
 
       const config2 = { baseUrl: 'https://api.new.example.com', apiKey: 'secret-key' };
       mockLoadConfig.mockReturnValue(config2);
       const client2 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(2); // Constructor called again
-      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({ environment: config2.baseUrl, token: config2.apiKey });
+      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({
+        environment: config2.baseUrl,
+        token: config2.apiKey,
+      });
       expect(client2).not.toBe(client1);
     });
 
@@ -94,28 +101,40 @@ describe('apiClient', () => {
       mockLoadConfig.mockReturnValue(config1);
       const client1 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(1);
-      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({ environment: config1.baseUrl, token: config1.apiKey });
+      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({
+        environment: config1.baseUrl,
+        token: config1.apiKey,
+      });
 
       const config2 = { baseUrl: 'https://api.example.com', apiKey: 'secret-key-2' };
       mockLoadConfig.mockReturnValue(config2);
       const client2 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(2); // Constructor called again
-      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({ environment: config2.baseUrl, token: config2.apiKey });
+      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({
+        environment: config2.baseUrl,
+        token: config2.apiKey,
+      });
       expect(client2).not.toBe(client1);
     });
 
-     it('should create a new instance if apiKey becomes undefined', async () => {
+    it('should create a new instance if apiKey becomes undefined', async () => {
       const config1 = { baseUrl: 'https://api.example.com', apiKey: 'secret-key-1' };
       mockLoadConfig.mockReturnValue(config1);
       const client1 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(1);
-      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({ environment: config1.baseUrl, token: config1.apiKey });
+      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({
+        environment: config1.baseUrl,
+        token: config1.apiKey,
+      });
 
       const config2 = { baseUrl: 'https://api.example.com', apiKey: undefined };
       mockLoadConfig.mockReturnValue(config2);
       const client2 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(2);
-      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({ environment: config2.baseUrl, token: config2.apiKey });
+      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({
+        environment: config2.baseUrl,
+        token: config2.apiKey,
+      });
       expect(client2).not.toBe(client1);
     });
 
@@ -124,13 +143,19 @@ describe('apiClient', () => {
       mockLoadConfig.mockReturnValue(config1);
       const client1 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(1);
-      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({ environment: config1.baseUrl, token: config1.apiKey });
+      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({
+        environment: config1.baseUrl,
+        token: config1.apiKey,
+      });
 
       const config2 = { baseUrl: 'https://api.example.com', apiKey: 'new-key' };
       mockLoadConfig.mockReturnValue(config2);
       const client2 = await getApiClient();
       expect(MockedDomeApiClient).toHaveBeenCalledTimes(2);
-      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({ environment: config2.baseUrl, token: config2.apiKey });
+      expect(MockedDomeApiClient).toHaveBeenLastCalledWith({
+        environment: config2.baseUrl,
+        token: config2.apiKey,
+      });
       expect(client2).not.toBe(client1);
     });
   });

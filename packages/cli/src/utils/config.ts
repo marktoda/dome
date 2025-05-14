@@ -44,7 +44,8 @@ const config = new Conf<ConfigSchema>({
       type: 'number',
       default: undefined,
     },
-    userId: { // Added userId schema
+    userId: {
+      // Added userId schema
       type: 'string',
       default: undefined,
     },
@@ -168,7 +169,8 @@ export function saveConfig(configData: ConfigSchema): void {
   if (configData.accessTokenExpiresAt) {
     config.set('accessTokenExpiresAt', configData.accessTokenExpiresAt);
   }
-  if (configData.userId) { // Save userId
+  if (configData.userId) {
+    // Save userId
     config.set('userId', configData.userId);
   }
 

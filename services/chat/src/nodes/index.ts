@@ -10,9 +10,6 @@ export { reranker } from './reranker';
 export { retrievalEvaluatorLLM } from './retrievalEvaluatorLLM';
 export { retrievalSelector } from './retrievalSelector';
 
-// Tool selection and classification nodes
-export { toolNecessityClassifier } from './toolNecessityClassifier';
-
 // Context processing and answer generation nodes
 export { combineContext } from './combineContext';
 export { docToSources } from './docToSources'; // Mapping docs to sources for streaming

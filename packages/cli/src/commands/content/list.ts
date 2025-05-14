@@ -5,7 +5,7 @@ import { DomeApi } from '@dome/dome-sdk';
 import { OutputFormat } from '../../utils/errorHandler';
 import { Command } from 'commander';
 // Assuming formatTable and heading are still desired from ui utilities
-import { formatTable, heading } from '../../utils/ui'; 
+import { formatTable, heading } from '../../utils/ui';
 // createSpinner and other ui elements can be replaced by BaseCommand.log or simple console logs
 
 export class ListCommand extends BaseCommand {
@@ -14,14 +14,15 @@ export class ListCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('list')
+    const cmd = program
+      .command('list')
       .description('List notes')
       .argument('[type]', 'Type of items to list (currently only "notes" is supported)', 'notes')
       .option('-c, --category <category>', 'Filter by category')
       .option('--limit <limit>', 'Number of notes to retrieve', '50')
       .option('--offset <offset>', 'Offset for pagination', '0')
       .option('--output-format <format>', 'Output format (cli, json)');
-    
+
     cmd.action(async (typeValue: string, optionsFromCommander: any) => {
       const commandInstance = new ListCommand();
       const combinedArgs: CommandArgs = {
@@ -34,10 +35,10 @@ export class ListCommand extends BaseCommand {
 
   async run(args: CommandArgs): Promise<void> {
     const outputFormat = args.outputFormat || OutputFormat.CLI;
-    const type = args.type as string || 'notes';
+    const type = (args.type as string) || 'notes';
     const category = args.category as string | undefined;
-    const limit = parseInt(args.limit as string || '50', 10);
-    const offset = parseInt(args.offset as string || '0', 10);
+    const limit = parseInt((args.limit as string) || '50', 10);
+    const offset = parseInt((args.offset as string) || '0', 10);
 
     if (!isAuthenticated()) {
       this.error('You need to login first. Run `dome login` to authenticate.', { outputFormat });
@@ -46,7 +47,10 @@ export class ListCommand extends BaseCommand {
     }
 
     if (type !== 'notes') {
-      this.error('Invalid type. Currently, only "notes" are supported for listing.\nExample: dome list notes --category "meetings"', { outputFormat });
+      this.error(
+        'Invalid type. Currently, only "notes" are supported for listing.\nExample: dome list notes --category "meetings"',
+        { outputFormat },
+      );
       process.exitCode = 1;
       return;
     }
@@ -72,7 +76,7 @@ export class ListCommand extends BaseCommand {
         this.log(`No notes found${category ? ` in category "${category}"` : ''}.`, outputFormat);
         return;
       }
-      
+
       this.log(`Showing ${notes.length} notes.`, outputFormat);
       console.log(heading('Notes')); // Using ui utility
 
@@ -90,7 +94,6 @@ export class ListCommand extends BaseCommand {
       });
 
       console.log(formatTable(headers, rows)); // Using ui utility
-      
     } catch (err) {
       // BaseCommand's executeRun will catch this
       throw err;

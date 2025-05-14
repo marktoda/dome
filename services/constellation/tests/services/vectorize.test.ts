@@ -52,7 +52,8 @@ vi.mock('../../src/utils/metrics', () => ({
 }));
 
 // Temporarily skip all tests to resolve memory issues
-describe('VectorizeService', () => { // Unskipped this describe block
+describe('VectorizeService', () => {
+  // Unskipped this describe block
   let mockVectorize: VectorizeIndex;
 
   beforeEach(() => {
@@ -292,7 +293,7 @@ describe('VectorizeService', () => { // Unskipped this describe block
       // or a more specific ValidationError if @dome/common provides it and it's used.
       // For now, let's expect it to throw an error that includes the message.
       await expect(vectorizeService.query([])).rejects.toThrow('Vector must not be empty');
-      
+
       expect(mockVectorize.query).not.toHaveBeenCalled();
     });
 

@@ -43,7 +43,8 @@ vi.mock('../../src/middleware/userIdMiddleware', () => ({
 // Mock logger and other common utilities from @dome/common
 // Consolidate mocks for @dome/common to avoid override issues
 vi.mock('@dome/common', () => ({
-  getLogger: () => ({ // Provide getLogger
+  getLogger: () => ({
+    // Provide getLogger
     info: vi.fn(),
     debug: vi.fn(),
     error: vi.fn(),
@@ -63,7 +64,8 @@ vi.mock('@dome/common', () => ({
   createSimpleAuthMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
   createDetailedLoggerMiddleware: vi.fn().mockImplementation(() => (c: any, next: any) => next()),
   formatZodError: vi.fn(),
-  ServiceError: class ServiceError extends Error { // Keep ServiceError mock if tests rely on this specific mocked class
+  ServiceError: class ServiceError extends Error {
+    // Keep ServiceError mock if tests rely on this specific mocked class
     code: string;
     status: number;
     constructor(message: string, opts: { code: string; status: number }) {

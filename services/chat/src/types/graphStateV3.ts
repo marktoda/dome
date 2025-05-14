@@ -8,7 +8,6 @@ import type {
   RetrievalEvaluation,
   ToolNecessityClassification,
   ToolRoutingDecision,
-  ToolResult,
 } from '../types';
 import { AgentStateV3 } from './stateSlices';
 import { merge } from '../types';
@@ -35,10 +34,6 @@ export const GraphStateAnnotationV3 = Annotation.Root({
   toolNecessityClassification: Annotation<ToolNecessityClassification>(),
   toolRoutingDecision: Annotation<ToolRoutingDecision>(),
 
-  /* Tool execution */
-  // tool: Annotation<string>(), // Removed as it's not used by any node
-  toolResults: Annotation<ToolResult[]>(),
-
   /* Generation */
   generatedText: Annotation<string>(),
 
@@ -52,6 +47,6 @@ export const GraphStateAnnotationV3 = Annotation.Root({
   taskIds: Annotation<string[]>(),
   taskEntities: merge<Record<string, any>>(),
 
-  /* Filter */
-  _filter: merge<Record<string, any>>(),
-}); 
+  /* Tool requirements */
+  toolRequirements: merge<Record<string, any>>(),
+});

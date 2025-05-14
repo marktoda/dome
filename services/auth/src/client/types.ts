@@ -12,7 +12,15 @@ import {
 } from '../types';
 
 // Re-export types that are used by the client
-export { User, UserRole, LoginResponse, RegisterResponse, ValidateTokenResponse, LogoutResponse, SupportedAuthProvider }; // Export the enum
+export {
+  User,
+  UserRole,
+  LoginResponse,
+  RegisterResponse,
+  ValidateTokenResponse,
+  LogoutResponse,
+  SupportedAuthProvider,
+}; // Export the enum
 
 /**
  * Error codes for auth operations
@@ -40,21 +48,30 @@ export interface AuthBinding {
    * @param providerName The name of the authentication provider (e.g., 'email', 'google').
    * @param credentials Provider-specific credentials.
    */
-  login(providerName: SupportedAuthProvider, credentials: Record<string, unknown>): Promise<LoginResponse>;
+  login(
+    providerName: SupportedAuthProvider,
+    credentials: Record<string, unknown>,
+  ): Promise<LoginResponse>;
 
   /**
    * Register a new user with a specific provider.
    * @param providerName The name of the authentication provider.
    * @param registrationData Provider-specific registration data.
    */
-  register(providerName: SupportedAuthProvider, registrationData: Record<string, unknown>): Promise<RegisterResponse>;
+  register(
+    providerName: SupportedAuthProvider,
+    registrationData: Record<string, unknown>,
+  ): Promise<RegisterResponse>;
 
   /**
    * Validate a token. Provider can be optionally specified.
    * @param token The token to validate.
    * @param providerName Optional: The name of the provider that issued the token.
    */
-  validateToken(token: string, providerName?: SupportedAuthProvider): Promise<ValidateTokenResponse>;
+  validateToken(
+    token: string,
+    providerName?: SupportedAuthProvider,
+  ): Promise<ValidateTokenResponse>;
 
   /**
    * Logout a user (invalidate their token) with a specific provider.

@@ -13,12 +13,13 @@ export class ShowCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('show')
+    const cmd = program
+      .command('show')
       .description('Show details of a specific note')
       .argument('<id>', 'ID of the note to show')
       .argument('[type]', 'Type of item to show (currently only "note" is supported)', 'note')
       .option('--output-format <format>', 'Output format (cli, json)');
-    
+
     cmd.action(async (idValue: string, typeValue: string, optionsFromCommander: any) => {
       const commandInstance = new ShowCommand();
       const combinedArgs: CommandArgs = {
@@ -33,7 +34,7 @@ export class ShowCommand extends BaseCommand {
   async run(args: CommandArgs): Promise<void> {
     const outputFormat = args.outputFormat || OutputFormat.CLI;
     const id = args.id as string;
-    const type = args.type as string || 'note';
+    const type = (args.type as string) || 'note';
 
     if (!isAuthenticated()) {
       this.error('You need to login first. Run `dome login` to authenticate.', { outputFormat });
@@ -42,7 +43,10 @@ export class ShowCommand extends BaseCommand {
     }
 
     if (type !== 'note') {
-      this.error('Invalid type. Currently, only "note" is supported for showing details.\nExample: dome show <note_id>', { outputFormat });
+      this.error(
+        'Invalid type. Currently, only "note" is supported for showing details.\nExample: dome show <note_id>',
+        { outputFormat },
+      );
       process.exitCode = 1;
       return;
     }
@@ -70,14 +74,13 @@ export class ShowCommand extends BaseCommand {
         console.log(formatKeyValue('URL (for large content)', note.url));
       }
       if (note.customMetadata && Object.keys(note.customMetadata).length > 0) {
-          console.log(subheading('Custom Metadata'));
-          for (const key in note.customMetadata) {
-              console.log(formatKeyValue(`  ${key}`, String(note.customMetadata[key])));
-          }
+        console.log(subheading('Custom Metadata'));
+        for (const key in note.customMetadata) {
+          console.log(formatKeyValue(`  ${key}`, String(note.customMetadata[key])));
+        }
       }
       console.log(subheading('Content'));
       console.log(note.content || '(No content)');
-
     } catch (err) {
       if (err instanceof DomeApiError && err.statusCode === 404) {
         this.error(`Note with ID "${id}" not found.`, { outputFormat });

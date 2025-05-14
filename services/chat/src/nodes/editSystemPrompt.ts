@@ -2,12 +2,12 @@ import { getLogger } from '@dome/common';
 import type { SliceUpdate } from '../types/stateSlices';
 import { NodeError, toDomeError } from '../utils/errors';
 import { z } from 'zod';
-import { AIMessage } from '../types';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
 import { getUpdateChatPrompt } from '../config/promptsConfig';
+import type { AIMessage } from '../types';
 
 /**
  * Zod schema for system prompt update
@@ -31,7 +31,7 @@ type PromptUpdateResult = z.infer<typeof promptUpdateSchema>;
  * This node enhances the system prompt based on the current conversation
  * context and any task-specific requirements identified.
  */
-export type EditSystemPromptUpdate = SliceUpdate<'instructions' | 'reasoning' | '_filter'>;
+export type EditSystemPromptUpdate = SliceUpdate<'instructions' | 'reasoning' | 'toolRequirements'>;
 
 export const editSystemPrompt = async (
   state: AgentState,
@@ -129,9 +129,9 @@ export const editSystemPrompt = async (
           ? 'System prompt updated.'
           : result.reasoning || 'System prompt updated.',
       ],
-      // Store required tools in _filter as it accepts flexible properties
-      _filter: {
-        ...(state._filter || {}),
+      // Store required tools in toolRequirements slice
+      toolRequirements: {
+        ...(state.toolRequirements || {}),
         requiredTools: result.activatedTools === null ? toolsArray : result.activatedTools,
       },
       metadata: {

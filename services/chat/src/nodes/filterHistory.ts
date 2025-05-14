@@ -1,5 +1,5 @@
 import { getLogger, logError } from '@dome/common';
-import { MessagePair } from '../types';
+import type { MessagePair } from '../types';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { getUserId } from '../utils/stateUtils';
 import { ObservabilityService } from '../services/observabilityService';
@@ -18,10 +18,7 @@ import type { SliceUpdate } from '../types/stateSlices';
  */
 export type FilterHistoryUpdate = SliceUpdate<'chatHistory' | 'reasoning'>;
 
-export const filterHistory = async (
-  state: AgentState,
-  env: Env,
-): Promise<FilterHistoryUpdate> => {
+export const filterHistory = async (state: AgentState, env: Env): Promise<FilterHistoryUpdate> => {
   const logger = getLogger().child({ node: 'filterHistory' });
   const t0 = performance.now();
 

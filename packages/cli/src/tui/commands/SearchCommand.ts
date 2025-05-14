@@ -54,15 +54,23 @@ export class SearchCommand implements CommandHandler {
       // TUI search might have different defaults for limit, or pass args for category etc.
       // For now, using a default limit.
       const searchRequest: DomeApi.GetSearchRequest = { q: query, limit: 5 };
-      const searchResponse: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
+      const searchResponse: DomeApi.SearchResponse = await apiClient.search.searchContent(
+        searchRequest,
+      );
 
       // Display results
-      if (!searchResponse.success || !searchResponse.results || searchResponse.results.length === 0) {
+      if (
+        !searchResponse.success ||
+        !searchResponse.results ||
+        searchResponse.results.length === 0
+      ) {
         const message = searchResponse.message || `No results found for query: "${query}"`;
         this.addMessage(`{yellow-fg}${message}{/yellow-fg}`);
       } else {
         const totalResults = searchResponse.pagination?.total || searchResponse.results.length;
-        this.addMessage(`{green-fg}Found ${totalResults} results (showing up to ${searchResponse.results.length}):{/green-fg}`);
+        this.addMessage(
+          `{green-fg}Found ${totalResults} results (showing up to ${searchResponse.results.length}):{/green-fg}`,
+        );
 
         searchResponse.results.forEach((match: DomeApi.SearchResultItem, index: number) => {
           this.addMessage(
@@ -73,7 +81,11 @@ export class SearchCommand implements CommandHandler {
           this.addMessage(`{bold}Category:{/bold} ${match.category}`);
           this.addMessage(`{bold}MIME Type:{/bold} ${match.mimeType}`);
           if (match.summary) {
-            this.addMessage(`{bold}Summary:{/bold} ${match.summary.substring(0, 100)}${match.summary.length > 100 ? '...' : ''}`);
+            this.addMessage(
+              `{bold}Summary:{/bold} ${match.summary.substring(0, 100)}${
+                match.summary.length > 100 ? '...' : ''
+              }`,
+            );
           }
           this.addMessage(`{bold}Created:{/bold} ${new Date(match.createdAt).toLocaleString()}`);
           if (match.updatedAt) {

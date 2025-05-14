@@ -42,7 +42,10 @@ export class PrivyAuthProvider extends BaseAuthProvider {
     this.providerName = 'privy'; // Set provider name
 
     if (!config.appId) {
-      throw new ServiceError('Privy App ID (appId) is required for PrivyAuthProvider.', { service: "auth", code: "PROVIDER_CONFIG_ERROR" });
+      throw new ServiceError('Privy App ID (appId) is required for PrivyAuthProvider.', {
+        service: 'auth',
+        code: 'PROVIDER_CONFIG_ERROR',
+      });
     }
     this.config = config;
     this.userManager = userManager;
@@ -54,13 +57,18 @@ export class PrivyAuthProvider extends BaseAuthProvider {
 
   private getAuthContext() {
     if (!this.env || !this.env.AUTH_DB) {
-      console.error("AUTH_DB not found in environment provided to PrivyAuthProvider");
-      throw new ServiceError("PrivyAuthProvider not configured correctly with AUTH_DB.", { service: "auth", code: "PROVIDER_CONFIG_ERROR" });
+      console.error('AUTH_DB not found in environment provided to PrivyAuthProvider');
+      throw new ServiceError('PrivyAuthProvider not configured correctly with AUTH_DB.', {
+        service: 'auth',
+        code: 'PROVIDER_CONFIG_ERROR',
+      });
     }
     return {
       env: this.env,
       db: this.env.AUTH_DB,
-      waitUntil: (promise: Promise<any>) => { /* Placeholder */ },
+      waitUntil: (promise: Promise<any>) => {
+        /* Placeholder */
+      },
     };
   }
 
@@ -72,14 +80,10 @@ export class PrivyAuthProvider extends BaseAuthProvider {
     const authContext = this.getAuthContext();
 
     try {
-      const { payload } = await jwtVerify<PrivyJWTPayload>(
-        credentials.token,
-        this.jwksClient,
-        {
-          issuer: 'privy.io', // Standard Privy issuer
-          audience: this.config.appId,
-        }
-      );
+      const { payload } = await jwtVerify<PrivyJWTPayload>(credentials.token, this.jwksClient, {
+        issuer: 'privy.io', // Standard Privy issuer
+        audience: this.config.appId,
+      });
 
       if (!payload.sub) {
         throw new UnauthorizedError('Privy token "sub" (DID) is missing.');
@@ -87,23 +91,26 @@ export class PrivyAuthProvider extends BaseAuthProvider {
 
       const privyUserId = payload.sub; // This is the Privy DID
 
-      let user = await this.userManager.findUserByProvider(this.providerName, privyUserId, authContext);
+      let user = await this.userManager.findUserByProvider(
+        this.providerName,
+        privyUserId,
+        authContext,
+      );
 
       if (!user) {
         console.log(`User with Privy DID ${privyUserId} not found. Attempting to create.`);
         const userToCreate: Partial<User> = {
           // Use email from token if available, otherwise it might be null or generated
-          email: payload.email || `privy_${privyUserId.substring(0,8)}@example.com`,
+          email: payload.email || `privy_${privyUserId.substring(0, 8)}@example.com`,
           authProvider: this.providerName,
           providerAccountId: privyUserId,
           emailVerified: !!payload.email, // Assume email verified if present in token, adjust as needed
           isActive: true,
         };
-        user = await this.userManager.createUser(
-            userToCreate,
-            authContext,
-            { providerId: this.providerName, providerUserId: privyUserId }
-        );
+        user = await this.userManager.createUser(userToCreate, authContext, {
+          providerId: this.providerName,
+          providerUserId: privyUserId,
+        });
       }
 
       const { accessToken, refreshToken } = await this.generateTokens(user);
@@ -114,13 +121,18 @@ export class PrivyAuthProvider extends BaseAuthProvider {
         accessToken,
         refreshToken,
       };
-
     } catch (error: any) {
       console.error('Privy token validation or user processing failed:', error.message);
-      if (error instanceof ServiceError || error instanceof UnauthorizedError || error instanceof ValidationError) {
+      if (
+        error instanceof ServiceError ||
+        error instanceof UnauthorizedError ||
+        error instanceof ValidationError
+      ) {
         throw error;
       }
-      throw new UnauthorizedError(`Privy authentication failed: ${error.message}`, { cause: error });
+      throw new UnauthorizedError(`Privy authentication failed: ${error.message}`, {
+        cause: error,
+      });
     }
   }
 
@@ -128,7 +140,7 @@ export class PrivyAuthProvider extends BaseAuthProvider {
     // For Privy, registration is often the same as the first authentication
     // if the user doesn't exist yet. The `authenticate` method handles implicit creation.
     console.warn(
-      'PrivyAuthProvider.register called. Forwarding to authenticate, which handles implicit user creation.'
+      'PrivyAuthProvider.register called. Forwarding to authenticate, which handles implicit user creation.',
     );
     return this.authenticate(registrationData);
   }

@@ -2,7 +2,11 @@ import { loadConfig, saveApiKey, saveConfig } from './config';
 import { getApiBaseUrl } from './apiClient';
 import * as jose from 'jose';
 
-interface RefreshResponse { token: string; refreshToken: string; expiresAt: number; }
+interface RefreshResponse {
+  token: string;
+  refreshToken: string;
+  expiresAt: number;
+}
 
 export async function ensureValidAccessToken(): Promise<string> {
   const cfg = loadConfig();
@@ -47,4 +51,4 @@ export async function ensureValidAccessToken(): Promise<string> {
   saveApiKey(data.token);
   saveConfig({ refreshToken: data.refreshToken, accessTokenExpiresAt: data.expiresAt } as any);
   return data.token;
-} 
+}

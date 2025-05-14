@@ -157,14 +157,6 @@ function createNodeWrappers(env: Cloudflare.Env, tools: ToolRegistry) {
       return res;
     },
 
-    toolNecessityClassifier: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
-      log.info({ preState: createStateSummary(state) }, '→ [START] toolNecessityClassifier');
-      // Using the actual toolNecessityClassifier implementation
-      const res = await nodes.toolNecessityClassifier(state, cfg, env);
-      log.info({ postState: createStateSummary(res) }, '→ [END] toolNecessityClassifier');
-      return res;
-    },
-
     toolRouter: async (state: AgentState, cfg: LangGraphRunnableConfig) => {
       log.info({ preState: createStateSummary(state) }, '→ [START] toolRouter');
       const res = await nodes.toolRouter(state, env, tools);

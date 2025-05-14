@@ -11,17 +11,23 @@ import { getApiBaseUrl } from '../../utils/apiClient';
 import { ChatWebSocketClient, ChatMessageChunk } from '../../utils/chatWebSocket';
 import { ThinkingIndicator } from '../../utils/indicator';
 
-type StreamOptions = { verbose: boolean; outputFormat: OutputFormat; interactiveRl?: readline.Interface };
+type StreamOptions = {
+  verbose: boolean;
+  outputFormat: OutputFormat;
+  interactiveRl?: readline.Interface;
+};
 
 async function streamChatResponse(
   userMessage: string,
   opts: StreamOptions,
   session: ChatSessionManager,
-  commandInstance: ChatCommand
+  commandInstance: ChatCommand,
 ): Promise<void> {
   const config = loadConfig();
   if (!config.userId || !config.apiKey) {
-    commandInstance.error('Missing credentials. Please login again.', { outputFormat: opts.outputFormat });
+    commandInstance.error('Missing credentials. Please login again.', {
+      outputFormat: opts.outputFormat,
+    });
     return;
   }
 
@@ -53,7 +59,7 @@ async function streamChatResponse(
 
   const wsClient = new ChatWebSocketClient(wsUrl, requestPayload, { verbose: opts.verbose });
 
-  return new Promise<void>((resolve) => {
+  return new Promise<void>(resolve => {
     let assistantResponse = '';
 
     indicator.start();
@@ -85,13 +91,16 @@ async function streamChatResponse(
             console.log(chalk.yellow(`[${i + 1}] ${s.title || 'Untitled'}`));
             console.log(chalk.gray(`    Type: ${s.type}, ID: ${s.id}`));
             if (s.url) console.log(chalk.blue(`    URL: ${s.url}`));
-            if (i < (chunk.sources!.length - 1)) console.log();
+            if (i < chunk.sources!.length - 1) console.log();
           });
           console.log();
           break;
         case 'error':
           indicator.stop();
-          commandInstance.error(`Chat error: ${chunk.error?.message} (Code: ${chunk.error?.code})`, { outputFormat: opts.outputFormat });
+          commandInstance.error(
+            `Chat error: ${chunk.error?.message} (Code: ${chunk.error?.code})`,
+            { outputFormat: opts.outputFormat },
+          );
           wsClient.close();
           break;
         case 'end':
@@ -128,7 +137,8 @@ export class ChatCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('chat')
+    const cmd = program
+      .command('chat')
       .description('Chat with the RAG-enhanced interface')
       .option('-m, --message <message>', 'Send a single message (otherwise start interactive mode)')
       .option('-v, --verbose', 'Enable verbose debug logging')
@@ -138,7 +148,7 @@ export class ChatCommand extends BaseCommand {
       .option('-l, --list', 'List available chat sessions')
       .option('--output-format <format>', 'Output format (cli, json)');
 
-    cmd.action(async (optionsFromCommander) => {
+    cmd.action(async optionsFromCommander => {
       const commandInstance = new ChatCommand();
       // Commander options are directly compatible with CommandArgs
       await commandInstance.executeRun(optionsFromCommander as CommandArgs);
@@ -167,7 +177,8 @@ export class ChatCommand extends BaseCommand {
 
     if (args.new) {
       session.clearSession(); // Creates a new session ID internally
-      const newSessionName = typeof args.new === 'string' ? args.new : `Chat Session ${new Date().toLocaleString()}`;
+      const newSessionName =
+        typeof args.new === 'string' ? args.new : `Chat Session ${new Date().toLocaleString()}`;
       session.setSessionName(newSessionName);
       this.log(`Created new session: ${session.getSessionName()}`, outputFormat);
     }
@@ -196,7 +207,7 @@ export class ChatCommand extends BaseCommand {
         console.log(chalk.bold.green('You: ') + args.message);
         process.stdout.write(chalk.bold.blue('Dome: '));
       }
-      
+
       await streamChatResponse(args.message, { verbose, outputFormat }, session, this);
     } else {
       this.startInteractiveMode(session, verbose, outputFormat);
@@ -206,8 +217,8 @@ export class ChatCommand extends BaseCommand {
   private listSessions(session: ChatSessionManager, outputFormat: OutputFormat): void {
     const sessions = session.listSessions();
     if (outputFormat === OutputFormat.JSON) {
-        console.log(JSON.stringify(sessions, null, 2));
-        return;
+      console.log(JSON.stringify(sessions, null, 2));
+      return;
     }
 
     if (sessions.length === 0) {
@@ -218,7 +229,9 @@ export class ChatCommand extends BaseCommand {
     const currentSessionId = session.getSessionId();
     sessions.forEach((s, index) => {
       const isActive = s.id === currentSessionId;
-      const title = isActive ? chalk.bold.cyan(`${s.name} ${chalk.gray('(active)')}`) : chalk.bold(s.name);
+      const title = isActive
+        ? chalk.bold.cyan(`${s.name} ${chalk.gray('(active)')}`)
+        : chalk.bold(s.name);
       console.log(`${isActive ? '➤' : ' '} ${chalk.bold.blue(`[${index + 1}]`)} ${title}`);
       console.log(`   ID: ${chalk.gray(s.id)}`);
       console.log(`   Last updated: ${chalk.gray(formatDate(s.lastUpdated))}`);
@@ -227,9 +240,17 @@ export class ChatCommand extends BaseCommand {
     });
   }
 
-  private startInteractiveMode(session: ChatSessionManager, verbose: boolean, outputFormat: OutputFormat): void {
+  private startInteractiveMode(
+    session: ChatSessionManager,
+    verbose: boolean,
+    outputFormat: OutputFormat,
+  ): void {
     console.log(heading(`Interactive Chat: ${session.getSessionName()}`));
-    console.log(info('Type messages. Special commands: /exit, /clear, /history, /sessions, /new [name], /switch <id|index>, /rename <name>, /delete [id|index]'));
+    console.log(
+      info(
+        'Type messages. Special commands: /exit, /clear, /history, /sessions, /new [name], /switch <id|index>, /rename <name>, /delete [id|index]',
+      ),
+    );
     console.log();
 
     const rl = readline.createInterface({
@@ -240,7 +261,7 @@ export class ChatCommand extends BaseCommand {
 
     rl.prompt();
 
-    rl.on('line', async (line) => {
+    rl.on('line', async line => {
       const trimmed = line.trim();
       let promptAfterCommand = true;
 
@@ -267,10 +288,10 @@ export class ChatCommand extends BaseCommand {
       } else if (trimmed.toLowerCase().startsWith('/rename')) {
         const parts = trimmed.split(' ');
         const name = parts.slice(1).join(' ').trim();
-        if (!name) this.error('Session name required. Usage: /rename <name>', {outputFormat});
+        if (!name) this.error('Session name required. Usage: /rename <name>', { outputFormat });
         else {
-            session.setSessionName(name);
-            this.log(`Renamed session to: ${name}`, outputFormat);
+          session.setSessionName(name);
+          this.log(`Renamed session to: ${name}`, outputFormat);
         }
       } else if (trimmed.toLowerCase().startsWith('/delete')) {
         this.handleDeleteCommand(trimmed, session, outputFormat, rl);
@@ -278,15 +299,23 @@ export class ChatCommand extends BaseCommand {
       } else if (trimmed) {
         console.log(chalk.bold.green('You: ') + trimmed);
         process.stdout.write(chalk.bold.blue('Dome: '));
-        
+
         try {
-        await streamChatResponse(trimmed, { verbose, outputFormat, interactiveRl: rl }, session, this);
+          await streamChatResponse(
+            trimmed,
+            { verbose, outputFormat, interactiveRl: rl },
+            session,
+            this,
+          );
         } catch (error) {
-          console.error(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`));
+          console.error(
+            chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`),
+          );
         }
       }
-      
-      if (promptAfterCommand) { // Removed !rl.closed check
+
+      if (promptAfterCommand) {
+        // Removed !rl.closed check
         rl.prompt();
       }
     });
@@ -295,8 +324,8 @@ export class ChatCommand extends BaseCommand {
   private displayHistory(session: ChatSessionManager, outputFormat: OutputFormat): void {
     const historyMessages = session.getMessages();
     if (outputFormat === OutputFormat.JSON) {
-        console.log(JSON.stringify(historyMessages, null, 2));
-        return;
+      console.log(JSON.stringify(historyMessages, null, 2));
+      return;
     }
 
     if (historyMessages.length === 0) {
@@ -316,15 +345,19 @@ export class ChatCommand extends BaseCommand {
     console.log();
   }
 
-  private handleSwitchCommand(command: string, session: ChatSessionManager, outputFormat: OutputFormat): void {
+  private handleSwitchCommand(
+    command: string,
+    session: ChatSessionManager,
+    outputFormat: OutputFormat,
+  ): void {
     const parts = command.split(' ');
     const idOrIndex = parts[1]?.trim();
-    
+
     if (!idOrIndex) {
       this.error('Session ID or index required. Usage: /switch <id|index>', { outputFormat });
       return;
     }
-    
+
     // Try to parse as index (1-based for user, 0-based internally)
     const index = parseInt(idOrIndex, 10);
     if (!isNaN(index) && index > 0) {
@@ -333,13 +366,13 @@ export class ChatCommand extends BaseCommand {
         const targetSession = sessions[index - 1];
         if (session.switchSession(targetSession.id)) {
           this.log(`Switched to session: ${session.getSessionName()}`, outputFormat);
-        return;
-      }
+          return;
+        }
       }
       this.error(`Invalid session index: ${index}`, { outputFormat });
       return;
     }
-    
+
     // Try as direct ID
     if (session.switchSession(idOrIndex)) {
       this.log(`Switched to session: ${session.getSessionName()}`, outputFormat);
@@ -348,28 +381,36 @@ export class ChatCommand extends BaseCommand {
     }
   }
 
-  private handleDeleteCommand(command: string, session: ChatSessionManager, outputFormat: OutputFormat, rl: readline.Interface): void {
+  private handleDeleteCommand(
+    command: string,
+    session: ChatSessionManager,
+    outputFormat: OutputFormat,
+    rl: readline.Interface,
+  ): void {
     const parts = command.split(' ');
     const idOrIndex = parts[1]?.trim();
-    
+
     // If no ID/index provided, confirm deletion of current session
     if (!idOrIndex) {
       const currentId = session.getSessionId();
       const currentName = session.getSessionName();
-      
-      console.log(chalk.yellow(`Are you sure you want to delete the current session "${currentName}"? (y/N)`));
-      
+
+      console.log(
+        chalk.yellow(`Are you sure you want to delete the current session "${currentName}"? (y/N)`),
+      );
+
       const originalPrompt = rl.getPrompt();
       rl.setPrompt('> ');
-                rl.prompt();
-      
+      rl.prompt();
+
       const onDeleteLine = (line: string) => {
         const response = line.trim().toLowerCase();
         if (response === 'y' || response === 'yes') {
           if (session.deleteSession(currentId)) {
             this.log(`Deleted session: ${currentName}`, outputFormat);
             // Switch to another session or create new one
-            if (session.getSessionId() === currentId) { // If still on deleted session
+            if (session.getSessionId() === currentId) {
+              // If still on deleted session
               this.log('Creating new session...', outputFormat);
             }
           } else {
@@ -378,16 +419,16 @@ export class ChatCommand extends BaseCommand {
         } else {
           this.log('Deletion cancelled.', outputFormat);
         }
-        
+
         rl.setPrompt(originalPrompt);
-                rl.prompt();
+        rl.prompt();
         rl.removeListener('line', onDeleteLine);
       };
-      
+
       rl.on('line', onDeleteLine);
-                return;
-            }
-    
+      return;
+    }
+
     // Try to parse as index (1-based for user, 0-based internally)
     const index = parseInt(idOrIndex, 10);
     if (!isNaN(index) && index > 0) {
@@ -404,20 +445,20 @@ export class ChatCommand extends BaseCommand {
       rl.prompt();
       return;
     }
-    
+
     // Try as direct ID
     const sessions = session.listSessions();
     const targetSession = sessions.find(s => s.id === idOrIndex);
     if (targetSession) {
       if (session.deleteSession(idOrIndex)) {
         this.log(`Deleted session: ${targetSession.name}`, outputFormat);
-            } else {
+      } else {
         this.error(`Failed to delete session: ${idOrIndex}`, { outputFormat });
-            }
-        } else {
+      }
+    } else {
       this.error(`Session not found: ${idOrIndex}`, { outputFormat });
-        }
-    
-        rl.prompt();
+    }
+
+    rl.prompt();
   }
 }

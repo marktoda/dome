@@ -77,14 +77,10 @@ ${METADATA_END}
 
 ${content}`;
   } catch (error) {
-    logError(
-      error,
-      'Error serializing metadata',
-      {
-        event: 'metadata_header_error',
-        requestId,
-      }
-    );
+    logError(error, 'Error serializing metadata', {
+      event: 'metadata_header_error',
+      requestId,
+    });
 
     throw new ValidationError('Failed to serialize metadata', {
       operation: 'injectMetadataHeader',

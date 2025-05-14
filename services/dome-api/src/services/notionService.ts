@@ -23,7 +23,14 @@ export class NotionService {
   async getWorkspaceHistory(userId: string | undefined, workspaceId: string): Promise<any[]> {
     logger.info({ userId, workspaceId }, 'NotionService.getWorkspaceHistory called (placeholder)');
     // TODO: Implement actual logic
-    return [{ id: 'mock_sync_hist_notion_1', timestamp: new Date().toISOString(), status: 'PENDING', details: 'Placeholder sync' }];
+    return [
+      {
+        id: 'mock_sync_hist_notion_1',
+        timestamp: new Date().toISOString(),
+        status: 'PENDING',
+        details: 'Placeholder sync',
+      },
+    ];
   }
 
   async triggerSync(userId: string | undefined, workspaceId: string): Promise<void> {
@@ -43,13 +50,23 @@ export class NotionService {
     const clientId = this.env.NOTION_CLIENT_ID || 'YOUR_NOTION_CLIENT_ID';
     const redirectUri = this.env.NOTION_REDIRECT_URI || 'YOUR_NOTION_REDIRECT_URI';
     const scope = 'read_content'; // Example scope
-    return `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&owner=user&scope=${scope}`;
+    return `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(
+      redirectUri,
+    )}&response_type=code&owner=user&scope=${scope}`;
   }
 
-  async storeIntegration(userId: string | undefined, authCode: string, state?: string): Promise<any> {
+  async storeIntegration(
+    userId: string | undefined,
+    authCode: string,
+    state?: string,
+  ): Promise<any> {
     logger.info({ userId, authCode, state }, 'NotionService.storeIntegration called (placeholder)');
     // TODO: Exchange authCode for access token, store it, and associate with user/workspace
-    return { success: true, workspaceId: 'mock_notion_ws_123', message: 'Integration stored successfully.' };
+    return {
+      success: true,
+      workspaceId: 'mock_notion_ws_123',
+      message: 'Integration stored successfully.',
+    };
   }
 }
 

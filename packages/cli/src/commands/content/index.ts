@@ -25,6 +25,6 @@ export function registerContentGroupCommand(program: Command): void {
   UpdateContentCommand.register(contentCmd);
 
   // Register command groups under 'content'
-  registerGitHubGroupCommand(contentCmd); 
+  registerGitHubGroupCommand(contentCmd);
   // Add other content-related command groups here if any
 }

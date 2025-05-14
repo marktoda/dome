@@ -31,12 +31,22 @@ const mockTokenManager: Mocked<TokenManager> = {
 // Mock Provider Classes
 class MockBaseAuthProvider extends BaseAuthProvider {
   public providerName: string;
-  public authenticate = vi.fn() as MockedFunction<(credentials: Record<string, any>) => Promise<AuthResult>>;
-  public register = vi.fn() as MockedFunction<(registrationData: Record<string, any>) => Promise<AuthResult>> | undefined;
-  public getUserFromToken = vi.fn() as MockedFunction<(accessToken: string) => Promise<SchemaUser | null>>;
+  public authenticate = vi.fn() as MockedFunction<
+    (credentials: Record<string, any>) => Promise<AuthResult>
+  >;
+  public register = vi.fn() as
+    | MockedFunction<(registrationData: Record<string, any>) => Promise<AuthResult>>
+    | undefined;
+  public getUserFromToken = vi.fn() as MockedFunction<
+    (accessToken: string) => Promise<SchemaUser | null>
+  >;
   public override logout = vi.fn() as MockedFunction<(token: string) => Promise<void>>; // Override to make it a mock
-  public override refreshAccessToken = vi.fn() as MockedFunction<(refreshToken: string) => Promise<AuthResult>>;
-  public override findUserById = vi.fn() as MockedFunction<(userId: string) => Promise<SchemaUser | null>>; // Override to make it a mock
+  public override refreshAccessToken = vi.fn() as MockedFunction<
+    (refreshToken: string) => Promise<AuthResult>
+  >;
+  public override findUserById = vi.fn() as MockedFunction<
+    (userId: string) => Promise<SchemaUser | null>
+  >; // Override to make it a mock
 
   constructor(providerName: string, tokenManager: TokenManager) {
     super(tokenManager);
@@ -113,13 +123,19 @@ describe('AuthService (Unified) Unit Tests', () => {
 
     it('should throw ValidationError for an unsupported provider type', async () => {
       await expect(authService.login('invalid-provider', {})).rejects.toThrow(ValidationError);
-      await expect(authService.login('invalid-provider', {})).rejects.toThrow('Unsupported or unconfigured provider: invalid-provider');
+      await expect(authService.login('invalid-provider', {})).rejects.toThrow(
+        'Unsupported or unconfigured provider: invalid-provider',
+      );
     });
 
     it('should throw UnauthorizedError if provider authentication fails', async () => {
       mockLocalAuthProvider.authenticate.mockRejectedValue(new Error('Provider internal error'));
-      await expect(authService.login(SupportedAuthProvider.LOCAL, {})).rejects.toThrow(UnauthorizedError);
-      await expect(authService.login(SupportedAuthProvider.LOCAL, {})).rejects.toThrow('Login failed');
+      await expect(authService.login(SupportedAuthProvider.LOCAL, {})).rejects.toThrow(
+        UnauthorizedError,
+      );
+      await expect(authService.login(SupportedAuthProvider.LOCAL, {})).rejects.toThrow(
+        'Login failed',
+      );
     });
   });
 
@@ -136,17 +152,26 @@ describe('AuthService (Unified) Unit Tests', () => {
     });
 
     it('should throw ValidationError if provider does not support registration', async () => {
-      const mockNoRegisterProvider = new MockBaseAuthProvider('no-register-provider', mockTokenManager);
+      const mockNoRegisterProvider = new MockBaseAuthProvider(
+        'no-register-provider',
+        mockTokenManager,
+      );
       mockNoRegisterProvider.register = undefined; // Explicitly set register to undefined
       mockProviderServices.set('no-register-provider', mockNoRegisterProvider);
 
-      await expect(authService.register('no-register-provider', {})).rejects.toThrow('Registration is not supported by the no-register-provider provider.');
+      await expect(authService.register('no-register-provider', {})).rejects.toThrow(
+        'Registration is not supported by the no-register-provider provider.',
+      );
     });
 
     it('should throw ValidationError if provider registration fails', async () => {
       mockLocalAuthProvider.register!.mockRejectedValue(new Error('Provider registration issue'));
-      await expect(authService.register(SupportedAuthProvider.LOCAL, registrationData)).rejects.toThrow(ValidationError);
-      await expect(authService.register(SupportedAuthProvider.LOCAL, registrationData)).rejects.toThrow('Registration failed');
+      await expect(
+        authService.register(SupportedAuthProvider.LOCAL, registrationData),
+      ).rejects.toThrow(ValidationError);
+      await expect(
+        authService.register(SupportedAuthProvider.LOCAL, registrationData),
+      ).rejects.toThrow('Registration failed');
     });
   });
 
@@ -171,7 +196,10 @@ describe('AuthService (Unified) Unit Tests', () => {
       const result = await authService.validateToken(tokenToValidate);
 
       expect(mockTokenManager.verifyAccessToken).toHaveBeenCalledWith(tokenToValidate);
-      expect(mockUserManager.findUserById).toHaveBeenCalledWith(mockSchemaUser.id, expect.objectContaining(mockAuthContext));
+      expect(mockUserManager.findUserById).toHaveBeenCalledWith(
+        mockSchemaUser.id,
+        expect.objectContaining(mockAuthContext),
+      );
       expect(result.userId).toBe(mockSchemaUser.id);
       expect(result.provider).toBe('internal');
       expect(result.user).toEqual(mockSchemaUser);
@@ -179,14 +207,22 @@ describe('AuthService (Unified) Unit Tests', () => {
 
     it('should throw UnauthorizedError if specified provider fails validation', async () => {
       mockLocalAuthProvider.getUserFromToken.mockResolvedValue(null);
-      await expect(authService.validateToken(tokenToValidate, SupportedAuthProvider.LOCAL)).rejects.toThrow(UnauthorizedError);
-      await expect(authService.validateToken(tokenToValidate, SupportedAuthProvider.LOCAL)).rejects.toThrow('Token validation failed: Invalid or expired token for the specified provider.');
+      await expect(
+        authService.validateToken(tokenToValidate, SupportedAuthProvider.LOCAL),
+      ).rejects.toThrow(UnauthorizedError);
+      await expect(
+        authService.validateToken(tokenToValidate, SupportedAuthProvider.LOCAL),
+      ).rejects.toThrow(
+        'Token validation failed: Invalid or expired token for the specified provider.',
+      );
     });
 
     it('should throw UnauthorizedError if internal token validation fails (no providerName)', async () => {
       mockTokenManager.verifyAccessToken.mockRejectedValue(new Error('TokenManager fail'));
       await expect(authService.validateToken(tokenToValidate)).rejects.toThrow(UnauthorizedError);
-      await expect(authService.validateToken(tokenToValidate)).rejects.toThrow('Token validation failed: Invalid or expired token.');
+      await expect(authService.validateToken(tokenToValidate)).rejects.toThrow(
+        'Token validation failed: Invalid or expired token.',
+      );
     });
   });
 
@@ -199,14 +235,22 @@ describe('AuthService (Unified) Unit Tests', () => {
     });
 
     it('should throw ValidationError for an unsupported provider type during logout', async () => {
-      await expect(authService.logout(tokenToLogout, 'unknown-provider')).rejects.toThrow(ValidationError);
-      await expect(authService.logout(tokenToLogout, 'unknown-provider')).rejects.toThrow('Unsupported or unconfigured provider: unknown-provider');
+      await expect(authService.logout(tokenToLogout, 'unknown-provider')).rejects.toThrow(
+        ValidationError,
+      );
+      await expect(authService.logout(tokenToLogout, 'unknown-provider')).rejects.toThrow(
+        'Unsupported or unconfigured provider: unknown-provider',
+      );
     });
 
     it('should throw ServiceError if provider logout fails', async () => {
       mockLocalAuthProvider.logout.mockRejectedValue(new Error('Provider logout failed'));
-      await expect(authService.logout(tokenToLogout, SupportedAuthProvider.LOCAL)).rejects.toThrow(ServiceError);
-      await expect(authService.logout(tokenToLogout, SupportedAuthProvider.LOCAL)).rejects.toThrow('Logout operation encountered an issue.');
+      await expect(authService.logout(tokenToLogout, SupportedAuthProvider.LOCAL)).rejects.toThrow(
+        ServiceError,
+      );
+      await expect(authService.logout(tokenToLogout, SupportedAuthProvider.LOCAL)).rejects.toThrow(
+        'Logout operation encountered an issue.',
+      );
     });
   });
 });

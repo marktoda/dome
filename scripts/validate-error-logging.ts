@@ -100,7 +100,7 @@ function runTest(testCase: TestCase) {
   }
 
   if (testCase.errorToLog.stack && !loggedEntry.errorStack?.includes(testCase.errorToLog.message)) {
-     // Stack check is lenient, just ensuring it's present and somewhat related
+    // Stack check is lenient, just ensuring it's present and somewhat related
     pass = false;
     mismatches.push(`Expected errorStack to be present and contain error message`);
   }
@@ -111,16 +111,22 @@ function runTest(testCase: TestCase) {
 
   // Verify DomeError specific fields
   if (testCase.errorToLog instanceof DomeError) {
-    const expectedErrorCode = testCase.expectedFields.errorCodeShouldBe || (testCase.errorToLog as DomeError).code;
+    const expectedErrorCode =
+      testCase.expectedFields.errorCodeShouldBe || (testCase.errorToLog as DomeError).code;
     if (loggedEntry.errorCode !== expectedErrorCode) {
       pass = false;
       mismatches.push(`Expected errorCode "${expectedErrorCode}", got "${loggedEntry.errorCode}"`);
     }
-    if (JSON.stringify(loggedEntry.errorDetails) !== JSON.stringify((testCase.errorToLog as DomeError).details)) {
-       // Note: This is a simple stringify comparison. For complex objects, a deep equal might be better.
+    if (
+      JSON.stringify(loggedEntry.errorDetails) !==
+      JSON.stringify((testCase.errorToLog as DomeError).details)
+    ) {
+      // Note: This is a simple stringify comparison. For complex objects, a deep equal might be better.
       pass = false;
       mismatches.push(
-        `Expected errorDetails ${JSON.stringify((testCase.errorToLog as DomeError).details)}, got ${JSON.stringify(loggedEntry.errorDetails)}`,
+        `Expected errorDetails ${JSON.stringify(
+          (testCase.errorToLog as DomeError).details,
+        )}, got ${JSON.stringify(loggedEntry.errorDetails)}`,
       );
     }
   }
@@ -138,21 +144,27 @@ function runTest(testCase: TestCase) {
         if (typeof loggedEntry.errorCause === 'string') {
           if (!loggedEntry.errorCause.includes(originalCause.message)) {
             pass = false;
-            mismatches.push(`Expected errorCause to contain "${originalCause.message}", got "${loggedEntry.errorCause}"`);
+            mismatches.push(
+              `Expected errorCause to contain "${originalCause.message}", got "${loggedEntry.errorCause}"`,
+            );
           }
         } else if (typeof loggedEntry.errorCause === 'object' && loggedEntry.errorCause !== null) {
           if ((loggedEntry.errorCause as any).message !== originalCause.message) {
-             pass = false;
-             mismatches.push(`Expected errorCause.message to be "${originalCause.message}", got "${(loggedEntry.errorCause as any).message}"`);
+            pass = false;
+            mismatches.push(
+              `Expected errorCause.message to be "${originalCause.message}", got "${
+                (loggedEntry.errorCause as any).message
+              }"`,
+            );
           }
         } else {
-            pass = false;
-            mismatches.push(`Unexpected errorCause format: ${typeof loggedEntry.errorCause}`);
+          pass = false;
+          mismatches.push(`Unexpected errorCause format: ${typeof loggedEntry.errorCause}`);
         }
       } else if (loggedEntry.errorCause !== originalCause) {
-         // For non-Error causes, expect direct match (if simple type)
-         pass = false;
-         mismatches.push(`Expected errorCause "${originalCause}", got "${loggedEntry.errorCause}"`);
+        // For non-Error causes, expect direct match (if simple type)
+        pass = false;
+        mismatches.push(`Expected errorCause "${originalCause}", got "${loggedEntry.errorCause}"`);
       }
     }
   } else if (loggedEntry.errorCause) {
@@ -167,12 +179,13 @@ function runTest(testCase: TestCase) {
       if (JSON.stringify(loggedEntry.context?.[key]) !== JSON.stringify(expectedCtx[key])) {
         pass = false;
         mismatches.push(
-          `Expected context.${key} to be ${JSON.stringify(expectedCtx[key])}, got ${JSON.stringify(loggedEntry.context?.[key])}`,
+          `Expected context.${key} to be ${JSON.stringify(expectedCtx[key])}, got ${JSON.stringify(
+            loggedEntry.context?.[key],
+          )}`,
         );
       }
     }
   }
-
 
   if (pass) {
     testsPassed++;
@@ -289,7 +302,10 @@ const testCases: TestCase[] = [
       errorCodeShouldBe: 'VALIDATION_ERROR',
       expectedContext: {
         userId: 99,
-        requestData: { body: { name: 'Test', value: null }, headers: { 'X-Request-ID': 'req-789' } },
+        requestData: {
+          body: { name: 'Test', value: null },
+          headers: { 'X-Request-ID': 'req-789' },
+        },
         attemptNumber: 3,
       },
     },

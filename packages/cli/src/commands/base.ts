@@ -27,7 +27,10 @@ export abstract class BaseCommand {
         const key = arg.substring(2);
         const nextArg = rawArgs[i + 1];
         if (nextArg && !nextArg.startsWith('--')) {
-          if (key === 'output-format' && (nextArg === OutputFormat.JSON || nextArg === OutputFormat.CLI)) {
+          if (
+            key === 'output-format' &&
+            (nextArg === OutputFormat.JSON || nextArg === OutputFormat.CLI)
+          ) {
             args['outputFormat'] = nextArg as OutputFormat;
           } else {
             args[key] = nextArg;
@@ -55,7 +58,7 @@ export abstract class BaseCommand {
   // Method for standardized error output, integrating with errorHandler
   public error(
     error: unknown,
-    options: HandleErrorOptions = { outputFormat: OutputFormat.CLI }
+    options: HandleErrorOptions = { outputFormat: OutputFormat.CLI },
   ): void {
     handleError(error, options);
   }
@@ -70,7 +73,9 @@ export abstract class BaseCommand {
       let outputFormat = OutputFormat.CLI;
       try {
         outputFormat = this.parseArguments(rawArgs).outputFormat || OutputFormat.CLI;
-      } catch (_) { /* ignore parsing error for error reporting */ }
+      } catch (_) {
+        /* ignore parsing error for error reporting */
+      }
       this.error(e, { outputFormat });
       process.exitCode = 1;
     }

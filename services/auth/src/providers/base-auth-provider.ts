@@ -3,9 +3,18 @@
 
 export type DefaultProviderCredentials = { [key: string]: any };
 export type DefaultUser = { id: string; email?: string; [key: string]: any };
-export type DefaultAuthToken = { token: string; type: string; expiresAt?: Date | number; [key: string]: any };
+export type DefaultAuthToken = {
+  token: string;
+  type: string;
+  expiresAt?: Date | number;
+  [key: string]: any;
+};
 export type DefaultRegistrationData = { [key: string]: any };
-export type DefaultTokenValidationResult = { userId: string; providerInfo?: any; [key: string]: any };
+export type DefaultTokenValidationResult = {
+  userId: string;
+  providerInfo?: any;
+  [key: string]: any;
+};
 
 /**
  * Base interface for all authentication providers.

@@ -140,8 +140,8 @@ export interface Jwk {
   kid?: string; // Key ID
   alg?: string; // Algorithm (e.g., "ES256")
   crv?: string; // Curve (e.g., "P-256")
-  x?: string;   // X Coordinate
-  y?: string;   // Y Coordinate
+  x?: string; // X Coordinate
+  y?: string; // Y Coordinate
   // other properties as per RFC 7517
 }
 

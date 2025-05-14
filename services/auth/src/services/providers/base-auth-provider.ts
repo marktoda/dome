@@ -109,16 +109,12 @@ export abstract class BaseAuthProvider implements AuthProvider {
       // email: user.email, // if available and desired in token
       ...additionalClaims,
     };
-    const accessToken = await this.tokenManager.generateAccessToken(
-      accessTokenPayload,
-    );
+    const accessToken = await this.tokenManager.generateAccessToken(accessTokenPayload);
 
     const refreshTokenPayload: Pick<TokenPayload, 'userId'> = {
       userId: user.id,
     };
-    const refreshToken = await this.tokenManager.generateRefreshToken(
-      refreshTokenPayload,
-    );
+    const refreshToken = await this.tokenManager.generateRefreshToken(refreshTokenPayload);
 
     return { accessToken, refreshToken };
   }
@@ -130,10 +126,8 @@ export abstract class BaseAuthProvider implements AuthProvider {
    */
   async refreshAccessToken(refreshToken: string): Promise<AuthResult> {
     try {
-      const refreshTokenPayload = await this.tokenManager.verifyRefreshToken(
-        refreshToken,
-      );
-      
+      const refreshTokenPayload = await this.tokenManager.verifyRefreshToken(refreshToken);
+
       // Here, you would typically fetch the user details from your database
       // using refreshTokenPayload.userId to ensure the user still exists and is active.
       // For this example, we'll assume a placeholder user retrieval.
@@ -147,16 +141,14 @@ export abstract class BaseAuthProvider implements AuthProvider {
         userId: user.id,
         // Potentially re-add other claims if needed, or keep it minimal
       };
-      const newAccessToken = await this.tokenManager.generateAccessToken(
-        newAccessTokenPayload,
-      );
+      const newAccessToken = await this.tokenManager.generateAccessToken(newAccessTokenPayload);
 
       return {
         success: true,
         user,
         accessToken: newAccessToken,
         // Optionally, issue a new refresh token (e.g., for refresh token rotation)
-        // refreshToken: newRefreshToken, 
+        // refreshToken: newRefreshToken,
       };
     } catch (error) {
       return {
@@ -207,26 +199,25 @@ export abstract class BaseAuthProvider implements AuthProvider {
    */
   protected async findUserById(userId: string): Promise<User | null> {
     // This is a placeholder. In a real application, this would query your user database.
-    console.warn(
-      `findUserById(${userId}) is a placeholder. Implement actual user lookup.`,
-    );
+    console.warn(`findUserById(${userId}) is a placeholder. Implement actual user lookup.`);
     // Simulate a user lookup
-    if (userId === "mock-user-id") { // Example
-        // Align with the User schema (which uses 'name', not 'username', and has other required fields)
-        return {
-            id: userId,
-            email: "user@example.com",
-            name: "mockuser", // Changed from username to name
-            role: "user",
-            emailVerified: false,
-            isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            password: null, // Or a mock hash if needed for other placeholder logic
-            lastLoginAt: null,
-            authProvider: null,
-            providerAccountId: null,
-        };
+    if (userId === 'mock-user-id') {
+      // Example
+      // Align with the User schema (which uses 'name', not 'username', and has other required fields)
+      return {
+        id: userId,
+        email: 'user@example.com',
+        name: 'mockuser', // Changed from username to name
+        role: 'user',
+        emailVerified: false,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        password: null, // Or a mock hash if needed for other placeholder logic
+        lastLoginAt: null,
+        authProvider: null,
+        providerAccountId: null,
+      };
     }
     return null;
   }

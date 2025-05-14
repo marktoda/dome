@@ -11,13 +11,14 @@ export class SetConfigCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('set')
+    const cmd = program
+      .command('set')
       .description('Set configuration values')
       .option('-u, --base-url <url>', 'Set the base URL for the API')
       .option('-e, --environment <env>', 'Set the environment (development or production)')
       .option('--output-format <format>', 'Output format (cli, json)');
-    
-    cmd.action(async (optionsFromCommander) => {
+
+    cmd.action(async optionsFromCommander => {
       const commandInstance = new SetConfigCommand();
       await commandInstance.executeRun(optionsFromCommander as CommandArgs);
     });
@@ -55,7 +56,10 @@ export class SetConfigCommand extends BaseCommand {
       }
 
       if (!changed) {
-        this.log('No configuration changes specified. Use --base-url or --environment options.', outputFormat);
+        this.log(
+          'No configuration changes specified. Use --base-url or --environment options.',
+          outputFormat,
+        );
       }
     } catch (err) {
       // BaseCommand's executeRun will catch this

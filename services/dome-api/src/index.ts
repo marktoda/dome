@@ -79,28 +79,34 @@ app.route('/auth', buildAuthRouter());
 // --- Public Routes (OpenAPI) ---
 
 // Schemas for Public Routes
-const RootResponseSchema = z.object({
-  message: z.string().openapi({ example: 'Welcome to the dome API' }),
-  service: z.object({
-    name: z.string().openapi({ example: serviceInfo.name }),
-    version: z.string().openapi({ example: serviceInfo.version }),
-    environment: z.string().openapi({ example: serviceInfo.environment }),
-  }),
-  description: z.string().openapi({ example: 'AI-Powered Exobrain API service' }),
-}).openapi('RootResponse');
-
-const HealthResponseSchema = z.object({
-  status: z.literal('ok').openapi({ example: 'ok' }),
-  timestamp: z.string().datetime().openapi({ example: new Date().toISOString() }),
-  service: z.string().openapi({ example: serviceInfo.name }),
-  version: z.string().openapi({ example: serviceInfo.version }),
-  metrics: z.object({
-    counters: z.object({
-      requests: z.number().int().optional().openapi({ example: 100 }),
-      errors: z.number().int().optional().openapi({ example: 5 }),
+const RootResponseSchema = z
+  .object({
+    message: z.string().openapi({ example: 'Welcome to the dome API' }),
+    service: z.object({
+      name: z.string().openapi({ example: serviceInfo.name }),
+      version: z.string().openapi({ example: serviceInfo.version }),
+      environment: z.string().openapi({ example: serviceInfo.environment }),
     }),
-  }).optional(),
-}).openapi('HealthResponse');
+    description: z.string().openapi({ example: 'AI-Powered Exobrain API service' }),
+  })
+  .openapi('RootResponse');
+
+const HealthResponseSchema = z
+  .object({
+    status: z.literal('ok').openapi({ example: 'ok' }),
+    timestamp: z.string().datetime().openapi({ example: new Date().toISOString() }),
+    service: z.string().openapi({ example: serviceInfo.name }),
+    version: z.string().openapi({ example: serviceInfo.version }),
+    metrics: z
+      .object({
+        counters: z.object({
+          requests: z.number().int().optional().openapi({ example: 100 }),
+          errors: z.number().int().optional().openapi({ example: 5 }),
+        }),
+      })
+      .optional(),
+  })
+  .openapi('HealthResponse');
 
 // Route Definitions for Public Routes
 const rootRoute = createRoute({
@@ -134,11 +140,14 @@ const healthRoute = createRoute({
 // Register Public Routes
 app.openapi(rootRoute, c => {
   getLogger().info({ path: '/' }, 'Root endpoint accessed');
-  return c.json({
-    message: 'Welcome to the dome API',
-    service: serviceInfo,
-    description: 'AI-Powered Exobrain API service',
-  }, 200);
+  return c.json(
+    {
+      message: 'Welcome to the dome API',
+      service: serviceInfo,
+      description: 'AI-Powered Exobrain API service',
+    },
+    200,
+  );
 });
 
 app.openapi(healthRoute, c => {
@@ -146,29 +155,36 @@ app.openapi(healthRoute, c => {
   const timer = metrics.startTimer('health.check');
   metrics.trackHealthCheck('ok', 0, 'api');
   const duration = timer.stop(); // duration is not part of schema, but good to keep calculation
-  return c.json({
-    status: 'ok' as const, // Ensure 'ok' is treated as a literal type
-    timestamp: new Date().toISOString(),
-    service: serviceInfo.name,
-    version: serviceInfo.version,
-    metrics: { // Optional in schema, provide if available
-      counters: {
-        requests: metrics.getCounter('api.request'),
-        errors: metrics.getCounter('api.error'),
+  return c.json(
+    {
+      status: 'ok' as const, // Ensure 'ok' is treated as a literal type
+      timestamp: new Date().toISOString(),
+      service: serviceInfo.name,
+      version: serviceInfo.version,
+      metrics: {
+        // Optional in schema, provide if available
+        counters: {
+          requests: metrics.getCounter('api.request'),
+          errors: metrics.getCounter('api.error'),
+        },
       },
     },
-  }, 200);
+    200,
+  );
 });
 
 // --- Chat Routes ---
 
 // OpenAPI definition for the WebSocket handshake
 const ChatWsUpgradeQuerySchema = z.object({
-  token: z.string().optional().openapi({
-    param: { name: 'token', in: 'query' },
-    description: 'Authentication token for WebSocket upgrade.',
-    example: 'jwt_token_here',
-  }),
+  token: z
+    .string()
+    .optional()
+    .openapi({
+      param: { name: 'token', in: 'query' },
+      description: 'Authentication token for WebSocket upgrade.',
+      example: 'jwt_token_here',
+    }),
 });
 
 const chatWsUpgradeRoute = createRoute({
@@ -188,7 +204,14 @@ const chatWsUpgradeRoute = createRoute({
     },
     401: {
       description: 'Unauthorized. Token missing or invalid.',
-      content: { 'application/json': { schema: z.object({ success: z.literal(false), error: z.object({ code: z.string(), message: z.string() }) }) } } // Generic error
+      content: {
+        'application/json': {
+          schema: z.object({
+            success: z.literal(false),
+            error: z.object({ code: z.string(), message: z.string() }),
+          }),
+        },
+      }, // Generic error
     },
   },
   tags: ['Chat', 'WebSocket'],
@@ -351,8 +374,9 @@ app.get(
 
           if (error && typeof error === 'object' && 'name' in error && error.name === 'ZodError') {
             errorCode = 'VALIDATION_ERROR';
-            errorMessage = `Invalid request format: ${error instanceof Error ? error.message : 'Unknown validation error'
-              }`;
+            errorMessage = `Invalid request format: ${
+              error instanceof Error ? error.message : 'Unknown validation error'
+            }`;
             closeCode = 1007; // Invalid message format
           } else if (error instanceof Error) {
             errorMessage = error.message;
@@ -366,7 +390,9 @@ app.get(
               // ws.close(closeCode, errorMessage.substring(0, 123)); // Max length for reason is 123 bytes
             }
           } catch (sendError) {
-            logError(sendError, 'Failed to send error message over WebSocket', { logger: messageLogger });
+            logError(sendError, 'Failed to send error message over WebSocket', {
+              logger: messageLogger,
+            });
           }
         }
       },
@@ -449,17 +475,13 @@ app.notFound(c => {
 
 // Error handler
 app.onError((err, c) => {
-  logError(
-    err,
-    'Unhandled error',
-    {
-      path: c.req.path,
-      method: c.req.method,
-      errorName: err.name,
-      // errorMessage is part of err
-      // stack is part of err
-    },
-  );
+  logError(err, 'Unhandled error', {
+    path: c.req.path,
+    method: c.req.method,
+    errorName: err.name,
+    // errorMessage is part of err
+    // stack is part of err
+  });
 
   // Track error with metrics
   metrics.counter('error.unhandled', 1, {
@@ -496,5 +518,3 @@ app.doc('/openapi.json', {
 app.get('/docs', swaggerUI({ url: '/openapi.json', title: `${serviceInfo.name} API Docs` }));
 
 export default app;
-
-

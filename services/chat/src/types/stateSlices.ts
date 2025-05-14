@@ -15,7 +15,6 @@ import type {
   Message,
   MessagePair,
   RetrievalTask,
-  ToolResult,
   SourceMetadata,
   RetrievalEvaluation,
   ToolRoutingDecision,
@@ -80,17 +79,6 @@ export interface ToolDecisionSlice {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Tool execution                                                    */
-/* ------------------------------------------------------------------ */
-
-export interface ToolSlice {
-  /** Identifier of the tool currently being executed (if any). */
-  // tool: string; // This field is not actively used by any node, only set by toolRouter and never read.
-  /** Results produced by executed tools (aggregated). */
-  toolResults?: ToolResult[]; // Made optional as it may not always be present
-}
-
-/* ------------------------------------------------------------------ */
 /*  Generation                                                        */
 /* ------------------------------------------------------------------ */
 export interface GenerationSlice {
@@ -134,7 +122,9 @@ export interface MetadataSlice {
 /* ------------------------------------------------------------------ */
 /*  Identity                                                          */
 /* ------------------------------------------------------------------ */
-export interface IdentitySlice { userId: string; }
+export interface IdentitySlice {
+  userId: string;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Composed experimental state                                       */
@@ -145,22 +135,24 @@ export interface TaskSlice {
   taskEntities?: Record<string, import('../types').UserTaskEntity>;
 }
 
-export interface FilterSlice { _filter?: Record<string, any>; }
+export interface ToolRequirementsSlice {
+  toolRequirements?: Record<string, any>;
+}
 
-export type AgentStateV3 = IdentitySlice & ConversationSlice &
+export type AgentStateV3 = IdentitySlice &
+  ConversationSlice &
   Partial<
     HistorySlice &
-    RetrievalSlice &
-    ReasoningSlice &
-    RetrievalEvaluationSlice &
-    ToolDecisionSlice &
-    ToolSlice &
-    GenerationSlice
+      RetrievalSlice &
+      ReasoningSlice &
+      RetrievalEvaluationSlice &
+      ToolDecisionSlice &
+      GenerationSlice
   > &
   ConfigSlice &
   MetadataSlice &
   TaskSlice &
-  FilterSlice;
+  ToolRequirementsSlice;
 
 /**
  * Utility: list of all slice keys so other tooling can reference them without
@@ -178,13 +170,12 @@ export const sliceKeys = [
   'retrievalEvaluation',
   'toolNecessityClassification',
   'toolRoutingDecision',
-  'toolResults',
   'generatedText',
   'options',
   'metadata',
   'taskIds',
   'taskEntities',
-  '_filter',
+  'toolRequirements',
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -199,5 +190,6 @@ export const sliceKeys = [
  * Always allows returning a (partial) `metadata` slice so nodes can set
  * timing and bookkeeping info without having to include it explicitly.
  */
-export type SliceUpdate<K extends keyof AgentStateV3 = never> =
-  Partial<Pick<AgentStateV3, K | 'metadata'>>; 
+export type SliceUpdate<K extends keyof AgentStateV3 = never> = Partial<
+  Pick<AgentStateV3, K | 'metadata'>
+>;

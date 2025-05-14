@@ -42,7 +42,13 @@ export class AuthService {
     return provider;
   }
 
-  async login(providerName: string, credentials: ProviderCredentials): Promise<{ user: User; tokenInfo: { token: string; type: string; expiresAt: number; refreshToken?: string } }> {
+  async login(
+    providerName: string,
+    credentials: ProviderCredentials,
+  ): Promise<{
+    user: User;
+    tokenInfo: { token: string; type: string; expiresAt: number; refreshToken?: string };
+  }> {
     try {
       const provider = this.getProvider(providerName);
       // Provider's authenticate method returns AuthResult
@@ -59,7 +65,10 @@ export class AuthService {
 
       if (typeof expiresAt !== 'number') {
         // This should ideally not happen if tokens are generated correctly with 'exp'
-        throw new ServiceError('Token expiration not found or invalid in decoded token.', { service: 'auth', code: 'TOKEN_EXP_MISSING' });
+        throw new ServiceError('Token expiration not found or invalid in decoded token.', {
+          service: 'auth',
+          code: 'TOKEN_EXP_MISSING',
+        });
       }
 
       return {
@@ -69,7 +78,7 @@ export class AuthService {
           type: 'Bearer',
           expiresAt: expiresAt, // Unix timestamp in seconds
           refreshToken: authResult.refreshToken,
-        }
+        },
       };
     } catch (error) {
       if (error instanceof BaseError) throw error;
@@ -77,7 +86,13 @@ export class AuthService {
     }
   }
 
-  async register(providerName: string, registrationData: UserRegistrationData): Promise<{ user: User; tokenInfo: { token: string; type: string; expiresAt: number; refreshToken?: string } }> {
+  async register(
+    providerName: string,
+    registrationData: UserRegistrationData,
+  ): Promise<{
+    user: User;
+    tokenInfo: { token: string; type: string; expiresAt: number; refreshToken?: string };
+  }> {
     try {
       const provider = this.getProvider(providerName);
       if (!provider.register) {
@@ -89,12 +104,15 @@ export class AuthService {
       if (!authResult.success || !authResult.user || !authResult.accessToken) {
         throw new ValidationError(authResult.error || 'Registration failed with provider.');
       }
-      
+
       const decodedToken = this.tokenManager.decodeToken(authResult.accessToken);
       const expiresAt = decodedToken.exp; // exp is a Unix timestamp (seconds)
 
       if (typeof expiresAt !== 'number') {
-        throw new ServiceError('Token expiration not found or invalid in decoded token.', { service: 'auth', code: 'TOKEN_EXP_MISSING' });
+        throw new ServiceError('Token expiration not found or invalid in decoded token.', {
+          service: 'auth',
+          code: 'TOKEN_EXP_MISSING',
+        });
       }
 
       return {
@@ -104,7 +122,7 @@ export class AuthService {
           type: 'Bearer',
           expiresAt: expiresAt, // Unix timestamp in seconds
           refreshToken: authResult.refreshToken,
-        }
+        },
       };
     } catch (error) {
       if (error instanceof BaseError) throw error;
@@ -112,16 +130,26 @@ export class AuthService {
     }
   }
 
-  async validateToken(token: string, providerName?: SupportedAuthProvider): Promise<{ userId: string; provider: SupportedAuthProvider; details?: any; user?: User }> {
+  async validateToken(
+    token: string,
+    providerName?: SupportedAuthProvider,
+  ): Promise<{ userId: string; provider: SupportedAuthProvider; details?: any; user?: User }> {
     // Log the received token at the entry point of validation
-    console.log(`AuthService.validateToken: Received token (first 30 chars): ${token.substring(0, 30)}...`);
+    console.log(
+      `AuthService.validateToken: Received token (first 30 chars): ${token.substring(0, 30)}...`,
+    );
     console.log(`AuthService.validateToken: Received token length: ${token.length}`);
     console.log(`AuthService.validateToken: Received providerName: ${providerName}`);
 
     let processedToken = token;
     if (token.toLowerCase().startsWith('bearer ')) {
       processedToken = token.slice(7);
-      console.log(`AuthService.validateToken: Stripped "Bearer " prefix. Token for verification (first 30 chars): ${processedToken.substring(0, 30)}...`);
+      console.log(
+        `AuthService.validateToken: Stripped "Bearer " prefix. Token for verification (first 30 chars): ${processedToken.substring(
+          0,
+          30,
+        )}...`,
+      );
     }
 
     try {
@@ -131,7 +159,9 @@ export class AuthService {
         // getUserFromToken is the method in BaseAuthProvider for validating and getting user
         const user = await provider.getUserFromToken(processedToken); // Use processedToken
         if (!user) {
-          throw new UnauthorizedError('Token validation failed: Invalid or expired token for the specified provider.');
+          throw new UnauthorizedError(
+            'Token validation failed: Invalid or expired token for the specified provider.',
+          );
         }
         // Ensure the returned user object is compatible with the expected structure.
         // The 'User' type from '../types' should be the source of truth.
@@ -145,22 +175,33 @@ export class AuthService {
       try {
         const payload = await this.tokenManager.verifyAccessToken(processedToken); // Use processedToken
         // Construct AuthContext for userManager
-        const authContext = { env: this.env, db: this.env.AUTH_DB, waitUntil: (p: Promise<any>) => {} };
+        const authContext = {
+          env: this.env,
+          db: this.env.AUTH_DB,
+          waitUntil: (p: Promise<any>) => {},
+        };
         const user = await this.userManager.findUserById(payload.userId, authContext);
         if (!user) {
           throw new UnauthorizedError('User not found for token.');
         }
         // Assuming internal tokens correspond to the LOCAL provider
         const internalProvider = SupportedAuthProvider.LOCAL;
-        return { userId: user.id, provider: internalProvider, details: payload, user: user as User };
+        return {
+          userId: user.id,
+          provider: internalProvider,
+          details: payload,
+          user: user as User,
+        };
       } catch (e) {
         // If TokenManager fails, and no providerName was given, then fail.
         throw new UnauthorizedError('Token validation failed: Invalid or expired token.');
       }
-
     } catch (error) {
       if (error instanceof BaseError) throw error;
-      throw new UnauthorizedError('Token validation failed', { cause: error as Error, service: 'auth' });
+      throw new UnauthorizedError('Token validation failed', {
+        cause: error as Error,
+        service: 'auth',
+      });
     }
   }
 
@@ -173,22 +214,36 @@ export class AuthService {
       if (error instanceof BaseError) throw error;
       console.warn(`Logout attempt failed for provider ${providerName}:`, error);
       // Depending on requirements, you might still want to throw or just log
-      throw new ServiceError('Logout operation encountered an issue.', { cause: error as Error, service: 'auth' });
+      throw new ServiceError('Logout operation encountered an issue.', {
+        cause: error as Error,
+        service: 'auth',
+      });
     }
   }
 
-  async refreshTokens(refreshToken: string): Promise<{user: User; accessToken: string; refreshToken: string; expiresAt: number}> {
+  async refreshTokens(
+    refreshToken: string,
+  ): Promise<{ user: User; accessToken: string; refreshToken: string; expiresAt: number }> {
     // Verify refresh token
     const payload = await this.tokenManager.verifyRefreshToken(refreshToken);
     const userId = payload.userId;
-    const user = await this.userManager.findUserById(userId, { env: this.env, db: this.env.AUTH_DB, waitUntil: (p: Promise<any>) => {} });
+    const user = await this.userManager.findUserById(userId, {
+      env: this.env,
+      db: this.env.AUTH_DB,
+      waitUntil: (p: Promise<any>) => {},
+    });
     if (!user) {
       throw new UnauthorizedError('Invalid refresh token – user not found');
     }
     const accessToken = await this.tokenManager.generateAccessToken({ userId });
     const newRefreshToken = await this.tokenManager.generateRefreshToken({ userId });
     const decoded = this.tokenManager.decodeToken(accessToken);
-    return { user: user as User, accessToken, refreshToken: newRefreshToken, expiresAt: decoded.exp as number };
+    return {
+      user: user as User,
+      accessToken,
+      refreshToken: newRefreshToken,
+      expiresAt: decoded.exp as number,
+    };
   }
 
   // Potentially add other methods like refreshToken, forgotPassword, resetPassword etc.

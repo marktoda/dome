@@ -30,14 +30,18 @@ const glob = require('fast-glob');
     }
   }
 
-  const entries = Object.entries(usageMap).sort((a, b) => (b[1].reads + b[1].writes) - (a[1].reads + a[1].writes));
+  const entries = Object.entries(usageMap).sort(
+    (a, b) => b[1].reads + b[1].writes - (a[1].reads + a[1].writes),
+  );
   console.log('Property, Reads, Writes');
   entries.forEach(([prop, data]) => {
     console.log(`${prop}, ${data.reads}, ${data.writes}`);
   });
 
-  const json = Object.fromEntries(entries.map(([prop, data]) => [prop, { ...data, files: [...data.files] }]));
+  const json = Object.fromEntries(
+    entries.map(([prop, data]) => [prop, { ...data, files: [...data.files] }]),
+  );
   const outPath = path.resolve(process.cwd(), 'state_usage_report.json');
   await fs.writeFile(outPath, JSON.stringify(json, null, 2));
   console.log(`\nJSON report written to ${outPath}`);
-})(); 
+})();

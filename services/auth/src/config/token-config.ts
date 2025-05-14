@@ -63,11 +63,9 @@ export function getTokenSettings(env: any): TokenSettings {
 
   return {
     accessTokenSecret,
-    accessTokenExpiresIn:
-      env.JWT_ACCESS_TOKEN_EXPIRES_IN || DEFAULT_ACCESS_TOKEN_EXPIRES_IN,
+    accessTokenExpiresIn: env.JWT_ACCESS_TOKEN_EXPIRES_IN || DEFAULT_ACCESS_TOKEN_EXPIRES_IN,
     refreshTokenSecret,
-    refreshTokenExpiresIn:
-      env.JWT_REFRESH_TOKEN_EXPIRES_IN || DEFAULT_REFRESH_TOKEN_EXPIRES_IN,
+    refreshTokenExpiresIn: env.JWT_REFRESH_TOKEN_EXPIRES_IN || DEFAULT_REFRESH_TOKEN_EXPIRES_IN,
     issuer: env.JWT_ISSUER || DEFAULT_ISSUER,
     audience: env.JWT_AUDIENCE || DEFAULT_AUDIENCE,
   };

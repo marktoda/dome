@@ -10,7 +10,13 @@ if (!global.gc) {
 // --- Shared Mock Definitions ---
 // const noop = () => {}; // noop is not needed if we use vi.fn() for logger methods
 const sharedMockLogger = {
-  info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn(), trace: vi.fn(), silent: vi.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  fatal: vi.fn(),
+  trace: vi.fn(),
+  silent: vi.fn(),
   child: () => sharedMockLogger, // This should also return a spy-based logger if child logs are checked
 };
 
@@ -20,7 +26,9 @@ const sharedMockMetrics = {
   gauge: vi.fn(),
   timing: vi.fn(),
   startTimer: vi.fn(() => ({ stop: vi.fn(() => 100) })), // Returns a timer object with a stop function
-  trackOperation: vi.fn((operationName, success, tags) => { /* Mock implementation, can be empty or log */ }), // Corrected signature
+  trackOperation: vi.fn((operationName, success, tags) => {
+    /* Mock implementation, can be empty or log */
+  }), // Corrected signature
   getCounter: vi.fn(() => 0),
   getGauge: vi.fn(() => 0),
   reset: vi.fn(),
@@ -48,7 +56,6 @@ vi.mock('pino', () => {
 // Mock pino-pretty (basic mock, as pino.transport is already simplified)
 vi.mock('pino-pretty', () => vi.fn(() => ({})));
 
-
 // Mock @dome/common (explicitly mock all used exports)
 vi.mock('@dome/common', () => {
   const mockErrorHandler = vi.fn(error => {
@@ -58,9 +65,23 @@ vi.mock('@dome/common', () => {
     // Assign properties from baseError, then our mock-specific ones
     Object.assign(errInstance, {
       name: baseError.name,
-      code: (error && typeof error === 'object' && Object.prototype.hasOwnProperty.call(error, 'code') && typeof error.code === 'string') ? error.code : 'UNKNOWN_MOCK_ERROR',
-      details: (error && typeof error === 'object' && Object.prototype.hasOwnProperty.call(error, 'details')) ? error.details : undefined,
-      statusCode: (error && typeof error === 'object' && Object.prototype.hasOwnProperty.call(error, 'statusCode')) ? error.statusCode : undefined,
+      code:
+        error &&
+        typeof error === 'object' &&
+        Object.prototype.hasOwnProperty.call(error, 'code') &&
+        typeof error.code === 'string'
+          ? error.code
+          : 'UNKNOWN_MOCK_ERROR',
+      details:
+        error && typeof error === 'object' && Object.prototype.hasOwnProperty.call(error, 'details')
+          ? error.details
+          : undefined,
+      statusCode:
+        error &&
+        typeof error === 'object' &&
+        Object.prototype.hasOwnProperty.call(error, 'statusCode')
+          ? error.statusCode
+          : undefined,
       processedByCommonMock: true,
       commonError: true,
     });
@@ -81,16 +102,41 @@ vi.mock('@dome/common', () => {
     // Error Handling
     createServiceErrorHandler: vi.fn(serviceName => mockErrorHandler),
     ensureError: vi.fn(err => (err instanceof Error ? err : new Error(String(err)))),
-    isOperationalError: vi.fn(err => !!(err && typeof err === 'object' && 'isOperational' in err && err.isOperational)),
+    isOperationalError: vi.fn(
+      err => !!(err && typeof err === 'object' && 'isOperational' in err && err.isOperational),
+    ),
     HttpError: MockHttpError,
     // Define common specific error classes if they are part of @dome/common API
-    NotFoundError: class NotFoundError extends MockHttpError { constructor(m,d){super(404, m || 'Not Found',d);}},
-    BadRequestError: class BadRequestError extends MockHttpError { constructor(m,d){super(400, m || 'Bad Request',d);}},
-    ValidationError: class ValidationError extends MockHttpError { constructor(m,d){super(400, m || 'Validation Error',d);}}, // Added ValidationError, using 400 status
-    UnauthorizedError: class UnauthorizedError extends MockHttpError { constructor(m,d){super(401, m || 'Unauthorized',d);}},
-    ForbiddenError: class ForbiddenError extends MockHttpError { constructor(m,d){super(403, m || 'Forbidden',d);}},
-    InternalServerError: class InternalServerError extends MockHttpError { constructor(m,d){super(500, m || 'Internal Server Error',d);}},
-
+    NotFoundError: class NotFoundError extends MockHttpError {
+      constructor(m, d) {
+        super(404, m || 'Not Found', d);
+      }
+    },
+    BadRequestError: class BadRequestError extends MockHttpError {
+      constructor(m, d) {
+        super(400, m || 'Bad Request', d);
+      }
+    },
+    ValidationError: class ValidationError extends MockHttpError {
+      constructor(m, d) {
+        super(400, m || 'Validation Error', d);
+      }
+    }, // Added ValidationError, using 400 status
+    UnauthorizedError: class UnauthorizedError extends MockHttpError {
+      constructor(m, d) {
+        super(401, m || 'Unauthorized', d);
+      }
+    },
+    ForbiddenError: class ForbiddenError extends MockHttpError {
+      constructor(m, d) {
+        super(403, m || 'Forbidden', d);
+      }
+    },
+    InternalServerError: class InternalServerError extends MockHttpError {
+      constructor(m, d) {
+        super(500, m || 'Internal Server Error', d);
+      }
+    },
 
     // Metrics
     createServiceMetrics: vi.fn(serviceName => sharedMockMetrics), // Assumes it returns a metrics instance
@@ -121,7 +167,8 @@ vi.mock('@dome/logging', () => {
   return {
     getLogger: vi.fn().mockReturnValue(sharedMockLogger), // constellation might use this specific getLogger
     withLogger: vi.fn((logger, fn) => fn(logger || sharedMockLogger)), // Executes the function with the logger
-    logError: vi.fn((error, context, message) => { // constellation might use this specific logError
+    logError: vi.fn((error, context, message) => {
+      // constellation might use this specific logError
       // console.error('Mocked @dome/logging logError:', message, error, context);
     }),
     logMetric: vi.fn(),
@@ -130,7 +177,6 @@ vi.mock('@dome/logging', () => {
     createServiceMetrics: vi.fn(serviceName => sharedMockMetrics), // constellation might use this
   };
 });
-
 
 // Mock cloudflare:workers with minimal implementation
 vi.mock('cloudflare:workers', () => {

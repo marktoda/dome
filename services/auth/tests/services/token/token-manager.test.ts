@@ -61,9 +61,9 @@ describe('JwtTokenManager Unit Tests', () => {
       // Wait for token to expire
       await new Promise(resolve => setTimeout(resolve, 50)); // Wait 50ms
 
-      await expect(shortExpiryTokenManager.verifyAccessToken(token))
-        .rejects
-        .toThrow(/Access token expired/);
+      await expect(shortExpiryTokenManager.verifyAccessToken(token)).rejects.toThrow(
+        /Access token expired/,
+      );
     });
 
     it('should throw an error for an invalid access token signature', async () => {
@@ -73,9 +73,9 @@ describe('JwtTokenManager Unit Tests', () => {
         ...tokenSettings,
         accessTokenSecret: 'another-different-secret-key',
       });
-      await expect(differentSecretManager.verifyAccessToken(token))
-        .rejects
-        .toThrow(/Invalid access token/); // jose throws 'signature verification failed'
+      await expect(differentSecretManager.verifyAccessToken(token)).rejects.toThrow(
+        /Invalid access token/,
+      ); // jose throws 'signature verification failed'
     });
   });
 
@@ -109,9 +109,9 @@ describe('JwtTokenManager Unit Tests', () => {
       });
       const token = await shortExpiryTokenManager.generateRefreshToken(refreshPayload);
       await new Promise(resolve => setTimeout(resolve, 50));
-      await expect(shortExpiryTokenManager.verifyRefreshToken(token))
-        .rejects
-        .toThrow(/Refresh token expired/);
+      await expect(shortExpiryTokenManager.verifyRefreshToken(token)).rejects.toThrow(
+        /Refresh token expired/,
+      );
     });
   });
 
@@ -124,8 +124,7 @@ describe('JwtTokenManager Unit Tests', () => {
     });
 
     it('should throw if decoding fails (e.g., not a JWT)', () => {
-      expect(() => tokenManager.decodeToken('not-a-jwt-string'))
-        .toThrow(/Failed to decode token/); // jose may throw "Invalid JWT"
+      expect(() => tokenManager.decodeToken('not-a-jwt-string')).toThrow(/Failed to decode token/); // jose may throw "Invalid JWT"
     });
   });
 

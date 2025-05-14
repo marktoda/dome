@@ -29,7 +29,9 @@ import type { SliceUpdate } from '../types/stateSlices';
  * @param env Environment bindings
  * @returns Updated agent state with retrieval evaluation results
  */
-export type RetrievalEvalUpdate = SliceUpdate<'retrievalEvaluation'>;
+export type RetrievalEvalUpdate = SliceUpdate<
+  'retrievalEvaluation' | 'toolNecessityClassification'
+>;
 
 export async function retrievalEvaluatorLLM(
   state: AgentState,
@@ -51,6 +53,11 @@ export async function retrievalEvaluatorLLM(
         isAdequate: false,
         reasoning: '',
         suggestedAction: 'use_tools',
+      },
+      toolNecessityClassification: {
+        isToolNeeded: true,
+        reasoning: 'No retrievals available',
+        confidence: 1,
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
@@ -75,6 +82,11 @@ export async function retrievalEvaluatorLLM(
         reasoning: '',
         suggestedAction: 'use_tools',
       },
+      toolNecessityClassification: {
+        isToolNeeded: true,
+        reasoning: 'No retrieval tasks with chunks found',
+        confidence: 1,
+      },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: 0,
@@ -96,6 +108,11 @@ export async function retrievalEvaluatorLLM(
         isAdequate: false,
         reasoning: '',
         suggestedAction: 'use_tools',
+      },
+      toolNecessityClassification: {
+        isToolNeeded: true,
+        reasoning: 'No user message found for evaluation context',
+        confidence: 1,
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
@@ -182,6 +199,13 @@ export async function retrievalEvaluatorLLM(
       suggestedAction: suggestedAction as 'use_tools' | 'refine_query' | 'proceed',
     };
 
+    // Derive a simple tool-necessity classification (will replace separate node)
+    const toolNecessityClassification: import('../types').ToolNecessityClassification = {
+      isToolNeeded: suggestedAction === 'use_tools' || !isAdequate,
+      reasoning: `Decision derived from retrievalEvaluatorLLM – suggestedAction="${suggestedAction}" and adequacy=${isAdequate}.`,
+      confidence: Math.round((1 - overallScore) * 100) / 100, // rough heuristic
+    };
+
     // Log results
     logger.info(
       {
@@ -211,6 +235,7 @@ export async function retrievalEvaluatorLLM(
     const updatedState = {
       ...state,
       retrievalEvaluation,
+      toolNecessityClassification,
     };
 
     ObservabilityService.endSpan(
@@ -226,6 +251,7 @@ export async function retrievalEvaluatorLLM(
     // Update state with evaluation results
     return {
       retrievalEvaluation,
+      toolNecessityClassification,
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: elapsed,
@@ -270,6 +296,11 @@ export async function retrievalEvaluatorLLM(
         isAdequate: false,
         reasoning: '',
         suggestedAction: 'use_tools',
+      },
+      toolNecessityClassification: {
+        isToolNeeded: true,
+        reasoning: domeError.message,
+        confidence: 1,
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',

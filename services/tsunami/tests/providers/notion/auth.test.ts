@@ -55,13 +55,11 @@ describe('NotionAuthManager', () => {
     vi.clearAllMocks(); // Clear other mocks like fetch
 
     // Re-mock TokenService methods for this instance if needed, or rely on class mock
-    mockTokenServiceInstance.storeNotionToken = vi
-      .fn()
-      .mockResolvedValue({
-        success: true,
-        tokenId: 'new-token-id',
-        workspaceId: 'test-workspace-id',
-      });
+    mockTokenServiceInstance.storeNotionToken = vi.fn().mockResolvedValue({
+      success: true,
+      tokenId: 'new-token-id',
+      workspaceId: 'test-workspace-id',
+    });
     mockTokenServiceInstance.getToken = vi.fn().mockResolvedValue(null);
 
     // Default successful response for token exchange

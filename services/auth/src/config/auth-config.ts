@@ -2,11 +2,7 @@
  * @file Manages configuration for authentication providers.
  */
 
-import {
-  SupportedAuthProvider,
-  AuthProvidersConfig,
-  ProviderConfig,
-} from '../types';
+import { SupportedAuthProvider, AuthProvidersConfig, ProviderConfig } from '../types';
 
 /**
  * Retrieves the configuration for all authentication providers.

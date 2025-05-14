@@ -37,7 +37,6 @@ vi.mock('@dome/common', () => {
   };
 });
 
-
 // NO NEED to mock '../../src/services' if Services is just a type.
 
 // Mock the graph builder
@@ -70,7 +69,8 @@ vi.mock('../../src/graphs', () => {
 
   // Mock V2Chat with a static build method that returns an object with the stream method
   const MockV2Chat = {
-    build: vi.fn().mockResolvedValue({ // build is async in controller
+    build: vi.fn().mockResolvedValue({
+      // build is async in controller
       stream: mockStreamMethod, // The built graph instance should have the stream method
       invoke: vi.fn().mockResolvedValue({
         // This is the object that will be JSON.stringified and returned by generateChatMessage
@@ -87,7 +87,11 @@ vi.mock('../../src/graphs', () => {
         // For simplicity, let's assume the graph result includes it.
         metadata: { executionTimeMs: 123 }, // Use a fixed number for predictability
       }),
-      batch: vi.fn().mockResolvedValue([{ /* mock non-streaming final state for batch */ }]),
+      batch: vi.fn().mockResolvedValue([
+        {
+          /* mock non-streaming final state for batch */
+        },
+      ]),
     }),
   };
 
@@ -131,24 +135,41 @@ describe('Non-streaming chat implementation', () => {
       OPENAI_API_KEY: 'test-openai-key',
       COHERE_API_KEY: 'test-cohere-key',
       CHAT_ENCRYPTION_KEY: 'test-encryption-key',
-      CHAT_DB: { prepare: vi.fn(() => ({ bind: vi.fn().mockReturnThis(), first: vi.fn(), run: vi.fn(), all: vi.fn(), raw: vi.fn() })), dump: vi.fn(), batch: vi.fn(), exec: vi.fn() } as unknown as D1Database,
+      CHAT_DB: {
+        prepare: vi.fn(() => ({
+          bind: vi.fn().mockReturnThis(),
+          first: vi.fn(),
+          run: vi.fn(),
+          all: vi.fn(),
+          raw: vi.fn(),
+        })),
+        dump: vi.fn(),
+        batch: vi.fn(),
+        exec: vi.fn(),
+      } as unknown as D1Database,
       CONSTELLATION: { fetch: vi.fn() } as unknown as Fetcher,
       SILO: { fetch: vi.fn() } as unknown as Fetcher,
       TODOS: { fetch: vi.fn() } as unknown as Fetcher,
       AI: { run: vi.fn() } as unknown as Ai,
-      ENRICHED_CONTENT: { get: vi.fn(), getWithMetadata: vi.fn(), put: vi.fn(), list: vi.fn(), delete: vi.fn() } as unknown as KVNamespace,
+      ENRICHED_CONTENT: {
+        get: vi.fn(),
+        getWithMetadata: vi.fn(),
+        put: vi.fn(),
+        list: vi.fn(),
+        delete: vi.fn(),
+      } as unknown as KVNamespace,
       RATE_LIMIT_DLQ: { send: vi.fn(), sendBatch: vi.fn() } as unknown as Queue,
     } as any as Env; // Use double assertion
 
     // Create the mock services object directly
     services = {
-       checkpointer: {
+      checkpointer: {
         initialize: vi.fn().mockResolvedValue(undefined),
         // Add other checkpointer methods if needed by controller
-         getState: vi.fn(),
-         setState: vi.fn(),
-         getStats: vi.fn(),
-         cleanup: vi.fn(),
+        getState: vi.fn(),
+        setState: vi.fn(),
+        getStats: vi.fn(),
+        cleanup: vi.fn(),
       },
       dataRetention: {
         initialize: vi.fn().mockResolvedValue(undefined),

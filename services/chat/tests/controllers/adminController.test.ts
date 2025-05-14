@@ -22,22 +22,22 @@ vi.mock('@dome/common', () => {
 
     // Mock metrics object used by controller and tests
     metrics: {
-    increment: vi.fn(),
-    timing: vi.fn(),
-    gauge: vi.fn(),
-    startTimer: vi.fn(() => ({ stop: vi.fn() })),
-    trackOperation: vi.fn(),
-  },
+      increment: vi.fn(),
+      timing: vi.fn(),
+      gauge: vi.fn(),
+      startTimer: vi.fn(() => ({ stop: vi.fn() })),
+      trackOperation: vi.fn(),
+    },
 
-  // Mock other potentially used exports if needed, though likely not necessary for this controller
-  baseLogger: mockLogger,
-  createLogger: vi.fn(() => mockLogger),
-  createServiceMetrics: vi.fn(() => ({
-    counter: vi.fn(),
-    gauge: vi.fn(),
-    timing: vi.fn(),
-    startTimer: vi.fn(() => ({ stop: vi.fn() })),
-    trackOperation: vi.fn(),
+    // Mock other potentially used exports if needed, though likely not necessary for this controller
+    baseLogger: mockLogger,
+    createLogger: vi.fn(() => mockLogger),
+    createServiceMetrics: vi.fn(() => ({
+      counter: vi.fn(),
+      gauge: vi.fn(),
+      timing: vi.fn(),
+      startTimer: vi.fn(() => ({ stop: vi.fn() })),
+      trackOperation: vi.fn(),
     })),
   };
 });
@@ -46,14 +46,13 @@ describe('AdminController', () => {
   let controller: AdminController;
   let mockEnv: Env;
   let mockServices: Services;
-// No need for mockMetrics variable, use the imported 'metrics' directly
+  // No need for mockMetrics variable, use the imported 'metrics' directly
 
-beforeEach(() => {
-  // Don't clear mocks here; vi.mock implementations should persist
-  // vi.clearAllMocks(); // REMOVED
+  beforeEach(() => {
+    // Don't clear mocks here; vi.mock implementations should persist
+    // vi.clearAllMocks(); // REMOVED
 
-  // Mocks defined in vi.mock are already active due to hoisting
-
+    // Mocks defined in vi.mock are already active due to hoisting
 
     // Create mock environment with all required properties
     mockEnv = {
@@ -64,7 +63,8 @@ beforeEach(() => {
       OPENAI_API_KEY: 'test-openai-key',
       COHERE_API_KEY: 'test-cohere-key',
       CHAT_ENCRYPTION_KEY: 'test-encryption-key',
-      CHAT_DB: { // Mock D1Database methods if needed by the controller
+      CHAT_DB: {
+        // Mock D1Database methods if needed by the controller
         prepare: vi.fn(() => ({
           bind: vi.fn().mockReturnThis(),
           first: vi.fn(),
@@ -81,14 +81,16 @@ beforeEach(() => {
       TODOS: { fetch: vi.fn() } as unknown as Fetcher,
       AI: { run: vi.fn() } as unknown as Ai, // Mock AI methods if needed
       // Add missing bindings based on latest Env definition
-      ENRICHED_CONTENT: { // Mock KVNamespace methods
+      ENRICHED_CONTENT: {
+        // Mock KVNamespace methods
         get: vi.fn(),
         getWithMetadata: vi.fn(),
         put: vi.fn(),
         list: vi.fn(),
         delete: vi.fn(),
       } as unknown as KVNamespace,
-      RATE_LIMIT_DLQ: { // Mock Queue methods
+      RATE_LIMIT_DLQ: {
+        // Mock Queue methods
         send: vi.fn(),
         sendBatch: vi.fn(),
       } as unknown as Queue,
@@ -169,7 +171,8 @@ beforeEach(() => {
       // Act & Assert
       await expect(controller.getCheckpointStats()).rejects.toThrow('Test error');
       // Check that the success metric was NOT called
-      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).not.toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.checkpoint_stats',
         1,
       );
@@ -187,11 +190,13 @@ beforeEach(() => {
       expect(result).toEqual({ deletedCount: 5 });
       expect(mockServices.checkpointer.initialize).toHaveBeenCalled();
       expect(mockServices.checkpointer.cleanup).toHaveBeenCalled();
-      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.checkpoint_cleanup',
         1,
       );
-      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.checkpoints_deleted',
         5,
       );
@@ -203,7 +208,8 @@ beforeEach(() => {
 
       // Act & Assert
       await expect(controller.cleanupCheckpoints()).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).not.toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.checkpoint_cleanup',
         1,
       );
@@ -228,7 +234,8 @@ beforeEach(() => {
       expect(mockServices.checkpointer.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.getStats).toHaveBeenCalled();
-      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.data_retention_stats',
         1,
       );
@@ -240,7 +247,8 @@ beforeEach(() => {
 
       // Act & Assert
       await expect(controller.getDataRetentionStats()).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).not.toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.data_retention_stats',
         1,
       );
@@ -286,7 +294,8 @@ beforeEach(() => {
       expect(mockServices.checkpointer.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.initialize).toHaveBeenCalled();
       expect(mockServices.dataRetention.deleteUserData).toHaveBeenCalledWith('test-user');
-      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.user_data_deleted',
         1,
         {
@@ -304,7 +313,8 @@ beforeEach(() => {
 
       // Act & Assert
       await expect(controller.deleteUserData('test-user')).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).not.toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.user_data_deleted',
         1,
       );
@@ -329,7 +339,8 @@ beforeEach(() => {
         'chatHistory',
         30,
       );
-      expect(metrics.increment).toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.consent_recorded',
         1,
         {
@@ -347,7 +358,8 @@ beforeEach(() => {
       await expect(
         controller.recordConsent('test-user', 'chatHistory', { durationDays: 30 }),
       ).rejects.toThrow('Test error');
-      expect(metrics.increment).not.toHaveBeenCalledWith( // Use imported 'metrics'
+      expect(metrics.increment).not.toHaveBeenCalledWith(
+        // Use imported 'metrics'
         'chat_orchestrator.admin.consent_recorded',
         1,
       );

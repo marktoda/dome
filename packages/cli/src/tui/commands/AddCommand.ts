@@ -60,7 +60,6 @@ export class AddCommand implements CommandHandler {
       if (response.category) {
         this.addMessage(`{bold}Category:{/bold} ${response.category}`);
       }
-      
     } catch (err: unknown) {
       let errorMessage = 'Error adding content.';
       if (err instanceof DomeApiError) {

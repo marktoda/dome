@@ -1,12 +1,7 @@
 import { getLogger } from '@dome/common';
 import { RETRIEVAL_TOOLS } from '../tools';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
-import {
-  RetrievalToolType,
-  RetrievalTask,
-  DocumentChunk,
-  RetrievalResult,
-} from '../types';
+import { RetrievalToolType, RetrievalTask, DocumentChunk, RetrievalResult } from '../types';
 import { ObservabilityService } from '../services/observabilityService';
 import { toDomeError } from '../utils/errors';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';

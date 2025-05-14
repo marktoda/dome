@@ -72,7 +72,7 @@ export class ExploreMode extends BaseMode {
         // category: undefined // Potentially add category filter later
       });
       this.notes = notesResponse || [];
-      
+
       // Calculate total pages based on fetched notes and pageSize
       this.totalPages = Math.ceil(this.notes.length / this.pageSize);
       this.currentPage = 0; // Reset to first page
@@ -90,7 +90,9 @@ export class ExploreMode extends BaseMode {
       let errorMessage = 'Error loading notes.';
       if (err instanceof DomeApiError) {
         const apiError = err as DomeApiError;
-        errorMessage = `API Error loading notes: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+        errorMessage = `API Error loading notes: ${apiError.message} (Status: ${
+          apiError.statusCode || 'N/A'
+        })`;
       } else if (err instanceof DomeApiTimeoutError) {
         const timeoutError = err as DomeApiTimeoutError;
         errorMessage = `API Timeout loading notes: ${timeoutError.message}`;
@@ -177,7 +179,7 @@ export class ExploreMode extends BaseMode {
         })`,
       );
       this.container.pushLine(
-         `{gray-fg}ID: ${match.id} | Category: ${match.category} | MIME: ${match.mimeType}{/gray-fg}`
+        `{gray-fg}ID: ${match.id} | Category: ${match.category} | MIME: ${match.mimeType}{/gray-fg}`,
       );
       if (match.createdAt) {
         this.container.pushLine(
@@ -187,9 +189,9 @@ export class ExploreMode extends BaseMode {
       // Tags are not directly available in DomeApi.SearchResultItem
 
       if (match.summary) {
-          this.container.pushLine(`{bold}Summary:{/bold} ${match.summary}`);
+        this.container.pushLine(`{bold}Summary:{/bold} ${match.summary}`);
       }
-      
+
       if (match.body) {
         const excerpt = match.body.length > 200 ? match.body.substring(0, 200) + '...' : match.body;
         this.container.pushLine('{bold}Body Snippet:{/bold}');
@@ -247,8 +249,10 @@ export class ExploreMode extends BaseMode {
 
         const apiClient = await getApiClient();
         const searchRequest: DomeApi.GetSearchRequest = { q: input, limit: 10 }; // Default limit for TUI
-        const sdkResults: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
-        
+        const sdkResults: DomeApi.SearchResponse = await apiClient.search.searchContent(
+          searchRequest,
+        );
+
         // Adapt sdkResults to the structure displaySearchResults expects or update displaySearchResults
         // For now, assuming displaySearchResults can handle sdkResults.results and sdkResults.pagination
         this.searchResults = sdkResults; // Store the whole SDK response
@@ -262,7 +266,9 @@ export class ExploreMode extends BaseMode {
         let errorMessage = 'Error searching.';
         if (err instanceof DomeApiError) {
           const apiError = err as DomeApiError;
-          errorMessage = `API Error searching: ${apiError.message} (Status: ${apiError.statusCode || 'N/A'})`;
+          errorMessage = `API Error searching: ${apiError.message} (Status: ${
+            apiError.statusCode || 'N/A'
+          })`;
         } else if (err instanceof DomeApiTimeoutError) {
           const timeoutError = err as DomeApiTimeoutError;
           errorMessage = `API Timeout searching: ${timeoutError.message}`;

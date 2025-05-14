@@ -11,12 +11,13 @@ export class AddGitHubRepoCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('add')
+    const cmd = program
+      .command('add')
       .description('Add a GitHub repository to Dome')
       .argument('<repository>', 'GitHub repository in the format owner/repo')
       .option('-c, --cadence <cadence>', 'Sync cadence (e.g., PT1H for hourly)', 'PT1H') // Default from original
       .option('--output-format <format>', 'Output format (cli, json)');
-    
+
     cmd.action(async (repoArg: string, optionsFromCommander: any) => {
       const commandInstance = new AddGitHubRepoCommand();
       const combinedArgs: CommandArgs = {
@@ -39,9 +40,9 @@ export class AddGitHubRepoCommand extends BaseCommand {
     }
 
     if (!repoArg) {
-        this.error('Repository argument (owner/repo) is required.', { outputFormat });
-        process.exitCode = 1;
-        return;
+      this.error('Repository argument (owner/repo) is required.', { outputFormat });
+      process.exitCode = 1;
+      return;
     }
 
     const [owner, repo] = repoArg.split('/');
@@ -53,25 +54,32 @@ export class AddGitHubRepoCommand extends BaseCommand {
 
     try {
       this.log(`Registering GitHub repository: ${owner}/${repo}...`, outputFormat);
-      if (outputFormat === OutputFormat.CLI) { // Only log cadence for CLI for brevity
+      if (outputFormat === OutputFormat.CLI) {
+        // Only log cadence for CLI for brevity
         this.log(`Sync cadence: ${cadence}`, outputFormat);
       }
-      
+
       // Note about cadence from original command
       if (cadence !== 'PT1H' && outputFormat === OutputFormat.CLI) {
-        this.log(`Note: Custom sync cadence ('${cadence}') might not be fully supported by the current SDK version for setting. Default server cadence may apply.`, outputFormat);
+        this.log(
+          `Note: Custom sync cadence ('${cadence}') might not be fully supported by the current SDK version for setting. Default server cadence may apply.`,
+          outputFormat,
+        );
       }
 
       const apiClient = await getApiClient();
-      const result: DomeApi.GithubRepoResponse = await apiClient.contentGitHub.registerGitHubRepository({ owner, name: repo } as any);
-      
+      const result: DomeApi.GithubRepoResponse =
+        await apiClient.contentGitHub.registerGitHubRepository({ owner, name: repo } as any);
+
       if (outputFormat === OutputFormat.JSON) {
         console.log(JSON.stringify(result, null, 2));
       } else {
-        this.log(`Repository ${result.owner}/${result.name} registered successfully!`, outputFormat);
+        this.log(
+          `Repository ${result.owner}/${result.name} registered successfully!`,
+          outputFormat,
+        );
         this.log(`ID: ${result.id}`, outputFormat);
       }
-
     } catch (err) {
       // BaseCommand's executeRun will catch this
       throw err;

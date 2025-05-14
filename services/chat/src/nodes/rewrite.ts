@@ -1,6 +1,5 @@
-import { getLogger, getDefaultModel, countTokens, logError } from '@dome/common';
+import { getLogger, logError } from '@dome/common';
 import { z } from 'zod';
-import { AIMessage, MessagePair } from '../types';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { getUserId } from '../utils/stateUtils';
 import { LlmService } from '../services/llmService';
@@ -27,10 +26,7 @@ type RewrittenTask = z.infer<typeof rewrittenTaskSchema>;
  */
 export type RewriteUpdate = SliceUpdate<'taskEntities' | 'reasoning'>;
 
-export const rewrite = async (
-  state: AgentState,
-  env: Env,
-): Promise<RewriteUpdate> => {
+export const rewrite = async (state: AgentState, env: Env): Promise<RewriteUpdate> => {
   const logger = getLogger().child({ node: 'rewrite' });
   const t0 = performance.now();
 

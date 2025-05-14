@@ -21,4 +21,4 @@ export class ThinkingIndicator {
     process.stdout.write('\r' + ' '.repeat(process.stdout.columns) + '\r');
     if (rewritePromptText) process.stdout.write(rewritePromptText);
   }
-} 
+}

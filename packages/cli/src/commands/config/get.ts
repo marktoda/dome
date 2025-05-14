@@ -10,12 +10,13 @@ export class GetConfigCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('get')
+    const cmd = program
+      .command('get')
       .description('Get configuration values')
       .option('-k, --key <key>', 'Specific configuration key to get')
       .option('--output-format <format>', 'Output format (cli, json)');
-    
-    cmd.action(async (optionsFromCommander) => {
+
+    cmd.action(async optionsFromCommander => {
       const commandInstance = new GetConfigCommand();
       await commandInstance.executeRun(optionsFromCommander as CommandArgs);
     });
@@ -41,7 +42,7 @@ export class GetConfigCommand extends BaseCommand {
         }
         // Mask API key in JSON output as well
         if (output.apiKey) {
-            output.apiKey = '********';
+          output.apiKey = '********';
         }
         console.log(JSON.stringify(output, null, 2));
         return;
@@ -69,7 +70,7 @@ export class GetConfigCommand extends BaseCommand {
       }
     } catch (err) {
       // BaseCommand's executeRun will catch this and use this.error
-      throw err; 
+      throw err;
     }
   }
 }

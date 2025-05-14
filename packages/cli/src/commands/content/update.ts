@@ -11,19 +11,19 @@ import { execSync } from 'child_process';
 // Assuming ui utilities are still desired
 import { heading, subheading, formatKeyValue, formatDate } from '../../utils/ui';
 
-
 export class UpdateContentCommand extends BaseCommand {
   constructor() {
     super('update', 'Update existing content in Dome using an editor');
   }
 
   static register(program: Command): void {
-    const cmd = program.command('update')
+    const cmd = program
+      .command('update')
       .description('Update existing content in Dome using an editor')
       .argument('<contentId>', 'ID of the content (note) to update')
       // .argument('[type]', 'Type of item (currently "note")', 'note') // Type is fixed to note for now
       .option('--output-format <format>', 'Output format (cli, json)');
-    
+
     cmd.action(async (contentIdValue: string, optionsFromCommander: any) => {
       const commandInstance = new UpdateContentCommand();
       const combinedArgs: CommandArgs = {
@@ -53,11 +53,11 @@ export class UpdateContentCommand extends BaseCommand {
     // }
 
     if (!contentId) {
-        this.error('Content ID is required.', { outputFormat });
-        process.exitCode = 1;
-        return;
+      this.error('Content ID is required.', { outputFormat });
+      process.exitCode = 1;
+      return;
     }
-    
+
     let tempFilePath = '';
 
     try {
@@ -65,15 +65,20 @@ export class UpdateContentCommand extends BaseCommand {
       const apiClient = await getApiClient();
       let noteToUpdate: DomeApi.Note;
       try {
-          noteToUpdate = await apiClient.notes.getANoteById(contentId);
+        noteToUpdate = await apiClient.notes.getANoteById(contentId);
       } catch (fetchErr) {
-          if (fetchErr instanceof DomeApiError && fetchErr.statusCode === 404) {
-            this.error(`Note with ID ${contentId} not found.`, { outputFormat });
-          } else {
-            this.error(`Failed to fetch note: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`, { outputFormat });
-          }
-          process.exitCode = 1;
-          return;
+        if (fetchErr instanceof DomeApiError && fetchErr.statusCode === 404) {
+          this.error(`Note with ID ${contentId} not found.`, { outputFormat });
+        } else {
+          this.error(
+            `Failed to fetch note: ${
+              fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+            }`,
+            { outputFormat },
+          );
+        }
+        process.exitCode = 1;
+        return;
       }
 
       tempFilePath = path.join(os.tmpdir(), `dome-content-${Date.now()}-${noteToUpdate.id}.md`);
@@ -91,21 +96,32 @@ export class UpdateContentCommand extends BaseCommand {
         `<!-- Title and category can be edited in the frontmatter above. -->`,
         ``,
       ].join('\n');
-      
+
       fs.writeFileSync(tempFilePath, filePreamble + originalContent);
 
-      this.log(`Opening content in your editor (${process.env.EDITOR || 'default editor'})...`, outputFormat);
+      this.log(
+        `Opening content in your editor (${process.env.EDITOR || 'default editor'})...`,
+        outputFormat,
+      );
       this.log('The CLI will continue when you exit the editor.', outputFormat);
 
       try {
-        execSync(`${process.env.EDITOR || 'vi'} "${tempFilePath}"`, { stdio: 'inherit', env: process.env });
+        execSync(`${process.env.EDITOR || 'vi'} "${tempFilePath}"`, {
+          stdio: 'inherit',
+          env: process.env,
+        });
       } catch (editorError) {
-        this.error(`Editor closed with an error or failed to open: ${editorError instanceof Error ? editorError.message : String(editorError)}`, { outputFormat });
+        this.error(
+          `Editor closed with an error or failed to open: ${
+            editorError instanceof Error ? editorError.message : String(editorError)
+          }`,
+          { outputFormat },
+        );
         // Do not exit here, allow cleanup
       }
-      
+
       const updatedFileContent = fs.readFileSync(tempFilePath, 'utf8');
-      
+
       // Basic frontmatter and content parsing
       const parts = updatedFileContent.split(/---\s*([\s\S]*?)\s*---/s);
       const newContentBody = (parts.length === 3 ? parts[2] : updatedFileContent).trim();
@@ -117,31 +133,37 @@ export class UpdateContentCommand extends BaseCommand {
       }
 
       // SDK currently lacks a direct update. Placeholder for delete + ingest or future update method.
-      this.log('Simulating update (SDK lacks direct update): Deleting old and ingesting new.', outputFormat);
-      
+      this.log(
+        'Simulating update (SDK lacks direct update): Deleting old and ingesting new.',
+        outputFormat,
+      );
+
       // 1. (Optional but safer) Ingest new first with a temporary category/flag if possible
       // For simplicity, we'll show the concept of delete then add.
       // In a real scenario, consider transactionality or soft delete.
 
       const newTitle = noteToUpdate.title; // For now, title/category not updated from editor
-      const newCategory = noteToUpdate.category as DomeApi.IngestNoteBodyApiSchemaCategory | undefined;
+      const newCategory = noteToUpdate.category as
+        | DomeApi.IngestNoteBodyApiSchemaCategory
+        | undefined;
 
       await apiClient.notes.ingestANewNote({
-          title: newTitle,
-          content: newContentBody,
-          category: newCategory,
-          // customMetadata: { ...(noteToUpdate.customMetadata || {}), originalId: contentId } // Example to link if creating new
+        title: newTitle,
+        content: newContentBody,
+        category: newCategory,
+        // customMetadata: { ...(noteToUpdate.customMetadata || {}), originalId: contentId } // Example to link if creating new
       });
       this.log('New version of content ingested.', outputFormat);
 
       // 2. Delete old note (if new one was successfully ingested)
       // await apiClient.notes.deleteANote(contentId); // Assuming deleteANote(id: string) exists
       // this.log(`Old note ${contentId} marked for deletion (if new version was successful).`, outputFormat);
-      this.log(`NOTE: Original note ${contentId} was NOT deleted. Manual cleanup may be needed until full update is supported.`, outputFormat);
-
+      this.log(
+        `NOTE: Original note ${contentId} was NOT deleted. Manual cleanup may be needed until full update is supported.`,
+        outputFormat,
+      );
 
       this.log('Content update process finished (simulated).', outputFormat);
-
     } catch (err) {
       // BaseCommand's executeRun will catch this
       throw err;
@@ -150,7 +172,12 @@ export class UpdateContentCommand extends BaseCommand {
         try {
           fs.unlinkSync(tempFilePath);
         } catch (cleanupErr) {
-          this.error(`Failed to clean up temporary file ${tempFilePath}: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`, { outputFormat });
+          this.error(
+            `Failed to clean up temporary file ${tempFilePath}: ${
+              cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)
+            }`,
+            { outputFormat },
+          );
         }
       }
     }

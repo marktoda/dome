@@ -6,9 +6,7 @@ import { AddGitHubRepoCommand } from './add';
  * @param program The parent commander program or command.
  */
 export function registerGitHubGroupCommand(program: Command): void {
-  const githubCmd = program
-    .command('github')
-    .description('Manage GitHub repositories in Dome');
+  const githubCmd = program.command('github').description('Manage GitHub repositories in Dome');
 
   // Register subcommands for github
   AddGitHubRepoCommand.register(githubCmd);

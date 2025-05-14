@@ -16,6 +16,7 @@ Key components of the architecture include:
 - **Configuration**: Environment variables and configuration files are used to manage settings for JWT secrets, provider API keys, token expiration times, etc.
 
 The primary goals of this architecture are:
+
 - **Security**: Prioritizing secure storage of credentials, robust token handling, and protection against common attack vectors.
 - **Modularity**: Separating concerns to make the system easier to understand, maintain, and test.
 - **Extensibility**: Allowing new authentication providers to be added with minimal changes to the core service.
@@ -23,7 +24,7 @@ The primary goals of this architecture are:
 
 ## 2. Authentication Flow Diagrams
 
-*(These diagrams would ideally be actual image files or use a text-based diagramming tool like Mermaid.js)*
+_(These diagrams would ideally be actual image files or use a text-based diagramming tool like Mermaid.js)_
 
 ### 2.1. Local Provider - Registration Flow
 
@@ -197,6 +198,7 @@ interface IAuthProvider<C, R, L, V> {
 
 1.  **Create the Provider Implementation**:
     Create a new class, e.g., `GoogleAuthProvider.ts`, that implements the `IAuthProvider` interface.
+
     ```typescript
     // Example: services/auth/src/services/providers/google-auth-provider.ts
     import { IAuthProvider } from './i-auth-provider';
@@ -243,6 +245,7 @@ interface IAuthProvider<C, R, L, V> {
 
 2.  **Update `AuthService`**:
     In `AuthService`, import and instantiate your new provider. Add it to the `providers` map.
+
     ```typescript
     // In AuthService constructor or initialization logic
     // import { GoogleAuthProvider } from './providers/google-auth-provider';
@@ -265,30 +268,30 @@ interface IAuthProvider<C, R, L, V> {
 
 ## 4. API Reference
 
-*(This section should detail all HTTP and RPC endpoints exposed by the Auth service. Actual paths and request/response bodies will depend on your specific Hono/RPC setup.)*
+_(This section should detail all HTTP and RPC endpoints exposed by the Auth service. Actual paths and request/response bodies will depend on your specific Hono/RPC setup.)_
 
 ### 4.1. HTTP Endpoints
 
 Base Path: `/auth`
 
-| Method | Endpoint                 | Provider | Description                                      | Request Body (Example)                                  | Response (Success - Example)                               | Response (Error - Example)                                  |
-| :----- | :----------------------- | :------- | :----------------------------------------------- | :------------------------------------------------------ | :--------------------------------------------------------- | :---------------------------------------------------------- |
-| POST   | `/local/register`        | Local    | Registers a new user.                            | `{ "email": "u@e.com", "password": "...", "name": "..." }` | `201 { "user": {...}, "token": "jwt..." }`                 | `400, 409 { "error": "message" }`                           |
-| POST   | `/local/login`           | Local    | Logs in an existing user.                        | `{ "email": "u@e.com", "password": "..." }`             | `200 { "user": {...}, "token": "jwt..." }`                 | `401 { "error": "Invalid credentials" }`                    |
-| POST   | `/privy/callback`        | Privy    | Handles Privy authentication callback.           | `{ "privyToken": "privy_jwt..." }`                      | `200 { "user": {...}, "token": "jwt..." }`                 | `401 { "error": "Invalid Privy token" }`                    |
-| GET    | `/validate-token`        | N/A      | Validates the provided session token (via Bearer). | N/A (Token in `Authorization` header)                   | `200 { "isValid": true, "user": {...} }`                   | `401 { "isValid": false, "user": null }`                    |
-| POST   | `/logout`                | N/A      | Logs out the user (invalidates token if stateful). | N/A (Token in `Authorization` header)                   | `200/204 { "message": "Logged out" }`                      | `401 { "error": "Unauthorized" }`                           |
-| POST   | `/refresh-token`         | N/A      | (If implemented) Refreshes an access token.      | `{ "refreshToken": "..." }`                             | `200 { "accessToken": "jwt..." }`                          | `401 { "error": "Invalid refresh token" }`                  |
+| Method | Endpoint          | Provider | Description                                        | Request Body (Example)                                     | Response (Success - Example)               | Response (Error - Example)                 |
+| :----- | :---------------- | :------- | :------------------------------------------------- | :--------------------------------------------------------- | :----------------------------------------- | :----------------------------------------- |
+| POST   | `/local/register` | Local    | Registers a new user.                              | `{ "email": "u@e.com", "password": "...", "name": "..." }` | `201 { "user": {...}, "token": "jwt..." }` | `400, 409 { "error": "message" }`          |
+| POST   | `/local/login`    | Local    | Logs in an existing user.                          | `{ "email": "u@e.com", "password": "..." }`                | `200 { "user": {...}, "token": "jwt..." }` | `401 { "error": "Invalid credentials" }`   |
+| POST   | `/privy/callback` | Privy    | Handles Privy authentication callback.             | `{ "privyToken": "privy_jwt..." }`                         | `200 { "user": {...}, "token": "jwt..." }` | `401 { "error": "Invalid Privy token" }`   |
+| GET    | `/validate-token` | N/A      | Validates the provided session token (via Bearer). | N/A (Token in `Authorization` header)                      | `200 { "isValid": true, "user": {...} }`   | `401 { "isValid": false, "user": null }`   |
+| POST   | `/logout`         | N/A      | Logs out the user (invalidates token if stateful). | N/A (Token in `Authorization` header)                      | `200/204 { "message": "Logged out" }`      | `401 { "error": "Unauthorized" }`          |
+| POST   | `/refresh-token`  | N/A      | (If implemented) Refreshes an access token.        | `{ "refreshToken": "..." }`                                | `200 { "accessToken": "jwt..." }`          | `401 { "error": "Invalid refresh token" }` |
 
 ### 4.2. RPC Endpoints (Conceptual)
 
 If using RPC (e.g., Hono RPC, tRPC), the methods would mirror the `AuthService` capabilities:
 
--   `auth.login(providerType: string, credentials: any): Promise<{ user: User, token: string }>`
--   `auth.register(providerType: string, details: any): Promise<{ user: User, token: string }>`
--   `auth.validateToken(token: string): Promise<{ isValid: boolean, user: User | null }>`
--   `auth.logout(token: string): Promise<{ success: boolean }>`
--   `auth.refreshToken?(refreshToken: string): Promise<{ accessToken: string }>`
+- `auth.login(providerType: string, credentials: any): Promise<{ user: User, token: string }>`
+- `auth.register(providerType: string, details: any): Promise<{ user: User, token: string }>`
+- `auth.validateToken(token: string): Promise<{ isValid: boolean, user: User | null }>`
+- `auth.logout(token: string): Promise<{ success: boolean }>`
+- `auth.refreshToken?(refreshToken: string): Promise<{ accessToken: string }>`
 
 Refer to the specific RPC implementation details for exact method signatures and client usage.
 
@@ -296,20 +299,21 @@ Refer to the specific RPC implementation details for exact method signatures and
 
 The Auth service relies on environment variables for critical configuration. Ensure these are set appropriately in your deployment environments and local `.dev.vars` (or equivalent).
 
-| Variable Name         | Description                                                                 | Example Value                      | Required |
-| :-------------------- | :-------------------------------------------------------------------------- | :--------------------------------- | :------- |
-| `JWT_SECRET_KEY`      | Secret key used to sign and verify JWTs. **Keep this highly confidential.** | `a_very_strong_and_long_secret`    | Yes      |
-| `JWT_EXPIRES_IN`      | Duration for which JWTs are valid (e.g., '1h', '15m', '7d').                | `1h`                               | Yes      |
-| `PRIVY_APP_ID`        | Your Privy Application ID.                                                  | `cl_abcdef123456`                  | If Privy |
-| `PRIVY_APP_SECRET`    | Your Privy Application Secret. **Keep this highly confidential.**           | `ps_abcdefghijklmnopqrstuvwxyz`    | If Privy |
-| `PASSWORD_SALT_ROUNDS`| Number of rounds for bcrypt/argon2 hashing (if applicable for local provider). | `10`                               | If Local |
-| `DATABASE_URL`        | Connection string for the user database.                                    | `postgresql://user:pass@host/db`   | Yes      |
-| `REDIS_URL`           | (If using Redis for token blacklisting/caching) Connection string for Redis. | `redis://localhost:6379`           | Optional |
+| Variable Name          | Description                                                                    | Example Value                    | Required |
+| :--------------------- | :----------------------------------------------------------------------------- | :------------------------------- | :------- |
+| `JWT_SECRET_KEY`       | Secret key used to sign and verify JWTs. **Keep this highly confidential.**    | `a_very_strong_and_long_secret`  | Yes      |
+| `JWT_EXPIRES_IN`       | Duration for which JWTs are valid (e.g., '1h', '15m', '7d').                   | `1h`                             | Yes      |
+| `PRIVY_APP_ID`         | Your Privy Application ID.                                                     | `cl_abcdef123456`                | If Privy |
+| `PRIVY_APP_SECRET`     | Your Privy Application Secret. **Keep this highly confidential.**              | `ps_abcdefghijklmnopqrstuvwxyz`  | If Privy |
+| `PASSWORD_SALT_ROUNDS` | Number of rounds for bcrypt/argon2 hashing (if applicable for local provider). | `10`                             | If Local |
+| `DATABASE_URL`         | Connection string for the user database.                                       | `postgresql://user:pass@host/db` | Yes      |
+| `REDIS_URL`            | (If using Redis for token blacklisting/caching) Connection string for Redis.   | `redis://localhost:6379`         | Optional |
 
 **Security Note:**
--   **Never hardcode secrets** like `JWT_SECRET_KEY` or `PRIVY_APP_SECRET` directly in the code.
--   Use a secure method for managing environment variables in production (e.g., Cloudflare Secrets, HashiCorp Vault, AWS Secrets Manager).
--   Rotate `JWT_SECRET_KEY` periodically as a security best practice.
+
+- **Never hardcode secrets** like `JWT_SECRET_KEY` or `PRIVY_APP_SECRET` directly in the code.
+- Use a secure method for managing environment variables in production (e.g., Cloudflare Secrets, HashiCorp Vault, AWS Secrets Manager).
+- Rotate `JWT_SECRET_KEY` periodically as a security best practice.
 
 ### Local Development (`.dev.vars`)
 

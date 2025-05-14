@@ -46,7 +46,8 @@ vi.mock('@dome/common', () => ({
   }),
   logError: vi.fn(),
   withLogger: vi.fn().mockImplementation((_, fn) => fn()), // Assuming this is a function that takes a context and a function
-  metrics: { // This was under @dome/common mock, ensure it's correct or move if it belongs to metricsMiddleware mock
+  metrics: {
+    // This was under @dome/common mock, ensure it's correct or move if it belongs to metricsMiddleware mock
     increment: vi.fn(),
     timing: vi.fn(),
     startTimer: () => ({

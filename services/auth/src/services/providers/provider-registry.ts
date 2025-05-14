@@ -43,9 +43,7 @@ export class DefaultProviderRegistry implements ProviderRegistry {
 
   registerProvider(provider: AuthProvider): void {
     if (this.providers.has(provider.providerName)) {
-      throw new Error(
-        `Provider with name "${provider.providerName}" is already registered.`,
-      );
+      throw new Error(`Provider with name "${provider.providerName}" is already registered.`);
     }
     this.providers.set(provider.providerName, provider);
     console.log(`Auth provider "${provider.providerName}" registered.`);

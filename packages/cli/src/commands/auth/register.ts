@@ -1,5 +1,11 @@
 import { BaseCommand, CommandArgs } from '../base';
-import { isAuthenticated, saveApiKey, saveUserId, saveConfig, loadConfig } from '../../utils/config';
+import {
+  isAuthenticated,
+  saveApiKey,
+  saveUserId,
+  saveConfig,
+  loadConfig,
+} from '../../utils/config';
 import { getApiClient, clearApiClientInstance, getApiBaseUrl } from '../../utils/apiClient';
 import { DomeApi } from '@dome/dome-sdk';
 import readline from 'readline';
@@ -13,14 +19,15 @@ export class RegisterCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('register')
+    const cmd = program
+      .command('register')
       .description('Register a new user with the Dome API')
       .option('-e, --email <email>', 'Email address')
       .option('-p, --password <password>', 'Password')
       .option('-n, --name <name>', 'Full name')
       .option('--output-format <format>', 'Output format (cli, json)');
-    
-    cmd.action(async (optionsFromCommander) => {
+
+    cmd.action(async optionsFromCommander => {
       const commandInstance = new RegisterCommand();
       await commandInstance.executeRun(optionsFromCommander as CommandArgs);
     });
@@ -30,7 +37,10 @@ export class RegisterCommand extends BaseCommand {
     const outputFormat = args.outputFormat || OutputFormat.CLI;
 
     if (isAuthenticated()) {
-      this.log('You are already logged in. To register a new account, run `dome logout` first.', outputFormat);
+      this.log(
+        'You are already logged in. To register a new account, run `dome logout` first.',
+        outputFormat,
+      );
       return;
     }
 
@@ -40,17 +50,23 @@ export class RegisterCommand extends BaseCommand {
     });
 
     try {
-      const email = args.email || (await new Promise<string>(resolve => {
-        rl.question('Enter your email: ', answer => resolve(answer.trim()));
-      }));
+      const email =
+        args.email ||
+        (await new Promise<string>(resolve => {
+          rl.question('Enter your email: ', answer => resolve(answer.trim()));
+        }));
 
-      const password = args.password || (await new Promise<string>(resolve => {
-        rl.question('Enter your password: ', answer => resolve(answer.trim()));
-      }));
-      
-      const name = args.name || (await new Promise<string>(resolve => {
-        rl.question('Enter your full name: ', answer => resolve(answer.trim()));
-      }));
+      const password =
+        args.password ||
+        (await new Promise<string>(resolve => {
+          rl.question('Enter your password: ', answer => resolve(answer.trim()));
+        }));
+
+      const name =
+        args.name ||
+        (await new Promise<string>(resolve => {
+          rl.question('Enter your full name: ', answer => resolve(answer.trim()));
+        }));
 
       // Close readline if all prompts were done.
       // If any arg was provided, one or more prompts might not have run.
@@ -61,7 +77,7 @@ export class RegisterCommand extends BaseCommand {
         // if all args provided, rl was not used for prompting, so close it.
         rl.close();
       }
-      
+
       if (!email) {
         this.error('Email is required.', { outputFormat });
         process.exitCode = 1; // BaseCommand's executeRun will set this, but good for clarity
@@ -117,15 +133,19 @@ export class RegisterCommand extends BaseCommand {
         if (!cfgAfterSave.userId) {
           try {
             const newApiClient = await getApiClient();
-            const validationResponse: DomeApi.DomeApiValidateTokenResponse = await newApiClient.auth.validateAuthenticationToken();
+            const validationResponse: DomeApi.DomeApiValidateTokenResponse =
+              await newApiClient.auth.validateAuthenticationToken();
             if (validationResponse.success && validationResponse.user) {
               saveUserId(validationResponse.user.id);
               this.log(
                 `User: ${validationResponse.user.name} (${validationResponse.user.email}) - ID: ${validationResponse.user.id}`,
-                outputFormat
+                outputFormat,
               );
             } else {
-              this.error('Could not retrieve user details after registration. Chat functionality might be affected.', { outputFormat });
+              this.error(
+                'Could not retrieve user details after registration. Chat functionality might be affected.',
+                { outputFormat },
+              );
             }
           } catch {
             // silent
@@ -135,7 +155,10 @@ export class RegisterCommand extends BaseCommand {
         // This case implies the API response for successful registration *might* not have a token,
         // which would be unusual. The error handler in BaseCommand will catch if API throws.
         // If API returns success but no token, this is a specific logic error.
-        this.error('Registration failed: No token received from server despite a successful response structure.', { outputFormat });
+        this.error(
+          'Registration failed: No token received from server despite a successful response structure.',
+          { outputFormat },
+        );
         process.exitCode = 1;
       }
     } catch (err) {
@@ -146,8 +169,8 @@ export class RegisterCommand extends BaseCommand {
       this.error(err, { outputFormat }); // Let BaseCommand handle formatting
       process.exitCode = 1; // executeRun in BaseCommand will also set this
     } finally {
-        // Ensure readline is closed if not already. rl.close() is idempotent.
-        rl.close();
+      // Ensure readline is closed if not already. rl.close() is idempotent.
+      rl.close();
     }
   }
 }

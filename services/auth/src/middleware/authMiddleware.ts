@@ -6,7 +6,6 @@ import { UserManager } from '../services/user/user-manager'; // For fetching ful
 // Import the schema-inferred User type to ensure userFromDb matches this.
 import type { User as SchemaUser } from '../types/user'; // Corrected import path
 
-
 // Define the shape of the context variables set by this middleware.
 export interface AuthenticatedContextEnv {
   Variables: {
@@ -43,19 +42,27 @@ export function createAuthMiddleware(
       // Validate the token using the unified auth service
       // The providerName can be omitted if the token is self-contained (e.g. JWT with issuer claim)
       // or if unifiedAuthService.validateToken can infer it or try multiple.
-      const validatedPayload = await unifiedAuthService.validateToken(token /*, optionalProviderNameFromRequest */);
-      
-      logger.info({ userId: validatedPayload.userId, provider: validatedPayload.provider }, 'Token validation successful.');
+      const validatedPayload = await unifiedAuthService.validateToken(
+        token /*, optionalProviderNameFromRequest */,
+      );
+
+      logger.info(
+        { userId: validatedPayload.userId, provider: validatedPayload.provider },
+        'Token validation successful.',
+      );
       c.set('tokenPayload', validatedPayload);
 
       // Fetch full user details using UserManager
       // This assumes that `validatedPayload.userId` is the standard user ID in your system.
-      const userFromDb: SchemaUser | null = await userManager.findUserById(validatedPayload.userId, { db: (c.env as any).AUTH_DB, env: c.env as any }); // Pass context for DB access
+      const userFromDb: SchemaUser | null = await userManager.findUserById(
+        validatedPayload.userId,
+        { db: (c.env as any).AUTH_DB, env: c.env as any },
+      ); // Pass context for DB access
       if (!userFromDb) {
         logger.warn({ userId: validatedPayload.userId }, 'User not found for validated token.');
         throw new UnauthorizedError('User associated with token not found.');
       }
-      
+
       // userFromDb is of type SchemaUser (inferred from DB).
       // The context variable `user` is now typed explicitly.
       // userFromDb is already of type SchemaUser | null.
@@ -64,17 +71,29 @@ export function createAuthMiddleware(
 
       await next();
     } catch (error) {
-      logger.warn({ error: error instanceof Error ? error.message : String(error) }, 'Authentication failed in middleware.');
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Authentication failed in middleware.',
+      );
 
       if (error instanceof BaseError) {
         // If it's already a structured error from our system
-        return c.json({ error: { code: error.code, message: error.message, details: error.details } }, error.status as any);
+        return c.json(
+          { error: { code: error.code, message: error.message, details: error.details } },
+          error.status as any,
+        );
       }
       // For other errors, return a generic unauthorized response
       const unauthorizedError = new UnauthorizedError('Authentication failed.');
       return c.json(
-        { error: { code: unauthorizedError.code, message: unauthorizedError.message, details: unauthorizedError.details } },
-        unauthorizedError.status as any
+        {
+          error: {
+            code: unauthorizedError.code,
+            message: unauthorizedError.message,
+            details: unauthorizedError.details,
+          },
+        },
+        unauthorizedError.status as any,
       );
     }
   };
@@ -88,14 +107,18 @@ export function createAuthMiddleware(
  * @param requiredRoles The roles required to access the resource.
  * @returns Middleware handler for role-based access control.
  */
-export function createRoleMiddleware(requiredRoles: string[]): MiddlewareHandler<AuthenticatedContextEnv> {
+export function createRoleMiddleware(
+  requiredRoles: string[],
+): MiddlewareHandler<AuthenticatedContextEnv> {
   const logger = getLogger().child({ component: 'RoleMiddleware' });
 
   return async (c: Context<AuthenticatedContextEnv>, next: Next) => {
     const userInContext = c.get('user');
 
     if (!userInContext) {
-      logger.error('Role middleware executed without an authenticated user in context. Ensure AuthMiddleware runs first.');
+      logger.error(
+        'Role middleware executed without an authenticated user in context. Ensure AuthMiddleware runs first.',
+      );
       const err = new UnauthorizedError('Authentication required.');
       return c.json({ error: { code: err.code, message: err.message } }, err.status as any);
     }
@@ -105,7 +128,10 @@ export function createRoleMiddleware(requiredRoles: string[]): MiddlewareHandler
     const userRole = userInContext.role;
 
     if (!userRole || !requiredRoles.includes(userRole)) {
-      logger.warn({ userId: userInContext.id, userRole, requiredRoles }, 'User does not have required role.');
+      logger.warn(
+        { userId: userInContext.id, userRole, requiredRoles },
+        'User does not have required role.',
+      );
       const err = new ForbiddenError('Insufficient permissions.');
       return c.json({ error: { code: err.code, message: err.message } }, err.status as any);
     }

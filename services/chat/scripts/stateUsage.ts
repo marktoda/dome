@@ -43,7 +43,9 @@ async function main() {
   }
 
   // Print summary table
-  const entries = Object.entries(usageMap).sort((a, b) => b[1].reads + b[1].writes - (a[1].reads + a[1].writes));
+  const entries = Object.entries(usageMap).sort(
+    (a, b) => b[1].reads + b[1].writes - (a[1].reads + a[1].writes),
+  );
   console.log('Property, Reads, Writes');
   for (const [prop, data] of entries) {
     console.log(`${prop}, ${data.reads}, ${data.writes}`);
@@ -51,7 +53,9 @@ async function main() {
 
   // Write JSON snapshot
   const jsonPath = path.resolve(process.cwd(), 'state_usage_report.json');
-  const jsonObj = Object.fromEntries(entries.map(([prop, data]) => [prop, { ...data, files: [...data.files] }]));
+  const jsonObj = Object.fromEntries(
+    entries.map(([prop, data]) => [prop, { ...data, files: [...data.files] }]),
+  );
   await fs.writeFile(jsonPath, JSON.stringify(jsonObj, null, 2));
   console.log(`\nDetailed JSON report written to ${jsonPath}`);
 }
@@ -59,4 +63,4 @@ async function main() {
 main().catch(err => {
   console.error(err);
   process.exit(1);
-}); 
+});

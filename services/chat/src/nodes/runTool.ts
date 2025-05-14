@@ -197,9 +197,6 @@ export async function runTool(
   // Collect all documents from tool executions
   const toolDocs = finished.flatMap(item => item.docs || []);
 
-  // Collect all tool results for easier access
-  const toolResults = finished.map(item => item.result);
-
   // Log summary of tool executions
   log.info(
     {

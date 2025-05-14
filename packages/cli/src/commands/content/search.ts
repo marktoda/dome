@@ -14,13 +14,17 @@ export class SearchCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('search')
+    const cmd = program
+      .command('search')
       .description('Search across all stored content types')
       .argument('<query>', 'Search query')
       .option('-l, --limit <limit>', 'Maximum number of results to return', '10') // Default value for option
-      .option('-c, --category <category>', 'Filter results by content type (e.g., code, docs, notes)')
+      .option(
+        '-c, --category <category>',
+        'Filter results by content type (e.g., code, docs, notes)',
+      )
       .option('--output-format <format>', 'Output format (cli, json)');
-    
+
     cmd.action(async (queryValue: string, optionsFromCommander: any) => {
       const commandInstance = new SearchCommand();
       const combinedArgs: CommandArgs = {
@@ -47,9 +51,9 @@ export class SearchCommand extends BaseCommand {
     }
 
     if (!query) {
-        this.error('Search query is required. e.g., `dome search "my query"`', { outputFormat });
-        process.exitCode = 1;
-        return;
+      this.error('Search query is required. e.g., `dome search "my query"`', { outputFormat });
+      process.exitCode = 1;
+      return;
     }
 
     const limit = limitOption ? parseInt(limitOption, 10) : 10;
@@ -58,10 +62,10 @@ export class SearchCommand extends BaseCommand {
       const searchMessage = category
         ? `Searching for: "${query}" in category: ${category}`
         : `Searching for: "${query}"`;
-      
+
       // const spinner = createSpinner(searchMessage); // If using spinner
       // spinner.start();
-      this.log(searchMessage + "...", outputFormat);
+      this.log(searchMessage + '...', outputFormat);
 
       const apiClient = await getApiClient();
       const searchRequest: DomeApi.GetSearchRequest = {
@@ -72,7 +76,9 @@ export class SearchCommand extends BaseCommand {
         searchRequest.category = category;
       }
 
-      const searchResponse: DomeApi.SearchResponse = await apiClient.search.searchContent(searchRequest);
+      const searchResponse: DomeApi.SearchResponse = await apiClient.search.searchContent(
+        searchRequest,
+      );
       // spinner.stop(); // If using spinner
 
       if (outputFormat === OutputFormat.JSON) {
@@ -81,7 +87,11 @@ export class SearchCommand extends BaseCommand {
       }
 
       // CLI Output
-      if (!searchResponse.success || !searchResponse.results || searchResponse.results.length === 0) {
+      if (
+        !searchResponse.success ||
+        !searchResponse.results ||
+        searchResponse.results.length === 0
+      ) {
         const message = searchResponse.message || `No results found for query: "${query}"`;
         this.log(message, outputFormat);
         return;
@@ -92,13 +102,18 @@ export class SearchCommand extends BaseCommand {
         : `Search Results for: "${query}"`;
 
       console.log(heading(headerText)); // Using ui utility
-      this.log(`Found ${searchResponse.results.length} results for query: "${searchResponse.query}"`, outputFormat);
+      this.log(
+        `Found ${searchResponse.results.length} results for query: "${searchResponse.query}"`,
+        outputFormat,
+      );
       if (searchResponse.pagination) {
-          const { total, limit: respLimit, offset, hasMore } = searchResponse.pagination;
-          this.log(`Total results: ${total}, Showing: ${searchResponse.results.length} (Limit: ${respLimit}, Offset: ${offset}), Has more: ${hasMore}`, outputFormat);
+        const { total, limit: respLimit, offset, hasMore } = searchResponse.pagination;
+        this.log(
+          `Total results: ${total}, Showing: ${searchResponse.results.length} (Limit: ${respLimit}, Offset: ${offset}), Has more: ${hasMore}`,
+          outputFormat,
+        );
       }
       console.log('');
-
 
       searchResponse.results.forEach((match: DomeApi.SearchResultItem, index: number) => {
         const score = typeof match.score === 'number' ? match.score : 0;
@@ -117,14 +132,11 @@ export class SearchCommand extends BaseCommand {
           console.log('\nContent Snippet:');
           const maxLength = 200;
           const contentBody =
-            match.body.length > maxLength
-              ? match.body.substring(0, maxLength) + '...'
-              : match.body;
+            match.body.length > maxLength ? match.body.substring(0, maxLength) + '...' : match.body;
           console.log(contentBody);
         }
         console.log('\n' + '-'.repeat(50) + '\n');
       });
-
     } catch (err: unknown) {
       this.error(err, { outputFormat });
       process.exitCode = 1;

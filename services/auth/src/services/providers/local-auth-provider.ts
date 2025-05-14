@@ -43,13 +43,18 @@ export class LocalAuthProvider extends BaseAuthProvider {
   private getAuthContext() {
     if (!this.env || !this.env.AUTH_DB) {
       // Or handle this more gracefully, maybe throw a config error
-      console.error("AUTH_DB not found in environment provided to LocalAuthProvider");
-      throw new ServiceError("LocalAuthProvider not configured correctly with AUTH_DB.", { service: "auth", code: "PROVIDER_CONFIG_ERROR" });
+      console.error('AUTH_DB not found in environment provided to LocalAuthProvider');
+      throw new ServiceError('LocalAuthProvider not configured correctly with AUTH_DB.', {
+        service: 'auth',
+        code: 'PROVIDER_CONFIG_ERROR',
+      });
     }
     return {
       env: this.env,
       db: this.env.AUTH_DB,
-      waitUntil: (promise: Promise<any>) => { /* Placeholder for waitUntil if needed */ },
+      waitUntil: (promise: Promise<any>) => {
+        /* Placeholder for waitUntil if needed */
+      },
     };
   }
 
@@ -63,7 +68,8 @@ export class LocalAuthProvider extends BaseAuthProvider {
     const authContext = this.getAuthContext();
     const user = await this.userManager.findUserByEmail(credentials.email, authContext);
 
-    if (!user || !user.password) { // Schema User has 'password' (hashed)
+    if (!user || !user.password) {
+      // Schema User has 'password' (hashed)
       throw new UnauthorizedError('Invalid email or password.');
     }
 
@@ -91,11 +97,18 @@ export class LocalAuthProvider extends BaseAuthProvider {
       throw new ValidationError('Email and password are required to register a local user.');
     }
     const registerAuthContext = this.getAuthContext();
-    
+
     try {
-      const existingUser = await this.userManager.findUserByEmail(registrationData.email, registerAuthContext);
+      const existingUser = await this.userManager.findUserByEmail(
+        registrationData.email,
+        registerAuthContext,
+      );
       if (existingUser) {
-        throw new ServiceError('User with this email already exists.', { code: 'USER_ALREADY_EXISTS', service: 'auth', httpStatus: 409 });
+        throw new ServiceError('User with this email already exists.', {
+          code: 'USER_ALREADY_EXISTS',
+          service: 'auth',
+          httpStatus: 409,
+        });
       }
 
       const hashedPassword = await bcrypt.hash(registrationData.password, this.config.saltRounds!);
@@ -108,15 +121,18 @@ export class LocalAuthProvider extends BaseAuthProvider {
         emailVerified: false,
         isActive: true,
       };
-      
-      const newUser = await this.userManager.createUser(
-        userToCreate,
-        registerAuthContext,
-        { providerId: this.providerName, providerUserId: registrationData.email }
-      );
 
-      if (!newUser) { // Should not happen if createUser throws on failure, but as a safeguard
-        throw new ServiceError('Failed to create user.', { code: 'USER_CREATION_FAILED', service: 'auth' });
+      const newUser = await this.userManager.createUser(userToCreate, registerAuthContext, {
+        providerId: this.providerName,
+        providerUserId: registrationData.email,
+      });
+
+      if (!newUser) {
+        // Should not happen if createUser throws on failure, but as a safeguard
+        throw new ServiceError('Failed to create user.', {
+          code: 'USER_CREATION_FAILED',
+          service: 'auth',
+        });
       }
 
       const { accessToken, refreshToken } = await this.generateTokens(newUser);
@@ -128,13 +144,18 @@ export class LocalAuthProvider extends BaseAuthProvider {
         refreshToken,
       };
     } catch (error) {
-      if (error instanceof BaseError) { // Re-throw known errors
+      if (error instanceof BaseError) {
+        // Re-throw known errors
         throw error;
       }
       // Log the original error for debugging
       console.error('Error during local provider registration:', error);
       // Wrap unknown errors in a ServiceError
-      throw new ServiceError('An unexpected error occurred during registration.', { cause: error as Error, code: 'REGISTRATION_GENERAL_ERROR', service: 'auth' });
+      throw new ServiceError('An unexpected error occurred during registration.', {
+        cause: error as Error,
+        code: 'REGISTRATION_GENERAL_ERROR',
+        service: 'auth',
+      });
     }
   }
 

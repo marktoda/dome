@@ -7,9 +7,7 @@ import { SetConfigCommand } from './set';
  * @param program The commander program.
  */
 export function registerConfigGroupCommand(program: Command): void {
-  const configCmd = program
-    .command('config')
-    .description('Manage dome CLI configuration');
+  const configCmd = program.command('config').description('Manage dome CLI configuration');
 
   // Register subcommands
   GetConfigCommand.register(configCmd);

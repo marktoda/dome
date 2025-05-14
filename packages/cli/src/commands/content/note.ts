@@ -13,12 +13,16 @@ export class NoteCommand extends BaseCommand {
   }
 
   static register(program: Command): void {
-    const cmd = program.command('note')
+    const cmd = program
+      .command('note')
       .description('Start or append to a note session')
       .argument('<context>', 'Context for the note (e.g., "meeting", "ideas")')
-      .option('-c, --content <content>', 'Content to add (if not provided, will start interactive mode)')
+      .option(
+        '-c, --content <content>',
+        'Content to add (if not provided, will start interactive mode)',
+      )
       .option('--output-format <format>', 'Output format (cli, json)');
-    
+
     cmd.action(async (contextValue: string, optionsFromCommander: any) => {
       const commandInstance = new NoteCommand();
       const combinedArgs: CommandArgs = {
@@ -33,7 +37,6 @@ export class NoteCommand extends BaseCommand {
   // It can be removed or kept for other potential invocation methods.
   // public parseArguments(rawArgs: string[]): CommandArgs { ... }
 
-
   async run(args: CommandArgs): Promise<void> {
     const outputFormat = args.outputFormat || OutputFormat.CLI;
     const context = args.context as string; // context is now directly from CommandArgs
@@ -46,9 +49,9 @@ export class NoteCommand extends BaseCommand {
     }
 
     if (!context) {
-        this.error('Context for the note is required. e.g., `dome note meeting`', { outputFormat });
-        process.exitCode = 1;
-        return;
+      this.error('Context for the note is required. e.g., `dome note meeting`', { outputFormat });
+      process.exitCode = 1;
+      return;
     }
 
     try {

@@ -134,7 +134,9 @@ describe('BaseCommand', () => {
       await command.execute(rawArgs);
 
       expect(command.lastRunArgs).toEqual({ shouldThrow: 'true' }); // run was called
-      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, { outputFormat: OutputFormat.CLI });
+      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, {
+        outputFormat: OutputFormat.CLI,
+      });
       expect(process.exitCode).toBe(1);
     });
 
@@ -143,22 +145,24 @@ describe('BaseCommand', () => {
       const expectedError = new Error('Test error in run');
       await command.execute(rawArgs);
 
-      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, { outputFormat: OutputFormat.JSON });
+      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, {
+        outputFormat: OutputFormat.JSON,
+      });
       expect(process.exitCode).toBe(1);
     });
 
     it('should handle errors during argument parsing', async () => {
-        // Sabotage parseArguments for this test
-        const parsingError = new Error('Parsing failed');
-        vi.spyOn(command, 'parseArguments').mockImplementationOnce(() => {
-            throw parsingError;
-        });
-        const rawArgs = ['--invalid'];
-        await command.execute(rawArgs);
+      // Sabotage parseArguments for this test
+      const parsingError = new Error('Parsing failed');
+      vi.spyOn(command, 'parseArguments').mockImplementationOnce(() => {
+        throw parsingError;
+      });
+      const rawArgs = ['--invalid'];
+      await command.execute(rawArgs);
 
-        expect(handleErrorSpy).toHaveBeenCalledWith(parsingError, { outputFormat: OutputFormat.CLI });
-        expect(process.exitCode).toBe(1);
-        expect(command.lastRunArgs).toBeNull(); // run should not have been called
+      expect(handleErrorSpy).toHaveBeenCalledWith(parsingError, { outputFormat: OutputFormat.CLI });
+      expect(process.exitCode).toBe(1);
+      expect(command.lastRunArgs).toBeNull(); // run should not have been called
     });
   });
 
@@ -167,7 +171,9 @@ describe('BaseCommand', () => {
       const args = { param: 'value', outputFormat: OutputFormat.JSON };
       await command.executeRun(args);
       expect(command.lastRunArgs).toEqual(args);
-      expect(consoleLogSpy).toHaveBeenCalledWith(JSON.stringify({ message: `TestCommand executed with: ${JSON.stringify(args)}` }));
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        JSON.stringify({ message: `TestCommand executed with: ${JSON.stringify(args)}` }),
+      );
       expect(handleErrorSpy).not.toHaveBeenCalled();
       expect(process.exitCode).toBe(0);
     });
@@ -178,7 +184,9 @@ describe('BaseCommand', () => {
       await command.executeRun(args);
 
       expect(command.lastRunArgs).toEqual(args);
-      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, { outputFormat: OutputFormat.CLI });
+      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, {
+        outputFormat: OutputFormat.CLI,
+      });
       expect(process.exitCode).toBe(1);
     });
 
@@ -187,16 +195,20 @@ describe('BaseCommand', () => {
       const expectedError = new Error('Test error in run');
       await command.executeRun(args);
 
-      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, { outputFormat: OutputFormat.JSON });
+      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, {
+        outputFormat: OutputFormat.JSON,
+      });
       expect(process.exitCode).toBe(1);
     });
 
-     it('should default to CLI output format for errors if not specified in args', async () => {
+    it('should default to CLI output format for errors if not specified in args', async () => {
       const args = { shouldThrow: true }; // No outputFormat
       const expectedError = new Error('Test error in run');
       await command.executeRun(args);
 
-      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, { outputFormat: OutputFormat.CLI });
+      expect(handleErrorSpy).toHaveBeenCalledWith(expectedError, {
+        outputFormat: OutputFormat.CLI,
+      });
       expect(process.exitCode).toBe(1);
     });
   });

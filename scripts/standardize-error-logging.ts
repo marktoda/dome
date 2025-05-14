@@ -20,7 +20,7 @@ interface Arguments {
 const loggerImportStatement = "import logger from '@common/utils/logger';\n";
 
 async function main() {
-  const argv = await yargs(hideBin(process.argv))
+  const argv = (await yargs(hideBin(process.argv))
     .option('target-dirs', {
       alias: 'd',
       type: 'array',
@@ -42,14 +42,14 @@ async function main() {
     })
     .help()
     .alias('help', 'h')
-    .parseAsync() as Arguments;
+    .parseAsync()) as Arguments;
 
   console.log('Starting error logging standardization...');
   console.log('Options:', argv);
 
   const targetPatterns = argv.targetDirs.flatMap(dir => [
     path.join(dir, '**/*.ts'), // General TS files in target dirs
-    path.join(dir, '*/scripts/**/*.ts') // Specific scripts pattern if services dir is listed
+    path.join(dir, '*/scripts/**/*.ts'), // Specific scripts pattern if services dir is listed
   ]);
 
   const excludePatterns = [
@@ -85,7 +85,13 @@ async function main() {
   console.log('\nStandardization process finished.');
 }
 
-async function processFile(filePath: string, relativePath: string, dryRun: boolean, interactive: boolean, projectRoot: string) {
+async function processFile(
+  filePath: string,
+  relativePath: string,
+  dryRun: boolean,
+  interactive: boolean,
+  projectRoot: string,
+) {
   try {
     let content = await fs.readFile(filePath, 'utf-8');
     let originalContent = content;
@@ -95,64 +101,64 @@ async function processFile(filePath: string, relativePath: string, dryRun: boole
     // Regex to find console.error calls, potentially followed by process.exit
     // This regex tries to capture the console.error call and optionally the process.exit call on the same or next line
     // It avoids matching lines that already contain 'logger.error' to prevent re-processing.
-    const consoleErrorRegex = /^(?!.*\b(?:logger|console)\.error\s*\(.*\);?\s*process\.exit\(\s*1\s*\);?)(.*console\.error\((.*?)\);?)(\s*process\.exit\(\s*1\s*\);?)?/gm;
-
+    const consoleErrorRegex =
+      /^(?!.*\b(?:logger|console)\.error\s*\(.*\);?\s*process\.exit\(\s*1\s*\);?)(.*console\.error\((.*?)\);?)(\s*process\.exit\(\s*1\s*\);?)?/gm;
 
     let match;
     const replacements: { index: number; old: string; new: string }[] = [];
 
     // Need to handle replacements carefully due to potential multi-line matches and index shifts
     let lastIndex = 0;
-    let modifiedContent = "";
+    let modifiedContent = '';
 
     while ((match = consoleErrorRegex.exec(content)) !== null) {
-        const fullMatch = match[0];
-        const consoleErrorCall = match[1]; // The console.error(...) part
-        const args = match[2].trim(); // Arguments inside console.error()
-        const processExitCall = match[3] || ""; // The process.exit(...) part, if present
+      const fullMatch = match[0];
+      const consoleErrorCall = match[1]; // The console.error(...) part
+      const args = match[2].trim(); // Arguments inside console.error()
+      const processExitCall = match[3] || ''; // The process.exit(...) part, if present
 
-        // Construct the replacement
-        let replacement = `logger.error(${args});`;
-        if (processExitCall) {
-            replacement += processExitCall;
+      // Construct the replacement
+      let replacement = `logger.error(${args});`;
+      if (processExitCall) {
+        replacement += processExitCall;
+      }
+
+      // Append content before the match
+      modifiedContent += content.substring(lastIndex, match.index);
+
+      console.log(`  Found potential replacement in ${relativePath}:`);
+      console.log(`    OLD: ${fullMatch.trim()}`);
+      console.log(`    NEW: ${replacement.trim()}`);
+
+      let applyChange = true;
+      if (interactive) {
+        // Basic interactive prompt (replace with a proper library like inquirer if needed)
+        const readline = require('readline').createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        const answer = await new Promise<string>(resolve => {
+          readline.question('  Apply this change? (y/N) ', resolve);
+        });
+        readline.close();
+
+        if (answer.toLowerCase() !== 'y') {
+          console.log('  Skipping change.');
+          applyChange = false;
         }
+      }
 
-        // Append content before the match
-        modifiedContent += content.substring(lastIndex, match.index);
+      if (applyChange) {
+        modifiedContent += replacement;
+        needsLoggerImport = true; // Mark that we need the import
+        changesMade = true;
+      } else {
+        // If skipping, append the original match
+        modifiedContent += fullMatch;
+      }
 
-        console.log(`  Found potential replacement in ${relativePath}:`);
-        console.log(`    OLD: ${fullMatch.trim()}`);
-        console.log(`    NEW: ${replacement.trim()}`);
-
-        let applyChange = true;
-        if (interactive) {
-            // Basic interactive prompt (replace with a proper library like inquirer if needed)
-            const readline = require('readline').createInterface({
-                input: process.stdin,
-                output: process.stdout
-            });
-            const answer = await new Promise<string>(resolve => {
-                readline.question('  Apply this change? (y/N) ', resolve);
-            });
-            readline.close();
-
-            if (answer.toLowerCase() !== 'y') {
-                console.log('  Skipping change.');
-                applyChange = false;
-            }
-        }
-
-        if (applyChange) {
-            modifiedContent += replacement;
-            needsLoggerImport = true; // Mark that we need the import
-            changesMade = true;
-        } else {
-            // If skipping, append the original match
-            modifiedContent += fullMatch;
-        }
-
-        // Update lastIndex to the end of the current match
-        lastIndex = match.index + fullMatch.length;
+      // Update lastIndex to the end of the current match
+      lastIndex = match.index + fullMatch.length;
     }
 
     // Append the rest of the content after the last match
@@ -160,24 +166,31 @@ async function processFile(filePath: string, relativePath: string, dryRun: boole
 
     // Update content if changes were made
     if (changesMade) {
-        content = modifiedContent;
+      content = modifiedContent;
     }
-
 
     // Add logger import if needed and not already present
     // Ensure path alias resolution works or use relative path
     // Trying relative path first
-    const loggerRelativePath = path.relative(path.dirname(filePath), path.join(projectRoot, 'packages/common/src/utils/logger')).replace(/\\/g, '/');
-    const relativeLoggerImport = `import logger from '${loggerRelativePath.startsWith('.') ? '' : './'}${loggerRelativePath}';\n`;
+    const loggerRelativePath = path
+      .relative(path.dirname(filePath), path.join(projectRoot, 'packages/common/src/utils/logger'))
+      .replace(/\\/g, '/');
+    const relativeLoggerImport = `import logger from '${
+      loggerRelativePath.startsWith('.') ? '' : './'
+    }${loggerRelativePath}';\n`;
     const aliasLoggerImport = `import logger from '@common/utils/logger';\n`;
 
-    if (needsLoggerImport && !content.includes('@common/utils/logger') && !content.includes(loggerRelativePath)) {
-        // Prefer alias import if possible, fallback to relative
-        // For simplicity in this script, let's just use the alias version.
-        // A more robust solution might check tsconfig paths.
-        content = aliasLoggerImport + content;
-        console.log(`  Added logger import to ${relativePath}`);
-        changesMade = true; // Ensure this is set if only import was added
+    if (
+      needsLoggerImport &&
+      !content.includes('@common/utils/logger') &&
+      !content.includes(loggerRelativePath)
+    ) {
+      // Prefer alias import if possible, fallback to relative
+      // For simplicity in this script, let's just use the alias version.
+      // A more robust solution might check tsconfig paths.
+      content = aliasLoggerImport + content;
+      console.log(`  Added logger import to ${relativePath}`);
+      changesMade = true; // Ensure this is set if only import was added
     }
 
     if (changesMade) {
@@ -196,7 +209,6 @@ async function processFile(filePath: string, relativePath: string, dryRun: boole
     } else {
       console.log(`  No changes needed for ${relativePath}`);
     }
-
   } catch (error) {
     console.error(`  Failed to process file ${relativePath}:`, error);
   }

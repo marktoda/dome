@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { Env, Services } from '../../src/types';
 // ... existing code ...
 // Define ErrorCode for the mock AppError
-type ErrorCode = string; 
+type ErrorCode = string;
 
 vi.mock('@dome/common', async () => {
   const originalModule = await vi.importActual('@dome/common');
@@ -33,7 +33,9 @@ vi.mock('@dome/common', async () => {
       if (!text) return 0;
       return Math.max(1, Math.ceil(text.length / 4));
     }),
-    getDefaultModel: vi.fn().mockReturnValue({ modelId: 'mock-model', contextWindow: 8000, knowledgeCutoff: '' }),
+    getDefaultModel: vi
+      .fn()
+      .mockReturnValue({ modelId: 'mock-model', contextWindow: 8000, knowledgeCutoff: '' }),
     AppError: class MockAppError extends Error {
       errorCode: ErrorCode;
       constructor(message: string, errorCode: ErrorCode) {
@@ -51,7 +53,9 @@ vi.mock('@dome/common', async () => {
       SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
       // Add other error codes as needed
     },
-    ContentCategoryEnum: { enum: { document: "document", community: "community", ticket: "ticket"}},
+    ContentCategoryEnum: {
+      enum: { document: 'document', community: 'community', ticket: 'ticket' },
+    },
     DEFAULT_CONTEXT_ALLOCATION: {
       maxPerDocumentPercentage: 0.1,
       documentsPercentage: 0.6,
@@ -76,4 +80,4 @@ beforeAll(async () => {
 
 // Remove or comment out the static import of ChatController at the top of the file
 // import { ChatController, createChatController } from '../../src/controllers/chatController';
-// ... existing code ... 
+// ... existing code ...

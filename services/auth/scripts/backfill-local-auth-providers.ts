@@ -9,9 +9,7 @@ import { eq } from 'drizzle-orm';
 
 async function main() {
   if (!process.env.DB) {
-    console.error(
-      'Error: DB binding not found. Ensure process.env.DB is available.',
-    );
+    console.error('Error: DB binding not found. Ensure process.env.DB is available.');
     console.error(
       'This script might need to be run with wrangler, e.g., `npx wrangler d1 execute <YOUR_DB_NAME> --file=./scripts/backfill-local-auth-providers.ts` or `npx wrangler dev --persist --local scripts/backfill-local-auth-providers.ts` (if adapted to be callable)',
     );
@@ -50,7 +48,9 @@ async function main() {
           .get(); // .get() for D1 single row
 
         if (existingProvider) {
-          console.log(`User ${user.id} (${user.email}) already has a 'local' auth provider. Skipping.`);
+          console.log(
+            `User ${user.id} (${user.email}) already has a 'local' auth provider. Skipping.`,
+          );
           continue;
         }
 
@@ -67,22 +67,27 @@ async function main() {
       if (newAuthProviders.length > 0) {
         await db.insert(userAuthProviders).values(newAuthProviders).execute();
         processedCount += newAuthProviders.length;
-        console.log(`Inserted ${newAuthProviders.length} local auth providers. Total processed: ${processedCount}`);
+        console.log(
+          `Inserted ${newAuthProviders.length} local auth providers. Total processed: ${processedCount}`,
+        );
       } else {
-        console.log(`Batch from index ${i} had no new providers to insert (all might have been skipped).`);
+        console.log(
+          `Batch from index ${i} had no new providers to insert (all might have been skipped).`,
+        );
       }
     }
 
     console.log('Backfill completed successfully.');
-    console.log(`Total local auth providers created or verified: ${processedCount} (out of ${allUsers.length} users).`);
-
+    console.log(
+      `Total local auth providers created or verified: ${processedCount} (out of ${allUsers.length} users).`,
+    );
   } catch (error) {
     console.error('Error during backfill process:', error);
     process.exit(1);
   }
 }
 
-main().catch((err) => {
+main().catch(err => {
   console.error('Unhandled error in main:', err);
   process.exit(1);
 });

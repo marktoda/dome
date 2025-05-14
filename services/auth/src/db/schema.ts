@@ -11,9 +11,7 @@ export const users = sqliteTable('users', {
   role: text('role', { enum: ['user', 'admin'] })
     .default('user')
     .notNull(),
-  emailVerified: integer('email_verified', { mode: 'boolean' })
-    .default(false)
-    .notNull(),
+  emailVerified: integer('email_verified', { mode: 'boolean' }).default(false).notNull(),
   lastLoginAt: integer('last_login_at', { mode: 'timestamp' }),
   isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
   authProvider: text('auth_provider'), // e.g., 'email', 'google', 'github'
@@ -40,12 +38,12 @@ export const tokenBlacklist = sqliteTable('token_blacklist', {
  * Links users to their authentication methods (local or external providers like Privy)
  */
 export const userAuthProviders = sqliteTable('user_auth_providers', {
-  id: text('id').primaryKey().notNull(),                 // UUID
+  id: text('id').primaryKey().notNull(), // UUID
   userId: text('user_id')
     .notNull()
-    .references(() => users.id),                         // Reference to users table
-  provider: text('provider').notNull(),                  // e.g., SupportedAuthProvider.PRIVY or SupportedAuthProvider.LOCAL
-  providerUserId: text('provider_user_id').notNull(),    // JWT sub for Privy or user's email for local
-  email: text('email'),                                  // May be null for some providers
+    .references(() => users.id), // Reference to users table
+  provider: text('provider').notNull(), // e.g., SupportedAuthProvider.PRIVY or SupportedAuthProvider.LOCAL
+  providerUserId: text('provider_user_id').notNull(), // JWT sub for Privy or user's email for local
+  email: text('email'), // May be null for some providers
   linkedAt: integer('linked_at', { mode: 'timestamp' }).notNull(),
 });
