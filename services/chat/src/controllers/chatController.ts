@@ -16,7 +16,7 @@ import {
   MessagePair,
 } from '../types';
 import { Services } from '../services';
-import { V2Chat } from '../graphs';
+import { V3Chat } from '../graphs';
 import { secureMessages } from '../utils/securePromptHandler';
 import { validateInitialState } from '../utils/inputValidator';
 
@@ -191,7 +191,7 @@ export class ChatController {
     runId: string,
   ): Promise<ReadableStream<Uint8Array>> {
     await this.services.checkpointer.initialize();
-    const graph = await V2Chat.build(this.env, this.services.checkpointer);
+    const graph = await V3Chat.build(this.env, this.services.checkpointer);
 
     const thread_id = crypto.randomUUID();
     this.logger.info({ thread_id, runId }, 'Starting graph stream');
@@ -219,7 +219,7 @@ export class ChatController {
 
   private async runGraphNonStreaming(state: AgentState, runId: string): Promise<Response> {
     await this.services.checkpointer.initialize();
-    const graph = await V2Chat.build(this.env, this.services.checkpointer);
+    const graph = await V3Chat.build(this.env, this.services.checkpointer);
 
     const thread_id = crypto.randomUUID();
     this.logger.info({ thread_id, runId }, 'Starting graph invocation');

@@ -222,3 +222,6 @@ export const dynamicWiden = async (state: AgentState, env: Env): Promise<Dynamic
     },
   };
 };
+
+// Re-export strategy enum for legacy tests
+export { WideningStrategy } from './helpers/widening';

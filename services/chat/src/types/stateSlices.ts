@@ -116,6 +116,10 @@ export interface MetadataSlice {
     spanId?: string;
     executionTimeMs?: number;
     route?: string;
+    /**
+     * Loop counter for iterative retrieval in Graph v3.
+     */
+    iteration?: number;
   };
 }
 

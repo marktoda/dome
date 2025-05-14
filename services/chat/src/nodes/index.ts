@@ -21,3 +21,6 @@ export { routingSplit } from './routingSplit';
 export { editSystemPrompt } from './editSystemPrompt';
 export { filterHistory } from './filterHistory';
 export { rewrite } from './rewrite';
+
+export { improveRetrieval } from './improveRetrieval';
+export { answerGuard } from './answerGuard';

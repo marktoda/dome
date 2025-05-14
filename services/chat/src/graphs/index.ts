@@ -2,6 +2,7 @@ import { BaseCheckpointSaver } from '@langchain/langgraph';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
 export { V1Chat } from './v1';
 export { V2Chat } from './v2';
+export { V3Chat } from './v3';
 
 export interface IChatGraph {
   stream(i: unknown, o?: Partial<unknown>): Promise<IterableReadableStream<unknown>>;
