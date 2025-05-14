@@ -4,7 +4,6 @@ import chalk from 'chalk';
 import { Command } from 'commander';
 
 import { isAuthenticated, loadConfig } from '../../utils/config';
-import { ensureValidAccessToken } from '../../utils/auth';
 import { heading, info, success, formatDate } from '../../utils/ui';
 import { getChatSession, ChatSessionManager } from '../../utils/chatSession';
 import { OutputFormat } from '../../utils/errorHandler';
@@ -20,18 +19,9 @@ async function streamChatResponse(
   session: ChatSessionManager,
   commandInstance: ChatCommand
 ): Promise<void> {
-  // Refresh / validate access token first. This will throw on invalid session.
-  let accessToken: string;
-  try {
-    accessToken = await ensureValidAccessToken();
-  } catch (err) {
-    commandInstance.error((err as Error).message, { outputFormat: opts.outputFormat });
-    return;
-  }
-
   const config = loadConfig();
-  if (!config.userId) {
-    commandInstance.error('Missing user ID. Please login again.', { outputFormat: opts.outputFormat });
+  if (!config.userId || !config.apiKey) {
+    commandInstance.error('Missing credentials. Please login again.', { outputFormat: opts.outputFormat });
     return;
   }
 
@@ -42,7 +32,7 @@ async function streamChatResponse(
   const baseUrl = getApiBaseUrl();
   const wsProtocol = baseUrl.startsWith('https://') ? 'wss' : 'ws';
   const httpBase = baseUrl.replace(/^https?:\/\//, '');
-  const wsUrl = `${wsProtocol}://${httpBase}/chat/ws?token=${accessToken}`;
+  const wsUrl = `${wsProtocol}://${httpBase}/chat/ws?token=${config.apiKey}`;
 
   if (opts.verbose) {
     console.log(chalk.gray(`[DEBUG] Connecting to WebSocket: ${wsUrl}`));
@@ -71,7 +61,14 @@ async function streamChatResponse(
     wsClient.on('chunk', (chunk: ChatMessageChunk) => {
       switch (chunk.type) {
         case 'thinking':
-          // keep spinner running
+          // Show reasoning/thinking in subtle grey when not verbose.
+          if (!opts.verbose && chunk.content) {
+            // Temporarily pause spinner to avoid overlap.
+            indicator.stop();
+            console.log(chalk.gray(chunk.content));
+            indicator.start();
+          }
+          // keep spinner running otherwise
           break;
         case 'content':
           indicator.stop();

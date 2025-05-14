@@ -48,7 +48,9 @@ const detectors: DetectorFn[] = [
       const node = p[1][nodeId];
       if (node?.reasoning) {
         const last = Array.isArray(node.reasoning) ? node.reasoning[node.reasoning.length - 1] : node.reasoning;
-        if (typeof last === 'string') return { type: 'thinking', content: last };
+        if (typeof last === 'string') {
+          return { type: 'thinking', content: last };
+        }
       }
     }
     return null;
@@ -197,7 +199,7 @@ export class ChatWebSocketClient extends EventEmitter {
           this.emit('chunk', mapped);
           if (mapped.type === 'end') this.close();
         }
-      } catch {/* ignore until we have full line */}
+      } catch {/* ignore until we have full line */ }
     }
   }
 
@@ -207,4 +209,4 @@ export class ChatWebSocketClient extends EventEmitter {
       console.log(`[WS] ${msg}`);
     }
   }
-} 
+}
