@@ -3,24 +3,24 @@
   "version": "0.1.0",
   "description": "Terminal UI client for the dome API",
   "private": true,
-  "main": "dist/cli/src/index.js",
-  "types": "dist/cli/src/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/src/index.d.ts",
   "bin": {
-    "dome": "dist/cli/src/index.js"
+    "dome": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/index.ts",
-    "start": "node dist/cli/src/index.js",
+    "start": "node dist/index.js",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "tui": "node dist/cli/src/index.js tui",
+    "tui": "node dist/index.js tui",
     "tui:dev": "ts-node src/index.ts tui",
-    "tui:custom": "node -e \"require('child_process').execSync('node dist/cli/src/index.js config set --base-url ' + process.argv[1], {stdio: 'inherit'}); require('child_process').execSync('node dist/cli/src/index.js tui', {stdio: 'inherit'});\"",
-    "tui:local": "node -e \"require('child_process').execSync('node dist/cli/src/index.js config set --base-url http://localhost:8787', {stdio: 'inherit'}); require('child_process').execSync('node dist/cli/src/index.js tui', {stdio: 'inherit'});\"",
-    "tui:url": "node -e \"if (process.argv[1]) { require('child_process').execSync('node dist/cli/src/index.js config set --base-url ' + process.argv[1], {stdio: 'inherit'}); } require('child_process').execSync('node dist/cli/src/index.js tui', {stdio: 'inherit'});\""
+    "tui:custom": "node -e \"require('child_process').execSync('node dist/index.js config set --base-url ' + process.argv[1], {stdio: 'inherit'}); require('child_process').execSync('node dist/index.js tui', {stdio: 'inherit'});\"",
+    "tui:local": "node -e \"require('child_process').execSync('node dist/index.js config set --base-url http://localhost:8787', {stdio: 'inherit'}); require('child_process').execSync('node dist/index.js tui', {stdio: 'inherit'});\"",
+    "tui:url": "node -e \"if (process.argv[1]) { require('child_process').execSync('node dist/index.js config set --base-url ' + process.argv[1], {stdio: 'inherit'}); } require('child_process').execSync('node dist/index.js tui', {stdio: 'inherit'});\""
   },
   "dependencies": {
     "@dome/common": "workspace:*",

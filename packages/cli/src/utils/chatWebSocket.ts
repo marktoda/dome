@@ -26,6 +26,58 @@ export interface ChatWebSocketOptions {
   verbose?: boolean;
 }
 
+// ---------- Detector helpers to translate LangGraph stream into ChatMessageChunk ----------
+type AnyJson = any;
+type DetectorFn = (raw: string, parsed: AnyJson) => ChatMessageChunk | null;
+
+const detectors: DetectorFn[] = [
+  // Sources emitted from doc_to_sources
+  (_raw, p) => {
+    if (Array.isArray(p) && p[0] === 'updates') {
+      const nodeId: string = Object.keys(p[1])[0];
+      if (nodeId !== 'doc_to_sources') return null;
+      const node = p[1][nodeId];
+      return { type: 'sources', sources: node.sources ?? [] } as any;
+    }
+    return null;
+  },
+  // Thinking / reasoning strings
+  (_raw, p) => {
+    if (Array.isArray(p) && p[0] === 'updates') {
+      const nodeId = Object.keys(p[1])[0];
+      const node = p[1][nodeId];
+      if (node?.reasoning) {
+        const last = Array.isArray(node.reasoning) ? node.reasoning[node.reasoning.length - 1] : node.reasoning;
+        if (typeof last === 'string') return { type: 'thinking', content: last };
+      }
+    }
+    return null;
+  },
+  // Content chunks from generate_answer
+  (_raw, p) => {
+    if (Array.isArray(p) && p[0] === 'messages') {
+      const details = p[1];
+      if (Array.isArray(details) && details.length > 0) {
+        const first = details[0];
+        const contentStr = first?.kwargs?.content;
+        const nodeName = details[1]?.langgraph_node;
+        if (contentStr && nodeName === 'generate_answer') {
+          return { type: 'content', content: contentStr };
+        }
+      }
+    }
+    return null;
+  },
+];
+
+function detectChunk(raw: string, parsed: AnyJson): ChatMessageChunk | null {
+  for (const det of detectors) {
+    const res = det(raw, parsed);
+    if (res) return res;
+  }
+  return null;
+}
+
 /**
  * Minimal wrapper around the websocket streaming endpoint that normalises the
  * different possible `event.data` shapes and emits parsed {@link ChatMessageChunk}s.
@@ -42,6 +94,7 @@ export class ChatWebSocketClient extends EventEmitter {
   private ws: WebSocket;
   private td = new TextDecoder();
   private verbose: boolean;
+  private buffer = '';
 
   constructor(wsUrl: string, requestPayload: unknown, opts: ChatWebSocketOptions = {}) {
     super();
@@ -76,9 +129,14 @@ export class ChatWebSocketClient extends EventEmitter {
 
   private handleIncoming(event: WebSocket.MessageEvent): void {
     if (typeof event.data === 'string') {
+      this.debug(`incoming string (${event.data.length} bytes)`);
       this.processChunk(event.data);
     } else if (event.data instanceof ArrayBuffer) {
+      this.debug(`incoming ArrayBuffer (${event.data.byteLength} bytes)`);
       this.processChunk(this.td.decode(event.data));
+    } else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(event.data)) {
+      this.debug(`incoming Buffer (${event.data.length} bytes)`);
+      this.processChunk(event.data.toString('utf-8'));
     } else if (typeof Blob !== 'undefined' && event.data instanceof Blob) {
       event.data.text().then(txt => this.processChunk(txt)).catch(err => {
         this.emit('error', err instanceof Error ? err : new Error(String(err)));
@@ -96,15 +154,38 @@ export class ChatWebSocketClient extends EventEmitter {
   }
 
   private processChunk(raw: string): void {
-    this.debug(`raw chunk: ${raw.substring(0, 120)}`);
+    // Detailed raw-frame debug disabled to reduce noise; enable if needed.
+
+    // Try to parse the raw chunk directly (normal case: one JSON per frame)
     try {
-      const parsed: ChatMessageChunk = JSON.parse(raw);
-      this.emit('chunk', parsed);
-      if (parsed.type === 'end') {
-        this.close();
+      const parsedAny = JSON.parse(raw);
+      const mapped = detectChunk(raw, parsedAny);
+      if (mapped) {
+        this.debug(`parsed chunk mapped type=${mapped.type}`);
+        this.emit('chunk', mapped);
+        if (mapped.type === 'end') this.close();
+        return;
       }
-    } catch (err) {
-      this.emit('error', err instanceof Error ? err : new Error(String(err)));
+    } catch {
+      this.debug('frame was not standalone JSON, buffering...');
+    }
+
+    // Accumulate and process newline-delimited fragments (fallback for partial frames)
+    this.buffer += raw;
+    let newlineIdx: number;
+    while ((newlineIdx = this.buffer.indexOf('\n')) !== -1) {
+      const line = this.buffer.slice(0, newlineIdx).trim();
+      this.buffer = this.buffer.slice(newlineIdx + 1);
+      if (!line) continue;
+      try {
+        const parsedAny = JSON.parse(line);
+        const mapped = detectChunk(line, parsedAny);
+        if (mapped) {
+          this.debug(`parsed buffered line mapped type=${mapped.type}`);
+          this.emit('chunk', mapped);
+          if (mapped.type === 'end') this.close();
+        }
+      } catch {/* ignore until we have full line */}
     }
   }
 

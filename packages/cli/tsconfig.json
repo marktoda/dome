@@ -9,8 +9,18 @@
     "sourceMap": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "isolatedModules": true
+    "isolatedModules": true,
+    "paths": {
+      "@dome/dome-sdk": ["../dome-sdk/dist"],
+      "@dome/dome-sdk/*": ["../dome-sdk/dist/*"]
+    }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "../dome-sdk/src"
+  ]
 }
