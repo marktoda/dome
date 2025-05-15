@@ -253,13 +253,16 @@ app.get(
     try {
       authResult = await authService.validateToken(token);
     } catch (err) {
-      // Map known auth errors to HTTP 401 instead of generic 500
       const unauthorizedCodes = ['UNAUTHORIZED', 'UNAUTHORIZED_ERROR'];
       const code = (err as any)?.code ?? (err as any)?.errorCode;
-      if (
-        err instanceof Error &&
-        (err.name === 'UnauthorizedError' || unauthorizedCodes.includes(code))
-      ) {
+      const status = (err as any)?.status ?? (err as any)?.statusCode;
+      const isUnauthorizedErr =
+        (err instanceof Error && err.name === 'UnauthorizedError') ||
+        unauthorizedCodes.includes(code) ||
+        status === 401 ||
+        (err as any)?.remote === true; // RPC remote errors
+
+      if (isUnauthorizedErr) {
         logger.warn({ err }, 'Token validation failed – unauthorized');
         throw new HTTPException(401, {
           message: 'Invalid or expired token for WebSocket.',
@@ -482,17 +485,20 @@ app.notFound(c => {
   );
 });
 
-// Error handler
+// Error handler – respect HTTPException status codes
 app.onError((err, c) => {
+  // If this is a Hono HTTPException, return its response unchanged
+  if (err instanceof HTTPException) {
+    return err.getResponse();
+  }
+
+  // Otherwise log and return generic 500
   logError(err, 'Unhandled error', {
     path: c.req.path,
     method: c.req.method,
     errorName: err.name,
-    // errorMessage is part of err
-    // stack is part of err
   });
 
-  // Track error with metrics
   metrics.counter('error.unhandled', 1, {
     path: c.req.path,
     method: c.req.method,
