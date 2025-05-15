@@ -54,6 +54,8 @@ export const GraphStateAnnotationV3 = Annotation.Root({
   retrievalMeta: merge<Required<NonNullable<AgentStateV3['retrievalMeta']>>>(),
 
   /* Retrieval loop v3 slices */
-  selectorHistory: merge<Required<NonNullable<import('./stateSlices').SelectorHistorySlice['selectorHistory']>>>(),
-  refinementPlan: merge<Required<NonNullable<import('./stateSlices').RefinementPlanSlice['refinementPlan']>>>(),
+  selectorHistory:
+    merge<Required<NonNullable<import('./stateSlices').SelectorHistorySlice['selectorHistory']>>>(),
+  refinementPlan:
+    merge<Required<NonNullable<import('./stateSlices').RefinementPlanSlice['refinementPlan']>>>(),
 });

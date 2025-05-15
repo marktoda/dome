@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 type Params = Promise<{ id: string }>; // <- note Promise
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Params }, // <- must match the new async shape
-) {
+export async function GET(req: NextRequest, { params }: { params: Params }) {
+  // <- must match the new async shape
   const { id } = await params; // await is required now
 
   const backendUrl = `${

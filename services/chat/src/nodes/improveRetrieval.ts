@@ -5,15 +5,15 @@ import { ObservabilityService } from '../services/observabilityService';
 import { buildMessages } from '../utils/promptHelpers';
 import { LlmService } from '../services/llmService';
 
-export type ImproveRetrievalUpdate = SliceUpdate<'retrievalMeta' | 'refinementPlan' | 'reasoning' | 'metadata'>;
+export type ImproveRetrievalUpdate = SliceUpdate<'retrievalLoop' | 'reasoning' | 'metadata'>;
 
 // -----------------------------
 // 1. Schema & prompt pieces
 // -----------------------------
 const refinementSchema = z.object({
   refinedQueries: z.array(z.string()).describe('1-3 refined queries'),
-  broadenScope: z.boolean().optional(),
-  excludedSources: z.array(z.string()).optional(),
+  broadenScope: z.boolean().optional().nullable(),
+  excludedSources: z.array(z.string()).optional().nullable(),
   reasoning: z.string(),
 });
 type Refinement = z.infer<typeof refinementSchema>;
@@ -38,26 +38,26 @@ export const improveRetrieval = async (
   /* ------------------------------------------------------------------ */
   /*  Retrieve and increment loop meta                                   */
   /* ------------------------------------------------------------------ */
-  const history = (state as any).selectorHistory ?? {
+  const loopPrev = state.retrievalLoop ?? {
     attempt: 1,
     issuedQueries: [],
+    refinedQueries: [],
     seenChunkIds: [],
+    lastEvaluation: undefined,
   };
 
-  const planPrev = (state as any).refinementPlan ?? { refinedQueries: [], lastEvaluation: undefined };
-
-  const attempt = history.attempt + 1;
+  const attempt = loopPrev.attempt + 1;
 
   /* ------------------------------------------------------------------ */
   /*  Build context for the LLM                                          */
   /* ------------------------------------------------------------------ */
   const question = state.messages[state.messages.length - 1]?.content ?? '';
-  const evaluation = planPrev.lastEvaluation;
+  const evaluation = loopPrev.lastEvaluation;
 
   if (!evaluation) {
     // No evaluation yet – just bump counters and exit (first loop)
     return {
-      retrievalMeta: { ...history, attempt },
+      retrievalLoop: { ...loopPrev, attempt },
       reasoning: [
         ...(state.reasoning ?? []),
         'No retrieval evaluation available; incrementing attempt counter.',
@@ -71,8 +71,11 @@ export const improveRetrieval = async (
   }
 
   /* ----------------  Prompt ----------------------------------------- */
-  const prevQueriesList = history.issuedQueries.map((q: string, i: number) => `  • ${i + 1}. "${q}"`).join('\n');
-  const systemPrompt = `You are an expert information-retrieval strategist.\n\n` +
+  const prevQueriesList = loopPrev.issuedQueries
+    .map((q: string, i: number) => `  • ${i + 1}. "${q}"`)
+    .join('\n');
+  const systemPrompt =
+    `You are an expert information-retrieval strategist.\n\n` +
     `Question: ${question}\n` +
     `Attempt #: ${attempt}\n` +
     `Previous queries:\n${prevQueriesList || '  • (none)'}\n\n` +
@@ -81,7 +84,6 @@ export const improveRetrieval = async (
     `Avoid repeating identical chunks already seen. Return JSON matching the schema.`;
 
   const messages = [{ role: 'system' as const, content: systemPrompt }];
-
 
   /* ------------------------------------------------------------------ */
   /*  Invoke LLM                                                         */
@@ -109,7 +111,8 @@ export const improveRetrieval = async (
   /* ------------------------------------------------------------------ */
   /*  Assemble updated meta & state                                      */
   /* ------------------------------------------------------------------ */
-  const updatedPlan = {
+  const updatedLoop = {
+    ...loopPrev,
     attempt,
     refinedQueries: refinement.refinedQueries,
     lastEvaluation: undefined,
@@ -130,11 +133,13 @@ export const improveRetrieval = async (
     logError(e, 'Failed to end observability span in improveRetrieval');
   }
 
-  log.info({ attempt, refinedQueries: refinement.refinedQueries }, 'Generated retrieval refinement');
+  log.info(
+    { attempt, refinedQueries: refinement.refinedQueries },
+    'Generated retrieval refinement',
+  );
 
   return {
-    retrievalMeta: { ...history, attempt },
-    refinementPlan: updatedPlan,
+    retrievalLoop: updatedLoop,
     reasoning: [...(state.reasoning ?? []), refinement.reasoning],
     metadata: {
       ...state.metadata,

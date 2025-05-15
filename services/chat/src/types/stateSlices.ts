@@ -187,6 +187,30 @@ export interface RefinementPlanSlice {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/*  Consolidated retrieval loop meta (NEW)                            */
+/* ------------------------------------------------------------------ */
+
+export interface RetrievalLoopSlice {
+  /**
+   * Combined metadata controlling the iterative retrieval → evaluate → refine
+   * loop.  This replaces the older selectorHistory / retrievalMeta /
+   * refinementPlan slices.
+   */
+  retrievalLoop: {
+    /** Incremented every time retrievalSelector runs (starts at 1) */
+    attempt: number;
+    /** Queries retrievalSelector has actually executed so far */
+    issuedQueries: string[];
+    /** Queries proposed by improveRetrieval for the NEXT round */
+    refinedQueries: string[];
+    /** All chunk IDs surfaced to the LLM – used for de-dup */
+    seenChunkIds: string[];
+    /** Evaluation of last round produced by retrievalEvaluatorLLM */
+    lastEvaluation?: import('../types').RetrievalEvaluation;
+  };
+}
+
 export type AgentStateV3 = IdentitySlice &
   ConversationSlice &
   Partial<
@@ -203,7 +227,8 @@ export type AgentStateV3 = IdentitySlice &
   ToolRequirementsSlice &
   Partial<SelectorHistorySlice> &
   Partial<RefinementPlanSlice> &
-  Partial<RetrievalMetaSlice>;
+  Partial<RetrievalMetaSlice> &
+  Partial<RetrievalLoopSlice>;
 
 /**
  * Utility: list of all slice keys so other tooling can reference them without
@@ -230,6 +255,7 @@ export const sliceKeys = [
   'selectorHistory',
   'refinementPlan',
   'retrievalMeta',
+  'retrievalLoop',
 ] as const;
 
 /* ------------------------------------------------------------------ */

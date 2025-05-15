@@ -33,7 +33,7 @@ import { chooseModel } from '@dome/common';
  * @returns Updated agent state with retrieval evaluation results
  */
 export type RetrievalEvalUpdate = SliceUpdate<
-  'retrievalEvaluation' | 'toolNecessityClassification' | 'refinementPlan' | 'selectorHistory'
+  'retrievalEvaluation' | 'toolNecessityClassification' | 'retrievalLoop'
 >;
 
 // Structured output schema – keeps evaluator responses machine-readable
@@ -76,9 +76,11 @@ export async function retrievalEvaluatorLLM(
         reasoning: 'No retrievals available',
         confidence: 1,
       },
-      refinementPlan: {
-        attempt: (state.selectorHistory?.attempt ?? 1),
+      retrievalLoop: {
+        attempt: 1,
+        issuedQueries: [],
         refinedQueries: [],
+        seenChunkIds: [],
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
@@ -108,9 +110,11 @@ export async function retrievalEvaluatorLLM(
         reasoning: 'No retrieval tasks with chunks found',
         confidence: 1,
       },
-      refinementPlan: {
-        attempt: (state.selectorHistory?.attempt ?? 1),
+      retrievalLoop: {
+        attempt: 1,
+        issuedQueries: [],
         refinedQueries: [],
+        seenChunkIds: [],
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
@@ -139,9 +143,11 @@ export async function retrievalEvaluatorLLM(
         reasoning: 'No user message found for evaluation context',
         confidence: 1,
       },
-      refinementPlan: {
-        attempt: (state.selectorHistory?.attempt ?? 1),
+      retrievalLoop: {
+        attempt: 1,
+        issuedQueries: [],
         refinedQueries: [],
+        seenChunkIds: [],
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
@@ -262,9 +268,15 @@ export async function retrievalEvaluatorLLM(
     );
 
     // Update retrievalMeta with the latest evaluation so that the improver has context
-    const prevPlan = (state as any).refinementPlan ?? { refinedQueries: [] };
-    const updatedPlan = {
-      ...prevPlan,
+    const loopPrev = state.retrievalLoop ?? {
+      attempt: 1,
+      issuedQueries: [],
+      refinedQueries: [],
+      seenChunkIds: [],
+    };
+
+    const updatedLoop = {
+      ...loopPrev,
       lastEvaluation: retrievalEvaluation,
     };
 
@@ -273,8 +285,7 @@ export async function retrievalEvaluatorLLM(
       ...state,
       retrievalEvaluation,
       toolNecessityClassification,
-      refinementPlan: updatedPlan,
-      selectorHistory: state.selectorHistory,
+      retrievalLoop: updatedLoop,
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: elapsed,
@@ -299,7 +310,7 @@ export async function retrievalEvaluatorLLM(
     return {
       retrievalEvaluation,
       toolNecessityClassification,
-      refinementPlan: updatedPlan,
+      retrievalLoop: updatedLoop,
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: elapsed,
@@ -350,9 +361,11 @@ export async function retrievalEvaluatorLLM(
         reasoning: domeError.message,
         confidence: 1,
       },
-      refinementPlan: state.refinementPlan ?? {
-        attempt: (state.selectorHistory?.attempt ?? 1),
+      retrievalLoop: {
+        attempt: 1,
+        issuedQueries: [],
         refinedQueries: [],
+        seenChunkIds: [],
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',

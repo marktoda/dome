@@ -17,8 +17,6 @@ export function allocateContext(
   );
 
   // Ensure we satisfy a minimum response requirement when specified
-  const finalMaxResponse = opts.minResponse
-    ? Math.max(maxResponse, opts.minResponse)
-    : maxResponse;
+  const finalMaxResponse = opts.minResponse ? Math.max(maxResponse, opts.minResponse) : maxResponse;
   return { promptTokens, maxResponse: finalMaxResponse };
-} 
+}

@@ -13,12 +13,14 @@ import type { SliceUpdate } from '../types/stateSlices';
  * Used for structured output from LLM
  */
 const splitInputSchema = z.object({
-  tasks: z.array(
-    z.object({
-      id: z.string(),
-      query: z.string(),
-    }),
-  ).nullable(),
+  tasks: z
+    .array(
+      z.object({
+        id: z.string(),
+        query: z.string(),
+      }),
+    )
+    .nullable(),
   instructions: z.string().nullable(),
   reasoning: z.string().nullable(),
 });
@@ -93,9 +95,7 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<Routing
     logger.debug(
       {
         taskCount: Array.isArray(result?.tasks) ? result.tasks.length : undefined,
-        reasoningPreview: result?.reasoning
-          ? result.reasoning.substring(0, 120)
-          : undefined,
+        reasoningPreview: result?.reasoning ? result.reasoning.substring(0, 120) : undefined,
       },
       'Received raw result from LLM (summary)',
     );

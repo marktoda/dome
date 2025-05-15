@@ -202,12 +202,10 @@ const DomeApiValidateTokenResponseSchema = z
     success: z.literal(true).openapi({ example: true }),
     // The user object in the response includes the provider
     user: UserProfileSchema.extend({
-      provider: z
-        .nativeEnum(SupportedAuthProvider)
-        .openapi({
-          example: SupportedAuthProvider.LOCAL,
-          description: 'The authentication provider used.',
-        }),
+      provider: z.nativeEnum(SupportedAuthProvider).openapi({
+        example: SupportedAuthProvider.LOCAL,
+        description: 'The authentication provider used.',
+      }),
     }),
   })
   .openapi('DomeApiValidateTokenResponse');

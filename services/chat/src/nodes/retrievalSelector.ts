@@ -41,7 +41,7 @@ type RetrievalTasks = z.infer<typeof retrievalTasksSchema>;
  * @param env Environment variables
  * @returns Updated agent state with retrieval selections
  */
-export type RetrievalSelectorUpdate = SliceUpdate<'retrievals' | 'reasoning' | 'selectorHistory' | 'refinementPlan'>;
+export type RetrievalSelectorUpdate = SliceUpdate<'retrievals' | 'reasoning' | 'retrievalLoop'>;
 
 export async function retrievalSelector(
   state: AgentState,
@@ -81,8 +81,17 @@ export async function retrievalSelector(
   `;
   }
 
+  // Access consolidated loop meta (fallback to old slices during migration)
+  const loop = state.retrievalLoop ?? {
+    attempt: 1,
+    issuedQueries: [],
+    refinedQueries: state.refinementPlan?.refinedQueries ?? [],
+    seenChunkIds: state.selectorHistory?.seenChunkIds ?? [],
+    lastEvaluation: state.refinementPlan?.lastEvaluation,
+  };
+
   // If we have refined queries from previous iteration, surface them as hints
-  const refinedQueryHintsArr = (state.refinementPlan?.refinedQueries || []).slice(-3);
+  const refinedQueryHintsArr = (loop.refinedQueries || []).slice(-3);
   const refinedQueryHints = refinedQueryHintsArr
     .map((q: string, idx: number) => `  • Hint ${idx + 1}: ${q}`)
     .join('\n');
@@ -143,32 +152,18 @@ export async function retrievalSelector(
       'Retrieval selection complete (with deduplication)',
     );
 
-    /* -------- Update selectorHistory & consume refinementPlan ------- */
-    const prevHistory = (state as any).selectorHistory ?? {
-      attempt: 1,
-      issuedQueries: [],
-      seenChunkIds: [],
-    };
-
-    const plan = (state as any).refinementPlan ?? { refinedQueries: [] };
-
+    /* -------- Update retrievalLoop meta ------- */
     const issuedQueries = deduplicatedTasks.map(t => t.query);
-    const prevIssued: string[] = Array.isArray(prevHistory.issuedQueries)
-      ? prevHistory.issuedQueries
-      : [];
-
-    const updatedHistory = {
-      ...prevHistory,
-      attempt: (prevHistory.attempt ?? 0) + 1,
-      issuedQueries: Array.from(new Set([...prevIssued, ...issuedQueries])),
+    const updatedLoop = {
+      ...loop,
+      attempt: (loop.attempt ?? 0) + 1,
+      issuedQueries: Array.from(new Set([...(loop.issuedQueries ?? []), ...issuedQueries])),
+      refinedQueries: [], // consumed
     };
-
-    const clearedPlan = { ...plan, refinedQueries: [] };
 
     return {
       retrievals: deduplicatedTasks,
-      selectorHistory: updatedHistory,
-      refinementPlan: clearedPlan,
+      retrievalLoop: updatedLoop,
       reasoning: [
         ...(state.reasoning || []),
         result.reasoning || 'Selected appropriate retrieval sources based on the task.',

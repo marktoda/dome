@@ -1,12 +1,7 @@
 import { getModelConfig, getDefaultModel } from './index.js';
 import { BaseModelConfig } from './types.js';
 
-export type TaskKind =
-  | 'retrieval_eval'
-  | 'rerank'
-  | 'generation'
-  | 'tool_router'
-  | 'rewrite';
+export type TaskKind = 'retrieval_eval' | 'rerank' | 'generation' | 'tool_router' | 'rewrite';
 
 export interface PickModelOpts {
   task: TaskKind;
@@ -17,7 +12,11 @@ export interface PickModelOpts {
 /**
  * Lightweight rule-based model chooser.  Central place to map tasks to model IDs.
  */
-export function chooseModel({ task, quality = 'balanced', explicitId }: PickModelOpts): BaseModelConfig {
+export function chooseModel({
+  task,
+  quality = 'balanced',
+  explicitId,
+}: PickModelOpts): BaseModelConfig {
   if (explicitId) return getModelConfig(explicitId);
 
   switch (task) {

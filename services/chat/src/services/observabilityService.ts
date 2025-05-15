@@ -64,7 +64,9 @@ export class ObservabilityService {
     // Primitive values can be returned as-is (except long strings)
     if (typeof value === 'string') {
       return value.length > this.MAX_STRING_LENGTH
-        ? `${value.substring(0, this.MAX_STRING_LENGTH)}…[truncated ${value.length - this.MAX_STRING_LENGTH} chars]`
+        ? `${value.substring(0, this.MAX_STRING_LENGTH)}…[truncated ${
+            value.length - this.MAX_STRING_LENGTH
+          } chars]`
         : value;
     }
 
@@ -78,9 +80,9 @@ export class ObservabilityService {
     }
 
     if (Array.isArray(value)) {
-      const sliced = value.slice(0, this.MAX_ARRAY_LENGTH).map(v =>
-        this.sanitizeForLog(v, depth + 1),
-      );
+      const sliced = value
+        .slice(0, this.MAX_ARRAY_LENGTH)
+        .map(v => this.sanitizeForLog(v, depth + 1));
       if (value.length > this.MAX_ARRAY_LENGTH) {
         sliced.push(`…(${value.length - this.MAX_ARRAY_LENGTH} more items)`);
       }
