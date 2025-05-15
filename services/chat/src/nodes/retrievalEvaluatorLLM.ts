@@ -3,10 +3,11 @@ import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { DocumentChunk, RetrievalEvaluation, RetrievalTask } from '../types';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { ObservabilityService } from '../services/observabilityService';
-import { ModelFactory } from '../services/modelFactory';
+import { LlmService } from '../services/llmService';
 import { toDomeError } from '../utils/errors';
 import { getRetrievalEvaluationPrompt } from '../config/promptsConfig';
 import type { SliceUpdate } from '../types/stateSlices';
+import { z } from 'zod';
 
 /**
  * Retrieval Evaluator LLM Node
@@ -32,6 +33,15 @@ import type { SliceUpdate } from '../types/stateSlices';
 export type RetrievalEvalUpdate = SliceUpdate<
   'retrievalEvaluation' | 'toolNecessityClassification'
 >;
+
+// Structured output schema – keeps evaluator responses machine-readable
+const retrievalEvalSchema = z.object({
+  overallScore: z.number().min(0).max(10),
+  isAdequate: z.boolean(),
+  suggestedAction: z.enum(['use_tools', 'refine_query', 'proceed']),
+  reasoning: z.string().max(300),
+});
+type RetrievalEvalLLM = z.infer<typeof retrievalEvalSchema>;
 
 export async function retrievalEvaluatorLLM(
   state: AgentState,
@@ -159,43 +169,26 @@ export async function retrievalEvaluatorLLM(
     // Build evaluation prompt using the centralized config
     const systemPrompt = getRetrievalEvaluationPrompt(query, contentToEvaluate);
 
-    // Call LLM for evaluation
-    const model = ModelFactory.createChatModel(env, {
-      temperature: 0.2,
-      maxTokens: 1000,
-      modelId: 'gpt-4', // Using GPT-4 for better evaluation
-    });
-
-    const modelResult = await model.invoke([{ role: 'system', content: systemPrompt }]);
-
-    const evalResult = modelResult.text;
-
-    // Parse and structure the evaluation
-    const overallScoreMatch = evalResult.match(/relevant.+?(\d+)\s*\/\s*10/i);
-    const isAdequateMatch = evalResult.match(/ADEQUATE|INADEQUATE/i);
-    const suggestedActionMatch = evalResult.match(
-      /external tools.+?(would|wouldn't|would not|will|might)/i,
+    // Call LLM with structured JSON output enforced by schema
+    const evalStructured = await LlmService.invokeStructured<RetrievalEvalLLM>(
+      env,
+      [{ role: 'system', content: systemPrompt }],
+      {
+        temperature: 0.2,
+        schema: retrievalEvalSchema,
+        schemaInstructions: 'Respond ONLY with valid JSON matching the schema.'
+      },
     );
 
-    const overallScore = overallScoreMatch
-      ? Math.min(1, Math.max(0, parseInt(overallScoreMatch[1]) / 10))
-      : 0.5;
-
-    const isAdequate = isAdequateMatch ? isAdequateMatch[0].toUpperCase() === 'ADEQUATE' : false;
-
-    const suggestedAction = suggestedActionMatch
-      ? suggestedActionMatch[1].match(/would|will|might/)
-        ? 'use_tools'
-        : 'proceed'
-      : isAdequate
-      ? 'proceed'
-      : 'use_tools';
+    const overallScore = Math.min(1, Math.max(0, evalStructured.overallScore / 10));
+    const isAdequate = evalStructured.isAdequate;
+    const suggestedAction = evalStructured.suggestedAction;
 
     // Structure the evaluation based on the RetrievalEvaluation interface
     const retrievalEvaluation: RetrievalEvaluation = {
       overallScore,
       isAdequate,
-      reasoning: evalResult,
+      reasoning: evalStructured.reasoning,
       suggestedAction: suggestedAction as 'use_tools' | 'refine_query' | 'proceed',
     };
 
@@ -226,9 +219,9 @@ export async function retrievalEvaluatorLLM(
       spanId,
       'gpt-4', // Assuming model here, ideally would come from config
       [{ role: 'system', content: systemPrompt }],
-      evalResult,
+      evalStructured.reasoning,
       elapsed,
-      { prompt: systemPrompt.length / 4, completion: evalResult.length / 4 }, // Rough token estimate
+      { prompt: systemPrompt.length / 4, completion: evalStructured.reasoning.length / 4 }, // Rough token estimate
     );
 
     // End span with updated state

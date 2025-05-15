@@ -26,8 +26,8 @@ function makeDecideAfterEval(maxLoops: number) {
   return function decideAfterEval(
     state: AgentState,
   ): 'combine_context' | 'tool_router' | 'improve_retrieval' {
-    const evalRes = (state as any).retrievalEvaluation;
-    const toolNec = (state as any).toolNecessityClassification;
+    const evalRes = state.retrievalEvaluation;
+    const toolNec = state.toolNecessityClassification;
 
     const adequate = !!evalRes?.isAdequate;
     const needsTool = !!toolNec?.isToolNeeded;
@@ -35,14 +35,13 @@ function makeDecideAfterEval(maxLoops: number) {
     const iteration = state.metadata?.iteration ?? 0;
 
     if (adequate && !needsTool) return 'combine_context';
+
+    // Always try to improve retrieval first while under loop budget
+    if (!adequate && iteration < maxLoops) return 'improve_retrieval';
+
     if (needsTool) return 'tool_router';
 
-    // If retrieval inadequate
-    if (iteration >= maxLoops) {
-      // stop looping – proceed with what we have
-      return 'combine_context';
-    }
-    return 'improve_retrieval';
+    return 'combine_context';
   };
 }
 
@@ -99,9 +98,10 @@ export const V3Chat: ChatBuilder = {
       // Loop edge back to selector
       .addEdge('improve_retrieval', 'retrieval_selector')
 
-      // Tool path
+      // Tool path – after running tool, loop back into retrieval pipeline so new tool output
+      // is reranked together with any additional retrievals.
       .addEdge('tool_router', 'run_tool')
-      .addEdge('run_tool', 'combine_context')
+      .addEdge('run_tool', 'retrieval_selector')
 
       // Generation path
       .addEdge('combine_context', 'doc_to_sources')
@@ -161,4 +161,4 @@ function createNodeWrappers(env: Env, tools: ToolRegistry) {
     ),
     answerGuard: wrap('answerGuard', (s: AgentState) => nodes.answerGuard(s)),
   };
-} 
+}
