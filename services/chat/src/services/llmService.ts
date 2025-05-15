@@ -19,6 +19,9 @@ import {
   getDefaultModel,
   ModelRegistry,
   ModelProvider,
+  chooseModel,
+  TaskKind,
+  allocateContext,
 } from '@dome/common';
 
 // Get prompts from local config for now (these aren't part of the common package yet)
@@ -263,6 +266,8 @@ export class LlmService {
       temperature?: number;
       schema: ZodSchema;
       schemaInstructions: string;
+      task?: TaskKind;
+      quality?: 'fast' | 'balanced' | 'high';
     },
   ): Promise<T> {
     if (isTest()) return mockResponse as unknown as T;
@@ -271,7 +276,8 @@ export class LlmService {
       // Convert messages to LangChain format
       const langChainMessages = LlmService.convertMessages(messages);
       // Get client and call the model
-      const modelConfig = MODEL_REGISTRY.getModel(DEFAULT_STRUCTURED_MODEL_ID);
+      const modelConfig = chooseModel({ task: opts.task ?? 'generation', quality: opts.quality });
+      const { maxResponse } = allocateContext(modelConfig);
       logger.info(
         {
           modelId: modelConfig.id,
@@ -284,6 +290,7 @@ export class LlmService {
       const model = ModelFactory.createStructuredOutputModel<T>(env, {
         modelId: modelConfig.id,
         temperature: opts.temperature,
+        maxTokens: maxResponse,
         schema: opts.schema,
         schemaInstructions: opts.schemaInstructions,
       }).withStructuredOutput(opts.schema);

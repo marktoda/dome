@@ -1,12 +1,11 @@
-import { getLogger, logError, countTokens, calculateResponseTokens } from '@dome/common';
-import { LlmService, MODEL_REGISTRY } from '../services/llmService';
+import { getLogger, logError, countTokens, chooseModel, allocateContext } from '@dome/common';
+import { LlmService } from '../services/llmService';
 import { toDomeError } from '../utils/errors';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { formatDocsForPrompt } from '../utils/promptHelpers';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import type { SliceUpdate } from '../types/stateSlices';
 import { ObservabilityService } from '../services/observabilityService';
-import { ModelFactory } from '../services/modelFactory';
 import { buildMessages } from '../utils';
 import { getGenerateAnswerPrompt } from '../config/promptsConfig';
 
@@ -65,7 +64,7 @@ export async function generateAnswer(
     }
 
     // Configure model parameters
-    const modelConfig = MODEL_REGISTRY.getModel(state.options?.modelId);
+    const modelConfig = chooseModel({ task: 'generation', explicitId: state.options?.modelId });
     const modelId = modelConfig.id;
 
     // Calculate token usage and limits
@@ -74,11 +73,7 @@ export async function generateAnswer(
     const systemPromptEstimate = 500; // Placeholder until we actually build the prompt
 
     // Calculate token limits for response using the new context configuration system
-    const maxResponseTokens = calculateResponseTokens(
-      modelConfig,
-      contextTokens + userQueryTokens + systemPromptEstimate,
-      state.options?.maxTokens,
-    );
+    const { maxResponse: maxResponseTokens } = allocateContext(modelConfig);
 
     logger.info(
       {
@@ -111,57 +106,31 @@ export async function generateAnswer(
     /* ------------------------------------------------------------------ */
     /*  Generate answer with LLM                                          */
     /* ------------------------------------------------------------------ */
-    // Create the model instance
-    const model = ModelFactory.createChatModel(env, {
-      modelId: modelId,
-      temperature: state.options?.temperature ?? 0.3, // Lower temperature for more factual answers
-      maxTokens: maxResponseTokens,
-    });
+    let responseText = '';
 
-    // Initialize response variable
-    let responseText: string;
-
-    // Handle streaming if configured
     if (cfg.configurable?.stream?.handleChunk) {
-      // Stream generation with chunk handling
-      const stream = await model.stream(
-        chatMessages.map(m => ({
-          role: m.role,
-          content: m.content,
-        })),
-      );
+      const stream = LlmService.stream(env, chatMessages, {
+        modelId,
+        temperature: state.options?.temperature ?? 0.3,
+        maxTokens: maxResponseTokens,
+      });
 
-      // Accumulate the streamed response
-      let accumulatedResponse = '';
-
-      // Process each chunk
+      let accumulated = '';
       for await (const chunk of stream) {
-        const content = chunk.content || '';
-        accumulatedResponse += content;
-
-        // Notify stream handler
+        accumulated += chunk as string;
         await cfg.configurable.stream.handleChunk({
           event: 'on_chat_model_stream',
           data: { chunk },
-          metadata: {
-            langgraph_node: 'generateAnswer',
-            traceId,
-            spanId,
-          },
+          metadata: { langgraph_node: 'generateAnswer', traceId, spanId },
         });
       }
-
-      // Set the final response text
-      responseText = accumulatedResponse;
+      responseText = accumulated;
     } else {
-      // Non-streaming generation
-      const response = await model.invoke(
-        chatMessages.map(m => ({
-          role: m.role,
-          content: m.content,
-        })),
-      );
-      responseText = response.text;
+      responseText = await LlmService.call(env, chatMessages, {
+        modelId,
+        temperature: state.options?.temperature ?? 0.3,
+        maxTokens: maxResponseTokens,
+      });
     }
 
     /* ------------------------------------------------------------------ */

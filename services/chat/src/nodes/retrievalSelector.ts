@@ -23,7 +23,7 @@ const retrievalTasksSchema = z.object({
       query: z.string(),
     }),
   ),
-  reasoning: z.string().optional(),
+  reasoning: z.string().nullable(),
 });
 
 // Type inference from the Zod schema
@@ -97,6 +97,7 @@ export async function retrievalSelector(
       temperature: 0.7,
       schema: retrievalTasksSchema,
       schemaInstructions: 'Return a JSON object selected retrievals',
+      task: 'tool_router',
     });
 
     // Log the selection that was made

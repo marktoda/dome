@@ -2,17 +2,12 @@ import { getLogger, logError, trackOperation } from '../utils/logging';
 import { toDomeError, LLMProcessingError, assertValid } from '../utils/errors';
 import { getSchemaForContentType, getSchemaInstructions } from '../schemas';
 import {
-  CLOUDFLARE_MODELS,
-  CLOUDFLARE_MODELS_ARRAY,
-  ModelRegistry,
   truncateToTokenLimit,
   countTokens,
   BaseModelConfig,
+  chooseModel,
+  allocateContext,
 } from '@dome/common';
-
-const DEFAULT_MODEL = CLOUDFLARE_MODELS.GEMMA_3;
-const REGISTRY = new ModelRegistry(CLOUDFLARE_MODELS_ARRAY);
-REGISTRY.setDefaultModel(DEFAULT_MODEL.id);
 
 /** Factory */
 export function createLlmService(env: Env): LlmService {
@@ -72,10 +67,9 @@ export class LlmService {
    * Get the AI model configuration from environment config or use default
    */
   private getModelConfig(): BaseModelConfig {
-    // Type assertion for accessing potentially undefined env vars
-    const env = this.env as any;
-    const configuredModelId = env.AI_MODEL_NAME;
-    return REGISTRY.getModel(configuredModelId);
+    const envAny = this.env as any;
+    const configuredModelId = envAny.AI_MODEL_NAME as string | undefined;
+    return chooseModel({ task: 'generation', explicitId: configuredModelId });
   }
 
   // -------------------------------------------------------------------------

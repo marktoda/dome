@@ -14,9 +14,9 @@ import type { AIMessage } from '../types';
  * Used for structured output from LLM
  */
 const promptUpdateSchema = z.object({
-  updatedInstructions: z.union([z.string(), z.null()]).optional(),
-  reasoning: z.union([z.string(), z.null()]).optional(),
-  activatedTools: z.union([z.array(z.string()), z.null()]).optional(),
+  updatedInstructions: z.string().nullable(),
+  reasoning: z.string().nullable(),
+  activatedTools: z.array(z.string()).nullable(),
 });
 
 // Type inference from the Zod schema

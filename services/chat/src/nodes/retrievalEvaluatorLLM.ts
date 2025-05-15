@@ -35,11 +35,16 @@ export type RetrievalEvalUpdate = SliceUpdate<
 >;
 
 // Structured output schema – keeps evaluator responses machine-readable
+// Note: `response_format: 'json_object' | 'extract'` accepts a limited JSON schema subset.
+//       Remove validation keywords like `minimum`, `maximum`, `maxLength` which are disallowed.
+//       We still document expectations via descriptions for future reference.
 const retrievalEvalSchema = z.object({
-  overallScore: z.number().min(0).max(10),
+  /* Overall score from 0 to 10 */
+  overallScore: z.number().describe('Overall score from 0 (poor) to 10 (excellent)'),
   isAdequate: z.boolean(),
   suggestedAction: z.enum(['use_tools', 'refine_query', 'proceed']),
-  reasoning: z.string().max(300),
+  /* Reasoning capped in prompt; server side we will truncate if needed */
+  reasoning: z.string().describe('Short reasoning sentence (max ~300 chars)'),
 });
 type RetrievalEvalLLM = z.infer<typeof retrievalEvalSchema>;
 
@@ -176,7 +181,8 @@ export async function retrievalEvaluatorLLM(
       {
         temperature: 0.2,
         schema: retrievalEvalSchema,
-        schemaInstructions: 'Respond ONLY with valid JSON matching the schema.'
+        schemaInstructions: 'Respond ONLY with valid JSON matching the schema.',
+        task: 'retrieval_eval',
       },
     );
 

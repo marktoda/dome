@@ -13,17 +13,14 @@ import type { SliceUpdate } from '../types/stateSlices';
  * Used for structured output from LLM
  */
 const splitInputSchema = z.object({
-  tasks: z
-    .array(
-      z.object({
-        id: z.string(),
-        query: z.string(),
-      }),
-    )
-    .nullable()
-    .optional(), // Make tasks optional
-  instructions: z.string().nullable().optional(), // Make instructions optional
-  reasoning: z.string().nullable().optional(), // Make reasoning optional
+  tasks: z.array(
+    z.object({
+      id: z.string(),
+      query: z.string(),
+    }),
+  ).nullable(),
+  instructions: z.string().nullable(),
+  reasoning: z.string().nullable(),
 });
 
 // Type inference from the Zod schema
@@ -85,6 +82,7 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<Routing
     const result: SplittedInput = await LlmService.invokeStructured<SplittedInput>(env, messages, {
       schema: splitInputSchema,
       schemaInstructions: 'Extract tasks from the user query and provide reasoning',
+      task: 'rewrite',
     });
 
     /* --------------------------------------------------------------- */

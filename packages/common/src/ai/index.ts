@@ -110,3 +110,6 @@ export { defaultModelRegistry as modelRegistry, ModelRegistry };
 
 // Re-export everything from providers
 export * from './providers/index.js';
+
+export * from './modelChooser.js';
+export * from './contextUtils.js';

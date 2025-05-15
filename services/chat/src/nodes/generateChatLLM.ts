@@ -2,14 +2,13 @@ import {
   getLogger,
   logError,
   countTokens,
-  getModelConfig,
-  calculateTokenLimits,
+  chooseModel,
+  allocateContext,
 } from '@dome/common';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
-import { ModelFactory } from '../services/modelFactory';
 import { getChatLLMPrompt } from '../config/promptsConfig';
 import type { SliceUpdate } from '../types/stateSlices';
 
@@ -46,8 +45,8 @@ export async function generateChatLLM(
   /* ------------------------------------------------------------------ */
   /*  Prompt setup                                                      */
   /* ------------------------------------------------------------------ */
-  const modelId = state.options?.modelId;
-  const modelConfig = getModelConfig(modelId);
+  const modelConfig = chooseModel({ task: 'generation', explicitId: state.options?.modelId });
+  const modelId = modelConfig.id;
 
   // Build simple system prompt for non-RAG chat
   const systemPrompt = buildChatSystemPrompt();
@@ -55,11 +54,7 @@ export async function generateChatLLM(
   const userTokens = state.messages.reduce((t, m) => t + countTokens(m.content), 0);
 
   // Calculate token limits based on model constraints
-  const { maxResponseTokens } = calculateTokenLimits(
-    modelConfig,
-    sysTokens + userTokens,
-    state.options?.maxTokens,
-  );
+  const { maxResponse: maxResponseTokens } = allocateContext(modelConfig);
 
   // Prepare chat messages with system prompt
   const chatMessages = [{ role: 'system', content: systemPrompt }, ...state.messages];
@@ -77,52 +72,27 @@ export async function generateChatLLM(
   let fullText = '';
 
   try {
-    // Create streaming-enabled model
-    const streamingModel = ModelFactory.createChatModel(env, {
-      modelId: modelId,
-      temperature: state.options?.temperature ?? 0.7,
-      maxTokens: maxResponseTokens,
-      streaming: true,
-    });
-
-    // Set up streaming through LangGraph (with null check)
     if (cfg.configurable?.stream) {
-      // Get the stream handler from LangGraph config
-      const nodeHandler = cfg.configurable?.stream;
+      const nodeHandler = cfg.configurable.stream;
+      const stream = LlmService.stream(env, chatMessages as any, {
+        modelId,
+        temperature: state.options?.temperature ?? 0.7,
+        maxTokens: maxResponseTokens,
+      });
 
-      // Start streaming
-      const stream = await streamingModel.stream(
-        chatMessages.map(m => ({
-          role: m.role,
-          content: m.content,
-        })),
-      );
-
-      // Setup tracking for the token stream
       let tokenCount = 0;
       const streamStart = performance.now();
-
-      // Process each chunk in the stream
       for await (const chunk of stream) {
-        // Accumulate the full text
-        if (chunk.content) {
-          fullText += chunk.content;
+        if (chunk) {
+          fullText += chunk as string;
           tokenCount += 1;
         }
-
-        // Send the chunk through LangGraph's stream handler
         await nodeHandler.handleChunk({
           event: 'on_chat_model_stream',
           data: { chunk },
-          metadata: {
-            langgraph_node: 'generate_chat_llm',
-            traceId,
-            spanId,
-          },
+          metadata: { langgraph_node: 'generate_chat_llm', traceId, spanId },
         });
       }
-
-      // Log streaming metrics
       const streamDuration = performance.now() - streamStart;
       logEvt('streaming_complete', {
         tokenCount,
@@ -130,15 +100,11 @@ export async function generateChatLLM(
         tokensPerSecond: tokenCount / (streamDuration / 1000),
       });
     } else {
-      // Fallback to non-streaming if LangGraph streaming is not configured
-      const response = await streamingModel.invoke(
-        chatMessages.map(m => ({
-          role: m.role,
-          content: m.content,
-        })),
-      );
-
-      fullText = response.text;
+      fullText = await LlmService.call(env, chatMessages as any, {
+        modelId,
+        temperature: state.options?.temperature ?? 0.7,
+        maxTokens: maxResponseTokens,
+      });
     }
   } catch (error) {
     // Handle errors gracefully

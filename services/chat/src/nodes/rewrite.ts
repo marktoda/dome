@@ -10,7 +10,7 @@ import type { SliceUpdate } from '../types/stateSlices';
 
 const rewrittenTaskSchema = z.object({
   rewrittenQuery: z.string(),
-  reasoning: z.string().nullable().optional(),
+  reasoning: z.string().nullable(),
 });
 type RewrittenTask = z.infer<typeof rewrittenTaskSchema>;
 
@@ -89,6 +89,7 @@ export const rewrite = async (state: AgentState, env: Env): Promise<RewriteUpdat
           const result = await LlmService.invokeStructured<RewrittenTask>(env, messages, {
             schema: rewrittenTaskSchema,
             schemaInstructions: 'Rewrite the user query in a concise, clear format',
+            task: 'rewrite',
           });
 
           tasks[taskId].rewrittenQuery = result.rewrittenQuery;
