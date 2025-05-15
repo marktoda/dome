@@ -299,10 +299,7 @@ export async function retrievalEvaluatorLLM(
     return {
       retrievalEvaluation,
       toolNecessityClassification,
-      refinementPlan: {
-        attempt: (state.selectorHistory?.attempt ?? 1),
-        refinedQueries: [],
-      },
+      refinementPlan: updatedPlan,
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: elapsed,
@@ -353,7 +350,7 @@ export async function retrievalEvaluatorLLM(
         reasoning: domeError.message,
         confidence: 1,
       },
-      refinementPlan: {
+      refinementPlan: state.refinementPlan ?? {
         attempt: (state.selectorHistory?.attempt ?? 1),
         refinedQueries: [],
       },

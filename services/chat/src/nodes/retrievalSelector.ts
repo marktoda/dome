@@ -114,8 +114,9 @@ export async function retrievalSelector(
 
     // Log the selection that was made
     logEvt('retrieval_selection', {
-      retrievalTasks: result.tasks,
-      reasoning: result.reasoning,
+      taskCount: result.tasks.length,
+      categories: Array.from(new Set(result.tasks.map(t => t.category))),
+      reasoningPreview: result.reasoning ? result.reasoning.substring(0, 120) : undefined,
     });
 
     /* ------------------------------------------------------------------ */
@@ -152,10 +153,14 @@ export async function retrievalSelector(
     const plan = (state as any).refinementPlan ?? { refinedQueries: [] };
 
     const issuedQueries = deduplicatedTasks.map(t => t.query);
+    const prevIssued: string[] = Array.isArray(prevHistory.issuedQueries)
+      ? prevHistory.issuedQueries
+      : [];
+
     const updatedHistory = {
       ...prevHistory,
-      attempt: prevHistory.attempt + 1,
-      issuedQueries: Array.from(new Set([...prevHistory.issuedQueries, ...issuedQueries])),
+      attempt: (prevHistory.attempt ?? 0) + 1,
+      issuedQueries: Array.from(new Set([...prevIssued, ...issuedQueries])),
     };
 
     const clearedPlan = { ...plan, refinedQueries: [] };

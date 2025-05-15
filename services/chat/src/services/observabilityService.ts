@@ -24,6 +24,9 @@ export type SpanStatus = 'success' | 'error' | 'unset';
 export class ObservabilityService {
   private static readonly logger = getLogger().child({ component: 'ObservabilityService' });
   private static readonly metrics = new MetricsService();
+  private static readonly MAX_STRING_LENGTH = 200;
+  private static readonly MAX_ARRAY_LENGTH = 10;
+  private static readonly MAX_OBJECT_KEYS = 20;
 
   // Trace and span storage for in-memory correlation
   private static traces: Map<
@@ -49,6 +52,60 @@ export class ObservabilityService {
       status: SpanStatus;
     }
   > = new Map();
+
+  /**
+   * Sanitize potentially large or deeply-nested objects before they are sent
+   * to the logger. This prevents oversized log entries that can overflow the
+   * 256 KB Cloudflare log limit.
+   */
+  private static sanitizeForLog(value: unknown, depth: number = 0): unknown {
+    if (value === null || value === undefined) return value;
+
+    // Primitive values can be returned as-is (except long strings)
+    if (typeof value === 'string') {
+      return value.length > this.MAX_STRING_LENGTH
+        ? `${value.substring(0, this.MAX_STRING_LENGTH)}…[truncated ${value.length - this.MAX_STRING_LENGTH} chars]`
+        : value;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return value;
+    }
+
+    // Limit recursion depth to avoid excessive processing
+    if (depth >= 2) {
+      return '[truncated]';
+    }
+
+    if (Array.isArray(value)) {
+      const sliced = value.slice(0, this.MAX_ARRAY_LENGTH).map(v =>
+        this.sanitizeForLog(v, depth + 1),
+      );
+      if (value.length > this.MAX_ARRAY_LENGTH) {
+        sliced.push(`…(${value.length - this.MAX_ARRAY_LENGTH} more items)`);
+      }
+      return sliced;
+    }
+
+    if (typeof value === 'object') {
+      const obj: Record<string, unknown> = {};
+      const keys = Object.keys(value as Record<string, unknown>);
+      for (const key of keys.slice(0, this.MAX_OBJECT_KEYS)) {
+        obj[key] = this.sanitizeForLog((value as Record<string, unknown>)[key], depth + 1);
+      }
+      if (keys.length > this.MAX_OBJECT_KEYS) {
+        obj['…'] = `(${keys.length - this.MAX_OBJECT_KEYS} more keys)`;
+      }
+      return obj;
+    }
+
+    // Fallback – stringify unknown types
+    try {
+      return String(value);
+    } catch {
+      return '[unserializable]';
+    }
+  }
 
   /**
    * Initialize a trace for a conversation
@@ -249,6 +306,9 @@ export class ObservabilityService {
     const context: TraceContext = { traceId, spanId };
     const timestamp = Date.now();
 
+    // Sanitize attributes to ensure we don't exceed log payload limits
+    const safeData = this.sanitizeForLog(data) as Record<string, unknown>;
+
     // Get the trace and span
     const trace = this.traces.get(traceId);
     if (!trace) {
@@ -262,20 +322,20 @@ export class ObservabilityService {
       return;
     }
 
-    // Add the event
+    // Add the event (store sanitized form as well – original data is not required for observability)
     span.events.push({
       name: eventName,
       timestamp,
-      attributes: data,
+      attributes: safeData,
     });
 
-    // Record event in logs
+    // Record event in logs (sanitized)
     this.logger.info(
       {
         traceId,
         spanId,
         eventName,
-        ...data,
+        ...safeData,
       },
       'Logged event',
     );

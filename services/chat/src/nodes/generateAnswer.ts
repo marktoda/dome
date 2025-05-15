@@ -93,7 +93,16 @@ export async function generateAnswer(
 
     // Build the messages for the LLM
     const chatMessages = buildMessages(systemPrompt, state.chatHistory, userQuery);
-    logger.info({ chatMessages }, '[DEBUG] [GenerateAnswer] Built chat messages for LLM');
+    logger.debug(
+      {
+        chatCount: chatMessages.length,
+        firstMsgPreview:
+          chatMessages.length > 0 && 'content' in chatMessages[0]
+            ? (chatMessages[0] as any).content.substring(0, 100)
+            : undefined,
+      },
+      '[DEBUG] [GenerateAnswer] Built chat messages for LLM',
+    );
 
     // Log context statistics for observability
     ObservabilityService.logEvent(env, traceId, spanId, 'context_stats', {

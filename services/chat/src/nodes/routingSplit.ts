@@ -90,7 +90,15 @@ export const routingSplit = async (state: AgentState, env: Env): Promise<Routing
     /*     response and AIMessageChunk format                          */
     /* --------------------------------------------------------------- */
     let responseFormat = 'direct';
-    logger.info({ result }, 'Received raw result from LLM');
+    logger.debug(
+      {
+        taskCount: Array.isArray(result?.tasks) ? result.tasks.length : undefined,
+        reasoningPreview: result?.reasoning
+          ? result.reasoning.substring(0, 120)
+          : undefined,
+      },
+      'Received raw result from LLM (summary)',
+    );
 
     /* --------------------------------------------------------------- */
     /*  6. Create task entities from parsed result                     */
