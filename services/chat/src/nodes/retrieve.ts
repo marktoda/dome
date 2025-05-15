@@ -22,7 +22,7 @@ import type { SliceUpdate } from '../types/stateSlices';
  * @param env Environment variables
  * @returns Updated agent state with retrieval results
  */
-export type RetrieveUpdate = SliceUpdate<'retrievals'>;
+export type RetrieveUpdate = SliceUpdate<'retrievals' | 'retrievalMeta'>;
 
 export async function retrieve(
   state: AgentState,
@@ -133,6 +133,20 @@ export async function retrieve(
     // Extract the retrieval tasks and results for the unified format
     const retrievalTasks: RetrievalTask[] = results.map(r => r.task);
 
+    // Update retrievalMeta: append seen chunk IDs
+    const prevMeta = (state as any).retrievalMeta ?? {
+      attempt: 1,
+      queries: [],
+      seenChunkIds: [],
+    };
+
+    const newChunkIds = results.flatMap(r => r.task.chunks?.map(c => c.id) ?? []);
+    const baseSeen: string[] = prevMeta.seenChunkIds ?? [];
+    const updatedMeta = {
+      ...prevMeta,
+      seenChunkIds: Array.from(new Set([...baseSeen, ...newChunkIds])),
+    };
+
     /* ------------------------------------------------------------------ */
     /*  Finish, log, and return the state update                          */
     /* ------------------------------------------------------------------ */
@@ -150,6 +164,7 @@ export async function retrieve(
 
     return {
       retrievals: retrievalTasks,
+      retrievalMeta: updatedMeta,
       metadata: {
         currentNode: 'retrieve',
         executionTimeMs: elapsed,

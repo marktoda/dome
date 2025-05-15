@@ -49,4 +49,11 @@ export const GraphStateAnnotationV3 = Annotation.Root({
 
   /* Tool requirements */
   toolRequirements: merge<Record<string, any>>(),
+
+  /* Retrieval loop meta */
+  retrievalMeta: merge<Required<NonNullable<AgentStateV3['retrievalMeta']>>>(),
+
+  /* Retrieval loop v3 slices */
+  selectorHistory: merge<Required<NonNullable<import('./stateSlices').SelectorHistorySlice['selectorHistory']>>>(),
+  refinementPlan: merge<Required<NonNullable<import('./stateSlices').RefinementPlanSlice['refinementPlan']>>>(),
 });

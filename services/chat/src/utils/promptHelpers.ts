@@ -173,8 +173,12 @@ export function buildMessages(
   /* ── 3 · Assemble in chronological order + current user turn ─────── */
   messages.push(...pairs);
   messages.push({ role: 'user', content: userPrompt });
-  getLogger().info(
-    { messages, historyLength: history?.length },
+  getLogger().debug(
+    {
+      messageCount: messages.length,
+      totalTokenEstimate: used,
+      historyPairsIncluded: (pairs.length / 2) | 0,
+    },
     '[BuildMessages] Built messages for LLM',
   );
 

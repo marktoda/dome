@@ -41,7 +41,7 @@ type RetrievalTasks = z.infer<typeof retrievalTasksSchema>;
  * @param env Environment variables
  * @returns Updated agent state with retrieval selections
  */
-export type RetrievalSelectorUpdate = SliceUpdate<'retrievals' | 'reasoning'>;
+export type RetrievalSelectorUpdate = SliceUpdate<'retrievals' | 'reasoning' | 'selectorHistory' | 'refinementPlan'>;
 
 export async function retrievalSelector(
   state: AgentState,
@@ -81,13 +81,25 @@ export async function retrievalSelector(
   `;
   }
 
+  // If we have refined queries from previous iteration, surface them as hints
+  const refinedQueryHintsArr = (state.refinementPlan?.refinedQueries || []).slice(-3);
+  const refinedQueryHints = refinedQueryHintsArr
+    .map((q: string, idx: number) => `  • Hint ${idx + 1}: ${q}`)
+    .join('\n');
+
   try {
     /* ------------------------------------------------------------------ */
     /*  LLM-based retrieval selection                                     */
     /* ------------------------------------------------------------------ */
-    // Get system prompt from centralized config
-    const systemPrompt = getRetrievalSelectionPrompt(availableRetrievalTypes);
-    logger.info({ systemPrompt }, 'System prompt for retrieval selection');
+    // Get system prompt from centralized config and append any refined query hints
+    let systemPrompt = getRetrievalSelectionPrompt(availableRetrievalTypes);
+    if (refinedQueryHints) {
+      systemPrompt += `\nPrevious refined query suggestions:\n${refinedQueryHints}`;
+    }
+    logger.debug(
+      { promptLength: systemPrompt.length },
+      'System prompt for retrieval selection (length only)',
+    );
 
     // Call LLM to decide which retrievers are appropriate for this task
     const messages = buildMessages(systemPrompt, state.chatHistory, lastUserMsg.content);
@@ -130,8 +142,28 @@ export async function retrievalSelector(
       'Retrieval selection complete (with deduplication)',
     );
 
+    /* -------- Update selectorHistory & consume refinementPlan ------- */
+    const prevHistory = (state as any).selectorHistory ?? {
+      attempt: 1,
+      issuedQueries: [],
+      seenChunkIds: [],
+    };
+
+    const plan = (state as any).refinementPlan ?? { refinedQueries: [] };
+
+    const issuedQueries = deduplicatedTasks.map(t => t.query);
+    const updatedHistory = {
+      ...prevHistory,
+      attempt: prevHistory.attempt + 1,
+      issuedQueries: Array.from(new Set([...prevHistory.issuedQueries, ...issuedQueries])),
+    };
+
+    const clearedPlan = { ...plan, refinedQueries: [] };
+
     return {
       retrievals: deduplicatedTasks,
+      selectorHistory: updatedHistory,
+      refinementPlan: clearedPlan,
       reasoning: [
         ...(state.reasoning || []),
         result.reasoning || 'Selected appropriate retrieval sources based on the task.',

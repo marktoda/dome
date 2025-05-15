@@ -8,6 +8,8 @@ import { toDomeError } from '../utils/errors';
 import { getRetrievalEvaluationPrompt } from '../config/promptsConfig';
 import type { SliceUpdate } from '../types/stateSlices';
 import { z } from 'zod';
+import { countTokens, calculateContextLimits } from '@dome/common';
+import { chooseModel } from '@dome/common';
 
 /**
  * Retrieval Evaluator LLM Node
@@ -31,7 +33,7 @@ import { z } from 'zod';
  * @returns Updated agent state with retrieval evaluation results
  */
 export type RetrievalEvalUpdate = SliceUpdate<
-  'retrievalEvaluation' | 'toolNecessityClassification'
+  'retrievalEvaluation' | 'toolNecessityClassification' | 'refinementPlan' | 'selectorHistory'
 >;
 
 // Structured output schema – keeps evaluator responses machine-readable
@@ -74,6 +76,10 @@ export async function retrievalEvaluatorLLM(
         reasoning: 'No retrievals available',
         confidence: 1,
       },
+      refinementPlan: {
+        attempt: (state.selectorHistory?.attempt ?? 1),
+        refinedQueries: [],
+      },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: 0,
@@ -102,6 +108,10 @@ export async function retrievalEvaluatorLLM(
         reasoning: 'No retrieval tasks with chunks found',
         confidence: 1,
       },
+      refinementPlan: {
+        attempt: (state.selectorHistory?.attempt ?? 1),
+        refinedQueries: [],
+      },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: 0,
@@ -128,6 +138,10 @@ export async function retrievalEvaluatorLLM(
         isToolNeeded: true,
         reasoning: 'No user message found for evaluation context',
         confidence: 1,
+      },
+      refinementPlan: {
+        attempt: (state.selectorHistory?.attempt ?? 1),
+        refinedQueries: [],
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
@@ -159,16 +173,33 @@ export async function retrievalEvaluatorLLM(
       'Starting retrieval evaluation',
     );
 
-    // Prepare the content for evaluation using the retrieval tasks
-    const contentToEvaluate = retrievalTasks
-      .map(task => {
-        const sourceType = task.sourceType || task.category;
-        const chunks = (task.chunks || [])
-          .map((chunk: DocumentChunk) => `[${sourceType.toUpperCase()} CHUNK]\n${chunk.content}\n`)
-          .join('\n\n');
+    /* --------------------------------------------------------------- */
+    /*  2b. Enforce context budget for docs                             */
+    /* --------------------------------------------------------------- */
+    // Determine the document token budget based on model limits
+    const modelConfig = chooseModel({ task: 'retrieval_eval' });
+    const limits = calculateContextLimits(modelConfig);
+    const docBudget = limits.maxDocumentsTokens ?? Math.floor(limits.maxContextTokens * 0.4);
 
-        return `SOURCE TYPE: ${sourceType}\n${chunks}`;
-      })
+    let runningDocTokens = 0;
+    const docSections: string[] = [];
+
+    for (const task of retrievalTasks) {
+      const sourceType = task.sourceType || task.category;
+      for (const chunk of task.chunks || []) {
+        const chunkText = `[${sourceType.toUpperCase()} CHUNK]\n${chunk.content}\n`;
+        const tokenCount = countTokens(chunkText);
+        if (runningDocTokens + tokenCount > docBudget) {
+          break;
+        }
+        docSections.push(chunkText);
+        runningDocTokens += tokenCount;
+      }
+      if (runningDocTokens >= docBudget) break;
+    }
+
+    const contentToEvaluate = docSections
+      .map((txt, idx) => `CHUNK ${idx + 1}:\n${txt}`)
       .join('\n\n');
 
     // Build evaluation prompt using the centralized config
@@ -230,11 +261,28 @@ export async function retrievalEvaluatorLLM(
       { prompt: systemPrompt.length / 4, completion: evalStructured.reasoning.length / 4 }, // Rough token estimate
     );
 
+    // Update retrievalMeta with the latest evaluation so that the improver has context
+    const prevPlan = (state as any).refinementPlan ?? { refinedQueries: [] };
+    const updatedPlan = {
+      ...prevPlan,
+      lastEvaluation: retrievalEvaluation,
+    };
+
     // End span with updated state
     const updatedState = {
       ...state,
       retrievalEvaluation,
       toolNecessityClassification,
+      refinementPlan: updatedPlan,
+      selectorHistory: state.selectorHistory,
+      metadata: {
+        currentNode: 'retrievalEvaluatorLLM',
+        executionTimeMs: elapsed,
+        nodeTimings: {
+          ...state.metadata?.nodeTimings,
+          retrievalEvaluatorLLM: elapsed,
+        },
+      },
     };
 
     ObservabilityService.endSpan(
@@ -251,6 +299,10 @@ export async function retrievalEvaluatorLLM(
     return {
       retrievalEvaluation,
       toolNecessityClassification,
+      refinementPlan: {
+        attempt: (state.selectorHistory?.attempt ?? 1),
+        refinedQueries: [],
+      },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',
         executionTimeMs: elapsed,
@@ -300,6 +352,10 @@ export async function retrievalEvaluatorLLM(
         isToolNeeded: true,
         reasoning: domeError.message,
         confidence: 1,
+      },
+      refinementPlan: {
+        attempt: (state.selectorHistory?.attempt ?? 1),
+        refinedQueries: [],
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',

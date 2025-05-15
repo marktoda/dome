@@ -143,6 +143,50 @@ export interface ToolRequirementsSlice {
   toolRequirements?: Record<string, any>;
 }
 
+export interface RetrievalMetaSlice {
+  retrievalMeta?: {
+    /** Loop counter (starts at 1) */
+    attempt: number;
+
+    /** Queries executed by retrievalSelector in previous rounds */
+    issuedQueries: string[];
+
+    /** Queries proposed by improveRetrieval for the next round */
+    refinedQueries: string[];
+
+    /** Chunk IDs already surfaced to the LLM */
+    seenChunkIds: string[];
+
+    /** Evaluation produced by the last retrievalEvaluatorLLM */
+    lastEvaluation?: import('../types').RetrievalEvaluation;
+  };
+}
+
+export interface SelectorHistorySlice {
+  selectorHistory?: {
+    /** Attempt counter incremented by retrievalSelector */
+    attempt: number;
+    /** Every query retrievalSelector has executed */
+    issuedQueries: string[];
+    /** All chunk IDs surfaced so far (for de-dup) */
+    seenChunkIds: string[];
+  };
+}
+
+export interface RefinementPlanSlice {
+  refinementPlan?: {
+    /** Same attempt number (incremented by improveRetrieval) */
+    attempt: number;
+    /** Queries proposed by improveRetrieval for the next round */
+    refinedQueries: string[];
+    /** Optional flags */
+    broadenScope?: boolean;
+    excludedSources?: string[];
+    /** Evaluation from last round for context */
+    lastEvaluation?: import('../types').RetrievalEvaluation;
+  };
+}
+
 export type AgentStateV3 = IdentitySlice &
   ConversationSlice &
   Partial<
@@ -156,7 +200,10 @@ export type AgentStateV3 = IdentitySlice &
   ConfigSlice &
   MetadataSlice &
   TaskSlice &
-  ToolRequirementsSlice;
+  ToolRequirementsSlice &
+  Partial<SelectorHistorySlice> &
+  Partial<RefinementPlanSlice> &
+  Partial<RetrievalMetaSlice>;
 
 /**
  * Utility: list of all slice keys so other tooling can reference them without
@@ -180,6 +227,9 @@ export const sliceKeys = [
   'taskIds',
   'taskEntities',
   'toolRequirements',
+  'selectorHistory',
+  'refinementPlan',
+  'retrievalMeta',
 ] as const;
 
 /* ------------------------------------------------------------------ */
