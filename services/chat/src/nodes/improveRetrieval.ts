@@ -2,7 +2,6 @@ import { getLogger, logError } from '@dome/common';
 import { z } from 'zod';
 import { AgentStateV3 as AgentState, SliceUpdate } from '../types/stateSlices';
 import { ObservabilityService } from '../services/observabilityService';
-import { buildMessages } from '../utils/promptHelpers';
 import { LlmService } from '../services/llmService';
 
 export type ImproveRetrievalUpdate = SliceUpdate<'retrievalLoop' | 'reasoning' | 'metadata'>;
@@ -10,12 +9,17 @@ export type ImproveRetrievalUpdate = SliceUpdate<'retrievalLoop' | 'reasoning' |
 // -----------------------------
 // 1. Schema & prompt pieces
 // -----------------------------
+// OpenAI `response_format` only supports a subset of JSON Schema.
+//    • No `nullable`, `not`, or other advanced keywords
+//    • Descriptive metadata must be omitted
+// Keep the schema minimal and validate elaborately on the server side instead.
 const refinementSchema = z.object({
-  refinedQueries: z.array(z.string()).describe('1-3 refined queries'),
-  broadenScope: z.boolean().optional().nullable(),
-  excludedSources: z.array(z.string()).optional().nullable(),
+  refinedQueries: z.array(z.string()),
   reasoning: z.string(),
+  broadenScope: z.boolean().nullable(),
+  excludedSources: z.array(z.string()).nullable(),
 });
+// Type output
 type Refinement = z.infer<typeof refinementSchema>;
 
 /**
@@ -46,7 +50,7 @@ export const improveRetrieval = async (
     lastEvaluation: undefined,
   };
 
-  const attempt = loopPrev.attempt + 1;
+  const attempt = loopPrev.attempt;
 
   /* ------------------------------------------------------------------ */
   /*  Build context for the LLM                                          */
@@ -55,16 +59,15 @@ export const improveRetrieval = async (
   const evaluation = loopPrev.lastEvaluation;
 
   if (!evaluation) {
-    // No evaluation yet – just bump counters and exit (first loop)
+    // No evaluation available – likely the first pass. Propagate loop without changes.
     return {
-      retrievalLoop: { ...loopPrev, attempt },
+      retrievalLoop: { ...loopPrev },
       reasoning: [
         ...(state.reasoning ?? []),
-        'No retrieval evaluation available; incrementing attempt counter.',
+        'No retrieval evaluation available in state; proceeding without refinement.',
       ],
       metadata: {
         ...state.metadata,
-        iteration: attempt,
         currentNode: 'improve_retrieval',
       },
     };
@@ -96,14 +99,13 @@ export const improveRetrieval = async (
       schemaInstructions: 'Respond ONLY with valid JSON matching the schema.',
       task: 'generation',
     });
-    log.info({ refinement }, 'Received refinement from LLM');
   } catch (err) {
     // Fallback: simple heuristic – reuse question with "explain in depth"
     logError(err, 'Refinement LLM failed; using heuristic');
     refinement = {
       refinedQueries: [question + ' in more detail'],
       broadenScope: true,
-      excludedSources: undefined,
+      excludedSources: null,
       reasoning: 'Heuristic fallback – broadened query.',
     };
   }
@@ -113,7 +115,6 @@ export const improveRetrieval = async (
   /* ------------------------------------------------------------------ */
   const updatedLoop = {
     ...loopPrev,
-    attempt,
     refinedQueries: refinement.refinedQueries,
     lastEvaluation: undefined,
   };
@@ -133,17 +134,11 @@ export const improveRetrieval = async (
     logError(e, 'Failed to end observability span in improveRetrieval');
   }
 
-  log.info(
-    { attempt, refinedQueries: refinement.refinedQueries },
-    'Generated retrieval refinement',
-  );
-
   return {
     retrievalLoop: updatedLoop,
     reasoning: [...(state.reasoning ?? []), refinement.reasoning],
     metadata: {
       ...state.metadata,
-      iteration: attempt,
       nodeTimings: { ...state.metadata?.nodeTimings, improveRetrieval: elapsed },
       currentNode: 'improve_retrieval',
     },

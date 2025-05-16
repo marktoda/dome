@@ -143,52 +143,8 @@ export interface ToolRequirementsSlice {
   toolRequirements?: Record<string, any>;
 }
 
-export interface RetrievalMetaSlice {
-  retrievalMeta?: {
-    /** Loop counter (starts at 1) */
-    attempt: number;
-
-    /** Queries executed by retrievalSelector in previous rounds */
-    issuedQueries: string[];
-
-    /** Queries proposed by improveRetrieval for the next round */
-    refinedQueries: string[];
-
-    /** Chunk IDs already surfaced to the LLM */
-    seenChunkIds: string[];
-
-    /** Evaluation produced by the last retrievalEvaluatorLLM */
-    lastEvaluation?: import('../types').RetrievalEvaluation;
-  };
-}
-
-export interface SelectorHistorySlice {
-  selectorHistory?: {
-    /** Attempt counter incremented by retrievalSelector */
-    attempt: number;
-    /** Every query retrievalSelector has executed */
-    issuedQueries: string[];
-    /** All chunk IDs surfaced so far (for de-dup) */
-    seenChunkIds: string[];
-  };
-}
-
-export interface RefinementPlanSlice {
-  refinementPlan?: {
-    /** Same attempt number (incremented by improveRetrieval) */
-    attempt: number;
-    /** Queries proposed by improveRetrieval for the next round */
-    refinedQueries: string[];
-    /** Optional flags */
-    broadenScope?: boolean;
-    excludedSources?: string[];
-    /** Evaluation from last round for context */
-    lastEvaluation?: import('../types').RetrievalEvaluation;
-  };
-}
-
 /* ------------------------------------------------------------------ */
-/*  Consolidated retrieval loop meta (NEW)                            */
+/*  Consolidated retrieval loop meta (v3) – single authoritative slice */
 /* ------------------------------------------------------------------ */
 
 export interface RetrievalLoopSlice {
@@ -208,6 +164,9 @@ export interface RetrievalLoopSlice {
     seenChunkIds: string[];
     /** Evaluation of last round produced by retrievalEvaluatorLLM */
     lastEvaluation?: import('../types').RetrievalEvaluation;
+
+    /** Count consecutive times a given category produced inadequate results */
+    categoryFailures?: Record<string, number>;
   };
 }
 
@@ -225,9 +184,6 @@ export type AgentStateV3 = IdentitySlice &
   MetadataSlice &
   TaskSlice &
   ToolRequirementsSlice &
-  Partial<SelectorHistorySlice> &
-  Partial<RefinementPlanSlice> &
-  Partial<RetrievalMetaSlice> &
   Partial<RetrievalLoopSlice>;
 
 /**
@@ -252,9 +208,6 @@ export const sliceKeys = [
   'taskIds',
   'taskEntities',
   'toolRequirements',
-  'selectorHistory',
-  'refinementPlan',
-  'retrievalMeta',
   'retrievalLoop',
 ] as const;
 

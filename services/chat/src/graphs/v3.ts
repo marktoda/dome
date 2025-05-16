@@ -32,7 +32,7 @@ function makeDecideAfterEval(maxLoops: number) {
     const adequate = !!evalRes?.isAdequate;
     const needsTool = !!toolNec?.isToolNeeded;
 
-    const iteration = state.metadata?.iteration ?? 0;
+    const iteration = state.retrievalLoop?.attempt ?? 0;
 
     if (adequate && !needsTool) return 'combine_context';
 
@@ -117,6 +117,7 @@ export const V3Chat: ChatBuilder = {
 
 function createNodeWrappers(env: Env, tools: ToolRegistry) {
   const log = getLogger().child({ component: 'ragNodeWrappersV3' });
+  const verbose = (env as any).LOG_VERBOSE === '1';
 
   // Helper that decorates a node with pre/post logging
   function wrap<T extends unknown[], R>(

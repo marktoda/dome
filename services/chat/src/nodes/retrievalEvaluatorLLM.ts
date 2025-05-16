@@ -267,17 +267,30 @@ export async function retrievalEvaluatorLLM(
       { prompt: systemPrompt.length / 4, completion: evalStructured.reasoning.length / 4 }, // Rough token estimate
     );
 
-    // Update retrievalMeta with the latest evaluation so that the improver has context
+    // Persist evaluation result into the consolidated retrievalLoop slice
     const loopPrev = state.retrievalLoop ?? {
       attempt: 1,
       issuedQueries: [],
       refinedQueries: [],
       seenChunkIds: [],
+      lastEvaluation: undefined,
     };
+
+    // update failure counters per category when evaluation is not adequate
+    const failuresPrev = loopPrev.categoryFailures ?? {};
+    const newFailures: Record<string, number> = { ...failuresPrev };
+    for (const cat of Array.from(new Set(retrievalTasks.map(t => t.category)))) {
+      if (!isAdequate) {
+        newFailures[cat] = (newFailures[cat] ?? 0) + 1;
+      } else {
+        newFailures[cat] = 0; // reset successes
+      }
+    }
 
     const updatedLoop = {
       ...loopPrev,
       lastEvaluation: retrievalEvaluation,
+      categoryFailures: newFailures,
     };
 
     // End span with updated state
@@ -362,10 +375,10 @@ export async function retrievalEvaluatorLLM(
         confidence: 1,
       },
       retrievalLoop: {
-        attempt: 1,
-        issuedQueries: [],
+        attempt: state.retrievalLoop?.attempt ?? 1,
+        issuedQueries: state.retrievalLoop?.issuedQueries ?? [],
         refinedQueries: [],
-        seenChunkIds: [],
+        seenChunkIds: state.retrievalLoop?.seenChunkIds ?? [],
       },
       metadata: {
         currentNode: 'retrievalEvaluatorLLM',

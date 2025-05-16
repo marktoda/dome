@@ -151,6 +151,12 @@ export class ChatController {
       taskEntities,
       docs,
       generatedText,
+      retrievalLoop: {
+        attempt: 1,
+        issuedQueries: [],
+        refinedQueries: [],
+        seenChunkIds: [],
+      },
       metadata: { ...metadata, startTime: performance.now(), runId },
     } as AgentState;
   }

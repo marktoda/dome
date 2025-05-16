@@ -50,12 +50,12 @@ export const GraphStateAnnotationV3 = Annotation.Root({
   /* Tool requirements */
   toolRequirements: merge<Record<string, any>>(),
 
-  /* Retrieval loop meta */
-  retrievalMeta: merge<Required<NonNullable<AgentStateV3['retrievalMeta']>>>(),
-
-  /* Retrieval loop v3 slices */
-  selectorHistory:
-    merge<Required<NonNullable<import('./stateSlices').SelectorHistorySlice['selectorHistory']>>>(),
-  refinementPlan:
-    merge<Required<NonNullable<import('./stateSlices').RefinementPlanSlice['refinementPlan']>>>(),
+  /* --- Iterative Retrieval Loop (v3) --- */
+  /**
+   * Consolidated metadata used by retrieval_selector, retrieve, retrieval_evaluator
+   * and improve_retrieval nodes. Replaces the older retrievalMeta / selectorHistory /
+   * refinementPlan slices.
+   */
+  retrievalLoop:
+    merge<Required<NonNullable<import('./stateSlices').RetrievalLoopSlice['retrievalLoop']>>>(),
 });

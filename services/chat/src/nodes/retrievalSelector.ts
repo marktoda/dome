@@ -1,9 +1,8 @@
 import { getLogger } from '@dome/common';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { buildMessages } from '../utils';
-import { ContentCategory, ContentCategoryEnum } from '@dome/common';
 import { RETRIEVAL_TOOLS } from '../tools';
-import { RetrievalToolType, Message } from '../types';
+import { RetrievalToolType } from '../types';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import type { SliceUpdate } from '../types/stateSlices';
 import { LlmService } from '../services/llmService';
@@ -81,30 +80,53 @@ export async function retrievalSelector(
   `;
   }
 
-  // Access consolidated loop meta (fallback to old slices during migration)
+  // Consolidated loop metadata (v3)
+  // If not present, initialize a fresh object. We no longer rely on legacy
+  // slices such as `selectorHistory` / `retrievalMeta` / `refinementPlan`.
   const loop = state.retrievalLoop ?? {
-    attempt: 1,
+    attempt: 0, // will be incremented below so first run becomes 1
     issuedQueries: [],
-    refinedQueries: state.refinementPlan?.refinedQueries ?? [],
-    seenChunkIds: state.selectorHistory?.seenChunkIds ?? [],
-    lastEvaluation: state.refinementPlan?.lastEvaluation,
+    refinedQueries: [],
+    seenChunkIds: [],
+    lastEvaluation: undefined,
   };
 
-  // If we have refined queries from previous iteration, surface them as hints
+  // Helper string builders -------------------------------------------------
   const refinedQueryHintsArr = (loop.refinedQueries || []).slice(-3);
   const refinedQueryHints = refinedQueryHintsArr
     .map((q: string, idx: number) => `  • Hint ${idx + 1}: ${q}`)
     .join('\n');
+
+  // Summarise last evaluator feedback (if any)
+  const evaluationFeedback = loop.lastEvaluation
+    ? `\nPrevious evaluator feedback (score=${loop.lastEvaluation.overallScore}, adequate=${loop.lastEvaluation.isAdequate}): ${loop.lastEvaluation.reasoning}`
+    : '';
+
+  // List of recent queries that the selector should avoid repeating
+  const recentQueriesList = (loop.issuedQueries || []).slice(-5);
+  const avoidQueriesSection = recentQueriesList.length
+    ? `\nDO NOT repeat any of these previous queries:\n${recentQueriesList.map(q => `  • ${q}`).join('\n')}`
+    : '';
+
+  // Construct failure stats paragraph – include categories with 2+ consecutive failures
+  const failureEntries = Object.entries(loop.categoryFailures || {}).filter(([, n]) => n >= 2);
+  const failureSection = failureEntries.length
+    ? `\nThese categories have yielded poor results recently:\n${failureEntries
+        .map(([cat, n]) => `  • ${cat}: ${n} failed attempts`)
+        .join('\n')}\nConsider alternative sources.`
+    : '';
 
   try {
     /* ------------------------------------------------------------------ */
     /*  LLM-based retrieval selection                                     */
     /* ------------------------------------------------------------------ */
     // Get system prompt from centralized config and append any refined query hints
-    let systemPrompt = getRetrievalSelectionPrompt(availableRetrievalTypes);
-    if (refinedQueryHints) {
-      systemPrompt += `\nPrevious refined query suggestions:\n${refinedQueryHints}`;
-    }
+    let systemPrompt =
+      getRetrievalSelectionPrompt(availableRetrievalTypes) +
+      failureSection +
+      evaluationFeedback +
+      (refinedQueryHints ? `\nPrevious refined query suggestions:\n${refinedQueryHints}` : '') +
+      avoidQueriesSection;
     logger.debug(
       { promptLength: systemPrompt.length },
       'System prompt for retrieval selection (length only)',
@@ -134,14 +156,17 @@ export async function retrievalSelector(
     const elapsed = performance.now() - t0;
     ObservabilityService.endSpan(env, traceId, spanId, 'retrievalSelector', state, state, elapsed);
 
-    // Deduplicate tasks by category and query
-    const uniqueTasks = new Map();
-    for (const task of result.tasks) {
-      const key = `${task.category}:${task.query}`;
-      uniqueTasks.set(key, task);
-    }
+    // Remove any tasks whose query was already issued in earlier rounds
+    const freshTasksPreDedup = result.tasks.filter(t =>
+      !loop.issuedQueries.includes(t.query),
+    );
 
-    const deduplicatedTasks = Array.from(uniqueTasks.values());
+    const uniqueMap = new Map();
+    for (const task of freshTasksPreDedup) {
+      uniqueMap.set(`${task.category}:${task.query}`, task);
+    }
+    const deduplicatedTasks = Array.from(uniqueMap.values());
+
     logger.info(
       {
         elapsedMs: elapsed,
@@ -156,9 +181,9 @@ export async function retrievalSelector(
     const issuedQueries = deduplicatedTasks.map(t => t.query);
     const updatedLoop = {
       ...loop,
-      attempt: (loop.attempt ?? 0) + 1,
+      attempt: loop.attempt + 1,
       issuedQueries: Array.from(new Set([...(loop.issuedQueries ?? []), ...issuedQueries])),
-      refinedQueries: [], // consumed
+      refinedQueries: [], // consumed after selector
     };
 
     return {
@@ -175,6 +200,7 @@ export async function retrievalSelector(
           ...state.metadata?.nodeTimings,
           retrievalSelector: elapsed,
         },
+        iteration: updatedLoop.attempt,
       },
     };
   } catch (error) {

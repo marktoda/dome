@@ -10,31 +10,17 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
   // Create a shallow copy of state to modify
   const summary: Record<string, any> = { ...state };
 
-  // Summarize docs (often the largest part) and include content snippets
-  if (state.docs && state.docs.length > 0) {
-    summary.docs = state.docs.map((d, i) => ({
-      idx: i,
-      id: d.id,
-      title: d.title,
-      source: d.metadata.source,
-      url: d.metadata.url,
-      relevanceScore: d.metadata.relevanceScore,
-      // Include a snippet of the document content
-      bodySnippet: d.content
-        ? d.content.length > 100
-          ? `${d.content.substring(0, 100)}...`
-          : d.content
-        : '[No content]',
-    }));
-  }
+  // Ultra-compact summaries ------------------------------------------------
+  if (state.docs) summary.docsCount = state.docs.length;
 
   // Truncate long messages
   if (state.messages && state.messages.length > 0) {
-    summary.messages = state.messages.map(msg => ({
-      role: msg.role,
-      content: msg.content.length > 50 ? `${msg.content.substring(0, 50)}...` : msg.content,
-      timestamp: msg.timestamp,
-    }));
+    const last = state.messages[state.messages.length - 1];
+    summary.lastMessage = {
+      role: last.role,
+      content: last.content.length > 40 ? `${last.content.substring(0, 40)}…` : last.content,
+    };
+    summary.totalMessages = state.messages.length;
   }
 
   // Summarize reasoning
@@ -55,22 +41,8 @@ export function createStateSummary(state: Partial<AgentState>): Record<string, a
   // If there are retrievals, summarize them and include body snippets
   if (state.retrievals) {
     summary.retrievals = state.retrievals.map(r => ({
-      query: r.query,
       category: r.category,
-      chunks: (r.chunks ?? []).map(c => ({
-        id: c.id,
-        source: c.metadata.source,
-        title: c.metadata.title,
-        url: c.metadata.url,
-        score: c.metadata.relevanceScore,
-        rerankerScore: c.metadata.rerankerScore,
-        // Include a snippet of the document content for better debugging
-        bodySnippet: c.content
-          ? c.content.length > 100
-            ? `${c.content.substring(0, 100)}...`
-            : c.content
-          : '[No content]',
-      })),
+      chunks: r.chunks?.length ?? 0,
     }));
   }
 

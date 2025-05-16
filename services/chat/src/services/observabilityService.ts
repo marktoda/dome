@@ -64,9 +64,8 @@ export class ObservabilityService {
     // Primitive values can be returned as-is (except long strings)
     if (typeof value === 'string') {
       return value.length > this.MAX_STRING_LENGTH
-        ? `${value.substring(0, this.MAX_STRING_LENGTH)}…[truncated ${
-            value.length - this.MAX_STRING_LENGTH
-          } chars]`
+        ? `${value.substring(0, this.MAX_STRING_LENGTH)}…[truncated ${value.length - this.MAX_STRING_LENGTH
+        } chars]`
         : value;
     }
 
@@ -130,7 +129,7 @@ export class ObservabilityService {
     });
 
     // Record trace initialization in logs
-    this.logger.info(
+    this.logger.debug(
       {
         traceId,
         userId,
@@ -185,7 +184,7 @@ export class ObservabilityService {
     });
 
     // Record span start in logs
-    this.logger.info(
+    this.logger.debug(
       {
         traceId,
         spanId,
@@ -267,7 +266,7 @@ export class ObservabilityService {
     }
 
     // Record span end in logs
-    this.logger.info(
+    this.logger.debug(
       {
         traceId,
         spanId,
@@ -332,7 +331,7 @@ export class ObservabilityService {
     });
 
     // Record event in logs (sanitized)
-    this.logger.info(
+    this.logger.debug(
       {
         traceId,
         spanId,
@@ -386,7 +385,7 @@ export class ObservabilityService {
     }
 
     // Record trace end in logs
-    this.logger.info(
+    this.logger.debug(
       {
         traceId,
         totalExecutionTimeMs,

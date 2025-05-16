@@ -94,7 +94,14 @@ export async function retrieve(
       );
 
       // Convert to document format
-      const docs = retriever.toDocuments(res);
+      let docs = retriever.toDocuments(res);
+
+      // ------------------------------------------------------------------
+      // Deduplicate across iterations – remove chunks we have already
+      // surfaced to the LLM in previous retrieval rounds.
+      // ------------------------------------------------------------------
+      const alreadySeen = new Set(state.retrievalLoop?.seenChunkIds ?? []);
+      docs = docs.filter(c => !alreadySeen.has(c.id));
 
       // Calculate execution time
       const execTime = performance.now() - startTime;
@@ -166,6 +173,7 @@ export async function retrieve(
       retrievals: retrievalTasks,
       retrievalLoop: updatedLoop,
       metadata: {
+        ...state.metadata,
         currentNode: 'retrieve',
         executionTimeMs: elapsed,
         nodeTimings: {
@@ -199,6 +207,7 @@ export async function retrieve(
 
     return {
       metadata: {
+        ...state.metadata,
         currentNode: 'retrieve',
         executionTimeMs: elapsed,
         errors: [formattedError],
