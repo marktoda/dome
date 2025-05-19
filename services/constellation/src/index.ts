@@ -27,6 +27,9 @@ import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
 import { createVectorizeService } from './services/vectorize';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
+  SILO: SiloBinding;
+}
 
 const logger = getLogger();
 
@@ -34,13 +37,13 @@ const logger = getLogger();
 /* helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-type DeadQueue = Env['EMBED_DEAD'];
+type DeadQueue = ServiceEnv['EMBED_DEAD'];
 
-const buildServices = (env: Env) => ({
+const buildServices = (env: ServiceEnv) => ({
   preprocessor: createPreprocessor(),
   embedder: createEmbedder(env.AI),
   vectorize: createVectorizeService(env.VECTORIZE), // Reverted to 'vectorize'
-  silo: new SiloClient(env.SILO as unknown as SiloBinding),
+  silo: new SiloClient(env.SILO),
 });
 
 /**
@@ -148,7 +151,7 @@ const sendToDeadLetter = async (
 /* worker                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export default class Constellation extends WorkerEntrypoint<Env> {
+export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
   /** Lazily created bundle of service clients (re‑used for every call) */
   private _services?: ReturnType<typeof buildServices>;
   private get services() {

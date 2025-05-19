@@ -15,6 +15,9 @@ import { createSyncPlanService } from './services/syncPlanService';
 import { TokenService } from './services/tokenService';
 import type { NotionOAuthDetails, GithubOAuthDetails } from './client/types'; // Added GithubOAuthDetails
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
+  SILO: SiloBinding;
+}
 import { syncHistoryOperations } from './db/client';
 import { ProviderType } from './providers';
 
@@ -25,8 +28,8 @@ export { ResourceObject } from './resourceObject';
 const logger = getLogger();
 const metrics = createServiceMetrics('tsunami');
 
-const buildServices = (env: Env) => ({
-  silo: new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE),
+const buildServices = (env: ServiceEnv) => ({
+  silo: new SiloClient(env.SILO, env.SILO_INGEST_QUEUE),
   syncPlan: createSyncPlanService(env),
   token: new TokenService(env.SYNC_PLAN), // Added TokenService instantiation
 });
@@ -53,7 +56,7 @@ logger.info(
  * This service manages GitHub repository syncing and provides
  * endpoints for registering repos and viewing sync history.
  */
-export default class Tsunami extends WorkerEntrypoint<Env> {
+export default class Tsunami extends WorkerEntrypoint<ServiceEnv> {
   /** Lazily created bundle of service clients (re‑used for every call) */
   private _services?: ReturnType<typeof buildServices>;
   private get services() {

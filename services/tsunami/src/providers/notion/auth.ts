@@ -8,6 +8,7 @@ import { getLogger, metrics } from '@dome/common';
 import { ServiceError } from '@dome/common/src/errors';
 import { TokenService, OAuthTokenRecord } from '../../services/tokenService'; // Corrected path
 import type { NotionOAuthDetails } from '../../client/types'; // Corrected path
+import type { ServiceEnv } from '../../resourceObject';
 
 /**
  * Notion OAuth Token Response
@@ -41,7 +42,7 @@ export class NotionAuthManager {
   // private tokenStore: Map<string, string> = new Map(); // Replaced with TokenService
   private tokenService: TokenService;
 
-  constructor(env: Env) {
+  constructor(env: ServiceEnv) {
     this.clientId = (env as any).NOTION_CLIENT_ID || '';
     this.clientSecret = (env as any).NOTION_CLIENT_SECRET || '';
     this.redirectUri = (env as any).NOTION_REDIRECT_URI || '';

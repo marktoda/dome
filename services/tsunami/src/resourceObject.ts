@@ -1,6 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
 import { getLogger, logError, metrics } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+
+export interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
+  SILO: SiloBinding;
+}
 import {
   ProviderType,
   GithubProvider,
@@ -46,14 +50,14 @@ const ConfigSchema = z.object({
 /*  durable object                                                    */
 /* ------------------------------------------------------------------ */
 
-export class ResourceObject extends DurableObject<Env> {
+export class ResourceObject extends DurableObject<ServiceEnv> {
   protected cfg: Config = DEFAULT_CFG;
   protected readonly silo: SiloClient;
   protected readonly log = getLogger();
 
-  constructor(ctx: any, env: Env) {
+  constructor(ctx: any, env: ServiceEnv) {
     super(ctx, env);
-    (this.silo = new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE)),
+    (this.silo = new SiloClient(env.SILO, env.SILO_INGEST_QUEUE)),
       // Load stored configuration (do **not** throw – an empty cfg just means un‑initialised).
       ctx.blockConcurrencyWhile(async () => {
         const stored = await ctx.storage.get(STORAGE_KEY);
@@ -259,7 +263,7 @@ export class ResourceObject extends DurableObject<Env> {
 /* ------------------------------------------------------------------ */
 
 /** Map provider-type → factory so we don't need a switch every time. */
-const PROVIDERS: Record<ProviderType, (env: Env) => Provider> = {
+const PROVIDERS: Record<ProviderType, (env: ServiceEnv) => Provider> = {
   [ProviderType.GITHUB]: env => new GithubProvider(env),
   [ProviderType.NOTION]: env => new NotionProvider(env),
   [ProviderType.WEBSITE]: env => new WebsiteProvider(env),

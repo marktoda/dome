@@ -1,59 +1,27 @@
 import { SiloBatchGetInput, SiloContentBatch } from '@dome/common';
+import { SiloBinding } from '@dome/silo/client';
 import { z } from 'zod';
 
 /**
  * Environment interface for AI Processor
  */
-interface Env {
-  // Bindings
-  AI: AI;
-  ENRICHED_CONTENT?: Queue<any>;
-  RATE_LIMIT_DLQ?: Queue<any>;
-  TODOS?: Queue<any>;
-  SILO: any;
-
-  // Environment variables
+export interface ServiceEnv {
+  AI: Ai;
+  ENRICHED_CONTENT: Queue;
+  RATE_LIMIT_DLQ: Queue;
+  TODOS: Queue;
+  SILO: SiloBinding;
   AI_MODEL_NAME?: string;
   AI_TOKEN_LIMIT?: string;
 }
 
-/**
- * AI interface for Cloudflare AI
- */
-interface AI {
-  run<T extends keyof AiModels>(model: T, options: any): Promise<AiResponse>;
-}
-
-/**
- * AI models available in Cloudflare
- */
-interface AiModels {
-  '@cf/google/gemma-7b-it-lora': any;
-  '@cf/meta/llama-2-7b-chat-int8': any;
-  '@cf/mistral/mistral-7b-instruct-v0.1': any;
-  '@cf/meta/llama-3-8b-instruct': any;
-  '@cf/meta/llama-3-70b-instruct': any;
-  '@cf/google/gemma-3-12b-it': any; // Added additional model
-  [key: string]: any; // Allow any other string model names
-}
-
-/**
- * AI response type
- */
-type AiResponse = {
-  response?: string;
-  [key: string]: any;
-};
 
 // Define Cloudflare Workers types
-export interface Queue<T> {
+export interface GenericQueue<T> {
   send(message: T): Promise<void>;
   sendBatch(messages: T[]): Promise<void>;
 }
 
-export interface SiloBinding {
-  batchGet(data: SiloBatchGetInput): Promise<SiloContentBatch>;
-}
 
 /**
  * Message batch from queue

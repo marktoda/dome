@@ -33,6 +33,7 @@ import type {
   DefaultProcessingResult,
 } from '../schemas';
 import type { SiloClient } from '@dome/silo/client';
+import type { ServiceEnv } from '../types';
 
 // This is a generic representation. The actual 'parsed' part will be one of the *ProcessingResult types.
 export type LlmProcessingResult = (
@@ -67,7 +68,7 @@ interface ExistingMetadata {
  * ContentProcessor – no I/O side‑effects beyond env queues.
  */
 export class ContentProcessor {
-  constructor(private readonly env: Env, private readonly services: ProcessorServices) {}
+  constructor(private readonly env: ServiceEnv, private readonly services: ProcessorServices) {}
 
   /** Process a single NEW_CONTENT message (idempotent). */
   async processMessage(msg: NewContentMessage, requestId: string): Promise<void> {

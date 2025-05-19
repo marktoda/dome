@@ -1,5 +1,6 @@
 import { getLogger, logError, trackOperation } from '../utils/logging';
 import { toDomeError, LLMProcessingError, assertValid } from '../utils/errors';
+import type { ServiceEnv } from '../types';
 import { getSchemaForContentType, getSchemaInstructions } from '../schemas';
 import {
   truncateToTokenLimit,
@@ -10,7 +11,7 @@ import {
 } from '@dome/common';
 
 /** Factory */
-export function createLlmService(env: Env): LlmService {
+export function createLlmService(env: ServiceEnv): LlmService {
   return new LlmService(env);
 }
 
@@ -22,7 +23,7 @@ export class LlmService {
 
   private readonly logger = getLogger().child({ component: 'LlmService' });
 
-  constructor(private readonly env: Env) {
+  constructor(private readonly env: ServiceEnv) {
     // Note: LLM configuration is now initialized automatically by the common package
   }
 

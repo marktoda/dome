@@ -12,6 +12,7 @@ import { toDomeError } from '@dome/errors';
 import { createLlmService } from './services/llmService';
 import { EnrichedContentMessage, NewContentMessage, SiloContentMetadata } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+import type { ServiceEnv } from './types';
 import { z } from 'zod';
 import { sendTodosToQueue } from './todos';
 import {
@@ -36,10 +37,10 @@ import { ContentProcessor } from './utils/processor';
  * @param env Environment bindings
  * @returns Service instances
  */
-const buildServices = (env: Env) => {
+const buildServices = (env: ServiceEnv) => {
   const first = {
     llm: createLlmService(env),
-    silo: new SiloClient(env.SILO as unknown as SiloBinding),
+    silo: new SiloClient(env.SILO),
   };
 
   return {
@@ -57,7 +58,7 @@ const buildServices = (env: Env) => {
  *
  * It also provides RPC functions for reprocessing content.
  */
-export default class AiProcessor extends WorkerEntrypoint<Env> {
+export default class AiProcessor extends WorkerEntrypoint<ServiceEnv> {
   /** Lazily created bundle of service clients (re‑used for every call) */
   private _services?: ReturnType<typeof buildServices>;
   private get services() {
