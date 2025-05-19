@@ -12,6 +12,7 @@ const logger = getLogger();
 import { assertValid, VectorizeError, toDomeError } from '../utils/errors';
 import { sliceIntoBatches } from '../utils/batching';
 import { retryAsync, RetryConfig } from '../utils/retry';
+import { toIndexMetadata } from '../utils/metadata';
 
 /* ------------------------------------------------------------------ */
 /*  configuration                                                     */
@@ -134,7 +135,7 @@ export class VectorizeService {
             batch.map(v => ({
               id: v.id,
               values: v.values,
-              metadata: v.metadata as any, // Reverting due to type incompatibility with VectorizeIndex
+              metadata: toIndexMetadata(v.metadata),
             })),
           );
           logger.info({ ...baseCtx, attempt: currentAttempt }, 'Batch upserted');
