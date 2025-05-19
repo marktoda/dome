@@ -1,7 +1,14 @@
 import { defineConfig } from 'vitest/config';
+import path from 'path';
 
 // Configure vitest to use more memory and run tests serially
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@dome/common': path.resolve(__dirname, '../../packages/common/src'),
+      '@dome/errors': path.resolve(__dirname, '../../packages/errors/src'),
+    },
+  },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
