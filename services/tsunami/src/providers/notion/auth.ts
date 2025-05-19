@@ -46,7 +46,10 @@ export class NotionAuthManager {
     this.clientId = (env as any).NOTION_CLIENT_ID || '';
     this.clientSecret = (env as any).NOTION_CLIENT_SECRET || '';
     this.redirectUri = (env as any).NOTION_REDIRECT_URI || '';
-    this.tokenService = new TokenService(env.SYNC_PLAN); // Initialize TokenService
+    this.tokenService = new TokenService(
+      env.SYNC_PLAN,
+      (env as any).TOKEN_ENCRYPTION_KEY || '',
+    );
 
     this.log.info(
       {
@@ -212,7 +215,7 @@ export class NotionAuthManager {
           'notion: token retrieval attempt from TokenService successful',
         );
         metrics.increment('notion.auth.token_retrieved');
-        // TODO: Decrypt tokenRecord.accessToken if it was encrypted by TokenService
+        // TokenService returns decrypted tokens
         return tokenRecord.accessToken;
       }
 

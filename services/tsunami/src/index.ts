@@ -31,7 +31,7 @@ const metrics = createServiceMetrics('tsunami');
 const buildServices = (env: ServiceEnv) => ({
   silo: new SiloClient(env.SILO, env.SILO_INGEST_QUEUE),
   syncPlan: createSyncPlanService(env),
-  token: new TokenService(env.SYNC_PLAN), // Added TokenService instantiation
+  token: new TokenService(env.SYNC_PLAN, (env as any).TOKEN_ENCRYPTION_KEY || ''),
 });
 
 /* ─────────── service bootstrap ─────────── */

@@ -5,6 +5,7 @@ import { oauthTokens, schema } from '../db/schema';
 import type { NotionOAuthDetails, GithubOAuthDetails } from '../client/types'; // Added GithubOAuthDetails
 import { eq, and } from 'drizzle-orm';
 import { ulid } from 'ulid';
+import { encryptString, decryptString } from '../utils/encryption';
 
 // Define the structure for the data to be inserted/updated, matching oauthTokens table
 export interface OAuthTokenRecord {
@@ -13,8 +14,8 @@ export interface OAuthTokenRecord {
   userId: string;
   provider: string;
   providerAccountId: string;
-  accessToken: string; // TODO: Encrypt
-  refreshToken?: string | null; // TODO: Encrypt
+  accessToken: string;
+  refreshToken?: string | null;
   expiresAt?: number | null;
   tokenType?: string | null;
   scope?: string | null;
@@ -27,9 +28,11 @@ export interface OAuthTokenRecord {
 export class TokenService {
   private logger = getLogger().child({ component: 'TokenService' });
   private db;
+  private encryptionKey: string;
 
-  constructor(d1: D1Database) {
+  constructor(d1: D1Database, encryptionKey: string) {
     this.db = drizzle(d1, { schema });
+    this.encryptionKey = encryptionKey;
   }
 
   /**
@@ -44,7 +47,10 @@ export class TokenService {
       'Storing Notion token',
     );
     try {
-      // TODO: Implement encryption for accessToken
+      const encryptedAccessToken = await encryptString(
+        details.accessToken,
+        this.encryptionKey,
+      );
       const metadataToStore = {
         workspaceName: details.workspaceName,
         workspaceIcon: details.workspaceIcon,
@@ -57,7 +63,7 @@ export class TokenService {
         userId: details.userId,
         provider: 'notion',
         providerAccountId: details.botId, // Notion's bot_id is the account ID for the integration
-        accessToken: details.accessToken,
+        accessToken: encryptedAccessToken,
         providerWorkspaceId: details.workspaceId,
         metadata: JSON.stringify(metadataToStore),
         // refreshToken, expiresAt, tokenType, scope can be added if Notion provides them
@@ -128,8 +134,14 @@ export class TokenService {
       });
 
       if (tokenRecord) {
-        // TODO: Decrypt accessToken and refreshToken here
-        return tokenRecord as OAuthTokenRecord; // Cast needed due to Drizzle's return type
+        const decryptedAccessToken = await decryptString(
+          tokenRecord.accessToken,
+          this.encryptionKey,
+        );
+        return {
+          ...tokenRecord,
+          accessToken: decryptedAccessToken,
+        } as OAuthTokenRecord;
       }
       return null;
     } catch (error) {
@@ -151,12 +163,15 @@ export class TokenService {
       'Storing GitHub token',
     );
     try {
-      // TODO: Implement encryption for accessToken
+      const encryptedAccessToken = await encryptString(
+        details.accessToken,
+        this.encryptionKey,
+      );
       const values: Omit<OAuthTokenRecord, 'id' | 'createdAt' | 'updatedAt'> = {
         userId: details.userId,
         provider: 'github',
         providerAccountId: details.providerAccountId, // GitHub User ID
-        accessToken: details.accessToken,
+        accessToken: encryptedAccessToken,
         scope: details.scope,
         tokenType: details.tokenType,
         metadata: details.metadata ? JSON.stringify(details.metadata) : null,
