@@ -38,7 +38,7 @@ export function LayoutWithSidebar({ children }: LayoutWithSidebarProps) {
   }
 
   return (
-    <div className="flex h-screen flex-col"> {/* Changed to flex-col for header on top */}
+    <div className="flex min-h-screen flex-col"> {/* Changed to min-h-screen to allow page scroll */}
       <Header /> {/* Add the new Header component here */}
       <div className="flex flex-1 overflow-hidden"> {/* Container for sidebar and main content */}
         {/* Desktop Sidebar */}
