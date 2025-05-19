@@ -66,7 +66,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
         ) : (
           // Only render message.text if it exists on the message type
           // UserMessage has text. For others, contentOverride should be used.
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
             {('text' in message && typeof message.text === 'string') ? message.text : ''}
           </p>
         )}

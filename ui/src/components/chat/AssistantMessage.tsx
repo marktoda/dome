@@ -127,7 +127,7 @@ const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ errorData, userFriendlyText
         <span className="font-semibold text-sm">Error</span>
         {errorData.code && <Badge variant="destructive" className="ml-2 text-xs">{errorData.code}</Badge>}
       </div>
-      <p className="text-destructive text-xs prose prose-sm dark:prose-invert max-w-none">
+      <p className="text-destructive text-xs prose prose-sm dark:prose-invert max-w-none break-words">
         {userFriendlyText || errorData.message}
       </p>
       {userFriendlyText && errorData.message !== userFriendlyText && (
@@ -176,7 +176,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     case 'content':
       contentToRender = (
         <div className="space-y-3">
-          <div className="prose prose-sm dark:prose-invert max-w-none">
+          <div className="prose prose-sm dark:prose-invert max-w-none break-words">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
           </div>
           {/*
