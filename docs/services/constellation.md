@@ -515,20 +515,28 @@ Logs are formatted as JSON with consistent fields:
 
 2. Set up local Vectorize index:
 
-   ```bash
-   wrangler vectorize create notes_index --dimensions 1536
-   ```
+```bash
+wrangler vectorize create notes_index --dimensions 1536
+```
 
-3. Run the service locally:
+3. Generate Worker configuration types:
 
-   ```bash
-   just dev constellation
-   ```
+```bash
+pnpm types
+```
 
-4. For queue consumer testing:
-   ```bash
-   wrangler dev --queue-consumer
-   ```
+This runs `wrangler types` to regenerate `worker-configuration.d.ts`.
+
+4. Run the service locally:
+
+```bash
+just dev constellation
+```
+
+5. For queue consumer testing:
+```bash
+wrangler dev --queue-consumer
+```
 
 ### Testing
 
