@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest
  */
 export async function POST(req: NextRequest) {
   // Changed type to NextRequest
-  console.warn('⚠️ Using MOCK /api/chat endpoint! Replace with actual implementation. ⚠️');
+  console.error('⚠️ Using MOCK /api/chat endpoint! Replace with actual implementation. ⚠️');
   try {
     const body = await req.json();
     // Validate the incoming message structure more robustly if needed

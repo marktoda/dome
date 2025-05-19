@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       maxAge: 0, // Expire the cookie immediately
     });
 
-    console.log('Logout request processed, clearing auth_token cookie.');
+    console.error('Logout request processed, clearing auth_token cookie.');
     return response;
   } catch (error) {
     console.error('Logout API route error:', error);

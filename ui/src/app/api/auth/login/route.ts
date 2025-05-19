@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
     const validation = LoginSchema.safeParse(body);
 
     if (!validation.success) {
-      console.log('Login validation failed:', validation.error.flatten());
+      console.error('Login validation failed:', validation.error.flatten());
       return NextResponse.json(
         { message: 'Invalid request body.', errors: validation.error.flatten().fieldErrors },
         { status: 400 },
@@ -53,12 +53,12 @@ export async function POST(req: NextRequest) {
 
     // !!! NEVER compare plain text passwords in production !!!
     if (!user || user.password !== password) {
-      console.log(`Login attempt failed for email: ${email}`);
+      console.error('Login attempt failed for provided email');
       return NextResponse.json({ message: 'Invalid email or password' }, { status: 401 });
     }
     // --- !!! INSECURE MOCK AUTHENTICATION END !!! ---
 
-    console.log(`Login successful for user: ${user.email}`);
+    console.error(`Login successful for user id: ${user.id}`);
 
     // Create JWT containing user claims
     const secret = new TextEncoder().encode(JWT_SECRET);

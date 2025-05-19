@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
 
   // --- 3. State Verification (CSRF Protection - Simplified) ---
   // !!! SECURITY TODO: Implement proper state verification (see GitHub callback comments) !!!
-  console.log(
+  console.error(
     `Notion callback state received. Extracted redirect path: ${clientFinalRedirectPath}`,
   );
   // --- End State Verification ---
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // --- 4. Exchange Code for Access Token ---
-    console.log('Exchanging Notion code for access token...');
+    console.error('Exchanging Notion code for access token...');
     const tokenResponse = await fetch('https://api.notion.com/v1/oauth/token', {
       method: 'POST',
       headers: {
@@ -142,11 +142,11 @@ export async function GET(request: NextRequest) {
       console.error('Notion access token or workspace_id not found in response:', tokenData);
       throw new Error('Access token or workspace_id not found in Notion response.');
     }
-    console.log(`Notion access token obtained successfully for workspace: ${workspaceId}`);
+    console.error(`Notion access token obtained successfully for workspace: ${workspaceId}`);
     // --- End Token Exchange ---
 
     // --- 5. Store Integration Details via Backend API ---
-    console.log('Storing Notion integration details via backend API...');
+    console.error('Storing Notion integration details via backend API...');
     const apiHeaders = new Headers({ 'Content-Type': 'application/json' });
     const cookieStore = await cookies(); // Keep await
     const authTokenCookie = cookieStore.get('auth_token'); // Ensure correct cookie name
@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
     }
 
     const storeResult = await storeIntegrationResponse.json();
-    console.log('Notion integration stored successfully via backend API:', storeResult);
+    console.error('Notion integration stored successfully via backend API');
     // --- End Integration Storage ---
 
     // --- 6. Redirect User Back to Frontend (Success) ---
@@ -197,7 +197,7 @@ export async function GET(request: NextRequest) {
     finalRedirectUrl.searchParams.set('oauth_callback', 'true');
     finalRedirectUrl.searchParams.set('platform', 'notion');
     finalRedirectUrl.searchParams.set('status', 'success');
-    console.log(`Redirecting user to success URL: ${finalRedirectUrl.toString()}`);
+    console.error(`Redirecting user to success URL: ${finalRedirectUrl.toString()}`);
     return NextResponse.redirect(finalRedirectUrl.toString(), { status: 302 });
   } catch (error) {
     // --- Error Handling & Redirect (Failure) ---
@@ -211,7 +211,7 @@ export async function GET(request: NextRequest) {
         ? error.message
         : 'An unknown error occurred during Notion connection.';
     errorRedirectUrl.searchParams.set('error_message', errorMessage);
-    console.log(`Redirecting user to error URL: ${errorRedirectUrl.toString()}`);
+    console.error(`Redirecting user to error URL: ${errorRedirectUrl.toString()}`);
     return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
   }
 }

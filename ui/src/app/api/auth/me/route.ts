@@ -32,14 +32,14 @@ export async function GET(req: NextRequest) {
   const tokenCookie = cookieStore.get('auth_token');
 
   if (!tokenCookie?.value) {
-    console.log('/api/auth/me: No auth_token cookie found.');
+    console.error('/api/auth/me: No auth_token cookie found.');
     return NextResponse.json({ message: 'Not authenticated: No token found.' }, { status: 401 });
   }
 
   const token = tokenCookie.value;
 
   try {
-    console.log(
+    console.error(
       `/api/auth/me: Forwarding token to ${DOME_API_URL}/auth/verify-token for verification.`,
     );
     const introspectionResponse = await fetch(`${DOME_API_URL}/auth/verify-token`, {
@@ -54,9 +54,7 @@ export async function GET(req: NextRequest) {
       const userData = await introspectionResponse.json();
       // Assuming backend returns { user: { id, email, name } } on success
       if (userData && userData.user) {
-        console.log(
-          `/api/auth/me: Token verified successfully by backend for user: ${userData.user.email}`,
-        );
+        console.error('/api/auth/me: Token verified successfully by backend');
         return NextResponse.json(userData);
       } else {
         console.error(
@@ -81,7 +79,7 @@ export async function GET(req: NextRequest) {
       }
     } else {
       // If backend says token is invalid (e.g., 401, 403)
-      console.warn(
+      console.error(
         `/api/auth/me: Backend token verification failed with status ${introspectionResponse.status}.`,
       );
       const errorBody = await introspectionResponse

@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const validation = RegisterSchema.safeParse(body);
 
     if (!validation.success) {
-      console.log('Registration validation failed:', validation.error.flatten());
+      console.error('Registration validation failed:', validation.error.flatten());
       return NextResponse.json(
         { message: 'Invalid request body.', errors: validation.error.flatten().fieldErrors },
         { status: 400 },
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     // --- !!! INSECURE MOCK USER CHECK START !!! ---
     const existingUser = users.find(u => u.email === email);
     if (existingUser) {
-      console.log(`Registration attempt failed: Email already exists - ${email}`);
+      console.error('Registration attempt failed: Email already exists');
       return NextResponse.json({ message: 'User with this email already exists' }, { status: 409 }); // 409 Conflict
     }
     // --- !!! INSECURE MOCK USER CHECK END !!! ---
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     };
 
     users.push(newUser); // Add to mock array
-    console.log(`New user registered: ${email} (ID: ${newUser.id})`);
+    console.error(`New user registered with ID: ${newUser.id}`);
     // --- !!! INSECURE MOCK USER CREATION END !!! ---
 
     // In a real application, you might:

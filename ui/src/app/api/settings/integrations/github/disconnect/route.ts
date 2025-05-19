@@ -20,7 +20,7 @@ import { updateMockIntegrationStatus } from '@/lib/integration-mock-db'; // Mock
  */
 export async function POST(req: NextRequest) {
   // Add req parameter
-  console.warn(
+  console.error(
     '⚠️ Using MOCK /api/settings/integrations/github/disconnect endpoint! Replace with actual implementation. ⚠️',
   );
   try {
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     // }
     // const userId = authResult.userId;
     const userId = 'default-user'; // Hardcoded mock user ID
-    console.log(`Processing disconnect request for GitHub for user: ${userId}`);
+    console.error(`Processing disconnect request for GitHub for user: ${userId}`);
     // --- !!! MOCK AUTHENTICATION END !!! ---
 
     // --- !!! MOCK DISCONNECT LOGIC START !!! ---
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     // --- !!! MOCK DISCONNECT LOGIC END !!! ---
 
     if (success) {
-      console.log(`Mock disconnect successful for GitHub for user: ${userId}`);
+      console.error(`Mock disconnect successful for GitHub for user: ${userId}`);
       return NextResponse.json({
         success: true,
         message: 'GitHub account disconnected successfully.',
