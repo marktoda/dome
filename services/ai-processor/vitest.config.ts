@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['tests/**/*.test.ts'],
+    setupFiles: ['tests/setup.ts'],
     alias: {
       '@dome/common': path.resolve(__dirname, '../../packages/common/src'),
       '@dome/errors': path.resolve(__dirname, '../../packages/errors/src'),
