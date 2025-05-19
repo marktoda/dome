@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
   // Example (conceptual, requires cookie library/helper):
   // const stateCookieOptions = { httpOnly: true, secure: true, path: '/', maxAge: 300 }; // 5 minutes
   // cookies().set('github_oauth_state', stateValue, stateCookieOptions);
-  console.log(`Generated state for GitHub OAuth: ${stateValue} (Storage TODO)`);
+  console.error('Generated state for GitHub OAuth (Storage TODO)');
   // --- End State Generation ---
 
   // Get the desired final redirect path from the client request
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
   // Optional: add allow_signup=false if you don't want users creating new GitHub accounts during flow
   // authUrl.searchParams.set('allow_signup', 'false');
 
-  console.log(`Redirecting user to GitHub for authorization: ${authUrl.toString()}`);
+  console.error(`Redirecting user to GitHub for authorization: ${authUrl.toString()}`);
 
   // Redirect the user to GitHub
   return NextResponse.redirect(authUrl.toString(), { status: 302 });

@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   // --- State Generation (CSRF Protection) ---
   const stateValue = uuidv4();
   // !!! SECURITY TODO: Store `stateValue` securely (e.g., HttpOnly cookie with short expiry) !!!
-  console.log(`Generated state for Notion OAuth: ${stateValue} (Storage TODO)`);
+  console.error('Generated state for Notion OAuth (Storage TODO)');
   // --- End State Generation ---
 
   // Get the desired final redirect path from the client request
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set('owner', 'user'); // Required by Notion
   authUrl.searchParams.set('state', combinedState);
 
-  console.log(`Redirecting user to Notion for authorization: ${authUrl.toString()}`);
+  console.error(`Redirecting user to Notion for authorization: ${authUrl.toString()}`);
 
   // Redirect the user to Notion
   return NextResponse.redirect(authUrl.toString(), { status: 302 });

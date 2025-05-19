@@ -22,7 +22,7 @@ import { updateMockIntegrationStatus } from '@/lib/integration-mock-db'; // Mock
  */
 export async function POST(req: NextRequest) {
   // Add req parameter
-  console.warn(
+  console.error(
     '⚠️ Using MOCK /api/settings/integrations/notion/disconnect endpoint! Replace with actual implementation. ⚠️',
   );
   try {
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     // }
     // const userId = authResult.userId;
     const userId = 'default-user'; // Hardcoded mock user ID
-    console.log(`Processing disconnect request for Notion for user: ${userId}`);
+    console.error(`Processing disconnect request for Notion for user: ${userId}`);
     // --- !!! MOCK AUTHENTICATION END !!! ---
 
     // --- !!! MOCK DISCONNECT LOGIC START !!! ---
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     // --- !!! MOCK DISCONNECT LOGIC END !!! ---
 
     if (success) {
-      console.log(`Mock disconnect successful for Notion for user: ${userId}`);
+      console.error(`Mock disconnect successful for Notion for user: ${userId}`);
       return NextResponse.json({
         success: true,
         message: 'Notion account disconnected successfully.',

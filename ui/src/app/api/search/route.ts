@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   // Extract and validate Authorization header
   const authorizationHeader = request.headers.get('Authorization');
   if (!authorizationHeader) {
-    console.warn('/api/search: Missing Authorization header.');
+    console.error('/api/search: Missing Authorization header.');
     return NextResponse.json(
       { message: 'Unauthorized: Authorization header required.' },
       { status: 401 },
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   const token = authorizationHeader.startsWith('Bearer ') ? authorizationHeader.substring(7) : null;
 
   if (!token) {
-    console.warn('/api/search: Invalid or missing Bearer token in Authorization header.');
+    console.error('/api/search: Invalid or missing Bearer token in Authorization header.');
     return NextResponse.json({ message: 'Unauthorized: Invalid token format.' }, { status: 401 });
   }
 
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     externalApiUrl.searchParams.append('category', category);
   }
 
-  console.log(`Proxying search request to: ${externalApiUrl.toString()}`);
+  console.error(`Proxying search request to: ${externalApiUrl.toString()}`);
 
   try {
     // Make the request to the external API, forwarding the token

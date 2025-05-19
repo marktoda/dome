@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   const clientFinalRedirectPath = encodedClientRedirectPath
     ? decodeURIComponent(encodedClientRedirectPath)
     : '/settings/integrations';
-  console.log(
+  console.error(
     `GitHub callback state received. Extracted redirect path: ${clientFinalRedirectPath}`,
   );
   // --- End State Verification ---
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // --- 3. Exchange Code for Access Token ---
-    console.log('Exchanging GitHub code for access token...');
+    console.error('Exchanging GitHub code for access token...');
     const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -118,11 +118,11 @@ export async function GET(request: NextRequest) {
       console.error('GitHub access token not found in response:', tokenData);
       throw new Error('Access token not found in GitHub response.');
     }
-    console.log('GitHub access token obtained successfully.');
+    console.error('GitHub access token obtained successfully.');
     // --- End Token Exchange ---
 
     // --- 4. Fetch GitHub User Info ---
-    console.log('Fetching GitHub user information...');
+    console.error('Fetching GitHub user information...');
     const userResponse = await fetch('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/vnd.github.v3+json' },
     });
@@ -140,11 +140,11 @@ export async function GET(request: NextRequest) {
     }
 
     const githubUser = await userResponse.json();
-    console.log(`GitHub user info fetched: ${githubUser.login} (ID: ${githubUser.id})`);
+    console.error(`GitHub user info fetched: ${githubUser.login} (ID: ${githubUser.id})`);
     // --- End User Info Fetch ---
 
     // --- 5. Store Integration Details via Backend API ---
-    console.log('Storing GitHub integration details via backend API...');
+    console.error('Storing GitHub integration details via backend API...');
     const apiHeaders = new Headers({ 'Content-Type': 'application/json' });
     const cookieStore = await cookies(); // Keep await based on previous fixes
     const authTokenCookie = cookieStore.get('auth_token'); // Ensure this is the correct cookie name
@@ -184,7 +184,7 @@ export async function GET(request: NextRequest) {
     }
 
     const storeResult = await storeIntegrationResponse.json();
-    console.log('GitHub integration stored successfully via backend API:', storeResult);
+    console.error('GitHub integration stored successfully via backend API');
     // --- End Integration Storage ---
 
     // --- 6. Redirect User Back to Frontend (Success) ---
@@ -192,7 +192,7 @@ export async function GET(request: NextRequest) {
     finalRedirectUrl.searchParams.set('oauth_callback', 'true');
     finalRedirectUrl.searchParams.set('platform', 'github');
     finalRedirectUrl.searchParams.set('status', 'success');
-    console.log(`Redirecting user to success URL: ${finalRedirectUrl.toString()}`);
+    console.error(`Redirecting user to success URL: ${finalRedirectUrl.toString()}`);
     return NextResponse.redirect(finalRedirectUrl.toString(), { status: 302 });
   } catch (error) {
     // --- Error Handling & Redirect (Failure) ---
@@ -207,7 +207,7 @@ export async function GET(request: NextRequest) {
         ? error.message
         : 'An unknown error occurred during GitHub connection.';
     errorRedirectUrl.searchParams.set('error_message', errorMessage);
-    console.log(`Redirecting user to error URL: ${errorRedirectUrl.toString()}`);
+    console.error(`Redirecting user to error URL: ${errorRedirectUrl.toString()}`);
     return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
   }
 }

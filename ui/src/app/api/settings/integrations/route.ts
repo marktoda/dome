@@ -18,7 +18,7 @@ import { getMockIntegrationStatuses } from '@/lib/integration-mock-db'; // Mock 
  */
 export async function GET(req: NextRequest) {
   // Add req parameter
-  console.warn(
+  console.error(
     '⚠️ Using MOCK /api/settings/integrations endpoint! Replace with actual implementation. ⚠️',
   );
   try {
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     // }
     // const userId = authResult.userId;
     const userId = 'default-user'; // Hardcoded mock user ID
-    console.log(`Fetching mock integration statuses for user: ${userId}`);
+    console.error(`Fetching mock integration statuses for user: ${userId}`);
     // --- !!! MOCK AUTHENTICATION END !!! ---
 
     // Fetch statuses from the mock data source
