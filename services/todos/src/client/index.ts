@@ -15,6 +15,8 @@ import {
   ListTodosResult,
   BatchUpdateInput,
   TodoStats,
+  TodoQueueItem,
+  TodoQueueItemSchema,
 } from '../types';
 import { getLogger } from '@dome/common';
 import { createServiceMetrics } from '@dome/common';
@@ -30,29 +32,9 @@ export {
   ListTodosResult,
   BatchUpdateInput,
   TodoStats,
+  TodoQueueItem,
+  TodoQueueItemSchema,
 };
-
-// Export TodoQueueItem type for use by services that send todos to the queue
-export interface TodoQueueItem {
-  // Required fields
-  userId: string; // User who owns the todo
-  sourceNoteId: string; // ID of the note/content this todo was extracted from
-  sourceText: string; // Original text snippet from which the todo was extracted
-
-  // AI-enriched content
-  title: string; // Short title/summary
-  description?: string; // Detailed description (optional)
-
-  // Metadata suggestions
-  priority?: TodoPriority | string; // Suggested priority
-  dueDate?: string | number; // Suggested due date (string date or timestamp)
-  estimatedEffort?: string; // Suggested effort (e.g., "5min", "1h")
-  actionableSteps?: string[]; // Suggested breakdown of steps
-  category?: string; // Suggested category
-
-  // Processing metadata
-  created?: number; // When this item was created (timestamp)
-}
 
 // Logger for the client
 const logger = getLogger();

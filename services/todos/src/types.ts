@@ -1,6 +1,7 @@
 /**
  * Todos Service Type Definitions
  */
+import { z } from 'zod';
 
 /**
  * Enum for todo status values
@@ -79,26 +80,27 @@ export interface CreateTodoInput {
  * Interface for todo items sent to the Todos service queue
  * This must remain in sync with the definition in the Todos service
  */
-export interface TodoQueueItem {
-  // Required fields
-  userId: string; // User who owns the todo
-  sourceNoteId: string; // ID of the note/content this todo was extracted from
-  sourceText: string; // Original text snippet from which the todo was extracted
+export const TodoQueueItemSchema = z.object({
+  userId: z.string(),
+  sourceNoteId: z.string(),
+  sourceText: z.string(),
 
   // AI-enriched content
-  title: string; // Short title/summary
-  description?: string; // Detailed description (optional)
+  title: z.string(),
+  description: z.string().optional(),
 
   // Metadata suggestions
-  priority?: TodoPriority | string; // Suggested priority
-  dueDate?: string | number; // Suggested due date (string date or timestamp)
-  estimatedEffort?: string; // Suggested effort (e.g., "5min", "1h")
-  actionableSteps?: string[]; // Suggested breakdown of steps
-  category?: string; // Suggested category
+  priority: z.union([z.nativeEnum(TodoPriority), z.string()]).optional(),
+  dueDate: z.union([z.string(), z.number()]).optional(),
+  estimatedEffort: z.string().optional(),
+  actionableSteps: z.array(z.string()).optional(),
+  category: z.string().optional(),
 
   // Processing metadata
-  created?: number; // When this item was created (timestamp)
-}
+  created: z.number().optional(),
+});
+
+export type TodoQueueItem = z.infer<typeof TodoQueueItemSchema>;
 
 /**
  * Result of creating a todo

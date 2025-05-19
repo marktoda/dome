@@ -1,8 +1,7 @@
-import { Env, TodoJob } from './types';
+import { Env, TodoJob, TodoQueueItemSchema, TodoQueueItem } from './types';
 import { TodosService } from './services/todosService';
-import { getLogger, logError } from '@dome/common'; // Assuming logError is co-located or update path
-import { AiProcessorAdapter, AiExtractedTodo } from './adapters/aiProcessorAdapter';
-import { TodoQueueItem } from './client';
+import { getLogger, logError, parseMessageBatch, RawMessageBatch, ParsedMessageBatch } from '@dome/common';
+import { AiProcessorAdapter } from './adapters/aiProcessorAdapter';
 
 const logger = getLogger();
 
@@ -27,12 +26,28 @@ export async function processTodoQueue(
   const todosService = new TodosService(env.DB);
   const startTime = Date.now();
 
+  // Convert the incoming batch to typed queue items
+  let parsed: ParsedMessageBatch<TodoQueueItem>;
+  try {
+    const rawBatch: RawMessageBatch = {
+      queue: batch.queue,
+      messages: batch.messages.map(m => ({
+        id: m.id,
+        timestamp: typeof m.timestamp === 'number' ? m.timestamp : m.timestamp.getTime(),
+        body: typeof m.body === 'string' ? m.body : JSON.stringify(m.body),
+      })),
+    };
+    parsed = parseMessageBatch(TodoQueueItemSchema, rawBatch);
+  } catch (error) {
+    logError(error, 'Failed to parse todo queue batch');
+    return;
+  }
+
   // Process each message in the batch
   const results = await Promise.allSettled(
-    batch.messages.map(async message => {
+    parsed.messages.map(async message => {
       try {
-        // Handle different message formats based on source
-        const jobs = transformQueueMessage(message);
+        const jobs = [AiProcessorAdapter.queueItemToJob(message.body)];
 
         if (jobs.length === 0) {
           logger.warn('No valid todo jobs found in message', {
@@ -99,49 +114,3 @@ export async function processTodoQueue(
   });
 }
 
-/**
- * Transform a queue message into TodoJob objects
- *
- * @param message Message from the queue
- * @returns Array of TodoJob objects ready for processing
- */
-function transformQueueMessage(message: { body: TodoQueueItem; id: string }): TodoJob[] {
-  const { body } = message;
-
-  if (!body) {
-    logger.warn('Empty message body received', { messageId: message.id });
-    return [];
-  }
-
-  try {
-    // Check if message has all required fields according to TodoQueueItem interface
-    const { userId, sourceNoteId, sourceText, title } = body;
-
-    if (!userId || !sourceNoteId || !sourceText || !title) {
-      logger.warn('Invalid todo queue item - missing required fields', {
-        messageId: message.id,
-        hasUserId: !!userId,
-        hasSourceNoteId: !!sourceNoteId,
-        hasSourceText: !!sourceText,
-        hasTitle: !!title,
-      });
-      return [];
-    }
-
-    // Use the adapter to convert the queue item to a job
-    const todoJob = AiProcessorAdapter.queueItemToJob(body);
-
-    logger.debug('Transformed queue message to todo job', {
-      messageId: message.id,
-      todoId: todoJob.sourceNoteId,
-      userId: todoJob.userId,
-    });
-
-    return [todoJob];
-  } catch (error) {
-    logError(error, 'Error transforming queue message', {
-      messageId: message.id,
-    });
-    return [];
-  }
-}
