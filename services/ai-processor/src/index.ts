@@ -16,7 +16,7 @@ import {
   NewContentMessageSchema,
   parseMessageBatch,
   ParsedMessageBatch,
-  RawMessageBatch,
+  toRawMessageBatch,
 } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import type { ServiceEnv } from './types';
@@ -354,7 +354,10 @@ export default class AiProcessor extends WorkerEntrypoint<ServiceEnv> {
 
         let parsed: ParsedMessageBatch<NewContentMessage>;
         try {
-          parsed = parseMessageBatch(NewContentMessageSchema, batch as unknown as RawMessageBatch);
+          parsed = parseMessageBatch(
+            NewContentMessageSchema,
+            toRawMessageBatch(batch),
+          );
         } catch (err) {
           const domeError = toDomeError(err, 'Failed to parse message batch', {
             batchId,
