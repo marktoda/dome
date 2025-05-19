@@ -117,6 +117,31 @@ interface EmbedJob {
 }
 ```
 
+#### Queue Consumer Example
+
+```typescript
+import {
+  parseMessageBatch,
+  serializeQueueMessage,
+  RawMessageBatch,
+} from '@dome/common';
+import { EmbedJobSchema, EmbedJob } from '../src/schemas';
+
+export async function enqueueJob(env: Env, job: EmbedJob) {
+  await env.EMBED_QUEUE.send(
+    serializeQueueMessage(EmbedJobSchema, job),
+  );
+}
+
+export async function processBatch(batch: RawMessageBatch, env: Env) {
+  const parsed = parseMessageBatch(EmbedJobSchema, batch);
+
+  for (const msg of parsed.messages) {
+    await env.CONSTELLATION.embed(msg.body);
+  }
+}
+```
+
 ### Vector Metadata
 
 ```typescript
