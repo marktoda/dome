@@ -260,109 +260,9 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
                 metrics.counter('preprocessing.success', 1);
                 metrics.gauge('preprocessing.chunk_count', chunks.length);
 
-                let allVectors: { id: string; values: number[]; metadata: VectorMeta }[] = [];
 
-                for (let i = 0; i < chunks.length; i += MAX_CHUNKS_PER_BATCH) {
-                  const batchChunks = chunks.slice(i, i + MAX_CHUNKS_PER_BATCH);
-                  const chunkBatchIndex = Math.floor(i / MAX_CHUNKS_PER_BATCH) + 1;
-                  const totalChunkBatches = Math.ceil(chunks.length / MAX_CHUNKS_PER_BATCH);
-
-                  logger.debug(
-                    {
-                      ...jobContext,
-                      chunkBatchIndex,
-                      totalChunkBatches,
-                      batchSize: batchChunks.length,
-                    },
-                    `Processing chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-                  );
-
-                  try {
-                    const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
-                      id: `content:${job.id}:${i + idx}`,
-                      values: v,
-                      metadata: <VectorMeta>{
-                        userId: job.userId,
-                        contentId: job.id,
-                        category: job.category,
-                        mimeType: job.mimeType,
-                        createdAt: Math.floor(job.createdAt / 1000),
-                        version: 1,
-                      },
-                    }));
-
-                    allVectors = allVectors.concat(batchVectors);
-
-                    logger.debug(
-                      { ...jobContext, chunkBatchIndex, vectorCount: batchVectors.length },
-                      `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-                    );
-
-                    metrics.counter('embedding.batch_success', 1);
-                    metrics.counter('embedding.vectors_created', batchVectors.length);
-
-                    batchChunks.length = 0;
-
-                    if (i + MAX_CHUNKS_PER_BATCH < chunks.length) {
-                      await new Promise(resolve => setTimeout(resolve, 50));
-                    }
-                  } catch (err) {
-                    const domeError = new EmbeddingError(
-                      `Failed to embed chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-                      {
-                        ...jobContext,
-                        chunkBatchIndex,
-                        totalChunkBatches,
-                        batchSize: batchChunks.length,
-                      },
-                      err instanceof Error ? err : undefined,
-                    );
-
-                    logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
-                    metrics.counter('embedding.batch_errors', 1);
-
-                    throw domeError;
-                  }
-                }
-
-                const UPSERT_BATCH_SIZE = 100;
-                for (let i = 0; i < allVectors.length; i += UPSERT_BATCH_SIZE) {
-                  const upsertBatch = allVectors.slice(i, i + UPSERT_BATCH_SIZE);
-                  const upsertBatchIndex = Math.floor(i / UPSERT_BATCH_SIZE) + 1;
-                  const totalUpsertBatches = Math.ceil(allVectors.length / UPSERT_BATCH_SIZE);
-
-                  logger.debug(
-                    {
-                      ...jobContext,
-                      upsertBatchIndex,
-                      totalUpsertBatches,
-                      batchSize: upsertBatch.length,
-                    },
-                    `Upserting vector batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                  );
-
-                  try {
-                    await vectorize.upsert(upsertBatch);
-
-                    logger.debug(
-                      { ...jobContext, upsertBatchIndex, totalUpsertBatches },
-                      `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                    );
-
-                    metrics.counter('vectorize.batch_success', 1);
-                  } catch (err) {
-                    const domeError = new VectorizeError(
-                      `Failed to upsert batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                      { ...jobContext, upsertBatchIndex, totalUpsertBatches },
-                      err instanceof Error ? err : undefined,
-                    );
-
-                    logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
-                    metrics.counter('vectorize.batch_errors', 1);
-
-                    throw domeError;
-                  }
-                }
+                const allVectors = await this.embedChunks(chunks, job, jobContext);
+                await this.upsertVectors(allVectors, jobContext);
 
                 logger.info(
                   {
@@ -416,27 +316,157 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
           }
         }
 
-        const duration = Date.now() - startTime;
-        logger.info(
-          {
-            batchRequestId,
-            jobCount: messages.length,
-            processedCount: processed,
-            successRate: Math.round((processed / messages.length) * 100),
-            duration,
-            operation: 'embedBatch',
-          },
-          `Completed embedding batch: ${processed}/${messages.length} jobs successful`,
-        );
-
-        metrics.gauge('batch.success_rate', processed / messages.length);
-        metrics.timing('batch.duration_ms', duration);
-        metrics.gauge('batch.avg_job_time_ms', messages.length > 0 ? duration / messages.length : 0);
-
+        this.logBatchResults(batchRequestId, processed, messages.length, startTime);
         return processed;
       },
       { jobCount: messages.length, batchRequestId },
     );
+  }
+
+  private async embedChunks(
+    chunks: string[],
+    job: SiloContentItem,
+    jobContext: Record<string, unknown>,
+  ): Promise<{ id: string; values: number[]; metadata: VectorMeta }[]> {
+    const MAX_CHUNKS_PER_BATCH = 50;
+    const { embedder } = this.services;
+    let vectors: { id: string; values: number[]; metadata: VectorMeta }[] = [];
+
+    for (let i = 0; i < chunks.length; i += MAX_CHUNKS_PER_BATCH) {
+      const batchChunks = chunks.slice(i, i + MAX_CHUNKS_PER_BATCH);
+      const chunkBatchIndex = Math.floor(i / MAX_CHUNKS_PER_BATCH) + 1;
+      const totalChunkBatches = Math.ceil(chunks.length / MAX_CHUNKS_PER_BATCH);
+
+      logger.debug(
+        {
+          ...jobContext,
+          chunkBatchIndex,
+          totalChunkBatches,
+          batchSize: batchChunks.length,
+        },
+        `Processing chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
+      );
+
+      try {
+        const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
+          id: `content:${job.id}:${i + idx}`,
+          values: v,
+          metadata: <VectorMeta>{
+            userId: job.userId,
+            contentId: job.id,
+            category: job.category,
+            mimeType: job.mimeType,
+            createdAt: Math.floor(job.createdAt / 1000),
+            version: 1,
+          },
+        }));
+
+        vectors = vectors.concat(batchVectors);
+
+        logger.debug(
+          { ...jobContext, chunkBatchIndex, vectorCount: batchVectors.length },
+          `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
+        );
+
+        metrics.counter('embedding.batch_success', 1);
+        metrics.counter('embedding.vectors_created', batchVectors.length);
+
+        batchChunks.length = 0;
+
+        if (i + MAX_CHUNKS_PER_BATCH < chunks.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      } catch (err) {
+        const domeError = new EmbeddingError(
+          `Failed to embed chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
+          {
+            ...jobContext,
+            chunkBatchIndex,
+            totalChunkBatches,
+            batchSize: batchChunks.length,
+          },
+          err instanceof Error ? err : undefined,
+        );
+
+        logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
+        metrics.counter('embedding.batch_errors', 1);
+
+        throw domeError;
+      }
+    }
+
+    return vectors;
+  }
+
+  private async upsertVectors(
+    vectors: { id: string; values: number[]; metadata: VectorMeta }[],
+    jobContext: Record<string, unknown>,
+  ) {
+    const UPSERT_BATCH_SIZE = 100;
+    const { vectorize } = this.services;
+
+    for (let i = 0; i < vectors.length; i += UPSERT_BATCH_SIZE) {
+      const upsertBatch = vectors.slice(i, i + UPSERT_BATCH_SIZE);
+      const upsertBatchIndex = Math.floor(i / UPSERT_BATCH_SIZE) + 1;
+      const totalUpsertBatches = Math.ceil(vectors.length / UPSERT_BATCH_SIZE);
+
+      logger.debug(
+        {
+          ...jobContext,
+          upsertBatchIndex,
+          totalUpsertBatches,
+          batchSize: upsertBatch.length,
+        },
+        `Upserting vector batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+      );
+
+      try {
+        await vectorize.upsert(upsertBatch);
+
+        logger.debug(
+          { ...jobContext, upsertBatchIndex, totalUpsertBatches },
+          `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+        );
+
+        metrics.counter('vectorize.batch_success', 1);
+      } catch (err) {
+        const domeError = new VectorizeError(
+          `Failed to upsert batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+          { ...jobContext, upsertBatchIndex, totalUpsertBatches },
+          err instanceof Error ? err : undefined,
+        );
+
+        logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
+        metrics.counter('vectorize.batch_errors', 1);
+
+        throw domeError;
+      }
+    }
+  }
+
+  private logBatchResults(
+    batchRequestId: string,
+    processed: number,
+    jobCount: number,
+    startTime: number,
+  ) {
+    const duration = Date.now() - startTime;
+
+    logger.info(
+      {
+        batchRequestId,
+        jobCount,
+        processedCount: processed,
+        successRate: Math.round((processed / jobCount) * 100),
+        duration,
+        operation: 'embedBatch',
+      },
+      `Completed embedding batch: ${processed}/${jobCount} jobs successful`,
+    );
+
+    metrics.gauge('batch.success_rate', processed / jobCount);
+    metrics.timing('batch.duration_ms', duration);
+    metrics.gauge('batch.avg_job_time_ms', jobCount > 0 ? duration / jobCount : 0);
   }
   /* ---------------------------- queue consumer -------------------------- */
 
