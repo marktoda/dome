@@ -141,7 +141,7 @@ export interface ErrorHandlerOptions {
    * @returns A logger instance
    */
   getContextLogger?: (c: Context) => {
-    error: Function;
+    error: (...args: unknown[]) => void;
   };
 }
 /**

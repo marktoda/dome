@@ -1,5 +1,5 @@
 import { getLogger, logError, metrics } from '@dome/common';
-import { NewContentMessage } from 'packages/common';
+import { NewContentMessage } from '@dome/common';
 
 /**
  * QueueService - A wrapper around Queue operations

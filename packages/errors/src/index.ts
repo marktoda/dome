@@ -245,7 +245,9 @@ export interface ErrorHandlerOptions {
    * @param c Hono context
    * @returns A logger instance
    */
-  getContextLogger?: (c: Context) => { error: Function };
+  getContextLogger?: (c: Context) => {
+    error: (...args: unknown[]) => void;
+  };
 }
 
 /**
