@@ -69,6 +69,14 @@ The package provides common types used across services:
 - `ServiceInfo`: Service information format
 - `ExtendedError`: Extended error interface
 
+### Queue Message Utilities
+
+Helpers for validating and converting queue messages between services:
+
+- `serializeQueueMessage(schema, message)`: validate and stringify a message.
+- `parseQueueMessage(schema, body)`: parse and validate a JSON message body.
+- `parseMessageBatch(schema, batch)`: convert a batch of raw messages into typed objects.
+
 ## Migration Guide
 
 When migrating from service-specific implementations to the common package:
