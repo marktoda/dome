@@ -230,3 +230,22 @@ The integration with Constellation replaces the previous direct embedding approa
    - New: Robust error handling with dead letter queues in Constellation
 
 For detailed migration steps, see the [Constellation Migration Plan](../constellation/MIGRATION.md).
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `VERSION` | Service version | No | `0.1.0` |
+| `LOG_LEVEL` | Logging level | No | `debug` |
+| `ENVIRONMENT` | Deployment environment | No | `production` |
+| `CONSTELLATION` | RPC binding to the Constellation service | Yes | - |
+| `TSUNAMI` | RPC binding to the Tsunami service | Yes | - |
+| `SILO` | RPC binding to the Silo service | Yes | - |
+| `TODOS` | RPC binding to the Todos service | Yes | - |
+| `CHAT` | RPC binding to the Chat service | Yes | - |
+| `AI_PROCESSOR` | RPC binding to the AI Processor service | Yes | - |
+| `AUTH` | RPC binding to the Auth service | Yes | - |
+| `SILO_INGEST_QUEUE` | Queue for ingest jobs | Yes | - |
+| `AI` | Workers AI binding | Yes | - |

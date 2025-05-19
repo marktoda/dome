@@ -117,3 +117,17 @@ const results = await constellationClient.query('Hello, world!', { userId: 'user
 - **Simplified API**: The ConstellationClient provides a simplified API for common operations.
 - **Reduced Code Duplication**: No need to implement the same logic in multiple services.
 - **Maintainability**: Changes to the Constellation API only need to be made in one place.
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `VERSION` | Service version | No | `1.0.0` |
+| `ENVIRONMENT` | Deployment environment | No | - |
+| `LOG_LEVEL` | Logging level | No | `debug` |
+| `SILO` | RPC binding to the Silo service | Yes | - |
+| `EMBED_DEAD` | Dead letter queue for failed embedding jobs | Yes | - |
+| `VECTORIZE` | Vectorize index for storing embeddings | Yes | - |
+| `AI` | Workers AI binding | Yes | - |

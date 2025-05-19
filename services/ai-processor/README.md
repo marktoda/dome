@@ -64,3 +64,18 @@ The test suite includes specific tests for JSON parsing edge cases, including:
 - JSON with single quotes
 - JSON with missing commas
 - Severely malformed JSON that requires fallback extraction
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `LOG_LEVEL` | Logging level | No | `info` |
+| `VERSION` | Service version | No | `0.1.0` |
+| `ENVIRONMENT` | Deployment environment | No | `dev` |
+| `SILO` | RPC binding to the Silo service | Yes | - |
+| `ENRICHED_CONTENT` | Queue for processed results | Yes | - |
+| `TODOS` | Queue for todo tasks | Yes | - |
+| `RATE_LIMIT_DLQ` | Dead letter queue for rate-limited content | Yes | - |
+| `AI` | Workers AI binding | Yes | - |

@@ -155,3 +155,14 @@ Deploy to Cloudflare with: `pnpm deploy`
 - **Simplified API**: The TodosClient provides a simplified API for common operations
 - **Reduced Code Duplication**: No need to implement the same logic in multiple services
 - **Maintainability**: Changes to the Todos API only need to be made in one place
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `VERSION` | Service version | No | `1.0.0` |
+| `ENVIRONMENT` | Deployment environment | No | `dev` |
+| `LOG_LEVEL` | Logging level | No | `info` |
+| `DB` | D1 database for todo storage | Yes | - |

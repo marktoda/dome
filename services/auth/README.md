@@ -309,6 +309,15 @@ The Auth service relies on environment variables for critical configuration. Ens
 | `DATABASE_URL`         | Connection string for the user database.                                       | `postgresql://user:pass@host/db` | Yes      |
 | `REDIS_URL`            | (If using Redis for token blacklisting/caching) Connection string for Redis.   | `redis://localhost:6379`         | Optional |
 
+### Worker Configuration Variables
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `AUTH_TOKENS` | KV namespace for storing tokens | Yes | - |
+| `ENVIRONMENT` | Deployment environment | No | `development` |
+| `VERSION` | Service version | No | `0.1.0` |
+| `AUTH_DB` | D1 database for authentication | Yes | - |
+
 **Security Note:**
 
 - **Never hardcode secrets** like `JWT_SECRET_KEY` or `PRIVY_APP_SECRET` directly in the code.

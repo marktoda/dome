@@ -155,3 +155,18 @@ For detailed documentation on the Notion integration, see:
 
 - [Notion Integration Guide](./docs/NOTION_INTEGRATION.md)
 - [Notion API Documentation](./docs/API_NOTION.md)
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `VERSION` | Service version | No | `1.0.0` |
+| `ENVIRONMENT` | Deployment environment | No | `prod` |
+| `LOG_LEVEL` | Logging level | No | `info` |
+| `GITHUB_TOKEN` | GitHub access token | No | - |
+| `RESOURCE_OBJECT` | Durable Object namespace for sync resources | Yes | - |
+| `SYNC_PLAN` | D1 database for sync metadata | Yes | - |
+| `SILO` | RPC binding to the Silo service | Yes | - |
+| `SILO_INGEST_QUEUE` | Queue for ingestion tasks | Yes | - |

@@ -276,6 +276,23 @@ interface ChatResponse {
 | `ENABLE_TRACING`         | Enable detailed tracing          | No       | false    |
 | `MIN_RELEVANCE_SCORE`    | Minimum relevance score for docs | No       | 0.7      |
 
+### Worker Configuration Variables
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `VERSION` | Service version | No | `0.1.0` |
+| `LOG_LEVEL` | Logging level | No | `debug` |
+| `ENVIRONMENT` | Deployment environment | No | `production` |
+| `SEARCH_API_KEY` | API key for external search | Yes | - |
+| `OPENAI_API_KEY` | OpenAI API key | Yes | - |
+| `COHERE_API_KEY` | Cohere API key | Yes | - |
+| `CHAT_ENCRYPTION_KEY` | Key used to encrypt chat records | Yes | - |
+| `CHAT_DB` | D1 database for chat storage | Yes | - |
+| `CONSTELLATION` | RPC binding to the Constellation service | Yes | - |
+| `SILO` | RPC binding to the Silo service | Yes | - |
+| `TODOS` | RPC binding to the Todos service | Yes | - |
+| `AI` | Workers AI binding | Yes | - |
+
 ## 6. Development
 
 ### Local Development Setup
