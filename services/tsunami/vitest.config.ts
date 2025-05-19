@@ -1,22 +1,18 @@
-import { defineConfig } from 'vitest/config';
-import path from 'path';
+import { defineConfig, mergeConfig } from 'vitest/config';
+import baseConfig from '../../vitest.base.config';
 
-export default defineConfig({
-  resolve: {
-    alias: {
-      '@dome/common': path.resolve(__dirname, '../../packages/common/src'),
+export default mergeConfig(
+  baseConfig,
+  defineConfig({
+    test: {
+      include: ['tests/**/*.test.ts'],
+      setupFiles: ['tests/setup.js'],
+      coverage: {
+        provider: 'v8',
+        reporter: ['text', 'lcov', 'json', 'html'],
+        include: ['src/**/*.{ts,js}'],
+        exclude: ['src/**/*.d.ts', 'tests/**'],
+      },
     },
-  },
-  test: {
-    environment: 'node',
-    include: ['tests/**/*.test.ts'],
-    globals: true,
-    setupFiles: ['tests/setup.js'],
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'lcov', 'json', 'html'],
-      include: ['src/**/*.{ts,js}'],
-      exclude: ['src/**/*.d.ts', 'tests/**'],
-    },
-  },
-});
+  }),
+);
