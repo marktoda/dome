@@ -1,16 +1,17 @@
-import type { Metadata } from "next";
-import { GeistSans } from "geist/font/sans"; // Updated import
-import { GeistMono } from "geist/font/mono"; // Updated import
-import "./globals.css";
+import type { Metadata } from 'next';
+import { GeistSans } from 'geist/font/sans'; // Updated import
+import { GeistMono } from 'geist/font/mono'; // Updated import
+import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
-import { LayoutWithSidebar } from '@/components/layout/LayoutWithSidebar'; // Import the new layout
-import { Toaster as Sonner } from '@/components/ui/sonner'; // Updated to Sonner
+import { LayoutWithSidebar } from '@/components/layout/LayoutWithSidebar';
+import { Toaster as Sonner } from '@/components/ui/sonner';
+import { ThemeProvider } from '@/components/theme-provider';
 
 // Removed Geist and Geist_Mono direct font loading, using GeistSans and GeistMono from geist/font
 
 export const metadata: Metadata = {
-  title: "Dome Knowledge Base",
-  description: "The Dome Knowledge Base.",
+  title: 'Dome Knowledge Base',
+  description: 'The Dome Knowledge Base.',
 };
 
 export default function RootLayout({
@@ -20,13 +21,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
-      >
-        <AuthProvider>
-          <LayoutWithSidebar>{children}</LayoutWithSidebar>
-          <Sonner />
-        </AuthProvider>
+      <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}>
+        <ThemeProvider>
+          <AuthProvider>
+            <LayoutWithSidebar>{children}</LayoutWithSidebar>
+            <Sonner />
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
