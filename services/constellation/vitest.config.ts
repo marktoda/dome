@@ -13,6 +13,10 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     globals: true,
+    alias: {
+      '@dome/common': path.resolve(__dirname, '../../packages/common/src'),
+      '@dome/errors': path.resolve(__dirname, '../../packages/errors/src'),
+    },
     setupFiles: ['tests/setup.js'],
     // Run tests serially to reduce memory pressure
     singleThread: true,
