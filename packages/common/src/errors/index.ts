@@ -39,9 +39,6 @@ export {
   NotImplementedError,
 };
 
-// For backward compatibility
-// TODO: Remove this export after verifying it's not used anywhere
-export { BaseError as AppError } from './BaseError.js';
 
 /**
  * Extended error interface with additional properties
