@@ -28,6 +28,8 @@ import { createEmbedder } from './services/embedder';
 import { createVectorizeService } from './services/vectorize';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 
+const logger = getLogger();
+
 /* -------------------------------------------------------------------------- */
 /* helpers                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -87,7 +89,7 @@ const sendToDeadLetter = async (
   requestId: string = crypto.randomUUID(),
 ) => {
   if (!queue) {
-    getLogger().warn(
+    logger.warn(
       {
         requestId,
         operation: 'sendToDeadLetter',
@@ -102,7 +104,7 @@ const sendToDeadLetter = async (
     'send_to_dlq',
     async () => {
       try {
-        getLogger().info(
+        logger.info(
           {
             requestId,
             operation: 'sendToDeadLetter',
@@ -123,7 +125,7 @@ const sendToDeadLetter = async (
 
         metrics.counter('dlq.messages_sent', 1);
 
-        getLogger().info(
+        logger.info(
           { requestId, operation: 'sendToDeadLetter' },
           'Successfully sent message to dead letter queue',
         );
@@ -180,7 +182,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         const startTime = Date.now();
 
         // Log batch processing start
-        getLogger().info(
+        logger.info(
           {
             batchRequestId,
             jobCount: jobs.length,
@@ -201,7 +203,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           };
 
           if (job.body === undefined) {
-            getLogger().error(
+            logger.error(
               { ...jobContext, contentSize: 0 },
               'Empty job body, skipping embedding',
             );
@@ -231,7 +233,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     : jobText;
 
                 if (truncatedText.length < jobText.length) {
-                  getLogger().warn(
+                  logger.warn(
                     {
                       ...jobContext,
                       originalLength: jobText.length,
@@ -248,7 +250,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                   const chunks = preprocessor.process(truncatedText);
 
                   if (chunks.length === 0) {
-                    getLogger().warn(
+                    logger.warn(
                       { ...jobContext, textLength: truncatedText.length },
                       'No processable text found in content',
                     );
@@ -256,7 +258,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     return;
                   }
 
-                  getLogger().info(
+                  logger.info(
                     {
                       ...jobContext,
                       chunks: chunks.length,
@@ -277,7 +279,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     const chunkBatchIndex = Math.floor(i / MAX_CHUNKS_PER_BATCH) + 1;
                     const totalChunkBatches = Math.ceil(chunks.length / MAX_CHUNKS_PER_BATCH);
 
-                    getLogger().debug(
+                    logger.debug(
                       {
                         ...jobContext,
                         chunkBatchIndex,
@@ -304,7 +306,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
                       allVectors = allVectors.concat(batchVectors);
 
-                      getLogger().debug(
+                      logger.debug(
                         {
                           ...jobContext,
                           chunkBatchIndex,
@@ -349,7 +351,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     const upsertBatchIndex = Math.floor(i / UPSERT_BATCH_SIZE) + 1;
                     const totalUpsertBatches = Math.ceil(allVectors.length / UPSERT_BATCH_SIZE);
 
-                    getLogger().debug(
+                    logger.debug(
                       {
                         ...jobContext,
                         upsertBatchIndex,
@@ -362,7 +364,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     try {
                       await vectorize.upsert(upsertBatch);
 
-                      getLogger().debug(
+                      logger.debug(
                         {
                           ...jobContext,
                           upsertBatchIndex,
@@ -390,7 +392,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
                     }
                   }
 
-                  getLogger().info(
+                  logger.info(
                     {
                       ...jobContext,
                       vectorCount: allVectors.length,
@@ -460,7 +462,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         // Log batch completion statistics
         const duration = Date.now() - startTime;
-        getLogger().info(
+        logger.info(
           {
             batchRequestId,
             jobCount: jobs.length,
@@ -506,7 +508,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         metrics.gauge('queue.batch_size', batch.messages.length);
         metrics.counter('queue.batches_received', 1);
 
-        getLogger().info(
+        logger.info(
           {
             batchRequestId,
             messageCount: batch.messages.length,
@@ -553,7 +555,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
         }
 
         // Log parsing results
-        getLogger().info(
+        logger.info(
           {
             batchRequestId,
             validMessages: embedItems.length,
@@ -566,7 +568,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         // Process valid messages
         if (embedItems.length) {
-          getLogger().info(
+          logger.info(
             {
               batchRequestId,
               count: embedItems.length,
@@ -578,7 +580,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           const processed = await this.embedBatch(embedItems, this.env.EMBED_DEAD, batchRequestId);
           metrics.counter('queue.jobs_processed', processed);
 
-          getLogger().info(
+          logger.info(
             {
               batchRequestId,
               processed,
@@ -589,7 +591,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             `Processed ${processed}/${embedItems.length} embed jobs successfully`,
           );
         } else {
-          getLogger().warn(
+          logger.warn(
             {
               batchRequestId,
               operation: 'queue',
@@ -600,7 +602,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         // Log batch completion
         const duration = Date.now() - startTime;
-        getLogger().info(
+        logger.info(
           {
             batchRequestId,
             messageCount: batch.messages.length,
@@ -650,7 +652,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             .map(i => `${i.path.join('.')}: ${i.message}`)
             .join(', ');
 
-          getLogger().warn(
+          logger.warn(
             {
               ...messageContext,
               issues,
@@ -667,7 +669,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
 
         try {
           // Fetch content from Silo
-          getLogger().debug(
+          logger.debug(
             {
               ...messageContext,
               contentId: validation.data.id,
@@ -686,7 +688,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             userId: validation.data.userId,
           });
 
-          getLogger().debug(
+          logger.debug(
             {
               ...messageContext,
               contentId: content.id,
@@ -742,7 +744,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           // Track request metrics
           metrics.counter('rpc.embed.requests', 1);
 
-          getLogger().info(
+          logger.info(
             {
               contentId: job.id,
               userId: job.userId,
@@ -763,7 +765,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             contentId: job.id,
           });
 
-          getLogger().info(
+          logger.info(
             {
               contentId: job.id,
               processed,
@@ -837,7 +839,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           metrics.counter('rpc.query.requests', 1);
           metrics.gauge('rpc.query.text_length', text.length);
 
-          getLogger().info(
+          logger.info(
             {
               query: text,
               filterKeys: Object.keys(filter),
@@ -854,7 +856,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           const norm = preprocessor.normalize(text);
 
           if (!norm) {
-            getLogger().warn(
+            logger.warn(
               { requestId, operation: 'query' },
               'Normalization produced empty text, returning empty results',
             );
@@ -863,7 +865,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
             return [];
           }
 
-          getLogger().debug(
+          logger.debug(
             {
               requestId,
               originalLength: text.length,
@@ -876,7 +878,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           // Generate embedding
           const [queryVec] = await embedder.embed([norm]);
 
-          getLogger().debug(
+          logger.debug(
             {
               requestId,
               vectorLength: queryVec.length,
@@ -889,7 +891,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           const results = await vectorize.query(queryVec, filter, topK);
 
           // Log summarized results
-          getLogger().info(
+          logger.info(
             {
               requestId,
               resultCount: results.length,
@@ -960,7 +962,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           // Track stats request
           metrics.counter('rpc.stats.requests', 1);
 
-          getLogger().info({ requestId, operation: 'stats' }, 'Fetching vector index statistics');
+          logger.info({ requestId, operation: 'stats' }, 'Fetching vector index statistics');
 
           // Get stats from vectorize service
           const stats = await this.services.vectorize.getStats();
@@ -968,7 +970,7 @@ export default class Constellation extends WorkerEntrypoint<Env> {
           // Track success
           metrics.counter('rpc.stats.success', 1);
 
-          getLogger().info(
+          logger.info(
             {
               requestId,
               vectors: stats.vectors,

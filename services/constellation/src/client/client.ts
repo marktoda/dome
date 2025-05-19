@@ -8,6 +8,8 @@
 import { SiloContentItem, VectorMeta, VectorSearchResult, VectorIndexStats } from '@dome/common';
 import { getLogger, logError, metrics } from '@dome/common';
 
+const logger = getLogger();
+
 /**
  * ConstellationBinding interface
  * Defines the contract for the Cloudflare Worker binding to the Constellation service
@@ -45,7 +47,7 @@ export class ConstellationClient {
   async embed(job: SiloContentItem): Promise<void> {
     const startTime = performance.now();
     try {
-      getLogger().info(
+      logger.info(
         {
           contentId: job.id,
           userId: job.userId,
@@ -85,7 +87,7 @@ export class ConstellationClient {
     const startTime = performance.now();
     try {
       const processedText = this.preprocess(text);
-      getLogger().info(
+      logger.info(
         {
           original: text,
           processed: processedText,
@@ -98,7 +100,7 @@ export class ConstellationClient {
 
       const results = await this.binding.query(text, filter, topK);
 
-      getLogger().info(
+      logger.info(
         {
           resultCount: results.length,
           firstResult: results.length > 0 ? results[0] : null,
@@ -129,7 +131,7 @@ export class ConstellationClient {
   async stats(): Promise<VectorIndexStats> {
     const startTime = performance.now();
     try {
-      getLogger().info('Fetching Constellation vector index statistics');
+      logger.info('Fetching Constellation vector index statistics');
 
       const result = await this.binding.stats();
 

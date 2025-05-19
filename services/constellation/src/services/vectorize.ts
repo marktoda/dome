@@ -7,6 +7,8 @@ import {
   trackOperation,
   constellationMetrics as metrics,
 } from '../utils/logging';
+
+const logger = getLogger();
 import { assertValid, VectorizeError, toDomeError } from '../utils/errors';
 import { sliceIntoBatches } from '../utils/batching';
 import { retryAsync, RetryConfig } from '../utils/retry';
@@ -65,7 +67,7 @@ export class VectorizeService {
       async () => {
         assertValid(Array.isArray(vecs), 'Vectors array is required', { requestId });
         if (vecs.length === 0) {
-          getLogger().warn({ requestId }, 'Upsert called with empty input');
+          logger.warn({ requestId }, 'Upsert called with empty input');
           return;
         }
 
@@ -89,7 +91,7 @@ export class VectorizeService {
           const dimensions = getDimensions(stats);
 
           metrics.gauge('vectorize.total_vectors', vectorCount);
-          getLogger().info(
+          logger.info(
             { requestId, vectorCount, dimensions },
             'Vectorize index stats after upsert',
           );
@@ -135,7 +137,7 @@ export class VectorizeService {
               metadata: v.metadata as any, // Reverting due to type incompatibility with VectorizeIndex
             })),
           );
-          getLogger().info({ ...baseCtx, attempt: currentAttempt }, 'Batch upserted');
+          logger.info({ ...baseCtx, attempt: currentAttempt }, 'Batch upserted');
         },
         retryConfig,
         baseCtx,
@@ -175,7 +177,7 @@ export class VectorizeService {
           ...(filter.userId ? { userId: { $in: [filter.userId, PUBLIC_USER_ID] } } : {}),
         };
 
-        getLogger().info({ vf }, 'Querying vectorize index');
+        logger.info({ vf }, 'Querying vectorize index');
         const res = await this.idx.query(vector, {
           topK,
           filter: vf as unknown as VectorizeVectorMetadataFilter,
@@ -205,7 +207,7 @@ export class VectorizeService {
     };
 
     metrics.gauge('vectorize.total_vectors', stats.vectors);
-    getLogger().info(stats, 'Vectorize index statistics');
+    logger.info(stats, 'Vectorize index statistics');
 
     return stats;
   }
@@ -220,6 +222,6 @@ export const createVectorizeService = (
   cfg: Partial<VectorizeConfig> = {},
 ): VectorizeService => {
   assertValid(!!vectorize, 'VECTORIZE binding is required');
-  getLogger().info({ cfg }, 'Creating VectorizeService');
+  logger.info({ cfg }, 'Creating VectorizeService');
   return new VectorizeService(vectorize, cfg);
 };
