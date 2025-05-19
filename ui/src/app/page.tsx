@@ -9,43 +9,32 @@ export default function HomePage() {
   const { user, isLoading } = useAuth();
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] p-4 text-center">
-      <main className="flex flex-1 flex-col items-center justify-center gap-6">
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
-          Welcome to Dome Knowledge Base
-        </h1>
-        <p className="max-w-xl text-lg text-muted-foreground sm:text-xl">
-          This is the central hub for all information. Explore features like chat, search, and
-          personalized settings.
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col">
+      <section className="flex flex-1 flex-col items-center justify-center bg-gradient-to-br from-primary/10 to-secondary/10 px-4 text-center">
+        <h1 className="mb-4 text-5xl font-bold sm:text-6xl">Dome Knowledge Base</h1>
+        <p className="max-w-xl text-lg text-muted-foreground">
+          Your modern personal exobrain powered by AI.
         </p>
-        <div className="mt-8 grid gap-6 sm:grid-cols-3">
+        <div className="mt-10 grid gap-6 sm:grid-cols-3">
           <div className="flex flex-col items-center gap-2">
             <MessageSquare className="h-8 w-8 text-primary" />
             <h3 className="text-lg font-semibold">Chat with your knowledge</h3>
-            <p className="text-sm text-muted-foreground">
-              Ask questions and get answers from your personal data.
-            </p>
+            <p className="text-sm text-muted-foreground">Ask questions and get answers from your data.</p>
           </div>
           <div className="flex flex-col items-center gap-2">
             <Search className="h-8 w-8 text-primary" />
             <h3 className="text-lg font-semibold">Powerful search</h3>
-            <p className="text-sm text-muted-foreground">
-              Quickly find notes and files across all your sources.
-            </p>
+            <p className="text-sm text-muted-foreground">Find notes and files instantly.</p>
           </div>
           <div className="flex flex-col items-center gap-2">
             <Plug className="h-8 w-8 text-primary" />
             <h3 className="text-lg font-semibold">Easy integrations</h3>
-            <p className="text-sm text-muted-foreground">
-              Connect services like GitHub or Notion in seconds.
-            </p>
+            <p className="text-sm text-muted-foreground">Connect services like GitHub or Notion.</p>
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row gap-4 mt-6">
+        <div className="mt-8 flex flex-col gap-4 sm:flex-row">
           {isLoading ? (
-            <Button disabled size="lg">
-              Loading...
-            </Button>
+            <Button disabled size="lg">Loading...</Button>
           ) : user ? (
             <Link href="/chat">
               <Button size="lg" className="group">
@@ -57,8 +46,7 @@ export default function HomePage() {
             <>
               <Link href="/login">
                 <Button size="lg" variant="outline" className="group">
-                  <LogIn className="mr-2 h-5 w-5" />
-                  Login
+                  <LogIn className="mr-2 h-5 w-5" /> Login
                 </Button>
               </Link>
               <Link href="/register">
@@ -70,9 +58,9 @@ export default function HomePage() {
             </>
           )}
         </div>
-      </main>
-      <footer className="py-8 text-sm text-muted-foreground">
-        © {new Date().getFullYear()} Dome Knowledge Base. All rights reserved.
+      </section>
+      <footer className="py-8 text-center text-sm text-muted-foreground">
+        © {new Date().getFullYear()} Dome Knowledge Base.
       </footer>
     </div>
   );
