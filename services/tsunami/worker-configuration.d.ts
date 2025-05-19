@@ -7,6 +7,7 @@ declare namespace Cloudflare {
     ENVIRONMENT: string;
     LOG_LEVEL: string;
     GITHUB_TOKEN: string;
+    TOKEN_ENCRYPTION_KEY: string;
     RESOURCE_OBJECT: DurableObjectNamespace<import('./src/index').ResourceObject>;
     SYNC_PLAN: D1Database;
     SILO: Fetcher;
