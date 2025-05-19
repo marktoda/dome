@@ -1,4 +1,3 @@
-import { AppError } from '@dome/common';
 import { Hono } from 'hono';
 // import { ChatController, createChatController } from '../../src/controllers/chatController'; // Commented out
 import { Env, Services } from '../../src/types';
