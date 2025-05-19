@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import crypto from 'node:crypto';
 
 /**
  * Base event schema that all events must extend
@@ -80,7 +81,9 @@ export type Event = z.infer<typeof EventSchema>;
 /**
  * Event factory functions
  */
-export const createReminderDueEvent = (data: ReminderDueEvent['data']): ReminderDueEvent => ({
+export const createReminderDueEvent = (
+  data: ReminderDueEvent['data'],
+): ReminderDueEvent => ({
   id: crypto.randomUUID(),
   timestamp: new Date().toISOString(),
   type: 'reminder_due',
