@@ -441,6 +441,12 @@ Common error codes:
 | `LOG_LEVEL`   | Logging level          | No       | `info`  |
 | `VERSION`     | Service version        | No       | `1.0.0` |
 | `ENVIRONMENT` | Deployment environment | No       | `prod`  |
+| `BUCKET`      | R2 bucket for storing content            | Yes | - |
+| `DB`          | D1 database for metadata                | Yes | - |
+| `NEW_CONTENT_CONSTELLATION` | Queue for Constellation notifications | Yes | - |
+| `NEW_CONTENT_AI` | Queue for AI processor notifications | Yes | - |
+| `INGEST_DLQ`  | Dead letter queue for ingestion failures | Yes | - |
+| `SILO_INGEST_QUEUE` | Main ingestion queue                | Yes | - |
 
 ### Wrangler Configuration
 

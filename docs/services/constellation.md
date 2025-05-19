@@ -313,6 +313,10 @@ Common error codes:
 | `LOG_LEVEL`   | Logging level          | No       | `info`  |
 | `VERSION`     | Service version        | No       | `1.0.0` |
 | `ENVIRONMENT` | Deployment environment | No       | `prod`  |
+| `SILO`        | RPC binding to the Silo service           | Yes | - |
+| `EMBED_DEAD`  | Dead letter queue for failed embedding jobs | Yes | - |
+| `VECTORIZE`   | Vectorize index used for storing embeddings | Yes | - |
+| `AI`          | Workers AI binding for embedding generation | Yes | - |
 
 ### Wrangler Configuration
 
@@ -389,6 +393,10 @@ The Constellation service does not require any secrets for its operation. The Wo
 | `constellation.queue.lag_ms`     | Time between job creation and processing | > 60000ms           |
 | `constellation.errors.count`     | Number of errors                         | > 0                 |
 
+Metrics are exported with the `constellation.` prefix. Alert definitions for these
+metrics can be found in
+[monitoring/alerts.yaml](../../services/constellation/monitoring/alerts.yaml).
+
 ### Logging
 
 The Constellation service uses structured logging with the following key events:
@@ -419,6 +427,8 @@ Logs are formatted as JSON with consistent fields:
 - **High Error Rate**: Alert if the error rate exceeds a threshold
 - **AI Service Errors**: Alert if there are persistent errors from the Workers AI service
 - **Vectorize Errors**: Alert if there are persistent errors from the Vectorize service
+
+See the full alert rules in [monitoring/alerts.yaml](../../services/constellation/monitoring/alerts.yaml).
 
 ## 8. Troubleshooting
 
@@ -527,8 +537,11 @@ Logs are formatted as JSON with consistent fields:
 
 4. For queue consumer testing:
    ```bash
+   cd services/constellation
    wrangler dev --queue-consumer
    ```
+   This command starts the worker in queue-consumer mode so batches from
+   `embed-queue` are processed locally.
 
 ### Testing
 
