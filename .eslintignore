@@ -12,6 +12,7 @@ node_modules/
 
 # Config files
 .eslintrc.js
+.eslintrc.cjs
 .prettierrc.js
 jest.config.js
 *.config.js

@@ -7,7 +7,6 @@ import {
   ForbiddenError,
   InternalError,
   errorHandler,
-  getLogger,
 } from './index';
 
 describe('DomeError', () => {
@@ -201,7 +200,11 @@ describe('errorHandler middleware', () => {
 
   it('should use default logger if not provided in context', async () => {
     mockContext.get.mockReturnValue(undefined);
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {
+        /* noop */
+      });
 
     const error = new Error('Something went wrong');
     mockNext.mockRejectedValueOnce(error);
