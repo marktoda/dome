@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner'; // Added toast import
 import { Button } from '@/components/ui/button';
 import { LogOut, Settings } from 'lucide-react';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { MobileSidebar } from '@/components/sidebar/MobileSidebar';
 
@@ -29,10 +30,10 @@ export function Header() {
     try {
       await logout();
       router.push('/login');
-      toast.success("Logged out successfully!");
+      toast.success('Logged out successfully!');
     } catch (error) {
       console.error('Logout failed:', error);
-      toast.error("Logout failed. Please try again.");
+      toast.error('Logout failed. Please try again.');
     }
   };
 
@@ -55,6 +56,7 @@ export function Header() {
             <Settings className="h-5 w-5" />
           </Button>
         </Link>
+        <ThemeToggle />
         <Button variant="ghost" size="icon" aria-label="Logout" onClick={handleLogout}>
           <LogOut className="h-5 w-5" />
         </Button>
