@@ -5,6 +5,7 @@ import {
   parseMessageBatch,
   serializeQueueMessage,
   RawMessageBatch,
+  toRawMessageBatch,
 } from '../src/queue';
 import { MessageProcessingError } from '../src/errors/ServiceError';
 
@@ -66,5 +67,26 @@ describe('queue message helpers', () => {
     expect(() => parseMessageBatch(NewContentMessageSchema, batch)).toThrow(
       MessageProcessingError
     );
+  });
+
+  it('converts a MessageBatch to raw format', () => {
+    const msg = {
+      id: 'a',
+      timestamp: new Date(1),
+      body: JSON.stringify(validMessage),
+      attempts: 0,
+      retry() {},
+      ack() {},
+    };
+    const batch: MessageBatch<string> = {
+      queue: 'test',
+      messages: [msg],
+      retryAll() {},
+      ackAll() {},
+    };
+
+    const raw = toRawMessageBatch(batch);
+    expect(raw.messages[0].timestamp).toBe(1);
+    expect(raw.messages[0].body).toBe(msg.body);
   });
 });

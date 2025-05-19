@@ -76,6 +76,7 @@ Helpers for validating and converting queue messages between services:
 - `serializeQueueMessage(schema, message)`: validate and stringify a message.
 - `parseQueueMessage(schema, body)`: parse and validate a JSON message body.
 - `parseMessageBatch(schema, batch)`: convert a batch of raw messages into typed objects.
+- `toRawMessageBatch(batch)`: normalize a Cloudflare `MessageBatch` to the raw format.
 
 ## Migration Guide
 

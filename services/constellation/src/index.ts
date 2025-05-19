@@ -7,7 +7,7 @@ import {
   parseMessageBatch,
   ParsedMessageBatch,
   ParsedQueueMessage,
-  RawMessageBatch,
+  toRawMessageBatch,
   NewContentMessage,
   SiloContentItem,
   serializeQueueMessage,
@@ -499,7 +499,7 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
         try {
           parsed = parseMessageBatch(
             NewContentMessageSchema,
-            batch as unknown as RawMessageBatch,
+            toRawMessageBatch(batch),
           );
         } catch (err) {
           const domeError = toDomeError(err, 'Failed to parse message batch', {

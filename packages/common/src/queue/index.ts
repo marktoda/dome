@@ -21,6 +21,16 @@ export interface RawMessageBatch {
   messages: RawQueueMessage[];
 }
 
+/** Minimal representation of the MessageBatch type from Cloudflare */
+export interface MessageBatch<Body = unknown> {
+  queue: string;
+  messages: ReadonlyArray<{
+    id: string;
+    timestamp: Date;
+    body: Body;
+  }>;
+}
+
 /** Parsed batch with typed messages */
 export interface ParsedMessageBatch<T> {
   queue: string;
@@ -76,6 +86,19 @@ export function parseMessageBatch<T>(schema: ZodSchema<T>, batch: RawMessageBatc
     id: m.id,
     timestamp: m.timestamp,
     body: parseQueueMessage(schema, m.body),
+  }));
+  return { queue: batch.queue, messages };
+}
+
+/**
+ * Convert a Cloudflare MessageBatch to the RawMessageBatch shape expected by
+ * parsing helpers.
+ */
+export function toRawMessageBatch(batch: MessageBatch<any>): RawMessageBatch {
+  const messages = batch.messages.map(m => ({
+    id: m.id,
+    timestamp: m.timestamp instanceof Date ? m.timestamp.getTime() : (m.timestamp as any),
+    body: typeof m.body === 'string' ? m.body : JSON.stringify(m.body),
   }));
   return { queue: batch.queue, messages };
 }

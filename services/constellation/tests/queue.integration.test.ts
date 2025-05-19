@@ -13,6 +13,7 @@ vi.mock('@dome/common', () => ({
     })),
   }),
   NewContentMessageSchema: {},
+  toRawMessageBatch: (b: any) => b,
 }));
 vi.mock('@dome/errors', () => ({}));
 vi.mock('../src/utils/errors', () => ({
