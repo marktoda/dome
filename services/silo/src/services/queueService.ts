@@ -1,5 +1,11 @@
-import { getLogger, logError, metrics } from '@dome/common';
-import { NewContentMessage } from '@dome/common';
+import {
+  getLogger,
+  logError,
+  metrics,
+  NewContentMessage,
+  NewContentMessageSchema,
+  serializeQueueMessage,
+} from '@dome/common';
 
 /**
  * QueueService - A wrapper around Queue operations
@@ -16,8 +22,9 @@ export class QueueService {
     const startTime = Date.now();
 
     try {
-      await this.env.NEW_CONTENT_CONSTELLATION.send(message);
-      await this.env.NEW_CONTENT_AI.send(message);
+      const serialized = serializeQueueMessage(NewContentMessageSchema, message);
+      await this.env.NEW_CONTENT_CONSTELLATION.send(serialized);
+      await this.env.NEW_CONTENT_AI.send(serialized);
 
       metrics.timing('silo.queue.send.latency_ms', Date.now() - startTime);
       getLogger().info({ message }, 'Message sent to NEW_CONTENT queue');
