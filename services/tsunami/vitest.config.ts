@@ -1,6 +1,12 @@
 import { defineConfig } from 'vitest/config';
+import path from 'path';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@dome/common': path.resolve(__dirname, '../../packages/common/src'),
+    },
+  },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
