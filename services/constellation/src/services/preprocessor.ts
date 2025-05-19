@@ -87,11 +87,6 @@ export class TextPreprocessor {
    * @param text Text to chunk
    * @returns Array of text chunks
    */
-  /**
-   * Split text into chunks of appropriate size for embedding
-   * @param text Text to chunk
-   * @returns Array of text chunks
-   */
   public chunk(text: string): string[] {
     if (!text) {
       getLogger().warn('Empty text provided for chunking');
@@ -342,11 +337,6 @@ export class TextPreprocessor {
     return newStartPos;
   }
 
-  /**
-   * Process text for embedding by normalizing and chunking
-   * @param text Raw text to process
-   * @returns Array of processed text chunks ready for embedding
-   */
   /**
    * Process text for embedding by normalizing and chunking
    * @param text Raw text to process
