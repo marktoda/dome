@@ -3,6 +3,11 @@ import {
   VectorMeta,
   VectorSearchResult,
   NewContentMessageSchema,
+  parseMessageBatch,
+  ParsedMessageBatch,
+  ParsedQueueMessage,
+  RawMessageBatch,
+  NewContentMessage,
   SiloContentItem,
 } from '@dome/common';
 import { z } from 'zod';
@@ -160,75 +165,63 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
 
   /* ----------------------- embed a batch of notes ----------------------- */
 
+
   /**
    * Process and embed a batch of content items
-   * @param jobs Array of content items to process
+   * @param messages Parsed queue messages to process
    * @param deadQueue Dead letter queue for failed items
    * @param batchRequestId Request ID for the entire batch
    * @returns Number of successfully processed items
    */
   private async embedBatch(
-    jobs: SiloContentItem[],
+    messages: ParsedQueueMessage<NewContentMessage>[],
     deadQueue?: DeadQueue,
     batchRequestId: string = crypto.randomUUID(),
   ): Promise<number> {
     return trackOperation(
       'embed_batch',
       async () => {
-        assertValid(Array.isArray(jobs), 'Jobs array is required', { batchRequestId });
-
-        // Constants for processing limits
-        const MAX_CHUNKS_PER_BATCH = 50; // Limit chunks processed at once
-        const MAX_TEXT_LENGTH = 100000; // Limit text size to prevent memory issues
+        const MAX_CHUNKS_PER_BATCH = 50;
+        const MAX_TEXT_LENGTH = 100000;
 
         let processed = 0;
         const startTime = Date.now();
 
-        // Log batch processing start
         logger.info(
-          {
-            batchRequestId,
-            jobCount: jobs.length,
-            operation: 'embedBatch',
-          },
-          `Starting embedding batch with ${jobs.length} jobs`,
+          { batchRequestId, jobCount: messages.length, operation: 'embedBatch' },
+          `Starting embedding batch with ${messages.length} jobs`,
         );
 
-        // Process jobs one at a time to avoid memory issues
-        for (const job of jobs) {
-          const jobRequestId = `${batchRequestId}-${job.id}`;
+        for (const msg of messages) {
+          const jobRequestId = `${batchRequestId}-${msg.id}`;
           const jobContext = {
             jobRequestId,
-            contentId: job.id,
-            userId: job.userId,
-            category: job.category,
+            contentId: msg.body.id,
+            userId: msg.body.userId,
+            category: msg.body.category,
             operation: 'embedBatch',
           };
 
-          if (job.body === undefined) {
-            logger.error(
-              { ...jobContext, contentSize: 0 },
-              'Empty job body, skipping embedding',
-            );
-            continue;
-          }
-
-          // Track individual job processing
           const timer = metrics.startTimer('process_job');
 
+          let job!: SiloContentItem;
           try {
             await trackOperation(
               'process_content_job',
               async () => {
-                const { preprocessor, embedder, vectorize } = this.services;
+                const { silo, preprocessor, embedder, vectorize } = this.services;
 
-                // Validate the job data
-                assertValid(!!job.id, 'Job ID is required', jobContext);
-                assertValid(!!job.userId, 'User ID is required', jobContext);
-                assertValid(job.body !== undefined, 'Job body is required', jobContext);
+                job = await silo.get(msg.body.id, msg.body.userId);
+                assertExists(job, `Content not found in Silo for ID: ${msg.body.id}`, jobContext);
 
-                // Truncate extremely large texts to prevent memory issues
-                // Ensure job.body is a string (not undefined)
+                if (job.body === undefined) {
+                  logger.error(
+                    { ...jobContext, contentSize: 0 },
+                    'Empty job body, skipping embedding',
+                  );
+                  return;
+                }
+
                 const jobText = job.body || '';
                 const truncatedText =
                   jobText.length > MAX_TEXT_LENGTH
@@ -248,207 +241,168 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
                   metrics.counter('content.truncated', 1);
                 }
 
-                // Process the text into chunks
-                try {
-                  const chunks = preprocessor.process(truncatedText);
+                const chunks = preprocessor.process(truncatedText);
 
-                  if (chunks.length === 0) {
-                    logger.warn(
-                      { ...jobContext, textLength: truncatedText.length },
-                      'No processable text found in content',
-                    );
-                    metrics.counter('preprocessing.empty_result', 1);
-                    return;
-                  }
+                if (chunks.length === 0) {
+                  logger.warn(
+                    { ...jobContext, textLength: truncatedText.length },
+                    'No processable text found in content',
+                  );
+                  metrics.counter('preprocessing.empty_result', 1);
+                  return;
+                }
 
-                  logger.info(
+                logger.info(
+                  { ...jobContext, chunks: chunks.length, textLength: truncatedText.length },
+                  `Successfully preprocessed content into ${chunks.length} chunks`,
+                );
+
+                metrics.counter('preprocessing.success', 1);
+                metrics.gauge('preprocessing.chunk_count', chunks.length);
+
+                let allVectors: { id: string; values: number[]; metadata: VectorMeta }[] = [];
+
+                for (let i = 0; i < chunks.length; i += MAX_CHUNKS_PER_BATCH) {
+                  const batchChunks = chunks.slice(i, i + MAX_CHUNKS_PER_BATCH);
+                  const chunkBatchIndex = Math.floor(i / MAX_CHUNKS_PER_BATCH) + 1;
+                  const totalChunkBatches = Math.ceil(chunks.length / MAX_CHUNKS_PER_BATCH);
+
+                  logger.debug(
                     {
                       ...jobContext,
-                      chunks: chunks.length,
-                      textLength: truncatedText.length,
+                      chunkBatchIndex,
+                      totalChunkBatches,
+                      batchSize: batchChunks.length,
                     },
-                    `Successfully preprocessed content into ${chunks.length} chunks`,
+                    `Processing chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
                   );
 
-                  metrics.counter('preprocessing.success', 1);
-                  metrics.gauge('preprocessing.chunk_count', chunks.length);
+                  try {
+                    const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
+                      id: `content:${job.id}:${i + idx}`,
+                      values: v,
+                      metadata: <VectorMeta>{
+                        userId: job.userId,
+                        contentId: job.id,
+                        category: job.category,
+                        mimeType: job.mimeType,
+                        createdAt: Math.floor(job.createdAt / 1000),
+                        version: 1,
+                      },
+                    }));
 
-                  // Process chunks in smaller batches to avoid memory issues
-                  let allVectors: { id: string; values: number[]; metadata: VectorMeta }[] = [];
-
-                  // Track embedding progress
-                  for (let i = 0; i < chunks.length; i += MAX_CHUNKS_PER_BATCH) {
-                    const batchChunks = chunks.slice(i, i + MAX_CHUNKS_PER_BATCH);
-                    const chunkBatchIndex = Math.floor(i / MAX_CHUNKS_PER_BATCH) + 1;
-                    const totalChunkBatches = Math.ceil(chunks.length / MAX_CHUNKS_PER_BATCH);
+                    allVectors = allVectors.concat(batchVectors);
 
                     logger.debug(
+                      { ...jobContext, chunkBatchIndex, vectorCount: batchVectors.length },
+                      `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
+                    );
+
+                    metrics.counter('embedding.batch_success', 1);
+                    metrics.counter('embedding.vectors_created', batchVectors.length);
+
+                    batchChunks.length = 0;
+
+                    if (i + MAX_CHUNKS_PER_BATCH < chunks.length) {
+                      await new Promise(resolve => setTimeout(resolve, 50));
+                    }
+                  } catch (err) {
+                    const domeError = new EmbeddingError(
+                      `Failed to embed chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
                       {
                         ...jobContext,
                         chunkBatchIndex,
                         totalChunkBatches,
                         batchSize: batchChunks.length,
                       },
-                      `Processing chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
+                      err instanceof Error ? err : undefined,
                     );
 
-                    try {
-                      // Generate embeddings for this batch of chunks
-                      const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
-                        id: `content:${job.id}:${i + idx}`,
-                        values: v,
-                        metadata: <VectorMeta>{
-                          userId: job.userId,
-                          contentId: job.id,
-                          category: job.category,
-                          mimeType: job.mimeType,
-                          createdAt: Math.floor(job.createdAt / 1000),
-                          version: 1,
-                        },
-                      }));
+                    logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
+                    metrics.counter('embedding.batch_errors', 1);
 
-                      allVectors = allVectors.concat(batchVectors);
-
-                      logger.debug(
-                        {
-                          ...jobContext,
-                          chunkBatchIndex,
-                          vectorCount: batchVectors.length,
-                        },
-                        `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-                      );
-
-                      metrics.counter('embedding.batch_success', 1);
-                      metrics.counter('embedding.vectors_created', batchVectors.length);
-
-                      // Force garbage collection between batches by breaking reference
-                      batchChunks.length = 0;
-
-                      // Add a small delay between batches to allow for garbage collection
-                      if (i + MAX_CHUNKS_PER_BATCH < chunks.length) {
-                        await new Promise(resolve => setTimeout(resolve, 50));
-                      }
-                    } catch (err) {
-                      const domeError = new EmbeddingError(
-                        `Failed to embed chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-                        {
-                          ...jobContext,
-                          chunkBatchIndex,
-                          totalChunkBatches,
-                          batchSize: batchChunks.length,
-                        },
-                        err instanceof Error ? err : undefined,
-                      );
-
-                      logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
-                      metrics.counter('embedding.batch_errors', 1);
-
-                      throw domeError;
-                    }
+                    throw domeError;
                   }
+                }
 
-                  // Upsert vectors in smaller batches
-                  const UPSERT_BATCH_SIZE = 100;
-                  for (let i = 0; i < allVectors.length; i += UPSERT_BATCH_SIZE) {
-                    const upsertBatch = allVectors.slice(i, i + UPSERT_BATCH_SIZE);
-                    const upsertBatchIndex = Math.floor(i / UPSERT_BATCH_SIZE) + 1;
-                    const totalUpsertBatches = Math.ceil(allVectors.length / UPSERT_BATCH_SIZE);
+                const UPSERT_BATCH_SIZE = 100;
+                for (let i = 0; i < allVectors.length; i += UPSERT_BATCH_SIZE) {
+                  const upsertBatch = allVectors.slice(i, i + UPSERT_BATCH_SIZE);
+                  const upsertBatchIndex = Math.floor(i / UPSERT_BATCH_SIZE) + 1;
+                  const totalUpsertBatches = Math.ceil(allVectors.length / UPSERT_BATCH_SIZE);
 
-                    logger.debug(
-                      {
-                        ...jobContext,
-                        upsertBatchIndex,
-                        totalUpsertBatches,
-                        batchSize: upsertBatch.length,
-                      },
-                      `Upserting vector batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                    );
-
-                    try {
-                      await vectorize.upsert(upsertBatch);
-
-                      logger.debug(
-                        {
-                          ...jobContext,
-                          upsertBatchIndex,
-                          totalUpsertBatches,
-                        },
-                        `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                      );
-
-                      metrics.counter('vectorize.batch_success', 1);
-                    } catch (err) {
-                      const domeError = new VectorizeError(
-                        `Failed to upsert batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                        {
-                          ...jobContext,
-                          upsertBatchIndex,
-                          totalUpsertBatches,
-                        },
-                        err instanceof Error ? err : undefined,
-                      );
-
-                      logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
-                      metrics.counter('vectorize.batch_errors', 1);
-
-                      throw domeError;
-                    }
-                  }
-
-                  logger.info(
+                  logger.debug(
                     {
                       ...jobContext,
-                      vectorCount: allVectors.length,
-                      textLength: truncatedText.length,
-                      duration: Date.now() - startTime,
+                      upsertBatchIndex,
+                      totalUpsertBatches,
+                      batchSize: upsertBatch.length,
                     },
-                    `Successfully upserted ${allVectors.length} vectors for content`,
+                    `Upserting vector batch ${upsertBatchIndex}/${totalUpsertBatches}`,
                   );
 
-                  metrics.trackOperation('content_embedding', true, {
-                    requestId: jobRequestId,
-                    vectorCount: String(allVectors.length),
-                  });
+                  try {
+                    await vectorize.upsert(upsertBatch);
 
-                  processed += 1;
+                    logger.debug(
+                      { ...jobContext, upsertBatchIndex, totalUpsertBatches },
+                      `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+                    );
 
-                  // Clear references to large objects to help garbage collection
-                  chunks.length = 0;
-                  allVectors.length = 0;
-                } catch (err) {
-                  const domeError = new PreprocessingError(
-                    'Failed to preprocess content',
-                    { ...jobContext, textLength: truncatedText.length },
-                    err instanceof Error ? err : undefined,
-                  );
+                    metrics.counter('vectorize.batch_success', 1);
+                  } catch (err) {
+                    const domeError = new VectorizeError(
+                      `Failed to upsert batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+                      { ...jobContext, upsertBatchIndex, totalUpsertBatches },
+                      err instanceof Error ? err : undefined,
+                    );
 
-                  logError(domeError, 'Content preprocessing failed');
-                  metrics.counter('preprocessing.errors', 1);
+                    logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
+                    metrics.counter('vectorize.batch_errors', 1);
 
-                  throw domeError;
+                    throw domeError;
+                  }
                 }
+
+                logger.info(
+                  {
+                    ...jobContext,
+                    vectorCount: allVectors.length,
+                    textLength: truncatedText.length,
+                    duration: Date.now() - startTime,
+                  },
+                  `Successfully upserted ${allVectors.length} vectors for content`,
+                );
+
+                metrics.trackOperation('content_embedding', true, {
+                  requestId: jobRequestId,
+                  vectorCount: String(allVectors.length),
+                });
+
+                processed += 1;
+
+                chunks.length = 0;
+                allVectors.length = 0;
               },
               jobContext,
             );
           } catch (err) {
-            // Convert to domain error
-            const domeError = toDomeError(err, `Failed to embed content ID: ${job.id}`, {
+            const domeError = toDomeError(err, `Failed to embed content ID: ${msg.body.id}`, {
               ...jobContext,
             });
 
-            logError(domeError, `Content embedding failed for ID: ${job.id}`);
+            logError(domeError, `Content embedding failed for ID: ${msg.body.id}`);
             metrics.trackOperation('content_embedding', false, {
               requestId: jobRequestId,
               errorType: domeError.code,
             });
 
-            // Send to dead letter queue with enhanced context
             await sendToDeadLetter(
               deadQueue,
               {
                 err: domeError.message,
                 errorCode: domeError.code,
-                job,
+                job: job!,
                 timestamp: Date.now(),
               },
               jobRequestId,
@@ -457,37 +411,33 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
             timer.stop();
           }
 
-          // Add a delay between jobs to allow for garbage collection
-          if (jobs.indexOf(job) < jobs.length - 1) {
+          if (messages.indexOf(msg) < messages.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 100));
           }
         }
 
-        // Log batch completion statistics
         const duration = Date.now() - startTime;
         logger.info(
           {
             batchRequestId,
-            jobCount: jobs.length,
+            jobCount: messages.length,
             processedCount: processed,
-            successRate: Math.round((processed / jobs.length) * 100),
+            successRate: Math.round((processed / messages.length) * 100),
             duration,
             operation: 'embedBatch',
           },
-          `Completed embedding batch: ${processed}/${jobs.length} jobs successful`,
+          `Completed embedding batch: ${processed}/${messages.length} jobs successful`,
         );
 
-        // Track batch metrics
-        metrics.gauge('batch.success_rate', processed / jobs.length);
+        metrics.gauge('batch.success_rate', processed / messages.length);
         metrics.timing('batch.duration_ms', duration);
-        metrics.gauge('batch.avg_job_time_ms', jobs.length > 0 ? duration / jobs.length : 0);
+        metrics.gauge('batch.avg_job_time_ms', messages.length > 0 ? duration / messages.length : 0);
 
         return processed;
       },
-      { jobCount: jobs.length, batchRequestId },
+      { jobCount: messages.length, batchRequestId },
     );
   }
-
   /* ---------------------------- queue consumer -------------------------- */
 
   /**
@@ -495,228 +445,62 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
    * @param batch Batch of messages to process
    */
   async queue(batch: MessageBatch<Record<string, unknown>>) {
-    const batchRequestId = crypto.randomUUID();
+    const batchId = crypto.randomUUID();
 
     await runWithLog(
       {
         service: 'constellation',
         op: 'queue',
         size: batch.messages.length,
-        batchRequestId,
+        batchRequestId: batchId,
         ...this.env,
       },
       async () => {
-        // Start tracking queue processing
         const startTime = Date.now();
         metrics.gauge('queue.batch_size', batch.messages.length);
         metrics.counter('queue.batches_received', 1);
 
+        let parsed: ParsedMessageBatch<NewContentMessage>;
+        try {
+          parsed = parseMessageBatch(
+            NewContentMessageSchema,
+            batch as unknown as RawMessageBatch,
+          );
+        } catch (err) {
+          const domeError = toDomeError(err, 'Failed to parse message batch', {
+            batchId,
+            queueName: batch.queue,
+          });
+          logError(domeError, 'Invalid queue batch');
+          metrics.counter('queue.parse_errors', 1);
+          throw domeError;
+        }
+
         logger.info(
           {
-            batchRequestId,
-            messageCount: batch.messages.length,
+            batchRequestId: batchId,
+            messageCount: parsed.messages.length,
             queueName: batch.queue,
             operation: 'queue',
           },
-          `Processing queue batch with ${batch.messages.length} messages`,
+          `Processing queue batch with ${parsed.messages.length} messages`,
         );
 
-        const embedItems: SiloContentItem[] = [];
-        let parseErrors = 0;
-
-        // Parse each message
-        for (const msg of batch.messages) {
-          try {
-            const item = await this.parseMessage(msg, batchRequestId);
-            embedItems.push(item);
-          } catch (err) {
-            parseErrors++;
-
-            const domeError = toDomeError(err, 'Failed to parse queue message', {
-              messageId: msg.id,
-              batchRequestId,
-              operation: 'parseMessage',
-            });
-
-            logError(domeError, 'Error parsing queue message');
-            metrics.counter('queue.parse_errors', 1);
-
-            await sendToDeadLetter(
-              this.env.EMBED_DEAD,
-              {
-                error: domeError.message,
-                errorCode: domeError.code,
-                originalMessage: msg.body,
-                timestamp: Date.now(),
-              },
-              `${batchRequestId}-${msg.id}`,
-            );
-          }
-
-          // Always acknowledge the message to remove from queue
-          msg.ack();
-        }
-
-        // Log parsing results
-        logger.info(
-          {
-            batchRequestId,
-            validMessages: embedItems.length,
-            parseErrors,
-            parseSuccessRate: Math.round((embedItems.length / batch.messages.length) * 100),
-            operation: 'queue',
-          },
-          `Message parsing complete: ${embedItems.length}/${batch.messages.length} valid`,
-        );
-
-        // Process valid messages
-        if (embedItems.length) {
-          logger.info(
-            {
-              batchRequestId,
-              count: embedItems.length,
-              operation: 'queue',
-            },
-            `Processing ${embedItems.length} embed jobs`,
+        if (parsed.messages.length) {
+          const processed = await this.embedBatch(
+            parsed.messages,
+            this.env.EMBED_DEAD,
+            batchId,
           );
-
-          const processed = await this.embedBatch(embedItems, this.env.EMBED_DEAD, batchRequestId);
           metrics.counter('queue.jobs_processed', processed);
-
-          logger.info(
-            {
-              batchRequestId,
-              processed,
-              total: embedItems.length,
-              successRate: Math.round((processed / embedItems.length) * 100),
-              operation: 'queue',
-            },
-            `Processed ${processed}/${embedItems.length} embed jobs successfully`,
-          );
-        } else {
-          logger.warn(
-            {
-              batchRequestId,
-              operation: 'queue',
-            },
-            'No valid messages to process after parsing',
-          );
         }
 
-        // Log batch completion
         const duration = Date.now() - startTime;
-        logger.info(
-          {
-            batchRequestId,
-            messageCount: batch.messages.length,
-            processedCount: embedItems.length,
-            successCount: embedItems.length > 0 ? Math.min(embedItems.length, 100) : 0, // Use fixed capacity instead of trying to read gauge value
-            duration,
-            operation: 'queue',
-          },
-          'Queue batch processing complete',
-        );
-
-        // Track timing metrics
         metrics.timing('queue.batch_processing_time', duration);
         metrics.counter('queue.batches_completed', 1);
       },
     );
   }
-
-  /**
-   * Validate and convert a single queue message
-   * @param msg Queue message to parse
-   * @param requestId Request ID for correlation
-   * @returns Parsed SiloContentItem
-   */
-  private async parseMessage(
-    msg: Message<Record<string, unknown>>,
-    requestId: string = crypto.randomUUID(),
-  ): Promise<SiloContentItem> {
-    return trackOperation(
-      'parse_message',
-      async () => {
-        const messageContext = {
-          messageId: msg.id,
-          requestId,
-          operation: 'parseMessage',
-        };
-
-        // Validate message has a body
-        if (!msg.body) {
-          throw new ValidationError('Message body is empty', messageContext);
-        }
-
-        // Validate message against schema
-        const validation = NewContentMessageSchema.safeParse(msg.body);
-        if (!validation.success) {
-          const issues = validation.error.issues
-            .map(i => `${i.path.join('.')}: ${i.message}`)
-            .join(', ');
-
-          logger.warn(
-            {
-              ...messageContext,
-              issues,
-              messageBody: JSON.stringify(msg.body).substring(0, 200),
-            },
-            'Invalid message format',
-          );
-
-          throw new ValidationError(`Message validation failed: ${issues}`, {
-            ...messageContext,
-            issues,
-          });
-        }
-
-        try {
-          // Fetch content from Silo
-          logger.debug(
-            {
-              ...messageContext,
-              contentId: validation.data.id,
-              userId: validation.data.userId,
-            },
-            'Fetching content from Silo',
-          );
-
-          // At this point, we know the message body conforms to NewContentMessage schema
-          const content = await this.services.silo.get(validation.data.id, validation.data.userId);
-
-          // Verify content was retrieved
-          assertExists(content, `Content not found in Silo for ID: ${validation.data.id}`, {
-            ...messageContext,
-            contentId: validation.data.id,
-            userId: validation.data.userId,
-          });
-
-          logger.debug(
-            {
-              ...messageContext,
-              contentId: content.id,
-              contentSize: content.body?.length || 0,
-              contentType: content.mimeType || content.category || 'unknown',
-            },
-            'Successfully fetched content from Silo',
-          );
-
-          return content;
-        } catch (err) {
-          const domeError = toDomeError(err, 'Error fetching content from Silo', {
-            ...messageContext,
-            contentId: validation.data.id,
-            userId: validation.data.userId,
-          });
-
-          logError(domeError, 'Silo content retrieval failed');
-          throw domeError;
-        }
-      },
-      { messageId: msg.id, requestId },
-    );
-  }
-
   /* ---------------------------- rpc: embed ------------------------------ */
 
   /**
@@ -758,8 +542,19 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
             'Processing RPC embed request',
           );
 
-          // Embed the content
-          const processed = await this.embedBatch([job], undefined, requestId);
+          const msg: ParsedQueueMessage<NewContentMessage> = {
+            id: job.id,
+            timestamp: Date.now(),
+            body: {
+              id: job.id,
+              userId: job.userId,
+              category: job.category,
+              mimeType: job.mimeType,
+              createdAt: job.createdAt,
+            },
+          };
+
+          const processed = await this.embedBatch([msg], undefined, requestId);
 
           // Track success metrics
           metrics.counter('rpc.embed.success', 1);
