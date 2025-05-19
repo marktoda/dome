@@ -126,10 +126,11 @@ export class ContentController {
             if (item.size <= SIMPLE_PUT_MAX_SIZE) {
               results[item.id].body = await obj.text();
             } else {
-              // TODO: fix
-              throw new ValidationError('Object too large for simple retrieval', {
-                size: item.size,
-              });
+              // For larger objects, provide a presigned URL for download
+              results[item.id].url = await this.r2Service.createPresignedUrl(
+                item.r2Key,
+                PRESIGNED_URL_TTL_SECONDS,
+              );
             }
           }
         }),
