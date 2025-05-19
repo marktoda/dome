@@ -3,16 +3,13 @@ import {
   VectorMeta,
   VectorSearchResult,
   NewContentMessageSchema,
-  EmbedDeadLetterMessageSchema,
   parseMessageBatch,
   ParsedMessageBatch,
   ParsedQueueMessage,
   toRawMessageBatch,
   NewContentMessage,
   SiloContentItem,
-  serializeQueueMessage,
 } from '@dome/common';
-import { z } from 'zod';
 
 import { withContext } from '@dome/common';
 import {
@@ -25,15 +22,16 @@ import {
   toDomeError,
   assertValid,
   assertExists,
-  ValidationError,
   VectorizeError,
   EmbeddingError,
-  PreprocessingError,
 } from './utils/errors';
 import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
 import { createVectorizeService } from './services/vectorize';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+import { Queue } from '@cloudflare/workers-types/experimental';
+import { DeadLetterQueue } from './queues/DeadLetterQueue';
+
 interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
   SILO: SiloBinding;
 }
@@ -82,11 +80,6 @@ const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Pro
     }
   });
 
-// Define a type for dead letter queue payloads
-type DeadLetterPayload =
-  | { error: string; originalMessage: unknown; errorCode?: string }
-  | { err: string; job: SiloContentItem; errorCode?: string; timestamp?: number };
-
 /**
  * Send a failed message to the dead letter queue with enhanced error context
  * @param queue Dead letter queue
@@ -94,8 +87,15 @@ type DeadLetterPayload =
  * @param requestId Request ID for correlation
  */
 const sendToDeadLetter = async (
-  queue: DeadQueue | undefined,
-  payload: DeadLetterPayload,
+  queue: Queue,
+  payload: {
+    err?: Error | string;
+    job?: SiloContentItem;
+    error?: string;
+    originalMessage?: unknown;
+    errorCode?: string;
+    timestamp?: number;
+  },
   requestId: string = crypto.randomUUID(),
 ) => {
   if (!queue) {
@@ -110,6 +110,11 @@ const sendToDeadLetter = async (
     return;
   }
 
+  // Validate the payload format
+  if (!('err' in payload || 'error' in payload)) {
+    throw new Error(`Invalid payload format for sendToDeadLetter: ${JSON.stringify(payload)}`);
+  }
+
   return trackOperation(
     'send_to_dlq',
     async () => {
@@ -118,22 +123,26 @@ const sendToDeadLetter = async (
           {
             requestId,
             operation: 'sendToDeadLetter',
-            hasError: 'error' in payload,
-            contentId: ('job' in payload && payload.job.id) || undefined,
+            contentId: payload.job?.id || (payload.originalMessage as any)?.id,
           },
           'Sending message to dead letter queue',
         );
 
-        const message = 'error' in payload
+        // Support both formats: { err, job } and { error, originalMessage }
+        const message = payload.error !== undefined 
           ? { error: payload.error, originalMessage: payload.originalMessage }
-          : { error: payload.err, originalMessage: payload.job };
+          : { 
+              error: payload.err instanceof Error 
+                ? payload.err.message 
+                : typeof payload.err === 'string' 
+                  ? payload.err 
+                  : 'Unknown error', 
+              originalMessage: payload.job 
+            };
 
-        const serialized = serializeQueueMessage(
-          EmbedDeadLetterMessageSchema,
-          message,
-        );
-
-        await queue.send(serialized);
+        // Create a typed queue wrapper
+        const deadLetterQueue = new DeadLetterQueue(queue);
+        await deadLetterQueue.send(message);
 
         metrics.counter('dlq.messages_sent', 1);
 
@@ -302,16 +311,16 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
               errorType: domeError.code,
             });
 
-            await sendToDeadLetter(
-              deadQueue,
-              {
-                err: domeError.message,
-                errorCode: domeError.code,
-                job: job!,
-                timestamp: Date.now(),
-              },
-              jobRequestId,
-            );
+            if (deadQueue) {
+              await sendToDeadLetter(
+                deadQueue,
+                {
+                  err: domeError,
+                  job: job!,
+                },
+                jobRequestId,
+              );
+            }
           } finally {
             timer.stop();
           }

@@ -102,3 +102,5 @@ export function toRawMessageBatch(batch: MessageBatch<any>): RawMessageBatch {
   }));
   return { queue: batch.queue, messages };
 }
+
+export * from './AbstractQueue.js';
