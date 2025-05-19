@@ -10,7 +10,14 @@ import { withContext } from '@dome/common';
 import { metrics } from '@dome/common';
 import { toDomeError } from '@dome/errors';
 import { createLlmService } from './services/llmService';
-import { EnrichedContentMessage, NewContentMessage, SiloContentMetadata } from '@dome/common';
+import {
+  EnrichedContentMessage,
+  NewContentMessage,
+  NewContentMessageSchema,
+  parseMessageBatch,
+  ParsedMessageBatch,
+  RawMessageBatch,
+} from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { z } from 'zod';
 import { sendTodosToQueue } from './todos';
@@ -22,13 +29,7 @@ import {
   aiProcessorMetrics,
 } from './utils/logging';
 import { ReprocessResponseSchema, ReprocessRequestSchema } from './types';
-import {
-  assertValid,
-  assertExists,
-  LLMProcessingError,
-  ContentProcessingError,
-  QueueError,
-} from './utils/errors';
+import { assertExists } from './utils/errors';
 import { ContentProcessor } from './utils/processor';
 
 /**
@@ -350,12 +351,28 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
         const startTime = Date.now();
         const queueName = batch.queue;
 
+        let parsed: ParsedMessageBatch<NewContentMessage>;
+        try {
+          parsed = parseMessageBatch(NewContentMessageSchema, batch as unknown as RawMessageBatch);
+        } catch (err) {
+          const domeError = toDomeError(err, 'Failed to parse message batch', {
+            batchId,
+            queueName,
+          });
+          logError(domeError, 'Invalid queue batch');
+          aiProcessorMetrics.counter('batch.errors', 1, {
+            queueName,
+            errorType: domeError.code,
+          });
+          throw domeError;
+        }
+
         getLogger().info(
           {
             queueName,
             batchId,
-            messageCount: batch.messages.length,
-            firstMessageId: batch.messages[0]?.id,
+            messageCount: parsed.messages.length,
+            firstMessageId: parsed.messages[0]?.id,
             operation: 'queue',
           },
           'Processing queue batch',
@@ -363,20 +380,15 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
 
         // Track batch metrics
         aiProcessorMetrics.counter('batch.received', 1, { queueName });
-        aiProcessorMetrics.counter('messages.received', batch.messages.length, { queueName });
+        aiProcessorMetrics.counter('messages.received', parsed.messages.length, { queueName });
 
         let successCount = 0;
         let errorCount = 0;
 
         // Process each message in the batch
-        for (const message of batch.messages) {
+        for (const message of parsed.messages) {
           const messageRequestId = `${batchId}-${message.id}`;
           try {
-            assertValid(!!message.body, 'Message body is empty or invalid', {
-              messageId: message.id,
-              batchId,
-            });
-
             await this.services.processor.processMessage(message.body, messageRequestId);
             successCount++;
           } catch (error) {
@@ -402,12 +414,12 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
           {
             queueName,
             batchId,
-            messageCount: batch.messages.length,
+            messageCount: parsed.messages.length,
             successCount,
             errorCount,
-            successRate: Math.round((successCount / batch.messages.length) * 100),
+            successRate: Math.round((successCount / parsed.messages.length) * 100),
             durationMs: duration,
-            avgProcessingTimeMs: Math.round(duration / batch.messages.length),
+            avgProcessingTimeMs: Math.round(duration / parsed.messages.length),
             operation: 'queue',
           },
           'Completed processing queue batch',
@@ -417,7 +429,7 @@ export default class AiProcessor extends WorkerEntrypoint<Env> {
         aiProcessorMetrics.timing('batch.duration_ms', duration, { queueName });
         aiProcessorMetrics.counter('batch.completed', 1, { queueName });
         aiProcessorMetrics.counter('messages.processed', successCount, { queueName });
-        aiProcessorMetrics.gauge('batch.success_rate', successCount / batch.messages.length, {
+        aiProcessorMetrics.gauge('batch.success_rate', successCount / parsed.messages.length, {
           queueName,
         });
       },
