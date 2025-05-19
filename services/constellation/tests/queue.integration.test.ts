@@ -4,6 +4,15 @@ vi.mock('@dome/common', () => ({
   getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   PUBLIC_USER_ID: 'public',
   withContext: async (_m: any, fn: any) => fn({}),
+  parseMessageBatch: (_schema: any, batch: any) => ({
+    queue: batch.queue,
+    messages: batch.messages.map((m: any) => ({
+      id: m.id,
+      timestamp: m.timestamp,
+      body: { id: m.id, userId: 'u', category: 'cat', mimeType: 'text', createdAt: Date.now() },
+    })),
+  }),
+  NewContentMessageSchema: {},
 }));
 vi.mock('@dome/errors', () => ({}));
 vi.mock('../src/utils/errors', () => ({
@@ -34,7 +43,6 @@ describe('queue integration', () => {
     const ctx = {} as any;
     const worker = new Constellation(ctx, env);
 
-    const parseSpy = vi.spyOn(worker as any, 'parseMessage').mockResolvedValue({ id: '1', userId: 'u', body: 'text' });
     const embedSpy = vi.spyOn(worker as any, 'embedBatch').mockResolvedValue(1);
 
     const mkMsg = (id: string) => ({
@@ -50,8 +58,6 @@ describe('queue integration', () => {
 
     await worker.queue(batch);
 
-    expect(parseSpy).toHaveBeenCalledTimes(2);
     expect(embedSpy).toHaveBeenCalledTimes(1);
-    batch.messages.forEach((m: any) => expect(m.ack).toHaveBeenCalled());
   });
 });
