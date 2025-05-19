@@ -134,3 +134,19 @@ const content = await siloClient.fetchContent('content123', 'user123');
 - **Simplified API**: The SiloClient provides a simplified API for common operations like fetching content.
 - **Reduced Code Duplication**: No need to implement the same logic in multiple services.
 - **Maintainability**: Changes to the Silo API only need to be made in one place.
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Required | Default |
+| -------- | ----------- | -------- | ------- |
+| `LOG_LEVEL` | Logging level | No | `info` |
+| `VERSION` | Service version | No | `1.0.0` |
+| `ENVIRONMENT` | Deployment environment | No | `prod` |
+| `BUCKET` | R2 bucket for stored content | Yes | - |
+| `DB` | D1 database for metadata | Yes | - |
+| `NEW_CONTENT_CONSTELLATION` | Queue for Constellation embedding jobs | Yes | - |
+| `NEW_CONTENT_AI` | Queue for AI processing jobs | Yes | - |
+| `INGEST_DLQ` | Dead letter queue for ingest failures | Yes | - |
+| `SILO_INGEST_QUEUE` | Queue for ingestion tasks | Yes | - |
