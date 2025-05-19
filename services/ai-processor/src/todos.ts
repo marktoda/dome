@@ -4,7 +4,8 @@
  * This module handles sending extracted todos to the Todos service queue
  */
 import { getLogger, trackOperation } from './utils/logging';
-import { TodoQueueItem } from '@dome/todos/client';
+import { TodoQueueItem, TodoQueueItemSchema } from '@dome/todos/client';
+import { serializeQueueMessage } from '@dome/common';
 import { PUBLIC_USER_ID, EnrichedContentMessage } from '@dome/common';
 import { toDomeError } from './utils/errors';
 
@@ -20,7 +21,7 @@ const logger = getLogger();
  */
 export async function sendTodosToQueue(
   content: EnrichedContentMessage,
-  queue: Queue<TodoQueueItem>,
+  queue: Queue,
 ): Promise<void> {
   const todos = content.metadata.todos;
   if (!content.userId || content.userId === PUBLIC_USER_ID) {
@@ -64,9 +65,13 @@ export async function sendTodosToQueue(
           'Sending todos to queue',
         );
 
-        // Send each todo to the queue
+        // Send each todo to the queue as a serialized message
         for (const item of todoItems) {
-          await queue.send(item);
+          const serialized = serializeQueueMessage(
+            TodoQueueItemSchema,
+            item,
+          );
+          await queue.send(serialized);
         }
 
         logger.info(

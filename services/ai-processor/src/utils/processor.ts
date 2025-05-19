@@ -16,6 +16,11 @@ import {
   ContentProcessingError,
 } from '../utils/errors';
 import { sendTodosToQueue } from '../todos';
+import {
+  serializeQueueMessage,
+  EnrichedContentMessageSchema,
+  NewContentMessageSchema,
+} from '@dome/common';
 
 import type {
   NewContentMessage,
@@ -266,21 +271,14 @@ export class ContentProcessor {
       timestamp: Date.now(),
     };
 
-    // Use optional chaining for queue sending
-    await this.env.ENRICHED_CONTENT?.send(enriched);
+    // Use optional chaining for queue sending with serialization
+    const serializedEnriched = serializeQueueMessage(
+      EnrichedContentMessageSchema,
+      enriched,
+    );
+    await this.env.ENRICHED_CONTENT?.send(serializedEnriched);
 
     if (metadata.todos?.length && userId) {
-      // Ensure TODOS queue exists before sending
-      await this.env.TODOS?.sendBatch(
-        metadata.todos.map(todo => ({
-          body: { ...enriched, metadata: { ...enriched.metadata, ...todo } },
-        })),
-      );
-      // The original sendTodosToQueue might have more complex logic,
-      // for simplicity here, directly sending. If sendTodosToQueue is complex,
-      // it should be updated to use optional chaining for this.env.TODOS
-      // For now, assuming direct send is okay or sendTodosToQueue handles undefined queue.
-      // Reverting to original call if it's safer and handles undefined queue.
       if (this.env.TODOS) {
         await sendTodosToQueue(enriched, this.env.TODOS);
       }
@@ -307,7 +305,11 @@ export class ContentProcessor {
   private async queueRateLimited(msg: NewContentMessage): Promise<void> {
     // Removed redundant silo.get and assertExists
     if (this.env.RATE_LIMIT_DLQ) {
-      await this.env.RATE_LIMIT_DLQ.send(msg);
+      const serialized = serializeQueueMessage(
+        NewContentMessageSchema,
+        msg,
+      );
+      await this.env.RATE_LIMIT_DLQ.send(serialized);
       getLogger().info({ id: msg.id }, 'Queued rate‑limited content to RATE_LIMIT_DLQ');
     } else {
       getLogger().warn(

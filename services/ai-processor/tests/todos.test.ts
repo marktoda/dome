@@ -23,7 +23,8 @@ describe('sendTodosToQueue', () => {
     const q = makeQueue();
     await sendTodosToQueue(baseContent as any, q as any);
     expect(q.send).toHaveBeenCalledTimes(1);
-    expect(q.send.mock.calls[0][0]).toMatchObject({ userId: 'u1', description: 'a' });
+    const sent = JSON.parse(q.send.mock.calls[0][0]);
+    expect(sent).toMatchObject({ userId: 'u1', description: 'a' });
   });
 
   it('skips when no userId', async () => {

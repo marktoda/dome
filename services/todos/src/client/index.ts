@@ -18,7 +18,7 @@ import {
   TodoQueueItem,
   TodoQueueItemSchema,
 } from '../types';
-import { getLogger } from '@dome/common';
+import { getLogger, serializeQueueMessage } from '@dome/common';
 import { createServiceMetrics } from '@dome/common';
 
 export {
@@ -165,7 +165,7 @@ export function createTodosClient(
  * @returns The result of sending to the queue
  */
 export async function sendTodosToQueue(
-  queue: Queue<TodoQueueItem>,
+  queue: Queue,
   todos: TodoQueueItem | TodoQueueItem[],
   metadata: Record<string, any> = {},
 ): Promise<void> {
@@ -195,7 +195,8 @@ export async function sendTodosToQueue(
   try {
     // Send each todo individually since queue.send doesn't support arrays
     for (const todo of todosArray) {
-      await queue.send(todo);
+      const serialized = serializeQueueMessage(TodoQueueItemSchema, todo);
+      await queue.send(serialized);
     }
 
     logger.info(
