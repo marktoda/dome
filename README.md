@@ -1,6 +1,45 @@
 # Dome: AI-Powered Exobrain Platform
 
-Dome is a modern, cloud-native platform for personal knowledge management, built on Cloudflare's edge infrastructure. It provides a secure, scalable, and efficient way to store, search, and interact with your personal knowledge base.
+Dome is an open source platform for building a personal or team knowledge base on Cloudflare's edge. It unifies storage, semantic search, and retrieval-augmented chat behind a typed API surface.
+
+## Features
+
+- **Unified storage** for notes, code, and documents
+- **Vector search** using Workers AI and Vectorize
+- **RAG chat** with customizable tools and graph-based execution
+- **Scheduled ingestors** for GitHub and other sources
+- **Typed RPC interfaces** between microservices
+
+### Use Cases
+
+- Capture notes and snippets from anywhere and search them instantly
+- Index code repositories for semantic search and summarization
+- Build chat agents that leverage your personal data
+
+For a deeper architectural overview see [docs/architecture/overview.md](docs/architecture/overview.md).
+
+## Table of Contents
+
+1. [System Architecture](#system-architecture)
+2. [Key Components](#key-components)
+3. [Technology Stack](#technology-stack)
+4. [Repository Structure](#repository-structure)
+5. [Development Workflow](#development-workflow)
+6. [Service Communication](#service-communication)
+7. [Future Enhancements](#future-enhancements)
+8. [Getting Started](#getting-started)
+
+## Services Overview
+
+| Service | Purpose |
+| ------- | ------- |
+| **Dome API** | Entry point for client requests and coordination layer |
+| **Silo** | Stores content bodies in R2 and metadata in D1 |
+| **Constellation** | Generates embeddings and performs vector search |
+| **Chat** | Retrieval-augmented generation over stored content |
+| **Tsunami** | Ingests external sources like GitHub repositories |
+| **Dome Cron** | Schedules periodic tasks |
+| **Dome Notify** | Sends notifications and alerts |
 
 ## System Architecture
 
@@ -306,7 +345,27 @@ Dome implements comprehensive error handling and observability:
 
 ## Getting Started
 
-See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for detailed setup instructions.
+1. Clone the repository and install dependencies:
+
+   ```bash
+   git clone https://github.com/your-org/dome.git
+   cd dome
+   pnpm install
+   ```
+
+2. Build all packages:
+
+   ```bash
+   just build
+   ```
+
+3. Start the local development workers:
+
+   ```bash
+   just dev
+   ```
+
+For a complete walkthrough see [docs/DEV_SETUP.md](docs/DEV_SETUP.md).
 
 # TODOS
 
