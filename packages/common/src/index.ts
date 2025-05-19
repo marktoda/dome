@@ -16,9 +16,6 @@ export * from './middleware/index.js';
 // Export all utilities
 export * from './utils/index.js';
 
-// Export all services
-export * from './services/index.js';
-
 // Export all constants
 export * from './constants/publicContent.js';
 
