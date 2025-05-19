@@ -24,6 +24,11 @@ import type {
   SiloContentItem, // For objects that include a body
   ContentCategory, // Import for explicit typing
 } from '@dome/common';
+import {
+  serializeQueueMessage,
+  EnrichedContentMessageSchema,
+  NewContentMessageSchema,
+} from '@dome/common';
 // Define LlmProcessingResult based on observed llmService output
 import type { LlmService } from '../services/llmService';
 import type {
@@ -266,13 +271,19 @@ export class ContentProcessor {
     };
 
     // Use optional chaining for queue sending
-    await this.env.ENRICHED_CONTENT?.send(enriched);
+    if (this.env.ENRICHED_CONTENT) {
+      const msg = serializeQueueMessage(EnrichedContentMessageSchema, enriched);
+      await this.env.ENRICHED_CONTENT.send(msg);
+    }
 
     if (metadata.todos?.length && userId) {
       // Ensure TODOS queue exists before sending
       await this.env.TODOS?.sendBatch(
         metadata.todos.map(todo => ({
-          body: { ...enriched, metadata: { ...enriched.metadata, ...todo } },
+          body: serializeQueueMessage(
+            EnrichedContentMessageSchema,
+            { ...enriched, metadata: { ...enriched.metadata, ...todo } },
+          ),
         })),
       );
       // The original sendTodosToQueue might have more complex logic,
@@ -306,7 +317,8 @@ export class ContentProcessor {
   private async queueRateLimited(msg: NewContentMessage): Promise<void> {
     // Removed redundant silo.get and assertExists
     if (this.env.RATE_LIMIT_DLQ) {
-      await this.env.RATE_LIMIT_DLQ.send(msg);
+      const serialized = serializeQueueMessage(NewContentMessageSchema, msg);
+      await this.env.RATE_LIMIT_DLQ.send(serialized);
       getLogger().info({ id: msg.id }, 'Queued rate‑limited content to RATE_LIMIT_DLQ');
     } else {
       getLogger().warn(

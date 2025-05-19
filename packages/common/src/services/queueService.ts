@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Event, EventSchema } from '../types/events.js';
+import { serializeQueueMessage } from '../queue/index.js';
 import { QueueError } from '../errors/ServiceError.js';
 
 /**
@@ -55,7 +56,7 @@ export class QueueService {
       EventSchema.parse(event);
 
       // Serialize the event to JSON
-      const serializedEvent = JSON.stringify(event);
+      const serializedEvent = serializeQueueMessage(EventSchema, event);
 
       // Send the event to the queue
       await this.queueBinding.send(serializedEvent);
@@ -85,7 +86,9 @@ export class QueueService {
       events.forEach(event => EventSchema.parse(event));
 
       // Serialize all events to JSON
-      const serializedEvents = events.map(event => JSON.stringify(event));
+      const serializedEvents = events.map(event =>
+        serializeQueueMessage(EventSchema, event),
+      );
 
       // Send all events to the queue
       const promises = serializedEvents.map(event => this.queueBinding.send(event));
@@ -140,7 +143,9 @@ export class QueueService {
             rawEvent.attempts = (rawEvent.attempts || 0) + 1;
 
             // Re-publish the event with incremented retry count
-            await this.queueBinding.send(JSON.stringify(rawEvent));
+            await this.queueBinding.send(
+              serializeQueueMessage(EventSchema, rawEvent),
+            );
 
             // Acknowledge the original message
             message.ack(msg.id);

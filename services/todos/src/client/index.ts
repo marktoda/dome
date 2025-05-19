@@ -15,7 +15,10 @@ import {
   ListTodosResult,
   BatchUpdateInput,
   TodoStats,
+  TodoQueueItemSchema,
+  TodoQueueItem,
 } from '../types';
+import { serializeQueueMessage } from '@dome/common';
 import { getLogger } from '@dome/common';
 import { createServiceMetrics } from '@dome/common';
 
@@ -32,27 +35,9 @@ export {
   TodoStats,
 };
 
-// Export TodoQueueItem type for use by services that send todos to the queue
-export interface TodoQueueItem {
-  // Required fields
-  userId: string; // User who owns the todo
-  sourceNoteId: string; // ID of the note/content this todo was extracted from
-  sourceText: string; // Original text snippet from which the todo was extracted
-
-  // AI-enriched content
-  title: string; // Short title/summary
-  description?: string; // Detailed description (optional)
-
-  // Metadata suggestions
-  priority?: TodoPriority | string; // Suggested priority
-  dueDate?: string | number; // Suggested due date (string date or timestamp)
-  estimatedEffort?: string; // Suggested effort (e.g., "5min", "1h")
-  actionableSteps?: string[]; // Suggested breakdown of steps
-  category?: string; // Suggested category
-
-  // Processing metadata
-  created?: number; // When this item was created (timestamp)
-}
+// Re-export the queue item type for consumers
+export { TodoQueueItemSchema } from '../types';
+export type { TodoQueueItem } from '../types';
 
 // Logger for the client
 const logger = getLogger();
@@ -183,7 +168,7 @@ export function createTodosClient(
  * @returns The result of sending to the queue
  */
 export async function sendTodosToQueue(
-  queue: Queue<TodoQueueItem>,
+  queue: Queue<string>,
   todos: TodoQueueItem | TodoQueueItem[],
   metadata: Record<string, any> = {},
 ): Promise<void> {
@@ -213,7 +198,8 @@ export async function sendTodosToQueue(
   try {
     // Send each todo individually since queue.send doesn't support arrays
     for (const todo of todosArray) {
-      await queue.send(todo);
+      const msg = serializeQueueMessage(TodoQueueItemSchema, todo);
+      await queue.send(msg);
     }
 
     logger.info(

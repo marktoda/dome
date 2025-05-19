@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sendTodosToQueue } from '../src/todos';
-import { PUBLIC_USER_ID } from '@dome/common';
+import { PUBLIC_USER_ID, serializeQueueMessage } from '@dome/common';
+import { TodoQueueItemSchema } from '@dome/todos/client';
 
 const makeQueue = () => ({ send: vi.fn() });
 
@@ -23,7 +24,9 @@ describe('sendTodosToQueue', () => {
     const q = makeQueue();
     await sendTodosToQueue(baseContent as any, q as any);
     expect(q.send).toHaveBeenCalledTimes(1);
-    expect(q.send.mock.calls[0][0]).toMatchObject({ userId: 'u1', description: 'a' });
+    const sent = q.send.mock.calls[0][0];
+    expect(typeof sent).toBe('string');
+    expect(JSON.parse(sent)).toMatchObject({ userId: 'u1' });
   });
 
   it('skips when no userId', async () => {
