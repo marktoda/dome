@@ -39,7 +39,11 @@ dev: build
 
 # Run tests for all packages
 test:
-    pnpm run test
+    pnpm -r test
+
+# Run tests with coverage across the workspace
+test-coverage:
+    pnpm -r test:coverage
 
 # Run tests for a specific package
 test-pkg PACKAGE:

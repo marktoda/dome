@@ -12,7 +12,8 @@
     "generate-migrations": "drizzle-kit generate",
     "migrate": "wrangler d1 execute CHAT_DB --local --file=./migrations/0000_create_checkpoints_table.sql",
     "ts-node": "ts-node",
-    "state-usage": "node scripts/stateUsage.js"
+    "state-usage": "node scripts/stateUsage.js",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@dome/common": "workspace:*",

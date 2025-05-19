@@ -5,17 +5,15 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    include: ['tests/**/*.test.ts'],
     alias: {
       '@dome/common': path.resolve(__dirname, '../../packages/common/src'),
       '@dome/errors': path.resolve(__dirname, '../../packages/errors/src'),
-      '@dome/todos': path.resolve(__dirname, '../todos/src'),
-      '@dome/silo': path.resolve(__dirname, '../silo/src'),
     },
     coverage: {
-      reporter: ['text', 'json', 'html'],
-      exclude: ['node_modules/', 'tests/'],
       provider: 'v8',
+      reporter: ['text', 'lcov', 'json', 'html'],
+      include: ['src/**/*.{ts,js}'],
+      exclude: ['src/**/*.d.ts', 'tests/**'],
     },
   },
 })
