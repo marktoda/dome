@@ -134,6 +134,30 @@ export class R2Service {
       throw error;
     }
   }
+
+  /**
+   * Create a presigned URL for an object
+   * @param key The R2 key to sign
+   * @param expiresIn Expiration time in seconds
+   */
+  async createPresignedUrl(key: string, expiresIn: number) {
+    const startTime = Date.now();
+
+    try {
+      const url = await (this.env.BUCKET as any).createPresignedUrl({
+        key,
+        method: 'GET',
+        expiresIn,
+      });
+
+      metrics.timing('silo.r2.presign.latency_ms', Date.now() - startTime);
+      return url.toString();
+    } catch (error) {
+      metrics.increment('silo.r2.errors', 1, { operation: 'presign' });
+      logError(error, 'Error creating presigned URL', { key });
+      throw error;
+    }
+  }
 }
 
 export function createR2Service(env: any): R2Service {
