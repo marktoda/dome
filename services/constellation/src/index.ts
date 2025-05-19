@@ -177,24 +177,17 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
       async () => {
         assertValid(Array.isArray(jobs), 'Jobs array is required', { batchRequestId });
 
-        // Constants for processing limits
-        const MAX_CHUNKS_PER_BATCH = 50; // Limit chunks processed at once
-        const MAX_TEXT_LENGTH = 100000; // Limit text size to prevent memory issues
+        const MAX_CHUNKS_PER_BATCH = 50;
+        const MAX_TEXT_LENGTH = 100000;
 
         let processed = 0;
         const startTime = Date.now();
 
-        // Log batch processing start
         logger.info(
-          {
-            batchRequestId,
-            jobCount: jobs.length,
-            operation: 'embedBatch',
-          },
+          { batchRequestId, jobCount: jobs.length, operation: 'embedBatch' },
           `Starting embedding batch with ${jobs.length} jobs`,
         );
 
-        // Process jobs one at a time to avoid memory issues
         for (const job of jobs) {
           const jobRequestId = `${batchRequestId}-${job.id}`;
           const jobContext = {
@@ -206,232 +199,79 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
           };
 
           if (job.body === undefined) {
-            logger.error(
-              { ...jobContext, contentSize: 0 },
-              'Empty job body, skipping embedding',
-            );
+            logger.error({ ...jobContext, contentSize: 0 }, 'Empty job body, skipping embedding');
             continue;
           }
 
-          // Track individual job processing
           const timer = metrics.startTimer('process_job');
 
           try {
             await trackOperation(
               'process_content_job',
               async () => {
-                const { preprocessor, embedder, vectorize } = this.services;
+                const { preprocessor } = this.services;
 
-                // Validate the job data
                 assertValid(!!job.id, 'Job ID is required', jobContext);
                 assertValid(!!job.userId, 'User ID is required', jobContext);
                 assertValid(job.body !== undefined, 'Job body is required', jobContext);
 
-                // Truncate extremely large texts to prevent memory issues
-                // Ensure job.body is a string (not undefined)
                 const jobText = job.body || '';
                 const truncatedText =
-                  jobText.length > MAX_TEXT_LENGTH
-                    ? jobText.substring(0, MAX_TEXT_LENGTH)
-                    : jobText;
+                  jobText.length > MAX_TEXT_LENGTH ? jobText.substring(0, MAX_TEXT_LENGTH) : jobText;
 
                 if (truncatedText.length < jobText.length) {
                   logger.warn(
-                    {
-                      ...jobContext,
-                      originalLength: jobText.length,
-                      truncatedLength: truncatedText.length,
-                    },
+                    { ...jobContext, originalLength: jobText.length, truncatedLength: truncatedText.length },
                     'Text truncated to prevent memory issues',
                   );
-
                   metrics.counter('content.truncated', 1);
                 }
 
-                // Process the text into chunks
-                try {
-                  const chunks = preprocessor.process(truncatedText);
+                const chunks = preprocessor.process(truncatedText);
 
-                  if (chunks.length === 0) {
-                    logger.warn(
-                      { ...jobContext, textLength: truncatedText.length },
-                      'No processable text found in content',
-                    );
-                    metrics.counter('preprocessing.empty_result', 1);
-                    return;
-                  }
-
-                  logger.info(
-                    {
-                      ...jobContext,
-                      chunks: chunks.length,
-                      textLength: truncatedText.length,
-                    },
-                    `Successfully preprocessed content into ${chunks.length} chunks`,
-                  );
-
-                  metrics.counter('preprocessing.success', 1);
-                  metrics.gauge('preprocessing.chunk_count', chunks.length);
-
-                  // Process chunks in smaller batches to avoid memory issues
-                  let allVectors: { id: string; values: number[]; metadata: VectorMeta }[] = [];
-
-                  // Track embedding progress
-                  for (let i = 0; i < chunks.length; i += MAX_CHUNKS_PER_BATCH) {
-                    const batchChunks = chunks.slice(i, i + MAX_CHUNKS_PER_BATCH);
-                    const chunkBatchIndex = Math.floor(i / MAX_CHUNKS_PER_BATCH) + 1;
-                    const totalChunkBatches = Math.ceil(chunks.length / MAX_CHUNKS_PER_BATCH);
-
-                    logger.debug(
-                      {
-                        ...jobContext,
-                        chunkBatchIndex,
-                        totalChunkBatches,
-                        batchSize: batchChunks.length,
-                      },
-                      `Processing chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-                    );
-
-                    try {
-                      // Generate embeddings for this batch of chunks
-                      const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
-                        id: `content:${job.id}:${i + idx}`,
-                        values: v,
-                        metadata: <VectorMeta>{
-                          userId: job.userId,
-                          contentId: job.id,
-                          category: job.category,
-                          mimeType: job.mimeType,
-                          createdAt: Math.floor(job.createdAt / 1000),
-                          version: 1,
-                        },
-                      }));
-
-                      allVectors = allVectors.concat(batchVectors);
-
-                      logger.debug(
-                        {
-                          ...jobContext,
-                          chunkBatchIndex,
-                          vectorCount: batchVectors.length,
-                        },
-                        `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-                      );
-
-                      metrics.counter('embedding.batch_success', 1);
-                      metrics.counter('embedding.vectors_created', batchVectors.length);
-
-                      // Force garbage collection between batches by breaking reference
-                      batchChunks.length = 0;
-
-                      // Add a small delay between batches to allow for garbage collection
-                      if (i + MAX_CHUNKS_PER_BATCH < chunks.length) {
-                        await new Promise(resolve => setTimeout(resolve, 50));
-                      }
-                    } catch (err) {
-                      const domeError = new EmbeddingError(
-                        `Failed to embed chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-                        {
-                          ...jobContext,
-                          chunkBatchIndex,
-                          totalChunkBatches,
-                          batchSize: batchChunks.length,
-                        },
-                        err instanceof Error ? err : undefined,
-                      );
-
-                      logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
-                      metrics.counter('embedding.batch_errors', 1);
-
-                      throw domeError;
-                    }
-                  }
-
-                  // Upsert vectors in smaller batches
-                  const UPSERT_BATCH_SIZE = 100;
-                  for (let i = 0; i < allVectors.length; i += UPSERT_BATCH_SIZE) {
-                    const upsertBatch = allVectors.slice(i, i + UPSERT_BATCH_SIZE);
-                    const upsertBatchIndex = Math.floor(i / UPSERT_BATCH_SIZE) + 1;
-                    const totalUpsertBatches = Math.ceil(allVectors.length / UPSERT_BATCH_SIZE);
-
-                    logger.debug(
-                      {
-                        ...jobContext,
-                        upsertBatchIndex,
-                        totalUpsertBatches,
-                        batchSize: upsertBatch.length,
-                      },
-                      `Upserting vector batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                    );
-
-                    try {
-                      await vectorize.upsert(upsertBatch);
-
-                      logger.debug(
-                        {
-                          ...jobContext,
-                          upsertBatchIndex,
-                          totalUpsertBatches,
-                        },
-                        `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                      );
-
-                      metrics.counter('vectorize.batch_success', 1);
-                    } catch (err) {
-                      const domeError = new VectorizeError(
-                        `Failed to upsert batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-                        {
-                          ...jobContext,
-                          upsertBatchIndex,
-                          totalUpsertBatches,
-                        },
-                        err instanceof Error ? err : undefined,
-                      );
-
-                      logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
-                      metrics.counter('vectorize.batch_errors', 1);
-
-                      throw domeError;
-                    }
-                  }
-
-                  logger.info(
-                    {
-                      ...jobContext,
-                      vectorCount: allVectors.length,
-                      textLength: truncatedText.length,
-                      duration: Date.now() - startTime,
-                    },
-                    `Successfully upserted ${allVectors.length} vectors for content`,
-                  );
-
-                  metrics.trackOperation('content_embedding', true, {
-                    requestId: jobRequestId,
-                    vectorCount: String(allVectors.length),
-                  });
-
-                  processed += 1;
-
-                  // Clear references to large objects to help garbage collection
-                  chunks.length = 0;
-                  allVectors.length = 0;
-                } catch (err) {
-                  const domeError = new PreprocessingError(
-                    'Failed to preprocess content',
+                if (chunks.length === 0) {
+                  logger.warn(
                     { ...jobContext, textLength: truncatedText.length },
-                    err instanceof Error ? err : undefined,
+                    'No processable text found in content',
                   );
-
-                  logError(domeError, 'Content preprocessing failed');
-                  metrics.counter('preprocessing.errors', 1);
-
-                  throw domeError;
+                  metrics.counter('preprocessing.empty_result', 1);
+                  return;
                 }
+
+                logger.info(
+                  { ...jobContext, chunks: chunks.length, textLength: truncatedText.length },
+                  `Successfully preprocessed content into ${chunks.length} chunks`,
+                );
+
+                metrics.counter('preprocessing.success', 1);
+                metrics.gauge('preprocessing.chunk_count', chunks.length);
+
+                const vectors = await this.embedChunks(chunks, job, jobContext, MAX_CHUNKS_PER_BATCH);
+                await this.upsertVectors(vectors, jobContext);
+
+                logger.info(
+                  {
+                    ...jobContext,
+                    vectorCount: vectors.length,
+                    textLength: truncatedText.length,
+                    duration: Date.now() - startTime,
+                  },
+                  `Successfully upserted ${vectors.length} vectors for content`,
+                );
+
+                metrics.trackOperation('content_embedding', true, {
+                  requestId: jobRequestId,
+                  vectorCount: String(vectors.length),
+                });
+
+                processed += 1;
+
+                chunks.length = 0;
+                vectors.length = 0;
               },
               jobContext,
             );
           } catch (err) {
-            // Convert to domain error
             const domeError = toDomeError(err, `Failed to embed content ID: ${job.id}`, {
               ...jobContext,
             });
@@ -442,50 +282,150 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
               errorType: domeError.code,
             });
 
-            // Send to dead letter queue with enhanced context
             await sendToDeadLetter(
               deadQueue,
-              {
-                err: domeError.message,
-                errorCode: domeError.code,
-                job,
-                timestamp: Date.now(),
-              },
+              { err: domeError.message, errorCode: domeError.code, job, timestamp: Date.now() },
               jobRequestId,
             );
           } finally {
             timer.stop();
           }
 
-          // Add a delay between jobs to allow for garbage collection
           if (jobs.indexOf(job) < jobs.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 100));
           }
         }
 
-        // Log batch completion statistics
         const duration = Date.now() - startTime;
-        logger.info(
-          {
-            batchRequestId,
-            jobCount: jobs.length,
-            processedCount: processed,
-            successRate: Math.round((processed / jobs.length) * 100),
-            duration,
-            operation: 'embedBatch',
-          },
-          `Completed embedding batch: ${processed}/${jobs.length} jobs successful`,
-        );
-
-        // Track batch metrics
-        metrics.gauge('batch.success_rate', processed / jobs.length);
-        metrics.timing('batch.duration_ms', duration);
-        metrics.gauge('batch.avg_job_time_ms', jobs.length > 0 ? duration / jobs.length : 0);
+        this.logBatchResults(batchRequestId, jobs.length, processed, duration);
 
         return processed;
       },
       { jobCount: jobs.length, batchRequestId },
     );
+  }
+
+  private async embedChunks(
+    chunks: string[],
+    job: SiloContentItem,
+    ctx: Record<string, unknown>,
+    batchSize: number,
+  ) {
+    const { embedder } = this.services;
+    let vectors: { id: string; values: number[]; metadata: VectorMeta }[] = [];
+
+    for (let i = 0; i < chunks.length; i += batchSize) {
+      const batchChunks = chunks.slice(i, i + batchSize);
+      const chunkBatchIndex = Math.floor(i / batchSize) + 1;
+      const totalChunkBatches = Math.ceil(chunks.length / batchSize);
+
+      logger.debug(
+        { ...ctx, chunkBatchIndex, totalChunkBatches, batchSize: batchChunks.length },
+        `Processing chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
+      );
+
+      try {
+        const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
+          id: `content:${job.id}:${i + idx}`,
+          values: v,
+          metadata: <VectorMeta>{
+            userId: job.userId,
+            contentId: job.id,
+            category: job.category,
+            mimeType: job.mimeType,
+            createdAt: Math.floor(job.createdAt / 1000),
+            version: 1,
+          },
+        }));
+
+        vectors = vectors.concat(batchVectors);
+
+        logger.debug(
+          { ...ctx, chunkBatchIndex, vectorCount: batchVectors.length },
+          `Successfully embedded chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
+        );
+
+        metrics.counter('embedding.batch_success', 1);
+        metrics.counter('embedding.vectors_created', batchVectors.length);
+
+        batchChunks.length = 0;
+        if (i + batchSize < chunks.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      } catch (err) {
+        const domeError = new EmbeddingError(
+          `Failed to embed chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
+          { ...ctx, chunkBatchIndex, totalChunkBatches, batchSize: batchChunks.length },
+          err instanceof Error ? err : undefined,
+        );
+
+        logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
+        metrics.counter('embedding.batch_errors', 1);
+
+        throw domeError;
+      }
+    }
+
+    return vectors;
+  }
+
+  private async upsertVectors(
+    vectors: { id: string; values: number[]; metadata: VectorMeta }[],
+    ctx: Record<string, unknown>,
+    batchSize = 100,
+  ) {
+    const { vectorize } = this.services;
+
+    for (let i = 0; i < vectors.length; i += batchSize) {
+      const upsertBatch = vectors.slice(i, i + batchSize);
+      const upsertBatchIndex = Math.floor(i / batchSize) + 1;
+      const totalUpsertBatches = Math.ceil(vectors.length / batchSize);
+
+      logger.debug(
+        { ...ctx, upsertBatchIndex, totalUpsertBatches, batchSize: upsertBatch.length },
+        `Upserting vector batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+      );
+
+      try {
+        await vectorize.upsert(upsertBatch);
+
+        logger.debug(
+          { ...ctx, upsertBatchIndex, totalUpsertBatches },
+          `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+        );
+
+        metrics.counter('vectorize.batch_success', 1);
+      } catch (err) {
+        const domeError = new VectorizeError(
+          `Failed to upsert batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+          { ...ctx, upsertBatchIndex, totalUpsertBatches },
+          err instanceof Error ? err : undefined,
+        );
+
+        logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
+        metrics.counter('vectorize.batch_errors', 1);
+
+        throw domeError;
+      }
+    }
+  }
+
+  private logBatchResults(batchRequestId: string, total: number, processed: number, duration: number) {
+    logger.info(
+      {
+        batchRequestId,
+        jobCount: total,
+        processedCount: processed,
+        successRate: Math.round((processed / total) * 100),
+        duration,
+        operation: 'embedBatch',
+      },
+      `Completed embedding batch: ${processed}/${total} jobs successful`,
+    );
+
+    metrics.gauge('batch.success_rate', processed / total);
+    metrics.timing('batch.duration_ms', duration);
+    metrics.gauge('batch.avg_job_time_ms', total > 0 ? duration / total : 0);
   }
 
   /* ---------------------------- queue consumer -------------------------- */
