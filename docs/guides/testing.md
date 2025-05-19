@@ -376,6 +376,9 @@ describe('fetchData', () => {
 
 ### 6.1 Running All Tests
 
+
+The `just test` command runs `pnpm -r test` to execute vitest across all packages.
+
 To run all tests:
 
 ```bash

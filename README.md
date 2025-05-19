@@ -292,7 +292,8 @@ Dome uses a monorepo approach with pnpm workspaces:
 
 - Install dependencies: `pnpm install`
 - Build all packages: `pnpm build`
-- Run tests: `pnpm test`
+- Run tests: `just test`
+- Run tests with coverage: `just test-coverage`
 - Deploy services: `pnpm deploy`
 
 ## Service Communication

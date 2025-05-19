@@ -20,7 +20,8 @@
     "deploy": "wrangler deploy",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@dome/common": "workspace:*",

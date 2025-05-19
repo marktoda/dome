@@ -23,7 +23,8 @@
     "lint": "eslint --ext .ts,.js .",
     "generate-migrations": "drizzle-kit generate",
     "migrate": "wrangler d1 migrations apply todos_db --local",
-    "migrate:prod": "wrangler d1 migrations apply todos_db"
+    "migrate:prod": "wrangler d1 migrations apply todos_db",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "drizzle-orm": "^0.42.0",

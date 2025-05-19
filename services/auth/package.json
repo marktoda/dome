@@ -9,7 +9,8 @@
     "lint": "eslint src --ext .ts,.tsx",
     "generate-migrations": "drizzle-kit generate",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "exports": {
     ".": {
