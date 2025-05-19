@@ -3,12 +3,14 @@ import {
   VectorMeta,
   VectorSearchResult,
   NewContentMessageSchema,
+  EmbedDeadLetterMessageSchema,
   parseMessageBatch,
   ParsedMessageBatch,
   ParsedQueueMessage,
   RawMessageBatch,
   NewContentMessage,
   SiloContentItem,
+  serializeQueueMessage,
 } from '@dome/common';
 import { z } from 'zod';
 
@@ -122,14 +124,16 @@ const sendToDeadLetter = async (
           'Sending message to dead letter queue',
         );
 
-        await queue.send({
-          ...payload,
-          _meta: {
-            timestamp: Date.now(),
-            requestId,
-            service: 'constellation',
-          },
-        });
+        const message = 'error' in payload
+          ? { error: payload.error, originalMessage: payload.originalMessage }
+          : { error: payload.err, originalMessage: payload.job };
+
+        const serialized = serializeQueueMessage(
+          EmbedDeadLetterMessageSchema,
+          message,
+        );
+
+        await queue.send(serialized);
 
         metrics.counter('dlq.messages_sent', 1);
 
@@ -146,6 +150,7 @@ const sendToDeadLetter = async (
 
         logError(domeError, 'Error sending message to dead letter queue');
         metrics.counter('dlq.errors', 1);
+        throw domeError;
       }
     },
     { requestId },
@@ -833,3 +838,4 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
     );
   }
 }
+export { sendToDeadLetter };
