@@ -18,6 +18,7 @@ import { injectMetadataHeader } from '../../services/metadataHeaderService';
 import { BaseProvider } from '../base';
 import { NotionClient } from './client';
 import { NotionAuthManager } from './auth';
+import type { ServiceEnv } from '../../resourceObject';
 
 /**
  * Notion Provider implementation
@@ -27,7 +28,7 @@ export class NotionProvider extends BaseProvider implements Provider {
   private notionClient: NotionClient;
   private authManager: NotionAuthManager;
 
-  constructor(env: Env) {
+  constructor(env: ServiceEnv) {
     const apiKey = (env as any).NOTION_API_KEY ?? '';
     super();
     this.authManager = new NotionAuthManager(env);

@@ -1,5 +1,6 @@
 import { ulid } from 'ulid';
 import { getLogger, logError, metrics, trackOperation, getRequestId } from '@dome/common';
+import type { ServiceEnv } from '../resourceObject';
 import {
   NotFoundError,
   ConflictError,
@@ -23,7 +24,7 @@ export class SyncPlanService {
   private logger = getLogger();
   private domain = 'tsunami.syncPlanService';
 
-  constructor(private env: Env) {}
+  constructor(private env: ServiceEnv) {}
 
   /* ─────────── Sync‑plan CRUD ─────────── */
 
@@ -300,4 +301,4 @@ export class SyncPlanService {
 }
 
 /* factory so the rest of the codebase changes ⟶ one line */
-export const createSyncPlanService = (env: Env) => new SyncPlanService(env);
+export const createSyncPlanService = (env: ServiceEnv) => new SyncPlanService(env);

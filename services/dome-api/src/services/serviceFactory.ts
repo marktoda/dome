@@ -100,7 +100,7 @@ export class DefaultServiceFactory implements ServiceFactory {
     let service = this.siloServices.get(env);
     if (!service) {
       this.logger.debug('Creating new SiloClient instance');
-      service = new SiloClient(env.SILO as unknown as SiloBinding, env.SILO_INGEST_QUEUE);
+      service = new SiloClient(env.SILO, env.SILO_INGEST_QUEUE);
       this.siloServices.set(env, service);
     }
     return service;

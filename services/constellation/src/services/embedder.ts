@@ -285,11 +285,7 @@ export class Embedder {
    */
   private async callAiService(texts: string[]): Promise<AiTextEmbeddingOutput> {
     const input: AiTextEmbeddingInput = { text: texts };
-    // Assuming this.ai.run is compatible with this signature.
-    // If this.ai is a more generic binding, further type refinement or casting might be needed
-    // at the binding level. For now, we cast to 'any' to match previous behavior
-    // pending a more precise AiModels type.
-    const response = await this.ai.run(this.config.model as any, input);
+    const response = await this.ai.run(this.config.model, input);
 
     // Basic type guard for the response
     if (

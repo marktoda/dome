@@ -8,6 +8,7 @@ import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
 import { logError, metrics } from '@dome/common';
 import { BaseProvider } from './base';
+import type { ServiceEnv } from '../resourceObject';
 import { RobotsChecker } from './website/robotsChecker';
 import { WebsiteCrawler } from './website/websiteCrawler';
 import { ContentExtractor } from './website/contentExtractor';
@@ -52,7 +53,7 @@ export class WebsiteProvider extends BaseProvider implements Provider {
   private crawler: WebsiteCrawler;
   private extractor: ContentExtractor;
 
-  constructor(env: Env) {
+  constructor(env: ServiceEnv) {
     super(); // initialise BaseProvider
     // Initialize components
     this.robotsChecker = new RobotsChecker(UA);

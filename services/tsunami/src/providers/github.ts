@@ -14,6 +14,7 @@ import {
 } from '../services/metadataHeaderService';
 import { IgnoreFileService } from '../services/ignoreFileService';
 import { BaseProvider } from './base';
+import type { ServiceEnv } from '../resourceObject';
 
 /* ─── constants ────────────────────────────────────────────────────────── */
 
@@ -61,7 +62,7 @@ export class GithubProvider extends BaseProvider implements Provider {
   private headers: Record<string, string>;
   private ignoreFileService: IgnoreFileService;
 
-  constructor(env: Env) {
+  constructor(env: ServiceEnv) {
     super();
     const token = (env as any).GITHUB_TOKEN ?? '';
     this.headers = {
