@@ -5,6 +5,8 @@
  */
 
 import { getLogger, logError, constellationMetrics as metrics } from '../utils/logging';
+
+const logger = getLogger();
 import { sliceIntoBatches } from '../utils/batching';
 import { EmbeddingError } from '../utils/errors';
 import { KnownAiModels, AiTextEmbeddingInput, AiTextEmbeddingOutput } from '../types';
@@ -52,7 +54,7 @@ export class Embedder {
    */
   public async embed(texts: string[]): Promise<number[][]> {
     if (!texts.length) {
-      getLogger().warn('Empty texts array provided for embedding');
+      logger.warn('Empty texts array provided for embedding');
       return [];
     }
 
@@ -93,7 +95,7 @@ export class Embedder {
    * @private
    */
   private logEmbeddingRequest(texts: string[]) {
-    getLogger().debug(
+    logger.debug(
       {
         textCount: texts.length,
         textSamples: texts.map(t => t.substring(0, 50) + (t.length > 50 ? '...' : '')).slice(0, 2),
@@ -111,7 +113,7 @@ export class Embedder {
    * @private
    */
   private async processMultipleBatches(texts: string[]): Promise<number[][]> {
-    getLogger().debug(
+    logger.debug(
       `Splitting ${texts.length} texts into batches of ${this.config.maxBatchSize}`,
     );
 
@@ -121,7 +123,7 @@ export class Embedder {
     // Process each batch and combine results
     const results = await this.processBatches(batches);
 
-    getLogger().debug(
+    logger.debug(
       {
         totalEmbeddings: results.length,
         embeddingDimension: results[0]?.length,
@@ -143,7 +145,7 @@ export class Embedder {
 
     for (let i = 0; i < batches.length; i++) {
       const batch = batches[i];
-      getLogger().debug(
+      logger.debug(
         {
           batchIndex: i + 1,
           totalBatches: batches.length,
@@ -175,7 +177,7 @@ export class Embedder {
    */
   private async processSingleBatch(texts: string[]): Promise<number[][]> {
     const results = await this.embedBatch(texts);
-    getLogger().debug(
+    logger.debug(
       {
         embeddingsCount: results.length,
         embeddingDimension: results[0]?.length,
@@ -213,7 +215,7 @@ export class Embedder {
     try {
       const response = await retryAsync(
         async currentAttempt => {
-          getLogger().debug(
+          logger.debug(
             { attempt: currentAttempt },
             'Sending batch to AI service for embedding',
           );
@@ -266,7 +268,7 @@ export class Embedder {
         ? `${Math.min(...texts.map(t => t.length))} - ${Math.max(...texts.map(t => t.length))}`
         : 'N/A';
 
-    getLogger().debug(
+    logger.debug(
       {
         batchSize: texts.length,
         textLengthRange,
@@ -327,7 +329,7 @@ export class Embedder {
    * @private
    */
   private logSuccessfulResponse(embeddings: number[][]) {
-    getLogger().debug(
+    logger.debug(
       {
         responseType: 'data array',
         embeddingsCount: embeddings.length,
@@ -343,7 +345,7 @@ export class Embedder {
    * @private
    */
   private logUnexpectedResponseFormat(response: any) {
-    getLogger().warn(
+    logger.warn(
       {
         responseType: typeof response,
         responseKeys:

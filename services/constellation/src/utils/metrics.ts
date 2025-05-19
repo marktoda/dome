@@ -5,7 +5,9 @@
  */
 
 import { MetricsService, logMetric } from '@dome/common';
-import { getLogger } from '@dome/common';
+import { getLogger } from "@dome/common";
+const logger = getLogger();
+
 
 // Re-export logging utilities
 export { logMetric };
@@ -111,7 +113,7 @@ class EfficientMetricsService {
   reset(): void {
     this.counters.clear();
     this.gauges.clear();
-    getLogger().info('Metrics reset');
+    logger.info('Metrics reset');
   }
 }
 
