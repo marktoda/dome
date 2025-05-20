@@ -13,6 +13,7 @@ This document provides key information for LLMs contributing to the Dome reposit
 1. Install dependencies with `pnpm install`.
 2. Build and test using just commands:
    - `just build` – compile all packages.
+   - `just build-no-install` – compile without running `pnpm install`.
    - `just build-pkg <pkg>` – build a single package or service.
    - `just test` – run vitest across the repo.
    - `just test-pkg <pkg>` – run tests for one package.
@@ -33,7 +34,7 @@ This document provides key information for LLMs contributing to the Dome reposit
 ## Pull Requests
 
 - Branch from `main` and keep changes focused on a single concern.
-- Ensure `just build`, `just lint`, and `just test` all succeed before opening a PR.
+ - Ensure `just build-no-install` (or `just build`), `just lint`, and `just test` all succeed before opening a PR.
 - Update documentation when behavior or APIs change.
 
 ## Security

@@ -19,6 +19,10 @@ reinstall: clean install
 build: install
     pnpm run build
 
+# Build all packages without installing dependencies first
+build-no-install:
+    pnpm run build
+
 # Build a specific package
 build-pkg PACKAGE: install
     pnpm --filter {{ PACKAGE }} build
