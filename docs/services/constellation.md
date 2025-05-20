@@ -121,8 +121,9 @@ interface EmbedJob {
 
 This example uses the `AbstractQueue` pattern so each queue has a thin
 wrapper class that handles validation and parsing. Cross-service queues are
-exported by the service that produces them so consumers can import them
-directly.
+exported by the service package that produces them so consumers can import the
+wrappers directly (for example `NewContentQueue` comes from
+`@dome/silo/queues`).
 
 ```typescript
 import { NewContentQueue } from '@dome/silo/queues';
