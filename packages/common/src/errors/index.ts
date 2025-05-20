@@ -56,3 +56,24 @@ export {
   createEnhancedAssertValid,
   createServiceErrorMiddleware,
 } from './errorUtils.js';
+
+// Dome error classes and helpers copied from @dome/errors
+export {
+  DomeError,
+  ValidationError as DomeValidationError,
+  NotFoundError as DomeNotFoundError,
+  UnauthorizedError as DomeUnauthorizedError,
+  ForbiddenError as DomeForbiddenError,
+  BadRequestError,
+  InternalError,
+  ServiceUnavailableError,
+  RateLimitError as DomeRateLimitError,
+  ConflictError,
+  toDomeError,
+  createErrorFactory,
+  createErrorWrapper,
+  assertValid as domeAssertValid,
+  assertExists as domeAssertExists,
+  handleDatabaseError,
+  errorHandler,
+} from './domeErrors.js';
