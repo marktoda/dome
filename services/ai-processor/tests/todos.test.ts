@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sendTodosToQueue } from '../src/todos';
 import { PUBLIC_USER_ID } from '@dome/common';
-import { TodoQueue } from '../src/queues/TodoQueue';
+import { TodoQueue } from '@dome/todos/client';
 
 const makeQueue = () => {
   const binding = { send: vi.fn(), sendBatch: vi.fn() };
