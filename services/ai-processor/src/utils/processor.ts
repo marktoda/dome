@@ -18,7 +18,7 @@ import {
 import { sendTodosToQueue } from '../todos';
 import { EnrichedContentQueue } from '../queues/EnrichedContentQueue';
 import { RateLimitDlqQueue } from '../queues/RateLimitDlqQueue';
-import { TodoQueue } from '../queues/TodoQueue';
+import { TodoQueue } from '@dome/todos/client';
 
 import type {
   NewContentMessage,

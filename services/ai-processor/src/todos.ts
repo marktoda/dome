@@ -7,7 +7,7 @@ import { getLogger, trackOperation } from './utils/logging';
 import { TodoQueueItem } from '@dome/todos/client';
 import { PUBLIC_USER_ID, EnrichedContentMessage } from '@dome/common';
 import { toDomeError } from './utils/errors';
-import { TodoQueue } from './queues/TodoQueue';
+import { TodoQueue } from '@dome/todos/client';
 
 const logger = getLogger();
 

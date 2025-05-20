@@ -35,6 +35,7 @@ export {
   TodoStats,
   TodoQueueItem,
   TodoQueueItemSchema,
+  TodoQueue,
 };
 
 // Logger for the client
