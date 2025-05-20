@@ -22,7 +22,6 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { EnrichedContentMessage, EnrichedContentMessageSchema } from '@dome/common';
 import {
-  siloSimplePutSchema,
   siloBatchGetSchema,
   siloDeleteSchema,
   siloStatsSchema,
@@ -34,6 +33,12 @@ import {
   SiloDeleteResponse,
   SiloStatsResponse,
 } from '@dome/common';
+import {
+  EnrichedContentQueue,
+  IngestQueue,
+  IngestDlqQueue,
+  R2EventQueue,
+} from './queues';
 export * from './client';
 
 /**
@@ -124,9 +129,10 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
       try {
         // Determine which queue we're processing
         if (batch.queue === 'silo-content-uploaded') {
-          // Process R2 events
-          const promises = batch.messages.map(async message => {
-            const event = message.body as R2Event;
+          const parsed = R2EventQueue.parseBatch(batch);
+          const promises = parsed.messages.map(async (message, idx) => {
+            const original = batch.messages[idx] as any;
+            const event = message.body;
             if (event.action === 'PutObject') {
               // Extract key from the event
               const { key } = event.object;
@@ -135,26 +141,27 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               const obj = await this.services.content.processR2Event(event);
 
               // Acknowledge the message
-              message.ack();
+              original.ack();
             } else {
               getLogger().warn({ event }, 'Unsupported event action: ' + event.action);
-              message.ack(); // Acknowledge anyway to avoid retries
+              original.ack(); // Acknowledge anyway to avoid retries
             }
           });
 
           await Promise.all(promises);
         } else if (batch.queue === 'enriched-content') {
-          // Process enriched content from AI processor
-          const promises = batch.messages.map(async message => {
+          const parsed = EnrichedContentQueue.parseBatch(batch);
+          const promises = parsed.messages.map(async (message, idx) => {
+            const original = batch.messages[idx] as any;
             try {
               // Validate the message
-              const enrichedContent = EnrichedContentMessageSchema.parse(message.body);
+              const enrichedContent = message.body;
 
               // Process the enriched content
               await this.services.content.processEnrichedContent(enrichedContent);
 
               // Acknowledge the message
-              message.ack();
+              original.ack();
             } catch (error) {
               logError(error, 'Error processing enriched content message', {
                 messageId: message.id,
@@ -165,18 +172,18 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
                 await this.services.dlq.sendToDLQ(message.body, error, {
                   queueName: 'enriched-content',
                   messageId: message.id,
-                  retryCount: message.attempts,
+                  retryCount: original.attempts,
                 });
-                message.ack();
-              } else if (message.attempts >= 3) {
+                original.ack();
+              } else if (original.attempts >= 3) {
                 // attempts starts at 1, so 3 means 2 retries
                 // If this is the final retry attempt, send to DLQ
                 await this.services.dlq.sendToDLQ(message.body, error as Error, {
                   queueName: 'enriched-content',
                   messageId: message.id,
-                  retryCount: message.attempts,
+                  retryCount: original.attempts,
                 });
-                message.ack();
+                original.ack();
               } else {
                 // Otherwise, allow retry
                 throw error;
@@ -186,17 +193,18 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
 
           await Promise.all(promises);
         } else if (batch.queue === 'silo-ingest-queue') {
-          // Process ingest queue messages
-          const promises = batch.messages.map(async message => {
+          const parsed = IngestQueue.parseBatch(batch);
+          const promises = parsed.messages.map(async (message, idx) => {
+            const original = batch.messages[idx] as any;
             try {
               // Validate the message
-              const ingestMessage = siloSimplePutSchema.parse(message.body);
+              const ingestMessage = message.body;
 
               // Process the ingest message
               await this.services.content.processIngestMessage(ingestMessage);
 
               // Acknowledge the message
-              message.ack();
+              original.ack();
             } catch (error) {
               logError(error, 'Error processing ingest queue message', { messageId: message.id });
 
@@ -205,18 +213,18 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
                 await this.services.dlq.sendToDLQ(message.body, error, {
                   queueName: 'silo-ingest-queue',
                   messageId: message.id,
-                  retryCount: message.attempts,
+                  retryCount: original.attempts,
                 });
-                message.ack();
-              } else if (message.attempts >= 3) {
+                original.ack();
+              } else if (original.attempts >= 3) {
                 // attempts starts at 1, so 3 means 2 retries
                 // If this is the final retry attempt, send to DLQ
                 await this.services.dlq.sendToDLQ(message.body, error as Error, {
                   queueName: 'silo-ingest-queue',
                   messageId: message.id,
-                  retryCount: message.attempts,
+                  retryCount: original.attempts,
                 });
-                message.ack();
+                original.ack();
               } else {
                 // Otherwise, allow retry
                 throw error;
@@ -226,21 +234,22 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
 
           await Promise.all(promises);
         } else if (batch.queue === 'ingest-dlq') {
-          // Process DLQ messages
-          const promises = batch.messages.map(async message => {
+          const parsed = IngestDlqQueue.parseBatch(batch);
+          const promises = parsed.messages.map(async (message, idx) => {
+            const original = batch.messages[idx] as any;
             try {
               // Log the DLQ message
               getLogger().info({ messageId: message.id }, 'Processing message from DLQ');
 
               // Just acknowledge the message for now
               // In a real implementation, we might have special handling for DLQ messages
-              message.ack();
+              original.ack();
             } catch (error) {
               // Log the error but acknowledge the message to prevent infinite retries
               logError(error, 'Error processing DLQ message, acknowledging anyway', {
                 messageId: message.id,
               });
-              message.ack();
+              original.ack();
             }
           });
 

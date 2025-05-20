@@ -19,6 +19,7 @@ import { eq, and, sql, desc, count } from 'drizzle-orm';
 import { dlqMetadata } from '../db/schema';
 import { DLQFilterOptions, DLQMessage, DLQStats } from '../types';
 import { siloSimplePutSchema } from '@dome/common';
+import { IngestQueue, IngestDlqQueue } from '../queues';
 import { z } from 'zod';
 
 /**
@@ -80,9 +81,13 @@ export interface DLQService {
  */
 export class DLQServiceImpl implements DLQService {
   private db: ReturnType<typeof drizzle>;
+  private ingestQueue?: IngestQueue;
+  private ingestDlq?: IngestDlqQueue;
 
   constructor(private env: Env) {
     this.db = drizzle(env.DB);
+    this.ingestQueue = env.SILO_INGEST_QUEUE ? new IngestQueue(env.SILO_INGEST_QUEUE) : undefined;
+    this.ingestDlq = env.INGEST_DLQ ? new IngestDlqQueue(env.INGEST_DLQ) : undefined;
   }
 
   async storeDLQMessage<T>(message: DLQMessage<T>): Promise<string> {
@@ -592,8 +597,8 @@ export class DLQServiceImpl implements DLQService {
               const validatedMessage = siloSimplePutSchema.parse(originalMessage);
 
               // Check if queue binding exists
-              if (this.env.SILO_INGEST_QUEUE) {
-                await this.env.SILO_INGEST_QUEUE.send(validatedMessage);
+              if (this.ingestQueue) {
+                await this.ingestQueue.send(validatedMessage);
                 result = 'Successfully requeued to silo-ingest-queue';
 
                 getLogger().info(
@@ -942,9 +947,9 @@ export class DLQServiceImpl implements DLQService {
 
           // Send to DLQ queue if binding exists
           let queueSendResult = false;
-          if (this.env.INGEST_DLQ) {
+          if (this.ingestDlq) {
             try {
-              await this.env.INGEST_DLQ.send(dlqMessage);
+              await this.ingestDlq.send(dlqMessage);
               queueSendResult = true;
               getLogger().debug(logContext, `Successfully sent message to INGEST_DLQ queue`);
             } catch (queueError) {

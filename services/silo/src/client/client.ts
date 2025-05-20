@@ -8,11 +8,14 @@ import {
   SiloStatsResponse,
   SiloContentItem,
   SiloContentMetadata,
+  siloSimplePutSchema,
 } from '@dome/common';
 import { getLogger, logError, metrics } from '@dome/common';
 import { SiloBinding } from '../types';
 export { SiloBinding } from '../types';
 import { ulid } from 'ulid';
+import { Queue } from '@dome/common/queue';
+import { IngestQueue } from '../queues/IngestQueue';
 
 // Maximum message size for the queue in bytes
 const MAX_QUEUE_MESSAGE_SIZE = 120000;
@@ -23,6 +26,7 @@ const MAX_QUEUE_MESSAGE_SIZE = 120000;
  */
 export class SiloClient {
   private readonly PUBLIC_USER_ID = 'public';
+  private readonly queue?: IngestQueue;
 
   /**
    * Create a new SiloClient
@@ -31,9 +35,11 @@ export class SiloClient {
    */
   constructor(
     private readonly binding: SiloBinding,
-    private readonly queue?: Queue<SiloSimplePutInput>,
+    queueBinding?: Queue,
     private readonly metricsPrefix: string = 'silo.client',
-  ) {}
+  ) {
+    this.queue = queueBinding ? new IngestQueue(queueBinding) : undefined;
+  }
 
   /**
    * Upload multiple content items to Silo
@@ -63,14 +69,14 @@ export class SiloClient {
     const createdAt = Math.floor(Date.now() / 1000);
 
     // Create a message for the ingest queue
-    const message: SiloSimplePutInput = {
+    const message = siloSimplePutSchema.parse({
       id,
       userId: content.userId || undefined,
       content: content.content,
       category: content.category || 'note',
       mimeType: content.mimeType || 'text/markdown',
       metadata: content.metadata,
-    };
+    });
 
     // Calculate the size of the content
     const contentSize =
@@ -352,7 +358,7 @@ export class SiloClient {
  */
 export function createSiloClient(
   binding: SiloBinding,
-  queue: Queue<SiloSimplePutInput>,
+  queue: Queue,
   metricsPrefix?: string,
 ): SiloClient {
   return new SiloClient(binding, queue, metricsPrefix);
