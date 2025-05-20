@@ -24,8 +24,6 @@
       "@dome/todos/*": ["services/todos/src/*"],
       "@dome/constellation": ["services/constellation/src"],
       "@dome/constellation/*": ["services/constellation/src/*"],
-      "@dome/errors": ["packages/errors/src"],
-      "@dome/errors/*": ["packages/errors/src/*"],
       "@dome/tsunami": ["services/tsunami/src"],
       "@dome/tsunami/*": ["services/tsunami/src/*"],
       "@dome/chat": ["services/chat/src"],

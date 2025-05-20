@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('@dome/common', () => ({ getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }), PUBLIC_USER_ID: 'public', withContext: async (_m: any, fn: any) => fn({}) }));
-vi.mock('@dome/errors', () => ({}));
 vi.mock('../src/utils/errors', () => ({ assertValid: () => {}, assertExists: () => {}, VectorizeError: class extends Error {}, toDomeError: (e:any)=>e }));
 import { VectorizeService } from '../src/services/vectorize';
 import { PUBLIC_USER_ID } from '@dome/common';

@@ -8,7 +8,7 @@ import {
   InternalError,
   toDomeError,
   assertExists,
-} from '@dome/errors';
+} from '@dome/common';
 import { assertValid } from '../utils/errors';
 import { syncPlanOperations } from '../db/client';
 import { ResourceObject } from '../resourceObject';

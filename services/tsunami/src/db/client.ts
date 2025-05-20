@@ -10,7 +10,7 @@
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, desc, and } from 'drizzle-orm';
 import { getLogger, logError, trackOperation, getRequestId } from '@dome/common';
-import { toDomeError, handleDatabaseError, assertExists, NotFoundError } from '@dome/errors';
+import { toDomeError, handleDatabaseError, assertExists, NotFoundError } from '@dome/common';
 import { assertValid } from '../utils/errors';
 import { syncPlans, syncHistory } from './schema';
 import { ulid } from 'ulid';

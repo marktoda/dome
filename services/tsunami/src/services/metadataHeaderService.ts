@@ -9,7 +9,7 @@
  */
 
 import { getLogger, getRequestId, logError } from '@dome/common';
-import { ValidationError } from '@dome/errors';
+import { ValidationError } from '@dome/common';
 import { assertValid } from '../utils/errors';
 import { DomeMetadata } from '../types/metadata';
 

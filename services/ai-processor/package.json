@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@dome/common": "workspace:*",
-    "@dome/errors": "workspace:*",
     "@dome/todos": "workspace:*",
     "@dome/silo": "workspace:*",
     "zod": "^3.22.4"

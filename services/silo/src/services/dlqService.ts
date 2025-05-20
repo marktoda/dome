@@ -11,9 +11,9 @@ import {
   NotFoundError,
   ValidationError,
   toDomeError,
-  assertValid,
-  assertExists,
-} from '@dome/errors';
+  domeAssertValid as assertValid,
+  domeAssertExists as assertExists,
+} from '@dome/common';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
 import { dlqMetadata } from '../db/schema';

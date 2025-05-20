@@ -5,8 +5,8 @@ import {
   ServiceUnavailableError,
   UnauthorizedError,
   createErrorFactory,
-  assertExists,
-} from '@dome/errors';
+  domeAssertExists as assertExists,
+} from '@dome/common';
 import {
   createServiceErrorHandler,
   createEnhancedAssertValid,

@@ -12,9 +12,9 @@ import {
   ValidationError,
   NotFoundError,
   toDomeError,
-  assertValid,
-  assertExists,
-} from '@dome/errors';
+  domeAssertValid as assertValid,
+  domeAssertExists as assertExists,
+} from '@dome/common';
 import { SiloBinding, DLQMessage, R2Event, DLQFilterOptions, DLQStats } from './types';
 import { wrap } from './utils/wrap';
 import { createServices, Services } from './services';
