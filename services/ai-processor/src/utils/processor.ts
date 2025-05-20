@@ -16,11 +16,9 @@ import {
   ContentProcessingError,
 } from '../utils/errors';
 import { sendTodosToQueue } from '../todos';
-import {
-  serializeQueueMessage,
-  EnrichedContentMessageSchema,
-  NewContentMessageSchema,
-} from '@dome/common';
+import { EnrichedContentQueue } from '../queues/EnrichedContentQueue';
+import { RateLimitDlqQueue } from '../queues/RateLimitDlqQueue';
+import { TodoQueue } from '../queues/TodoQueue';
 
 import type {
   NewContentMessage,
@@ -73,7 +71,19 @@ interface ExistingMetadata {
  * ContentProcessor – no I/O side‑effects beyond env queues.
  */
 export class ContentProcessor {
-  constructor(private readonly env: ServiceEnv, private readonly services: ProcessorServices) {}
+  private readonly enrichedQueue?: EnrichedContentQueue;
+  private readonly rateLimitDlq?: RateLimitDlqQueue;
+  private readonly todoQueue?: TodoQueue;
+
+  constructor(private readonly env: ServiceEnv, private readonly services: ProcessorServices) {
+    this.enrichedQueue = env.ENRICHED_CONTENT
+      ? new EnrichedContentQueue(env.ENRICHED_CONTENT)
+      : undefined;
+    this.rateLimitDlq = env.RATE_LIMIT_DLQ
+      ? new RateLimitDlqQueue(env.RATE_LIMIT_DLQ)
+      : undefined;
+    this.todoQueue = env.TODOS ? new TodoQueue(env.TODOS) : undefined;
+  }
 
   /** Process a single NEW_CONTENT message (idempotent). */
   async processMessage(msg: NewContentMessage, requestId: string): Promise<void> {
@@ -271,17 +281,12 @@ export class ContentProcessor {
       timestamp: Date.now(),
     };
 
-    // Use optional chaining for queue sending with serialization
-    const serializedEnriched = serializeQueueMessage(
-      EnrichedContentMessageSchema,
-      enriched,
-    );
-    await this.env.ENRICHED_CONTENT?.send(serializedEnriched);
+    if (this.enrichedQueue) {
+      await this.enrichedQueue.send(enriched);
+    }
 
-    if (metadata.todos?.length && userId) {
-      if (this.env.TODOS) {
-        await sendTodosToQueue(enriched, this.env.TODOS);
-      }
+    if (metadata.todos?.length && userId && this.todoQueue) {
+      await sendTodosToQueue(enriched, this.todoQueue);
     }
 
     const safe = sanitizeForLogging({
@@ -303,14 +308,12 @@ export class ContentProcessor {
   }
 
   private async queueRateLimited(msg: NewContentMessage): Promise<void> {
-    // Removed redundant silo.get and assertExists
-    if (this.env.RATE_LIMIT_DLQ) {
-      const serialized = serializeQueueMessage(
-        NewContentMessageSchema,
-        msg,
+    if (this.rateLimitDlq) {
+      await this.rateLimitDlq.send(msg);
+      getLogger().info(
+        { id: msg.id },
+        'Queued rate‑limited content to RATE_LIMIT_DLQ',
       );
-      await this.env.RATE_LIMIT_DLQ.send(serialized);
-      getLogger().info({ id: msg.id }, 'Queued rate‑limited content to RATE_LIMIT_DLQ');
     } else {
       getLogger().warn(
         { id: msg.id },

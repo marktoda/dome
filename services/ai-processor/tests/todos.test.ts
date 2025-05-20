@@ -1,8 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { sendTodosToQueue } from '../src/todos';
 import { PUBLIC_USER_ID } from '@dome/common';
+import { TodoQueue } from '../src/queues/TodoQueue';
 
-const makeQueue = () => ({ send: vi.fn() });
+const makeQueue = () => {
+  const binding = { send: vi.fn(), sendBatch: vi.fn() };
+  return { wrapper: new TodoQueue(binding as any), binding };
+};
 
 const baseContent = {
   id: '1',
@@ -20,22 +24,22 @@ const baseContent = {
 
 describe('sendTodosToQueue', () => {
   it('sends todos when userId present', async () => {
-    const q = makeQueue();
-    await sendTodosToQueue(baseContent as any, q as any);
-    expect(q.send).toHaveBeenCalledTimes(1);
-    const sent = JSON.parse(q.send.mock.calls[0][0]);
+    const { wrapper, binding } = makeQueue();
+    await sendTodosToQueue(baseContent as any, wrapper as any);
+    expect(binding.send).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(binding.send.mock.calls[0][0]);
     expect(sent).toMatchObject({ userId: 'u1', description: 'a' });
   });
 
   it('skips when no userId', async () => {
-    const q = makeQueue();
-    await sendTodosToQueue({ ...baseContent, userId: null } as any, q as any);
-    expect(q.send).not.toHaveBeenCalled();
+    const { wrapper, binding } = makeQueue();
+    await sendTodosToQueue({ ...baseContent, userId: null } as any, wrapper as any);
+    expect(binding.send).not.toHaveBeenCalled();
   });
 
   it('skips public user', async () => {
-    const q = makeQueue();
-    await sendTodosToQueue({ ...baseContent, userId: PUBLIC_USER_ID } as any, q as any);
-    expect(q.send).not.toHaveBeenCalled();
+    const { wrapper, binding } = makeQueue();
+    await sendTodosToQueue({ ...baseContent, userId: PUBLIC_USER_ID } as any, wrapper as any);
+    expect(binding.send).not.toHaveBeenCalled();
   });
 });
