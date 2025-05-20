@@ -23,8 +23,8 @@ export const ContentMessageSchema = z.object({
 export type ContentMessage = z.infer<typeof ContentMessageSchema>;
 
 // 3. Create a queue wrapper subclass
-export class ContentQueue extends AbstractQueue<ContentMessage, typeof ContentMessageSchema> {
-  protected readonly schema = ContentMessageSchema;
+export class ContentQueue extends AbstractQueue<typeof ContentMessageSchema> {
+  static override schema = ContentMessageSchema;
 }
 ```
 
