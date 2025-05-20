@@ -9,6 +9,7 @@ export * from './context/index.js';
 
 // Export all errors
 export * from './errors/index.js';
+export { DomeError } from './errors/domeErrors.js';
 
 // Export all middleware
 export * from './middleware/index.js';

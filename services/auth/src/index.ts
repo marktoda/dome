@@ -203,7 +203,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
       const domeError = authToDomeError(err, 'An unexpected API error occurred');
       return c.json(
         { error: { code: domeError.code, message: domeError.message, details: domeError.details } },
-        domeError.status as any,
+        domeError.statusCode as any,
       );
     });
 

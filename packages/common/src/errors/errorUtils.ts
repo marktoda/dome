@@ -2,6 +2,7 @@
  * Error utilities that work with domeErrors module
  */
 import { getLogger } from '@dome/common';
+import { toDomeError as baseToDomeError, assertValid as originalAssertValid } from './domeErrors.js';
 
 /**
  * Enhanced toDomeError function with service-specific context
@@ -13,9 +14,6 @@ import { getLogger } from '@dome/common';
  * @returns A DomeError instance
  */
 export function createServiceErrorHandler(serviceName: string) {
-  // Import locally at runtime to avoid potential circular dependencies
-  const { toDomeError: baseToDomeError } = require('./domeErrors.js');
-
   return function toDomeError(
     error: unknown,
     defaultMessage = `An unexpected error occurred in ${serviceName} service`,
@@ -32,9 +30,6 @@ export function createServiceErrorHandler(serviceName: string) {
  * Enhanced version of assertValid that explicitly converts string expressions to boolean
  */
 export function createEnhancedAssertValid() {
-  // Import locally at runtime to avoid potential circular dependencies
-  const { assertValid: originalAssertValid } = require('./domeErrors.js');
-
   return function assertValid(
     condition: string | boolean | undefined | null,
     message: string,
