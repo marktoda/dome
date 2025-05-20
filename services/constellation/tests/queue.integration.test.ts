@@ -1,19 +1,26 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('cloudflare:workers', () => ({ WorkerEntrypoint: class { env: any; constructor(_c: any, env: any) { this.env = env; } } }));
-vi.mock('@dome/common', () => ({
-  getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-  PUBLIC_USER_ID: 'public',
-  withContext: async (_m: any, fn: any) => fn({}),
-  parseMessageBatch: (_schema: any, batch: any) => ({
-    queue: batch.queue,
-    messages: batch.messages.map((m: any) => ({
-      id: m.id,
-      timestamp: m.timestamp,
-      body: { id: m.id, userId: 'u', category: 'cat', mimeType: 'text', createdAt: Date.now() },
-    })),
-  }),
-  NewContentMessageSchema: {},
-  toRawMessageBatch: (b: any) => b,
+vi.mock('@dome/common', async () => {
+  const actual = await vi.importActual<any>('@dome/common');
+  return {
+    ...actual,
+    getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+    PUBLIC_USER_ID: 'public',
+    withContext: async (_m: any, fn: any) => fn({}),
+  };
+});
+
+vi.mock('../src/queues/NewContentQueue', () => ({
+  NewContentQueue: {
+    parseBatch: (batch: any) => ({
+      queue: batch.queue,
+      messages: batch.messages.map((m: any) => ({
+        id: m.id,
+        timestamp: m.timestamp,
+        body: { id: m.id, userId: 'u', category: 'cat', mimeType: 'text', createdAt: Date.now() },
+      })),
+    }),
+  },
 }));
 vi.mock('@dome/errors', () => ({}));
 vi.mock('../src/utils/errors', () => ({

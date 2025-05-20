@@ -12,5 +12,5 @@ export type DeadLetterMessage = z.infer<typeof EmbedDeadLetterMessageSchema>;
  * Uses the existing EmbedDeadLetterMessageSchema from common.
  */
 export class DeadLetterQueue extends AbstractQueue<DeadLetterMessage, typeof EmbedDeadLetterMessageSchema> {
-  protected readonly schema = EmbedDeadLetterMessageSchema;
-} 
+  public static schema = EmbedDeadLetterMessageSchema;
+}

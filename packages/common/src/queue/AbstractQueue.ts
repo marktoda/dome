@@ -27,11 +27,11 @@ import {
  * ```
  */
 export abstract class AbstractQueue<T, S extends ZodSchema<T>> {
-  /** 
+  /**
    * The Zod schema used to validate and serialize messages.
-   * Subclasses must provide this.
+   * Subclasses must provide this as a static field.
    */
-  protected abstract readonly schema: S;
+  public static schema: ZodSchema<any>;
 
   /**
    * Create a new queue wrapper for the given Cloudflare Queue binding.
@@ -44,7 +44,8 @@ export abstract class AbstractQueue<T, S extends ZodSchema<T>> {
    * @param message The message to send
    */
   async send(message: T): Promise<void> {
-    const serialized = serializeQueueMessage(this.schema, message);
+    const cls = this.constructor as typeof AbstractQueue & { schema: S };
+    const serialized = serializeQueueMessage(cls.schema as S, message);
     await this.queue.send(serialized);
   }
 
@@ -59,14 +60,6 @@ export abstract class AbstractQueue<T, S extends ZodSchema<T>> {
   }
 
   /**
-   * Get the schema for this queue (used by static parseBatch)
-   * @protected
-   */
-  protected static get schema() {
-    return this.prototype.schema;
-  }
-
-  /**
    * Parse a message batch from a queue consumer.
    * Static method that can be called without instantiating the queue.
    * 
@@ -74,10 +67,10 @@ export abstract class AbstractQueue<T, S extends ZodSchema<T>> {
    * @returns The parsed messages with proper types
    */
   static parseBatch<T, S extends ZodSchema<T>>(
-    this: typeof AbstractQueue & { prototype: { schema: S } },
+    this: { new (...args: any[]): AbstractQueue<T, S> } & { schema: S },
     batch: MessageBatch<unknown>
   ): ParsedMessageBatch<T> {
     const raw = toRawMessageBatch(batch);
-    return parseMessageBatch(this.prototype.schema, raw as RawMessageBatch);
+    return parseMessageBatch(this.schema as S, raw as RawMessageBatch);
   }
 } 
