@@ -33,8 +33,8 @@ import {
   SiloDeleteResponse,
   SiloStatsResponse,
 } from '@dome/common';
+import { EnrichedContentQueue } from '@dome/ai-processor/client';
 import {
-  EnrichedContentQueue,
   IngestQueue,
   IngestDlqQueue,
   R2EventQueue,
