@@ -15,6 +15,7 @@ import { createSyncPlanService } from './services/syncPlanService';
 import { TokenService } from './services/tokenService';
 import type { NotionOAuthDetails, GithubOAuthDetails } from './client/types'; // Added GithubOAuthDetails
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+import { IngestQueue } from '@dome/silo/queues';
 interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
   SILO: SiloBinding;
 }
@@ -29,7 +30,7 @@ const logger = getLogger();
 const metrics = createServiceMetrics('tsunami');
 
 const buildServices = (env: ServiceEnv) => ({
-  silo: new SiloClient(env.SILO, env.SILO_INGEST_QUEUE),
+  silo: new SiloClient(env.SILO, new IngestQueue(env.SILO_INGEST_QUEUE)),
   syncPlan: createSyncPlanService(env),
   token: new TokenService(env.SYNC_PLAN, (env as any).TOKEN_ENCRYPTION_KEY || ''),
 });

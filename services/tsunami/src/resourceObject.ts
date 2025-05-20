@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { getLogger, logError, metrics } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
+import { IngestQueue } from '@dome/silo/queues';
 
 export interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
   SILO: SiloBinding;
@@ -57,7 +58,7 @@ export class ResourceObject extends DurableObject<ServiceEnv> {
 
   constructor(ctx: any, env: ServiceEnv) {
     super(ctx, env);
-    (this.silo = new SiloClient(env.SILO, env.SILO_INGEST_QUEUE)),
+    (this.silo = new SiloClient(env.SILO, new IngestQueue(env.SILO_INGEST_QUEUE))),
       // Load stored configuration (do **not** throw – an empty cfg just means un‑initialised).
       ctx.blockConcurrencyWhile(async () => {
         const stored = await ctx.storage.get(STORAGE_KEY);

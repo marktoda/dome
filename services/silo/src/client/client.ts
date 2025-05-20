@@ -35,10 +35,10 @@ export class SiloClient {
    */
   constructor(
     private readonly binding: SiloBinding,
-    queueBinding?: Queue,
+    queue?: IngestQueue,
     private readonly metricsPrefix: string = 'silo.client',
   ) {
-    this.queue = queueBinding ? new IngestQueue(queueBinding) : undefined;
+    this.queue = queue;
   }
 
   /**
@@ -358,8 +358,8 @@ export class SiloClient {
  */
 export function createSiloClient(
   binding: SiloBinding,
-  queue: Queue,
+  queueBinding: Queue,
   metricsPrefix?: string,
 ): SiloClient {
-  return new SiloClient(binding, queue, metricsPrefix);
+  return new SiloClient(binding, new IngestQueue(queueBinding), metricsPrefix);
 }
