@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest
-import { v4 as uuidv4 } from 'uuid';
+import { NextRequest, NextResponse } from 'next/server';
+import { randomBytes } from 'crypto';
 
 /**
  * Handles GET requests to `/api/settings/integrations/github/connect`.
@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
  * Flow:
  * 1. Checks for required environment variables (GitHub Client ID, Scopes).
  * 2. Determines the application's base URL to construct the callback URL.
- * 3. Generates a unique `state` parameter for CSRF protection **(Security TODO: Store and verify this state)**.
+ * 3. Generates a unique `state` parameter for CSRF protection.
  * 4. Retrieves the desired final client redirect path from the request's query parameters (`redirect_uri`).
  * 5. Constructs the GitHub authorization URL including client ID, scopes, callback URL, and state (embedding client redirect path).
  * 6. Redirects the user (302) to the constructed GitHub authorization URL.
@@ -18,11 +18,8 @@ import { v4 as uuidv4 } from 'uuid';
  * @returns A NextResponse object performing a 302 redirect to GitHub's authorization endpoint,
  *          or a JSON error response (500) if server configuration is missing.
  *
- * @security **Critical TODO:** This implementation generates a `state` parameter but does not store it
- *           for verification in the callback route (`/api/settings/integrations/github/callback`).
- *           This is **essential** to prevent CSRF attacks. Implement a mechanism (e.g., short-lived HttpOnly cookie)
- *           to store the generated `state` and verify it upon callback. Embedding the client redirect path
- *           in the state is also less secure than storing it server-side associated with the state.
+ * The generated state is stored in a short-lived HttpOnly cookie and verified in
+ * `/api/settings/integrations/github/callback` to prevent CSRF attacks.
  */
 export async function GET(request: NextRequest) {
   // Changed type to NextRequest
@@ -48,12 +45,8 @@ export async function GET(request: NextRequest) {
   const redirect_uri = new URL('/api/settings/integrations/github/callback', appBaseUrl).toString();
 
   // --- State Generation (CSRF Protection) ---
-  const stateValue = uuidv4();
-  // !!! SECURITY TODO: Store `stateValue` securely (e.g., HttpOnly cookie with short expiry) !!!
-  // Example (conceptual, requires cookie library/helper):
-  // const stateCookieOptions = { httpOnly: true, secure: true, path: '/', maxAge: 300 }; // 5 minutes
-  // cookies().set('github_oauth_state', stateValue, stateCookieOptions);
-  console.error('Generated state for GitHub OAuth (Storage TODO)');
+  const stateValue = randomBytes(16).toString('hex');
+  console.error('Generated state for GitHub OAuth');
   // --- End State Generation ---
 
   // Get the desired final redirect path from the client request
@@ -74,6 +67,15 @@ export async function GET(request: NextRequest) {
 
   console.error(`Redirecting user to GitHub for authorization: ${authUrl.toString()}`);
 
-  // Redirect the user to GitHub
-  return NextResponse.redirect(authUrl.toString(), { status: 302 });
+  const response = NextResponse.redirect(authUrl.toString(), { status: 302 });
+  response.cookies.set({
+    name: 'github_oauth_state',
+    value: stateValue,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 300, // 5 minutes
+  });
+  return response;
 }
