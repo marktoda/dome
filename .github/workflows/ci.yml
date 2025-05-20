@@ -61,4 +61,4 @@ jobs:
         
       - name: Validate D1 Migrations
         if: github.ref == 'refs/heads/main'
-        run: wrangler d1 migrations apply dome_meta --dry-run
+        run: wrangler d1 migrations apply dome-meta --local
