@@ -119,22 +119,20 @@ interface EmbedJob {
 
 #### Queue Consumer Example
 
+This example uses the `AbstractQueue` pattern so each queue has a thin
+wrapper class that handles validation and parsing.
+
 ```typescript
-import {
-  parseMessageBatch,
-  serializeQueueMessage,
-  RawMessageBatch,
-} from '@dome/common';
-import { EmbedJobSchema, EmbedJob } from '../src/schemas';
+import { NewContentQueue } from '../src/queues/NewContentQueue';
+import type { EmbedJob } from '../src/schemas';
 
 export async function enqueueJob(env: Env, job: EmbedJob) {
-  await env.EMBED_QUEUE.send(
-    serializeQueueMessage(EmbedJobSchema, job),
-  );
+  const queue = new NewContentQueue(env.EMBED_QUEUE);
+  await queue.send(job);
 }
 
-export async function processBatch(batch: RawMessageBatch, env: Env) {
-  const parsed = parseMessageBatch(EmbedJobSchema, batch);
+export async function processBatch(batch: MessageBatch<unknown>, env: Env) {
+  const parsed = NewContentQueue.parseBatch(batch);
 
   for (const msg of parsed.messages) {
     await env.CONSTELLATION.embed(msg.body);
