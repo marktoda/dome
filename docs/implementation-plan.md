@@ -28,7 +28,7 @@ We've made the following progress on integrating the queue wrapper with services
    - Fixed parameter sequencing to match function signature
 
 3. **Next Steps:**
-   - [ ] Complete similar wrappers for the remaining Cloudflare Queue bindings in constellation
+   - [x] Complete similar wrappers for the remaining Cloudflare Queue bindings in constellation
    - [ ] Identify all queue message schemas and create proper wrappers for them
    - [ ] Test the wrappers with real workloads
 
@@ -36,18 +36,18 @@ We've made the following progress on integrating the queue wrapper with services
 
 - [x] Create `DeadLetterQueue` implementation
 - [x] Integrate `DeadLetterQueue` with `sendToDeadLetter` function
-- [ ] Create queue wrappers for CONTENT_QUEUE in constellation
+- [x] Create queue wrappers for CONTENT_QUEUE in constellation
 - [ ] Create queue wrappers for other services
 - [ ] Add unit tests for the concrete queue implementations
 - [ ] Write a short migration guide for teams integrating the wrappers
 
 ## Phase 2: Migration Target Services 
 
-- [ ] ai-processor service
+- [x] ai-processor service
 - [ ] chat service
-- [ ] todos service
+- [x] todos service
 - [ ] tsunami service
-- [ ] silo service
+- [x] silo service
 
 ## Contact
 
