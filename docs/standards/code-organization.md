@@ -231,55 +231,32 @@ export class UserRepository extends BaseRepository<User> {
 
 ### Queue Processing
 
-Queue processing should follow this pattern using the queue helpers from `@dome/common`:
+Queue processing should follow the `AbstractQueue` pattern using typed queue
+wrappers:
 
 ```typescript
-import {
-  serializeQueueMessage,
-  parseQueueMessage,
-  parseMessageBatch,
-  RawMessageBatch,
-} from '@dome/common';
-import { ExampleMessageSchema, ExampleMessage } from './schemas';
+import { ExampleQueue } from './queues/ExampleQueue';
+import type { ExampleMessage } from './schemas';
 
 export async function enqueueExample(env: Env, msg: ExampleMessage) {
-  const body = serializeQueueMessage(ExampleMessageSchema, msg);
-  await env.EXAMPLE_QUEUE.send(body);
+  const queue = new ExampleQueue(env.EXAMPLE_QUEUE);
+  await queue.send(msg);
 }
 
-export async function processQueueMessage(message: QueueMessage, env: Env): Promise<void> {
-  const logger = getLogger().child({ message_id: message.id });
+export async function processQueueBatch(batch: MessageBatch<unknown>, env: Env) {
+  const parsed = ExampleQueue.parseBatch(batch);
 
-  try {
-    logger.info('Processing queue message');
-
-    // Parse message
-    const data = parseQueueMessage(ExampleMessageSchema, message.body);
-
-    // Process message
+  for (const { body } of parsed.messages) {
     const service = new SomeService(env);
-    await service.processData(data);
-
-    logger.info('Successfully processed queue message');
-  } catch (error) {
-    logger.error({ error }, 'Error processing queue message');
-    throw error; // Rethrow to trigger retry
-  }
-}
-
-export async function processQueueBatch(batch: RawMessageBatch, env: Env) {
-  const parsed = parseMessageBatch(ExampleMessageSchema, batch);
-
-  for (const message of parsed.messages) {
-    await processQueueMessage(message, env);
+    await service.processData(body);
   }
 }
 ```
 
 ### Migration Note
 
-Replace any manual `JSON.parse` of queue messages with `parseQueueMessage` or `parseMessageBatch`.
-When enqueuing data, use `serializeQueueMessage` to validate and stringify the message body.
+Replace any manual `JSON.parse` of queue messages with typed queue wrappers based on `AbstractQueue`.
+Use `.send()` when enqueuing and `.parseBatch()` when consuming to ensure validation.
 
 ## Error Handling
 
