@@ -9,3 +9,4 @@ import { SiloClient, createSiloClient } from './client';
 import { SiloBinding } from '../types';
 
 export { SiloClient, SiloBinding, createSiloClient };
+export * from '../queues';
