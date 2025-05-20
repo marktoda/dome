@@ -1,6 +1,6 @@
 import { Bindings } from '../types';
 import { getLogger } from '@dome/common';
-import { SiloClient, SiloBinding } from '@dome/silo/client';
+import { SiloClient, createSiloClient, SiloBinding } from '@dome/silo/client';
 import { ConstellationClient, ConstellationBinding } from '@dome/constellation/client';
 import { AiProcessorClient, AiProcessorBinding } from '@dome/ai-processor/client';
 import { SearchService } from './searchService';
@@ -100,7 +100,7 @@ export class DefaultServiceFactory implements ServiceFactory {
     let service = this.siloServices.get(env);
     if (!service) {
       this.logger.debug('Creating new SiloClient instance');
-      service = new SiloClient(env.SILO, env.SILO_INGEST_QUEUE);
+      service = createSiloClient(env.SILO, env.SILO_INGEST_QUEUE as any);
       this.siloServices.set(env, service);
     }
     return service;
