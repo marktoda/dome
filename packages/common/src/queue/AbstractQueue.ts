@@ -1,11 +1,11 @@
-import { z, ZodSchema } from 'zod';
+import { z, type ZodTypeAny } from 'zod';
+import type { Queue, MessageBatch } from '@cloudflare/workers-types';
 import {
   serializeQueueMessage,
   parseMessageBatch,
   toRawMessageBatch,
   RawMessageBatch,
   ParsedMessageBatch,
-  MessageBatch,
 } from './index.js';
 
 /**
@@ -14,8 +14,8 @@ import {
  * 
  * @example
  * ```ts
- * export class ContentQueue extends AbstractQueue<ContentMessage, typeof ContentMessageSchema> {
- *   protected readonly schema = ContentMessageSchema;
+ * export class ContentQueue extends AbstractQueue<typeof ContentMessageSchema> {
+ *   static override schema = ContentMessageSchema;
  * }
  * 
  * // Producer
@@ -26,26 +26,32 @@ import {
  * const messages = ContentQueue.parseBatch(batch);
  * ```
  */
-export abstract class AbstractQueue<T, S extends ZodSchema<T>> {
+type MessageOf<S extends ZodTypeAny> = z.infer<S>;
+
+export abstract class AbstractQueue<S extends ZodTypeAny> {
   /**
    * The Zod schema used to validate and serialize messages.
    * Subclasses must provide this as a static field.
    */
-  public static schema: ZodSchema<any>;
+  static schema: ZodTypeAny;
 
   /**
    * Create a new queue wrapper for the given Cloudflare Queue binding.
    * @param queue The Cloudflare Queue binding
    */
-  constructor(protected readonly queue: { send(body: string | ArrayBuffer): Promise<void> }) {}
+  protected readonly schema: S;
+
+  constructor(protected readonly queue: Queue) {
+    // Bridge the static schema to the instance for convenience
+    this.schema = (this.constructor as typeof AbstractQueue & { schema: S }).schema as S;
+  }
 
   /**
    * Send a validated message to the queue.
    * @param message The message to send
    */
-  async send(message: T): Promise<void> {
-    const cls = this.constructor as typeof AbstractQueue & { schema: S };
-    const serialized = serializeQueueMessage(cls.schema as S, message);
+  async send(message: MessageOf<S>): Promise<void> {
+    const serialized = serializeQueueMessage(this.schema, message);
     await this.queue.send(serialized);
   }
 
@@ -53,10 +59,11 @@ export abstract class AbstractQueue<T, S extends ZodSchema<T>> {
    * Send multiple messages to the queue in sequence.
    * @param messages The messages to send
    */
-  async sendBatch(messages: Iterable<T>): Promise<void> {
-    for (const message of messages) {
-      await this.send(message);
-    }
+  async sendBatch(messages: ReadonlyArray<MessageOf<S>>): Promise<void> {
+    const payload = messages.map(m => ({
+      body: serializeQueueMessage(this.schema, m),
+    }));
+    await this.queue.sendBatch(payload);
   }
 
   /**
@@ -66,11 +73,11 @@ export abstract class AbstractQueue<T, S extends ZodSchema<T>> {
    * @param batch The raw message batch from Cloudflare
    * @returns The parsed messages with proper types
    */
-  static parseBatch<T, S extends ZodSchema<T>>(
-    this: { new (...args: any[]): AbstractQueue<T, S> } & { schema: S },
+  static parseBatch<S extends ZodTypeAny>(
+    this: { schema: S },
     batch: MessageBatch<unknown>
-  ): ParsedMessageBatch<T> {
+  ): ParsedMessageBatch<MessageOf<S>> {
     const raw = toRawMessageBatch(batch);
-    return parseMessageBatch(this.schema as S, raw as RawMessageBatch);
+    return parseMessageBatch(this.schema, raw as RawMessageBatch);
   }
-} 
+}

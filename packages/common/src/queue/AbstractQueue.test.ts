@@ -13,13 +13,14 @@ const TestMessageSchema = z.object({
 type TestMessage = z.infer<typeof TestMessageSchema>;
 
 // Concrete implementation for testing
-class TestQueue extends AbstractQueue<TestMessage, typeof TestMessageSchema> {
-  public static schema = TestMessageSchema;
+class TestQueue extends AbstractQueue<typeof TestMessageSchema> {
+  static override schema = TestMessageSchema;
 }
 
 // Mock queue
 const mockQueue = {
   send: vi.fn().mockResolvedValue(undefined),
+  sendBatch: vi.fn().mockResolvedValue(undefined),
 };
 
 // Sample valid message
@@ -57,9 +58,9 @@ describe('AbstractQueue', () => {
     ];
     
     await queue.sendBatch(messages);
-    
-    // Verify queue.send was called for each message
-    expect(mockQueue.send).toHaveBeenCalledTimes(3);
+
+    // Should use sendBatch once with all messages
+    expect(mockQueue.sendBatch).toHaveBeenCalledTimes(1);
   });
 
   test('parseBatch() should delegate to helpers with schema', () => {
@@ -67,7 +68,7 @@ describe('AbstractQueue', () => {
     // test that the helper methods would be called correctly
     
     // Create a mock message batch to verify serialization behavior
-    const mockQueue = new TestQueue({ send: vi.fn() });
+    const mockQueue = new TestQueue({ send: vi.fn(), sendBatch: vi.fn() } as any);
     const mockMessage: TestMessage = { id: 'test', value: 123 };
     
     // Spy on the core functions we expect to be used
