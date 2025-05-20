@@ -120,10 +120,12 @@ interface EmbedJob {
 #### Queue Consumer Example
 
 This example uses the `AbstractQueue` pattern so each queue has a thin
-wrapper class that handles validation and parsing.
+wrapper class that handles validation and parsing. Cross-service queues are
+exported by the service that produces them so consumers can import them
+directly.
 
 ```typescript
-import { NewContentQueue } from '../src/queues/NewContentQueue';
+import { NewContentQueue } from '@dome/silo/queues';
 import type { EmbedJob } from '../src/schemas';
 
 export async function enqueueJob(env: Env, job: EmbedJob) {
