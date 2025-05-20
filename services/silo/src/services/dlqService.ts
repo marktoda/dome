@@ -11,9 +11,9 @@ import {
   NotFoundError,
   ValidationError,
   toDomeError,
-  assertValid,
-  assertExists,
-} from '@dome/errors';
+  domeAssertValid as assertValid,
+  domeAssertExists as assertExists,
+} from '@dome/common';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
 import { dlqMetadata } from '../db/schema';
@@ -570,7 +570,6 @@ export class DLQServiceImpl implements DLQService {
                 queueName: message?.queueName ?? 'unknown',
                 parseError: parseErrorMessage,
               },
-              parseError instanceof Error ? parseError : undefined,
             );
 
             logError(
@@ -630,7 +629,6 @@ export class DLQServiceImpl implements DLQService {
                     queueName,
                     validationErrors: errorDetails,
                   },
-                  validationError instanceof Error ? validationError : undefined,
                 );
 
                 logError(domeValidationError, `Message validation failed during reprocessing`);

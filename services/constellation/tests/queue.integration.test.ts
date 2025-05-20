@@ -22,7 +22,6 @@ vi.mock('@dome/silo/queues', () => ({
     }),
   },
 }));
-vi.mock('@dome/errors', () => ({}));
 vi.mock('../src/utils/errors', () => ({
   assertValid: () => {},
   assertExists: () => {},

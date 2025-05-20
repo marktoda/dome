@@ -7,8 +7,8 @@ import {
   ValidationError,
   InternalError,
   toDomeError,
-  assertExists,
-} from '@dome/errors';
+  domeAssertExists as assertExists,
+} from '@dome/common';
 import { assertValid } from '../utils/errors';
 import { syncPlanOperations } from '../db/client';
 import { ResourceObject } from '../resourceObject';

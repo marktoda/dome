@@ -12,9 +12,9 @@ import {
   ValidationError,
   NotFoundError,
   toDomeError,
-  assertValid,
-  assertExists,
-} from '@dome/errors';
+  domeAssertValid as assertValid,
+  domeAssertExists as assertExists,
+} from '@dome/common';
 import { SiloBinding, DLQMessage, R2Event, DLQFilterOptions, DLQStats } from './types';
 import { wrap } from './utils/wrap';
 import { createServices, Services } from './services';
@@ -295,7 +295,6 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               method: 'batchGet',
               inputData: JSON.stringify(data),
             },
-            error,
           );
 
           logError(validationError, 'Validation error in batchGet request', {
@@ -362,7 +361,6 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
               method: 'delete',
               contentId: data.id,
             },
-            error,
           );
 
           logError(validationError, 'Validation error in delete request', {
@@ -437,7 +435,6 @@ export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
           const validationError = new ValidationError(
             `Invalid stats request parameters`,
             { validationErrors: errorDetails, method: 'stats' },
-            error,
           );
 
           logError(validationError, 'Validation error in stats request', {

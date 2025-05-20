@@ -322,7 +322,7 @@ export class ContentProcessor {
     }
   }
 
-  private classify(err: unknown, ctx: Record<string, unknown>): import('@dome/errors').DomeError {
+  private classify(err: unknown, ctx: Record<string, unknown>): import('@dome/common').DomeError {
     if (err instanceof Error && err.message.includes('LLM')) {
       return new LLMProcessingError('LLM failed', ctx, err);
     }

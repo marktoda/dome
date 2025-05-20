@@ -5,10 +5,10 @@ import {
   ConflictError,
   ServiceUnavailableError,
   toDomeError,
-  assertValid,
-  assertExists,
+  domeAssertValid as assertValid,
+  domeAssertExists as assertExists,
   createErrorFactory,
-} from '@dome/errors';
+} from '@dome/common';
 
 // Create domain-specific error factory
 export const AiProcessorErrors = createErrorFactory('aiprocessor', {

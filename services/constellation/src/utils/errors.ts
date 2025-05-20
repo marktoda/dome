@@ -4,10 +4,10 @@ import {
   InternalError,
   ConflictError,
   ServiceUnavailableError,
-  assertValid,
-  assertExists,
+  domeAssertValid as assertValid,
+  domeAssertExists as assertExists,
   createErrorFactory,
-} from '@dome/errors';
+} from '@dome/common';
 import { createServiceErrorHandler } from '@dome/common';
 
 // Service name constant for consistency

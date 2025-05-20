@@ -8,7 +8,7 @@ import {
   logOperationFailure,
   createServiceMetrics,
 } from '@dome/common';
-import { toDomeError } from '@dome/errors';
+import { toDomeError } from '@dome/common';
 
 // Create service-specific metrics
 export const aiProcessorMetrics = createServiceMetrics('ai-processor');

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 vi.mock('@dome/common', () => ({ getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }), PUBLIC_USER_ID: 'public', withContext: async (_m: any, fn: any) => fn({}) }));
 vi.mock('../src/utils/errors', () => ({ EmbeddingError: class extends Error {}, assertValid: () => {}, assertExists: () => {}, toDomeError: (e: any) => e }));
-vi.mock('@dome/errors', () => ({}));
 import { Embedder } from '../src/services/embedder';
 
 vi.mock('../src/utils/logging', () => ({
