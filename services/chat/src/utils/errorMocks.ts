@@ -1,6 +1,6 @@
 /**
  * Error mocks for local development and testing
- * These are used instead of @dome/errors to avoid circular dependencies
+ * These are used instead of @dome/common to avoid circular dependencies
  */
 
 export class ForbiddenError extends Error {

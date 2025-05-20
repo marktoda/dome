@@ -25,7 +25,6 @@ vi.mock('@dome/common', async () => {
   return { ...actual };
 });
 
-vi.mock('@dome/errors', () => ({}));
 
 import { sendToDeadLetter } from '../src';
 

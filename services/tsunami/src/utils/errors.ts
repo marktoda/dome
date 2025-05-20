@@ -4,11 +4,11 @@ import {
   ConflictError,
   ServiceUnavailableError,
   toDomeError as baseToDomeError,
-  assertValid as originalAssertValid,
-  assertExists as originalAssertExists,
+  domeAssertValid as originalAssertValid,
+  domeAssertExists as originalAssertExists,
   createErrorFactory,
   errorHandler,
-} from '@dome/errors';
+} from '@dome/common';
 import { getLogger as getDomeLogger } from '@dome/common';
 
 // Create domain-specific error factory

@@ -8,7 +8,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withContext } from '@dome/common';
 import { metrics } from '@dome/common';
-import { toDomeError } from '@dome/errors';
+import { toDomeError } from '@dome/common';
 import { createLlmService } from './services/llmService';
 import {
   EnrichedContentMessage,

@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@dome/common": "workspace:*",
-    "@dome/errors": "workspace:*",
     "@dome/todos": "workspace:*",
     "@dqbd/tiktoken": "^1.0.7",
     "@langchain/cloudflare": "^0.1.0",
