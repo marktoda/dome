@@ -13,11 +13,9 @@ import { createLlmService } from './services/llmService';
 import {
   EnrichedContentMessage,
   NewContentMessage,
-  NewContentMessageSchema,
-  parseMessageBatch,
   ParsedMessageBatch,
-  toRawMessageBatch,
 } from '@dome/common';
+import { NewContentQueue } from './queues/NewContentQueue';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import type { ServiceEnv } from './types';
 import { z } from 'zod';
@@ -354,10 +352,7 @@ export default class AiProcessor extends WorkerEntrypoint<ServiceEnv> {
 
         let parsed: ParsedMessageBatch<NewContentMessage>;
         try {
-          parsed = parseMessageBatch(
-            NewContentMessageSchema,
-            toRawMessageBatch(batch),
-          );
+          parsed = NewContentQueue.parseBatch(batch);
         } catch (err) {
           const domeError = toDomeError(err, 'Failed to parse message batch', {
             batchId,
