@@ -2,11 +2,8 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import {
   VectorMeta,
   VectorSearchResult,
-  NewContentMessageSchema,
-  parseMessageBatch,
-  ParsedMessageBatch,
   ParsedQueueMessage,
-  toRawMessageBatch,
+  ParsedMessageBatch,
   NewContentMessage,
   SiloContentItem,
 } from '@dome/common';
@@ -31,6 +28,7 @@ import { createVectorizeService } from './services/vectorize';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { Queue } from '@cloudflare/workers-types/experimental';
 import { DeadLetterQueue } from './queues/DeadLetterQueue';
+import { NewContentQueue } from './queues/NewContentQueue';
 
 interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
   SILO: SiloBinding;
@@ -506,10 +504,7 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
 
         let parsed: ParsedMessageBatch<NewContentMessage>;
         try {
-          parsed = parseMessageBatch(
-            NewContentMessageSchema,
-            toRawMessageBatch(batch),
-          );
+          parsed = NewContentQueue.parseBatch(batch);
         } catch (err) {
           const domeError = toDomeError(err, 'Failed to parse message batch', {
             batchId,

@@ -14,7 +14,7 @@ type TestMessage = z.infer<typeof TestMessageSchema>;
 
 // Concrete implementation for testing
 class TestQueue extends AbstractQueue<TestMessage, typeof TestMessageSchema> {
-  protected readonly schema = TestMessageSchema;
+  public static schema = TestMessageSchema;
 }
 
 // Mock queue

@@ -20,6 +20,11 @@ vi.mock('../src/utils/errors', () => ({
   toDomeError: (e: any) => e,
 }));
 
+vi.mock('@dome/common', async () => {
+  const actual = await vi.importActual<any>('@dome/common');
+  return { ...actual };
+});
+
 vi.mock('@dome/errors', () => ({}));
 
 import { sendToDeadLetter } from '../src';
