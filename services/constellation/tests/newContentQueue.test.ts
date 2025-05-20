@@ -3,7 +3,7 @@ import { NewContentQueue } from '../src/queues/NewContentQueue';
 import { NewContentMessageSchema } from '@dome/common';
 import * as queueHelpers from '@dome/common/queue';
 
-const mockQueue = { send: vi.fn() };
+const mockQueue = { send: vi.fn(), sendBatch: vi.fn() };
 
 const validMessage = { id: '1', userId: 'u' };
 

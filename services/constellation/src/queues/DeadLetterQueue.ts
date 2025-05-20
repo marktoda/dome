@@ -11,6 +11,6 @@ export type DeadLetterMessage = z.infer<typeof EmbedDeadLetterMessageSchema>;
  * Type-safe wrapper for the dead letter queue.
  * Uses the existing EmbedDeadLetterMessageSchema from common.
  */
-export class DeadLetterQueue extends AbstractQueue<DeadLetterMessage, typeof EmbedDeadLetterMessageSchema> {
-  public static schema = EmbedDeadLetterMessageSchema;
+export class DeadLetterQueue extends AbstractQueue<typeof EmbedDeadLetterMessageSchema> {
+  static override schema = EmbedDeadLetterMessageSchema;
 }

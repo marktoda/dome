@@ -3,6 +3,6 @@ import { NewContentMessage, NewContentMessageSchema } from '@dome/common';
 
 export type { NewContentMessage };
 
-export class NewContentQueue extends AbstractQueue<NewContentMessage, typeof NewContentMessageSchema> {
-  public static schema = NewContentMessageSchema;
+export class NewContentQueue extends AbstractQueue<typeof NewContentMessageSchema> {
+  static override schema = NewContentMessageSchema;
 }
