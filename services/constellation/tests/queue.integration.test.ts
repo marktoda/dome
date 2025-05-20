@@ -10,7 +10,7 @@ vi.mock('@dome/common', async () => {
   };
 });
 
-vi.mock('../src/queues/NewContentQueue', () => ({
+vi.mock('@dome/silo/queues', () => ({
   NewContentQueue: {
     parseBatch: (batch: any) => ({
       queue: batch.queue,

@@ -15,7 +15,7 @@ import {
   NewContentMessage,
   ParsedMessageBatch,
 } from '@dome/common';
-import { NewContentQueue } from './queues/NewContentQueue';
+import { NewContentQueue } from '@dome/silo/queues';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import type { ServiceEnv } from './types';
 import { z } from 'zod';

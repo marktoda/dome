@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NewContentQueue } from '../src/queues/NewContentQueue';
+import { NewContentQueue } from '@dome/silo/queues';
 import { NewContentMessageSchema } from '@dome/common';
 import * as queueHelpers from '@dome/common/queue';
 

@@ -28,7 +28,7 @@ import { createVectorizeService } from './services/vectorize';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { Queue } from '@cloudflare/workers-types/experimental';
 import { DeadLetterQueue } from './queues/DeadLetterQueue';
-import { NewContentQueue } from './queues/NewContentQueue';
+import { NewContentQueue } from '@dome/silo/queues';
 
 interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
   SILO: SiloBinding;
