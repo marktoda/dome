@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest
+import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
 /**
@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
  *
  * Flow:
  * 1. Extracts the authorization `code` and `state` from the query parameters.
- * 2. **(Security TODO)** Verifies the received `state` against a stored value to prevent CSRF.
+ * 2. Verifies the received `state` against the value stored in an HttpOnly cookie to prevent CSRF.
  * 3. Exchanges the `code` for a GitHub access token using client ID and secret.
  * 4. Uses the access token to fetch the authenticated user's GitHub profile information.
  * 5. Forwards the access token and relevant user details to the backend API (`/content/github/oauth/store`)
@@ -34,17 +34,43 @@ export async function GET(request: NextRequest) {
     errorRedirectUrl.searchParams.set('platform', 'github');
     errorRedirectUrl.searchParams.set('status', 'error');
     errorRedirectUrl.searchParams.set('error_message', 'Invalid callback parameters from GitHub.');
-    return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'github_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
     // return NextResponse.json({ error: 'Missing code or state from GitHub' }, { status: 400 });
   }
 
-  // --- 2. State Verification (CSRF Protection - Simplified) ---
-  // !!! SECURITY TODO: Implement proper state verification !!!
-  // - Generate a unique, unguessable 'state' value before redirecting the user to GitHub.
-  // - Store this value securely (e.g., in an HttpOnly cookie with a short expiry).
-  // - Compare stateFromGitHub with the stored value. If they don't match, abort.
-  // - Include the original client redirect path within the *verified* state or store it alongside the state value.
-  const [_originalStateValue, encodedClientRedirectPath] = stateFromGitHub.split('|'); // Simplified extraction
+  // --- 2. State Verification (CSRF Protection) ---
+  const [receivedState, encodedClientRedirectPath] = stateFromGitHub.split('|');
+  const cookieStore = await cookies();
+  const storedState = cookieStore.get('github_oauth_state');
+  if (!storedState?.value || storedState.value !== receivedState) {
+    console.error('GitHub OAuth state mismatch or missing.');
+    const errorRedirectUrl = new URL('/settings/integrations', request.nextUrl.origin);
+    errorRedirectUrl.searchParams.set('oauth_callback', 'true');
+    errorRedirectUrl.searchParams.set('platform', 'github');
+    errorRedirectUrl.searchParams.set('status', 'error');
+    errorRedirectUrl.searchParams.set('error_message', 'Invalid OAuth state.');
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'github_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
+  }
   const clientFinalRedirectPath = encodedClientRedirectPath
     ? decodeURIComponent(encodedClientRedirectPath)
     : '/settings/integrations';
@@ -70,7 +96,17 @@ export async function GET(request: NextRequest) {
       'error_message',
       'Server configuration error preventing GitHub connection.',
     );
-    return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'github_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
     // return NextResponse.json({ error: 'Server configuration error for GitHub OAuth.' }, { status: 500 });
   }
 
@@ -193,7 +229,17 @@ export async function GET(request: NextRequest) {
     finalRedirectUrl.searchParams.set('platform', 'github');
     finalRedirectUrl.searchParams.set('status', 'success');
     console.error(`Redirecting user to success URL: ${finalRedirectUrl.toString()}`);
-    return NextResponse.redirect(finalRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(finalRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'github_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
   } catch (error) {
     // --- Error Handling & Redirect (Failure) ---
     console.error('GitHub OAuth callback processing error:', error);
@@ -208,6 +254,16 @@ export async function GET(request: NextRequest) {
         : 'An unknown error occurred during GitHub connection.';
     errorRedirectUrl.searchParams.set('error_message', errorMessage);
     console.error(`Redirecting user to error URL: ${errorRedirectUrl.toString()}`);
-    return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'github_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
   }
 }

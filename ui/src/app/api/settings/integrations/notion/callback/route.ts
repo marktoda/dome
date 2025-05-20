@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest
+import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
 /**
@@ -8,7 +8,7 @@ import { cookies } from 'next/headers';
  * Flow:
  * 1. Extracts the authorization `code`, `state`, and potential `error` from the query parameters.
  * 2. Handles any errors returned directly from Notion.
- * 3. **(Security TODO)** Verifies the received `state` against a stored value to prevent CSRF.
+ * 3. Verifies the received `state` against the value stored in an HttpOnly cookie to prevent CSRF.
  * 4. Exchanges the `code` for a Notion access token using client ID/secret (via Basic Auth).
  * 5. Extracts relevant workspace and bot information from the token response.
  * 6. Forwards the access token and workspace details to the backend API (`/content/notion/oauth/store`)
@@ -34,13 +34,7 @@ export async function GET(request: NextRequest) {
     process.env.NEXT_PUBLIC_APP_URL ||
     `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` ||
     'http://localhost:3000';
-  const [_originalStateValue, encodedClientRedirectPath] = stateFromNotion?.split('|') || [
-    null,
-    null,
-  ];
-  const clientFinalRedirectPath = encodedClientRedirectPath
-    ? decodeURIComponent(encodedClientRedirectPath)
-    : '/settings/integrations';
+  let clientFinalRedirectPath = '/settings/integrations';
   // --- End Base URL ---
 
   // --- 1. Handle Errors from Notion ---
@@ -51,7 +45,17 @@ export async function GET(request: NextRequest) {
     errorRedirectUrl.searchParams.set('platform', 'notion');
     errorRedirectUrl.searchParams.set('status', 'error');
     errorRedirectUrl.searchParams.set('error_message', `Notion authorization failed: ${error}`);
-    return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'notion_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
   }
 
   // --- 2. Validate Parameters ---
@@ -62,12 +66,46 @@ export async function GET(request: NextRequest) {
     errorRedirectUrl.searchParams.set('platform', 'notion');
     errorRedirectUrl.searchParams.set('status', 'error');
     errorRedirectUrl.searchParams.set('error_message', 'Invalid callback parameters from Notion.');
-    return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'notion_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
     // return NextResponse.json({ error: 'Missing code or state from Notion' }, { status: 400 });
   }
 
-  // --- 3. State Verification (CSRF Protection - Simplified) ---
-  // !!! SECURITY TODO: Implement proper state verification (see GitHub callback comments) !!!
+  // --- 3. State Verification (CSRF Protection) ---
+  const [receivedState, encodedClientRedirectPath] = stateFromNotion.split('|');
+  const cookieStore = await cookies();
+  const storedState = cookieStore.get('notion_oauth_state');
+  if (!storedState?.value || storedState.value !== receivedState) {
+    console.error('Notion OAuth state mismatch or missing.');
+    const errorRedirectUrl = new URL('/settings/integrations', appBaseUrl);
+    errorRedirectUrl.searchParams.set('oauth_callback', 'true');
+    errorRedirectUrl.searchParams.set('platform', 'notion');
+    errorRedirectUrl.searchParams.set('status', 'error');
+    errorRedirectUrl.searchParams.set('error_message', 'Invalid OAuth state.');
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'notion_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
+  }
+  clientFinalRedirectPath = encodedClientRedirectPath
+    ? decodeURIComponent(encodedClientRedirectPath)
+    : '/settings/integrations';
   console.error(
     `Notion callback state received. Extracted redirect path: ${clientFinalRedirectPath}`,
   );
@@ -90,7 +128,17 @@ export async function GET(request: NextRequest) {
       'error_message',
       'Server configuration error preventing Notion connection.',
     );
-    return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'notion_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
     // return NextResponse.json({ error: 'Server configuration error for Notion OAuth.' }, { status: 500 });
   }
 
@@ -198,7 +246,17 @@ export async function GET(request: NextRequest) {
     finalRedirectUrl.searchParams.set('platform', 'notion');
     finalRedirectUrl.searchParams.set('status', 'success');
     console.error(`Redirecting user to success URL: ${finalRedirectUrl.toString()}`);
-    return NextResponse.redirect(finalRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(finalRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'notion_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
   } catch (error) {
     // --- Error Handling & Redirect (Failure) ---
     console.error('Notion OAuth callback processing error:', error);
@@ -212,6 +270,16 @@ export async function GET(request: NextRequest) {
         : 'An unknown error occurred during Notion connection.';
     errorRedirectUrl.searchParams.set('error_message', errorMessage);
     console.error(`Redirecting user to error URL: ${errorRedirectUrl.toString()}`);
-    return NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    const resp = NextResponse.redirect(errorRedirectUrl.toString(), { status: 302 });
+    resp.cookies.set({
+      name: 'notion_oauth_state',
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    });
+    return resp;
   }
 }

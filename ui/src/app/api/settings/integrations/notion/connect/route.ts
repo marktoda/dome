@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest
-import { v4 as uuidv4 } from 'uuid';
+import { NextRequest, NextResponse } from 'next/server';
+import { randomBytes } from 'crypto';
 
 /**
  * Handles GET requests to `/api/settings/integrations/notion/connect`.
@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
  * Flow:
  * 1. Checks for required environment variables (Notion Client ID).
  * 2. Determines the application's base URL to construct the callback URL.
- * 3. Generates a unique `state` parameter for CSRF protection **(Security TODO: Store and verify this state)**.
+ * 3. Generates a unique `state` parameter for CSRF protection.
  * 4. Retrieves the desired final client redirect path from the request's query parameters (`redirect_uri`).
  * 5. Constructs the Notion authorization URL including client ID, callback URL, response type, owner, and state (embedding client redirect path).
  * 6. Redirects the user (302) to the constructed Notion authorization URL.
@@ -18,11 +18,8 @@ import { v4 as uuidv4 } from 'uuid';
  * @returns A NextResponse object performing a 302 redirect to Notion's authorization endpoint,
  *          or a JSON error response (500) if server configuration is missing.
  *
- * @security **Critical TODO:** This implementation generates a `state` parameter but does not store it
- *           for verification in the callback route (`/api/settings/integrations/notion/callback`).
- *           This is **essential** to prevent CSRF attacks. Implement a mechanism (e.g., short-lived HttpOnly cookie)
- *           to store the generated `state` and verify it upon callback. Embedding the client redirect path
- *           in the state is also less secure than storing it server-side associated with the state.
+ * The generated state is stored in a short-lived HttpOnly cookie and verified in
+ * `/api/settings/integrations/notion/callback` to prevent CSRF attacks.
  */
 export async function GET(request: NextRequest) {
   // Changed type to NextRequest
@@ -46,9 +43,8 @@ export async function GET(request: NextRequest) {
   const redirect_uri = new URL('/api/settings/integrations/notion/callback', appBaseUrl).toString();
 
   // --- State Generation (CSRF Protection) ---
-  const stateValue = uuidv4();
-  // !!! SECURITY TODO: Store `stateValue` securely (e.g., HttpOnly cookie with short expiry) !!!
-  console.error('Generated state for Notion OAuth (Storage TODO)');
+  const stateValue = randomBytes(16).toString('hex');
+  console.error('Generated state for Notion OAuth');
   // --- End State Generation ---
 
   // Get the desired final redirect path from the client request
@@ -68,6 +64,15 @@ export async function GET(request: NextRequest) {
 
   console.error(`Redirecting user to Notion for authorization: ${authUrl.toString()}`);
 
-  // Redirect the user to Notion
-  return NextResponse.redirect(authUrl.toString(), { status: 302 });
+  const response = NextResponse.redirect(authUrl.toString(), { status: 302 });
+  response.cookies.set({
+    name: 'notion_oauth_state',
+    value: stateValue,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 300, // 5 minutes
+  });
+  return response;
 }
