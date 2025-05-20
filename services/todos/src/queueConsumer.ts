@@ -1,12 +1,7 @@
-import { Env, TodoJob, TodoQueueItemSchema, TodoQueueItem } from './types';
+import { Env, TodoJob, TodoQueueItem } from './types';
 import { TodosService } from './services/todosService';
-import {
-  getLogger,
-  logError,
-  parseMessageBatch,
-  ParsedMessageBatch,
-  toRawMessageBatch,
-} from '@dome/common';
+import { getLogger, logError, ParsedMessageBatch } from '@dome/common';
+import { TodoQueue } from './queues/TodoQueue';
 import { AiProcessorAdapter } from './adapters/aiProcessorAdapter';
 
 const logger = getLogger();
@@ -35,10 +30,7 @@ export async function processTodoQueue(
   // Convert the incoming batch to typed queue items
   let parsed: ParsedMessageBatch<TodoQueueItem>;
   try {
-    parsed = parseMessageBatch(
-      TodoQueueItemSchema,
-      toRawMessageBatch(batch),
-    );
+    parsed = TodoQueue.parseBatch(batch);
   } catch (error) {
     logError(error, 'Failed to parse todo queue batch');
     return;

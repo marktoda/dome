@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { TodoQueueItemSchema } from '../src/types';
-import { parseMessageBatch, RawMessageBatch, MessageProcessingError } from '@dome/common';
+import { MessageBatch, MessageProcessingError } from '@dome/common';
+import { TodoQueue } from '../src/queues/TodoQueue';
 
 const validItem = {
   userId: 'u',
@@ -11,23 +11,23 @@ const validItem = {
 
 describe('TodoQueueItemSchema', () => {
   it('parses a valid batch', () => {
-    const batch: RawMessageBatch = {
+    const batch: MessageBatch<string> = {
       queue: 'todos',
       messages: [
-        { id: '1', timestamp: 1, body: JSON.stringify(validItem) },
+        { id: '1', timestamp: new Date(1), body: JSON.stringify(validItem) },
       ],
     };
-    const parsed = parseMessageBatch(TodoQueueItemSchema, batch);
+    const parsed = TodoQueue.parseBatch(batch);
     expect(parsed.messages[0].body.userId).toBe('u');
   });
 
   it('throws on invalid message', () => {
-    const batch: RawMessageBatch = {
+    const batch: MessageBatch<string> = {
       queue: 'todos',
       messages: [
-        { id: '1', timestamp: 1, body: JSON.stringify({ userId: 'u' }) },
+        { id: '1', timestamp: new Date(1), body: JSON.stringify({ userId: 'u' }) },
       ],
     };
-    expect(() => parseMessageBatch(TodoQueueItemSchema, batch)).toThrow(MessageProcessingError);
+    expect(() => TodoQueue.parseBatch(batch)).toThrow(MessageProcessingError);
   });
 });
