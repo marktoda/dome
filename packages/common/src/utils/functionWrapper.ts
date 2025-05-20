@@ -1,12 +1,8 @@
 import { getLogger, logError, trackOperation } from '@dome/common';
 import { withContext } from '@dome/common';
+import { toDomeError, DomeError } from '../errors/domeErrors.js';
 
-// Use type reference for DomeError without importing it
-type DomeError = {
-  message: string;
-  code?: string;
-  details?: Record<string, any>;
-};
+// DomeError type re-exported for convenience
 
 /**
  * Wraps a function call with logging context specific to a service.
@@ -18,8 +14,6 @@ type DomeError = {
  * @returns The result of the function execution
  */
 export function createServiceWrapper(serviceName: string) {
-  // Import at runtime to avoid circular dependencies
-  const { toDomeError } = require('../errors/domeErrors.js');
 
   return async function wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
     // Extract operation name if present for better error context
@@ -42,8 +36,6 @@ export function createServiceWrapper(serviceName: string) {
         // Otherwise just run the function
         return await fn();
       } catch (err) {
-        // Get toDomeError at runtime
-        const { toDomeError } = require('../errors/domeErrors.js');
 
         // Convert to DomeError for consistent handling
         const domeError =
