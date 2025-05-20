@@ -3,7 +3,7 @@ import {
   DomeError,
   toDomeError as baseToDomeError,
   assertValid as originalAssertValid,
-} from '@dome/errors';
+} from './domeErrors.js';
 import { getLogger } from '../context/index.js';
 import { ValidationError } from './ValidationError.js';
 
@@ -57,7 +57,7 @@ export function assertValid(
   message: string,
   details: Record<string, any> = {},
 ): void {
-  // originalAssertValid is now imported from '@dome/errors'
+  // originalAssertValid is imported from the local domeErrors module
 
   // Explicitly convert string expressions to boolean
   const boolCondition =
@@ -120,6 +120,6 @@ export function createErrorMiddleware(
 }
 
 /**
- * Re-export from @dome/errors for convenience
+ * Re-export DomeError class
  */
 export { DomeError };

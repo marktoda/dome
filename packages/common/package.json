@@ -36,7 +36,6 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@dome/errors": "workspace:*",
     "hono": "^4.0.0",
     "nanoid": "^3.3.4",
     "pino": "^9.6.0",

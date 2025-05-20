@@ -1,5 +1,5 @@
 /**
- * Error utilities that work with @dome/errors package
+ * Error utilities that work with domeErrors module
  */
 import { getLogger } from '@dome/common';
 
@@ -13,8 +13,8 @@ import { getLogger } from '@dome/common';
  * @returns A DomeError instance
  */
 export function createServiceErrorHandler(serviceName: string) {
-  // Import from @dome/errors at runtime to avoid potential circular dependencies
-  const { toDomeError: baseToDomeError } = require('@dome/errors');
+  // Import locally at runtime to avoid potential circular dependencies
+  const { toDomeError: baseToDomeError } = require('./domeErrors.js');
 
   return function toDomeError(
     error: unknown,
@@ -32,8 +32,8 @@ export function createServiceErrorHandler(serviceName: string) {
  * Enhanced version of assertValid that explicitly converts string expressions to boolean
  */
 export function createEnhancedAssertValid() {
-  // Import from @dome/errors at runtime to avoid potential circular dependencies
-  const { assertValid: originalAssertValid } = require('@dome/errors');
+  // Import locally at runtime to avoid potential circular dependencies
+  const { assertValid: originalAssertValid } = require('./domeErrors.js');
 
   return function assertValid(
     condition: string | boolean | undefined | null,
