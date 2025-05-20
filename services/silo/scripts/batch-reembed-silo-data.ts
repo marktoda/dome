@@ -15,7 +15,8 @@
  *   --help                Show this help message
  */
 
-import { NewContentMessage, NewContentMessageSchema, serializeQueueMessage } from '@dome/common';
+import { NewContentMessage } from '@dome/common';
+import { NewContentQueue } from '../src/queues';
 import { getLogger, logError } from '@dome/common';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -159,10 +160,8 @@ async function main() {
 
           try {
             // Create temporary message file with validated payload
-            const messageJson = serializeQueueMessage(
-              NewContentMessageSchema,
-              message,
-            );
+            const validated = NewContentQueue.schema.parse(message);
+            const messageJson = JSON.stringify(validated);
             tempMessageFile = await createTempFile('silo-message', messageJson);
             logger.debug(`Created temporary message file at ${tempMessageFile}`);
 
