@@ -7,8 +7,8 @@
 
 import { BaseWorker } from '@dome/common';
 import { Hono } from 'hono';
-import { upgradeWebSocket } from 'hono/cloudflare-workers';
-import { getLogger, logError } from '@dome/common';
+import { getLogger } from '@dome/common';
+import { wrap } from './utils/wrap';
 import { errorHandler } from '@dome/common/errors';
 import { createServices } from './services';
 import { createControllers } from './controllers';
@@ -69,24 +69,10 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Complete response with aggregated output
    */
   async generateChatMessage(request: ChatRequest): Promise<Response> {
-    try {
-      this.logger.info(
-        {
-          operation: 'generateChatMessage',
-          userId: request?.userId,
-        },
-        'RPC call received',
-      );
-
-      // Delegate to the controller
-      return await this.controllers.chat.generateChatMessage(request);
-    } catch (error) {
-      logError(error, 'Error in RPC call: generateChatMessage', {
-        operation: 'generateChatMessage',
-      });
-
-      throw error;
-    }
+    return wrap(
+      { operation: 'generateChatMessage', userId: request?.userId },
+      () => this.controllers.chat.generateChatMessage(request),
+    );
   }
 
   /**
@@ -94,20 +80,10 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Checkpoint statistics
    */
   async getCheckpointStats(): Promise<any> {
-    try {
-      this.logger.info(
-        {
-          operation: 'getCheckpointStats',
-        },
-        'RPC call received',
-      );
-
-      return await this.controllers.admin.getCheckpointStats();
-    } catch (error) {
-      logError(error, 'Error in RPC call: getCheckpointStats', { operation: 'getCheckpointStats' });
-
-      throw error;
-    }
+    return wrap(
+      { operation: 'getCheckpointStats' },
+      () => this.controllers.admin.getCheckpointStats(),
+    );
   }
 
   /**
@@ -115,20 +91,10 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Cleanup result
    */
   async cleanupCheckpoints(): Promise<{ deletedCount: number }> {
-    try {
-      this.logger.info(
-        {
-          operation: 'cleanupCheckpoints',
-        },
-        'RPC call received',
-      );
-
-      return await this.controllers.admin.cleanupCheckpoints();
-    } catch (error) {
-      logError(error, 'Error in RPC call: cleanupCheckpoints', { operation: 'cleanupCheckpoints' });
-
-      throw error;
-    }
+    return wrap(
+      { operation: 'cleanupCheckpoints' },
+      () => this.controllers.admin.cleanupCheckpoints(),
+    );
   }
 
   /**
@@ -136,22 +102,10 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Data retention statistics
    */
   async getDataRetentionStats(): Promise<any> {
-    try {
-      this.logger.info(
-        {
-          operation: 'getDataRetentionStats',
-        },
-        'RPC call received',
-      );
-
-      return await this.controllers.admin.getDataRetentionStats();
-    } catch (error) {
-      logError(error, 'Error in RPC call: getDataRetentionStats', {
-        operation: 'getDataRetentionStats',
-      });
-
-      throw error;
-    }
+    return wrap(
+      { operation: 'getDataRetentionStats' },
+      () => this.controllers.admin.getDataRetentionStats(),
+    );
   }
 
   /**
@@ -159,20 +113,10 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Cleanup result
    */
   async cleanupExpiredData(): Promise<any> {
-    try {
-      this.logger.info(
-        {
-          operation: 'cleanupExpiredData',
-        },
-        'RPC call received',
-      );
-
-      return await this.controllers.admin.cleanupExpiredData();
-    } catch (error) {
-      logError(error, 'Error in RPC call: cleanupExpiredData', { operation: 'cleanupExpiredData' });
-
-      throw error;
-    }
+    return wrap(
+      { operation: 'cleanupExpiredData' },
+      () => this.controllers.admin.cleanupExpiredData(),
+    );
   }
 
   /**
@@ -181,21 +125,10 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Deletion result
    */
   async deleteUserData(userId: string): Promise<{ deletedCount: number }> {
-    try {
-      this.logger.info(
-        {
-          operation: 'deleteUserData',
-          userId,
-        },
-        'RPC call received',
-      );
-
-      return await this.controllers.admin.deleteUserData(userId);
-    } catch (error) {
-      logError(error, 'Error in RPC call: deleteUserData', { operation: 'deleteUserData', userId });
-
-      throw error;
-    }
+    return wrap(
+      { operation: 'deleteUserData', userId },
+      () => this.controllers.admin.deleteUserData(userId),
+    );
   }
 
   /**
@@ -210,25 +143,9 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
     dataCategory: string,
     request: { durationDays: number },
   ): Promise<{ success: boolean }> {
-    try {
-      this.logger.info(
-        {
-          operation: 'recordConsent',
-          userId,
-          dataCategory,
-        },
-        'RPC call received',
-      );
-
-      return await this.controllers.admin.recordConsent(userId, dataCategory, request);
-    } catch (error) {
-      logError(error, 'Error in RPC call: recordConsent', {
-        operation: 'recordConsent',
-        userId,
-        dataCategory,
-      });
-
-      throw error;
-    }
+    return wrap(
+      { operation: 'recordConsent', userId, dataCategory },
+      () => this.controllers.admin.recordConsent(userId, dataCategory, request),
+    );
   }
 }
