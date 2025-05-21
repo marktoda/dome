@@ -10,7 +10,8 @@ import {
   trackOperation,
   createServiceMetrics,
 } from '@dome/common';
-import { toDomeError, ConflictError, ValidationError } from './utils/errors';
+import { toDomeError } from './utils/errors';
+import { ConflictError, ValidationError } from '@dome/common/errors';
 import { createSyncPlanService } from './services/syncPlanService';
 import { TokenService } from './services/tokenService';
 import type { NotionOAuthDetails, GithubOAuthDetails } from './client/types'; // Added GithubOAuthDetails

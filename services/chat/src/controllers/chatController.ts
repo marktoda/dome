@@ -5,7 +5,8 @@ import {
   getModelConfig,
   calculateContextLimits,
 } from '@dome/common';
-import { toDomeError, ValidationError } from '../utils/errors';
+import { toDomeError } from '../utils/errors';
+import { ValidationError } from '@dome/common/errors';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
 import {
   chatRequestSchema,

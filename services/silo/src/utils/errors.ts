@@ -6,12 +6,10 @@ import {
   UnauthorizedError,
   createErrorFactory,
   domeAssertExists as assertExists,
-} from '@dome/common';
-import {
   createServiceErrorHandler,
   createEnhancedAssertValid,
   createServiceErrorMiddleware,
-} from '@dome/common';
+} from '@dome/common/errors';
 
 // Service name constant for consistency
 const SERVICE_NAME = 'silo';
@@ -27,12 +25,3 @@ export const assertValid = createEnhancedAssertValid();
 export const createErrorMiddleware = createServiceErrorMiddleware(SERVICE_NAME);
 
 // Re-export common errors
-export {
-  ValidationError,
-  NotFoundError,
-  ConflictError,
-  ServiceUnavailableError,
-  UnauthorizedError,
-  assertExists,
-  createErrorFactory,
-};

@@ -7,8 +7,8 @@ import {
   domeAssertValid as assertValid,
   domeAssertExists as assertExists,
   createErrorFactory,
-} from '@dome/common';
-import { createServiceErrorHandler } from '@dome/common';
+  createServiceErrorHandler,
+} from '@dome/common/errors';
 
 // Service name constant for consistency
 const SERVICE_NAME = 'constellation';
@@ -70,11 +70,3 @@ export class PreprocessingError extends InternalError {
 }
 
 // Re-export common errors
-export {
-  ValidationError,
-  NotFoundError,
-  ConflictError,
-  ServiceUnavailableError,
-  assertValid,
-  assertExists,
-};

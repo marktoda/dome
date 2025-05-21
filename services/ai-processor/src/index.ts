@@ -28,7 +28,7 @@ import {
   aiProcessorMetrics,
 } from './utils/logging';
 import { ReprocessResponseSchema, ReprocessRequestSchema } from './types';
-import { assertExists } from './utils/errors';
+import { domeAssertExists as assertExists } from '@dome/common/errors';
 import { ContentProcessor } from './utils/processor';
 
 /**

@@ -9,7 +9,8 @@ import {
 } from '../utils/logging';
 
 const logger = getLogger();
-import { assertValid, VectorizeError, toDomeError } from '../utils/errors';
+import { VectorizeError } from '../utils/errors';
+import { domeAssertValid as assertValid, toDomeError } from '@dome/common/errors';
 import { sliceIntoBatches } from '../utils/batching';
 import { retryAsync, RetryConfig } from '../utils/retry';
 import { toIndexMetadata } from '../utils/metadata';

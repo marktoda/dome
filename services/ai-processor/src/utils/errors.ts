@@ -8,7 +8,7 @@ import {
   domeAssertValid as assertValid,
   domeAssertExists as assertExists,
   createErrorFactory,
-} from '@dome/common';
+} from '@dome/common/errors';
 
 // Create domain-specific error factory
 export const AiProcessorErrors = createErrorFactory('aiprocessor', {
@@ -73,4 +73,3 @@ export function determineErrorType(error: unknown): string {
   return domeError.code;
 }
 
-export { toDomeError, assertValid, assertExists };

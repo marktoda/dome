@@ -1,5 +1,5 @@
 import { getLogger, logError, metrics } from '@dome/common';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { DLQService } from '../services/dlqService';
 import { DLQFilterOptions, DLQMessage, DLQStats } from '../types';
 

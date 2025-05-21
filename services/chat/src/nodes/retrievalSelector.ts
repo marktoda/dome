@@ -7,7 +7,7 @@ import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import type { SliceUpdate } from '../types/stateSlices';
 import { LlmService } from '../services/llmService';
 import { ObservabilityService } from '../services/observabilityService';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { z } from 'zod';
 import { getRetrievalSelectionPrompt } from '../config/promptsConfig';
 

@@ -9,12 +9,11 @@
 // ───────────────────────────────────────────────────────────────
 
 import { getLogger, logError, sanitizeForLogging, aiProcessorMetrics } from './logging';
+import { LLMProcessingError, ContentProcessingError } from '../utils/errors';
 import {
-  assertExists,
+  domeAssertExists as assertExists,
   toDomeError,
-  LLMProcessingError,
-  ContentProcessingError,
-} from '../utils/errors';
+} from '@dome/common/errors';
 import { sendTodosToQueue } from '../todos';
 import { EnrichedContentQueue } from '../queues/EnrichedContentQueue';
 import { RateLimitDlqQueue } from '../queues/RateLimitDlqQueue';
