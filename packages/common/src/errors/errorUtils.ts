@@ -62,13 +62,10 @@ export function createServiceErrorMiddleware(serviceName: string) {
         // Get logger from context or fallback
         const logger = c.get?.('logger') || getLogger();
 
-        // Get service-specific error handler
-        const toDomeError = createServiceErrorHandler(serviceName);
-
         // Convert error to DomeError
         const error = options.errorMapper
           ? options.errorMapper(err)
-          : toDomeError(err, 'Unhandled request error');
+          : baseToDomeError(err, 'Unhandled request error', { service: serviceName });
 
         // Log error
         logger.error({
