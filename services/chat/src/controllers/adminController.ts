@@ -1,5 +1,5 @@
-import { getLogger, logError, metrics } from '@dome/common';
-import { withContext } from '@dome/common';
+import { getLogger, metrics, withContext } from '@dome/common';
+import { wrap } from '../utils/wrap';
 import { z } from 'zod';
 import { Services } from '../services';
 
@@ -52,13 +52,13 @@ export class AdminController {
    * @returns Checkpoint statistics
    */
   async getCheckpointStats(): Promise<z.infer<typeof checkpointStatsResponseSchema>> {
-    return withContext(
-      {
-        service: 'chat-orchestrator',
-        operation: 'getCheckpointStats',
-      },
-      async () => {
-        try {
+    return wrap({ operation: 'getCheckpointStats' }, () =>
+      withContext(
+        {
+          service: 'chat-orchestrator',
+          operation: 'getCheckpointStats',
+        },
+        async () => {
           // Initialize checkpointer
           await this.services.checkpointer.initialize();
 
@@ -69,14 +69,8 @@ export class AdminController {
           metrics.increment('chat_orchestrator.admin.checkpoint_stats', 1);
 
           return stats;
-        } catch (error) {
-          logError(error, 'Error getting checkpoint stats');
-          metrics.increment('chat_orchestrator.admin.errors', 1, {
-            operation: 'getCheckpointStats',
-          });
-          throw error;
-        }
-      },
+        },
+      ),
     );
   }
 
@@ -85,13 +79,13 @@ export class AdminController {
    * @returns Cleanup result
    */
   async cleanupCheckpoints(): Promise<z.infer<typeof cleanupResponseSchema>> {
-    return withContext(
-      {
-        service: 'chat-orchestrator',
-        operation: 'cleanupCheckpoints',
-      },
-      async () => {
-        try {
+    return wrap({ operation: 'cleanupCheckpoints' }, () =>
+      withContext(
+        {
+          service: 'chat-orchestrator',
+          operation: 'cleanupCheckpoints',
+        },
+        async () => {
           // Initialize checkpointer
           await this.services.checkpointer.initialize();
 
@@ -103,14 +97,8 @@ export class AdminController {
           metrics.increment('chat_orchestrator.admin.checkpoints_deleted', deletedCount);
 
           return { deletedCount };
-        } catch (error) {
-          logError(error, 'Error cleaning up checkpoints');
-          metrics.increment('chat_orchestrator.admin.errors', 1, {
-            operation: 'cleanupCheckpoints',
-          });
-          throw error;
-        }
-      },
+        },
+      ),
     );
   }
 
@@ -119,13 +107,13 @@ export class AdminController {
    * @returns Data retention statistics
    */
   async getDataRetentionStats(): Promise<z.infer<typeof dataRetentionStatsResponseSchema>> {
-    return withContext(
-      {
-        service: 'chat-orchestrator',
-        operation: 'getDataRetentionStats',
-      },
-      async () => {
-        try {
+    return wrap({ operation: 'getDataRetentionStats' }, () =>
+      withContext(
+        {
+          service: 'chat-orchestrator',
+          operation: 'getDataRetentionStats',
+        },
+        async () => {
           // Initialize checkpointer
           await this.services.checkpointer.initialize();
 
@@ -148,14 +136,8 @@ export class AdminController {
           metrics.increment('chat_orchestrator.admin.data_retention_stats', 1);
 
           return stats;
-        } catch (error) {
-          logError(error, 'Error getting data retention stats');
-          metrics.increment('chat_orchestrator.admin.errors', 1, {
-            operation: 'getDataRetentionStats',
-          });
-          throw error;
-        }
-      },
+        },
+      ),
     );
   }
 
@@ -164,13 +146,13 @@ export class AdminController {
    * @returns Cleanup result
    */
   async cleanupExpiredData(): Promise<any> {
-    return withContext(
-      {
-        service: 'chat-orchestrator',
-        operation: 'cleanupExpiredData',
-      },
-      async () => {
-        try {
+    return wrap({ operation: 'cleanupExpiredData' }, () =>
+      withContext(
+        {
+          service: 'chat-orchestrator',
+          operation: 'cleanupExpiredData',
+        },
+        async () => {
           // Initialize checkpointer
           await this.services.checkpointer.initialize();
 
@@ -191,14 +173,8 @@ export class AdminController {
 
           // Return unified result
           return { deletedCount };
-        } catch (error) {
-          logError(error, 'Error cleaning up expired data');
-          metrics.increment('chat_orchestrator.admin.errors', 1, {
-            operation: 'cleanupExpiredData',
-          });
-          throw error;
-        }
-      },
+        },
+      ),
     );
   }
 
@@ -208,14 +184,14 @@ export class AdminController {
    * @returns Deletion result
    */
   async deleteUserData(userId: string): Promise<{ deletedCount: number }> {
-    return withContext(
-      {
-        service: 'chat-orchestrator',
-        operation: 'deleteUserData',
-        userId,
-      },
-      async () => {
-        try {
+    return wrap({ operation: 'deleteUserData', userId }, () =>
+      withContext(
+        {
+          service: 'chat-orchestrator',
+          operation: 'deleteUserData',
+          userId,
+        },
+        async () => {
           // Initialize checkpointer
           await this.services.checkpointer.initialize();
 
@@ -232,15 +208,8 @@ export class AdminController {
           metrics.increment('chat_orchestrator.admin.records_deleted', deletedCount);
 
           return { deletedCount };
-        } catch (error) {
-          logError(error, 'Error deleting user data', { userId });
-          metrics.increment('chat_orchestrator.admin.errors', 1, {
-            operation: 'deleteUserData',
-            userId,
-          });
-          throw error;
-        }
-      },
+        },
+      ),
     );
   }
 
@@ -256,15 +225,15 @@ export class AdminController {
     dataCategory: string,
     request: z.infer<typeof consentRequestSchema>,
   ): Promise<{ success: boolean }> {
-    return withContext(
-      {
-        service: 'chat-orchestrator',
-        operation: 'recordConsent',
-        userId,
-        dataCategory,
-      },
-      async () => {
-        try {
+    return wrap({ operation: 'recordConsent', userId, dataCategory }, () =>
+      withContext(
+        {
+          service: 'chat-orchestrator',
+          operation: 'recordConsent',
+          userId,
+          dataCategory,
+        },
+        async () => {
           // Validate request
           const validatedRequest = consentRequestSchema.parse(request);
 
@@ -288,16 +257,8 @@ export class AdminController {
           });
 
           return { success: true };
-        } catch (error) {
-          logError(error, 'Error recording user consent', { userId, dataCategory });
-          metrics.increment('chat_orchestrator.admin.errors', 1, {
-            operation: 'recordConsent',
-            userId,
-            dataCategory,
-          });
-          throw error;
-        }
-      },
+        },
+      ),
     );
   }
 }
