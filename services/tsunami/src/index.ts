@@ -1,15 +1,7 @@
 /**
  * Tsunami Service – using WorkerEntrypoint pattern
  */
-import { WorkerEntrypoint } from 'cloudflare:workers';
-import {
-  getLogger,
-  ServiceInfo,
-  formatZodError,
-  logError,
-  trackOperation,
-  createServiceMetrics,
-} from '@dome/common';
+import { BaseWorker, createServiceMetrics, getLogger, ServiceInfo, formatZodError, logError, trackOperation } from '@dome/common';
 import { toDomeError } from './utils/errors';
 import { ConflictError, ValidationError } from '@dome/common/errors';
 import { createSyncPlanService } from './services/syncPlanService';
@@ -28,7 +20,6 @@ export { ResourceObject } from './resourceObject';
 /* ─────────── shared utils ─────────── */
 
 const logger = getLogger();
-const metrics = createServiceMetrics('tsunami');
 
 const buildServices = (env: ServiceEnv) => ({
   silo: new SiloClient(env.SILO, new IngestQueue(env.SILO_INGEST_QUEUE)),
@@ -58,11 +49,9 @@ logger.info(
  * This service manages GitHub repository syncing and provides
  * endpoints for registering repos and viewing sync history.
  */
-export default class Tsunami extends WorkerEntrypoint<ServiceEnv> {
-  /** Lazily created bundle of service clients (re‑used for every call) */
-  private _services?: ReturnType<typeof buildServices>;
-  private get services() {
-    return (this._services ??= buildServices(this.env));
+export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof buildServices>> {
+  constructor(ctx: ExecutionContext, env: ServiceEnv) {
+    super(ctx, env, buildServices, { serviceName: 'tsunami' });
   }
 
   /**
@@ -255,7 +244,7 @@ export default class Tsunami extends WorkerEntrypoint<ServiceEnv> {
       `${providerType} resource initialised & synced successfully`,
     );
 
-    metrics.trackOperation(`${providerType.toLowerCase()}_resource_registration`, true, {
+      this.metrics?.trackOperation(`${providerType.toLowerCase()}_resource_registration`, true, {
       created: String(wasInitialised),
     });
 
@@ -327,7 +316,7 @@ export default class Tsunami extends WorkerEntrypoint<ServiceEnv> {
     try {
       // Use the lazily instantiated TokenService
       const result = await this.services.token.storeNotionToken(details);
-      metrics.trackOperation('store_notion_oauth_details', true, {
+      this.metrics?.trackOperation('store_notion_oauth_details', true, {
         workspaceId: details.workspaceId,
       });
       return result;
@@ -337,7 +326,7 @@ export default class Tsunami extends WorkerEntrypoint<ServiceEnv> {
         workspaceId: details.workspaceId,
         requestId,
       });
-      metrics.trackOperation('store_notion_oauth_details', false, {
+      this.metrics?.trackOperation('store_notion_oauth_details', false, {
         workspaceId: details.workspaceId,
       });
       // Ensure the error is re-thrown in a way that the client (TsunamiClient) can handle it
@@ -372,7 +361,7 @@ export default class Tsunami extends WorkerEntrypoint<ServiceEnv> {
       // The actual implementation in TokenService would handle provider-specific logic or use generic fields.
       const result = await this.services.token.storeGithubToken(details); // Corrected to use storeGithubToken
 
-      metrics.trackOperation('store_github_oauth_details', true, {
+      this.metrics?.trackOperation('store_github_oauth_details', true, {
         githubUserId: details.providerAccountId,
       });
       // The return type from a generic storeToken might need adjustment or casting.
@@ -384,7 +373,7 @@ export default class Tsunami extends WorkerEntrypoint<ServiceEnv> {
         providerAccountId: details.providerAccountId,
         requestId,
       });
-      metrics.trackOperation('store_github_oauth_details', false, {
+      this.metrics?.trackOperation('store_github_oauth_details', false, {
         githubUserId: details.providerAccountId,
       });
       throw error;

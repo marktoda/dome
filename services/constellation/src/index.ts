@@ -1,4 +1,4 @@
-import { WorkerEntrypoint } from 'cloudflare:workers';
+import { BaseWorker } from '@dome/common';
 import {
   VectorMeta,
   VectorSearchResult,
@@ -146,11 +146,9 @@ const sendToDeadLetter = async (
 /* worker                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
-  /** Lazily created bundle of service clients (re‑used for every call) */
-  private _services?: ReturnType<typeof buildServices>;
-  private get services() {
-    return (this._services ??= buildServices(this.env));
+export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typeof buildServices>> {
+  constructor(ctx: ExecutionContext, env: ServiceEnv) {
+    super(ctx, env, buildServices, { serviceName: 'constellation' });
   }
 
   /* ----------------------- embed a batch of notes ----------------------- */
