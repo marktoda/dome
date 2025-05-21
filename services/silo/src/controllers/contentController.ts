@@ -1,5 +1,6 @@
-import { getLogger, logError, metrics } from '@dome/common';
-import { ValidationError, NotFoundError, UnauthorizedError, toDomeError } from '@dome/common/errors';
+import { getLogger, metrics } from '@dome/common';
+import { ValidationError, NotFoundError, UnauthorizedError } from '@dome/common/errors';
+import { wrap } from '../utils/wrap';
 import { ulid } from 'ulid';
 import { R2Service } from '../services/r2Service';
 import { MetadataService } from '../services/metadataService';
@@ -51,35 +52,37 @@ export class ContentController {
     const start = performance.now();
 
     try {
-      this.logInput('simplePut input data', input);
+      return await wrap({ operation: 'simplePut' }, async () => {
+        this.logInput('simplePut input data', input);
 
-      const id = input.id ?? ulid();
-      const userId = SiloService.normalizeUserId(input.userId ?? null);
-      const size = this.contentSize(input.content);
+        const id = input.id ?? ulid();
+        const userId = SiloService.normalizeUserId(input.userId ?? null);
+        const size = this.contentSize(input.content);
 
-      if (size > SIMPLE_PUT_MAX_SIZE) {
-        throw new ValidationError('Content size exceeds 1 MiB. Use createUpload for larger files.');
-      }
+        if (size > SIMPLE_PUT_MAX_SIZE) {
+          throw new ValidationError('Content size exceeds 1 MiB. Use createUpload for larger files.');
+        }
 
-      const category = input.category ?? 'note';
-      const mimeType = input.mimeType ?? this.deriveMimeType(category, input.content);
-      const r2Key = this.buildR2Key('content', id);
+        const category = input.category ?? 'note';
+        const mimeType = input.mimeType ?? this.deriveMimeType(category, input.content);
+        const r2Key = this.buildR2Key('content', id);
 
-      await this.r2Service.putObject(
-        r2Key,
-        input.content,
-        this.buildMetadata({ userId, category, mimeType, custom: input.metadata }),
-      );
+        await this.r2Service.putObject(
+          r2Key,
+          input.content,
+          this.buildMetadata({ userId, category, mimeType, custom: input.metadata }),
+        );
 
-      metrics.increment('silo.upload.bytes', size);
+        metrics.increment('silo.upload.bytes', size);
 
-      const createdAt = Math.floor(Date.now() / 1000);
-      logger.info({ id, category, mimeType, size }, 'Content stored successfully');
+        const createdAt = Math.floor(Date.now() / 1000);
+        logger.info({ id, category, mimeType, size }, 'Content stored successfully');
 
-      return { id, category, mimeType, size, createdAt };
+        return { id, category, mimeType, size, createdAt };
+      });
     } catch (error) {
-      this.handleError('simplePut', error);
-      throw toDomeError(error);
+      metrics.increment('silo.rpc.errors', 1, { method: 'simplePut' });
+      throw error;
     } finally {
       metrics.timing('silo.rpc.simplePut.latency_ms', performance.now() - start);
     }
@@ -94,7 +97,8 @@ export class ContentController {
     offset?: number;
   }): Promise<SiloContentBatch> {
     try {
-      logger.info(params, 'batchGet called');
+      return await wrap({ operation: 'batchGet' }, async () => {
+        logger.info(params, 'batchGet called');
 
       const { ids = [], userId = null, contentType, limit = 50, offset = 0 } = params;
 
@@ -141,13 +145,14 @@ export class ContentController {
           ? await this.metadataService.getContentCountForUser(userId, contentType)
           : metadataItems.length;
 
-      const items = Object.values(results);
-      logger.info({ itemsCount: items.length, total }, 'Returning batchGet results');
+        const items = Object.values(results);
+        logger.info({ itemsCount: items.length, total }, 'Returning batchGet results');
 
-      return { items, total, limit, offset };
+        return { items, total, limit, offset };
+      });
     } catch (error) {
-      this.handleError('batchGet', error);
-      throw toDomeError(error);
+      metrics.increment('silo.rpc.errors', 1, { method: 'batchGet' });
+      throw error;
     }
   }
 
@@ -184,7 +189,8 @@ export class ContentController {
   /** Process enriched content from AI processor */
   async processEnrichedContent(message: EnrichedContentMessage): Promise<void> {
     try {
-      const { id, userId, metadata } = message;
+      await wrap({ operation: 'processEnrichedContent', contentId: message.id }, async () => {
+        const { id, userId, metadata } = message;
 
       logger.info(
         {
@@ -202,19 +208,20 @@ export class ContentController {
         summary: metadata.summary,
       });
 
-      metrics.increment('silo.enriched_content.processed');
-      logger.info({ id, userId }, 'Content enriched successfully');
+        metrics.increment('silo.enriched_content.processed');
+        logger.info({ id, userId }, 'Content enriched successfully');
+      });
     } catch (error) {
       metrics.increment('silo.enriched_content.errors');
-      logError(error, 'Error processing enriched content', { messageId: message.id });
-      throw toDomeError(error, 'Failed to process enriched content', { contentId: message.id });
+      throw error;
     }
   }
 
   /** Process messages from the ingest queue */
   async processIngestMessage(message: SiloSimplePutInput): Promise<void> {
     try {
-      const { content, metadata } = message;
+      await wrap({ operation: 'processIngestMessage', messageId: message.id }, async () => {
+        const { content, metadata } = message;
       const id = message.id ?? ulid();
       const userId = SiloService.normalizeUserId(message.userId || null);
       const category = message.category || 'note';
@@ -240,14 +247,14 @@ export class ContentController {
       );
 
       // Update metrics
-      metrics.increment('silo.ingest_queue.processed');
+        metrics.increment('silo.ingest_queue.processed');
 
-      // The R2 event will trigger metadata creation via the silo-content-uploaded queue
-      logger.info({ id, userId, category, mimeType }, 'Content ingested successfully');
+        // The R2 event will trigger metadata creation via the silo-content-uploaded queue
+        logger.info({ id, userId, category, mimeType }, 'Content ingested successfully');
+      });
     } catch (error) {
       metrics.increment('silo.ingest_queue.errors');
-      logError(error, 'Error processing ingest queue message', { messageId: message.id });
-      throw toDomeError(error, 'Failed to process ingest queue message', { contentId: message.id });
+      throw error;
     }
   }
 
@@ -259,7 +266,10 @@ export class ContentController {
     }
 
     try {
-      const { key } = event.object;
+      return await wrap(
+        { operation: 'processR2Event', objectKey: event.object.key },
+        async () => {
+          const { key } = event.object;
       logger.info({ key }, 'Processing R2 PutObject event');
 
       const obj = await this.r2Service.headObject(key);
@@ -300,17 +310,18 @@ export class ContentController {
         metadata,
       });
 
-      metrics.increment('silo.r2.events.processed');
-      logger.info(
-        { id, key, category, mimeType, size: obj.size },
-        'R2 event processed successfully',
-      );
+          metrics.increment('silo.r2.events.processed');
+          logger.info(
+            { id, key, category, mimeType, size: obj.size },
+            'R2 event processed successfully',
+          );
 
-      return { id, category, mimeType, size: obj.size, createdAt };
+          return { id, category, mimeType, size: obj.size, createdAt };
+        },
+      );
     } catch (error) {
       metrics.increment('silo.r2.events.errors');
-      logError(error, 'Error processing R2 event', { event });
-      throw toDomeError(error, 'Failed to process R2 event', { objectKey: event.object.key });
+      throw error;
     }
   }
 
@@ -416,11 +427,6 @@ export class ContentController {
     );
   }
 
-  private handleError(method: string, error: unknown) {
-    const domeError = toDomeError(error, `Error in Silo service during ${method}`);
-    logError(domeError, `Error in ${method}`);
-    metrics.increment('silo.rpc.errors', 1, { method });
-  }
 
   private async fetchAllMetadataForUser(
     userId: string | null,
