@@ -3,7 +3,8 @@
  *
  * A client for interacting with the Todos service using WorkerEntrypoint RPC
  */
-import { getLogger, logError, metrics } from '@dome/common';
+import { metrics } from '@dome/common';
+import { wrap } from '../utils/wrap';
 import {
   TodoItem,
   CreateTodoInput,
@@ -17,7 +18,6 @@ import {
   BatchUpdateInput,
   BatchUpdateResult,
   TodoStats,
-  TodosErrorCode,
 } from '../types';
 import { TodosBinding, TodosService } from './types';
 export { TodosBinding, TodosService } from './types';
@@ -27,7 +27,6 @@ export { TodosBinding, TodosService } from './types';
  * Provides methods for managing Todo items
  */
 export class TodosClient implements TodosService {
-  private logger = getLogger();
 
   /**
    * Create a new TodosClient
@@ -39,207 +38,87 @@ export class TodosClient implements TodosService {
     private readonly metricsPrefix: string = 'todos.client',
   ) {}
 
+  private async runWithMetrics<T>(
+    operation: string,
+    meta: Record<string, unknown>,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const startTime = performance.now();
+    try {
+      const result = await wrap({ operation, ...meta }, fn);
+      metrics.increment(`${this.metricsPrefix}.${operation}.success`);
+      metrics.timing(
+        `${this.metricsPrefix}.${operation}.latency_ms`,
+        performance.now() - startTime,
+      );
+      return result;
+    } catch (error) {
+      metrics.increment(`${this.metricsPrefix}.${operation}.error`);
+      throw error;
+    }
+  }
+
   /**
    * Create a new todo item
    */
   async createTodo(todo: CreateTodoInput): Promise<CreateTodoResult> {
-    const startTime = performance.now();
-
-    try {
-      this.logger.info(
-        {
-          event: 'create_todo',
-          userId: todo.userId,
-          title: todo.title,
-        },
-        'Creating todo',
-      );
-
-      const result = await this.binding.createTodo(todo);
-
-      metrics.increment(`${this.metricsPrefix}.create_todo.success`);
-      metrics.timing(`${this.metricsPrefix}.create_todo.latency_ms`, performance.now() - startTime);
-
-      return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.create_todo.error`);
-      this.logger.error('Error creating todo', { error, userId: todo.userId });
-      throw error;
-    }
+    return this.runWithMetrics('create_todo', { userId: todo.userId }, () =>
+      this.binding.createTodo(todo),
+    );
   }
 
   /**
    * Get a todo by ID
    */
   async getTodo(id: string): Promise<TodoItem | null> {
-    const startTime = performance.now();
-
-    try {
-      this.logger.info(
-        {
-          event: 'get_todo',
-          todoId: id,
-        },
-        'Getting todo',
-      );
-
-      const result = await this.binding.getTodo(id);
-
-      metrics.increment(`${this.metricsPrefix}.get_todo.success`);
-      metrics.timing(`${this.metricsPrefix}.get_todo.latency_ms`, performance.now() - startTime);
-
-      return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.get_todo.error`);
-      this.logger.error('Error getting todo', { error, todoId: id });
-      throw error;
-    }
+    return this.runWithMetrics('get_todo', { todoId: id }, () => this.binding.getTodo(id));
   }
 
   /**
    * List todos with filtering and pagination
    */
   async listTodos(filter: TodoFilter, pagination?: Pagination): Promise<ListTodosResult> {
-    const startTime = performance.now();
-
-    try {
-      this.logger.info(
-        {
-          event: 'list_todos',
-          userId: filter.userId,
-          filter,
-        },
-        'Listing todos',
-      );
-
-      const result = await this.binding.listTodos(filter, pagination);
-
-      metrics.increment(`${this.metricsPrefix}.list_todos.success`);
-      metrics.timing(`${this.metricsPrefix}.list_todos.latency_ms`, performance.now() - startTime);
-
-      return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.list_todos.error`);
-      this.logger.error('Error listing todos', { error, userId: filter.userId });
-      throw error;
-    }
+    return this.runWithMetrics(
+      'list_todos',
+      { userId: filter.userId },
+      () => this.binding.listTodos(filter, pagination),
+    );
   }
 
   /**
    * Update a todo
    */
   async updateTodo(id: string, updates: UpdateTodoInput): Promise<UpdateTodoResult> {
-    const startTime = performance.now();
-
-    try {
-      this.logger.info(
-        {
-          event: 'update_todo',
-          todoId: id,
-          updates,
-        },
-        'Updating todo',
-      );
-
-      const result = await this.binding.updateTodo(id, updates);
-
-      metrics.increment(`${this.metricsPrefix}.update_todo.success`);
-      metrics.timing(`${this.metricsPrefix}.update_todo.latency_ms`, performance.now() - startTime);
-
-      return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.update_todo.error`);
-      this.logger.error('Error updating todo', { error, todoId: id });
-      throw error;
-    }
+    return this.runWithMetrics('update_todo', { todoId: id }, () =>
+      this.binding.updateTodo(id, updates),
+    );
   }
 
   /**
    * Delete a todo
    */
   async deleteTodo(id: string): Promise<DeleteTodoResult> {
-    const startTime = performance.now();
-
-    try {
-      this.logger.info(
-        {
-          event: 'delete_todo',
-          todoId: id,
-        },
-        'Deleting todo',
-      );
-
-      const result = await this.binding.deleteTodo(id);
-
-      metrics.increment(`${this.metricsPrefix}.delete_todo.success`);
-      metrics.timing(`${this.metricsPrefix}.delete_todo.latency_ms`, performance.now() - startTime);
-
-      return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.delete_todo.error`);
-      this.logger.error('Error deleting todo', { error, todoId: id });
-      throw error;
-    }
+    return this.runWithMetrics('delete_todo', { todoId: id }, () =>
+      this.binding.deleteTodo(id),
+    );
   }
 
   /**
    * Batch update multiple todos
    */
   async batchUpdateTodos(ids: string[], updates: BatchUpdateInput): Promise<BatchUpdateResult> {
-    const startTime = performance.now();
-
-    try {
-      this.logger.info(
-        {
-          event: 'batch_update_todos',
-          todoIds: ids,
-          updates,
-        },
-        'Batch updating todos',
-      );
-
-      const result = await this.binding.batchUpdateTodos(ids, updates);
-
-      metrics.increment(`${this.metricsPrefix}.batch_update_todos.success`);
-      metrics.timing(
-        `${this.metricsPrefix}.batch_update_todos.latency_ms`,
-        performance.now() - startTime,
-      );
-
-      return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.batch_update_todos.error`);
-      this.logger.error('Error batch updating todos', { error, todoIds: ids });
-      throw error;
-    }
+    return this.runWithMetrics(
+      'batch_update_todos',
+      { todoCount: ids.length },
+      () => this.binding.batchUpdateTodos(ids, updates),
+    );
   }
 
   /**
    * Get todo statistics for a user
    */
   async stats(userId: string): Promise<TodoStats> {
-    const startTime = performance.now();
-
-    try {
-      this.logger.info(
-        {
-          event: 'get_todo_stats',
-          userId,
-        },
-        'Getting todo statistics',
-      );
-
-      const result = await this.binding.stats(userId);
-
-      metrics.increment(`${this.metricsPrefix}.stats.success`);
-      metrics.timing(`${this.metricsPrefix}.stats.latency_ms`, performance.now() - startTime);
-
-      return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.stats.error`);
-      this.logger.error('Error getting todo statistics', { error, userId });
-      throw error;
-    }
+    return this.runWithMetrics('stats', { userId }, () => this.binding.stats(userId));
   }
 }
 
