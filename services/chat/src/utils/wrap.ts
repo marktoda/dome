@@ -1,19 +1,7 @@
-import { createServiceWrapper } from '@dome/common';
+import { wrapServiceCall } from '@dome/common';
 
 /**
  * Service-specific wrapper for the Chat service
- * This uses the standardized function wrapper with Chat-specific context
  */
-const wrapServiceFunction = createServiceWrapper('chat');
+export const wrap = wrapServiceCall('chat');
 
-/**
- * Wraps a function call with logging context specific to the Chat service.
- * Provides enhanced error handling and structured logging.
- *
- * @param meta Metadata to include with logs (operation name, IDs, etc.)
- * @param fn The function to execute within this context
- * @returns The result of the function execution
- */
-export async function wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
-  return wrapServiceFunction(meta, fn);
-}
