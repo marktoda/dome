@@ -12,7 +12,7 @@ This document outlines the verification and testing plan for the logging and err
 
 We've created a comprehensive verification script that:
 
-- Scans all services for proper usage of `@dome/logging` and `@dome/errors` packages
+- Scans all services for proper usage of `@dome/logging` and `@dome/common/errors` packages
 - Identifies any remaining `console.log` statements or non-standard error handling patterns
 - Verifies consistent use of `logError`, request ID propagation, and structured logging
 - Checks for appropriate log level usage across services
@@ -136,7 +136,7 @@ The integration tests specifically verify:
 
 As of the latest verification run, service compliance status is:
 
-| Service       | @dome/logging | @dome/errors | Request ID Propagation | Console.log Free |
+| Service       | @dome/logging | @dome/common/errors | Request ID Propagation | Console.log Free |
 | ------------- | ------------- | ------------ | ---------------------- | ---------------- |
 | ai-processor  | 🟢            | 🟢           | 🟢                     | 🟢               |
 | chat          | 🟢            | 🟢           | 🟢                     | 🟡               |
@@ -159,7 +159,7 @@ The following items have been identified as technical debt that should be addres
 ### 6.1 Code Quality Issues
 
 - Replace remaining `console.log` statements in the `chat` service
-- Update `tsunami` service to use `@dome/logging` and `@dome/errors`
+- Update `tsunami` service to use `@dome/logging` and `@dome/common/errors`
 - Implement request ID propagation in `tsunami` service
 - Standardize error handling in all RPC calls between services
 

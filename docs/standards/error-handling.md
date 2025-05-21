@@ -18,7 +18,7 @@ import {
   ConflictError,
   RateLimitError,
   ServiceUnavailableError,
-} from '@dome/errors';
+} from '@dome/common/errors';
 ```
 
 ### Base Error Class
@@ -257,7 +257,7 @@ try {
 4. **Use utility functions**: Leverage the error utilities for consistent handling.
 
 ```typescript
-import { toDomeError, logError } from '@dome/errors';
+import { toDomeError, logError } from '@dome/common/errors';
 
 try {
   return await userService.createUser(userData);
@@ -281,12 +281,12 @@ try {
 
 ### Using Error Utilities
 
-The `@dome/errors` package provides several utilities to make error handling more consistent:
+The `@dome/common/errors` package provides several utilities to make error handling more consistent:
 
 #### Error Conversion
 
 ```typescript
-import { toDomeError } from '@dome/errors';
+import { toDomeError } from '@dome/common/errors';
 
 // Converts any error type to the most appropriate DomeError
 const domeError = toDomeError(
@@ -299,7 +299,7 @@ const domeError = toDomeError(
 #### Assertions
 
 ```typescript
-import { assertValid, assertExists } from '@dome/errors';
+import { assertValid, assertExists } from '@dome/common/errors';
 
 // Throws ValidationError if false
 assertValid(userId && userId.length > 0, 'User ID is required');
@@ -311,7 +311,7 @@ const user = assertExists(await db.user.findById(userId), `User with ID ${userId
 #### Error Factory for Domains
 
 ```typescript
-import { createErrorFactory } from '@dome/errors';
+import { createErrorFactory } from '@dome/common/errors';
 
 // Create domain-specific error factory
 const userErrors = createErrorFactory('UserService', { component: 'user-management' });
@@ -327,7 +327,7 @@ return userErrors.wrap(() => updateUser(user), 'Failed to update user', { userId
 #### Database Error Handling
 
 ```typescript
-import { handleDatabaseError } from '@dome/errors';
+import { handleDatabaseError } from '@dome/common/errors';
 
 try {
   return await db.user.create({ data: userData });
@@ -339,10 +339,10 @@ try {
 
 ### Error Middleware
 
-The `@dome/errors` package provides an error handling middleware for Hono applications:
+The `@dome/common/errors` package provides an error handling middleware for Hono applications:
 
 ```typescript
-import { errorHandler } from '@dome/errors';
+import { errorHandler } from '@dome/common/errors';
 import { Hono } from 'hono';
 
 const app = new Hono();
@@ -464,7 +464,7 @@ it('should convert unknown errors to DomeErrors', () => {
 ### Input Validation
 
 ```typescript
-import { ValidationError } from '@dome/errors';
+import { ValidationError } from '@dome/common/errors';
 
 function validateUser(user) {
   const errors = [];
@@ -488,7 +488,7 @@ function validateUser(user) {
 ### Resource Not Found
 
 ```typescript
-import { NotFoundError } from '@dome/errors';
+import { NotFoundError } from '@dome/common/errors';
 
 async function getUserById(id) {
   const user = await db.user.findUnique({ where: { id } });
@@ -504,7 +504,7 @@ async function getUserById(id) {
 ### Authorization Checks
 
 ```typescript
-import { UnauthorizedError, ForbiddenError } from '@dome/errors';
+import { UnauthorizedError, ForbiddenError } from '@dome/common/errors';
 
 function checkAccess(user, resource) {
   if (!user) {
@@ -523,7 +523,7 @@ function checkAccess(user, resource) {
 ### External Service Calls
 
 ```typescript
-import { ServiceUnavailableError, InternalError } from '@dome/errors';
+import { ServiceUnavailableError, InternalError } from '@dome/common/errors';
 
 async function callExternalAPI(endpoint, data) {
   try {
