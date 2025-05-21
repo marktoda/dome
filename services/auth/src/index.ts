@@ -1,17 +1,8 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import {
-  BaseError,
-  UnauthorizedError,
-  ValidationError,
-  ServiceError,
-  NotFoundError,
-  ForbiddenError,
-  createServiceErrorHandler,
-} from '@dome/common/errors';
+import { BaseError, createServiceErrorHandler } from '@dome/common/errors';
 import { getLogger } from '@dome/common';
-import { wrapServiceCall } from '@dome/common';
 import { authMetrics } from './utils/logging';
 import {
   LoginResponse,
@@ -32,10 +23,12 @@ import { LocalAuthProvider } from './services/providers/local-auth-provider';
 import { PrivyAuthProvider } from './services/providers/privy-auth-provider';
 // import { GoogleAuthProvider } from './services/providers/google-auth-provider'; // Example for future
 // import { GitHubAuthProvider } from './services/providers/github-auth-provider'; // Example for future
+import { registerRoutes } from './controllers/routes';
+import * as rpcHandlers from './controllers/rpc';
 
 // Define Env if not already globally available or imported
 // This should match the Env used by WorkerEntrypoint<Env>
-interface Env {
+export interface Env {
   AUTH_DB: any; // D1Database, etc.
   // Expected environment variables for providers, JWT secrets, etc.
   [key: string]: any;
@@ -46,7 +39,6 @@ const authToDomeError = createServiceErrorHandler('auth');
 /**
  * Helper to run RPC methods with standardized context and error handling.
  */
-const runRpcWithLog = wrapServiceCall('auth');
 
 /**
  * Auth service implementation
@@ -174,88 +166,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
       );
     });
 
-    // Define Hono HTTP Routes (details in next step)
-    this.setupHttpRoutes();
-  }
-
-  private setupHttpRoutes() {
-    // /login
-    this.honoApp.post('/login', async c => {
-      const body = await c.req.json<{
-        providerName: string;
-        credentials: Record<string, unknown>;
-      }>();
-      if (!body.providerName || !body.credentials) {
-        throw new ValidationError('providerName and credentials are required.');
-      }
-      const result = await this.unifiedAuthService.login(body.providerName, body.credentials);
-      const response: LoginResponse = {
-        success: true,
-        user: result.user,
-        token: result.tokenInfo.token,
-        tokenType: result.tokenInfo.type,
-        expiresAt: result.tokenInfo.expiresAt, // This is now a Unix timestamp (number)
-        provider: body.providerName,
-      };
-      return c.json(response);
-    });
-
-    // /register
-    this.honoApp.post('/register', async c => {
-      const body = await c.req.json<{
-        providerName: string;
-        registrationData: Record<string, unknown>;
-      }>();
-      if (!body.providerName || !body.registrationData) {
-        throw new ValidationError('providerName and registrationData are required.');
-      }
-      const result = await this.unifiedAuthService.register(
-        body.providerName,
-        body.registrationData,
-      );
-      const response: RegisterResponse = {
-        success: true,
-        user: result.user,
-        token: result.tokenInfo.token,
-        tokenType: result.tokenInfo.type,
-        expiresAt: result.tokenInfo.expiresAt, // This is now a Unix timestamp (number)
-        provider: body.providerName,
-      };
-      return c.json(response);
-    });
-
-    // /validate
-    this.honoApp.post('/validate', async c => {
-      const body = await c.req.json<{ token: string; providerName?: string }>();
-      if (!body.token) {
-        throw new ValidationError('token is required.');
-      }
-      // Cast the incoming string providerName to the enum type
-      const providerEnum = body.providerName as SupportedAuthProvider | undefined;
-      const result = await this.unifiedAuthService.validateToken(body.token, providerEnum);
-      const response: ValidateTokenResponse = {
-        success: true, // Assuming validateToken throws on failure
-        userId: result.userId,
-        provider: result.provider,
-        details: result.details,
-        // ttl needs to be derived if available in details
-      };
-      return c.json(response);
-    });
-
-    // /logout
-    this.honoApp.post('/logout', async c => {
-      const body = await c.req.json<{ providerName: string; token: string }>();
-      if (!body.providerName || !body.token) {
-        throw new ValidationError('providerName and token are required.');
-      }
-      await this.unifiedAuthService.logout(body.token, body.providerName);
-      const response: LogoutResponse = { success: true };
-      return c.json(response);
-    });
-
-    // Health check
-    this.honoApp.get('/health', c => c.text('OK'));
+    registerRoutes(this.honoApp, this.unifiedAuthService);
   }
 
   /**
@@ -270,31 +181,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
     providerName: string,
     credentials: Record<string, unknown>,
   ): Promise<LoginResponse> {
-    const requestId = crypto.randomUUID();
-    return runRpcWithLog({ service: 'auth', op: 'rpcLogin', providerName, requestId }, async () => {
-      authMetrics.counter('rpc.login.requests', 1, { providerName });
-      getLogger().info(
-        { providerName, requestId, operation: 'rpcLogin' },
-        'Processing RPC login request',
-      );
-
-      const result = await this.unifiedAuthService.login(providerName, credentials);
-
-      authMetrics.counter('rpc.login.success', 1, { providerName });
-      getLogger().info(
-        { userId: result.user.id, providerName, requestId, operation: 'rpcLogin' },
-        'RPC Login successful',
-      );
-
-      return {
-        success: true,
-        user: result.user,
-        token: result.tokenInfo.token,
-        tokenType: result.tokenInfo.type,
-        expiresAt: result.tokenInfo.expiresAt, // This is now a Unix timestamp (number)
-        provider: providerName,
-      };
-    });
+    return rpcHandlers.login.call(this, providerName, credentials);
   }
 
   /**
@@ -309,33 +196,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
     providerName: string,
     registrationData: Record<string, unknown>,
   ): Promise<RegisterResponse> {
-    const requestId = crypto.randomUUID();
-    return runRpcWithLog(
-      { service: 'auth', op: 'rpcRegister', providerName, requestId },
-      async () => {
-        authMetrics.counter('rpc.register.requests', 1, { providerName });
-        getLogger().info(
-          { providerName, requestId, operation: 'rpcRegister' },
-          'Processing RPC register request',
-        );
-
-        const result = await this.unifiedAuthService.register(providerName, registrationData);
-
-        authMetrics.counter('rpc.register.success', 1, { providerName });
-        getLogger().info(
-          { userId: result.user.id, providerName, requestId, operation: 'rpcRegister' },
-          'RPC Registration successful',
-        );
-        return {
-          success: true,
-          user: result.user,
-          token: result.tokenInfo.token,
-          tokenType: result.tokenInfo.type,
-          expiresAt: result.tokenInfo.expiresAt, // This is now a Unix timestamp (number)
-          provider: providerName,
-        };
-      },
-    );
+    return rpcHandlers.register.call(this, providerName, registrationData);
   }
 
   /**
@@ -345,44 +206,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
    * @returns Validation result with user info
    */
   public async validateToken(token: string, providerName?: string): Promise<ValidateTokenResponse> {
-    const requestId = crypto.randomUUID();
-    return runRpcWithLog(
-      { service: 'auth', op: 'rpcValidateToken', providerName, requestId },
-      async () => {
-        authMetrics.counter('rpc.validateToken.requests', 1, {
-          providerName: providerName || 'unknown',
-        });
-        getLogger().info(
-          { providerName, requestId, operation: 'rpcValidateToken' },
-          'Processing RPC validateToken request',
-        );
-
-        const providerEnum = providerName as SupportedAuthProvider | undefined;
-        const result = await this.unifiedAuthService.validateToken(token, providerEnum);
-
-        authMetrics.counter('rpc.validateToken.success', 1, {
-          providerName: providerName || 'unknown',
-        });
-        getLogger().info(
-          {
-            userId: result.userId,
-            provider: result.provider,
-            requestId,
-            operation: 'rpcValidateToken',
-          },
-          'RPC Token validation successful',
-        );
-
-        return {
-          success: true, // Assuming validateToken throws on failure
-          userId: result.userId,
-          provider: result.provider,
-          details: result.details,
-          user: result.user, // Include the full user object
-          // ttl needs to be derived
-        };
-      },
-    );
+    return rpcHandlers.validateToken.call(this, token, providerName);
   }
 
   /**
@@ -392,26 +216,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
    * @returns Logout result
    */
   public async logout(providerName: string, token: string): Promise<LogoutResponse> {
-    const requestId = crypto.randomUUID();
-    return runRpcWithLog(
-      { service: 'auth', op: 'rpcLogout', providerName, requestId },
-      async () => {
-        authMetrics.counter('rpc.logout.requests', 1, { providerName });
-        getLogger().info(
-          { providerName, requestId, operation: 'rpcLogout' },
-          'Processing RPC logout request',
-        );
-
-        await this.unifiedAuthService.logout(token, providerName);
-
-        authMetrics.counter('rpc.logout.success', 1, { providerName });
-        getLogger().info(
-          { providerName, requestId, operation: 'rpcLogout' },
-          'RPC Logout successful',
-        );
-        return { success: true };
-      },
-    );
+    return rpcHandlers.logout.call(this, providerName, token);
   }
 
   /**
@@ -421,32 +226,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
    * @returns new access & refresh token pair plus user info
    */
   public async refreshToken(refreshToken: string): Promise<LoginResponse> {
-    const requestId = crypto.randomUUID();
-    return runRpcWithLog({ service: 'auth', op: 'rpcRefresh', requestId }, async () => {
-      authMetrics.counter('rpc.refresh.requests', 1);
-      getLogger().info(
-        { requestId, operation: 'rpcRefresh' },
-        'Processing RPC refreshToken request',
-      );
-
-      const result = await this.unifiedAuthService.refreshTokens(refreshToken);
-
-      authMetrics.counter('rpc.refresh.success', 1);
-      getLogger().info(
-        { requestId, userId: result.user.id, operation: 'rpcRefresh' },
-        'Token refresh successful',
-      );
-
-      return {
-        success: true,
-        user: result.user,
-        token: result.accessToken,
-        refreshToken: result.refreshToken,
-        tokenType: 'Bearer',
-        expiresAt: result.expiresAt,
-        provider: 'refresh',
-      } as any;
-    });
+    return rpcHandlers.refreshToken.call(this, refreshToken);
   }
 
   // fetch method signature must match WorkerEntrypoint
