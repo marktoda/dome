@@ -11,9 +11,9 @@ import {
   RegisterResponse,
   ValidateTokenResponse,
   LogoutResponse,
-  AuthErrorCode,
   SupportedAuthProvider, // Import the enum
 } from './types';
+import { wrap } from '../utils/wrap';
 
 /**
  * Client for interacting with the Auth service
@@ -41,7 +41,7 @@ export class AuthClient implements AuthService {
   ): Promise<LoginResponse> {
     const startTime = performance.now();
 
-    try {
+    return wrap({ operation: 'login', provider: providerName }, async () => {
       this.logger.info(
         {
           event: 'login',
@@ -57,11 +57,7 @@ export class AuthClient implements AuthService {
       metrics.increment(`${this.metricsPrefix}.login.success`);
 
       return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.login.error`);
-      this.logger.error({ error, provider: providerName, credentials }, 'Error during login');
-      throw error;
-    }
+    });
   }
 
   /**
@@ -73,7 +69,7 @@ export class AuthClient implements AuthService {
   ): Promise<RegisterResponse> {
     const startTime = performance.now();
 
-    try {
+    return wrap({ operation: 'register', provider: providerName }, async () => {
       this.logger.info(
         {
           event: 'register',
@@ -89,14 +85,7 @@ export class AuthClient implements AuthService {
       metrics.increment(`${this.metricsPrefix}.register.success`);
 
       return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.register.error`);
-      this.logger.error(
-        { error, provider: providerName, registrationData },
-        'Error during registration',
-      );
-      throw error;
-    }
+    });
   }
 
   /**
@@ -108,7 +97,7 @@ export class AuthClient implements AuthService {
   ): Promise<ValidateTokenResponse> {
     const startTime = performance.now();
 
-    try {
+    return wrap({ operation: 'validateToken', provider: providerName }, async () => {
       this.logger.info(
         {
           event: 'validate_token',
@@ -126,11 +115,7 @@ export class AuthClient implements AuthService {
       metrics.increment(`${this.metricsPrefix}.validate_token.success`);
 
       return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.validate_token.error`);
-      this.logger.error({ error }, 'Error validating token');
-      throw error;
-    }
+    });
   }
 
   /**
@@ -139,7 +124,7 @@ export class AuthClient implements AuthService {
   async logout(providerName: SupportedAuthProvider, token: string): Promise<LogoutResponse> {
     const startTime = performance.now();
 
-    try {
+    return wrap({ operation: 'logout', provider: providerName }, async () => {
       this.logger.info(
         {
           event: 'logout',
@@ -154,11 +139,7 @@ export class AuthClient implements AuthService {
       metrics.increment(`${this.metricsPrefix}.logout.success`);
 
       return result;
-    } catch (error) {
-      metrics.increment(`${this.metricsPrefix}.logout.error`);
-      this.logger.error({ error }, 'Error during logout');
-      throw error;
-    }
+    });
   }
 }
 
