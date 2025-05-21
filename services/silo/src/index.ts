@@ -304,23 +304,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
           throw validationError;
         }
 
-        // Handle other errors
-        const domeError = toDomeError(error, 'Failed to retrieve batch content', {
-          method: 'batchGet',
-          ids: data?.ids?.length ? data.ids.join(',') : 'none',
-        });
-
-        // Log structured error
-        logError(domeError, 'Error processing batchGet request', {
-          method: 'batchGet',
-        });
-
-        metrics.increment('silo.rpc.errors', 1, {
-          method: 'batchGet',
-          errorType: domeError.code,
-        });
-
-        throw domeError;
+        throw error;
       }
     });
   }
@@ -369,23 +353,9 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
 
           metrics.increment('silo.validation.errors', 1, { method: 'delete' });
           throw validationError;
-        } else if (error instanceof DomeError) {
-          // If already a DomeError, just add context if needed
-          error.withContext({ method: 'delete', contentId: data.id });
-          logError(error, `Error deleting content ${data.id}`, { method: 'delete' });
-          metrics.increment('silo.rpc.errors', 1, { method: 'delete', errorType: error.code });
+        } else {
           throw error;
         }
-
-        // Convert other errors to DomeError
-        const domeError = toDomeError(error, `Failed to delete content with ID ${data.id}`, {
-          method: 'delete',
-          contentId: data.id,
-        });
-
-        logError(domeError, `Error deleting content ${data.id}`, { method: 'delete' });
-        metrics.increment('silo.rpc.errors', 1, { method: 'delete', errorType: domeError.code });
-        throw domeError;
       }
     });
   }
@@ -444,14 +414,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
           throw validationError;
         }
 
-        // Handle other errors
-        const domeError = toDomeError(error, 'Failed to retrieve storage statistics', {
-          method: 'stats',
-        });
-
-        logError(domeError, 'Error retrieving storage statistics', { method: 'stats' });
-        metrics.increment('silo.rpc.errors', 1, { method: 'stats', errorType: domeError.code });
-        throw domeError;
+        throw error;
       }
     });
   }
@@ -482,23 +445,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
 
         return result;
       } catch (error) {
-        // Convert to DomeError for consistent handling
-        const domeError = toDomeError(error, 'Failed to find content with failed summaries', {
-          method: 'findContentWithFailedSummary',
-        });
-
-        // Log with enhanced context
-        logError(domeError, 'Error finding content with failed summaries', {
-          method: 'findContentWithFailedSummary',
-          errorType: domeError.code,
-        });
-
-        metrics.increment('silo.rpc.errors', 1, {
-          method: 'findContentWithFailedSummary',
-          errorType: domeError.code,
-        });
-
-        throw domeError;
+        throw error;
       }
     });
   }
@@ -536,24 +483,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
 
         return result;
       } catch (error) {
-        // Handle errors
-        const domeError = toDomeError(error, `Failed to get metadata for content with ID ${id}`, {
-          method: 'getMetadataById',
-          contentId: id,
-        });
-
-        // Log structured error
-        logError(domeError, 'Error in getMetadataById', {
-          method: 'getMetadataById',
-          contentId: id,
-        });
-
-        metrics.increment('silo.rpc.errors', 1, {
-          method: 'getMetadataById',
-          errorType: domeError.code,
-        });
-
-        throw domeError;
+        throw error;
       }
     });
   }
@@ -589,23 +519,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
 
         return result;
       } catch (error) {
-        // Convert to DomeError for consistent handling
-        const domeError = toDomeError(error, 'Failed to retrieve DLQ statistics', {
-          method: 'dlqStats',
-        });
-
-        // Log with enhanced context
-        logError(domeError, 'Error retrieving DLQ statistics', {
-          method: 'dlqStats',
-          errorType: domeError.code,
-        });
-
-        metrics.increment('silo.rpc.errors', 1, {
-          method: 'dlqStats',
-          errorType: domeError.code,
-        });
-
-        throw domeError;
+        throw error;
       }
     });
   }
@@ -656,24 +570,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
 
         return messages;
       } catch (error) {
-        // Convert to DomeError for consistent handling
-        const domeError = toDomeError(error, 'Failed to retrieve DLQ messages', {
-          method: 'dlqMessages',
-          filters: JSON.stringify(options),
-        });
-
-        // Log with enhanced context
-        logError(domeError, 'Error retrieving DLQ messages', {
-          method: 'dlqMessages',
-          errorType: domeError.code,
-        });
-
-        metrics.increment('silo.rpc.errors', 1, {
-          method: 'dlqMessages',
-          errorType: domeError.code,
-        });
-
-        throw domeError;
+        throw error;
       }
     });
   }
@@ -715,25 +612,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
 
         return result;
       } catch (error) {
-        // Convert to DomeError for consistent handling
-        const domeError = toDomeError(error, `Failed to reprocess DLQ message ${id}`, {
-          method: 'dlqReprocess',
-          messageId: id,
-        });
-
-        // Log with enhanced context
-        logError(domeError, 'Error reprocessing DLQ message', {
-          method: 'dlqReprocess',
-          messageId: id,
-          errorType: domeError.code,
-        });
-
-        metrics.increment('silo.rpc.errors', 1, {
-          method: 'dlqReprocess',
-          errorType: domeError.code,
-        });
-
-        throw domeError;
+        throw error;
       }
     });
   }
@@ -786,23 +665,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
 
         return purgedCount;
       } catch (error) {
-        // Convert to DomeError for consistent handling
-        const domeError = toDomeError(error, 'Failed to purge DLQ messages', {
-          method: 'dlqPurge',
-          filters: JSON.stringify(options),
-        });
-
-        logError(domeError, 'Error purging DLQ messages', {
-          method: 'dlqPurge',
-          errorType: domeError.code,
-        });
-
-        metrics.increment('silo.rpc.errors', 1, {
-          method: 'dlqPurge',
-          errorType: domeError.code,
-        });
-
-        throw domeError;
+        throw error;
       }
     });
   }
@@ -923,24 +786,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
 
         return { reprocessed: reprocessedCount };
       } catch (error) {
-        // Convert to DomeError for consistent handling
-        const domeError = toDomeError(error, 'Failed to reprocess content', {
-          method: 'reprocessContent',
-        });
-
-        // Log with enhanced context
-        logError(domeError, 'Error reprocessing content', {
-          method: 'reprocessContent',
-          errorType: domeError.code,
-          contentIds: JSON.stringify(contentIds),
-        });
-
-        metrics.increment('silo.rpc.errors', 1, {
-          method: 'reprocessContent',
-          errorType: domeError.code,
-        });
-
-        throw domeError;
+        throw error;
       }
     });
   }
