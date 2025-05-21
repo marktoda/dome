@@ -7,7 +7,7 @@
 export { formatZodError } from './zodUtils.js';
 
 // Function wrappers
-export { createServiceWrapper, createProcessChain } from './functionWrapper.js';
+export { createServiceWrapper, createProcessChain, wrapServiceCall } from './functionWrapper.js';
 
 // Content sanitization
 export {

@@ -8,7 +8,7 @@ import {
   SiloContentItem,
 } from '@dome/common';
 
-import { withContext } from '@dome/common';
+import { wrapServiceCall } from '@dome/common';
 import {
   getLogger,
   logError,
@@ -52,33 +52,9 @@ const buildServices = (env: ServiceEnv) => ({
 });
 
 /**
- * Run a function with enhanced logging and error handling
- * @param meta Metadata for logging context
- * @param fn Function to execute
- * @returns Result of the function
+ * Helper to run service logic with standardized context and error handling.
  */
-const runWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
-  withContext(meta, async logger => {
-    try {
-      return await fn();
-    } catch (err) {
-      const requestId = typeof meta.requestId === 'string' ? meta.requestId : undefined;
-      const operation = typeof meta.op === 'string' ? meta.op : 'unknown_operation';
-
-      const errorContext = {
-        operation,
-        requestId,
-        service: 'constellation',
-        timestamp: new Date().toISOString(),
-        ...meta,
-      };
-
-      logError(err, `Unhandled error in ${operation}`, errorContext);
-
-      // Convert to a proper DomeError before rethrowing
-      throw toDomeError(err, `Error in ${operation}`, errorContext);
-    }
-  });
+const runWithLog = wrapServiceCall('constellation');
 
 /**
  * Send a failed message to the dead letter queue with enhanced error context

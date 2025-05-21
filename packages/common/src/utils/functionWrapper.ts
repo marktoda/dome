@@ -1,6 +1,7 @@
 import { getLogger, logError, trackOperation } from '@dome/common';
 import { withContext } from '@dome/common';
 import { toDomeError, DomeError } from '../errors/domeErrors.js';
+import { createServiceErrorHandler } from '../errors/errorUtils.js';
 
 // DomeError type re-exported for convenience
 
@@ -56,6 +57,29 @@ export function createServiceWrapper(serviceName: string) {
         );
 
         // Rethrow the converted error
+        throw domeError;
+      }
+    });
+  };
+}
+
+/**
+ * Create a lightweight wrapper for service calls with built-in context,
+ * error conversion and logging.
+ *
+ * @param serviceName Service name to attach to log context
+ */
+export function wrapServiceCall(serviceName: string) {
+  const toError = createServiceErrorHandler(serviceName);
+  return async function run<T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
+    const op = (meta.op || meta.operation || 'unknown_operation') as string;
+    const ctx = { ...meta, service: serviceName, operation: op };
+    return withContext(ctx, async () => {
+      try {
+        return await fn();
+      } catch (err) {
+        const domeError = err instanceof DomeError ? err.withContext(ctx) : toError(err, `Error in ${op}`, ctx);
+        logError(domeError, `${serviceName} service error`, ctx);
         throw domeError;
       }
     });
