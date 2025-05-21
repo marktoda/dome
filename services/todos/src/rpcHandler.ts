@@ -9,7 +9,8 @@ import {
   Env,
 } from './types';
 import { TodosService } from './services/todosService';
-import { getLogger, logError } from '@dome/common'; // Assuming logError is co-located or update path
+import { getLogger } from '@dome/common';
+import { wrap } from './utils/wrap';
 
 const logger = getLogger();
 
@@ -20,6 +21,17 @@ const logger = getLogger();
  */
 export class TodosRPCHandler implements TodosBinding {
   private todosService: TodosService;
+  private async run<T>(
+    operation: string,
+    meta: Record<string, unknown>,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await wrap({ operation, ...meta }, fn);
+    } catch (error) {
+      throw this.formatRPCError(error);
+    }
+  }
 
   constructor(private readonly env: Env) {
     // Ensure DB binding exists
@@ -37,149 +49,63 @@ export class TodosRPCHandler implements TodosBinding {
    * Create a new todo
    */
   async createTodo(todo: CreateTodoInput) {
-    try {
-      logger.debug('RPC: createTodo', { userId: todo.userId });
-
-      const result = await this.todosService.createTodo(todo);
-
-      logger.debug('RPC: createTodo completed', {
-        todoId: result.id,
-        userId: todo.userId,
-      });
-
-      return result;
-    } catch (error) {
-      logError(error, 'RPC: createTodo failed', { userId: todo.userId });
-      throw this.formatRPCError(error);
-    }
+    return this.run('create_todo', { userId: todo.userId }, () =>
+      this.todosService.createTodo(todo),
+    );
   }
 
   /**
    * Get a todo by ID
    */
   async getTodo(id: string) {
-    try {
-      logger.debug('RPC: getTodo', { todoId: id });
-
-      const todo = await this.todosService.getTodo(id);
-
-      logger.debug('RPC: getTodo completed', {
-        todoId: id,
-        found: !!todo,
-      });
-
-      return todo;
-    } catch (error) {
-      logError(error, 'RPC: getTodo failed', { todoId: id });
-      throw this.formatRPCError(error);
-    }
+    return this.run('get_todo', { todoId: id }, () =>
+      this.todosService.getTodo(id),
+    );
   }
 
   /**
    * List todos with filtering and pagination
    */
   async listTodos(filter: TodoFilter, pagination?: Pagination) {
-    try {
-      logger.debug('RPC: listTodos', { filter });
-
-      const result = await this.todosService.listTodos(filter, pagination);
-
-      logger.debug('RPC: listTodos completed', {
-        userId: filter.userId,
-        count: result.items.length,
-      });
-
-      return result;
-    } catch (error) {
-      logError(error, 'RPC: listTodos failed', { filter });
-      throw this.formatRPCError(error);
-    }
+    return this.run('list_todos', { userId: filter.userId }, () =>
+      this.todosService.listTodos(filter, pagination),
+    );
   }
 
   /**
    * Update a todo
    */
   async updateTodo(id: string, updates: UpdateTodoInput) {
-    try {
-      logger.debug('RPC: updateTodo', { todoId: id });
-
-      const result = await this.todosService.updateTodo(id, updates);
-
-      logger.debug('RPC: updateTodo completed', {
-        todoId: id,
-        success: result.success,
-      });
-
-      return result;
-    } catch (error) {
-      logError(error, 'RPC: updateTodo failed', { todoId: id });
-      throw this.formatRPCError(error);
-    }
+    return this.run('update_todo', { todoId: id }, () =>
+      this.todosService.updateTodo(id, updates),
+    );
   }
 
   /**
    * Delete a todo
    */
   async deleteTodo(id: string) {
-    try {
-      logger.debug('RPC: deleteTodo', { todoId: id });
-
-      const result = await this.todosService.deleteTodo(id);
-
-      logger.debug('RPC: deleteTodo completed', {
-        todoId: id,
-        success: result.success,
-      });
-
-      return result;
-    } catch (error) {
-      logError(error, 'RPC: deleteTodo failed', { todoId: id });
-      throw this.formatRPCError(error);
-    }
+    return this.run('delete_todo', { todoId: id }, () =>
+      this.todosService.deleteTodo(id),
+    );
   }
 
   /**
    * Batch update multiple todos
    */
   async batchUpdateTodos(ids: string[], updates: BatchUpdateInput) {
-    try {
-      logger.debug('RPC: batchUpdateTodos', {
-        todoCount: ids.length,
-      });
-
-      const result = await this.todosService.batchUpdateTodos(ids, updates);
-
-      logger.debug('RPC: batchUpdateTodos completed', {
-        todoCount: ids.length,
-        updatedCount: result.updatedCount,
-      });
-
-      return result;
-    } catch (error) {
-      logError(error, 'RPC: batchUpdateTodos failed', { todoIds: ids });
-      throw this.formatRPCError(error);
-    }
+    return this.run('batch_update_todos', { todoCount: ids.length }, () =>
+      this.todosService.batchUpdateTodos(ids, updates),
+    );
   }
 
   /**
    * Get todo statistics for a user
    */
   async stats(userId: string) {
-    try {
-      logger.debug('RPC: stats', { userId });
-
-      const stats = await this.todosService.getTodoStats(userId);
-
-      logger.debug('RPC: stats completed', {
-        userId,
-        totalCount: stats.totalCount,
-      });
-
-      return stats;
-    } catch (error) {
-      logError(error, 'RPC: stats failed', { userId });
-      throw this.formatRPCError(error);
-    }
+    return this.run('stats', { userId }, () =>
+      this.todosService.getTodoStats(userId),
+    );
   }
 
   /**
