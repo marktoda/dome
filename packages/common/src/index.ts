@@ -25,3 +25,6 @@ export * from './ai/index.js';
 
 // Queue helpers
 export * from './queue/index.js';
+
+// Service helpers
+export * from './service/BaseWorker.js';

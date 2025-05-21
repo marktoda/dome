@@ -5,7 +5,7 @@
  * class that handles both RPC methods and queue processing.
  */
 
-import { WorkerEntrypoint } from 'cloudflare:workers';
+import { BaseWorker } from '@dome/common';
 import { getLogger, logError, metrics, trackOperation, trackedFetch } from '@dome/common';
 import {
   DomeError,
@@ -44,12 +44,10 @@ export * from './client';
 /**
  * Silo service main class
  */
-export default class Silo extends WorkerEntrypoint<Env> implements SiloBinding {
-  private services: Services;
+export default class Silo extends BaseWorker<Env, Services> implements SiloBinding {
 
   constructor(ctx: ExecutionContext, env: Env) {
-    super(ctx, env);
-    this.services = createServices(env);
+    super(ctx, env, createServices, { serviceName: 'silo' });
   }
 
   /**

@@ -5,6 +5,7 @@ export default mergeConfig(
   baseConfig,
   defineConfig({
     test: {
+      setupFiles: ['tests/setup.ts'],
       coverage: {
         provider: 'v8',
         reporter: ['text', 'lcov', 'json', 'html'],

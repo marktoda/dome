@@ -5,7 +5,7 @@
  * class that handles both RPC methods and queue processing using Hono for routing.
  */
 
-import { WorkerEntrypoint } from 'cloudflare:workers';
+import { BaseWorker } from '@dome/common';
 import { Hono } from 'hono';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import { getLogger, logError } from '@dome/common';
@@ -19,17 +19,15 @@ export * from './client';
 /**
  * Chat Orchestrator service main class
  */
-export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
-  private services;
+export default class Chat extends BaseWorker<Env, ReturnType<typeof createServices>> implements ChatBinding {
   private controllers;
   private app: Hono;
   private logger = getLogger().child({ component: 'Chat' });
 
   constructor(ctx: ExecutionContext, env: Env) {
-    super(ctx, env);
+    super(ctx, env, createServices, { serviceName: 'chat' });
 
-    // Initialize services and controllers
-    this.services = createServices(env);
+    // Initialize controllers using lazily created services
     this.controllers = createControllers(env, this.services, ctx);
 
     // Create Hono app instance
