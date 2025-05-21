@@ -1,7 +1,7 @@
 import { getLogger, logError, trackOperation } from '@dome/common';
 import { withContext } from '@dome/common';
-import { toDomeError, DomeError } from '../errors/domeErrors.js';
-import { createServiceErrorHandler } from '../errors/errorUtils.js';
+import { DomeError } from '../errors/domeErrors.js';
+import { toDomeError } from '../errors/errorFactory.js';
 
 // DomeError type re-exported for convenience
 
@@ -44,6 +44,7 @@ export function createServiceWrapper(serviceName: string) {
             ? err
             : toDomeError(
                 err,
+                serviceName,
                 `Error in ${serviceName} service${operation ? ` during ${operation}` : ''}`,
                 // Include original metadata as error context
                 meta as Record<string, any>,
@@ -70,7 +71,6 @@ export function createServiceWrapper(serviceName: string) {
  * @param serviceName Service name to attach to log context
  */
 export function wrapServiceCall(serviceName: string) {
-  const toError = createServiceErrorHandler(serviceName);
   return async function run<T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
     const op = (meta.op || meta.operation || 'unknown_operation') as string;
     const ctx = { ...meta, service: serviceName, operation: op };
@@ -78,7 +78,10 @@ export function wrapServiceCall(serviceName: string) {
       try {
         return await fn();
       } catch (err) {
-        const domeError = err instanceof DomeError ? err.withContext(ctx) : toError(err, `Error in ${op}`, ctx);
+        const domeError =
+          err instanceof DomeError
+            ? err.withContext(ctx)
+            : toDomeError(err, serviceName, `Error in ${op}`, ctx);
         logError(domeError, `${serviceName} service error`, ctx);
         throw domeError;
       }

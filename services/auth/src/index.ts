@@ -1,7 +1,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { BaseError, createServiceErrorHandler } from '@dome/common/errors';
+import { BaseError, createServiceErrorHandler, errorHandler } from '@dome/common/errors';
 import { getLogger } from '@dome/common';
 import { authMetrics } from './utils/logging';
 import {
@@ -149,22 +149,8 @@ export default class Auth extends WorkerEntrypoint<Env> {
       logger.info({ status: c.res.status }, 'HTTP request processed');
     });
 
-    // Hono Error Handler
-    this.honoApp.onError((err, c) => {
-      const logger = getLogger();
-      logger.error({ error: err, path: c.req.path, method: c.req.method }, 'Hono API Error');
-      if (err instanceof BaseError) {
-        return c.json(
-          { error: { code: err.code, message: err.message, details: err.details } },
-          err.status as any,
-        );
-      }
-      const domeError = authToDomeError(err, 'An unexpected API error occurred');
-      return c.json(
-        { error: { code: domeError.code, message: domeError.message, details: domeError.details } },
-        domeError.statusCode as any,
-      );
-    });
+    // Error handler middleware
+    this.honoApp.use('*', errorHandler({ errorMapper: authToDomeError }));
 
     registerRoutes(this.honoApp, this.unifiedAuthService);
   }
