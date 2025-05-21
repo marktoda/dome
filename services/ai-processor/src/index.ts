@@ -5,7 +5,7 @@
  * class that handles both RPC methods and queue processing.
  */
 
-import { WorkerEntrypoint } from 'cloudflare:workers';
+import { BaseWorker } from '@dome/common';
 import { createLlmService } from './services/llmService';
 import { NewContentMessage } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
@@ -48,11 +48,9 @@ const buildServices = (env: ServiceEnv) => {
  *
  * It also provides RPC functions for reprocessing content.
  */
-export default class AiProcessor extends WorkerEntrypoint<ServiceEnv> {
-  /** Lazily created bundle of service clients (re‑used for every call) */
-  private _services?: ReturnType<typeof buildServices>;
-  private get services() {
-    return (this._services ??= buildServices(this.env));
+export default class AiProcessor extends BaseWorker<ServiceEnv, ReturnType<typeof buildServices>> {
+  constructor(ctx: ExecutionContext, env: ServiceEnv) {
+    super(ctx, env, buildServices, { serviceName: 'ai-processor' });
   }
 
   /**
@@ -96,7 +94,7 @@ export default class AiProcessor extends WorkerEntrypoint<ServiceEnv> {
    * Queue handler for processing regular content messages
    * @param batch Batch of messages from the queue
    */
-  async queue(batch: MessageBatch<NewContentMessage>) {
-    await queueHandlers.handleQueue.call(this, batch);
+  async queue(batch: MessageBatch<unknown>) {
+    await queueHandlers.handleQueue.call(this, batch as MessageBatch<NewContentMessage>);
   }
 }

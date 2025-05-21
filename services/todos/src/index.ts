@@ -1,9 +1,7 @@
 /**
  * Todos Service – using WorkerEntrypoint pattern
  */
-import { WorkerEntrypoint } from 'cloudflare:workers';
-import { ServiceInfo } from '@dome/common';
-import { getLogger, logError, trackOperation, createServiceMetrics } from '@dome/common';
+import { BaseWorker, ServiceInfo, getLogger, logError, trackOperation, MessageBatch } from '@dome/common';
 import { processTodoQueue } from './queueConsumer';
 import { TodosService } from './services/todosService';
 import {
@@ -19,7 +17,6 @@ import {
 /* ─────────── shared utils ─────────── */
 
 const logger = getLogger();
-const metrics = createServiceMetrics('todos');
 
 const buildServices = (env: Env) => ({
   todos: new TodosService(env.DB),
@@ -47,11 +44,9 @@ logger.info(
  * This service manages user TODO lists, processing AI-enriched content from notes
  * and providing RPC methods for other services to query and update todos.
  */
-export default class Todos extends WorkerEntrypoint<Env> {
-  /** Lazily created bundle of service clients (re‑used for every call) */
-  private _services?: ReturnType<typeof buildServices>;
-  private get services() {
-    return (this._services ??= buildServices(this.env));
+export default class Todos extends BaseWorker<Env, ReturnType<typeof buildServices>> {
+  constructor(ctx: ExecutionContext, env: Env) {
+    super(ctx, env, buildServices, { serviceName: 'todos' });
   }
 
   /**
@@ -147,24 +142,25 @@ export default class Todos extends WorkerEntrypoint<Env> {
    * 1. Directly sent to the todos queue
    * 2. AI-extracted from notes via the ai-processor service
    */
-  async queue(batch: MessageBatch<TodoQueueItem>) {
+  async queue(batch: any) {
+    const typed = batch as MessageBatch<TodoQueueItem>;
     try {
-      await processTodoQueue(batch, this.env);
+      await processTodoQueue(typed as any, this.env);
 
-      metrics.counter('todos.queue.processed_batches', 1, {
-        queueName: batch.queue || 'unknown',
+      this.metrics?.counter('queue.processed_batches', 1, {
+        queueName: typed.queue || 'unknown',
       });
-      metrics.counter('todos.queue.received_messages', batch.messages.length, {
-        queueName: batch.queue || 'unknown',
+      this.metrics?.counter('queue.received_messages', typed.messages.length, {
+        queueName: typed.queue || 'unknown',
       });
     } catch (error) {
       logError(error, 'Error in queue consumer', {
-        queueName: batch.queue,
-        messageCount: batch.messages.length,
+        queueName: typed.queue,
+        messageCount: typed.messages.length,
       });
 
-      metrics.counter('todos.queue.errors', 1, {
-        queueName: batch.queue || 'unknown',
+      this.metrics?.counter('queue.errors', 1, {
+        queueName: typed.queue || 'unknown',
       });
     }
   }

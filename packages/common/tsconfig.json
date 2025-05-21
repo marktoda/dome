@@ -8,5 +8,5 @@
     "declarationDir": "./dist/types",
     "resolveJsonModule": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "src/service/workers.d.ts"]
 }
