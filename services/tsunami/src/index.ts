@@ -9,6 +9,7 @@ import { TokenService } from './services/tokenService';
 import type { NotionOAuthDetails, GithubOAuthDetails } from './client/types'; // Added GithubOAuthDetails
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { IngestQueue } from '@dome/silo/queues';
+import { wrap } from './utils/wrap';
 interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
   SILO: SiloBinding;
 }
@@ -313,26 +314,21 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
       'Tsunami service: Storing Notion OAuth details',
     );
 
-    try {
-      // Use the lazily instantiated TokenService
-      const result = await this.services.token.storeNotionToken(details);
-      this.metrics?.trackOperation('store_notion_oauth_details', true, {
-        workspaceId: details.workspaceId,
-      });
-      return result;
-    } catch (error) {
-      logError(error, 'Tsunami service: Error storing Notion OAuth details', {
+    return wrap(
+      {
+        operation: 'store_notion_oauth_details',
         userId: details.userId,
         workspaceId: details.workspaceId,
         requestId,
-      });
-      this.metrics?.trackOperation('store_notion_oauth_details', false, {
-        workspaceId: details.workspaceId,
-      });
-      // Ensure the error is re-thrown in a way that the client (TsunamiClient) can handle it
-      // TsunamiClient already uses toDomeError, so just re-throwing should be fine.
-      throw error;
-    }
+      },
+      async () => {
+        const result = await this.services.token.storeNotionToken(details);
+        this.metrics?.trackOperation('store_notion_oauth_details', true, {
+          workspaceId: details.workspaceId,
+        });
+        return result;
+      },
+    );
   }
 
   /**
@@ -353,30 +349,28 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
       'Tsunami service: Storing GitHub OAuth details',
     );
 
-    try {
-      // TODO: Adapt TokenService.storeToken or add a specific storeGithubToken method if structure differs significantly
-      // For now, assuming storeNotionToken's structure is adaptable or a generic storeToken exists.
-      // This will likely require a new method in TokenService: storeGithubToken(details: GithubOAuthDetails)
-      // For this step, we'll call a conceptual 'storeToken' on TokenService.
-      // The actual implementation in TokenService would handle provider-specific logic or use generic fields.
-      const result = await this.services.token.storeGithubToken(details); // Corrected to use storeGithubToken
-
-      this.metrics?.trackOperation('store_github_oauth_details', true, {
-        githubUserId: details.providerAccountId,
-      });
-      // The return type from a generic storeToken might need adjustment or casting.
-      // For now, assuming it can return what's needed or we adapt.
-      return { success: result.success, githubUserId: details.providerAccountId };
-    } catch (error) {
-      logError(error, 'Tsunami service: Error storing GitHub OAuth details', {
+    return wrap(
+      {
+        operation: 'store_github_oauth_details',
         userId: details.userId,
         providerAccountId: details.providerAccountId,
         requestId,
-      });
-      this.metrics?.trackOperation('store_github_oauth_details', false, {
-        githubUserId: details.providerAccountId,
-      });
-      throw error;
-    }
+      },
+      async () => {
+        // TODO: Adapt TokenService.storeToken or add a specific storeGithubToken method if structure differs significantly
+        // For now, assuming storeNotionToken's structure is adaptable or a generic storeToken exists.
+        // This will likely require a new method in TokenService: storeGithubToken(details: GithubOAuthDetails)
+        // For this step, we'll call a conceptual 'storeToken' on TokenService.
+        // The actual implementation in TokenService would handle provider-specific logic or use generic fields.
+        const result = await this.services.token.storeGithubToken(details); // Corrected to use storeGithubToken
+
+        this.metrics?.trackOperation('store_github_oauth_details', true, {
+          githubUserId: details.providerAccountId,
+        });
+        // The return type from a generic storeToken might need adjustment or casting.
+        // For now, assuming it can return what's needed or we adapt.
+        return { success: result.success, githubUserId: details.providerAccountId };
+      },
+    );
   }
 }
