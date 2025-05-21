@@ -10,7 +10,8 @@ import {
   ForbiddenError,
   createServiceErrorHandler,
 } from '@dome/common/errors';
-import { getLogger, logError, withContext } from '@dome/common';
+import { getLogger } from '@dome/common';
+import { wrapServiceCall } from '@dome/common';
 import { authMetrics } from './utils/logging';
 import {
   LoginResponse,
@@ -43,43 +44,9 @@ interface Env {
 const authToDomeError = createServiceErrorHandler('auth');
 
 /**
- * Run a function with enhanced logging and error handling for RPC.
- * For Hono, error handling will be managed by its middleware.
- * @param meta Metadata for logging context
- * @param fn Function to execute
- * @returns Result of the function
+ * Helper to run RPC methods with standardized context and error handling.
  */
-const runRpcWithLog = <T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> =>
-  withContext(meta, async () => {
-    // logger instance is available via getLogger() from context
-    const logger = getLogger();
-    try {
-      return await fn();
-    } catch (err) {
-      const requestId = typeof meta.requestId === 'string' ? meta.requestId : undefined;
-      const operation = typeof meta.op === 'string' ? meta.op : 'unknown_operation';
-
-      const errorContext = {
-        operation,
-        requestId,
-        service: 'auth',
-        timestamp: new Date().toISOString(),
-        ...meta,
-      };
-
-      // Log the original error structure
-      logError(err, `Error in RPC operation ${operation}`, { errorContext });
-
-      if (err instanceof BaseError) {
-        // If it's already a BaseError, it's structured for our system
-        throw err; // Propagate it as is for RPC handler to format
-      }
-
-      // Convert unknown errors to a generic ServiceError or use authToDomeError
-      const domeError = authToDomeError(err, `RPC ${operation} failed`);
-      throw domeError;
-    }
-  });
+const runRpcWithLog = wrapServiceCall('auth');
 
 /**
  * Auth service implementation
