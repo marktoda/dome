@@ -4,7 +4,7 @@
  * A client for interacting with the Tsunami service using WorkerEntrypoint RPC
  */
 import { getLogger, logError, metrics } from '@dome/common';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import {
   TsunamiBinding,
   TsunamiService,

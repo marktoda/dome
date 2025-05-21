@@ -1,5 +1,5 @@
 import { getLogger, logError, metrics } from '@dome/common';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { SiloStatsResponse } from '@dome/common';
 import { MetadataService } from '../services/metadataService';
 

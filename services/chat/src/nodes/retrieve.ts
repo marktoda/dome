@@ -3,7 +3,7 @@ import { RETRIEVAL_TOOLS } from '../tools';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { RetrievalToolType, RetrievalTask, DocumentChunk, RetrievalResult } from '../types';
 import { ObservabilityService } from '../services/observabilityService';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import type { SliceUpdate } from '../types/stateSlices';
 

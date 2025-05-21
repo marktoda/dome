@@ -9,7 +9,12 @@
  */
 
 import { getLogger, trackedFetch, trackOperation, getRequestId } from '@dome/common';
-import { ValidationError, NotFoundError, ServiceUnavailableError, toDomeError } from '@dome/common';
+import {
+  ValidationError,
+  NotFoundError,
+  ServiceUnavailableError,
+  toDomeError,
+} from '@dome/common';
 import { assertValid } from '../utils/errors';
 import { DEFAULT_IGNORE_PATTERNS } from '../config/defaultIgnorePatterns';
 import { DEFAULT_FILTER_CONFIG, FilterConfig } from '../config/filterConfig';

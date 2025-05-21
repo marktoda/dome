@@ -4,7 +4,7 @@ import { ToolRegistry } from '../tools';
 import { Document, ToolResult } from '../types';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import type { SliceUpdate } from '../types/stateSlices';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 
 /**
  * Run Tool Node

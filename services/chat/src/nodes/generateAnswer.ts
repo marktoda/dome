@@ -1,6 +1,6 @@
 import { getLogger, logError, countTokens, chooseModel, allocateContext } from '@dome/common';
 import { LlmService } from '../services/llmService';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { formatDocsForPrompt } from '../utils/promptHelpers';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';

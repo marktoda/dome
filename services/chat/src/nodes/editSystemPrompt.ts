@@ -1,6 +1,7 @@
 import { getLogger } from '@dome/common';
 import type { SliceUpdate } from '../types/stateSlices';
-import { NodeError, toDomeError } from '../utils/errors';
+import { NodeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { z } from 'zod';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { getUserId } from '../utils/stateUtils';

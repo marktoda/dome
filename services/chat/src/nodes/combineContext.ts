@@ -2,7 +2,7 @@ import { getLogger, logError } from '@dome/common';
 import { ObservabilityService } from '../services/observabilityService';
 import { Document } from '../types';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { countTokens } from '../utils/tokenCounter';
 import { getModelDocumentLimits } from '../config/retrieveConfig';
 import type { SliceUpdate } from '../types/stateSlices';

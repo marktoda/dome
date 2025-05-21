@@ -6,12 +6,10 @@ import {
   UnauthorizedError,
   createErrorFactory,
   domeAssertExists as assertExists,
-} from '@dome/common';
-import {
   createServiceErrorHandler,
   createEnhancedAssertValid,
   createServiceErrorMiddleware,
-} from '@dome/common';
+} from '@dome/common/errors';
 
 // Service name constant for consistency
 const SERVICE_NAME = 'chat';
@@ -75,12 +73,3 @@ export class NodeError extends ServiceUnavailableError {
 }
 
 // Re-export common errors
-export {
-  ValidationError,
-  NotFoundError,
-  ConflictError,
-  ServiceUnavailableError,
-  UnauthorizedError,
-  assertExists,
-  createErrorFactory,
-};

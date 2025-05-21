@@ -8,7 +8,7 @@ import {
   domeAssertExists as originalAssertExists,
   createErrorFactory,
   errorHandler,
-} from '@dome/common';
+} from '@dome/common/errors';
 import { getLogger as getDomeLogger } from '@dome/common';
 
 // Create domain-specific error factory
@@ -100,11 +100,3 @@ export function createErrorMiddleware(
   };
 }
 
-export {
-  ValidationError,
-  NotFoundError,
-  ConflictError,
-  ServiceUnavailableError,
-  originalAssertExists as assertExists,
-  createErrorFactory,
-};

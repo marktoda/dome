@@ -24,7 +24,7 @@ import {
 } from './core';
 import { CohereReranker } from './impl/cohere';
 import { WorkersAIReranker } from './impl/workersAi';
-import { toDomeError } from '../../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { AgentStateV3 as AgentState } from '../../types/stateSlices';
 import type { SliceUpdate } from '../../types/stateSlices';
 

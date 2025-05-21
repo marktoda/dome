@@ -1,5 +1,6 @@
 import { getLogger, logError, trackOperation } from '../utils/logging';
-import { toDomeError, LLMProcessingError, assertValid } from '../utils/errors';
+import { LLMProcessingError } from '../utils/errors';
+import { toDomeError, domeAssertValid as assertValid } from '@dome/common/errors';
 import type { ServiceEnv } from '../types';
 import { getSchemaForContentType, getSchemaInstructions } from '../schemas';
 import {

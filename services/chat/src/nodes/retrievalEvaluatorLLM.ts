@@ -4,7 +4,7 @@ import { DocumentChunk, RetrievalEvaluation, RetrievalTask } from '../types';
 import { AgentStateV3 as AgentState } from '../types/stateSlices';
 import { ObservabilityService } from '../services/observabilityService';
 import { LlmService } from '../services/llmService';
-import { toDomeError } from '../utils/errors';
+import { toDomeError } from '@dome/common/errors';
 import { getRetrievalEvaluationPrompt } from '../config/promptsConfig';
 import type { SliceUpdate } from '../types/stateSlices';
 import { z } from 'zod';

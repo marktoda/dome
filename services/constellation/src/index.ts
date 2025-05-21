@@ -17,11 +17,13 @@ import {
 } from './utils/logging';
 import {
   toDomeError,
-  assertValid,
-  assertExists,
   VectorizeError,
   EmbeddingError,
 } from './utils/errors';
+import {
+  domeAssertValid as assertValid,
+  domeAssertExists as assertExists,
+} from '@dome/common/errors';
 import { createPreprocessor } from './services/preprocessor';
 import { createEmbedder } from './services/embedder';
 import { createVectorizeService } from './services/vectorize';
