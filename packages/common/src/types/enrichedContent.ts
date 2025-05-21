@@ -17,7 +17,7 @@ export const EnrichedMetadataSchema = z.object({
         dueDate: z.string().optional(), // ISO date if detected
         priority: z
           .string()
-          .transform(val => val.toLowerCase())
+          .transform((val: string) => val.toLowerCase())
           .pipe(z.enum(['high', 'medium', 'low']))
           .optional(),
       }),

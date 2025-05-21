@@ -9,6 +9,7 @@ import {
   NotFoundError,
   ForbiddenError,
   createServiceErrorHandler,
+  createServiceErrorMiddleware,
 } from '@dome/common/errors';
 import { getLogger, logError, withContext } from '@dome/common';
 import { authMetrics } from './utils/logging';
@@ -179,6 +180,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
 
     // Initialize Hono App
     this.honoApp = new Hono<{ Bindings: Env }>().basePath('/auth');
+    this.honoApp.use('*', createServiceErrorMiddleware('auth')());
 
     // Hono Middleware
     this.honoApp.use('*', cors()); // Basic CORS for all routes
@@ -190,22 +192,7 @@ export default class Auth extends WorkerEntrypoint<Env> {
       logger.info({ status: c.res.status }, 'HTTP request processed');
     });
 
-    // Hono Error Handler
-    this.honoApp.onError((err, c) => {
-      const logger = getLogger();
-      logger.error({ error: err, path: c.req.path, method: c.req.method }, 'Hono API Error');
-      if (err instanceof BaseError) {
-        return c.json(
-          { error: { code: err.code, message: err.message, details: err.details } },
-          err.status as any,
-        );
-      }
-      const domeError = authToDomeError(err, 'An unexpected API error occurred');
-      return c.json(
-        { error: { code: domeError.code, message: domeError.message, details: domeError.details } },
-        domeError.statusCode as any,
-      );
-    });
+
 
     // Define Hono HTTP Routes (details in next step)
     this.setupHttpRoutes();

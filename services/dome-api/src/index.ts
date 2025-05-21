@@ -10,12 +10,11 @@ import type { ServiceInfo } from '@dome/common';
 import { chatRequestSchema } from '@dome/chat/client';
 import {
   createRequestContextMiddleware,
-  createErrorMiddleware,
   responseHandlerMiddleware,
-  formatZodError,
   createDetailedLoggerMiddleware,
   updateContext,
 } from '@dome/common';
+import { errorHandler } from '@dome/common/errors';
 import { SupportedAuthProvider } from '@dome/auth/client'; // Import the enum
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { buildAuthRouter } from './controllers/authController';
@@ -60,7 +59,7 @@ initMetrics({
 // Log application startup
 getLogger().info('Application starting');
 app.use('*', cors());
-app.use('*', createErrorMiddleware(formatZodError));
+app.use('*', errorHandler());
 // Replace simple auth with auth routes and protected route middleware
 app.use('*', responseHandlerMiddleware);
 

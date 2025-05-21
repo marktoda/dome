@@ -78,7 +78,7 @@ export const siloSimplePutSchema = z.object({
   category: ContentCategoryEnum.default('note'),
   mimeType: MimeTypeSchema.default('text/markdown'),
   content: z.union([z.string(), z.instanceof(ArrayBuffer)]).refine(
-    val => {
+    (val: string | ArrayBuffer) => {
       // Check if content is not empty
       if (typeof val === 'string') {
         return val.length > 0;

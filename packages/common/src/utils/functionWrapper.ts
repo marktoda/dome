@@ -38,15 +38,11 @@ export function createServiceWrapper(serviceName: string) {
       } catch (err) {
 
         // Convert to DomeError for consistent handling
-        const domeError =
-          err && typeof err === 'object' && 'code' in err && 'message' in err
-            ? err
-            : toDomeError(
-                err,
-                `Error in ${serviceName} service${operation ? ` during ${operation}` : ''}`,
-                // Include original metadata as error context
-                meta as Record<string, any>,
-              );
+        const domeError = toDomeError(
+          err,
+          `Error in ${serviceName} service${operation ? ` during ${operation}` : ''}`,
+          meta as Record<string, any>,
+        );
 
         // Log the error with structured format
         logError(
