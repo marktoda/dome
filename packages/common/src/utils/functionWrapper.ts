@@ -1,6 +1,7 @@
-import { getLogger, logError, trackOperation } from '@dome/common';
+import { logError, trackOperation } from '@dome/common';
 import { withContext } from '@dome/common';
-import { toDomeError, DomeError } from '../errors/domeErrors.js';
+import { DomeError } from '../errors/domeErrors.js';
+import { toDomeError } from '../errors/errorFactory.js';
 
 // DomeError type re-exported for convenience
 
@@ -39,10 +40,11 @@ export function createServiceWrapper(serviceName: string) {
 
         // Convert to DomeError for consistent handling
         const domeError =
-          err && typeof err === 'object' && 'code' in err && 'message' in err
+          err instanceof DomeError
             ? err
             : toDomeError(
                 err,
+                serviceName,
                 `Error in ${serviceName} service${operation ? ` during ${operation}` : ''}`,
                 // Include original metadata as error context
                 meta as Record<string, any>,

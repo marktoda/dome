@@ -3,6 +3,7 @@
  */
 import { getLogger } from '@dome/common';
 import { toDomeError as baseToDomeError, assertValid as originalAssertValid } from './domeErrors.js';
+import { toDomeError } from './errorFactory.js';
 
 /**
  * Enhanced toDomeError function with service-specific context
@@ -62,13 +63,10 @@ export function createServiceErrorMiddleware(serviceName: string) {
         // Get logger from context or fallback
         const logger = c.get?.('logger') || getLogger();
 
-        // Get service-specific error handler
-        const toDomeError = createServiceErrorHandler(serviceName);
-
         // Convert error to DomeError
         const error = options.errorMapper
           ? options.errorMapper(err)
-          : toDomeError(err, 'Unhandled request error');
+          : toDomeError(err, serviceName, 'Unhandled request error');
 
         // Log error
         logger.error({

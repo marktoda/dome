@@ -1,7 +1,7 @@
 import { Hono, Context } from 'hono';
 import { swaggerUI } from '@hono/swagger-ui';
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi'; // Added createRoute
-import { z } from 'zod'; // Added z
+import { z, ZodError } from 'zod'; // Added ZodError
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import type { WSContext, WSEvents } from 'hono/ws';
 import { HTTPException } from 'hono/http-exception';
@@ -10,12 +10,12 @@ import type { ServiceInfo } from '@dome/common';
 import { chatRequestSchema } from '@dome/chat/client';
 import {
   createRequestContextMiddleware,
-  createErrorMiddleware,
   responseHandlerMiddleware,
   formatZodError,
   createDetailedLoggerMiddleware,
   updateContext,
 } from '@dome/common';
+import { createServiceErrorMiddleware, ValidationError } from '@dome/common/errors';
 import { SupportedAuthProvider } from '@dome/auth/client'; // Import the enum
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { buildAuthRouter } from './controllers/authController';
@@ -60,7 +60,15 @@ initMetrics({
 // Log application startup
 getLogger().info('Application starting');
 app.use('*', cors());
-app.use('*', createErrorMiddleware(formatZodError));
+app.use(
+  '*',
+  createServiceErrorMiddleware('dome-api')({
+    errorMapper: err =>
+      err instanceof ZodError
+        ? new ValidationError('Validation error', formatZodError(err))
+        : err,
+  }),
+);
 // Replace simple auth with auth routes and protected route middleware
 app.use('*', responseHandlerMiddleware);
 
