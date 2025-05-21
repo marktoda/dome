@@ -13,6 +13,7 @@ import { createServices } from './services';
 import { createControllers } from './controllers';
 import { ChatBinding } from './client';
 import { ChatRequest } from './types';
+import { createErrorMiddleware } from './utils/errors';
 
 export * from './client';
 
@@ -34,6 +35,7 @@ export default class Chat extends WorkerEntrypoint<Env> implements ChatBinding {
 
     // Create Hono app instance
     this.app = new Hono();
+    this.app.use('*', createErrorMiddleware());
 
     this.app.post('/stream', async c => {
       // Parse once, Hono does *not* auto-parse JSON for you

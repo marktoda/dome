@@ -2,6 +2,7 @@
  * Error utilities that work with domeErrors module
  */
 import { getLogger } from '@dome/common';
+// Alias imported toDomeError to avoid name clash with wrapper function
 import { toDomeError as baseToDomeError, assertValid as originalAssertValid } from './domeErrors.js';
 
 /**
@@ -14,7 +15,7 @@ import { toDomeError as baseToDomeError, assertValid as originalAssertValid } fr
  * @returns A DomeError instance
  */
 export function createServiceErrorHandler(serviceName: string) {
-  return function toDomeError(
+  return function serviceToDomeError(
     error: unknown,
     defaultMessage = `An unexpected error occurred in ${serviceName} service`,
     defaultDetails: Record<string, any> = {},
@@ -62,13 +63,10 @@ export function createServiceErrorMiddleware(serviceName: string) {
         // Get logger from context or fallback
         const logger = c.get?.('logger') || getLogger();
 
-        // Get service-specific error handler
-        const toDomeError = createServiceErrorHandler(serviceName);
-
         // Convert error to DomeError
         const error = options.errorMapper
           ? options.errorMapper(err)
-          : toDomeError(err, 'Unhandled request error');
+          : baseToDomeError(err, 'Unhandled request error', { service: serviceName });
 
         // Log error
         logger.error({
