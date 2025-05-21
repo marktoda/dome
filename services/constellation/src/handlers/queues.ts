@@ -28,18 +28,7 @@ export async function handleQueue(this: any, batch: MessageBatch<Record<string, 
       metrics.gauge('queue.batch_size', batch.messages.length);
       metrics.counter('queue.batches_received', 1);
 
-      let parsed: ParsedMessageBatch<NewContentMessage>;
-      try {
-        parsed = NewContentQueue.parseBatch(batch);
-      } catch (err) {
-        const domeError = toDomeError(err, 'Failed to parse message batch', {
-          batchId,
-          queueName: batch.queue,
-        });
-        logError(domeError, 'Invalid queue batch');
-        metrics.counter('queue.parse_errors', 1);
-        throw domeError;
-      }
+      const parsed: ParsedMessageBatch<NewContentMessage> = NewContentQueue.parseBatch(batch);
 
       getLogger().info(
         {

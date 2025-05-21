@@ -16,8 +16,7 @@ export async function reprocess(this: any, data: z.infer<typeof ReprocessRequest
   return trackOperation(
     'reprocess_content',
     async () => {
-      try {
-        const validatedData = ReprocessRequestSchema.parse(data);
+      const validatedData = ReprocessRequestSchema.parse(data);
         const { id } = validatedData;
 
         if (id) {
@@ -51,23 +50,6 @@ export async function reprocess(this: any, data: z.infer<typeof ReprocessRequest
 
           return { success: true, reprocessed: result };
         }
-      } catch (error) {
-        const domeError = toDomeError(error, 'Error in reprocess operation', {
-          service: 'ai-processor',
-          operation: 'reprocess',
-          id: (data as any).id,
-          requestId,
-        });
-
-        logError(domeError, 'Failed to reprocess content');
-
-        aiProcessorMetrics.trackOperation('reprocess', false, {
-          errorType: domeError.code,
-          requestId,
-        });
-
-        throw domeError;
-      }
     },
     { requestId, id: (data as any).id },
   );

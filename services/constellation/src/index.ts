@@ -94,49 +94,37 @@ const sendToDeadLetter = async (
   return trackOperation(
     'send_to_dlq',
     async () => {
-      try {
-        logger.info(
-          {
-            requestId,
-            operation: 'sendToDeadLetter',
-            contentId: payload.job?.id || (payload.originalMessage as any)?.id,
-          },
-          'Sending message to dead letter queue',
-        );
-
-        // Support both formats: { err, job } and { error, originalMessage }
-        const message = payload.error !== undefined 
-          ? { error: payload.error, originalMessage: payload.originalMessage }
-          : { 
-              error: payload.err instanceof Error 
-                ? payload.err.message 
-                : typeof payload.err === 'string' 
-                  ? payload.err 
-                  : 'Unknown error', 
-              originalMessage: payload.job 
-            };
-
-        // Create a typed queue wrapper
-        const deadLetterQueue = new DeadLetterQueue(queue);
-        await deadLetterQueue.send(message);
-
-        metrics.counter('dlq.messages_sent', 1);
-
-        logger.info(
-          { requestId, operation: 'sendToDeadLetter' },
-          'Successfully sent message to dead letter queue',
-        );
-      } catch (err) {
-        const domeError = toDomeError(err, 'Failed to send to dead letter queue', {
+      logger.info(
+        {
           requestId,
           operation: 'sendToDeadLetter',
-          payloadType: typeof payload,
-        });
+          contentId: payload.job?.id || (payload.originalMessage as any)?.id,
+        },
+        'Sending message to dead letter queue',
+      );
 
-        logError(domeError, 'Error sending message to dead letter queue');
-        metrics.counter('dlq.errors', 1);
-        throw domeError;
-      }
+      // Support both formats: { err, job } and { error, originalMessage }
+      const message = payload.error !== undefined
+        ? { error: payload.error, originalMessage: payload.originalMessage }
+        : {
+            error: payload.err instanceof Error
+              ? payload.err.message
+              : typeof payload.err === 'string'
+                ? payload.err
+                : 'Unknown error',
+            originalMessage: payload.job
+          };
+
+      // Create a typed queue wrapper
+      const deadLetterQueue = new DeadLetterQueue(queue);
+      await deadLetterQueue.send(message);
+
+      metrics.counter('dlq.messages_sent', 1);
+
+      logger.info(
+        { requestId, operation: 'sendToDeadLetter' },
+        'Successfully sent message to dead letter queue',
+      );
     },
     { requestId },
   );
@@ -335,8 +323,7 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
         `Processing chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
       );
 
-      try {
-        const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
+      const batchVectors = (await embedder.embed(batchChunks)).map((v, idx) => ({
           id: `content:${job.id}:${i + idx}`,
           values: v,
           metadata: <VectorMeta>{
@@ -359,27 +346,10 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
         metrics.counter('embedding.batch_success', 1);
         metrics.counter('embedding.vectors_created', batchVectors.length);
 
-        batchChunks.length = 0;
+      batchChunks.length = 0;
 
-        if (i + MAX_CHUNKS_PER_BATCH < chunks.length) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-        }
-      } catch (err) {
-        const domeError = new EmbeddingError(
-          `Failed to embed chunk batch ${chunkBatchIndex}/${totalChunkBatches}`,
-          {
-            ...jobContext,
-            chunkBatchIndex,
-            totalChunkBatches,
-            batchSize: batchChunks.length,
-          },
-          err instanceof Error ? err : undefined,
-        );
-
-        logError(domeError, `Embedding chunk batch ${chunkBatchIndex} failed`);
-        metrics.counter('embedding.batch_errors', 1);
-
-        throw domeError;
+      if (i + MAX_CHUNKS_PER_BATCH < chunks.length) {
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
     }
 
@@ -408,27 +378,14 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
         `Upserting vector batch ${upsertBatchIndex}/${totalUpsertBatches}`,
       );
 
-      try {
-        await vectorize.upsert(upsertBatch);
+      await vectorize.upsert(upsertBatch);
 
-        logger.debug(
-          { ...jobContext, upsertBatchIndex, totalUpsertBatches },
-          `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-        );
+      logger.debug(
+        { ...jobContext, upsertBatchIndex, totalUpsertBatches },
+        `Successfully upserted batch ${upsertBatchIndex}/${totalUpsertBatches}`,
+      );
 
-        metrics.counter('vectorize.batch_success', 1);
-      } catch (err) {
-        const domeError = new VectorizeError(
-          `Failed to upsert batch ${upsertBatchIndex}/${totalUpsertBatches}`,
-          { ...jobContext, upsertBatchIndex, totalUpsertBatches },
-          err instanceof Error ? err : undefined,
-        );
-
-        logError(domeError, `Vector upsert batch ${upsertBatchIndex} failed`);
-        metrics.counter('vectorize.batch_errors', 1);
-
-        throw domeError;
-      }
+      metrics.counter('vectorize.batch_success', 1);
     }
   }
 
