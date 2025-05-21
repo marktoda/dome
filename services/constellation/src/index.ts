@@ -8,7 +8,7 @@ import {
   SiloContentItem,
 } from '@dome/common';
 
-import { wrapServiceCall } from '@dome/common';
+
 import {
   getLogger,
   logError,
@@ -21,7 +21,6 @@ import {
   EmbeddingError,
 } from './utils/errors';
 import {
-  domeAssertValid as assertValid,
   domeAssertExists as assertExists,
 } from '@dome/common/errors';
 import { createPreprocessor } from './services/preprocessor';
@@ -31,6 +30,8 @@ import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { Queue } from '@cloudflare/workers-types/experimental';
 import { DeadLetterQueue } from './queues/DeadLetterQueue';
 import { NewContentQueue } from '@dome/silo/queues';
+import * as rpcHandlers from './handlers/rpc';
+import * as queueHandlers from './handlers/queues';
 
 interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
   SILO: SiloBinding;
@@ -54,7 +55,6 @@ const buildServices = (env: ServiceEnv) => ({
 /**
  * Helper to run service logic with standardized context and error handling.
  */
-const runWithLog = wrapServiceCall('constellation');
 
 /**
  * Send a failed message to the dead letter queue with enhanced error context
@@ -465,58 +465,7 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
    * @param batch Batch of messages to process
    */
   async queue(batch: MessageBatch<Record<string, unknown>>) {
-    const batchId = crypto.randomUUID();
-
-    await runWithLog(
-      {
-        service: 'constellation',
-        op: 'queue',
-        size: batch.messages.length,
-        batchRequestId: batchId,
-        ...this.env,
-      },
-      async () => {
-        const startTime = Date.now();
-        metrics.gauge('queue.batch_size', batch.messages.length);
-        metrics.counter('queue.batches_received', 1);
-
-        let parsed: ParsedMessageBatch<NewContentMessage>;
-        try {
-          parsed = NewContentQueue.parseBatch(batch);
-        } catch (err) {
-          const domeError = toDomeError(err, 'Failed to parse message batch', {
-            batchId,
-            queueName: batch.queue,
-          });
-          logError(domeError, 'Invalid queue batch');
-          metrics.counter('queue.parse_errors', 1);
-          throw domeError;
-        }
-
-        logger.info(
-          {
-            batchRequestId: batchId,
-            messageCount: parsed.messages.length,
-            queueName: batch.queue,
-            operation: 'queue',
-          },
-          `Processing queue batch with ${parsed.messages.length} messages`,
-        );
-
-        if (parsed.messages.length) {
-          const processed = await this.embedBatch(
-            parsed.messages,
-            this.env.EMBED_DEAD,
-            batchId,
-          );
-          metrics.counter('queue.jobs_processed', processed);
-        }
-
-        const duration = Date.now() - startTime;
-        metrics.timing('queue.batch_processing_time', duration);
-        metrics.counter('queue.batches_completed', 1);
-      },
-    );
+    await queueHandlers.handleQueue.call(this, batch);
   }
   /* ---------------------------- rpc: embed ------------------------------ */
 
@@ -525,94 +474,7 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
    * @param job Content item to embed
    */
   public async embed(job: SiloContentItem) {
-    const requestId = crypto.randomUUID();
-
-    await runWithLog(
-      {
-        service: 'constellation',
-        op: 'embed',
-        content: job.id,
-        user: job.userId,
-        requestId,
-        ...this.env,
-      },
-      async () => {
-        try {
-          // Validate job data
-          assertValid(!!job, 'Content item is required', { requestId });
-          assertValid(!!job.id, 'Content ID is required', {
-            requestId,
-            operation: 'embed',
-          });
-
-          // Track request metrics
-          metrics.counter('rpc.embed.requests', 1);
-
-          logger.info(
-            {
-              contentId: job.id,
-              userId: job.userId,
-              contentType: job.category || job.mimeType || 'unknown',
-              requestId,
-              operation: 'embed',
-            },
-            'Processing RPC embed request',
-          );
-
-          const msg: ParsedQueueMessage<NewContentMessage> = {
-            id: job.id,
-            timestamp: Date.now(),
-            body: {
-              id: job.id,
-              userId: job.userId,
-              category: job.category,
-              mimeType: job.mimeType,
-              createdAt: job.createdAt,
-            },
-          };
-
-          const processed = await this.embedBatch([msg], undefined, requestId);
-
-          // Track success metrics
-          metrics.counter('rpc.embed.success', 1);
-          metrics.trackOperation('rpc_embed', true, {
-            requestId,
-            contentId: job.id,
-          });
-
-          logger.info(
-            {
-              contentId: job.id,
-              processed,
-              success: processed === 1,
-              requestId,
-              operation: 'embed',
-            },
-            `RPC embed request ${processed === 1 ? 'succeeded' : 'failed'}`,
-          );
-        } catch (error) {
-          // Track failure metrics
-          metrics.counter('rpc.embed.errors', 1);
-
-          const domeError = toDomeError(error, `Failed to embed content ID: ${job.id}`, {
-            contentId: job.id,
-            userId: job.userId,
-            requestId,
-            operation: 'embed',
-          });
-
-          logError(domeError, 'RPC embed request failed');
-
-          metrics.trackOperation('rpc_embed', false, {
-            requestId,
-            contentId: job.id,
-            errorType: domeError.code,
-          });
-
-          throw domeError;
-        }
-      },
-    );
+    await rpcHandlers.embed.call(this, job);
   }
 
   /* ---------------------------- rpc: query ------------------------------ */
@@ -629,131 +491,7 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
     filter: Partial<VectorMeta>,
     topK = 10,
   ): Promise<VectorSearchResult[] | { error: unknown }> {
-    const requestId = crypto.randomUUID();
-
-    return runWithLog(
-      {
-        service: 'constellation',
-        op: 'query',
-        filter,
-        topK,
-        requestId,
-        ...this.env,
-      },
-      async () => {
-        try {
-          // Validate inputs
-          assertValid(typeof text === 'string', 'Text query is required', { requestId });
-          assertValid(text.trim().length > 0, 'Query text cannot be empty', { requestId });
-          assertValid(topK > 0 && topK <= 1000, 'topK must be between 1 and 1000', {
-            requestId,
-            providedTopK: topK,
-          });
-
-          // Track query metrics
-          metrics.counter('rpc.query.requests', 1);
-          metrics.gauge('rpc.query.text_length', text.length);
-
-          logger.info(
-            {
-              query: text,
-              filterKeys: Object.keys(filter),
-              topK,
-              requestId,
-              operation: 'query',
-            },
-            'Processing vector search query',
-          );
-
-          const { preprocessor, embedder, vectorize } = this.services;
-
-          // Preprocess the query
-          const norm = preprocessor.normalize(text);
-
-          if (!norm) {
-            logger.warn(
-              { requestId, operation: 'query' },
-              'Normalization produced empty text, returning empty results',
-            );
-
-            metrics.counter('rpc.query.empty_norm', 1);
-            return [];
-          }
-
-          logger.debug(
-            {
-              requestId,
-              originalLength: text.length,
-              normalizedLength: norm.length,
-              operation: 'query',
-            },
-            'Successfully normalized query text',
-          );
-
-          // Generate embedding
-          const [queryVec] = await embedder.embed([norm]);
-
-          logger.debug(
-            {
-              requestId,
-              vectorLength: queryVec.length,
-              operation: 'query',
-            },
-            'Generated embedding vector for query',
-          );
-
-          // Query for similar vectors
-          const results = await vectorize.query(queryVec, filter, topK);
-
-          // Log summarized results
-          logger.info(
-            {
-              requestId,
-              resultCount: results.length,
-              topScore: results.length > 0 ? results[0].score : 0,
-              operation: 'query',
-            },
-            `Query returned ${results.length} results`,
-          );
-
-          // Track success metrics
-          metrics.counter('rpc.query.success', 1);
-          metrics.gauge('rpc.query.results', results.length);
-          metrics.trackOperation('vector_query', true, {
-            requestId,
-            resultCount: String(results.length),
-          });
-
-          return results;
-        } catch (error) {
-          // Track error metrics
-          metrics.counter('rpc.query.errors', 1);
-
-          const domeError = toDomeError(error, 'Vector query failed', {
-            requestId,
-            operation: 'query',
-            textLength: text?.length,
-            filterKeys: Object.keys(filter || {}),
-          });
-
-          logError(domeError, 'Vector query operation failed');
-
-          metrics.trackOperation('vector_query', false, {
-            requestId,
-            errorType: domeError.code,
-          });
-
-          // Return structured error object for RPC
-          return {
-            error: {
-              message: domeError.message,
-              code: domeError.code,
-              status: domeError.statusCode,
-            },
-          };
-        }
-      },
-    );
+    return rpcHandlers.query.call(this, text, filter, topK);
   }
 
   /* ---------------------------- rpc: stats ------------------------------ */
@@ -763,61 +501,7 @@ export default class Constellation extends WorkerEntrypoint<ServiceEnv> {
    * @returns Index statistics or error object
    */
   public async stats() {
-    const requestId = crypto.randomUUID();
-
-    return runWithLog(
-      {
-        service: 'constellation',
-        op: 'stats',
-        requestId,
-        ...this.env,
-      },
-      async () => {
-        try {
-          // Track stats request
-          metrics.counter('rpc.stats.requests', 1);
-
-          logger.info({ requestId, operation: 'stats' }, 'Fetching vector index statistics');
-
-          // Get stats from vectorize service
-          const stats = await this.services.vectorize.getStats();
-
-          // Track success
-          metrics.counter('rpc.stats.success', 1);
-
-          logger.info(
-            {
-              requestId,
-              vectors: stats.vectors,
-              dimension: stats.dimension,
-              operation: 'stats',
-            },
-            'Successfully retrieved vector index statistics',
-          );
-
-          return stats;
-        } catch (error) {
-          // Track error
-          metrics.counter('rpc.stats.errors', 1);
-
-          const domeError = toDomeError(error, 'Failed to retrieve vector index statistics', {
-            requestId,
-            operation: 'stats',
-          });
-
-          logError(domeError, 'Error getting vector index stats');
-
-          // Return structured error for RPC
-          return {
-            error: {
-              message: domeError.message,
-              code: domeError.code,
-              status: domeError.statusCode,
-            },
-          };
-        }
-      },
-    );
+    return rpcHandlers.stats.call(this);
   }
 }
 export { sendToDeadLetter };
