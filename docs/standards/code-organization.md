@@ -258,9 +258,9 @@ export async function processQueueBatch(batch: MessageBatch<unknown>, env: Env) 
 Replace any manual `JSON.parse` of queue messages with typed queue wrappers based on `AbstractQueue`.
 Use `.send()` when enqueuing and `.parseBatch()` when consuming to ensure validation.
 
-## Error Handling
+-## Error Handling
 
-- Use the `@dome/errors` package for standard error types
+- Use the `@dome/common/errors` package for standard error types
 - Always log errors with context
 - Return appropriate HTTP status codes for API errors
 - Include helpful error messages in responses
@@ -268,7 +268,7 @@ Use `.send()` when enqueuing and `.parseBatch()` when consuming to ensure valida
 Example:
 
 ```typescript
-import { NotFoundError, ValidationError } from '@dome/errors';
+import { NotFoundError, ValidationError } from '@dome/common/errors';
 import { getLogger } from '@dome/logging';
 
 export async function getUser(id: string): Promise<User> {

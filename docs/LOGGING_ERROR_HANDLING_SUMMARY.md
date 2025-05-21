@@ -31,7 +31,7 @@ The improvement project was designed to achieve the following objectives:
 The improvement project followed a systematic approach:
 
 1. **Analysis Phase**: Comprehensive audit of existing logging and error handling across services.
-2. **Architecture Design**: Creation of shared packages for logging (`@dome/logging`) and errors (`@dome/errors`).
+2. **Architecture Design**: Creation of shared packages for logging (`@dome/logging`) and errors (`@dome/common/errors`).
 3. **Implementation**: Service-by-service migration to the new architecture.
 4. **Verification**: Development of automated verification scripts and tests.
 5. **Documentation**: Creation of best practices documentation and examples.
@@ -81,9 +81,9 @@ Key enhancements:
 - Service-specific metrics collection
 - Standardized log levels with appropriate usage guidelines
 
-### 2.2 @dome/errors Package
+### 2.2 @dome/common/errors Package
 
-The `@dome/errors` package defines a consistent error hierarchy and handling mechanism:
+The `@dome/common/errors` package defines a consistent error hierarchy and handling mechanism:
 
 - **Error Hierarchy**: Base `DomeError` class with specialized subclasses for different HTTP status codes.
 - **Error Context**: Rich contextual information through `details` and error chaining with `cause`.
@@ -184,7 +184,7 @@ The Constellation service received vectorization-specific improvements:
 
 The Tsunami service is still in the process of being fully migrated:
 
-- **Initial Migration**: Started migration to `@dome/logging` and `@dome/errors`.
+- **Initial Migration**: Started migration to `@dome/logging` and `@dome/common/errors`.
 - **Pattern Identification**: Standardized patterns for resource processing errors.
 - **Technical Debt**: Identified remaining areas for improvement.
 
@@ -357,7 +357,7 @@ export default app;
 
 ```typescript
 import { getLogger, trackOperation } from '@dome/logging';
-import { ValidationError, NotFoundError } from '@dome/errors';
+import { ValidationError, NotFoundError } from '@dome/common/errors';
 
 export async function getUserProfile(c) {
   const logger = getLogger();
@@ -386,7 +386,7 @@ export async function getUserProfile(c) {
 ```typescript
 import { Hono } from 'hono';
 import { initLogging } from '@dome/logging';
-import { errorHandler } from '@dome/errors';
+import { errorHandler } from '@dome/common/errors';
 
 const app = new Hono();
 initLogging(app);
@@ -408,13 +408,13 @@ export default app;
 | Log structured information     | `logger.info({ key: value }, 'message')`        | @dome/logging |
 | Track operation with timing    | `trackOperation('name', async () => { ... })`   | @dome/logging |
 | Log an error                   | `logError(error, 'message', context)`           | @dome/logging |
-| Throw validation error         | `throw new ValidationError('message', details)` | @dome/errors  |
-| Throw not found error          | `throw new NotFoundError('message', details)`   | @dome/errors  |
-| Create domain-specific errors  | `const Errors = createErrorFactory('domain')`   | @dome/errors  |
-| Convert any error to DomeError | `const domeError = toDomeError(error)`          | @dome/errors  |
-| Add error middleware           | `app.use('*', errorHandler())`                  | @dome/errors  |
-| Assert valid input             | `assertValid(condition, 'message', details)`    | @dome/errors  |
-| Assert entity exists           | `assertExists(entity, 'message', details)`      | @dome/errors  |
+| Throw validation error         | `throw new ValidationError('message', details)` | @dome/common/errors |
+| Throw not found error          | `throw new NotFoundError('message', details)`   | @dome/common/errors |
+| Create domain-specific errors  | `const Errors = createErrorFactory('domain')`   | @dome/common/errors |
+| Convert any error to DomeError | `const domeError = toDomeError(error)`          | @dome/common/errors |
+| Add error middleware           | `app.use('*', errorHandler())`                  | @dome/common/errors |
+| Assert valid input             | `assertValid(condition, 'message', details)`    | @dome/common/errors |
+| Assert entity exists           | `assertExists(entity, 'message', details)`      | @dome/common/errors |
 
 ## 7. Future Recommendations
 
