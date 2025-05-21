@@ -20,6 +20,7 @@ import { Services } from '../services';
 import { V3Chat } from '../graphs';
 import { secureMessages } from '../utils/securePromptHandler';
 import { validateInitialState } from '../utils/inputValidator';
+import { wrap } from '../utils/wrap';
 
 export class ChatController {
   private logger: ReturnType<typeof getLogger>;
@@ -38,26 +39,34 @@ export class ChatController {
 
   /** Generate a full (non‑streaming) answer */
   async generateChatMessage(req: ChatRequest): Promise<Response> {
-    const state = await this.buildInitialState(req);
-    return this.runGraphNonStreaming(state, crypto.randomUUID());
+    return wrap({ operation: 'generateChatMessage', userId: req.userId }, async () => {
+      const state = await this.buildInitialState(req);
+      return this.runGraphNonStreaming(state, crypto.randomUUID());
+    });
   }
 
   /** Start a new chat session in streaming mode */
   async startChatSession(req: ChatRequest): Promise<ReadableStream<Uint8Array>> {
-    const state = await this.buildInitialState(req);
-    return this.runGraphStreaming(state, crypto.randomUUID());
+    return wrap({ operation: 'startChatSession', userId: req.userId }, async () => {
+      const state = await this.buildInitialState(req);
+      return this.runGraphStreaming(state, crypto.randomUUID());
+    });
   }
 
   /** Resume an existing chat run in streaming mode */
   async resumeChatSession(req: ResumeChatRequest): Promise<IterableReadableStream<unknown>> {
     const { runId, newMessage } = resumeChatRequestSchema.parse(req);
 
-    return withContext(
-      { service: 'chat-orchestrator', operation: 'resumeChatSession', runId },
-      async () => {
-        const state = await this.buildResumeState(runId, newMessage);
-        return this.runGraphStreaming(state, runId) as Promise<IterableReadableStream<unknown>>;
-      },
+    return wrap(
+      { operation: 'resumeChatSession', runId },
+      () =>
+        withContext(
+          { service: 'chat-orchestrator', operation: 'resumeChatSession', runId },
+          async () => {
+            const state = await this.buildResumeState(runId, newMessage);
+            return this.runGraphStreaming(state, runId) as Promise<IterableReadableStream<unknown>>;
+          },
+        ),
     );
   }
 
