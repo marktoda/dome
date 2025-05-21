@@ -16,6 +16,7 @@ import {
   createDetailedLoggerMiddleware,
   updateContext,
 } from '@dome/common';
+import { errorHandler } from '@dome/common/errors';
 import { SupportedAuthProvider } from '@dome/auth/client'; // Import the enum
 import { authenticationMiddleware, AuthContext } from './middleware/authenticationMiddleware';
 import { buildAuthRouter } from './controllers/authController';
@@ -61,6 +62,7 @@ initMetrics({
 getLogger().info('Application starting');
 app.use('*', cors());
 app.use('*', createErrorMiddleware(formatZodError));
+app.use('*', errorHandler());
 // Replace simple auth with auth routes and protected route middleware
 app.use('*', responseHandlerMiddleware);
 

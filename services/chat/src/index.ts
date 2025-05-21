@@ -9,6 +9,7 @@ import { BaseWorker } from '@dome/common';
 import { Hono } from 'hono';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
 import { getLogger, logError } from '@dome/common';
+import { errorHandler } from '@dome/common/errors';
 import { createServices } from './services';
 import { createControllers } from './controllers';
 import { ChatBinding } from './client';
@@ -32,6 +33,7 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
 
     // Create Hono app instance
     this.app = new Hono();
+    this.app.use('*', errorHandler());
 
     this.app.post('/stream', async c => {
       // Parse once, Hono does *not* auto-parse JSON for you
