@@ -367,6 +367,7 @@ Dome implements comprehensive error handling and observability:
    ```
 
 For a complete walkthrough see [docs/DEV_SETUP.md](docs/DEV_SETUP.md).
+For details on the shared worker base class see [docs/BaseWorker.md](docs/BaseWorker.md).
 
 # TODOS
 
