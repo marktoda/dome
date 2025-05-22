@@ -8,7 +8,7 @@ import { getLogger, metrics, trackedFetch, getRequestId } from '@dome/common';
 import { ServiceError } from '@dome/common/src/errors';
 import { TokenService, OAuthTokenRecord } from '../../services/tokenService'; // Corrected path
 import type { NotionOAuthDetails } from '../../client/types'; // Corrected path
-import type { ServiceEnv } from '../../resourceObject';
+import type { ServiceEnv } from '../../config/env';
 
 /**
  * Notion OAuth Token Response
@@ -43,12 +43,12 @@ export class NotionAuthManager {
   private tokenService: TokenService;
 
   constructor(env: ServiceEnv) {
-    this.clientId = (env as any).NOTION_CLIENT_ID || '';
-    this.clientSecret = (env as any).NOTION_CLIENT_SECRET || '';
-    this.redirectUri = (env as any).NOTION_REDIRECT_URI || '';
+    this.clientId = env.NOTION_CLIENT_ID ?? '';
+    this.clientSecret = env.NOTION_CLIENT_SECRET ?? '';
+    this.redirectUri = env.NOTION_REDIRECT_URI ?? '';
     this.tokenService = new TokenService(
       env.SYNC_PLAN,
-      (env as any).TOKEN_ENCRYPTION_KEY || '',
+      env.TOKEN_ENCRYPTION_KEY,
     );
 
     this.log.info(

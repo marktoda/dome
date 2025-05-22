@@ -8,7 +8,7 @@ import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
 import { logError, metrics } from '@dome/common';
 import { BaseProvider } from './base';
-import type { ServiceEnv } from '../resourceObject';
+import type { ServiceEnv } from '../config/env';
 import { RobotsChecker } from './website/robotsChecker';
 import { WebsiteCrawler } from './website/websiteCrawler';
 import { ContentExtractor } from './website/contentExtractor';

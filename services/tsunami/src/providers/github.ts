@@ -14,7 +14,7 @@ import {
 } from '../services/metadataHeaderService';
 import { IgnoreFileService } from '../services/ignoreFileService';
 import { BaseProvider } from './base';
-import type { ServiceEnv } from '../resourceObject';
+import type { ServiceEnv } from '../config/env';
 
 /* ─── constants ────────────────────────────────────────────────────────── */
 
@@ -64,7 +64,7 @@ export class GithubProvider extends BaseProvider implements Provider {
 
   constructor(env: ServiceEnv) {
     super();
-    const token = (env as any).GITHUB_TOKEN ?? '';
+    const token = env.GITHUB_TOKEN ?? '';
     this.headers = {
       Accept: 'application/vnd.github.v3+json',
       'X-GitHub-Api-Version': '2022-11-28',

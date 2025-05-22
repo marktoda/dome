@@ -21,7 +21,9 @@ import { SupportedAuthProvider, AuthProvidersConfig, ProviderConfig } from '../t
  * @param env - The environment object, typically context.env in a Cloudflare Worker.
  * @returns Configuration for all supported authentication providers.
  */
-export function getAuthProvidersConfig(env: any): AuthProvidersConfig {
+import type { AuthEnv } from './env';
+
+export function getAuthProvidersConfig(env: AuthEnv): AuthProvidersConfig {
   const config: AuthProvidersConfig = {};
 
   // Local Provider Configuration (Email/Password)
@@ -31,9 +33,7 @@ export function getAuthProvidersConfig(env: any): AuthProvidersConfig {
   };
 
   // Google Provider Configuration
-  const googleScopes = env.AUTH_GOOGLE_SCOPES
-    ? env.AUTH_GOOGLE_SCOPES.split(',')
-    : ['email', 'profile'];
+  const googleScopes = env.AUTH_GOOGLE_SCOPES ?? ['email', 'profile'];
 
   config[SupportedAuthProvider.GOOGLE] = {
     clientId: env.AUTH_GOOGLE_CLIENT_ID,
@@ -47,9 +47,7 @@ export function getAuthProvidersConfig(env: any): AuthProvidersConfig {
   };
 
   // GitHub Provider Configuration (Example structure)
-  const githubScopes = env.AUTH_GITHUB_SCOPES
-    ? env.AUTH_GITHUB_SCOPES.split(',')
-    : ['read:user', 'user:email'];
+  const githubScopes = env.AUTH_GITHUB_SCOPES ?? ['read:user', 'user:email'];
 
   config[SupportedAuthProvider.GITHUB] = {
     clientId: env.AUTH_GITHUB_CLIENT_ID,
@@ -75,7 +73,7 @@ export function getAuthProvidersConfig(env: any): AuthProvidersConfig {
  */
 export function getProviderConfig(
   providerName: SupportedAuthProvider,
-  env: any,
+  env: AuthEnv,
 ): ProviderConfig | undefined {
   const allConfigs = getAuthProvidersConfig(env);
   const config = allConfigs[providerName];

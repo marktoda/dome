@@ -485,6 +485,13 @@ If you encounter issues with deployment:
    wrangler deploy --verbose
    ```
 
+### 12.4 Environment Variable Validation
+
+Services validate their configuration using `loadEnv` from `@dome/common`. Define
+a Zod schema in `services/<service>/src/config/env.ts` and call `loadEnv` in the
+service constructor. This replaces ad-hoc checks like `if (!env.AUTH_DB)` and
+handles comma-separated lists via schema transforms.
+
 ## 13. Conclusion
 
 Following this development workflow will help ensure a smooth and efficient development process for the Dome project. If you have any questions or suggestions for improving this workflow, please reach out to the team or submit a pull request to update this guide.

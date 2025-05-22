@@ -41,14 +41,6 @@ export class LocalAuthProvider extends BaseAuthProvider {
   }
 
   private getAuthContext() {
-    if (!this.env || !this.env.AUTH_DB) {
-      // Or handle this more gracefully, maybe throw a config error
-      console.error('AUTH_DB not found in environment provided to LocalAuthProvider');
-      throw new ServiceError('LocalAuthProvider not configured correctly with AUTH_DB.', {
-        service: 'auth',
-        code: 'PROVIDER_CONFIG_ERROR',
-      });
-    }
     return {
       env: this.env,
       db: this.env.AUTH_DB,

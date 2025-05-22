@@ -16,6 +16,8 @@ import { AuthService as UnifiedAuthService } from './services/auth-service';
 import { UserManager } from './services/user/user-manager';
 import { BaseAuthProvider } from './services/providers/base-auth-provider'; // Corrected import
 import { getAuthProvidersConfig } from './config/auth-config'; // Corrected path
+import { loadEnv } from '@dome/common/config/env';
+import { AuthEnvSchema, AuthEnv } from './config/env';
 import { JwtTokenManager } from './services/token/token-manager'; // Use concrete class
 import { getTokenSettings } from './config/token-config'; // For JwtTokenManager
 import { LocalAuthProvider } from './services/providers/local-auth-provider';
@@ -27,11 +29,7 @@ import * as rpcHandlers from './controllers/rpc';
 
 // Define Env if not already globally available or imported
 // This should match the Env used by BaseWorker<Env>
-export interface Env {
-  AUTH_DB: any; // D1Database, etc.
-  // Expected environment variables for providers, JWT secrets, etc.
-  [key: string]: any;
-}
+export type Env = AuthEnv;
 
 const authToDomeError = createServiceErrorHandler('auth');
 
@@ -41,15 +39,6 @@ interface Services {
 
 const buildServices = (env: Env): Services => {
   const logger = getLogger();
-
-  if (!env.AUTH_DB) {
-    logger.error('AUTH_DB environment variable is not set.');
-    throw authToDomeError(
-      new Error('AUTH_DB is not configured.'),
-      'AUTH_DB configuration error',
-      { code: 'AUTH_CONFIG_ERROR', httpStatus: 500 },
-    );
-  }
 
   const userManager = new UserManager();
   const tokenManager = new JwtTokenManager(getTokenSettings(env));
@@ -112,8 +101,9 @@ export default class Auth extends BaseWorker<Env, ReturnType<typeof buildService
   private unifiedAuthService: UnifiedAuthService;
   private honoApp: Hono<{ Bindings: Env }>;
 
-  constructor(ctx: ExecutionContext, env: Env) {
-    super(ctx, env, buildServices, { serviceName: 'auth' });
+  constructor(ctx: ExecutionContext, env: unknown) {
+    const parsedEnv = loadEnv<AuthEnv>(AuthEnvSchema, env);
+    super(ctx, parsedEnv, buildServices, { serviceName: 'auth' });
 
     this.unifiedAuthService = this.services.auth;
 

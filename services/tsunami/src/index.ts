@@ -1,7 +1,7 @@
 /**
  * Tsunami Service – using WorkerEntrypoint pattern
  */
-import { BaseWorker, getLogger, ServiceInfo, formatZodError, logError } from '@dome/common';
+import { BaseWorker, getLogger, ServiceInfo, logError } from '@dome/common';
 import { toDomeError } from './utils/errors';
 import { ConflictError, ValidationError } from '@dome/common/errors';
 import { createSyncPlanService } from './services/syncPlanService';
@@ -9,9 +9,8 @@ import { TokenService } from './services/tokenService';
 import type { NotionOAuthDetails, GithubOAuthDetails } from './client/types'; // Added GithubOAuthDetails
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { IngestQueue } from '@dome/silo/queues';
-interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
-  SILO: SiloBinding;
-}
+import { loadEnv } from '@dome/common/config/env';
+import { TsunamiEnvSchema, ServiceEnv } from './config/env';
 import { syncHistoryOperations } from './db/client';
 import { ProviderType } from './providers';
 
@@ -24,7 +23,7 @@ const logger = getLogger();
 const buildServices = (env: ServiceEnv) => ({
   silo: new SiloClient(env.SILO, new IngestQueue(env.SILO_INGEST_QUEUE)),
   syncPlan: createSyncPlanService(env),
-  token: new TokenService(env.SYNC_PLAN, (env as any).TOKEN_ENCRYPTION_KEY || ''),
+  token: new TokenService(env.SYNC_PLAN, env.TOKEN_ENCRYPTION_KEY),
 });
 
 /* ─────────── service bootstrap ─────────── */
@@ -50,8 +49,9 @@ logger.info(
  * endpoints for registering repos and viewing sync history.
  */
 export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof buildServices>> {
-  constructor(ctx: ExecutionContext, env: ServiceEnv) {
-    super(ctx, env, buildServices, { serviceName: 'tsunami' });
+  constructor(ctx: ExecutionContext, env: unknown) {
+    const parsedEnv = loadEnv<ServiceEnv>(TsunamiEnvSchema, env);
+    super(ctx, parsedEnv, buildServices, { serviceName: 'tsunami' });
   }
 
   /**

@@ -18,6 +18,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
 import { dlqMetadata } from '../db/schema';
 import { DLQFilterOptions, DLQMessage, DLQStats } from '../types';
+import type { SiloEnv } from '../config/env';
 import { siloSimplePutSchema } from '@dome/common';
 import { IngestQueue, IngestDlqQueue } from '../queues';
 import { z } from 'zod';
@@ -84,7 +85,7 @@ export class DLQServiceImpl implements DLQService {
   private ingestQueue?: IngestQueue;
   private ingestDlq?: IngestDlqQueue;
 
-  constructor(private env: Env) {
+  constructor(private env: SiloEnv) {
     this.db = drizzle(env.DB);
     this.ingestQueue = env.SILO_INGEST_QUEUE ? new IngestQueue(env.SILO_INGEST_QUEUE) : undefined;
     this.ingestDlq = env.INGEST_DLQ ? new IngestDlqQueue(env.INGEST_DLQ) : undefined;
@@ -1031,6 +1032,6 @@ export class DLQServiceImpl implements DLQService {
 /**
  * Create a new DLQ service
  */
-export function createDLQService(env: Env): DLQService {
+export function createDLQService(env: SiloEnv): DLQService {
   return new DLQServiceImpl(env);
 }
