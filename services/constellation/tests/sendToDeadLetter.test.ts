@@ -32,7 +32,7 @@ describe('sendToDeadLetter', () => {
   it('sends a serialized message', async () => {
     const queue = { send: vi.fn() } as any;
     const payload = { error: 'oops', originalMessage: { id: 1 } } as any;
-    await sendToDeadLetter(queue, payload, 'req1');
+    await sendToDeadLetter.call({ wrap: async (_m: any, fn: any) => fn() }, queue, payload, 'req1');
     expect(queue.send).toHaveBeenCalledTimes(1);
     const arg = queue.send.mock.calls[0][0];
     expect(typeof arg).toBe('string');
@@ -42,6 +42,8 @@ describe('sendToDeadLetter', () => {
   it('throws for invalid payload', async () => {
     const queue = { send: vi.fn() } as any;
     const badPayload = { foo: 'bar' } as any;
-    await expect(sendToDeadLetter(queue, badPayload, 'req2')).rejects.toThrow();
+    await expect(
+      sendToDeadLetter.call({ wrap: async (_m: any, fn: any) => fn() }, queue, badPayload, 'req2')
+    ).rejects.toThrow();
   });
 });
