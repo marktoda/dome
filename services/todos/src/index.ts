@@ -1,7 +1,7 @@
 /**
  * Todos Service – using WorkerEntrypoint pattern
  */
-import { BaseWorker, ServiceInfo, getLogger, logError, trackOperation, MessageBatch } from '@dome/common';
+import { BaseWorker, ServiceInfo, getLogger, logError, MessageBatch } from '@dome/common';
 import { processTodoQueue } from './queueConsumer';
 import { TodosService } from './services/todosService';
 import {
@@ -55,10 +55,10 @@ export default class Todos extends BaseWorker<Env, ReturnType<typeof buildServic
   async createTodo(todo: CreateTodoInput) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation('create_todo', () => this.services.todos.createTodo(todo), {
-      userId: todo.userId,
-      requestId,
-    });
+    return await this.wrap(
+      { operation: 'create_todo', userId: todo.userId, requestId },
+      () => this.services.todos.createTodo(todo),
+    );
   }
 
   /**
@@ -67,10 +67,10 @@ export default class Todos extends BaseWorker<Env, ReturnType<typeof buildServic
   async getTodo(id: string) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation('get_todo', () => this.services.todos.getTodo(id), {
-      todoId: id,
-      requestId,
-    });
+    return await this.wrap(
+      { operation: 'get_todo', todoId: id, requestId },
+      () => this.services.todos.getTodo(id),
+    );
   }
 
   /**
@@ -79,10 +79,9 @@ export default class Todos extends BaseWorker<Env, ReturnType<typeof buildServic
   async listTodos(filter: TodoFilter, pagination?: Pagination) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'list_todos',
+    return await this.wrap(
+      { operation: 'list_todos', userId: filter.userId, requestId },
       () => this.services.todos.listTodos(filter, pagination),
-      { userId: filter.userId, requestId },
     );
   }
 
@@ -92,10 +91,10 @@ export default class Todos extends BaseWorker<Env, ReturnType<typeof buildServic
   async updateTodo(id: string, updates: UpdateTodoInput) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation('update_todo', () => this.services.todos.updateTodo(id, updates), {
-      todoId: id,
-      requestId,
-    });
+    return await this.wrap(
+      { operation: 'update_todo', todoId: id, requestId },
+      () => this.services.todos.updateTodo(id, updates),
+    );
   }
 
   /**
@@ -104,10 +103,10 @@ export default class Todos extends BaseWorker<Env, ReturnType<typeof buildServic
   async deleteTodo(id: string) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation('delete_todo', () => this.services.todos.deleteTodo(id), {
-      todoId: id,
-      requestId,
-    });
+    return await this.wrap(
+      { operation: 'delete_todo', todoId: id, requestId },
+      () => this.services.todos.deleteTodo(id),
+    );
   }
 
   /**
@@ -116,10 +115,9 @@ export default class Todos extends BaseWorker<Env, ReturnType<typeof buildServic
   async batchUpdateTodos(ids: string[], updates: BatchUpdateInput) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'batch_update_todos',
+    return await this.wrap(
+      { operation: 'batch_update_todos', todoCount: ids.length, requestId },
       () => this.services.todos.batchUpdateTodos(ids, updates),
-      { todoCount: ids.length, requestId },
     );
   }
 
@@ -129,10 +127,10 @@ export default class Todos extends BaseWorker<Env, ReturnType<typeof buildServic
   async stats(userId: string) {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation('get_todo_stats', () => this.services.todos.getTodoStats(userId), {
-      userId,
-      requestId,
-    });
+    return await this.wrap(
+      { operation: 'get_todo_stats', userId, requestId },
+      () => this.services.todos.getTodoStats(userId),
+    );
   }
 
   /**
