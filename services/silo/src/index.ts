@@ -59,9 +59,8 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
     queueName: string,
     retryCount?: number,
   ): Promise<void> {
-    // Use trackOperation to ensure consistent logging of the DLQ operation
-    return trackOperation(
-      'silo.sendToDLQ',
+    return this.wrap(
+      { operation: 'sendToDLQ', messageId: message.id, queueName },
       async () => {
         try {
           // Use retryCount parameter if provided, otherwise use message.retryCount or message.attempts
@@ -114,7 +113,6 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
           metrics.increment('silo.dlq.send_failures', 1, { queueName });
         }
       },
-      { messageId: message.id, queueName },
     );
   }
 
