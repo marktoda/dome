@@ -6,7 +6,7 @@
  */
 
 import { BaseWorker } from '@dome/common';
-import { getLogger, logError, metrics, trackOperation } from '@dome/common';
+import { getLogger, logError, metrics } from '@dome/common';
 import {
   DomeError,
   ValidationError,
