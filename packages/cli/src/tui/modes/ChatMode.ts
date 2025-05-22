@@ -2,6 +2,7 @@ import { Widgets } from 'blessed';
 import { BaseMode } from './BaseMode';
 import { getApiClient } from '../../utils/apiClient';
 import { loadConfig } from '../../utils/config';
+import { getChatSession, ChatSessionManager } from '../../utils/chatSession';
 import { DomeApi, DomeApiError, DomeApiTimeoutError } from '@dome/dome-sdk'; // SDK imports
 
 // SDK's ChatSource will be used. RelevanceScore is not available.
@@ -75,6 +76,9 @@ export class ChatMode extends BaseMode {
     '{center}Type a message to chat with Dome AI{/center}',
     '',
   ];
+
+  /** Chat session manager for persisting history */
+  private session: ChatSessionManager = getChatSession();
 
   /** Processes thinking content and maintains state between chunks */
   private thinkingProcessor = new (class {
@@ -154,7 +158,8 @@ export class ChatMode extends BaseMode {
   protected onActivate(): void {
     this.configureContainer();
     this.container.setLabel(' Chat with Dome ');
-    this.renderHeader();
+    const cw = (this.container as any).width - 4;
+    this.renderHistory(cw);
   }
 
   protected onDeactivate(): void {
@@ -168,6 +173,7 @@ export class ChatMode extends BaseMode {
   async handleInput(input: string): Promise<void> {
     this.configureContainer();
     const cw = (this.container as any).width - 4;
+    this.session.addUserMessage(input);
 
     const convo: Conversation = { user: input, thinking: '', reply: '' };
     const rebuild = () => this.renderConversation(convo, cw);
@@ -221,9 +227,9 @@ export class ChatMode extends BaseMode {
       }
 
       const apiClient = await getApiClient();
-      // TODO: Integrate ChatSessionManager if TUI chat should persist history across CLI calls
-      // For now, sending only the current input as a new conversation.
-      const messages: DomeApi.PostChatRequestMessagesItem[] = [{ role: 'user', content: input }];
+      const messages: DomeApi.PostChatRequestMessagesItem[] = this.session
+        .getMessages()
+        .map(m => ({ role: m.role, content: m.content }));
 
       const request: DomeApi.PostChatRequest = {
         userId: config.userId,
@@ -259,6 +265,9 @@ export class ChatMode extends BaseMode {
           if (line) onChunk(detectSdkChunk(line));
         }
       }
+
+      this.session.addAssistantMessage(convo.reply.trim());
+      rebuild();
 
       /* sources ------------------------------------------------------ */
       if (accumulatedSources.length > 0) {
@@ -308,11 +317,22 @@ export class ChatMode extends BaseMode {
     this.screen.render();
   }
 
-  private renderConversation({ user, thinking, reply }: Conversation, cw: number): void {
+  private renderHistory(cw: number): void {
     this.container.setContent('');
     ChatMode.HEADER.forEach(l => this.container.pushLine(l));
+    const history = this.session.getMessages();
+    history.forEach(msg => {
+      const header =
+        msg.role === 'user'
+          ? '{bold}{green-fg}You:{/green-fg}{/bold}'
+          : '{bold}{blue-fg}Dome:{/blue-fg}{/bold}';
+      this.printBlock(header, msg.content, cw);
+    });
+    this.scrollToBottom();
+  }
 
-    this.printBlock('{bold}{green-fg}You:{/green-fg}{/bold}', user, cw);
+  private renderConversation({ user, thinking, reply }: Conversation, cw: number): void {
+    this.renderHistory(cw);
 
     // Format and display thinking content if available
     if (thinking && thinking !== 'Thinking...' && thinking.length > 1) {
