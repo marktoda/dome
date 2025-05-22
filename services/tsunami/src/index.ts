@@ -1,7 +1,7 @@
 /**
  * Tsunami Service – using WorkerEntrypoint pattern
  */
-import { BaseWorker, createServiceMetrics, getLogger, ServiceInfo, formatZodError, logError, trackOperation } from '@dome/common';
+import { BaseWorker, getLogger, ServiceInfo, formatZodError, logError, trackOperation } from '@dome/common';
 import { toDomeError } from './utils/errors';
 import { ConflictError, ValidationError } from '@dome/common/errors';
 import { createSyncPlanService } from './services/syncPlanService';
