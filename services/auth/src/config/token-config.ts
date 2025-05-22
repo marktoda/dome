@@ -46,25 +46,13 @@ const DEFAULT_AUDIENCE = 'dome-app';
  * @returns Token configuration settings.
  * @throws Error if essential secret keys are not defined in the environment.
  */
-export function getTokenSettings(env: any): TokenSettings {
-  const accessTokenSecret = env.JWT_ACCESS_TOKEN_SECRET;
-  const refreshTokenSecret = env.JWT_REFRESH_TOKEN_SECRET;
+import type { AuthEnv } from './env';
 
-  if (!accessTokenSecret) {
-    throw new Error(
-      'JWT_ACCESS_TOKEN_SECRET is not defined in environment variables. This is required.',
-    );
-  }
-  if (!refreshTokenSecret) {
-    throw new Error(
-      'JWT_REFRESH_TOKEN_SECRET is not defined in environment variables. This is required.',
-    );
-  }
-
+export function getTokenSettings(env: AuthEnv): TokenSettings {
   return {
-    accessTokenSecret,
+    accessTokenSecret: env.JWT_ACCESS_TOKEN_SECRET,
     accessTokenExpiresIn: env.JWT_ACCESS_TOKEN_EXPIRES_IN || DEFAULT_ACCESS_TOKEN_EXPIRES_IN,
-    refreshTokenSecret,
+    refreshTokenSecret: env.JWT_REFRESH_TOKEN_SECRET,
     refreshTokenExpiresIn: env.JWT_REFRESH_TOKEN_EXPIRES_IN || DEFAULT_REFRESH_TOKEN_EXPIRES_IN,
     issuer: env.JWT_ISSUER || DEFAULT_ISSUER,
     audience: env.JWT_AUDIENCE || DEFAULT_AUDIENCE,

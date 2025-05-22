@@ -2,10 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { getLogger, logError, metrics } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { IngestQueue } from '@dome/silo/queues';
-
-export interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
-  SILO: SiloBinding;
-}
+import type { ServiceEnv } from './config/env';
 import {
   ProviderType,
   GithubProvider,

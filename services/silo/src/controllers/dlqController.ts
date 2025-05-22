@@ -49,8 +49,10 @@ export interface DLQController {
 /**
  * DLQ Controller implementation
  */
+import type { SiloEnv } from '../config/env';
+
 class DLQControllerImpl implements DLQController {
-  constructor(private env: Env, private dlqService: DLQService) {}
+  constructor(private env: SiloEnv, private dlqService: DLQService) {}
 
   async getStats(): Promise<DLQStats> {
     return wrap({ operation: 'getStats' }, () => this.dlqService.getDLQStats());
@@ -104,6 +106,6 @@ class DLQControllerImpl implements DLQController {
 /**
  * Create a new DLQ controller
  */
-export function createDLQController(env: Env, dlqService: DLQService): DLQController {
+export function createDLQController(env: SiloEnv, dlqService: DLQService): DLQController {
   return new DLQControllerImpl(env, dlqService);
 }

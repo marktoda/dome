@@ -1,6 +1,6 @@
 import { ulid } from 'ulid';
 import { getLogger, logError, metrics, trackOperation, getRequestId } from '@dome/common';
-import type { ServiceEnv } from '../resourceObject';
+import type { ServiceEnv } from '../config/env';
 import {
   NotFoundError,
   ConflictError,

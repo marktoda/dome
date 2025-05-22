@@ -38,15 +38,18 @@ import {
   IngestDlqQueue,
   R2EventQueue,
 } from './queues';
+import { loadEnv } from '@dome/common/config/env';
+import { SiloEnvSchema, SiloEnv } from './config/env';
 export * from './client';
 
 /**
  * Silo service main class
  */
-export default class Silo extends BaseWorker<Env, Services> implements SiloBinding {
+export default class Silo extends BaseWorker<SiloEnv, Services> implements SiloBinding {
 
-  constructor(ctx: ExecutionContext, env: Env) {
-    super(ctx, env, createServices, { serviceName: 'silo' });
+  constructor(ctx: ExecutionContext, env: unknown) {
+    const parsedEnv = loadEnv<SiloEnv>(SiloEnvSchema, env);
+    super(ctx, parsedEnv, createServices, { serviceName: 'silo' });
   }
 
   /**

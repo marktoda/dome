@@ -56,13 +56,6 @@ export class PrivyAuthProvider extends BaseAuthProvider {
   }
 
   private getAuthContext() {
-    if (!this.env || !this.env.AUTH_DB) {
-      console.error('AUTH_DB not found in environment provided to PrivyAuthProvider');
-      throw new ServiceError('PrivyAuthProvider not configured correctly with AUTH_DB.', {
-        service: 'auth',
-        code: 'PROVIDER_CONFIG_ERROR',
-      });
-    }
     return {
       env: this.env,
       db: this.env.AUTH_DB,

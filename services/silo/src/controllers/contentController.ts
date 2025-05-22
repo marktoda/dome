@@ -7,6 +7,7 @@ import { MetadataService } from '../services/metadataService';
 import { QueueService } from '../services/queueService';
 import { SiloService } from '../services/siloService';
 import { R2Event } from '../types';
+import type { SiloEnv } from '../config/env';
 import {
   SiloContentMetadata,
   SiloSimplePutResponse,
@@ -36,7 +37,7 @@ const logger = getLogger();
 
 export class ContentController {
   constructor(
-    private readonly env: Env,
+    private readonly env: SiloEnv,
     private readonly r2Service: R2Service,
     private readonly metadataService: MetadataService,
     private readonly queueService: QueueService,
@@ -434,7 +435,7 @@ export class ContentController {
 // ---------------------------------------------------------------------------
 
 export function createContentController(
-  env: Env,
+  env: SiloEnv,
   r2Service: R2Service,
   metadataService: MetadataService,
   queueService: QueueService,

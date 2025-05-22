@@ -4,6 +4,7 @@ import { eq, and, desc, count, sum, or, isNull, inArray } from 'drizzle-orm';
 import { contents } from '../db/schema';
 import { SiloContentMetadata, SiloStatsResponse, PUBLIC_USER_ID } from '@dome/common';
 import { SiloService } from './siloService';
+import type { SiloEnv } from '../config/env';
 
 /**
  * MetadataService - A wrapper around D1 for content metadata operations
@@ -12,7 +13,7 @@ import { SiloService } from './siloService';
 export class MetadataService {
   private db: ReturnType<typeof drizzle>;
 
-  constructor(private env: Env) {
+  constructor(private env: SiloEnv) {
     this.db = drizzle(env.DB);
   }
 
@@ -442,6 +443,6 @@ export class MetadataService {
   }
 }
 
-export function createMetadataService(env: Env): MetadataService {
+export function createMetadataService(env: SiloEnv): MetadataService {
   return new MetadataService(env);
 }

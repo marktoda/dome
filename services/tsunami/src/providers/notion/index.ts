@@ -18,7 +18,7 @@ import { injectMetadataHeader } from '../../services/metadataHeaderService';
 import { BaseProvider } from '../base';
 import { NotionClient } from './client';
 import { NotionAuthManager } from './auth';
-import type { ServiceEnv } from '../../resourceObject';
+import type { ServiceEnv } from '../../config/env';
 
 /**
  * Notion Provider implementation

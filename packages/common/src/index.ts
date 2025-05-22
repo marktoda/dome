@@ -28,3 +28,5 @@ export * from './queue/index.js';
 
 // Service helpers
 export * from './service/BaseWorker.js';
+// Environment utilities
+export * from './config/env.js';

@@ -5,6 +5,7 @@ import { createDLQService } from './dlqService';
 import { createContentController, ContentController } from '../controllers/contentController';
 import { createStatsController, StatsController } from '../controllers/statsController';
 import { createDLQController, DLQController } from '../controllers/dlqController';
+import type { SiloEnv } from '../config/env';
 
 /**
  * Service container interface
@@ -19,7 +20,7 @@ export interface Services {
 /**
  * Create and initialize all services
  */
-export function createServices(env: Env): Services {
+export function createServices(env: SiloEnv): Services {
   // Create service wrappers around external services
   const r2Service = createR2Service(env);
   const metadataService = createMetadataService(env);
