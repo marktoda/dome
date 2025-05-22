@@ -6,7 +6,7 @@
  */
 import { SiloSimplePutInput, ContentCategory, MimeType } from '@dome/common';
 import { Provider, PullOpts, PullResult } from '.';
-import { getLogger, metrics } from '@dome/common';
+import { getLogger, metrics, trackedFetch } from '@dome/common';
 import {
   createGitHubMetadata,
   getLanguageFromPath,
@@ -177,8 +177,8 @@ export class GithubProvider extends BaseProvider implements Provider {
 
   /* ─── GitHub API wrappers ────────────────────────────────────────────── */
 
-  private async json<T>(url: string): Promise<T> {
-    const res = await fetch(url, { headers: this.headers });
+  private async json<T>(url: string, context: Record<string, any> = {}): Promise<T> {
+    const res = await trackedFetch(url, { headers: this.headers }, context);
     if (!res.ok) {
       const body = await res.text().catch(() => '<no-body>');
       this.log.error({ url, status: res.status, body }, 'github: request failed');
@@ -199,7 +199,7 @@ export class GithubProvider extends BaseProvider implements Provider {
     cursor: string | null,
   ): Promise<Commit[]> {
     const url = `${API}/repos/${owner}/${repo}/commits?per_page=100`;
-    const all = await this.json<Commit[]>(url);
+    const all = await this.json<Commit[]>(url, { owner, repo, op: 'getNewCommits' });
 
     if (!cursor) return all; // first sync
 
@@ -209,7 +209,7 @@ export class GithubProvider extends BaseProvider implements Provider {
 
   private async getFiles(owner: string, repo: string, sha: string): Promise<GitFile[]> {
     const url = `${API}/repos/${owner}/${repo}/commits/${sha}`;
-    const { files = [] } = await this.json<FilesResp>(url);
+    const { files = [] } = await this.json<FilesResp>(url, { owner, repo, sha, op: 'getFiles' });
     return files;
   }
 
@@ -221,7 +221,13 @@ export class GithubProvider extends BaseProvider implements Provider {
   ): Promise<string | null> {
     const url = `${API}/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=${sha}`;
     try {
-      const { content, encoding, size } = await this.json<ContentResp>(url);
+      const { content, encoding, size } = await this.json<ContentResp>(url, {
+        owner,
+        repo,
+        path,
+        sha,
+        op: 'getFile',
+      });
       if (!content || size > MAX) return null;
       return encoding === 'base64' ? b64(content) : content;
     } catch (err) {

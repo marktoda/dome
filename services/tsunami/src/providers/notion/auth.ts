@@ -4,7 +4,7 @@
  * This module handles API keys and OAuth integration with Notion,
  * including token exchange and secure storage.
  */
-import { getLogger, metrics } from '@dome/common';
+import { getLogger, metrics, trackedFetch, getRequestId } from '@dome/common';
 import { ServiceError } from '@dome/common/src/errors';
 import { TokenService, OAuthTokenRecord } from '../../services/tokenService'; // Corrected path
 import type { NotionOAuthDetails } from '../../client/types'; // Corrected path
@@ -99,18 +99,23 @@ export class NotionAuthManager {
       const tokenEndpoint = 'https://api.notion.com/v1/oauth/token';
       const authHeader = `Basic ${btoa(`${this.clientId}:${this.clientSecret}`)}`;
 
-      const response = await fetch(tokenEndpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          'Content-Type': 'application/json',
+      const requestId = getRequestId();
+      const response = await trackedFetch(
+        tokenEndpoint,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: this.redirectUri,
+          }),
         },
-        body: JSON.stringify({
-          grant_type: 'authorization_code',
-          code,
-          redirect_uri: this.redirectUri,
-        }),
-      });
+        { operation: 'exchangeCodeForToken', requestId },
+      );
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => '<no-body>');

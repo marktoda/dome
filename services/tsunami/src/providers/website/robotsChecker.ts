@@ -4,7 +4,7 @@
  * This class is responsible for checking robots.txt files and determining
  * if a URL is allowed to be crawled according to the robots.txt rules.
  */
-import { getLogger } from '@dome/common';
+import { getLogger, trackedFetch } from '@dome/common';
 
 export class RobotsChecker {
   private log = getLogger();
@@ -31,11 +31,15 @@ export class RobotsChecker {
 
     try {
       this.log.info({ robotsUrl }, 'Fetching robots.txt');
-      const response = await fetch(robotsUrl, {
-        headers: {
-          'User-Agent': this.userAgent,
+      const response = await trackedFetch(
+        robotsUrl,
+        {
+          headers: {
+            'User-Agent': this.userAgent,
+          },
         },
-      });
+        { robotsUrl },
+      );
 
       if (!response.ok) {
         if (response.status === 404) {
