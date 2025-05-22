@@ -9,7 +9,22 @@ vi.mock('../src/utils/functionWrapper', async () => {
   };
 });
 
+vi.mock('../src/logging/index', async () => {
+  const actual = await vi.importActual<any>('../src/logging/index');
+  return {
+    ...actual,
+    createServiceMetrics: vi.fn(() => ({
+      counter: vi.fn(),
+      gauge: vi.fn(),
+      timing: vi.fn(),
+      startTimer: vi.fn(() => ({ stop: vi.fn() })),
+      trackOperation: vi.fn(),
+    })),
+  };
+});
+
 import { createServiceWrapper } from '../src/utils/functionWrapper';
+import { createServiceMetrics } from '../src/logging/index';
 
 class TestWorker extends BaseWorker<any, Record<string, any>> {
   public getServices() {
@@ -28,6 +43,13 @@ describe('BaseWorker', () => {
     const s2 = worker.getServices();
     expect(build).toHaveBeenCalledTimes(1);
     expect(s1).toBe(s2);
+  });
+
+  it('creates metrics when serviceName provided', () => {
+    const worker = new TestWorker({}, {}, () => ({}), { serviceName: 'metric' });
+
+    expect((createServiceMetrics as unknown as vi.Mock)).toHaveBeenCalledWith('metric');
+    expect((worker as any).metrics).toBeDefined();
   });
 
   it('wrap delegates to createServiceWrapper', async () => {

@@ -16,7 +16,7 @@ export class BaseWorker<Env = unknown, Services = unknown> extends WorkerEntrypo
   private readonly buildServices: (env: Env) => Services;
   protected metrics?: ServiceMetrics;
   protected logger = getLogger();
-  protected wrap: <T>(meta: Record<string, unknown>, fn: () => Promise<T>) => Promise<T> = async (_m, fn) => fn();
+  private serviceWrapper: <T>(meta: Record<string, unknown>, fn: () => Promise<T>) => Promise<T> = async (_m, fn) => fn();
   protected trackedFetch = baseTrackedFetch;
 
   constructor(
@@ -30,11 +30,15 @@ export class BaseWorker<Env = unknown, Services = unknown> extends WorkerEntrypo
     if (options.serviceName) {
       this.metrics = createServiceMetrics(options.serviceName);
       this.logger = getLogger().child({ service: options.serviceName });
-      this.wrap = createServiceWrapper(options.serviceName);
+      this.serviceWrapper = createServiceWrapper(options.serviceName);
     }
   }
 
   protected get services(): Services {
     return (this._services ??= this.buildServices(this.env));
+  }
+
+  protected wrap<T>(meta: Record<string, unknown>, fn: () => Promise<T>): Promise<T> {
+    return this.serviceWrapper(meta, fn);
   }
 }
