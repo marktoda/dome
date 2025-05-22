@@ -10,6 +10,7 @@ import { createLlmService } from './services/llmService';
 import { NewContentMessage } from '@dome/common';
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import type { ServiceEnv } from './types';
+import type { MessageBatch as CommonMessageBatch } from '@dome/common';
 import { z } from 'zod';
 import {
   getLogger,
@@ -95,6 +96,10 @@ export default class AiProcessor extends BaseWorker<ServiceEnv, ReturnType<typeo
    * @param batch Batch of messages from the queue
    */
   async queue(batch: MessageBatch<unknown>) {
-    await queueHandlers.handleQueue.call(this, batch as MessageBatch<NewContentMessage>);
+    const typed = batch as unknown as CommonMessageBatch<NewContentMessage>;
+    await queueHandlers.handleQueue.call(
+      this,
+      typed as unknown as MessageBatch<NewContentMessage>,
+    );
   }
 }
