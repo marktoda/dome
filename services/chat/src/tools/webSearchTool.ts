@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getLogger } from '@dome/common';
+import { getLogger, trackedFetch } from '@dome/common';
 import { Document } from '../types';
 import { RetrievalTool, RetrievalInput } from '.';
 /* ------------------------------------------------------------------ */
@@ -48,12 +48,16 @@ async function fetchBraveSearch(
   url.searchParams.set('count', String(k));
   if (freshDays) url.searchParams.set('freshness', `${freshDays}d`);
 
-  const resp = await fetch(url.toString(), {
-    headers: {
-      Accept: 'application/json',
-      'X-Subscription-Token': apiKey,
+  const resp = await trackedFetch(
+    url.toString(),
+    {
+      headers: {
+        Accept: 'application/json',
+        'X-Subscription-Token': apiKey,
+      },
     },
-  });
+    { query: q, topK: k, freshDays },
+  );
   if (!resp.ok) throw new Error(`Search API error • ${resp.status}`);
 
   // TODO: fetch detailed info from the sites

@@ -4,7 +4,7 @@
  * This class is responsible for crawling websites and fetching pages.
  * It handles rate limiting, depth control, and URL filtering.
  */
-import { getLogger } from '@dome/common';
+import { getLogger, trackedFetch } from '@dome/common';
 import { RobotsChecker } from './robotsChecker';
 
 export class WebsiteCrawler {
@@ -248,11 +248,15 @@ export class WebsiteCrawler {
   private async fetchPage(url: string): Promise<CrawledPage> {
     this.log.debug({ url }, 'Fetching page');
 
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': this.userAgent,
+    const response = await trackedFetch(
+      url,
+      {
+        headers: {
+          'User-Agent': this.userAgent,
+        },
       },
-    });
+      { url },
+    );
 
     // Get content type and last modified date
     const contentType = response.headers.get('content-type') || 'text/html';

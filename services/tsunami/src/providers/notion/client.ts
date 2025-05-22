@@ -4,7 +4,7 @@
  * This client handles communication with the Notion API, including authentication,
  * rate limiting, and error handling.
  */
-import { getLogger, metrics } from '@dome/common';
+import { getLogger, metrics, trackedFetch, getRequestId } from '@dome/common';
 import { ServiceError } from '@dome/common/src/errors';
 import { NotionAuthManager } from './auth';
 
@@ -460,7 +460,11 @@ export class NotionClient {
           body: body ? JSON.stringify(body) : undefined,
         };
 
-        const response = await fetch(url, options);
+        const requestId = getRequestId();
+        const response = await trackedFetch(url, options, {
+          method,
+          requestId,
+        });
 
         // Handle rate limiting
         if (response.status === 429) {
