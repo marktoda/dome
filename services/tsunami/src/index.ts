@@ -1,7 +1,7 @@
 /**
  * Tsunami Service – using WorkerEntrypoint pattern
  */
-import { BaseWorker, getLogger, ServiceInfo, formatZodError, logError, trackOperation } from '@dome/common';
+import { BaseWorker, getLogger, ServiceInfo, formatZodError, logError } from '@dome/common';
 import { toDomeError } from './utils/errors';
 import { ConflictError, ValidationError } from '@dome/common/errors';
 import { createSyncPlanService } from './services/syncPlanService';
@@ -65,10 +65,14 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
   async createSyncPlan(providerType: string, resourceId: string, userId?: string): Promise<string> {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'create_sync_plan',
+    return this.wrap(
+      {
+        operation: 'create_sync_plan',
+        resourceId,
+        userId,
+        requestId,
+      },
       () => this.services.syncPlan.createSyncPlan(providerType, resourceId, userId),
-      { resourceId, userId, requestId },
     );
   }
 
@@ -81,10 +85,13 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
   async getSyncPlan(resourceId: string): Promise<any> {
     const requestId = crypto.randomUUID();
 
-    return await trackOperation(
-      'get_sync_plan',
+    return this.wrap(
+      {
+        operation: 'get_sync_plan',
+        resourceId,
+        requestId,
+      },
       () => this.services.syncPlan.getSyncPlan(resourceId),
-      { resourceId, requestId },
     );
   }
 
@@ -97,10 +104,14 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
   async attachUser(syncPlanId: string, userId: string): Promise<void> {
     const requestId = crypto.randomUUID();
 
-    await trackOperation(
-      'attach_user_to_plan',
+    await this.wrap(
+      {
+        operation: 'attach_user_to_plan',
+        syncPlanId,
+        userId,
+        requestId,
+      },
       () => this.services.syncPlan.attachUser(syncPlanId, userId),
-      { syncPlanId, userId, requestId },
     );
   }
 
@@ -121,8 +132,13 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
     const providerTypeEnum =
       params.providerType.toUpperCase() === 'GITHUB' ? ProviderType.GITHUB : ProviderType.NOTION;
 
-    return await trackOperation(
-      'initialize_resource',
+    return this.wrap(
+      {
+        operation: 'initialize_resource',
+        resourceId: params.resourceId,
+        userId: params.userId,
+        requestId,
+      },
       () =>
         this.services.syncPlan.initializeResource(
           {
@@ -131,7 +147,6 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
           },
           cadenceSecs,
         ),
-      { resourceId: params.resourceId, userId: params.userId, requestId },
     );
   }
 
