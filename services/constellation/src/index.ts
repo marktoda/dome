@@ -12,7 +12,6 @@ import {
 import {
   getLogger,
   logError,
-  trackOperation,
   constellationMetrics as metrics,
 } from './utils/logging';
 import {
@@ -62,7 +61,8 @@ const buildServices = (env: ServiceEnv) => ({
  * @param payload Payload to send to dead letter queue
  * @param requestId Request ID for correlation
  */
-const sendToDeadLetter = async (
+async function sendToDeadLetter(
+  this: { wrap: <T>(meta: Record<string, unknown>, fn: () => Promise<T>) => Promise<T> } | void,
   queue: Queue,
   payload: {
     err?: Error | string;
@@ -73,7 +73,7 @@ const sendToDeadLetter = async (
     timestamp?: number;
   },
   requestId: string = crypto.randomUUID(),
-) => {
+) {
   if (!queue) {
     logger.warn(
       {
@@ -91,8 +91,12 @@ const sendToDeadLetter = async (
     throw new Error(`Invalid payload format for sendToDeadLetter: ${JSON.stringify(payload)}`);
   }
 
-  return trackOperation(
-    'send_to_dlq',
+  const wrap = this
+    ? this.wrap
+    : async (_m: Record<string, unknown>, fn: () => Promise<any>) => fn();
+
+  return wrap(
+    { operation: 'send_to_dlq', requestId },
     async () => {
       logger.info(
         {
@@ -126,9 +130,8 @@ const sendToDeadLetter = async (
         'Successfully sent message to dead letter queue',
       );
     },
-    { requestId },
   );
-};
+}
 
 /* -------------------------------------------------------------------------- */
 /* worker                                                                     */
@@ -154,8 +157,8 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
     deadQueue?: DeadQueue,
     batchRequestId: string = crypto.randomUUID(),
   ): Promise<number> {
-    return trackOperation(
-      'embed_batch',
+    return this.wrap(
+      { operation: 'embed_batch', jobCount: messages.length, batchRequestId },
       async () => {
         const MAX_CHUNKS_PER_BATCH = 50;
         const MAX_TEXT_LENGTH = 100000;
@@ -182,8 +185,8 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
 
           let job!: SiloContentItem;
           try {
-            await trackOperation(
-              'process_content_job',
+            await this.wrap(
+              { ...jobContext, operation: 'process_content_job' },
               async () => {
                 const { silo, preprocessor, embedder, vectorize } = this.services;
 
@@ -260,7 +263,6 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
                 chunks.length = 0;
                 allVectors.length = 0;
               },
-              jobContext,
             );
           } catch (err) {
             const domeError = toDomeError(err, `Failed to embed content ID: ${msg.body.id}`, {
@@ -274,7 +276,8 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
             });
 
             if (deadQueue) {
-              await sendToDeadLetter(
+              await sendToDeadLetter.call(
+                this as any,
                 deadQueue,
                 {
                   err: domeError,
@@ -295,7 +298,6 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
         this.logBatchResults(batchRequestId, processed, messages.length, startTime);
         return processed;
       },
-      { jobCount: messages.length, batchRequestId },
     );
   }
 
