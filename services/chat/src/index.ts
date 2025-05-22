@@ -7,8 +7,6 @@
 
 import { BaseWorker } from '@dome/common';
 import { Hono } from 'hono';
-import { getLogger } from '@dome/common';
-import { wrap } from './utils/wrap';
 import { errorHandler } from '@dome/common/errors';
 import { createServices } from './services';
 import { createControllers } from './controllers';
@@ -23,7 +21,6 @@ export * from './client';
 export default class Chat extends BaseWorker<Env, ReturnType<typeof createServices>> implements ChatBinding {
   private controllers;
   private app: Hono;
-  private logger = getLogger().child({ component: 'Chat' });
 
   constructor(ctx: ExecutionContext, env: Env) {
     super(ctx, env, createServices, { serviceName: 'chat' });
@@ -69,7 +66,7 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Complete response with aggregated output
    */
   async generateChatMessage(request: ChatRequest): Promise<Response> {
-    return wrap(
+    return this.wrap(
       { operation: 'generateChatMessage', userId: request?.userId },
       () => this.controllers.chat.generateChatMessage(request),
     );
@@ -80,7 +77,7 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Checkpoint statistics
    */
   async getCheckpointStats(): Promise<any> {
-    return wrap(
+    return this.wrap(
       { operation: 'getCheckpointStats' },
       () => this.controllers.admin.getCheckpointStats(),
     );
@@ -91,7 +88,7 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Cleanup result
    */
   async cleanupCheckpoints(): Promise<{ deletedCount: number }> {
-    return wrap(
+    return this.wrap(
       { operation: 'cleanupCheckpoints' },
       () => this.controllers.admin.cleanupCheckpoints(),
     );
@@ -102,7 +99,7 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Data retention statistics
    */
   async getDataRetentionStats(): Promise<any> {
-    return wrap(
+    return this.wrap(
       { operation: 'getDataRetentionStats' },
       () => this.controllers.admin.getDataRetentionStats(),
     );
@@ -113,7 +110,7 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Cleanup result
    */
   async cleanupExpiredData(): Promise<any> {
-    return wrap(
+    return this.wrap(
       { operation: 'cleanupExpiredData' },
       () => this.controllers.admin.cleanupExpiredData(),
     );
@@ -125,7 +122,7 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
    * @returns Deletion result
    */
   async deleteUserData(userId: string): Promise<{ deletedCount: number }> {
-    return wrap(
+    return this.wrap(
       { operation: 'deleteUserData', userId },
       () => this.controllers.admin.deleteUserData(userId),
     );
@@ -143,7 +140,7 @@ export default class Chat extends BaseWorker<Env, ReturnType<typeof createServic
     dataCategory: string,
     request: { durationDays: number },
   ): Promise<{ success: boolean }> {
-    return wrap(
+    return this.wrap(
       { operation: 'recordConsent', userId, dataCategory },
       () => this.controllers.admin.recordConsent(userId, dataCategory, request),
     );

@@ -83,6 +83,32 @@ const user = await processUserRegistration(registrationData);
 - Simplifies complex workflows
 - Enforces input and output validation
 
+### 2.3 BaseWorker Utilities
+
+`BaseWorker` now exposes helper properties for common service patterns:
+
+```typescript
+class MyWorker extends BaseWorker<Env, Services> {
+  constructor(ctx: ExecutionContext, env: Env) {
+    super(ctx, env, buildServices, { serviceName: 'my-worker' });
+  }
+
+  async doSomething() {
+    return this.wrap({ operation: 'doSomething' }, async () => {
+      this.logger.info('doing work');
+      const res = await this.trackedFetch('https://api.example.com');
+      return res.ok;
+    });
+  }
+}
+```
+
+#### Key Features
+
+- `logger` property scoped to the service name
+- `wrap(meta, fn)` for standardized context and error handling
+- `trackedFetch` for external calls with automatic logging
+
 ## 3. Context Management
 
 ### 3.1 Context Propagation

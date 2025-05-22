@@ -9,7 +9,6 @@ import { TokenService } from './services/tokenService';
 import type { NotionOAuthDetails, GithubOAuthDetails } from './client/types'; // Added GithubOAuthDetails
 import { SiloClient, SiloBinding } from '@dome/silo/client';
 import { IngestQueue } from '@dome/silo/queues';
-import { wrap } from './utils/wrap';
 interface ServiceEnv extends Omit<Cloudflare.Env, 'SILO'> {
   SILO: SiloBinding;
 }
@@ -181,7 +180,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
   ): Promise<{ id: string; resourceId: string; wasInitialised: boolean }> {
     const requestId = crypto.randomUUID();
 
-    logger.info(
+    this.logger.info(
       {
         event: 'resource_registration_start',
         providerType,
@@ -196,7 +195,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
     let syncPlanId: string;
     try {
       syncPlanId = await this.createSyncPlan(providerType.toLowerCase(), resourceId, userId);
-      logger.info(
+      this.logger.info(
         { event: 'sync_plan_created', syncPlanId, resourceId, providerType, requestId },
         'Sync-plan created successfully',
       );
@@ -204,7 +203,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
       if (err instanceof ConflictError) {
         const plan = await this.getSyncPlan(resourceId);
         syncPlanId = plan.id;
-        logger.info(
+        this.logger.info(
           { event: 'sync_plan_exists', syncPlanId, resourceId, providerType, requestId },
           'Sync-plan already exists',
         );
@@ -221,7 +220,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
     // Attach user if provided (idempotent)
     if (userId) {
       await this.attachUser(syncPlanId, userId);
-      logger.info(
+      this.logger.info(
         { event: 'user_attached', syncPlanId, userId, providerType, requestId },
         'User attached to sync-plan successfully',
       );
@@ -233,7 +232,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
       cadenceSecs,
     );
 
-    logger.info(
+    this.logger.info(
       {
         event: 'resource_initialized',
         syncPlanId,
@@ -303,7 +302,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
     details: NotionOAuthDetails,
   ): Promise<{ success: boolean; workspaceId: string }> {
     const requestId = crypto.randomUUID();
-    logger.info(
+    this.logger.info(
       {
         event: 'store_notion_oauth_details_entrypoint',
         userId: details.userId,
@@ -314,7 +313,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
       'Tsunami service: Storing Notion OAuth details',
     );
 
-    return wrap(
+    return this.wrap(
       {
         operation: 'store_notion_oauth_details',
         userId: details.userId,
@@ -339,7 +338,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
     details: GithubOAuthDetails,
   ): Promise<{ success: boolean; githubUserId: string }> {
     const requestId = crypto.randomUUID();
-    logger.info(
+    this.logger.info(
       {
         event: 'store_github_oauth_details_entrypoint',
         userId: details.userId,
@@ -349,7 +348,7 @@ export default class Tsunami extends BaseWorker<ServiceEnv, ReturnType<typeof bu
       'Tsunami service: Storing GitHub OAuth details',
     );
 
-    return wrap(
+    return this.wrap(
       {
         operation: 'store_github_oauth_details',
         userId: details.userId,
