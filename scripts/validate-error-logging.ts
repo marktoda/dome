@@ -5,7 +5,7 @@ import {
   ValidationError,
   InternalError,
   ForbiddenError, // Added for more variety
-} from '@dome/errors';
+} from '@dome/common/errors';
 
 // --- Test Runner Setup ---
 interface TestCase {
