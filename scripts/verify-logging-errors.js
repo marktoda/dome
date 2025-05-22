@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * Verification script for @dome/logging and @dome/errors usage
+ * Verification script for @dome/logging and @dome/common/errors usage
  *
  * This script scans all services and verifies:
  * 1. Proper import and usage of @dome/logging
- * 2. Proper import and usage of @dome/errors
+ * 2. Proper import and usage of @dome/common/errors
  * 3. Absence of console.log statements
  * 4. Correct error handling patterns
  * 5. Request ID propagation
@@ -24,7 +24,7 @@ const REPORT_FILE = path.resolve(__dirname, '../docs/LOGGING_VERIFICATION.md');
 const PATTERNS = {
   // Correct patterns
   DOME_LOGGING_IMPORT: /@dome\/logging/,
-  DOME_ERRORS_IMPORT: /@dome\/errors/,
+  DOME_ERRORS_IMPORT: /@dome\/common\/errors/,
   LOG_ERROR_USAGE: /logError\(/,
   REQUEST_ID_PROPAGATION: /requestId|x-request-id/i,
   TRACK_OPERATION: /trackOperation\(/,
@@ -133,7 +133,7 @@ function processService(serviceName, serviceDir) {
       const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
 
       results.services[serviceName].usingDomeLogging = !!dependencies['@dome/logging'];
-      results.services[serviceName].usingDomeErrors = !!dependencies['@dome/errors'];
+      results.services[serviceName].usingDomeErrors = !!dependencies['@dome/common'];
     }
   } catch (err) {
     console.error(`Error checking package.json for ${serviceName}:`, err);
@@ -256,7 +256,7 @@ function generateReport() {
   report += `## Summary\n\n`;
   report += `- **Total Services**: ${results.summary.totalServices}\n`;
   report += `- **Services using @dome/logging**: ${results.summary.servicesUsingDomeLogging}\n`;
-  report += `- **Services using @dome/errors**: ${results.summary.servicesUsingDomeErrors}\n`;
+  report += `- **Services using @dome/common/errors**: ${results.summary.servicesUsingDomeErrors}\n`;
   report += `- **Services missing proper logging**: ${results.summary.servicesMissingProperLogging}\n`;
   report += `- **Services missing proper error handling**: ${results.summary.servicesMissingProperErrors}\n`;
   report += `- **Total console.log violations**: ${results.summary.consoleLogViolations}\n`;
@@ -271,7 +271,7 @@ function generateReport() {
     report += `### ${serviceName}\n\n`;
     report += `- **Source Files**: ${service.sourceFiles}\n`;
     report += `- **Using @dome/logging**: ${service.usingDomeLogging ? '✅' : '❌'}\n`;
-    report += `- **Using @dome/errors**: ${service.usingDomeErrors ? '✅' : '❌'}\n`;
+    report += `- **Using @dome/common/errors**: ${service.usingDomeErrors ? '✅' : '❌'}\n`;
     report += `- **Request ID Propagation**: ${service.requestIdPropagation ? '✅' : '❌'}\n`;
     report += `- **Operation Tracking**: ${service.operationTracking ? '✅' : '❌'}\n`;
     report += `- **Log Level Usage**:\n`;
@@ -310,7 +310,7 @@ function generateReport() {
     }
 
     if (!service.usingDomeErrors) {
-      issues.push('Migrate to @dome/errors');
+      issues.push('Migrate to @dome/common/errors');
     }
 
     if (service.consoleLogViolations.length > 0) {
