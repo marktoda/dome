@@ -6,7 +6,7 @@
  */
 
 import { BaseWorker } from '@dome/common';
-import { getLogger, logError, metrics, trackOperation, trackedFetch } from '@dome/common';
+import { getLogger, logError, metrics, trackOperation } from '@dome/common';
 import {
   DomeError,
   ValidationError,
@@ -16,7 +16,6 @@ import {
   domeAssertExists as assertExists,
 } from '@dome/common';
 import { SiloBinding, DLQMessage, R2Event, DLQFilterOptions, DLQStats } from './types';
-import { wrap } from './utils/wrap';
 import { createServices, Services } from './services';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
@@ -123,7 +122,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Queue consumer for processing R2 object-created events
    */
   async queue(batch: MessageBatch<any>) {
-    await wrap({ op: 'queue', queue: batch.queue, size: batch.messages.length }, async () => {
+    await this.wrap({ op: 'queue', queue: batch.queue, size: batch.messages.length }, async () => {
       try {
         // Determine which queue we're processing
         if (batch.queue === 'silo-content-uploaded') {
@@ -267,7 +266,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Efficiently retrieve multiple content items
    */
   async batchGet(data: SiloBatchGetInput): Promise<SiloContentBatch> {
-    return wrap({ operation: 'batchGet', inputSize: data?.ids?.length || 0 }, async () => {
+    return this.wrap({ operation: 'batchGet', inputSize: data?.ids?.length || 0 }, async () => {
       try {
         // Validate input
         const validatedData = siloBatchGetSchema.parse(data);
@@ -313,7 +312,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Delete content items
    */
   async delete(data: SiloDeleteInput): Promise<SiloDeleteResponse> {
-    return wrap({ operation: 'delete', id: data.id }, async () => {
+    return this.wrap({ operation: 'delete', id: data.id }, async () => {
       try {
         // Make sure required data is present
         assertValid(!!data, 'Delete request must include data', { method: 'delete' });
@@ -364,7 +363,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Get storage statistics
    */
   async stats(data: SiloStatsInput = {}): Promise<SiloStatsResponse> {
-    return wrap({ operation: 'stats' }, async () => {
+    return this.wrap({ operation: 'stats' }, async () => {
       try {
         // Validate input (empty object is fine for stats)
         siloStatsSchema.parse(data);
@@ -423,7 +422,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Find content with null or "Content processing failed" summaries
    */
   async findContentWithFailedSummary(): Promise<SiloContentMetadata[]> {
-    return wrap({ operation: 'findContentWithFailedSummary' }, async () => {
+    return this.wrap({ operation: 'findContentWithFailedSummary' }, async () => {
       try {
         // Track operation start
         metrics.increment('silo.request.started', 1, { method: 'findContentWithFailedSummary' });
@@ -454,7 +453,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Retrieve metadata for a specific content item by ID
    */
   async getMetadataById(id: string): Promise<SiloContentMetadata | null> {
-    return wrap({ operation: 'getMetadataById', id }, async () => {
+    return this.wrap({ operation: 'getMetadataById', id }, async () => {
       try {
         // Make sure ID is provided
         assertValid(!!id, 'ID is required for getMetadataById', { method: 'getMetadataById' });
@@ -492,7 +491,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Get DLQ statistics
    */
   async dlqStats(): Promise<DLQStats> {
-    return wrap({ operation: 'dlqStats' }, async () => {
+    return this.wrap({ operation: 'dlqStats' }, async () => {
       try {
         // Track operation start
         metrics.increment('silo.request.started', 1, { method: 'dlqStats' });
@@ -528,7 +527,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Get DLQ messages with optional filtering
    */
   async dlqMessages(options: DLQFilterOptions = {}): Promise<DLQMessage<unknown>[]> {
-    return wrap({ operation: 'dlqMessages', options: JSON.stringify(options) }, async () => {
+    return this.wrap({ operation: 'dlqMessages', options: JSON.stringify(options) }, async () => {
       try {
         // Track operation start
         metrics.increment('silo.request.started', 1, { method: 'dlqMessages' });
@@ -579,7 +578,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Reprocess a specific DLQ message
    */
   async dlqReprocess(id: string): Promise<string> {
-    return wrap({ operation: 'dlqReprocess', id }, async () => {
+    return this.wrap({ operation: 'dlqReprocess', id }, async () => {
       try {
         // Track operation start
         metrics.increment('silo.request.started', 1, { method: 'dlqReprocess' });
@@ -621,7 +620,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Purge DLQ messages with optional filtering
    */
   async dlqPurge(options: DLQFilterOptions = {}): Promise<number> {
-    return wrap({ operation: 'dlqPurge', options: JSON.stringify(options) }, async () => {
+    return this.wrap({ operation: 'dlqPurge', options: JSON.stringify(options) }, async () => {
       try {
         // Track operation start
         metrics.increment('silo.request.started', 1, { method: 'dlqPurge' });
@@ -675,7 +674,7 @@ export default class Silo extends BaseWorker<Env, Services> implements SiloBindi
    * Takes a list of content IDs and re-publishes them to constellation and ai-processor services
    */
   async reprocessContent(contentIds: string[]): Promise<{ reprocessed: number }> {
-    return wrap({ operation: 'reprocessContent', contentCount: contentIds.length }, async () => {
+    return this.wrap({ operation: 'reprocessContent', contentCount: contentIds.length }, async () => {
       try {
         // Track operation start
         metrics.increment('silo.request.started', 1, { method: 'reprocessContent' });
