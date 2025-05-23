@@ -3,6 +3,7 @@
 export const runtime = 'edge';
 
 import React, { useEffect, useState } from 'react';
+import type { PageProps } from 'next';
 import { useRouter } from 'next/navigation'; // useSearchParams removed as we fetch by ID
 import { Button } from '@/components/ui/button';
 import { ArrowLeftIcon, Loader2 } from 'lucide-react';
@@ -11,12 +12,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 // import { SearchResultItem } from '@/lib/types/search';
 import { notesApi, Note } from '../../../../lib/api'; // Adjusted path
 
-interface SearchResultViewPageProps {
-  params: { id: string };
-  searchParams?: Record<string, string | string[] | undefined>;
-}
-
-const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) => {
+export default function SearchResultViewPage({
+  params,
+}: PageProps<{ id: string }>) {
   const router = useRouter();
   const [note, setNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,6 +164,4 @@ const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) =
       </Card>
     </div>
   );
-};
-
-export default SearchResultViewPage;
+}
