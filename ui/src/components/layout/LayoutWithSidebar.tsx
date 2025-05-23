@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { Header } from '@/components/layout/Header';
 
@@ -32,6 +33,7 @@ export function LayoutWithSidebar({ children }: LayoutWithSidebarProps) {
   const pathname = usePathname();
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
   const isLandingPage = pathname === '/';
+  const isChatPage = pathname.startsWith('/chat');
 
   if (isAuthRoute || isLandingPage) {
     return <>{children}</>;
@@ -49,7 +51,7 @@ export function LayoutWithSidebar({ children }: LayoutWithSidebarProps) {
         {/* Main Content Area */}
         {/* Removed sticky header from here as it's now a global Header component */}
         <main className="flex-1 overflow-y-auto bg-background">
-          <div className="p-4 sm:p-6 lg:p-8">
+          <div className={cn('p-4 sm:p-6 lg:p-8', isChatPage && 'p-0') }>
             {children}
           </div>
         </main>

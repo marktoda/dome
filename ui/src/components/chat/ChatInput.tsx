@@ -52,7 +52,7 @@ export const ChatInput: React.FC = () => {
     <div className="sticky bottom-0 border-t bg-background shadow-t-md">
       <form
         onSubmit={handleSubmit}
-        className="flex w-full items-center gap-2 p-3 md:p-4"
+        className="flex w-full items-center gap-2 p-2 sm:p-3 md:p-4"
       >
         <Input
           type="text"

@@ -88,7 +88,7 @@ export const ChatMessagesList: React.FC = () => {
 
   return (
     <ScrollArea className="flex-1" ref={scrollAreaRootRef}>
-      <div className="space-y-6 p-4 md:p-6">
+      <div className="space-y-6 p-0 sm:p-4 md:p-6">
         {sortedMessages.map((msg: ParsedMessage) => { // Use sortedMessages
           switch (msg.sender) {
             case 'user':
