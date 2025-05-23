@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -16,7 +17,13 @@ import { Sidebar } from './Sidebar';
  */
 export function MobileSidebar() {
   const [open, setOpen] = React.useState(false);
+  const pathname = usePathname();
   const handleResultClick = React.useCallback(() => setOpen(false), []);
+
+  React.useEffect(() => {
+    // Close the sidebar whenever navigation occurs
+    setOpen(false);
+  }, [pathname]);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
