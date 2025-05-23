@@ -22,20 +22,25 @@ export const ChatMessagesList: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Define the desired order for assistant message types within a single turn
-  const assistantMessageTypeOrder: Record<
-    AssistantContentMessage['type'] |
-    AssistantThinkingMessage['type'] |
-    AssistantSourcesMessage['type'] |
-    AssistantReasoningMessage['type'] |
-    AssistantErrorMessage['type'], // Only assistant-specific types that have a 'type' property
-    number
-  > = {
-    thinking: 1,
-    reasoning: 2,
-    sources: 3,
-    content: 4,
-    error: 5, // Assistant errors related to the turn
-  };
+  const assistantMessageTypeOrder = useMemo<
+    Record<
+      | AssistantContentMessage['type']
+      | AssistantThinkingMessage['type']
+      | AssistantSourcesMessage['type']
+      | AssistantReasoningMessage['type']
+      | AssistantErrorMessage['type'],
+      number
+    >
+  >(
+    () => ({
+      thinking: 1,
+      reasoning: 2,
+      sources: 3,
+      content: 4,
+      error: 5, // Assistant errors related to the turn
+    }),
+    []
+  );
 
   const sortedMessages = useMemo(() => {
     return [...messages].sort((a, b) => {

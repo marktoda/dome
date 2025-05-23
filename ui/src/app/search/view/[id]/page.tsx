@@ -11,18 +11,18 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 // import { SearchResultItem } from '@/lib/types/search';
 import { notesApi, Note } from '../../../../lib/api'; // Adjusted path
 
-interface SearchResultViewPageProps {
-  params: { id: string };
-  searchParams?: Record<string, string | string[] | undefined>;
-}
-
-const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) => {
+export default async function SearchResultViewPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const router = useRouter();
   const [note, setNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { id: noteId } = params;
+  const { id: noteId } = await params;
 
   const handleBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -166,6 +166,4 @@ const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) =
       </Card>
     </div>
   );
-};
-
-export default SearchResultViewPage;
+}
