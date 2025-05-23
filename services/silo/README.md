@@ -180,3 +180,19 @@ just test-pkg silo
 | `NEW_CONTENT_AI` | Queue for AI processing jobs | Yes | - |
 | `INGEST_DLQ` | Dead letter queue for ingest failures | Yes | - |
 | `SILO_INGEST_QUEUE` | Queue for ingestion tasks | Yes | - |
+
+### Local Development (`.dev.vars`)
+
+For local development with Wrangler, create a `.dev.vars` file in the
+`services/silo` directory and populate it with the environment variables listed
+above. This file will be loaded automatically when running `just dev silo` or
+`wrangler dev`.
+
+```ini
+# Example
+LOG_LEVEL="debug"
+BUCKET="silo-content"
+DB="silo"
+```
+
+Remember to keep `.dev.vars` out of version control.
