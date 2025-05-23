@@ -46,10 +46,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: {node-version: 18}
+        with: {node-version: 20}
       - run: npm install -g wrangler@latest
       - name: Deploy ${{ matrix.service }}
         working-directory: services/${{ matrix.service }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: wrangler deploy --env production
+        run: wrangler deploy

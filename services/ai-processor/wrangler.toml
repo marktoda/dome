@@ -65,11 +65,11 @@ LOG_LEVEL = "info"
 ENVIRONMENT = "staging"
 
 # Production environment
-[env.prod]
+[env.production]
 name = "ai-processor"
-[env.prod.vars]
+[env.production.vars]
 LOG_LEVEL = "info"
-ENVIRONMENT = "prod"
+ENVIRONMENT = "production"
 
 [observability]
 enabled = true
