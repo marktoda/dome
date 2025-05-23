@@ -143,6 +143,9 @@ h4 { @apply text-xl font-semibold tracking-tight; }
     @apply font-mono text-xl leading-snug caret-transparent outline-none w-full;
     min-height: 2.5rem;
   }
+  .minimal-input:focus-visible {
+    @apply ring-0 outline-none;
+  }
   .minimal-input::after {
     content: '';
     display: inline-block;
