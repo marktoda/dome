@@ -5,7 +5,7 @@
  * rate limiting, and error handling.
  */
 import { getLogger, metrics, trackedFetch, getRequestId } from '@dome/common';
-import { ServiceError } from '@dome/common/src/errors';
+import { ServiceError } from '@dome/common/errors';
 import { NotionAuthManager } from './auth';
 
 /* ─── Constants ───────────────────────────────────────────────────────────── */

@@ -5,7 +5,7 @@
  * including token exchange and secure storage.
  */
 import { getLogger, metrics, trackedFetch, getRequestId } from '@dome/common';
-import { ServiceError } from '@dome/common/src/errors';
+import { ServiceError } from '@dome/common/errors';
 import { TokenService, OAuthTokenRecord } from '../../services/tokenService'; // Corrected path
 import type { NotionOAuthDetails } from '../../client/types'; // Corrected path
 import type { ServiceEnv } from '../../config/env';
