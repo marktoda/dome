@@ -24,24 +24,21 @@ jobs:
       - name: Install Wrangler
         run: npm install -g wrangler
 
+
       - name: Determine Changed Services
         id: changes
         run: |
-          echo "CHANGED_SERVICES<<EOF" >> $GITHUB_OUTPUT
-          git diff --name-only ${{ github.event.before }} ${{ github.sha }} \
-            | grep '^services/' \
-            | cut -d/ -f2 \
-            | sort -u \
-            >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          changed=$(git diff --name-only HEAD^ HEAD | grep '^services/' | cut -d/ -f2 | sort -u | xargs)
+          echo "Changed services: $changed"
+          echo "services=$changed" >> $GITHUB_OUTPUT
 
       - name: Deploy Changed Workers
-        if: steps.changes.outputs.CHANGED_SERVICES != ''
+        if: steps.changes.outputs.services != ''
         run: |
-          for service in ${{ steps.changes.outputs.CHANGED_SERVICES }}; do
+          for service in ${{ steps.changes.outputs.services }}; do
             echo "Deploying $service..."
             cd services/$service
-            wrangler deploy --env production
+            wrangler deploy
             cd -
           done
         env:
