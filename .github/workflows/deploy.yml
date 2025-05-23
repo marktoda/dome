@@ -47,6 +47,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: {node-version: 20}
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install
       - run: npm install -g wrangler@latest
       - name: Deploy ${{ matrix.service }}
         working-directory: services/${{ matrix.service }}
