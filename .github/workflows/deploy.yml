@@ -24,6 +24,8 @@ jobs:
       - name: Install Wrangler
         run: npm install -g wrangler
 
+      - name: Fetch full Git history
+        run: git fetch --prune --unshallow || true
 
       - name: Determine Changed Services
         id: changes
