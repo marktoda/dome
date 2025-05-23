@@ -131,3 +131,25 @@ const results = await constellationClient.query('Hello, world!', { userId: 'user
 | `EMBED_DEAD` | Dead letter queue for failed embedding jobs | Yes | - |
 | `VECTORIZE` | Vectorize index for storing embeddings | Yes | - |
 | `AI` | Workers AI binding | Yes | - |
+
+## Public Vectors
+
+Constellation supports storing vectors that are accessible to all users. To
+create public content pass `null` (or the `PUBLIC_USER_ID` constant from
+`@dome/common`) as the `userId` when calling `embed`. Queries that include a
+`userId` filter automatically merge this value so public vectors are always
+returned alongside user specific results.
+
+### Example: Embedding Public Content
+
+```typescript
+await constellationClient.embed({
+  userId: null, // stored as PUBLIC_USER_ID
+  contentId: 'getting-started',
+  text: 'Public documentation goes here',
+  created: Date.now(),
+  version: 1,
+  category: 'doc',
+  mimeType: 'text/markdown',
+});
+```
