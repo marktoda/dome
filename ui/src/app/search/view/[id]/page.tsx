@@ -11,12 +11,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 // import { SearchResultItem } from '@/lib/types/search';
 import { notesApi, Note } from '../../../../lib/api'; // Adjusted path
 
-interface SearchResultViewPageProps {
+export default function SearchResultViewPage({
+  params,
+}: {
   params: { id: string };
   searchParams?: Record<string, string | string[] | undefined>;
-}
-
-const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) => {
+}) {
   const router = useRouter();
   const [note, setNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,6 +166,4 @@ const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) =
       </Card>
     </div>
   );
-};
-
-export default SearchResultViewPage;
+}

@@ -21,21 +21,25 @@ export const ChatMessagesList: React.FC = () => {
   const scrollAreaRootRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Define the desired order for assistant message types within a single turn
-  const assistantMessageTypeOrder: Record<
-    AssistantContentMessage['type'] |
-    AssistantThinkingMessage['type'] |
-    AssistantSourcesMessage['type'] |
-    AssistantReasoningMessage['type'] |
-    AssistantErrorMessage['type'], // Only assistant-specific types that have a 'type' property
+  // Define the desired order for assistant message types within a single turn.
+  // Memoize so the object reference remains stable across renders.
+  const assistantMessageTypeOrder = useMemo(
+    () => ({
+      thinking: 1,
+      reasoning: 2,
+      sources: 3,
+      content: 4,
+      error: 5, // Assistant errors related to the turn
+    }),
+    []
+  ) as Record<
+    | AssistantContentMessage['type']
+    | AssistantThinkingMessage['type']
+    | AssistantSourcesMessage['type']
+    | AssistantReasoningMessage['type']
+    | AssistantErrorMessage['type'],
     number
-  > = {
-    thinking: 1,
-    reasoning: 2,
-    sources: 3,
-    content: 4,
-    error: 5, // Assistant errors related to the turn
-  };
+  >;
 
   const sortedMessages = useMemo(() => {
     return [...messages].sort((a, b) => {
@@ -79,7 +83,7 @@ export const ChatMessagesList: React.FC = () => {
 
       return timeDiff;
     });
-  }, [messages, assistantMessageTypeOrder]); // Add assistantMessageTypeOrder to dependencies
+  }, [messages]);
 
   useEffect(() => {
     // Scroll to the bottom when sorted messages change or loading state changes.
