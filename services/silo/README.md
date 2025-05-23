@@ -135,6 +135,36 @@ const content = await siloClient.fetchContent('content123', 'user123');
 - **Reduced Code Duplication**: No need to implement the same logic in multiple services.
 - **Maintainability**: Changes to the Silo API only need to be made in one place.
 
+## Local Development
+
+Set up a local instance of the Silo worker with the following steps:
+
+1. Install dependencies:
+
+   ```bash
+   pnpm install
+   ```
+
+2. Apply database migrations:
+
+   ```bash
+   just db-migrate-local silo
+   ```
+
+3. Start the worker locally:
+
+   ```bash
+   just dev silo
+   ```
+
+## Testing
+
+Run the Silo test suite with:
+
+```bash
+just test-pkg silo
+```
+
 ## Configuration
 
 ### Environment Variables
