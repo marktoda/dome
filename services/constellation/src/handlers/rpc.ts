@@ -269,3 +269,20 @@ export async function stats(this: any) {
     },
   );
 }
+
+export async function ping(this: any) {
+  const requestId = crypto.randomUUID();
+  return runWithLog(
+    {
+      service: 'constellation',
+      op: 'ping',
+      requestId,
+      ...this.env,
+    },
+    async () => {
+      metrics.counter('rpc.ping.requests', 1);
+      getLogger().debug({ requestId, operation: 'ping' }, 'Ping request received');
+      return { status: 'ok' };
+    },
+  );
+}
