@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils';
 interface SidebarProps {
   /** Optional additional CSS class names for the sidebar container. */
   className?: string;
+  /** Callback when a search result is selected. */
+  onResultClick?: () => void;
 }
 
 /**
@@ -25,7 +27,7 @@ interface SidebarProps {
  * @param props.className - Optional additional CSS class names for the sidebar container.
  * @returns A React functional component representing the application sidebar.
  */
-export function Sidebar({ className }: SidebarProps) {
+export function Sidebar({ className, onResultClick }: SidebarProps) {
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +96,7 @@ export function Sidebar({ className }: SidebarProps) {
         )}
         {/* Only render SearchResultsList if there are actual results and not in a loading/error state that implies no results yet */}
         {!isLoading && !error && searchResults.length > 0 && (
-          <SearchResultsList results={searchResults} />
+          <SearchResultsList results={searchResults} onSelect={onResultClick} />
         )}
       </div>
     </aside>
