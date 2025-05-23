@@ -58,7 +58,6 @@ export const ChatInput: React.FC = () => {
         ref={inputRef}
         contentEditable
         role="textbox"
-        data-placeholder="Type a message"
         onInput={(e) => setInputValue(e.currentTarget.textContent || '')}
         onKeyDown={handleKeyDown}
         className="minimal-input w-full"

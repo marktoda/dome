@@ -152,10 +152,6 @@ h4 { @apply text-xl font-semibold tracking-tight; }
     vertical-align: bottom;
     animation: block-blink 1s steps(1) infinite;
   }
-  .minimal-input[data-placeholder]:empty::before {
-    content: attr(data-placeholder);
-    @apply text-muted-foreground;
-  }
   @keyframes block-blink {
     0%,50% { opacity: 1; }
     50.01%,100% { opacity: 0; }
