@@ -12,18 +12,25 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { notesApi, Note } from '../../../../lib/api'; // Adjusted path
 
 interface SearchResultViewPageProps {
-  params: Promise<{ id: string }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  params: { id: string };
+  searchParams?: Record<string, string | string[] | undefined>;
 }
 
-// Using any as a temporary workaround for the persistent PageProps constraint issue
 const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) => {
   const router = useRouter();
   const [note, setNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { id: noteId } = React.use(params);
+  const { id: noteId } = params;
+
+  const handleBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/search');
+    }
+  };
 
   useEffect(() => {
     if (noteId) {
@@ -66,7 +73,7 @@ const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) =
   if (error || !note) {
     return (
       <div className="container mx-auto p-4">
-        <Button onClick={() => router.back()} variant="outline" className="mb-4">
+        <Button onClick={handleBack} variant="outline" className="mb-4">
           <ArrowLeftIcon className="mr-2 h-4 w-4" /> Back to Search
         </Button>
         <Card>
@@ -103,7 +110,7 @@ const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) =
 
   return (
     <div className="container mx-auto p-4 md:p-6 lg:p-8">
-      <Button onClick={() => router.back()} variant="outline" className="mb-6 inline-flex items-center">
+      <Button onClick={handleBack} variant="outline" className="mb-6 inline-flex items-center">
         <ArrowLeftIcon className="mr-2 h-5 w-5" />
         Back to Search Results
       </Button>
