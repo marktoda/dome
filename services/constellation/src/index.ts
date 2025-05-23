@@ -456,5 +456,15 @@ export default class Constellation extends BaseWorker<ServiceEnv, ReturnType<typ
   public async stats() {
     return rpcHandlers.stats.call(this);
   }
+
+  /* ---------------------------- rpc: ping ------------------------------ */
+
+  /**
+   * Simple health check method
+   * @returns A status object indicating service is running
+   */
+  public async ping() {
+    return rpcHandlers.ping.call(this);
+  }
 }
 export { sendToDeadLetter };
