@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest';
-import crypto from 'node:crypto';
 import { createRequestContextMiddleware } from '../src/middleware/requestContext';
 
 describe('createRequestContextMiddleware', () => {
@@ -20,7 +19,7 @@ describe('createRequestContextMiddleware', () => {
 
   it('generates id when none provided', async () => {
     const uuid = 'generated';
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue(uuid as any);
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(uuid as any);
     const c: any = {
       req: { header: vi.fn().mockReturnValue(undefined) },
       get: vi.fn().mockReturnValue(undefined),

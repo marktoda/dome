@@ -1,5 +1,4 @@
 import type { Context, Next } from 'hono';
-import crypto from 'node:crypto';
 
 /**
  * Middleware factory for creating request context middleware

@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import crypto from 'node:crypto';
 
 /**
  * Base event schema that all events must extend
