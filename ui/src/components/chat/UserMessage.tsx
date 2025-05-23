@@ -27,13 +27,5 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message }) => {
     return null;
   }
 
-  return (
-    <ChatMessage
-      message={message}
-      avatarFallback="U"
-      // You can add a specific avatar source for the user if available
-      // avatarSrc="/path/to/user-avatar.png"
-      className="ml-auto"
-    />
-  );
+  return <ChatMessage message={message} className="text-right" />;
 };

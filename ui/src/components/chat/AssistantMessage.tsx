@@ -165,8 +165,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     // Fallback rendering for unexpected message structure.
     return (
       <ChatMessage
-        message={message as ParsedMessage} // Cast, as we know it's not a standard Assistant/System type here.
-        avatarFallback="ERR"
+        message={message as ParsedMessage}
         contentOverride={<div className="text-red-500">Invalid message format: Missing &apos;type&apos;.</div>}
       />
     );
@@ -215,11 +214,5 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
       contentToRender = <div className="text-red-500">Error: Unknown message type received.</div>;
   }
 
-  return (
-    <ChatMessage
-      message={message} // Pass the original message for ChatMessage's own logic (e.g., sender, timestamp)
-      avatarFallback={message.sender === 'system' ? 'SYS' : 'A'}
-      contentOverride={contentToRender}
-    />
-  );
+  return <ChatMessage message={message} contentOverride={contentToRender} />;
 };

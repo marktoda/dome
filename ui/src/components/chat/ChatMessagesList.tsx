@@ -88,7 +88,7 @@ export const ChatMessagesList: React.FC = () => {
 
   return (
     <ScrollArea className="flex-1" ref={scrollAreaRootRef}>
-      <div className="space-y-6 p-0 sm:p-4 md:p-6">
+      <div className="space-y-4 p-0 sm:p-4 md:p-6">
         {sortedMessages.map((msg: ParsedMessage) => { // Use sortedMessages
           switch (msg.sender) {
             case 'user':
@@ -144,15 +144,12 @@ export const ChatMessagesList: React.FC = () => {
             For now, if `isLoading` is true, we show a generic pending response.
             The `AssistantMessage` component will replace this with a "thinking" state once an assistant message shell is created.
         */}
-        {isLoading && sortedMessages[sortedMessages.length -1]?.sender !== 'assistant' && (
-          <div className="flex items-start space-x-3 py-3 justify-start">
-            <Skeleton className="h-8 w-8 rounded-full" />
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-[250px]" />
-              <Skeleton className="h-4 w-[200px]" />
+        {isLoading &&
+          sortedMessages[sortedMessages.length - 1]?.sender !== 'assistant' && (
+            <div className="py-2">
+              <Skeleton className="h-4 w-1/2" />
             </div>
-          </div>
-        )}
+          )}
         <div ref={messagesEndRef} /> {/* Invisible element to scroll to */}
       </div>
     </ScrollArea>

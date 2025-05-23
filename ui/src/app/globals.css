@@ -135,5 +135,29 @@
   h1 { @apply text-4xl font-bold tracking-tight lg:text-5xl; }
   h2 { @apply text-3xl font-semibold tracking-tight; }
   h3 { @apply text-2xl font-semibold tracking-tight; }
-  h4 { @apply text-xl font-semibold tracking-tight; }
+h4 { @apply text-xl font-semibold tracking-tight; }
+}
+
+@layer components {
+  .minimal-input {
+    @apply font-mono text-xl leading-snug caret-transparent outline-none w-full;
+    min-height: 2.5rem;
+  }
+  .minimal-input::after {
+    content: '';
+    display: inline-block;
+    width: 0.6em;
+    height: 1.2em;
+    background-color: currentColor;
+    vertical-align: bottom;
+    animation: block-blink 1s steps(1) infinite;
+  }
+  .minimal-input[data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    @apply text-muted-foreground;
+  }
+  @keyframes block-blink {
+    0%,50% { opacity: 1; }
+    50.01%,100% { opacity: 0; }
+  }
 }
