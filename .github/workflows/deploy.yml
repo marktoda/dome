@@ -1,47 +1,45 @@
-name: Deploy  Workers
+name: Deploy changed Cloudflare workers
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  pull_request:
+    paths:
+      - 'services/**'
 
 jobs:
-  deploy:
+  detect-changes:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - id: list_dirs
+        run: |
+          echo "dirs=$(ls -1 services | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+          filters: |
+            {% for d in steps.list_dirs.outputs.dirs.split(' ') %}
+            {{ d }}:
+              - 'services/{{ d }}/**'
+            {% endfor %}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+  deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.any_changed == 'true'
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.detect-changes.outputs.changed_names) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
-
-      - name: Install Wrangler
-        run: npm install -g wrangler
-
-      - name: Fetch full Git history
-        run: git fetch --prune --unshallow || true
-
-      - name: Determine Changed Services
-        id: changes
-        run: |
-          changed=$(git diff --name-only HEAD^ HEAD | grep '^services/' | cut -d/ -f2 | sort -u | xargs)
-          echo "Changed services: $changed"
-          echo "services=$changed" >> $GITHUB_OUTPUT
-
-      - name: Deploy Changed Workers
-        if: steps.changes.outputs.services != ''
-        run: |
-          for service in ${{ steps.changes.outputs.services }}; do
-            echo "Deploying $service..."
-            cd services/$service
-            wrangler deploy
-            cd -
-          done
+      - run: npm install -g wrangler@latest
+      - name: Deploy ${{ matrix.service }}
+        working-directory: services/${{ matrix.service }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: wrangler deploy --env production
