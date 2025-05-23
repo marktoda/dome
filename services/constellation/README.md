@@ -140,6 +140,8 @@ create public content pass `null` (or the `PUBLIC_USER_ID` constant from
 `userId` filter automatically merge this value so public vectors are always
 returned alongside user specific results.
 
+For manual testing steps see [docs/public-vectors-testing.md](docs/public-vectors-testing.md).
+
 ### Example: Embedding Public Content
 
 ```typescript
