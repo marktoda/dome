@@ -15,8 +15,11 @@ import { Sidebar } from './Sidebar';
  * @returns A React functional component representing the mobile sidebar toggle and sheet.
  */
 export function MobileSidebar() {
+  const [open, setOpen] = React.useState(false);
+  const handleResultClick = React.useCallback(() => setOpen(false), []);
+
   return (
-    <Sheet>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <Button variant="ghost" size="icon" className="md:hidden">
           <Menu />
@@ -24,7 +27,7 @@ export function MobileSidebar() {
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="p-0 w-72"> {/* Removed pt-6, Sidebar will handle its padding. Explicitly set width. */}
-        <Sidebar />
+        <Sidebar onResultClick={handleResultClick} />
       </SheetContent>
     </Sheet>
   );

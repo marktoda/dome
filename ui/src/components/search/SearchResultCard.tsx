@@ -12,6 +12,8 @@ import { Badge } from '@/components/ui/badge';
 interface SearchResultCardProps {
   /** The search result item data to display. */
   item: SearchResultItem;
+  /** Callback when the card is selected. */
+  onSelect?: () => void;
 }
 
 /**
@@ -22,7 +24,7 @@ interface SearchResultCardProps {
  * @param props - The props for the component.
  * @returns A React functional component representing a search result card.
  */
-export function SearchResultCard({ item }: SearchResultCardProps) {
+export function SearchResultCard({ item, onSelect }: SearchResultCardProps) {
   const router = useRouter();
 
   /**
@@ -44,6 +46,7 @@ export function SearchResultCard({ item }: SearchResultCardProps) {
     // Ensure item.id is present; otherwise, this navigation will fail or be incorrect.
     // Consider adding a check or fallback if item.id could be missing.
     router.push(`/search/view/${item.id}?${queryParams.toString()}`);
+    onSelect?.();
   };
 
   return (
