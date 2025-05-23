@@ -1,5 +1,6 @@
 name = "ai-processor"
 main = "src/index.ts"
+account_id = "d566e3c491e1cef6c530d45b76672814"
 workers_dev = false   # <-- no public *.workers.dev URL
 compatibility_date = "2025-04-15"
 compatibility_flags = ["nodejs_compat"]
