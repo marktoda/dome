@@ -5,7 +5,7 @@
  * data structures into the standard format expected by tsunami.
  */
 import { getLogger, getRequestId } from '@dome/common';
-import { ValidationError } from '@dome/common/src/errors';
+import { ValidationError } from '@dome/common/errors';
 import { assertValid } from '../../utils/errors';
 import { DomeMetadata } from '../../types/metadata';
 import { ContentCategory, MimeType } from '@dome/common';
