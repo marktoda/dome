@@ -38,11 +38,11 @@ LOG_LEVEL = "info"
 ENVIRONMENT = "staging"
 
 # Production environment
-[env.prod]
+[env.production]
 workers_dev = false
-[env.prod.vars]
+[env.production.vars]
 LOG_LEVEL = "info"
-ENVIRONMENT = "prod"
+ENVIRONMENT = "production"
 
 # Miniflare configuration for local development
 [miniflare]
