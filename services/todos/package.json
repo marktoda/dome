@@ -1,6 +1,6 @@
 {
   "name": "@dome/todos",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Todos service for the Dome platform",
   "main": "dist/index.js",
   "exports": {
