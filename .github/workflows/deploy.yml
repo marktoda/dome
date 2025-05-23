@@ -3,40 +3,50 @@ name: Deploy changed Cloudflare workers
 on:
   push:
     branches: [ main ]
-  pull_request:
     paths:
       - 'services/**'
 
 jobs:
-  detect-changes:
+  detect:
     runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.set.outputs.services }}
+      any: ${{ steps.set.outputs.any }}
     steps:
       - uses: actions/checkout@v4
-      - id: list_dirs
-        run: |
-          echo "dirs=$(ls -1 services | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
-      - uses: dorny/paths-filter@v3
-        id: filter
+        with: {fetch-depth: 0}
+      - id: filter
+        uses: dorny/paths-filter@v3
         with:
-          base: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+          token: ${{ github.token }}
           filters: |
-            {% for d in steps.list_dirs.outputs.dirs.split(' ') %}
-            {{ d }}:
-              - 'services/{{ d }}/**'
-            {% endfor %}
+            services:
+              - 'services/**'
+      - id: set
+        shell: bash
+        run: |
+          files="${{ steps.filter.outputs.services_files }}"
+          if [[ -z "$files" ]]; then
+            echo "any=false" >>"$GITHUB_OUTPUT"
+            echo "services=" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          services=$(echo "$files" | tr ',' '\n' | cut -d/ -f2 | sort -u | tr '\n' ' ')
+          echo "Changed services: $services"
+          echo "any=true" >>"$GITHUB_OUTPUT"
+          echo "services=$services" >>"$GITHUB_OUTPUT"
 
   deploy:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.any_changed == 'true'
+    needs: detect
+    if: needs.detect.outputs.any == 'true'
     strategy:
       matrix:
-        service: ${{ fromJSON(needs.detect-changes.outputs.changed_names) }}
+        service: ${{ fromJson('["' + replace(needs.detect.outputs.services, ' ', '","') + '"]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 18
+        with: {node-version: 18}
       - run: npm install -g wrangler@latest
       - name: Deploy ${{ matrix.service }}
         working-directory: services/${{ matrix.service }}
