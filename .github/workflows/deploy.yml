@@ -20,6 +20,7 @@ jobs:
           filters: |
             services:
               - 'services/**'
+          list-files: shell
       - id: set
         shell: bash
         run: |
@@ -29,7 +30,7 @@ jobs:
             echo "services=[]" >>"$GITHUB_OUTPUT"
             exit 0
           fi
-          services=$(echo "$files" | tr ',' '\n' | cut -d/ -f2 | sort -u)
+          services=$(echo "$files" | cut -d/ -f2 | sort -u)
           echo "Changed services: $(echo "$services" | tr '\n' ' ')"
           services_json=$(printf '%s\n' $services | jq -R -s -c 'split("\n")[:-1]')
           echo "any=true" >>"$GITHUB_OUTPUT"
