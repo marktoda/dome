@@ -389,25 +389,36 @@ export class TsunamiController {
     }
   };
 
-  /*
   storeGithubIntegration = async (
     c: Context<AppEnv & { Variables: { auth: AuthContext } }>,
-    body: z.infer<typeof StoreGithubIntegrationBodySchema>
+    body: z.infer<typeof StoreGithubIntegrationBodySchema>,
   ): Promise<RouteConfigToTypedResponse<typeof storeGithubIntegrationRoute>> => {
     const userId = c.get('auth')?.userId;
-    logger.info({ userId, installationId: body.installationId }, 'Store GitHub integration request');
+    logger.info(
+      { userId, installationId: body.installationId },
+      'Store GitHub integration request',
+    );
     try {
       const tsunamiService = this.getTsunamiServiceClient(c.env);
-      // TODO: Identify and call the correct tsunamiService method here
-      // For example: await tsunamiService.actualStoreGithubIntegrationMethod(body, userId);
-      logger.warn("storeGithubIntegration's underlying service method is not implemented/identified yet.");
-      return c.json({ success: true, message: 'GitHub integration storage (placeholder - needs implementation).' }, 200);
+      await tsunamiService.storeGithubOAuthDetails({
+        userId,
+        ...(body as any),
+      });
+      return c.json({ success: true as const, message: 'Integration stored' }, 200);
     } catch (error: any) {
       logError(error, 'Store GitHub integration failed', { userId });
-      return c.json({ success: false as const, error: { code: 'INTERNAL_SERVER_ERROR', message: String(error.message) || 'Failed to store GitHub integration' } }, 500);
+      return c.json(
+        {
+          success: false as const,
+          error: {
+            code: 'INTERNAL_SERVER_ERROR',
+            message: String(error.message) || 'Failed to store GitHub integration',
+          },
+        },
+        500,
+      );
     }
   };
-  */
 }
 
 export function createTsunamiController(): TsunamiController {
@@ -438,7 +449,9 @@ export function buildTsunamiContentRouter(): OpenAPIHono<
   router.openapi(getSyncPlanHistoryRoute, c =>
     tsunamiController.getSyncPlanHistory(c, c.req.valid('param')),
   );
-  // router.openapi(storeGithubIntegrationRoute, (c) => tsunamiController.storeGithubIntegration(c, c.req.valid('json'))); // storeGithubIntegration method is commented out
+  router.openapi(storeGithubIntegrationRoute, c =>
+    tsunamiController.storeGithubIntegration(c, c.req.valid('json')),
+  );
 
   return router;
 }
