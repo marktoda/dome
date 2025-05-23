@@ -3,7 +3,7 @@
 export const runtime = 'edge';
 
 import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation'; // useSearchParams removed as we fetch by ID
+import { useRouter, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ArrowLeftIcon, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,18 +11,12 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 // import { SearchResultItem } from '@/lib/types/search';
 import { notesApi, Note } from '../../../../lib/api'; // Adjusted path
 
-interface SearchResultViewPageProps {
-  params: { id: string };
-  searchParams?: Record<string, string | string[] | undefined>;
-}
-
-const SearchResultViewPage: React.FC<SearchResultViewPageProps> = ({ params }) => {
+const SearchResultViewPage: React.FC = () => {
   const router = useRouter();
+  const { id: noteId } = useParams<{ id: string }>();
   const [note, setNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const { id: noteId } = params;
 
   const handleBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
