@@ -354,11 +354,6 @@ export interface Note {
  * Expected structure of the API response when fetching a single note by ID,
  * assuming the API wraps the note in a success object.
  */
-export interface ApiGetNoteByIdResponse {
-  success: boolean;
-  note: Note;
-  message?: string; // Optional message from API on failure
-}
 
 /**
  * Collection of API functions related to search operations.
@@ -407,29 +402,14 @@ export const notesApi = {
    * @throws {ApiError} If the API request fails or the response indicates an application-level error.
    */
   getNoteById: async (id: string): Promise<Note> => {
-    // apiClient.get will throw an ApiError for HTTP status codes like 404, 500, etc.
-    const response = await apiClient.get<ApiGetNoteByIdResponse>(`/notes/${id}`);
-
-    // Handle cases where the HTTP request was successful (e.g., 200 OK),
-    // but the application-level response indicates failure (e.g., { success: false }).
-    if (response?.success && response.note) {
-      return response.note;
+    // The API returns the Note object directly on success.
+    const response = await apiClient.get<Note>(`/notes/${id}`);
+    // Basic validation that required fields exist
+    if (response && typeof response.id === 'string') {
+      return response;
     }
-
-    const errorMessage =
-      response?.message ||
-      (response?.success === false
-        ? `API request to get note ${id} failed (application-level).`
-        : `Invalid API response structure when fetching note ${id}.`);
-
+    const errorMessage = `Invalid API response structure when fetching note ${id}.`;
     console.error(errorMessage, 'Full Response:', response);
-    // Throw an ApiError for consistency, providing details from the application-level response.
-    throw new ApiError(
-      errorMessage,
-      200, // Assuming 200 OK if response object exists but indicates logical failure
-      response, // The full response data can be useful for debugging
-      `/notes/${id}`,
-      'GET',
-    );
+    throw new ApiError(errorMessage, 200, response, `/notes/${id}`, 'GET');
   },
 };
