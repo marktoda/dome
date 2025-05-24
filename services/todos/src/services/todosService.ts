@@ -11,9 +11,19 @@ import {
   TodoJob,
 } from '../types';
 import { TodosRepository } from '../db/todosRepository';
-import { getLogger, logError } from '@dome/common'; // Assuming logError is co-located or update path
+import { getLogger, logError } from '@dome/common';
+import {
+  createErrorFactory,
+  ValidationError,
+  NotFoundError,
+  ConflictError,
+  toDomeError,
+} from '@dome/common/errors';
 
 const logger = getLogger();
+
+// Create error factory for todos service
+const TodosErrors = createErrorFactory('todos');
 
 /**
  * Service for handling todo business logic
@@ -305,25 +315,13 @@ export class TodosService {
    * Throw a validation error
    */
   private throwValidationError(message: string): never {
-    const error = new Error(message);
-    (error as any).code = TodosErrorCode.VALIDATION_ERROR;
-    throw error;
+    throw TodosErrors.validation(message);
   }
 
   /**
    * Handle service errors
    */
   private handleServiceError(error: any, defaultMessage: string): Error {
-    // If the error already has a code, pass it through
-    if ((error as any).code) {
-      return error;
-    }
-
-    // Otherwise, create a standardized error
-    const serviceError = new Error(error.message || defaultMessage);
-    (serviceError as any).code = TodosErrorCode.INTERNAL_ERROR;
-    (serviceError as any).details = { originalError: error };
-
-    return serviceError;
+    return toDomeError(error, defaultMessage, { service: 'todos' });
   }
 }
