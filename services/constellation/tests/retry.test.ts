@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { retryAsync } from '../src/utils/retry';
 
-vi.mock('../src/utils/logging', () => ({
+vi.mock('../src/utils/constellationLogging', () => ({
   getLogger: () => ({
     debug: vi.fn(),
     warn: vi.fn(),

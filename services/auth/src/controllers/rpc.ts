@@ -1,8 +1,7 @@
-import { wrapServiceCall } from '@dome/common';
-import {
-  getLogger,
-} from '@dome/common';
-import { authMetrics } from '../utils/logging';
+import { wrapServiceCall, getLogger, createServiceMetrics } from '@dome/common';
+
+// Create service-specific metrics
+const authMetrics = createServiceMetrics('auth');
 import {
   LoginResponse,
   RegisterResponse,

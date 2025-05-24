@@ -1,6 +1,5 @@
 import {
   getLogger as getDomeLogger,
-  metrics,
   logError as domeLogError,
   trackOperation as domeTrackOperation,
   logOperationStart,
@@ -57,29 +56,6 @@ export async function trackOperation<T>(
 }
 
 /**
- * Sanitize sensitive data for logging
- * @param data Object containing possible sensitive data
- * @returns Sanitized copy with sensitive fields redacted
+ * Export logging utilities from @dome/common (excluding generic metrics)
  */
-export function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
-  const sensitiveFields = ['password', 'token', 'secret', 'key', 'apiKey', 'auth'];
-  const sanitized = { ...data };
-
-  for (const field of Object.keys(sanitized)) {
-    if (sensitiveFields.some(sensitive => field.toLowerCase().includes(sensitive))) {
-      sanitized[field as keyof T] = '[REDACTED]' as any;
-    } else if (
-      typeof sanitized[field as keyof T] === 'object' &&
-      sanitized[field as keyof T] !== null
-    ) {
-      sanitized[field as keyof T] = sanitizeForLogging(sanitized[field as keyof T]) as any;
-    }
-  }
-
-  return sanitized;
-}
-
-/**
- * Export metrics and logging utilities from @dome/common
- */
-export { metrics, logOperationStart, logOperationSuccess, logOperationFailure };
+export { logOperationStart, logOperationSuccess, logOperationFailure };

@@ -32,7 +32,7 @@ vi.mock('../src/utils/errors', () => ({
 vi.mock('@dome/silo/client', () => ({ SiloClient: class { constructor(){} get(){return Promise.resolve({ id: 'id', userId: 'u', body: 'text' });} } }));
 import Constellation from '../src';
 
-vi.mock('../src/utils/logging', () => ({
+vi.mock('../src/utils/constellationLogging', () => ({
   getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   logError: vi.fn(),
   trackOperation: async (_n: string, fn: () => Promise<any>) => fn(),

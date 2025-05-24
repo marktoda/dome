@@ -8,7 +8,32 @@
 // Any worker can import this class and call `processMessage`.
 // ───────────────────────────────────────────────────────────────
 
-import { getLogger, logError, sanitizeForLogging, aiProcessorMetrics } from './logging';
+import { getLogger, logError, createServiceMetrics } from '@dome/common';
+
+const aiProcessorMetrics = createServiceMetrics('ai-processor');
+
+/**
+ * Sanitize sensitive data for logging
+ * @param data Object containing possible sensitive data
+ * @returns Sanitized copy with sensitive fields redacted
+ */
+function sanitizeForLogging<T extends Record<string, any>>(data: T): T {
+  const sensitiveFields = ['password', 'token', 'secret', 'key', 'apiKey', 'auth'];
+  const sanitized = { ...data };
+
+  for (const field of Object.keys(sanitized)) {
+    if (sensitiveFields.some(sensitive => field.toLowerCase().includes(sensitive))) {
+      sanitized[field as keyof T] = '[REDACTED]' as any;
+    } else if (
+      typeof sanitized[field as keyof T] === 'object' &&
+      sanitized[field as keyof T] !== null
+    ) {
+      sanitized[field as keyof T] = sanitizeForLogging(sanitized[field as keyof T]) as any;
+    }
+  }
+
+  return sanitized;
+}
 import { LLMProcessingError, ContentProcessingError } from '../utils/errors';
 import {
   domeAssertExists as assertExists,
@@ -87,7 +112,7 @@ export class ContentProcessor {
   /** Process a single NEW_CONTENT message (idempotent). */
   async processMessage(msg: NewContentMessage, requestId: string): Promise<void> {
     const { id, userId, category, mimeType } = msg;
-    const logger = getLogger();
+    const logger = getLogger().child({ service: 'ai-processor' });
     const contentType = category || mimeType || DEFAULT_CONTENT_TYPE;
 
     if (this._performInitialChecks(msg, contentType, requestId)) {
@@ -139,7 +164,7 @@ export class ContentProcessor {
     requestId: string,
   ): boolean {
     const { id, userId, deleted } = msg;
-    const logger = getLogger();
+    const logger = getLogger().child({ service: 'ai-processor' });
 
     if (deleted) {
       logger.info({ id, userId, requestId }, 'Skipping deleted content');
@@ -158,7 +183,7 @@ export class ContentProcessor {
     userId: string | undefined | null,
     requestId: string,
   ): Promise<SiloContentItem | null> {
-    const logger = getLogger();
+    const logger = getLogger().child({ service: 'ai-processor' });
     // Assuming silo.get returns a SiloContentItem or similar that includes 'body'
     const doc: SiloContentItem | null = await this.services.silo.get(id, userId);
     assertExists(doc, `Content ${id} not found`, { id, requestId });
@@ -178,7 +203,7 @@ export class ContentProcessor {
     id: string,
     requestId: string,
   ): ExistingMetadata | undefined {
-    const logger = getLogger();
+    const logger = getLogger().child({ service: 'ai-processor' });
     // Assuming 'tags' might be in customMetadata if it exists
     const tagsFromCustomMetadata =
       doc.customMetadata &&
@@ -296,7 +321,7 @@ export class ContentProcessor {
       hasTodos: !!metadata.todos?.length,
     });
 
-    getLogger().info(safe, 'Enriched content published');
+    getLogger().child({ service: 'ai-processor' }).info(safe, 'Enriched content published');
   }
 
   private isRateLimitError(err: unknown): boolean {
@@ -309,12 +334,12 @@ export class ContentProcessor {
   private async queueRateLimited(msg: NewContentMessage): Promise<void> {
     if (this.rateLimitDlq) {
       await this.rateLimitDlq.send(msg);
-      getLogger().info(
+      getLogger().child({ service: 'ai-processor' }).info(
         { id: msg.id },
         'Queued rate‑limited content to RATE_LIMIT_DLQ',
       );
     } else {
-      getLogger().warn(
+      getLogger().child({ service: 'ai-processor' }).warn(
         { id: msg.id },
         'RATE_LIMIT_DLQ not configured. Cannot queue rate-limited message.',
       );

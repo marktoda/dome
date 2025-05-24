@@ -4,7 +4,7 @@
  * Interfaces with Workers AI to generate embeddings.
  */
 
-import { getLogger, logError, constellationMetrics as metrics } from '../utils/logging';
+import { getLogger, logError, constellationMetrics as metrics } from '../utils/constellationLogging';
 
 const logger = getLogger();
 import { sliceIntoBatches } from '../utils/batching';

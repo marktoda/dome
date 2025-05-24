@@ -16,8 +16,10 @@ import {
   getLogger,
   logError,
   trackOperation,
-  aiProcessorMetrics,
-} from './utils/logging';
+  createServiceMetrics,
+} from '@dome/common';
+
+const aiProcessorMetrics = createServiceMetrics('ai-processor');
 import { ReprocessResponseSchema, ReprocessRequestSchema } from './types';
 import { ContentProcessor } from './utils/processor';
 import * as rpcHandlers from './handlers/rpc';

@@ -6,7 +6,7 @@ import {
   logError,
   trackOperation,
   constellationMetrics as metrics,
-} from '../utils/logging';
+} from '../utils/constellationLogging';
 import { wrapServiceCall } from '@dome/common';
 import type { MessageBatch } from '@cloudflare/workers-types/experimental';
 
