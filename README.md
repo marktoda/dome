@@ -349,7 +349,7 @@ Dome implements comprehensive error handling and observability:
 1. Clone the repository and install dependencies:
 
    ```bash
-   git clone https://github.com/your-org/dome.git
+   git clone https://github.com/marktoda/dome.git
    cd dome
    pnpm install
    ```
@@ -360,11 +360,13 @@ Dome implements comprehensive error handling and observability:
    just build
    ```
 
-3. Start the local development workers:
+3. Start the local development environment:
 
    ```bash
    just dev
    ```
+
+   This will start the core services (dome-api, constellation, silo) with vectorize bindings.
 
 For a complete walkthrough see [docs/DEV_SETUP.md](docs/DEV_SETUP.md).
 For details on the shared worker base class see [docs/BaseWorker.md](docs/BaseWorker.md).
