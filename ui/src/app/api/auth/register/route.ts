@@ -1,29 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RegisterSchema } from '@/lib/validators';
 
-// !!! SECURITY WARNING: Mock user data and plain password storage !!!
-// !!! This is for demonstration ONLY. Replace with secure database storage and password hashing (e.g., bcrypt) in production. !!!
-const users = [{ id: '1', name: 'Test User', email: 'test@example.com', password: 'password123' }];
+const DOME_API_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 /**
  * Handles POST requests to `/api/auth/register`.
- * Validates registration data, checks for existing users (using mock data),
- * and adds the new user to the mock data store.
+ * Proxies registration requests to the backend dome-api service.
  *
  * @param req - The NextRequest object containing the request details.
  * @returns A NextResponse object with:
- *   - 201 Created: User data (excluding password) and success message on successful registration.
+ *   - 201 Created: User data and token from backend on successful registration.
  *   - 400 Bad Request: Validation errors if request body is invalid.
- *   - 409 Conflict: If a user with the provided email already exists (based on mock data).
- *   - 500 Internal Server Error: If an unexpected server error occurs.
- *
- * @security **Critical Warning:** This implementation uses a mock in-memory array for users
- *           and stores passwords in plain text. It is **highly insecure** and **must not**
- *           be used in production. Replace mock data with a database and implement
- *           password hashing (e.g., bcrypt) before storing user credentials.
+ *   - 409 Conflict: If a user with the provided email already exists.
+ *   - 500 Internal Server Error: If backend is unavailable or other server errors occur.
  */
 export async function POST(req: NextRequest) {
   try {
+    if (!DOME_API_URL) {
+      console.error('CRITICAL: NEXT_PUBLIC_API_BASE_URL is not defined in environment variables.');
+      return NextResponse.json(
+        { message: 'Server configuration error: Backend API endpoint missing.' },
+        { status: 500 },
+      );
+    }
+
     const body = await req.json();
     const validation = RegisterSchema.safeParse(body);
 
@@ -37,38 +37,87 @@ export async function POST(req: NextRequest) {
 
     const { name, email, password } = validation.data;
 
-    // --- !!! INSECURE MOCK USER CHECK START !!! ---
-    const existingUser = users.find(u => u.email === email);
-    if (existingUser) {
-      console.error('Registration attempt failed: Email already exists');
-      return NextResponse.json({ message: 'User with this email already exists' }, { status: 409 }); // 409 Conflict
+    console.log(`Proxying registration request to backend: ${DOME_API_URL}/auth/register`);
+
+    // Proxy the request to the backend
+    const backendResponse = await fetch(`${DOME_API_URL}/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name, email, password }),
+    });
+
+    const backendData = await backendResponse.json();
+
+    if (!backendResponse.ok) {
+      console.error('Backend registration failed:', backendData);
+      return NextResponse.json(
+        { message: backendData.message || 'Registration failed' },
+        { status: backendResponse.status },
+      );
     }
-    // --- !!! INSECURE MOCK USER CHECK END !!! ---
 
-    // --- !!! INSECURE MOCK USER CREATION START !!! ---
-    const newUser = {
-      id: String(users.length + 1), // Very basic ID generation
-      name,
-      email,
-      password, // !!! Storing plain text password - DO NOT DO THIS IN PRODUCTION !!!
-    };
+    console.log('Backend registration successful');
 
-    users.push(newUser); // Add to mock array
-    console.error(`New user registered with ID: ${newUser.id}`);
-    // --- !!! INSECURE MOCK USER CREATION END !!! ---
+    // The backend returns { token: string }
+    // We need to also fetch user data using the token to match the expected UI response format
+    if (backendData.token) {
+      try {
+        const userResponse = await fetch(`${DOME_API_URL}/auth/validate`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${backendData.token}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
-    // In a real application, you might:
-    // 1. Hash the password securely (bcrypt.hash) before saving.
-    // 2. Save the user to a database.
-    // 3. Optionally, automatically log the user in by generating a JWT and setting a cookie (like in the login route).
-    // 4. Or, send a verification email.
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          if (userData.success && userData.user) {
+            // Set the token in an HttpOnly cookie for security
+            const response = NextResponse.json({ 
+              user: userData.user, 
+              token: backendData.token, // Include token in response for frontend state
+              message: 'Registration successful' 
+            }, { status: 201 });
 
-    // Return the newly created user data (excluding the password)
-    const { password: _removedPassword, ...userWithoutPassword } = newUser;
-    return NextResponse.json(
-      { user: userWithoutPassword, message: 'Registration successful' },
-      { status: 201 }, // 201 Created
-    );
+            response.cookies.set({
+              name: 'auth_token',
+              value: backendData.token,
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production',
+              sameSite: 'lax',
+              path: '/',
+              maxAge: 2 * 60 * 60, // 2 hours in seconds
+            });
+
+            return response;
+          }
+        }
+      } catch (userError) {
+        console.error('Failed to fetch user data after registration:', userError);
+      }
+    }
+
+    // Fallback if user data fetch fails
+    const response = NextResponse.json({ 
+      token: backendData.token,
+      message: 'Registration successful' 
+    }, { status: 201 });
+
+    response.cookies.set({
+      name: 'auth_token',
+      value: backendData.token,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 2 * 60 * 60, // 2 hours in seconds
+    });
+
+    return response;
+
   } catch (error) {
     console.error('Register API route error:', error);
     return NextResponse.json(

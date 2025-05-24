@@ -1,36 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LoginSchema } from '@/lib/validators';
-import * as jose from 'jose';
-import { cookies } from 'next/headers'; // Revert import, ResponseCookies not found
 
-// !!! SECURITY WARNING: Mock user data and plain password check !!!
-// !!! This is for demonstration ONLY. Replace with secure database lookup and password hashing (e.g., bcrypt) in production. !!!
-const users = [{ id: '1', name: 'Test User', email: 'test@example.com', password: 'password123' }];
-
-const JWT_SECRET = process.env.JWT_SECRET;
+const DOME_API_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 /**
  * Handles POST requests to `/api/auth/login`.
- * Validates user credentials against mock data, generates a JWT, and sets it in an HttpOnly cookie.
- *
+ * Proxies login requests to the backend dome-api service.
+ * 
  * @param req - The NextRequest object containing the request details.
  * @returns A NextResponse object with:
- *   - 200 OK: User data (excluding password) and success message on successful login.
+ *   - 200 OK: User data and token from backend on successful login.
  *   - 400 Bad Request: Validation errors if request body is invalid.
- *   - 401 Unauthorized: If email/password combination is incorrect (based on mock data).
- *   - 500 Internal Server Error: If JWT_SECRET is missing or other server errors occur.
- *
- * @security **Critical Warning:** This implementation uses mock user data and compares passwords in plain text.
- *           It is **highly insecure** and **must not** be used in production.
- *           Replace mock data with database lookups and implement password hashing (e.g., bcrypt)
- *           for secure password verification.
+ *   - 401 Unauthorized: If email/password combination is incorrect.
+ *   - 500 Internal Server Error: If backend is unavailable or other server errors occur.
  */
 export async function POST(req: NextRequest) {
   try {
-    if (!JWT_SECRET) {
-      console.error('CRITICAL: JWT_SECRET is not defined in environment variables.');
+    if (!DOME_API_URL) {
+      console.error('CRITICAL: NEXT_PUBLIC_API_BASE_URL is not defined in environment variables.');
       return NextResponse.json(
-        { message: 'Server configuration error: JWT secret missing.' },
+        { message: 'Server configuration error: Backend API endpoint missing.' },
         { status: 500 },
       );
     }
@@ -48,35 +37,78 @@ export async function POST(req: NextRequest) {
 
     const { email, password } = validation.data;
 
-    // --- !!! INSECURE MOCK AUTHENTICATION START !!! ---
-    const user = users.find(u => u.email === email);
+    console.log(`Proxying login request to backend: ${DOME_API_URL}/auth/login`);
 
-    // !!! NEVER compare plain text passwords in production !!!
-    if (!user || user.password !== password) {
-      console.error('Login attempt failed for provided email');
-      return NextResponse.json({ message: 'Invalid email or password' }, { status: 401 });
+    // Proxy the request to the backend
+    const backendResponse = await fetch(`${DOME_API_URL}/auth/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const backendData = await backendResponse.json();
+
+    if (!backendResponse.ok) {
+      console.error('Backend login failed:', backendData);
+      return NextResponse.json(
+        { message: backendData.message || 'Login failed' },
+        { status: backendResponse.status },
+      );
     }
-    // --- !!! INSECURE MOCK AUTHENTICATION END !!! ---
 
-    console.error(`Login successful for user id: ${user.id}`);
+    console.log('Backend login successful');
 
-    // Create JWT containing user claims
-    const secret = new TextEncoder().encode(JWT_SECRET);
-    const alg = 'HS256';
-    const jwt = await new jose.SignJWT({ userId: user.id, email: user.email, name: user.name })
-      .setProtectedHeader({ alg })
-      .setIssuedAt()
-      .setExpirationTime('2h') // Token valid for 2 hours
-      .sign(secret);
+    // The backend returns { token: string }
+    // We need to also fetch user data using the token to match the expected UI response format
+    if (backendData.token) {
+      try {
+        const userResponse = await fetch(`${DOME_API_URL}/auth/validate`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${backendData.token}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
-    // Set JWT in an HttpOnly cookie for security
-    const { password: _password, ...userWithoutPassword } = user;
-    const response = NextResponse.json({ user: userWithoutPassword, message: 'Login successful' });
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          if (userData.success && userData.user) {
+            // Set the token in an HttpOnly cookie for security
+            const response = NextResponse.json({ 
+              user: userData.user, 
+              token: backendData.token, // Include token in response for frontend state
+              message: 'Login successful' 
+            });
 
-    // Use the cookies.set() method on the NextResponse instance
+            response.cookies.set({
+              name: 'auth_token',
+              value: backendData.token,
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production',
+              sameSite: 'lax',
+              path: '/',
+              maxAge: 2 * 60 * 60, // 2 hours in seconds
+            });
+
+            return response;
+          }
+        }
+      } catch (userError) {
+        console.error('Failed to fetch user data after login:', userError);
+      }
+    }
+
+    // Fallback if user data fetch fails
+    const response = NextResponse.json({ 
+      token: backendData.token,
+      message: 'Login successful' 
+    });
+
     response.cookies.set({
       name: 'auth_token',
-      value: jwt,
+      value: backendData.token,
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -85,6 +117,7 @@ export async function POST(req: NextRequest) {
     });
 
     return response;
+
   } catch (error) {
     console.error('Login API route error:', error);
     return NextResponse.json(

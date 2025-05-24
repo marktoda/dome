@@ -1,23 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest for type safety
 import { cookies } from 'next/headers';
 
+const DOME_API_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+
 /**
  * Handles POST requests to `/api/auth/logout`.
- * Clears the `auth_token` HttpOnly cookie to log the user out.
+ * Clears the `auth_token` HttpOnly cookie and notifies the backend to invalidate the token.
  *
- * @param req - The NextRequest object (unused in this implementation but good practice to type).
+ * @param req - The NextRequest object.
  * @returns A NextResponse object with:
- *   - 200 OK: Success message, regardless of whether a token cookie was initially present.
- *             The response includes instructions to clear the `auth_token` cookie.
+ *   - 200 OK: Success message, clearing the auth_token cookie.
  *   - 500 Internal Server Error: If an unexpected error occurs during cookie handling.
  */
 export async function POST(req: NextRequest) {
-  // Changed type to NextRequest
   try {
     const cookieStore = await cookies(); // Add await back as TS expects a Promise here
     const tokenCookie = cookieStore.get('auth_token');
 
-    // Prepare the response - we always want to try clearing the cookie
+    // If we have a token and backend URL, notify the backend to invalidate it
+    if (tokenCookie?.value && DOME_API_URL) {
+      try {
+        console.log('Notifying backend to invalidate token');
+        await fetch(`${DOME_API_URL}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${tokenCookie.value}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        // We don't check the response status - clearing the cookie is the primary action
+      } catch (backendError) {
+        console.error('Failed to notify backend of logout:', backendError);
+        // Continue with cookie clearing even if backend notification fails
+      }
+    }
+
+    // Always clear the cookie regardless of backend response
     const response = NextResponse.json(
       {
         message: tokenCookie ? 'Logout successful' : 'Logout successful (no active session found)',
@@ -25,7 +43,7 @@ export async function POST(req: NextRequest) {
       { status: 200 },
     );
 
-    // Instruct the browser to clear the cookie by setting its value to empty and maxAge to 0
+    // Clear the auth cookie
     response.cookies.set({
       name: 'auth_token',
       value: '', // Clear the value
@@ -36,7 +54,7 @@ export async function POST(req: NextRequest) {
       maxAge: 0, // Expire the cookie immediately
     });
 
-    console.error('Logout request processed, clearing auth_token cookie.');
+    console.log('Logout request processed, clearing auth_token cookie.');
     return response;
   } catch (error) {
     console.error('Logout API route error:', error);

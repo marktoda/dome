@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Menu, MessageSquare, Search, Settings, Home, LogOut } from 'lucide-react'; // Removed User icon
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
@@ -53,6 +53,9 @@ export function Navbar() {
             <span className="sr-only">Toggle navigation menu</span>
         </SheetTrigger>
         <SheetContent side="left">
+          {/* Using sr-only instead of VisuallyHidden for accessibility */}
+          <SheetTitle className="sr-only">Main Navigation</SheetTitle>
+          <SheetDescription className="sr-only">Navigate to different sections of the application</SheetDescription>
           <nav className="grid gap-6 text-lg font-medium">
             <Link href="/" className="flex items-center gap-2 text-lg font-semibold mb-4">
               <MessageSquare className="h-6 w-6" />

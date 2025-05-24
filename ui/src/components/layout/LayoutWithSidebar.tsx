@@ -18,7 +18,7 @@ interface LayoutWithSidebarProps {
  * Defines the routes that should not display the main application layout (header and sidebar).
  * These typically include authentication pages (login, register) and the landing page.
  */
-const AUTH_ROUTES = ['/login', '/register', '/forgot-password']; // Add other auth routes if any
+const AUTH_ROUTES = ['/login', '/register', '/forgot-password'];
 
 /**
  * `LayoutWithSidebar` provides the main application structure, including a header and a sidebar.
@@ -35,9 +35,16 @@ export function LayoutWithSidebar({ children }: LayoutWithSidebarProps) {
   const isLandingPage = pathname === '/';
   const isChatPage = pathname.startsWith('/chat');
 
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  // Desktop sidebar state - starts closed by default, can be toggled
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  
   const toggleSidebar = React.useCallback(() => {
     setSidebarOpen((prev) => !prev);
+  }, []);
+
+  // Handle sidebar close when a search result is clicked
+  const handleSidebarClose = React.useCallback(() => {
+    setSidebarOpen(false);
   }, []);
 
   if (isAuthRoute || isLandingPage) {
@@ -51,14 +58,13 @@ export function LayoutWithSidebar({ children }: LayoutWithSidebarProps) {
         {/* Desktop Sidebar */}
         {sidebarOpen && (
           <div className="hidden md:flex">
-            <Sidebar onResultClick={() => setSidebarOpen(false)} />
+            <Sidebar onResultClick={handleSidebarClose} />
           </div>
         )}
 
         {/* Main Content Area */}
-        {/* Removed sticky header from here as it's now a global Header component */}
         <main className="flex-1 overflow-y-auto bg-background">
-          <div className={cn('p-4 sm:p-6 lg:p-8', isChatPage && 'p-0') }>
+          <div className={cn('p-4 sm:p-6 lg:p-8', isChatPage && 'p-0')}>
             {children}
           </div>
         </main>

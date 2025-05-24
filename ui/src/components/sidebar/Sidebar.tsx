@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { toast } from 'sonner'; // Added toast import
+import { toast } from 'sonner';
 import { SearchInput } from '@/components/search/SearchInput';
 import { SearchResultsList } from '@/components/search/SearchResultsList';
 import { searchApi } from '@/lib/api';
 import { SearchResultItem } from '@/lib/types/search';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Terminal, Loader2 } from 'lucide-react'; // Added Loader2
+import { Terminal, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -27,6 +27,7 @@ interface SidebarProps {
  *
  * @param props - The props for the component.
  * @param props.className - Optional additional CSS class names for the sidebar container.
+ * @param props.onResultClick - Callback when a search result is selected.
  * @returns A React functional component representing the application sidebar.
  */
 export function Sidebar({ className, onResultClick }: SidebarProps) {
@@ -49,22 +50,20 @@ export function Sidebar({ className, onResultClick }: SidebarProps) {
       setLastQuery('');
       return;
     }
+    
     setIsLoading(true);
-    setError(null); // Clear previous errors before new search
+    setError(null);
     setLastQuery(query);
+    
     try {
       const response = await searchApi.search(query);
       setSearchResults(response.results);
-      if (response.results.length === 0) {
-        // Optionally, toast if you want to notify for "no results" specifically
-        // toast.info(`No results found for "${query}"`);
-      }
     } catch (err) {
       console.error('Search API error:', err);
       const errorMessage = 'Failed to fetch search results. Please try again.';
       setError(errorMessage);
-      toast.error(errorMessage); // Add toast notification for search error
-      setSearchResults([]); // Clear previous results on error
+      toast.error(errorMessage);
+      setSearchResults([]);
     } finally {
       setIsLoading(false);
     }
@@ -75,6 +74,7 @@ export function Sidebar({ className, onResultClick }: SidebarProps) {
       <div className="mb-4">
         <h2 className="text-xl font-semibold tracking-tight">Search</h2>
       </div>
+      
       <SearchInput onSearch={handleSearch} isLoading={isLoading} />
       
       <div className="mt-4 flex-grow overflow-y-auto pr-1">
@@ -84,6 +84,7 @@ export function Sidebar({ className, onResultClick }: SidebarProps) {
             <p className="text-sm text-muted-foreground">Searching for &quot;{lastQuery}&quot;...</p>
           </div>
         )}
+        
         {error && (
           <Alert variant="destructive" className="mb-4">
             <Terminal className="h-4 w-4" />
@@ -91,12 +92,13 @@ export function Sidebar({ className, onResultClick }: SidebarProps) {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+        
         {!isLoading && !error && searchResults.length === 0 && lastQuery && (
           <div className="text-center py-4">
             <p className="text-sm text-muted-foreground">No results found for &quot;{lastQuery}&quot;.</p>
           </div>
         )}
-        {/* Only render SearchResultsList if there are actual results and not in a loading/error state that implies no results yet */}
+        
         {!isLoading && !error && searchResults.length > 0 && (
           <SearchResultsList results={searchResults} onSelect={onResultClick} />
         )}

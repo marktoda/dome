@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner'; // Added toast import
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { LogOut, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -52,7 +52,7 @@ export function Header({ isSidebarOpen, toggleSidebar }: HeaderProps) {
             size="icon"
             onClick={toggleSidebar}
             className="hidden md:flex"
-            aria-label="Toggle sidebar"
+            aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
           >
             {isSidebarOpen ? (
               <ChevronLeft className="h-5 w-5" />
