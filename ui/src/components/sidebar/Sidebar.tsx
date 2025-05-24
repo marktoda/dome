@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import { toast } from 'sonner'; // Added toast import
 import { SearchInput } from '@/components/search/SearchInput';
@@ -102,3 +104,4 @@ export function Sidebar({ className, onResultClick }: SidebarProps) {
     </aside>
   );
 }
+

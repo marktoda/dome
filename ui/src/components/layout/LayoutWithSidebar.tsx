@@ -35,18 +35,25 @@ export function LayoutWithSidebar({ children }: LayoutWithSidebarProps) {
   const isLandingPage = pathname === '/';
   const isChatPage = pathname.startsWith('/chat');
 
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const toggleSidebar = React.useCallback(() => {
+    setSidebarOpen((prev) => !prev);
+  }, []);
+
   if (isAuthRoute || isLandingPage) {
     return <>{children}</>;
   }
 
   return (
-    <div className="flex min-h-screen flex-col"> {/* Changed to min-h-screen to allow page scroll */}
-      <Header /> {/* Add the new Header component here */}
-      <div className="flex flex-1 overflow-hidden"> {/* Container for sidebar and main content */}
+    <div className="flex min-h-screen flex-col">
+      <Header isSidebarOpen={sidebarOpen} toggleSidebar={toggleSidebar} />
+      <div className="flex flex-1 overflow-hidden">
         {/* Desktop Sidebar */}
-        <div className="hidden md:flex">
-          <Sidebar />
-        </div>
+        {sidebarOpen && (
+          <div className="hidden md:flex">
+            <Sidebar onResultClick={() => setSidebarOpen(false)} />
+          </div>
+        )}
 
         {/* Main Content Area */}
         {/* Removed sticky header from here as it's now a global Header component */}

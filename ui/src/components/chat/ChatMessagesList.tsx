@@ -9,6 +9,21 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SystemMessageDisplay } from './SystemMessageDisplay';
 
+const ASSISTANT_MESSAGE_TYPE_ORDER: Record<
+  AssistantContentMessage['type'] |
+  AssistantThinkingMessage['type'] |
+  AssistantSourcesMessage['type'] |
+  AssistantReasoningMessage['type'] |
+  AssistantErrorMessage['type'],
+  number
+> = {
+  thinking: 1,
+  reasoning: 2,
+  sources: 3,
+  content: 4,
+  error: 5,
+};
+
 /**
  * `ChatMessagesList` component renders a list of chat messages within a scrollable area.
  * It handles different message senders (user, assistant, system) and displays them accordingly.
@@ -20,22 +35,6 @@ export const ChatMessagesList: React.FC = () => {
   const { messages, isLoading } = useChat();
   const scrollAreaRootRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Define the desired order for assistant message types within a single turn
-  const assistantMessageTypeOrder: Record<
-    AssistantContentMessage['type'] |
-    AssistantThinkingMessage['type'] |
-    AssistantSourcesMessage['type'] |
-    AssistantReasoningMessage['type'] |
-    AssistantErrorMessage['type'], // Only assistant-specific types that have a 'type' property
-    number
-  > = {
-    thinking: 1,
-    reasoning: 2,
-    sources: 3,
-    content: 4,
-    error: 5, // Assistant errors related to the turn
-  };
 
   const sortedMessages = useMemo(() => {
     return [...messages].sort((a, b) => {
@@ -54,8 +53,8 @@ export const ChatMessagesList: React.FC = () => {
       ) {
         // Now 'a.type' and 'b.type' are safe to access for assistant messages
         // and are guaranteed to be one of the keys in assistantMessageTypeOrder
-        const orderA = assistantMessageTypeOrder[a.type as keyof typeof assistantMessageTypeOrder] || 99;
-        const orderB = assistantMessageTypeOrder[b.type as keyof typeof assistantMessageTypeOrder] || 99;
+        const orderA = ASSISTANT_MESSAGE_TYPE_ORDER[a.type as keyof typeof ASSISTANT_MESSAGE_TYPE_ORDER] || 99;
+        const orderB = ASSISTANT_MESSAGE_TYPE_ORDER[b.type as keyof typeof ASSISTANT_MESSAGE_TYPE_ORDER] || 99;
 
         if (orderA !== orderB) {
           return orderA - orderB;
@@ -72,14 +71,14 @@ export const ChatMessagesList: React.FC = () => {
         'type' in a && // Type guard for a
         'type' in b   // Type guard for b
       ) {
-        const orderA = assistantMessageTypeOrder[a.type as keyof typeof assistantMessageTypeOrder] || 99;
-        const orderB = assistantMessageTypeOrder[b.type as keyof typeof assistantMessageTypeOrder] || 99;
+        const orderA = ASSISTANT_MESSAGE_TYPE_ORDER[a.type as keyof typeof ASSISTANT_MESSAGE_TYPE_ORDER] || 99;
+        const orderB = ASSISTANT_MESSAGE_TYPE_ORDER[b.type as keyof typeof ASSISTANT_MESSAGE_TYPE_ORDER] || 99;
         return orderA - orderB;
       }
 
       return timeDiff;
     });
-  }, [messages, assistantMessageTypeOrder]); // Add assistantMessageTypeOrder to dependencies
+  }, [messages]);
 
   useEffect(() => {
     // Scroll to the bottom when sorted messages change or loading state changes.
