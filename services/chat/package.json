@@ -30,7 +30,7 @@
     "drizzle-orm": "^0.42.0",
     "hono": "^4.0.0",
     "langfuse": "^2.0.0",
-    "zod": "^3.21.4"
+    "zod": "^3.24.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.1",
