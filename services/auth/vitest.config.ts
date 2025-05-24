@@ -6,7 +6,7 @@ export default mergeConfig(
   defineConfig({
     test: {
       include: ['tests/**/*.test.ts'],
-      setupFiles: ['tests/setup.js'],
+      setupFiles: ['tests/setup.ts'],
       coverage: {
         provider: 'v8',
         reporter: ['text', 'lcov', 'json', 'html'],

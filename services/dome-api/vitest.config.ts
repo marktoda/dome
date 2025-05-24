@@ -7,7 +7,7 @@ export default mergeConfig(
     test: {
       include: ['**/*.test.ts', '**/*.test.js'],
       root: '.',
-      setupFiles: ['./tests/setup.js'],
+      setupFiles: ['./tests/setup.ts'],
       coverage: {
         provider: 'c8',
         reporter: ['text', 'lcov'],

@@ -1,0 +1,35 @@
+{
+  "name": "@dome/{{SERVICE_NAME}}",
+  "version": "0.1.0",
+  "description": "{{SERVICE_DESCRIPTION}}",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "build": "tsc",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src/ tests/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dome/common": "workspace:*",
+    "hono": "^4.0.0",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0",
+    "wrangler": "^4.10.0"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "typescript",
+    "dome"
+  ],
+  "author": "Dome Team",
+  "license": "MIT"
+}

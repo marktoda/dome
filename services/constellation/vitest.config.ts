@@ -7,7 +7,7 @@ export default mergeConfig(
   defineConfig({
     test: {
       include: ['tests/**/*.test.ts'],
-      setupFiles: ['tests/setup.js'],
+      setupFiles: ['tests/setup.ts'],
       exclude: ['tests/newContentQueue.test.ts', 'tests/sendToDeadLetter.test.ts'],
       // Run tests serially to reduce memory pressure
       singleThread: true,
