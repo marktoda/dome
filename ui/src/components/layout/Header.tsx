@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner'; // Added toast import
 import { Button } from '@/components/ui/button';
-import { LogOut, Settings } from 'lucide-react';
+import { LogOut, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { MobileSidebar } from '@/components/sidebar/MobileSidebar';
@@ -17,7 +17,12 @@ import { MobileSidebar } from '@/components/sidebar/MobileSidebar';
  *
  * @returns A React functional component representing the application header.
  */
-export function Header() {
+interface HeaderProps {
+  onToggleSidebar?: () => void;
+  sidebarOpen?: boolean;
+}
+
+export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
   const { logout } = useAuth();
   const router = useRouter();
 
@@ -40,6 +45,12 @@ export function Header() {
   return (
     <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b bg-background px-4 sm:px-6">
       <div className="flex items-center gap-4">
+        {/* Desktop Sidebar Toggle */}
+        <div className="hidden md:block">
+          <Button variant="ghost" size="icon" aria-label="Toggle Sidebar" onClick={onToggleSidebar}>
+            {sidebarOpen ? <ChevronLeft /> : <ChevronRight />}
+          </Button>
+        </div>
         {/* Mobile Menu Toggle - shown only on md and smaller screens */}
         <div className="md:hidden">
           <MobileSidebar />
