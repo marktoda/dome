@@ -6,7 +6,7 @@ import {
   logError,
   trackOperation,
   constellationMetrics as metrics,
-} from '../utils/logging';
+} from '../utils/constellationLogging';
 
 const logger = getLogger();
 import { VectorizeError } from '../utils/errors';

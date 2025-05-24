@@ -1,4 +1,4 @@
-import { getLogger, logError, trackOperation } from '../utils/logging';
+import { getLogger, logError, trackOperation } from '@dome/common';
 import { LLMProcessingError } from '../utils/errors';
 import { toDomeError, domeAssertValid as assertValid } from '@dome/common/errors';
 import type { ServiceEnv } from '../types';
@@ -22,7 +22,7 @@ export function createLlmService(env: ServiceEnv): LlmService {
 export class LlmService {
   private static readonly MAX_RETRY_ATTEMPTS = 2;
 
-  private readonly logger = getLogger().child({ component: 'LlmService' });
+  private readonly logger = getLogger().child({ service: 'ai-processor', component: 'LlmService' });
 
   constructor(private readonly env: ServiceEnv) {
     // Note: LLM configuration is now initialized automatically by the common package

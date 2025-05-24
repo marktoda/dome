@@ -6,7 +6,7 @@ import {
   logError,
   trackOperation,
   constellationMetrics as metrics,
-} from '../utils/logging';
+} from '../utils/constellationLogging';
 import { toDomeError } from '../utils/errors';
 import { domeAssertValid as assertValid } from '@dome/common/errors';
 

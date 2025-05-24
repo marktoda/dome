@@ -6,8 +6,10 @@ import {
   getLogger,
   logError,
   trackOperation,
-  aiProcessorMetrics,
-} from '../utils/logging';
+  createServiceMetrics,
+} from '@dome/common';
+
+const aiProcessorMetrics = createServiceMetrics('ai-processor');
 import { ReprocessRequestSchema } from '../types';
 
 export async function reprocess(this: any, data: z.infer<typeof ReprocessRequestSchema>) {
@@ -20,7 +22,7 @@ export async function reprocess(this: any, data: z.infer<typeof ReprocessRequest
         const { id } = validatedData;
 
         if (id) {
-          getLogger().info(
+          getLogger().child({ service: 'ai-processor' }).info(
             { requestId, id, operation: 'reprocess_content' },
             'Reprocessing specific content by ID',
           );
@@ -34,7 +36,7 @@ export async function reprocess(this: any, data: z.infer<typeof ReprocessRequest
 
           return { success: true, reprocessed: result };
         } else {
-          getLogger().info(
+          getLogger().child({ service: 'ai-processor' }).info(
             { requestId, operation: 'reprocess_content_batch' },
             'Reprocessing all content with null or failed summary',
           );
@@ -122,7 +124,7 @@ export async function reprocessFailedContent(this: any, requestId: string): Prom
       try {
         const failedContent = await this.services.silo.findContentWithFailedSummary();
 
-        getLogger().info(
+        getLogger().child({ service: 'ai-processor' }).info(
           { count: failedContent.length, requestId, operation: 'reprocessFailedContent' },
           'Found content with failed summaries',
         );
@@ -143,7 +145,7 @@ export async function reprocessFailedContent(this: any, requestId: string): Prom
             successful++;
 
             if (successful % 10 === 0) {
-              getLogger().info(
+              getLogger().child({ service: 'ai-processor' }).info(
                 {
                   requestId,
                   progress: `${successful}/${failedContent.length}`,
@@ -172,7 +174,7 @@ export async function reprocessFailedContent(this: any, requestId: string): Prom
           requestId,
         });
 
-        getLogger().info(
+        getLogger().child({ service: 'ai-processor' }).info(
           {
             total: failedContent.length,
             successful,

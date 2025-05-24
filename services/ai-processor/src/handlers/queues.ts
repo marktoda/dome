@@ -4,8 +4,10 @@ import {
   getLogger,
   logError,
   trackOperation,
-  aiProcessorMetrics,
-} from '../utils/logging';
+  createServiceMetrics,
+} from '@dome/common';
+
+const aiProcessorMetrics = createServiceMetrics('ai-processor');
 import type { NewContentMessage, ParsedMessageBatch } from '@dome/common';
 
 export async function handleQueue(this: any, batch: MessageBatch<NewContentMessage>) {
@@ -19,7 +21,7 @@ export async function handleQueue(this: any, batch: MessageBatch<NewContentMessa
 
       const parsed: ParsedMessageBatch<NewContentMessage> = NewContentQueue.parseBatch(batch);
 
-      getLogger().info(
+      getLogger().child({ service: 'ai-processor' }).info(
         {
           queueName,
           batchId,
@@ -59,7 +61,7 @@ export async function handleQueue(this: any, batch: MessageBatch<NewContentMessa
       }
 
       const duration = Date.now() - startTime;
-      getLogger().info(
+      getLogger().child({ service: 'ai-processor' }).info(
         {
           queueName,
           batchId,

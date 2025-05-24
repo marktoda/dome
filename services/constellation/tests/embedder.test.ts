@@ -3,7 +3,7 @@ vi.mock('@dome/common', () => ({ getLogger: () => ({ debug: vi.fn(), info: vi.fn
 vi.mock('../src/utils/errors', () => ({ EmbeddingError: class extends Error {}, assertValid: () => {}, assertExists: () => {}, toDomeError: (e: any) => e }));
 import { Embedder } from '../src/services/embedder';
 
-vi.mock('../src/utils/logging', () => ({
+vi.mock('../src/utils/constellationLogging', () => ({
   getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   logError: vi.fn(),
   constellationMetrics: {

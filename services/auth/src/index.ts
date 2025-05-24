@@ -2,8 +2,10 @@ import { BaseWorker } from '@dome/common';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { BaseError, createServiceErrorHandler, errorHandler } from '@dome/common/errors';
-import { getLogger } from '@dome/common';
-import { authMetrics } from './utils/logging';
+import { getLogger, createServiceMetrics } from '@dome/common';
+
+// Create service-specific metrics
+const authMetrics = createServiceMetrics('auth');
 import {
   LoginResponse,
   RegisterResponse,

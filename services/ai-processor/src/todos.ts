@@ -3,13 +3,13 @@
  *
  * This module handles sending extracted todos to the Todos service queue
  */
-import { getLogger, trackOperation } from './utils/logging';
+import { getLogger, trackOperation } from '@dome/common';
 import { TodoQueueItem } from '@dome/todos/client';
 import { PUBLIC_USER_ID, EnrichedContentMessage } from '@dome/common';
 import { toDomeError } from '@dome/common/errors';
 import { TodoQueue } from '@dome/todos/client';
 
-const logger = getLogger();
+const logger = getLogger().child({ service: 'ai-processor' });
 
 /**
  * Convert AI-extracted todos into TodoQueueItem format

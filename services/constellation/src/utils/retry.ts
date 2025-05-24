@@ -1,4 +1,4 @@
-import { getLogger } from './logging';
+import { getLogger } from './constellationLogging';
 
 export interface RetryConfig {
   attempts: number;

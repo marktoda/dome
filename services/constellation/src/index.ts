@@ -13,7 +13,7 @@ import {
   getLogger,
   logError,
   constellationMetrics as metrics,
-} from './utils/logging';
+} from './utils/constellationLogging';
 import {
   toDomeError,
   VectorizeError,

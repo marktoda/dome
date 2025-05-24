@@ -4,7 +4,7 @@ vi.mock('../src/utils/errors', () => ({ assertValid: () => {}, assertExists: () 
 import { VectorizeService } from '../src/services/vectorize';
 import { PUBLIC_USER_ID } from '@dome/common';
 
-vi.mock('../src/utils/logging', () => ({
+vi.mock('../src/utils/constellationLogging', () => ({
   getLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   logError: vi.fn(),
   trackOperation: async (_name: string, fn: () => Promise<any>) => fn(),
