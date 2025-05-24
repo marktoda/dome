@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Sidebar } from './Sidebar';
+import { Sidebar, SIDEBAR_WIDTH_CLASS } from './Sidebar';
+import { useDisclosure } from '@/hooks/useDisclosure';
 
 /**
  * `MobileSidebar` provides a toggle button (hamburger menu icon) that, when clicked,
@@ -16,24 +17,24 @@ import { Sidebar } from './Sidebar';
  * @returns A React functional component representing the mobile sidebar toggle and sheet.
  */
 export function MobileSidebar() {
-  const [open, setOpen] = React.useState(false);
+  const { isOpen, open, close } = useDisclosure();
   const pathname = usePathname();
-  const handleResultClick = React.useCallback(() => setOpen(false), []);
+  const handleResultClick = React.useCallback(() => close(), [close]);
 
   React.useEffect(() => {
     // Close the sidebar whenever navigation occurs
-    setOpen(false);
-  }, [pathname]);
+    close();
+  }, [pathname, close]);
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={isOpen} onOpenChange={(v) => (v ? open() : close())}>
       <SheetTrigger asChild>
         <Button variant="ghost" size="icon" className="md:hidden">
           <Menu />
           <span className="sr-only">Toggle Menu</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="p-0 w-72"> {/* Removed pt-6, Sidebar will handle its padding. Explicitly set width. */}
+      <SheetContent side="left" className={`p-0 ${SIDEBAR_WIDTH_CLASS}`}> {/* Match sidebar width so close button remains accessible */}
         <Sidebar onResultClick={handleResultClick} />
       </SheetContent>
     </Sheet>

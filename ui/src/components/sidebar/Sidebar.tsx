@@ -8,6 +8,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Terminal, Loader2 } from 'lucide-react'; // Added Loader2
 import { cn } from '@/lib/utils';
 
+/** Width class shared between sidebar and mobile sheet */
+export const SIDEBAR_WIDTH_CLASS = 'w-80';
+
 /**
  * Props for the {@link Sidebar} component.
  */
@@ -69,7 +72,7 @@ export function Sidebar({ className, onResultClick }: SidebarProps) {
   };
 
   return (
-    <aside className={cn("h-full w-80 flex-col border-r bg-background p-4 flex", className)}>
+    <aside className={cn(`h-full ${SIDEBAR_WIDTH_CLASS} flex-col border-r bg-background p-4 flex`, className)}>
       <div className="mb-4">
         <h2 className="text-xl font-semibold tracking-tight">Search</h2>
       </div>
