@@ -29,6 +29,9 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Install just
+        run: npm install -g rust-just
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@beta
