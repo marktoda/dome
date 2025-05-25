@@ -1,6 +1,6 @@
 # Dome AGENTS Onboarding Guide
 
-This document provides key information for LLMs contributing to the Dome repository. Use it as a quick reference for typical workflows and best practices. For full details see `.roo/rules/01-general.md` or `.cursorrules`.
+This document provides key information for LLMs contributing to the Dome repository. Use it as a quick reference for typical workflows and best practices. For comprehensive details see `CLAUDE.md` which contains the master configuration for AI assistants.
 
 ## Repository Overview
 
@@ -42,4 +42,6 @@ This document provides key information for LLMs contributing to the Dome reposit
 - Never commit credentials or other secrets.
 - Configure sensitive data via environment variables or `.dev.vars` files.
 
-For further information consult the documentation in the `docs/` directory.
+For further information consult:
+- `CLAUDE.md` - Complete AI assistant guidelines and repository best practices
+- Documentation in the `docs/` directory for technical details
