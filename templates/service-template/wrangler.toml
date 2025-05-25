@@ -1,0 +1,13 @@
+name = "service-name"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.dev]
+name = "service-name-dev"
+
+[env.staging]
+name = "service-name-staging"
+
+[env.prod]
+name = "service-name-prod"
