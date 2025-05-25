@@ -19,6 +19,7 @@
     "@dome/common": "workspace:*",
     "@dome/constellation": "workspace:*",
     "@dome/silo": "workspace:*",
+    "@dome/tsunami": "workspace:*",
     "@dqbd/tiktoken": "^1.0.7",
     "@graphql-tools/schema": "^10.0.2",
     "@hono/swagger-ui": "^0.5.1",
