@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('cloudflare:workers', () => ({ WorkerEntrypoint: class {} }));
 
 import AiProcessor from '../src/index';
-import { RawMessageBatch } from '@dome/common';
+import { MessageBatch } from '@dome/common';
+import type { NewContentMessage } from '@dome/common';
 
 const makeWorker = () => {
   const worker = new AiProcessor({} as any, {} as any);
@@ -16,11 +17,11 @@ const makeWorker = () => {
 describe('AiProcessor.queue', () => {
   it('parses and processes a valid batch', async () => {
     const worker = makeWorker();
-    const msg = { id: '1', userId: 'u' };
-    const batch: RawMessageBatch = {
+    const msg: NewContentMessage = { id: '1', userId: 'u' };
+    const batch: MessageBatch<NewContentMessage> = {
       queue: 'test',
       messages: [
-        { id: 'm1', timestamp: Date.now(), body: JSON.stringify(msg) },
+        { id: 'm1', timestamp: new Date(), body: msg },
       ],
     };
     await worker.queue(batch as any);
@@ -32,10 +33,10 @@ describe('AiProcessor.queue', () => {
 
   it('throws when batch parsing fails', async () => {
     const worker = makeWorker();
-    const batch: RawMessageBatch = {
+    const batch: MessageBatch<unknown> = {
       queue: 'test',
       messages: [
-        { id: 'm1', timestamp: Date.now(), body: JSON.stringify({}) },
+        { id: 'm1', timestamp: new Date(), body: {} },
       ],
     };
     await expect(worker.queue(batch as any)).rejects.toThrow();
