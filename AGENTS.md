@@ -138,13 +138,22 @@ This repository is organized as a monorepo with the following structure:
 
 ## Pull Requests
 
+### 🚨 CRITICAL: Pre-PR Quality Gates 🚨
+
+**EVERY PULL REQUEST MUST PASS ALL THREE COMMANDS BEFORE CREATION:**
+
+1. **`just build`** - Build must complete successfully
+2. **`just lint`** - Linting must pass without errors 
+3. **`just test`** - All tests must pass
+
+**NO EXCEPTIONS.** Pull requests with failing builds, lint errors, or test failures will be rejected immediately.
+
+### Additional Requirements
+
 - Branch from `main` and keep changes focused on a single concern
-- Ensure `just build-no-install` (or `just build`), `just lint`, and `just test` all succeed before opening a PR
 - Update documentation when behavior or APIs change
 - Create feature branches from main
 - Follow the conventional commits specification for commit messages
-- Ensure all tests pass before submitting a pull request
-- Update documentation when making significant changes
 - Add tests for new features and bug fixes
 - Keep pull requests focused on a single concern
 - Rebase feature branches on main before submitting pull requests
