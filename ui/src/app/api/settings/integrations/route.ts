@@ -1,6 +1,48 @@
-import { NextRequest, NextResponse } from 'next/server'; // Use NextRequest
-import { getMockIntegrationStatuses } from '@/lib/integration-mock-db'; // Mock data source
-// import { verifyAuth } from '@/lib/auth'; // Example: Import your actual auth verification function
+import { NextRequest, NextResponse } from 'next/server';
+import type { IntegrationStatus } from '@/lib/oauth-types';
+
+/**
+ * Extract user ID from JWT token in request cookies.
+ * TODO: Replace with actual auth service integration.
+ */
+function getUserIdFromRequest(req: NextRequest): string | null {
+  try {
+    // TODO: Implement proper JWT token verification
+    // For now, return a placeholder that will be replaced with real auth
+    const authToken = req.cookies.get('authToken')?.value;
+    if (!authToken) {
+      return null;
+    }
+    
+    // Placeholder: In real implementation, decode and verify JWT
+    // const payload = jwt.verify(authToken, process.env.JWT_SECRET);
+    // return payload.userId;
+    
+    // Temporary fallback for development
+    return 'authenticated-user';
+  } catch (error) {
+    console.error('Error extracting user ID from request:', error);
+    return null;
+  }
+}
+
+/**
+ * Fetch integration statuses from the backend service.
+ * TODO: Implement actual API call to tsunami service.
+ */
+async function fetchIntegrationStatuses(userId: string): Promise<IntegrationStatus[]> {
+  // TODO: Make actual API call to tsunami service to get real integration statuses
+  // This should query the database for stored OAuth tokens and return connection status
+  
+  // Placeholder implementation - replace with real backend integration
+  const mockStatuses: IntegrationStatus[] = [
+    { platform: 'github', isConnected: false },
+    { platform: 'notion', isConnected: false },
+  ];
+  
+  console.warn('TODO: Replace with actual backend API call to fetch integration statuses');
+  return mockStatuses;
+}
 
 /**
  * Handles GET requests to `/api/settings/integrations`.
@@ -11,31 +53,17 @@ import { getMockIntegrationStatuses } from '@/lib/integration-mock-db'; // Mock 
  *   - 200 OK: An array of `IntegrationStatus` objects.
  *   - 401 Unauthorized: If the user is not authenticated.
  *   - 500 Internal Server Error: If an unexpected error occurs.
- *
- * @security **Note:** This implementation currently uses a **mock data source** (`getMockIntegrationStatuses`)
- *           and does not perform real authentication. Replace mock data and hardcoded `userId`
- *           with actual authentication logic (e.g., verifying JWT from cookie) and database lookups.
  */
 export async function GET(req: NextRequest) {
-  // Add req parameter
-  console.error(
-    '⚠️ Using MOCK /api/settings/integrations endpoint! Replace with actual implementation. ⚠️',
-  );
   try {
-    // --- !!! MOCK AUTHENTICATION START !!! ---
-    // In a real application, verify the user's session/token here.
-    // Example using a hypothetical verifyAuth function:
-    // const authResult = await verifyAuth(req);
-    // if (!authResult.authenticated || !authResult.userId) {
-    //   return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    // }
-    // const userId = authResult.userId;
-    const userId = 'default-user'; // Hardcoded mock user ID
-    console.error(`Fetching mock integration statuses for user: ${userId}`);
-    // --- !!! MOCK AUTHENTICATION END !!! ---
+    // Extract user ID from authentication token
+    const userId = getUserIdFromRequest(req);
+    if (!userId) {
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    }
 
-    // Fetch statuses from the mock data source
-    const statuses = getMockIntegrationStatuses(userId);
+    // Fetch integration statuses from backend
+    const statuses = await fetchIntegrationStatuses(userId);
 
     return NextResponse.json(statuses);
   } catch (error) {

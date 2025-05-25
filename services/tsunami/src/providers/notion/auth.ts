@@ -4,9 +4,8 @@
  * This module handles API keys and OAuth integration with Notion,
  * including token exchange and secure storage.
  */
-import { getLogger, metrics, trackedFetch, getRequestId } from '@dome/common';
-import { ServiceError } from '@dome/common/errors';
-import { TokenService, OAuthTokenRecord } from '../../services/tokenService'; // Corrected path
+import { BaseOAuthManager, OAuthConfig } from '../oauth/BaseOAuthManager';
+import { OAuthErrorHandler, OAuthError } from '../oauth/OAuthErrorHandler';
 import type { NotionOAuthDetails } from '../../client/types'; // Corrected path
 import type { ServiceEnv } from '../../config/env';
 
@@ -34,132 +33,61 @@ export interface NotionOAuthTokenResponse {
  * Notion Authentication Manager
  * Handles OAuth flow and token management for Notion API
  */
-export class NotionAuthManager {
-  private log = getLogger();
+export class NotionAuthManager extends BaseOAuthManager {
   private clientId: string;
   private clientSecret: string;
   private redirectUri: string;
-  // private tokenStore: Map<string, string> = new Map(); // Replaced with TokenService
-  private tokenService: TokenService;
 
   constructor(env: ServiceEnv) {
+    super(env, 'notion');
     this.clientId = env.NOTION_CLIENT_ID ?? '';
     this.clientSecret = env.NOTION_CLIENT_SECRET ?? '';
     this.redirectUri = env.NOTION_REDIRECT_URI ?? '';
-    this.tokenService = new TokenService(
-      env.SYNC_PLAN,
-      env.TOKEN_ENCRYPTION_KEY,
-    );
+  }
 
-    this.log.info(
-      {
-        hasClientId: !!this.clientId,
-        hasClientSecret: !!this.clientSecret,
-        hasRedirectUri: !!this.redirectUri,
+  /**
+   * Get OAuth configuration for Notion
+   */
+  protected getOAuthConfig(): OAuthConfig {
+    return {
+      clientId: this.clientId,
+      clientSecret: this.clientSecret,
+      redirectUri: this.redirectUri,
+      authBaseUrl: 'https://api.notion.com/v1/oauth/authorize',
+      tokenEndpoint: 'https://api.notion.com/v1/oauth/token',
+      additionalAuthParams: {
+        owner: 'user',
       },
-      'notion: auth manager initialized',
-    );
+    };
   }
 
   /**
    * Generate the OAuth authorization URL for Notion
-   *
-   * @param state - State parameter for OAuth security
-   * @returns The full authorization URL
+   * Uses the base class implementation with Notion-specific parameters
    */
   getAuthUrl(state: string): string {
-    const baseUrl = 'https://api.notion.com/v1/oauth/authorize';
-    const params = new URLSearchParams({
-      client_id: this.clientId,
-      redirect_uri: this.redirectUri,
-      response_type: 'code',
-      owner: 'user',
-      state,
-    });
-
-    const url = `${baseUrl}?${params.toString()}`;
-
-    this.log.debug({ state }, 'notion: generated auth URL');
-
-    return url;
+    return this.generateAuthUrl(state);
   }
 
   /**
    * Exchange an authorization code for an access token
-   *
-   * @param code - The authorization code from Notion OAuth callback
-   * @returns Token response with access token and workspace details
+   * Uses the base class implementation and returns Notion-specific response
    */
   async exchangeCodeForToken(code: string): Promise<NotionOAuthTokenResponse> {
-    // Return full response
     try {
-      const startTime = performance.now();
-      this.log.info({ code: code.substring(0, 6) + '...' }, 'notion: exchanging code for token');
-
-      const tokenEndpoint = 'https://api.notion.com/v1/oauth/token';
-      const authHeader = `Basic ${btoa(`${this.clientId}:${this.clientSecret}`)}`;
-
-      const requestId = getRequestId();
-      const response = await trackedFetch(
-        tokenEndpoint,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: authHeader,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: this.redirectUri,
-          }),
-        },
-        { operation: 'exchangeCodeForToken', requestId },
-      );
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => '<no-body>');
-        this.log.error(
-          { status: response.status, body: errorBody },
-          'notion: token exchange failed',
-        );
-
-        metrics.increment('notion.auth.token_exchange.errors');
-
-        throw new ServiceError(
-          `Notion token exchange failed: ${response.status} ${response.statusText}`,
-          {
-            context: { status: response.status },
-          },
-        );
-      }
-
-      const tokenData = (await response.json()) as NotionOAuthTokenResponse;
-
-      metrics.timing('notion.auth.token_exchange.latency_ms', performance.now() - startTime);
-      metrics.increment('notion.auth.token_exchange.success');
-
-      return tokenData; // Return the full tokenData object
+      return await super.exchangeCodeForToken<NotionOAuthTokenResponse>(code);
     } catch (error) {
-      if (error instanceof ServiceError) throw error;
-
-      this.log.error(
-        { error: error instanceof Error ? error.message : String(error) },
-        'notion: token exchange error',
-      );
-
-      metrics.increment('notion.auth.token_exchange.errors');
-
-      throw new ServiceError('Failed to exchange authorization code for token', {
-        cause: error,
-        context: { code: code.substring(0, 6) + '...' },
-      });
+      // Log Notion-specific error details and re-throw
+      if (error instanceof OAuthError) {
+        OAuthErrorHandler.logOAuthError(error);
+      }
+      throw error;
     }
   }
 
   /**
    * Store a user's Notion OAuth details securely using TokenService.
-   *
+   * 
    * @param userId - User ID from your application
    * @param notionTokenResponse - The full token response from Notion after code exchange
    */
@@ -167,81 +95,39 @@ export class NotionAuthManager {
     userId: string,
     notionTokenResponse: NotionOAuthTokenResponse,
   ): Promise<void> {
-    try {
-      const details: NotionOAuthDetails = {
-        userId,
-        accessToken: notionTokenResponse.access_token,
-        workspaceId: notionTokenResponse.workspace_id,
-        workspaceName: notionTokenResponse.workspace_name,
-        workspaceIcon: notionTokenResponse.workspace_icon,
-        botId: notionTokenResponse.bot_id,
-        owner: notionTokenResponse.owner,
-        // duplicatedTemplateId is not directly in NotionOAuthTokenResponse, might be null or from elsewhere if needed
-      };
+    const details: NotionOAuthDetails = {
+      userId,
+      accessToken: notionTokenResponse.access_token,
+      workspaceId: notionTokenResponse.workspace_id,
+      workspaceName: notionTokenResponse.workspace_name,
+      workspaceIcon: notionTokenResponse.workspace_icon,
+      botId: notionTokenResponse.bot_id,
+      owner: notionTokenResponse.owner,
+    };
 
-      await this.tokenService.storeNotionToken(details);
-
-      this.log.info(
-        { userId, workspaceId: details.workspaceId },
-        'notion: integration details stored successfully via TokenService',
-      );
-      metrics.increment('notion.auth.integration_stored');
-    } catch (error) {
-      this.log.error(
-        {
-          userId,
-          workspaceId: notionTokenResponse.workspace_id,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'notion: error storing integration details via TokenService',
-      );
-      metrics.increment('notion.auth.integration_store.errors');
-      throw new ServiceError('Failed to store Notion integration details', {
-        cause: error,
-        context: { userId, workspaceId: notionTokenResponse.workspace_id },
-      });
-    }
+    // Use the base class method for storing tokens
+    await this.storeUserToken(userId, details, notionTokenResponse.workspace_id);
   }
 
   /**
    * Retrieve a user's access token
-   *
-   * @param userId - User ID
-   * @param workspaceId - Notion workspace ID
-   * @returns The access token or null if not found
+   * Uses the base class implementation
    */
   async getUserToken(userId: string, workspaceId: string): Promise<string | null> {
-    try {
-      const tokenRecord = await this.tokenService.getToken(userId, 'notion', workspaceId);
-
-      if (tokenRecord) {
-        this.log.debug(
-          { userId, workspaceId, found: true },
-          'notion: token retrieval attempt from TokenService successful',
-        );
-        metrics.increment('notion.auth.token_retrieved');
-        // TokenService returns decrypted tokens
-        return tokenRecord.accessToken;
-      }
-
-      this.log.debug(
-        { userId, workspaceId, found: false },
-        'notion: token not found via TokenService',
-      );
-      metrics.increment('notion.auth.token_not_found');
-      return null;
-    } catch (error) {
-      this.log.error(
-        { userId, workspaceId, error: error instanceof Error ? error.message : String(error) },
-        'notion: error retrieving token via TokenService',
-      );
-      metrics.increment('notion.auth.token_retrieve.errors');
-      throw new ServiceError('Failed to retrieve user token via TokenService', {
-        cause: error,
-        context: { userId, workspaceId },
-      });
-    }
+    return super.getUserToken(userId, workspaceId);
   }
 
-  // getStorageKey is no longer needed as TokenService handles its own storage structure.
+  /**
+   * Delete a user's stored token (for disconnection)
+   */
+  async deleteUserToken(userId: string, workspaceId: string): Promise<boolean> {
+    return super.deleteUserToken(userId, workspaceId);
+  }
+
+  /**
+   * Check if a user has a valid Notion token
+   */
+  async hasValidToken(userId: string, workspaceId: string): Promise<boolean> {
+    return super.hasValidToken(userId, workspaceId);
+  }
 }

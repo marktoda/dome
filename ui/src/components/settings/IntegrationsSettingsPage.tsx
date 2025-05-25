@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import type { IntegrationStatus, Integration, IntegrationPlatform } from '@/lib/oauth-types';
+import { getAllIntegrationConfigs } from '@/lib/integration-config';
+import integrationClient, { IntegrationError } from '@/lib/integration-client';
 import IntegrationCard from './IntegrationCard';
 import { Github, BookText, RefreshCw, ZapOff } from 'lucide-react'; // Added ZapOff, Using BookText for Notion
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,30 +12,27 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 
 /**
- * Configuration for available integrations.
- * Each object defines the properties of an integration platform like GitHub or Notion.
- * `statusUrl` is generally not used per integration if a global status endpoint exists.
+ * Map platform names to their corresponding icons.
  */
-const AVAILABLE_INTEGRATIONS_CONFIG: Omit<Integration, 'isConnected'>[] = [
-  {
-    platform: 'github',
-    name: 'GitHub',
-    icon: <Github />,
-    description: 'Connect your GitHub account to sync repositories, issues, and pull requests.',
-    connectUrl: '/api/settings/integrations/github/connect',
-    disconnectUrl: '/api/settings/integrations/github/disconnect',
-    statusUrl: '', // Not used per integration if global status endpoint exists
-  },
-  {
-    platform: 'notion',
-    name: 'Notion',
-    icon: <BookText />,
-    description: 'Connect your Notion account to sync pages, databases, and notes.',
-    connectUrl: '/api/settings/integrations/notion/connect',
-    disconnectUrl: '/api/settings/integrations/notion/disconnect',
-    statusUrl: '',
-  },
-];
+const PLATFORM_ICONS: Record<IntegrationPlatform, React.ReactElement> = {
+  github: <Github />,
+  notion: <BookText />,
+};
+
+/**
+ * Convert integration config to the format expected by IntegrationCard.
+ */
+function createIntegrationFromConfig(config: any): Omit<Integration, 'isConnected'> {
+  return {
+    platform: config.platform,
+    name: config.name,
+    icon: PLATFORM_ICONS[config.platform] || <Github />, // Fallback to GitHub icon
+    description: config.description,
+    connectUrl: config.endpoints.connect,
+    disconnectUrl: config.endpoints.disconnect,
+    statusUrl: config.endpoints.status,
+  };
+}
 
 /**
  * `IntegrationsSettingsPage` provides a UI for users to manage their third-party integrations.
@@ -79,11 +78,7 @@ const IntegrationsSettingsPage: React.FC = () => {
         setLoadingGlobal(true);
     }
     try {
-      const response = await fetch('/api/settings/integrations');
-      if (!response.ok) {
-        throw new Error(`Failed to fetch integration statuses: ${response.statusText}`);
-      }
-      const data: IntegrationStatus[] = await response.json();
+      const data = await integrationClient.getAllIntegrationsStatus();
       const newStatuses: Record<IntegrationPlatform, IntegrationStatus | undefined> = { github: undefined, notion: undefined };
       data.forEach(status => {
         if (newStatuses.hasOwnProperty(status.platform)) { // Ensure platform is known
@@ -93,8 +88,11 @@ const IntegrationsSettingsPage: React.FC = () => {
       setIntegrationStatuses(newStatuses);
     } catch (error) {
       console.error("Error fetching integration statuses:", error);
+      const errorMessage = error instanceof IntegrationError 
+        ? error.message 
+        : "Could not load integration statuses. Please try refreshing.";
       sonnerToast.error("Error Loading Integrations", {
-        description: "Could not load integration statuses. Please try refreshing.",
+        description: errorMessage,
       });
     } finally {
       if (showLoadingIndicator) {
@@ -114,14 +112,23 @@ const IntegrationsSettingsPage: React.FC = () => {
    * Includes a `redirect_uri` parameter to return the user to this page after OAuth.
    * @param platform - The platform to connect (e.g., 'github', 'notion').
    */
-  const handleConnect = (platform: IntegrationPlatform) => {
+  const handleConnect = async (platform: IntegrationPlatform) => {
     setOperationStates(prev => ({ ...prev, [platform]: { isConnecting: true, isDisconnecting: false }}));
-    const connectUrl = AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform)?.connectUrl;
-    if (connectUrl) {
-      const redirectUri = encodeURIComponent(`${window.location.origin}/settings/integrations?oauth_callback=true&platform=${platform}`);
-      window.location.href = `${connectUrl}?redirect_uri=${redirectUri}`;
-    } else {
-      sonnerToast.error("Connection Error", { description: `Connect URL not found for ${platform}.` });
+    try {
+      const redirectUri = `${window.location.origin}/settings/integrations?oauth_callback=true&platform=${platform}`;
+      const result = await integrationClient.connectIntegration(platform, { redirectUrl: redirectUri });
+      
+      if (result.success && result.redirectUrl) {
+        window.location.href = result.redirectUrl;
+      } else {
+        throw new Error(result.message || 'Failed to initiate connection');
+      }
+    } catch (error) {
+      console.error(`Error connecting ${platform}:`, error);
+      const errorMessage = error instanceof IntegrationError 
+        ? error.message 
+        : `Failed to connect ${platform}`;
+      sonnerToast.error("Connection Error", { description: errorMessage });
       setOperationStates(prev => ({ ...prev, [platform]: { isConnecting: false }}));
     }
   };
@@ -135,25 +142,23 @@ const IntegrationsSettingsPage: React.FC = () => {
   const handleDisconnect = async (platform: IntegrationPlatform) => {
     setOperationStates(prev => ({ ...prev, [platform]: { isDisconnecting: true, isConnecting: false }}));
     try {
-      const integrationConfig = AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform);
-      if (!integrationConfig) throw new Error(`Invalid integration platform: ${platform}`);
-
-      const response = await fetch(integrationConfig.disconnectUrl, { method: 'POST' });
-      // It's good practice to check if response.json() is callable, e.g. by checking content-type
-      const responseData = await response.json().catch(() => ({ success: false, message: 'Invalid JSON response from server.' }));
-
-      if (!response.ok || !responseData.success) {
-        throw new Error(responseData.message || `Failed to disconnect ${integrationConfig.name}.`);
+      const result = await integrationClient.disconnectIntegration(platform);
+      
+      if (result.success) {
+        sonnerToast.success("Disconnected", {
+          description: result.message,
+        });
+        await fetchAllIntegrationStatuses(false); // Refresh statuses without global loading indicator
+      } else {
+        throw new Error(result.message || `Failed to disconnect ${platform}`);
       }
-      sonnerToast.success("Disconnected", {
-        description: `${integrationConfig.name} disconnected successfully.`,
-      });
-      await fetchAllIntegrationStatuses(false); // Refresh statuses without global loading indicator
     } catch (error) {
       console.error(`Error disconnecting ${platform}:`, error);
-      const integrationConfig = AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform);
+      const errorMessage = error instanceof IntegrationError 
+        ? error.message 
+        : `Could not disconnect ${platform}`;
       sonnerToast.error("Disconnection Error", {
-        description: `Could not disconnect ${integrationConfig?.name || platform}. ${(error as Error).message}`,
+        description: errorMessage,
       });
     } finally {
       setOperationStates(prev => ({ ...prev, [platform]: { isDisconnecting: false }}));
@@ -174,13 +179,17 @@ const IntegrationsSettingsPage: React.FC = () => {
       const errorDescriptionParam = queryParams.get('error_description');
 
       if (platform) {
+        // Get platform name from config
+        const platformConfig = getAllIntegrationConfigs().find(c => c.platform === platform);
+        const platformName = platformConfig?.name || platform;
+        
         if (errorParam) {
           sonnerToast.error("Connection Failed", {
-            description: `${AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform)?.name || platform} connection failed: ${errorDescriptionParam || errorParam}`,
+            description: `${platformName} connection failed: ${errorDescriptionParam || errorParam}`,
           });
         } else {
           sonnerToast.success("Connected!", {
-            description: `${AVAILABLE_INTEGRATIONS_CONFIG.find(i => i.platform === platform)?.name || platform} connected successfully.`,
+            description: `${platformName} connected successfully.`,
           });
         }
         fetchAllIntegrationStatuses(false); // Refresh to get the latest status
@@ -217,7 +226,7 @@ const IntegrationsSettingsPage: React.FC = () => {
            <Skeleton className="h-10 w-36 mt-4 sm:mt-0" /> {/* Adjusted width */}
         </div>
         <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3"> {/* Added xl:grid-cols-3 */}
-          {AVAILABLE_INTEGRATIONS_CONFIG.map(config => (
+          {getAllIntegrationConfigs().map(config => (
             <Card key={config.platform} className="w-full">
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -286,7 +295,8 @@ const IntegrationsSettingsPage: React.FC = () => {
       )}
 
       <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3"> {/* Added xl:grid-cols-3 */}
-        {AVAILABLE_INTEGRATIONS_CONFIG.map(config => {
+        {getAllIntegrationConfigs().map(config => {
+          const integrationFormat = createIntegrationFromConfig(config);
           const status = integrationStatuses[config.platform];
           const opsState = operationStates[config.platform] || {};
           const isLoadingCard = opsState.isConnecting || opsState.isDisconnecting;
@@ -295,7 +305,7 @@ const IntegrationsSettingsPage: React.FC = () => {
           return (
             <IntegrationCard
               key={config.platform}
-              integrationConfig={config}
+              integrationConfig={integrationFormat}
               status={status} // Can be undefined
               onConnect={handleConnect}
               onDisconnect={handleDisconnect}
