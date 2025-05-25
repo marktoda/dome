@@ -31,12 +31,12 @@ describe('RobotsChecker', () => {
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
-    originalFetch = global.fetch;
-    global.fetch = vi.fn(async () => new Response(robotsContent));
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => new Response(robotsContent));
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    globalThis.fetch = originalFetch;
   });
 
   it('blocks disallowed paths', async () => {
@@ -53,8 +53,8 @@ describe.skip('WebsiteCrawler', () => {
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
-    originalFetch = global.fetch;
-    global.fetch = vi.fn(async (url: RequestInfo | URL) => {
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
       if (url.toString() === 'https://example.com/') {
         return new Response(
           '<html><body><a href="/internal">in</a><a href="https://ext.com">ex</a></body></html>',
@@ -73,7 +73,7 @@ describe.skip('WebsiteCrawler', () => {
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    globalThis.fetch = originalFetch;
   });
 
   it('crawls internal links and records pending external ones', async () => {

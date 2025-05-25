@@ -7,7 +7,7 @@ export default mergeConfig(
     test: {
       include: ['tests/**/*.test.ts'],
       setupFiles: ['tests/setup.ts'],
-      exclude: ['tests/queue.test.ts'],
+      exclude: [],
       coverage: {
         reporter: ['text', 'json', 'html'],
         exclude: ['node_modules/', 'tests/'],

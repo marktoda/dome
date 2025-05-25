@@ -7,7 +7,7 @@ export default mergeConfig(
     test: {
       include: ['tests/**/*.test.ts'],
       setupFiles: ['tests/setup.ts'],
-      exclude: ['tests/websiteComponents.test.ts'],
+      exclude: [],
       coverage: {
         provider: 'v8',
         reporter: ['text', 'lcov', 'json', 'html'],

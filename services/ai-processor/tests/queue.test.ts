@@ -2,6 +2,27 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('cloudflare:workers', () => ({ WorkerEntrypoint: class {} }));
 
+// Mock the silo import that doesn't exist
+vi.mock('@dome/silo/client', () => ({
+  SiloClient: class MockSiloClient {
+    constructor() {}
+  },
+  SiloBinding: {}
+}));
+
+vi.mock('@dome/silo/queues', () => ({
+  NewContentQueue: {
+    parseBatch: vi.fn().mockImplementation((batch) => ({
+      queue: batch.queue,
+      messages: batch.messages.map(m => ({
+        id: m.id,
+        timestamp: m.timestamp,
+        body: JSON.parse(m.body)
+      }))
+    }))
+  }
+}));
+
 import AiProcessor from '../src/index';
 import { RawMessageBatch } from '@dome/common';
 

@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NewContentQueue } from '@dome/silo/queues';
 import { NewContentMessageSchema } from '@dome/common';
 import * as queueHelpers from '@dome/common/queue';
+import { AbstractQueue } from '@dome/common/queue';
+
+// Create a local NewContentQueue class for testing
+class NewContentQueue extends AbstractQueue<typeof NewContentMessageSchema> {
+  static override schema = NewContentMessageSchema;
+}
 
 const mockQueue = { send: vi.fn(), sendBatch: vi.fn() };
 

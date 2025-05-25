@@ -8,7 +8,7 @@ export default mergeConfig(
     test: {
       include: ['tests/**/*.test.ts'],
       setupFiles: ['tests/setup.ts'],
-      exclude: ['tests/newContentQueue.test.ts', 'tests/sendToDeadLetter.test.ts'],
+      exclude: [],
       // Run tests serially to reduce memory pressure
       singleThread: true,
       // Increase Node.js memory limit using the runner process args
