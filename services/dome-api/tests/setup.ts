@@ -1,0 +1,2 @@
+// Minimal test setup
+export {};
