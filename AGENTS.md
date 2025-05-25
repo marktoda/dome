@@ -1,45 +1,206 @@
-# Dome AGENTS Onboarding Guide
+# Dome AI Agent Configuration
 
-This document provides key information for LLMs contributing to the Dome repository. Use it as a quick reference for typical workflows and best practices. For full details see `.roo/rules/01-general.md` or `.cursorrules`.
+This document provides comprehensive guidelines for AI assistants contributing to the Dome repository. This is the master configuration file that consolidates all AI assistant rules and best practices.
 
 ## Repository Overview
 
-- **Monorepo layout** with microservices under `services/` and shared code in `packages/`.
-- Infrastructure code lives in `infra/` and Cloudflare worker templates are in `templates/`.
-- Tests reside next to each service or package.
+This repository is organized as a monorepo with the following structure:
+
+### Project State
+
+- This is an **undeployed development project**
+- Do not worry about backwards compatibility, deleting outdated files etc.
+- When refactoring code, always clean up the old code
+- Focus heavily on creating simple, readable and extensible code
+- The common/ package has all errors and middleware for api handlers
+- To update common packages in a service you need to pnpm i and pnpm build
+- We do not use `fetch` for inter-service communication -- only direct cloudflare worker RPC
+
+### Core Directories
+
+- `services/` - Contains individual microservices
+  - Each service is a standalone Cloudflare Worker
+- `packages/` - Shared packages and libraries
+  - `common/` - Common utilities and shared code
+- `infra/` - Infrastructure as code using Pulumi
+- `templates/` - Templates for creating new services and workers
+- `docs/` - Project documentation
+
+## Repository Navigation
+
+- This is a monorepo with multiple projects in different directories
+- Always verify your current location with `pwd` before executing commands
+- Navigate to specific project directories with `cd path/to/directory` before running commands
+- Use absolute paths when possible for clarity and reliability
+- Use relative paths only when necessary to reference files in other parts of the repository
+- Use the directory structure to understand the relationships between services and packages
+- Keep the root directory as clean as possible
+- Put service-specific tests in the relevant service directory
 
 ## Workflow Basics
 
-1. Install dependencies with `pnpm install`.
-2. Build and test using just commands:
-   - `just build` – compile all packages.
-   - `just build-no-install` – compile without running `pnpm install`.
-   - `just build-pkg <pkg>` – build a single package or service.
-   - `just test` – run vitest across the repo.
-   - `just test-pkg <pkg>` – run tests for one package.
-   - `just lint` – check code style (`just lint-fix` to auto-fix).
-   - `just lint-pkg <pkg>` – lint only a single package.
-3. Use `wrangler` for Cloudflare Workers operations (`wrangler dev`, `wrangler deploy`).
-4. When creating new services, use templates in `templates/` and add them to the pnpm workspace.
+1. **Dependencies**: Install with `pnpm install`
+2. **Build and Test** using just commands:
+   - `just build` – compile all packages
+   - `just build-no-install` – compile without running `pnpm install`
+   - `just build-pkg <pkg>` – build a single package or service
+   - `just test` – run vitest across the repo
+   - `just test-pkg <pkg>` – run tests for one package
+   - `just lint` – check code style (`just lint-fix` to auto-fix)
+   - `just lint-pkg <pkg>` – lint only a single package
+3. **Cloudflare Workers**: Use `wrangler` for operations (`wrangler dev`, `wrangler deploy`)
+4. **New Services**: Use templates in `templates/` and add them to the pnpm workspace
+
+## pnpm Workspace Setup
+
+- This repository uses pnpm workspaces for managing dependencies
+- The workspace configuration is defined in `pnpm-workspace.yaml`
+- To install all dependencies across the workspace: `pnpm install`
+- To add a dependency to a specific package: `pnpm add <package> --filter <workspace-package>`
+- To add a dependency to all packages: `pnpm add -w <package>`
+- To run a script in a specific package: `pnpm --filter <workspace-package> <script>`
+- To run the same script across all packages: `pnpm -r <script>`
+
+## TypeScript Configuration
+
+- The repository uses TypeScript for type safety and better developer experience
+- Root `tsconfig.json` provides base configuration
+- Each service and package has its own `tsconfig.json` that extends the root configuration
+- Common TypeScript settings are shared across the workspace
+- For service-specific TypeScript configurations, check the respective `tsconfig.json` files
+- When creating new services, use the TypeScript templates in the `templates/` directory
+- Ensure consistent TypeScript version usage across all packages
 
 ## Coding Guidelines
 
-- Keep the code simple, readable and well-typed.
-- Prefer RPC bindings over HTTP fetches for inter-service calls.
-- Follow the established error handling and logging patterns from `@dome/common`.
-- Use the Hono framework for APIs and zValidator/Zod for validation.
-- Add tests for new features and run them before committing.
-- Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/).
+- **Simplicity**: Keep the code simple, readable and well-typed
+- **Inter-service Communication**: Prefer RPC bindings over HTTP fetches for inter-service calls
+- **Error Handling**: Follow the established error handling and logging patterns from `@dome/common`
+- **Frameworks**: Use the Hono framework for APIs and zValidator/Zod for validation
+- **Testing**: Add tests for new features and run them before committing
+- **Commits**: Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/)
+
+## Preferred Tooling
+
+- Use Wrangler CLI commands directly instead of pnpm scripts
+- Use autogenerated cloudflare types (generated by `wrangler types`) and native WorkerEntrypoint from cloudflare:workers
+- Opt for RPC style inter-service interactions instead of http fetch
+- Wrangler.toml compatibility version 2025-04-15
+- Example: `wrangler deploy` rather than `pnpm run deploy`
+- Use pnpm for package management and script execution
+- Use TypeScript for type-safe development
+- Follow the established patterns in existing services and packages
+- Use drizzle ORM native queries where possible
+
+## Hono Integration
+
+- This repository uses Hono framework for building web applications
+- Hono is particularly well-suited for Cloudflare Workers
+- Key Hono practices:
+  - Use middleware for cross-cutting concerns
+  - Leverage Hono's routing capabilities for clean API design
+  - Use Hono's type-safe request/response handling
+  - Follow the established patterns in existing services
+  - Utilize Zod and Hono zValidator built-in validation and error handling
+
+## Common Workflows
+
+- **Deploying**: First navigate to the project directory, then run Wrangler commands
+- **Testing**: Ensure you're in the correct directory before running test suites
+- Use vitest for testing
+- **Creating a new service**:
+  1. Use the appropriate template from `templates/`
+  2. Update the service configuration
+  3. Add the service to the pnpm workspace
+  4. Implement the service logic
+  5. Add tests
+  6. Update CI/CD configuration if necessary
+- **Updating shared packages**:
+  1. Make changes in the appropriate package
+  2. Run tests to ensure compatibility
+  3. Update version according to semver
+  4. Update dependent services if necessary
+
+## justfile Commands
+
+- This repository uses `just` for defining and running common commands
+- The `justfile` contains predefined commands for various tasks
+- Common just commands:
+  - `just build` - Build all services
+  - `just build-pkg {package name}` - Build a specific service
+  - `just test` - Run tests for all services
+  - `just test-pkg {package name}` - Run tests for a specific service
+  - `just deploy` - Deploy all services
+  - `just new-service <name>` - Create a new service from template
+  - `just new-worker <name>` - Create a new Rust worker from template
+- Run `just --list` to see all available commands
+- Prefer using just commands for standardized workflows
 
 ## Pull Requests
 
-- Branch from `main` and keep changes focused on a single concern.
- - Ensure `just build-no-install` (or `just build`), `just lint`, and `just test` all succeed before opening a PR.
-- Update documentation when behavior or APIs change.
+- Branch from `main` and keep changes focused on a single concern
+- Ensure `just build-no-install` (or `just build`), `just lint`, and `just test` all succeed before opening a PR
+- Update documentation when behavior or APIs change
+- Create feature branches from main
+- Follow the conventional commits specification for commit messages
+- Ensure all tests pass before submitting a pull request
+- Update documentation when making significant changes
+- Add tests for new features and bug fixes
+- Keep pull requests focused on a single concern
+- Rebase feature branches on main before submitting pull requests
 
 ## Security
 
-- Never commit credentials or other secrets.
-- Configure sensitive data via environment variables or `.dev.vars` files.
+- **Credentials**: Never commit credentials or other secrets
+- **Configuration**: Configure sensitive data via environment variables or `.dev.vars` files
+- **Environment Variables**: Use environment variables for sensitive configuration
+- **Permissions**: Follow least privilege principle for worker permissions
+- **Dependencies**: Keep dependencies updated to avoid security vulnerabilities
+- **Authentication**: Use proper authentication and authorization in services
+
+## Environment Setup
+
+- Ensure Wrangler CLI is installed globally or available in your PATH
+- Configure environment variables as needed for different deployment targets
+- **Required tools**:
+  - Node.js (LTS version recommended)
+  - pnpm (latest version)
+  - Wrangler CLI
+  - Rust toolchain (for Rust workers)
+  - just command runner
+- **Local development**:
+  - Use `.dev.vars` files for local environment variables
+  - Use `wrangler dev` for local development of workers
+  - Use appropriate local development commands for services
+
+## CI/CD Workflows
+
+- CI/CD is configured in `.github/workflows/ci.yml`
+- The CI pipeline includes:
+  - Dependency installation
+  - Type checking
+  - Linting
+  - Testing
+  - Building
+  - Deployment (for specific branches)
+- Pull requests trigger CI checks but not deployments
+- Merges to main branch trigger both CI checks and deployments
+- Environment variables are managed through GitHub Secrets
+- Different environments (dev, staging, prod) have different deployment configurations
+
+## Troubleshooting
+
+- If commands fail, first verify you're in the correct directory
+- Check Wrangler configuration files are properly set up for the specific project
+- **Common issues**:
+  - Missing dependencies: run `pnpm install`
+  - TypeScript errors: check the specific error and fix type issues
+  - Wrangler configuration: ensure account ID and other settings are correct
+  - pnpm workspace issues: check `pnpm-workspace.yaml` for correct configuration
+  - Rust compilation errors: check Rust version and dependencies
+- Check logs in Cloudflare dashboard for deployed workers
+- Use `wrangler tail` to stream logs from deployed workers
+
+## Additional Resources
 
 For further information consult the documentation in the `docs/` directory.
