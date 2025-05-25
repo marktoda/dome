@@ -29,8 +29,8 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Install just
-        run: npm install -g rust-just
+      - name: Install npm deps
+        run: npm install -g rust-just pnpm
 
       - name: Run Claude Code
         id: claude
