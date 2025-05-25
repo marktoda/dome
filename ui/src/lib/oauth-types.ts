@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * Defines the supported integration platforms.
  * Add new platform identifiers here as needed.
