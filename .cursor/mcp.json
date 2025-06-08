@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "astrotask-task": {
+      "command": "npx",
+      "args": [
+        "@astrotask/mcp"
+      ],
+      "env": {
+        "DATABASE_PATH": "/home/toda/dev/dome2/data/astrotask.db"
+      }
+    }
+  }
+}

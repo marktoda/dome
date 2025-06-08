@@ -1,0 +1,92 @@
+---
+description: Guidelines for working with Astrotask task management system - MCP functions, workflows, and best practices
+globs: "**/*"
+alwaysApply: true
+---
+
+- **Astrotask Overview:**
+  - Local-first, MCP-compatible task management platform for human + AI collaboration
+  - Hierarchical task management with parent-child relationships
+  - Context-aware task bundling for better decision-making
+
+- **Essential MCP Functions:**
+  ```typescript
+  // Get next available task to work on
+  getNextTask(options?: { parentTaskId?: string, priority?: string, status?: string })
+
+  // Create tasks with hierarchy and dependencies  
+  addTasks({ tasks: [{ title, description?, parentIndex?, dependsOn?, priority?, status? }] })
+
+  // Add context information to tasks
+  addTaskContext({ taskId, title, description, contextType? })
+
+  // Update task status (pending, in-progress, done, cancelled, archived)
+  updateStatus({ taskId, status, cascade? })
+
+  // List tasks with filtering
+  listTasks({ statuses?, parentId?, includeProjectRoot? })
+
+  // Add dependencies between tasks
+  addDependency({ dependentTaskId, dependencyTaskId })
+  ```
+
+- **Agent Workflow Patterns:**
+  ```typescript
+  // ✅ DO: Start work session pattern
+  const nextTask = await getNextTask({ priority: "high", status: "pending" });
+  await updateStatus({ taskId: nextTask.id, status: "in-progress" });
+
+  // ✅ DO: Break down large tasks
+  await addTasks({
+    tasks: [
+      { title: "Research approach", parentIndex: 0 },
+      { title: "Implement core logic", parentIndex: 0, dependsOn: [1] },
+      { title: "Add tests", parentIndex: 0, dependsOn: [2] }
+    ]
+  });
+  ```  // ✅ DO: Add context as you work
+  await addTaskContext({
+    taskId: currentTask.id,
+    title: "Implementation Notes",
+    description: "Found issue with X, resolved by Y approach",
+    contextType: "implementation"
+  });
+  ```
+
+- **Task Management Best Practices:**
+  - **Always update task status** when starting/completing work
+  - **Break down complex tasks** into smaller, manageable subtasks
+  - **Add context** for decisions, blockers, and implementation notes
+  - **Use dependencies** to model workflow order and blockers
+  - **Reference existing tasks** when creating related work
+
+- **Status Management:**
+  - `pending` - Not started, available for work
+  - `in-progress` - Currently being worked on
+  - `done` - Completed successfully
+  - `cancelled` - Abandoned or no longer needed
+  - `archived` - Completed and archived for reference
+
+- **Priority Levels:**
+  - `high` - Urgent work, critical path items
+  - `medium` - Normal priority work (default)
+  - `low` - Nice-to-have, background tasks
+
+- **Context Types:**
+  - `implementation` - Technical details and code notes
+  - `research` - Investigation findings and links
+  - `complexity` - Risk assessment and complexity notes
+  - `requirements` - Clarifications and acceptance criteria
+  - `testing` - Test strategies and coverage notes
+  - `general` - Miscellaneous notes and observations- **❌ DON'T:**
+  - Don't forget to update task status when starting work
+  - Don't create tasks without clear titles and descriptions
+  - Don't skip adding context for important decisions
+  - Don't create deeply nested hierarchies (max 3-4 levels)
+  - Don't leave tasks in `in-progress` status indefinitely
+
+- **Integration Patterns:**
+  - Use task IDs in commit messages: `git commit -m "feat: implement X (TASK-123)"`
+  - Reference tasks in PR descriptions and code comments
+  - Add links to external resources in task context
+  - Track progress by updating status as work progresses
