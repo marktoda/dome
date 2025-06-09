@@ -1,0 +1,71 @@
+# syntax=docker/dockerfile:1
+
+# Base image with Node.js and pnpm
+FROM node:20-alpine AS base
+RUN corepack enable
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Dependencies stage
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/database/package.json ./packages/database/
+COPY packages/api/package.json ./packages/api/
+RUN pnpm install --frozen-lockfile --prod=false
+
+# Build stage
+FROM base AS builder
+COPY . .
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/database/node_modules ./packages/database/node_modules
+COPY --from=deps /app/packages/api/node_modules ./packages/api/node_modules
+
+# Build all packages
+RUN pnpm build
+
+# Production dependencies
+FROM base AS prod-deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/database/package.json ./packages/database/
+COPY packages/api/package.json ./packages/api/
+RUN pnpm install --frozen-lockfile --prod
+
+# Runtime stage
+FROM node:20-alpine AS runtime
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 dome2
+
+WORKDIR /app
+
+# Copy production dependencies
+COPY --from=prod-deps --chown=dome2:nodejs /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=dome2:nodejs /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=prod-deps --chown=dome2:nodejs /app/packages/database/node_modules ./packages/database/node_modules
+COPY --from=prod-deps --chown=dome2:nodejs /app/packages/api/node_modules ./packages/api/node_modules
+
+# Copy built application
+COPY --from=builder --chown=dome2:nodejs /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder --chown=dome2:nodejs /app/packages/database/dist ./packages/database/dist
+COPY --from=builder --chown=dome2:nodejs /app/packages/api/dist ./packages/api/dist
+
+# Copy package.json files for runtime
+COPY --chown=dome2:nodejs package.json ./
+COPY --chown=dome2:nodejs packages/shared/package.json ./packages/shared/
+COPY --chown=dome2:nodejs packages/database/package.json ./packages/database/
+COPY --chown=dome2:nodejs packages/api/package.json ./packages/api/
+
+USER dome2
+
+EXPOSE 3001
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+CMD ["node", "packages/api/dist/server.js"] 
