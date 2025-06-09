@@ -35,7 +35,7 @@
   },
   "dependencies": {
     "@dome2/shared": "workspace:*",
-    "drizzle-orm": "^0.29.0",
+    "drizzle-orm": "^0.44.2",
     "postgres": "^3.4.3",
     "zod": "^3.22.4"
   },
