@@ -37,7 +37,7 @@
     "@hono/trpc-server": "^0.3.2",
     "@trpc/server": "^10.45.0",
     "drizzle-orm": "^0.29.0",
-    "drizzle-kit": "^0.20.0",
+    "drizzle-kit": "^0.31.1",
     "postgres": "^3.4.3",
     "hono": "^4.0.0",
     "zod": "^3.22.4"
