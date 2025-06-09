@@ -46,7 +46,7 @@ jobs:
           echo "key=pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}" >> $GITHUB_OUTPUT
 
       - name: Setup pnpm cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.STORE_PATH }}
           key: ${{ steps.cache-key.outputs.key }}
@@ -57,7 +57,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Cache node_modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             node_modules
@@ -84,7 +84,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Restore node_modules cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             node_modules
@@ -123,7 +123,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Restore node_modules cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             node_modules
@@ -166,7 +166,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Restore node_modules cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             node_modules
@@ -180,7 +180,7 @@ jobs:
         run: pnpm build
 
       - name: Cache build artifacts
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             packages/*/dist
@@ -206,7 +206,7 @@ jobs:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Restore node_modules cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             node_modules
