@@ -35,7 +35,7 @@
     "@dome2/database": "workspace:*",
     "@hono/node-server": "^1.8.0",
     "@hono/trpc-server": "^0.3.2",
-    "@trpc/server": "^10.45.0",
+    "@trpc/server": "^11.3.1",
     "drizzle-orm": "^0.29.0",
     "drizzle-kit": "^0.20.0",
     "postgres": "^3.4.3",
