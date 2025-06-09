@@ -1,0 +1,8 @@
+packages:
+  - 'packages/*'
+  - 'packages/connectors/*'
+  - 'packages/core/*'
+  - 'packages/agent/*'
+  - 'packages/api/*'
+  - 'packages/shared/*'
+  - 'services/*' 

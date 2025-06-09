@@ -1,0 +1,56 @@
+{
+  "name": "@dome2/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hono/tRPC API server for Dome2 RAG platform",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./hono": {
+      "types": "./dist/hono/index.d.ts",
+      "import": "./dist/hono/index.js"
+    },
+    "./trpc": {
+      "types": "./dist/trpc/index.d.ts",
+      "import": "./dist/trpc/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsup",
+    "start": "node dist/server.js",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@dome2/shared": "workspace:*",
+    "@dome2/database": "workspace:*",
+    "@hono/node-server": "^1.8.0",
+    "@hono/trpc-server": "^0.3.2",
+    "@trpc/server": "^10.45.0",
+    "drizzle-orm": "^0.29.0",
+    "drizzle-kit": "^0.20.0",
+    "postgres": "^3.4.3",
+    "hono": "^4.0.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.10.9",
+    "tsup": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "files": [
+    "dist"
+  ]
+}

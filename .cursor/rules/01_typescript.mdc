@@ -13,6 +13,8 @@ The application we are working on uses the following tech stack:
 - TypeScript
 - Node.js
 - Docker & docker-compose
+- Drizzle
+- Hono
 - Zod
 
 ## TypeScript General Guidelines
