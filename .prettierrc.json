@@ -5,22 +5,24 @@
   "printWidth": 100,
   "tabWidth": 2,
   "useTabs": false,
-  "arrowParens": "always",
-  "endOfLine": "lf",
   "bracketSpacing": true,
   "bracketSameLine": false,
-  "proseWrap": "preserve",
+  "arrowParens": "avoid",
+  "endOfLine": "lf",
+  "quoteProps": "as-needed",
+  "jsxSingleQuote": true,
   "overrides": [
-    {
-      "files": "*.json",
-      "options": {
-        "printWidth": 80
-      }
-    },
     {
       "files": "*.md",
       "options": {
+        "printWidth": 80,
         "proseWrap": "always"
+      }
+    },
+    {
+      "files": "*.json",
+      "options": {
+        "printWidth": 120
       }
     }
   ]

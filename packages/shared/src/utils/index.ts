@@ -51,7 +51,7 @@ export async function retry<T>(fn: () => Promise<T>, options: RetryOptions = {})
 
 // Sleep utility
 export const sleep = (ms: number): Promise<void> => {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 };
 
 // Chunk array utility

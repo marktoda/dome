@@ -63,12 +63,7 @@
       "@dome2/agent/*": ["./packages/agent/*/src"]
     }
   },
-  "include": [
-    "packages/**/*.ts",
-    "packages/**/*.tsx",
-    "services/**/*.ts",
-    "services/**/*.tsx"
-  ],
+  "include": ["packages/**/*.ts", "packages/**/*.tsx", "services/**/*.ts", "services/**/*.tsx"],
   "exclude": [
     "node_modules",
     "**/node_modules",
@@ -82,9 +77,5 @@
     "**/*.spec.tsx",
     "**/*.d.ts"
   ],
-  "references": [
-    { "path": "./packages/shared" },
-    { "path": "./packages/api" },
-    { "path": "./packages/database" }
-  ]
+  "references": [{ "path": "./packages/shared" }, { "path": "./packages/api" }, { "path": "./packages/database" }]
 }

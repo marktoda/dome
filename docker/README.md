@@ -1,6 +1,7 @@
 # Docker Configuration for Dome2 RAG Platform
 
-This directory contains Docker configurations for both development and production environments.
+This directory contains Docker configurations for both development and
+production environments.
 
 ## Quick Start
 
@@ -123,11 +124,13 @@ All services use named volumes for data persistence:
 
 ## Networking
 
-All services are connected via the `dome2-network` bridge network with subnet `172.20.0.0/16`.
+All services are connected via the `dome2-network` bridge network with subnet
+`172.20.0.0/16`.
 
 ## Health Checks
 
-All services include health checks for proper dependency management and monitoring.
+All services include health checks for proper dependency management and
+monitoring.
 
 ## Resource Limits
 
@@ -157,7 +160,8 @@ This creates:
 
 ## Database Schema
 
-PostgreSQL is initialized with the schema in `postgres/init.sql`, which includes:
+PostgreSQL is initialized with the schema in `postgres/init.sql`, which
+includes:
 
 - Organizations management
 - Document metadata storage

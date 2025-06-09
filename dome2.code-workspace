@@ -1,0 +1,47 @@
+{
+  "folders": [
+    {
+      "name": "🏠 Root",
+      "path": "."
+    },
+    {
+      "name": "📦 Shared",
+      "path": "./packages/shared"
+    },
+    {
+      "name": "🗄️ Database",
+      "path": "./packages/database"
+    },
+    {
+      "name": "🚀 API",
+      "path": "./packages/api"
+    }
+  ],
+  "settings": {
+    "typescript.preferences.importModuleSpecifier": "relative",
+    "typescript.suggest.autoImports": true,
+    "typescript.updateImportsOnFileMove.enabled": "always",
+    "eslint.workingDirectories": [
+      "packages/shared",
+      "packages/database", 
+      "packages/api"
+    ],
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/build": true,
+      "**/.git": true,
+      "**/coverage": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-vscode.vscode-typescript-next",
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "eamodio.gitlens",
+      "vitest.explorer",
+      "ms-azuretools.vscode-docker"
+    ]
+  }
+} 

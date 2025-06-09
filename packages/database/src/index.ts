@@ -4,7 +4,8 @@ import postgres from 'postgres';
 import * as schema from './schema/index.js';
 
 // Database connection
-const connectionString = process.env.DATABASE_URL || 'postgresql://localhost:5432/dome2';
+const connectionString =
+  (process.env['DATABASE_URL'] as string) || 'postgresql://localhost:5432/dome2';
 const client = postgres(connectionString);
 export const db = drizzle(client, { schema });
 

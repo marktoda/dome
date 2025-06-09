@@ -36,7 +36,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Health check endpoint
-app.get('/health', (c) => {
+app.get('/health', c => {
   return c.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -49,7 +49,7 @@ app.use(
   '/trpc/*',
   trpcServer({
     router: appRouter,
-    createContext: (opts) => ({
+    createContext: opts => ({
       req: opts.req,
       // Add any additional context here (auth, db, etc.)
     }),
@@ -57,7 +57,7 @@ app.use(
 );
 
 // 404 handler
-app.notFound((c) => {
+app.notFound(c => {
   return c.json({ error: 'Not Found' }, 404);
 });
 

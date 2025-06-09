@@ -4,8 +4,8 @@ Shared utilities, types, and configurations for the Dome2 RAG platform.
 
 ## Installation
 
-This package is part of the Dome2 monorepo and is automatically available to other packages in the
-workspace.
+This package is part of the Dome2 monorepo and is automatically available to
+other packages in the workspace.
 
 ```bash
 pnpm add @dome2/shared
@@ -46,7 +46,13 @@ try {
 ### Types
 
 ```typescript
-import { Document, QueryRequest, Connector, VectorStore, Dome2Error } from '@dome2/shared/types';
+import {
+  Document,
+  QueryRequest,
+  Connector,
+  VectorStore,
+  Dome2Error,
+} from '@dome2/shared/types';
 
 // Use shared interfaces and types
 const doc: Document = {
@@ -66,13 +72,21 @@ const doc: Document = {
 ### Utilities
 
 ```typescript
-import { generateId, retry, chunkArray, PerformanceTimer } from '@dome2/shared/utils';
+import {
+  generateId,
+  retry,
+  chunkArray,
+  PerformanceTimer,
+} from '@dome2/shared/utils';
 
 // Generate unique IDs
 const id = generateId('doc');
 
 // Retry operations
-const result = await retry(async () => fetchData(), { maxAttempts: 3, backoff: 'exponential' });
+const result = await retry(async () => fetchData(), {
+  maxAttempts: 3,
+  backoff: 'exponential',
+});
 
 // Measure performance
 const timer = new PerformanceTimer();

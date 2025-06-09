@@ -1,46 +1,48 @@
 # Dependencies
-node_modules
-**/node_modules
+node_modules/
+**/node_modules/
 
 # Build outputs
-dist
-**/dist
-build
-**/build
-.next
-out
+dist/
+**/dist/
+build/
+**/build/
+
+# Generated files
+*.d.ts
+coverage/
+.nyc_output/
+
+# Package manager files
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Environment files
+.env
+.env.*
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Logs
 *.log
-logs
+logs/
 
-# Testing
-coverage
-.nyc_output
+# Temporary files
+*.tmp
+*.temp
 
 # Misc
-.DS_Store
 *.pem
 
 # Debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-
-# Environment
-.env
-.env.*
-
-# IDE
-.vscode
-.idea
-
-# Generated files
-*.d.ts
-tsconfig.tsbuildinfo
-
-# Package manager
-pnpm-lock.yaml
-package-lock.json
-yarn.lock 
+pnpm-debug.log* 
