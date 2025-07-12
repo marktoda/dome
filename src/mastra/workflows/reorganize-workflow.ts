@@ -24,24 +24,24 @@ const MergeGroupSchema = z.object({
   proposedLocation: z.string(),
   reason: z.string(),
   confidence: z.number().min(0).max(1)
-}).strict();
+});
 
 const RemovalCandidateSchema = z.object({
   path: z.string(),
   reason: z.string(),
   confidence: z.number().min(0).max(1)
-}).strict();
+});
 
 // Structured output schemas for AI responses
 const MergeNotesResponseSchema = z.object({
   mergeGroups: z.array(MergeGroupSchema),
   reasoning: z.string()
-}).strict();
+});
 
 const RemoveNotesResponseSchema = z.object({
   removalCandidates: z.array(RemovalCandidateSchema),
   reasoning: z.string()
-}).strict();
+});
 
 // Constants
 export const DEFAULT_OPTIONS: Readonly<ReorganizeOptions> = {
@@ -127,7 +127,7 @@ Focus on merges that will genuinely improve the organization and reduce redundan
 
     try {
       const response = await agent.generate([{ role: 'user', content: identifyPrompt }], {
-        output: MergeNotesResponseSchema
+        experimental_output: MergeNotesResponseSchema
       });
 
       const mergeGroups = response.object?.mergeGroups || [];
@@ -436,18 +436,18 @@ Provide your analysis in this structured format:
 
       try {
         const response = await agent.generate([{ role: 'user', content: analyzePrompt }], {
-          output: RemoveNotesResponseSchema
+          experimental_output: RemoveNotesResponseSchema
         });
 
         const removalCandidates = response.object?.removalCandidates || [];
-        const highConfidenceRemovals = removalCandidates.filter(candidate => candidate.confidence >= 0.7);
-        const lowConfidenceRemovals = removalCandidates.filter(candidate => candidate.confidence < 0.7);
+        const highConfidenceRemovals = removalCandidates.filter((candidate: any) => candidate.confidence >= 0.7);
+        const lowConfidenceRemovals = removalCandidates.filter((candidate: any) => candidate.confidence < 0.7);
 
         // Enhanced dry-run logging for removals
         if (highConfidenceRemovals.length > 0) {
           console.log('\n🗑️  Notes to Remove (≥70% confidence):');
           console.log('======================================');
-          highConfidenceRemovals.forEach((candidate, index) => {
+          highConfidenceRemovals.forEach((candidate: any, index: number) => {
             console.log(`\n${index + 1}. ${candidate.path}`);
             console.log(`   🎯 Confidence: ${(candidate.confidence * 100).toFixed(1)}%`);
             console.log(`   💭 Reason: ${candidate.reason}`);
@@ -457,7 +457,7 @@ Provide your analysis in this structured format:
         if (lowConfidenceRemovals.length > 0) {
           console.log('\n⚠️  Lower-Confidence Removal Candidates (<70%) - Not Removed:');
           console.log('=============================================================');
-          lowConfidenceRemovals.forEach((candidate, index) => {
+          lowConfidenceRemovals.forEach((candidate: any, index: number) => {
             console.log(`\n${index + 1}. ${candidate.path}`);
             console.log(`   🎯 Confidence: ${(candidate.confidence * 100).toFixed(1)}% (too low)`);
             console.log(`   💭 Reason: ${candidate.reason}`);
