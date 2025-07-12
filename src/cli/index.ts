@@ -5,6 +5,7 @@ import { handleAdd } from './commands/add.js';
 import { handleList } from './commands/list.js';
 import { handleChat } from './commands/chat.js';
 import { createIndexCommand } from './commands/indexNotes.js';
+import { createReorganizeCommand } from './commands/reorganize.js';
 
 const program = new Command();
 
@@ -31,6 +32,9 @@ program
 
 // Index command
 program.addCommand(createIndexCommand());
+
+// Reorganize command
+program.addCommand(createReorganizeCommand());
 
 // Default action - start interactive chat
 program
