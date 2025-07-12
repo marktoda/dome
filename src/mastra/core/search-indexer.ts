@@ -17,14 +17,10 @@ const indexName = "vector";                 // column that stores embeddings
 const dimension = 1536;                      // text‑embedding‑3‑small
 
 // ---------------------------------------------------------------------------
-// LanceDB store singleton
+// LanceDB store factory (avoid singleton issues with async operations)
 // ---------------------------------------------------------------------------
-let store: LanceVectorStore | null = null;
-export async function getVectorStore(): Promise<LanceVectorStore> {
-  if (!store) {
-    store = await LanceVectorStore.create(dbPath);
-  }
-  return store;
+export async function createVectorStore(): Promise<LanceVectorStore> {
+  return await LanceVectorStore.create(dbPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +72,6 @@ async function ensureTable(
 
   if (!exists) {
     await store.createTable(tableName, records, { existOk: true }); // ← tolerates re-runs
-    console.log(`✅ Table '${tableName}' created with ${records.length} vectors`);
   }
 }
 
@@ -86,7 +81,7 @@ async function ensureTable(
 export async function indexAllNotes(): Promise<void> {
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY env var missing");
 
-  const vectorStore = await getVectorStore();
+  const vectorStore = await createVectorStore();
   const notes = await listNotes();               // your helper
 
   const BATCH_SIZE = 5;
@@ -110,7 +105,6 @@ export async function indexAllNotes(): Promise<void> {
       ids: batchRecords.map(r => r.id),
     });
     vectorsInserted += batchRecords.length;
-    console.log(`🔄 Upserted ${batchRecords.length} chunks from [${batch.map(n => n.path).join(", ")}]`);
   }
 
   // build the HNSW index once (skip if present)
@@ -118,17 +112,14 @@ export async function indexAllNotes(): Promise<void> {
 
   if (!existingIdx?.includes(`${indexName}_idx`)) {
     await vectorStore.createIndex({ tableName, indexName, dimension, indexConfig: { type: "hnsw" } });
-    console.log(`🔧 HNSW index built on column '${indexName}'`);
   }
-
-  console.log(`🎉 Finished indexing ${vectorsInserted} vectors across ${notes.length} files.`);
 }
 
 // ---------------------------------------------------------------------------
 // Public helper: semantic search
 // ---------------------------------------------------------------------------
 export async function searchSimilarNotes(queryEmbedding: number[], topK = 6) {
-  const vectorStore = await getVectorStore();
+  const vectorStore = await createVectorStore();
   return vectorStore.query({ includeAllColumns: true, tableName, indexName, queryVector: queryEmbedding, topK });
 }
 
