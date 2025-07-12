@@ -1,0 +1,3 @@
+export { AwsInstrumentation } from './aws-sdk';
+export type { AwsSdkDynamoDBStatementSerializer, AwsSdkInstrumentationConfig, AwsSdkRequestCustomAttributeFunction, AwsSdkRequestHookInformation, AwsSdkResponseCustomAttributeFunction, AwsSdkResponseHookInformation, AwsSdkSqsProcessCustomAttributeFunction, AwsSdkSqsProcessHookInformation, CommandInput, NormalizedRequest, NormalizedResponse, } from './types';
+//# sourceMappingURL=index.d.ts.map

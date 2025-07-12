@@ -1,0 +1,65 @@
+import { e as Workflow, c as ToolAction } from '../base-CS5eSXbL.cjs';
+import '../base-B_y9sMg0.cjs';
+import 'ai';
+import 'zod';
+import '../logger-B8XXh6ya.cjs';
+import '../error/index.cjs';
+import 'stream';
+import 'json-schema';
+import '../types-Bo1uigWx.cjs';
+import 'sift';
+import '../runtime-context/index.cjs';
+import '@opentelemetry/api';
+import 'xstate';
+import 'node:events';
+import '../vector/index.cjs';
+import '../vector/filter/index.cjs';
+import '../tts/index.cjs';
+import '@opentelemetry/sdk-trace-base';
+import 'node:http';
+import 'hono';
+import 'stream/web';
+import 'events';
+import 'node:stream/web';
+import '../workflows/constants.cjs';
+import 'ai/test';
+import '../deployer/index.cjs';
+import '../bundler/index.cjs';
+import 'hono/cors';
+import 'hono-openapi';
+
+declare class Integration<ToolsParams = void, ApiClient = void> {
+    name: string;
+    private workflows;
+    constructor();
+    /**
+     * Workflows
+     */
+    registerWorkflow(name: string, fn: Workflow): void;
+    getWorkflows({ serialized }: {
+        serialized?: boolean;
+    }): Record<string, Workflow>;
+    /**
+     * TOOLS
+     */
+    getStaticTools(_params?: ToolsParams): Record<string, ToolAction<any, any, any>>;
+    getTools(_params?: ToolsParams): Promise<Record<string, ToolAction<any, any, any>>>;
+    getApiClient(): Promise<ApiClient>;
+}
+
+declare abstract class OpenAPIToolset {
+    abstract readonly name: string;
+    abstract readonly tools: Record<string, ToolAction<any, any, any>>;
+    authType: string;
+    constructor();
+    protected get toolSchemas(): any;
+    protected get toolDocumentations(): Record<string, {
+        comment: string;
+        doc?: string;
+    }>;
+    protected get baseClient(): any;
+    getApiClient(): Promise<any>;
+    protected _generateIntegrationTools<T>(): T;
+}
+
+export { Integration, OpenAPIToolset };

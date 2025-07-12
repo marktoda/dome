@@ -1,0 +1,12 @@
+
+> @mastra/memory@0.11.2-alpha.1 build /home/runner/work/mastra/mastra/packages/memory
+> pnpm run check && tsup --silent src/index.ts src/processors/index.ts --format esm,cjs --experimental-dts --clean --treeshake=smallest --splitting
+
+
+> @mastra/memory@0.11.2-alpha.1 check /home/runner/work/mastra/mastra/packages/memory
+> tsc --noEmit
+
+Analysis will use the bundled TypeScript version 5.8.3
+[36mWriting package typings: /home/runner/work/mastra/mastra/packages/memory/dist/_tsup-dts-rollup.d.ts[39m
+Analysis will use the bundled TypeScript version 5.8.3
+[36mWriting package typings: /home/runner/work/mastra/mastra/packages/memory/dist/_tsup-dts-rollup.d.cts[39m

@@ -1,0 +1,10 @@
+'use strict';
+
+var chunkXKH6F4NE_cjs = require('../chunk-XKH6F4NE.cjs');
+
+
+
+Object.defineProperty(exports, "analyzeBundle", {
+  enumerable: true,
+  get: function () { return chunkXKH6F4NE_cjs.analyzeBundle; }
+});

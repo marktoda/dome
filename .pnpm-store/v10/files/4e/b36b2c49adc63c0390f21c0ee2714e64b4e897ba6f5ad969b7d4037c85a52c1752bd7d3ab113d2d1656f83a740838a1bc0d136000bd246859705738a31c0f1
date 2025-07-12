@@ -1,0 +1,45 @@
+{
+  "name": "@mastra/libsql",
+  "version": "0.11.0",
+  "description": "Libsql provider for Mastra - includes both vector and db storage capabilities",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@libsql/client": "^0.15.9"
+  },
+  "devDependencies": {
+    "@microsoft/api-extractor": "^7.52.8",
+    "@types/node": "^20.19.0",
+    "eslint": "^9.29.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3",
+    "@internal/lint": "0.0.14",
+    "@internal/storage-test-utils": "0.0.10",
+    "@mastra/core": "0.10.7"
+  },
+  "peerDependencies": {
+    "@mastra/core": ">=0.10.7-0 <0.11.0-0"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --experimental-dts --clean --treeshake=smallest --splitting",
+    "build:watch": "pnpm build --watch",
+    "test": "vitest run",
+    "lint": "eslint ."
+  }
+}

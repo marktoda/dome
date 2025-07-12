@@ -1,0 +1,149 @@
+import { o as MastraStorage, p as TABLE_NAMES, q as StorageColumn, r as StorageThreadType, s as StorageResourceType, t as MastraMessageV2, u as StorageGetMessagesArg, v as MastraMessageV1, E as EvalRow, w as WorkflowRuns, x as WorkflowRun, P as PaginationInfo } from '../base-DBhKcre4.js';
+export { z as LegacyWorkflowRun, y as LegacyWorkflowRuns, B as PaginationArgs, D as StorageGetTracesArg, G as TABLE_EVALS, H as TABLE_MESSAGES, K as TABLE_RESOURCES, O as TABLE_SCHEMAS, I as TABLE_THREADS, J as TABLE_TRACES, F as TABLE_WORKFLOW_SNAPSHOT } from '../base-DBhKcre4.js';
+import { T as Trace } from '../base-ClrXcCRx.js';
+import 'ai';
+import 'zod';
+import '../logger-Bpa2oLL4.js';
+import '../error/index.js';
+import 'stream';
+import 'json-schema';
+import '../types-Bo1uigWx.js';
+import 'sift';
+import '../runtime-context/index.js';
+import '@opentelemetry/api';
+import 'xstate';
+import 'node:events';
+import '../vector/index.js';
+import '../vector/filter/index.js';
+import '../tts/index.js';
+import 'node:http';
+import 'hono';
+import 'stream/web';
+import 'events';
+import 'node:stream/web';
+import '../workflows/constants.js';
+import 'ai/test';
+import '../deployer/index.js';
+import '../bundler/index.js';
+import 'hono/cors';
+import 'hono-openapi';
+import '@opentelemetry/sdk-trace-base';
+
+declare class MockStore extends MastraStorage {
+    private data;
+    constructor();
+    createTable(_: {
+        tableName: TABLE_NAMES;
+        schema: Record<string, StorageColumn>;
+    }): Promise<void>;
+    alterTable({ tableName, }: {
+        tableName: TABLE_NAMES;
+        schema: Record<string, StorageColumn>;
+        ifNotExists: string[];
+    }): Promise<void>;
+    clearTable({ tableName }: {
+        tableName: TABLE_NAMES;
+    }): Promise<void>;
+    insert({ tableName, record }: {
+        tableName: TABLE_NAMES;
+        record: Record<string, any>;
+    }): Promise<void>;
+    batchInsert({ tableName, records }: {
+        tableName: TABLE_NAMES;
+        records: Record<string, any>[];
+    }): Promise<void>;
+    load<R>({ tableName, keys }: {
+        tableName: TABLE_NAMES;
+        keys: Record<string, string>;
+    }): Promise<R | null>;
+    getThreadById({ threadId }: {
+        threadId: string;
+    }): Promise<StorageThreadType | null>;
+    getThreadsByResourceId({ resourceId }: {
+        resourceId: string;
+    }): Promise<StorageThreadType[]>;
+    saveThread({ thread }: {
+        thread: StorageThreadType;
+    }): Promise<StorageThreadType>;
+    updateThread({ id, title, metadata, }: {
+        id: string;
+        title: string;
+        metadata: Record<string, unknown>;
+    }): Promise<StorageThreadType>;
+    deleteThread({ threadId }: {
+        threadId: string;
+    }): Promise<void>;
+    getResourceById({ resourceId }: {
+        resourceId: string;
+    }): Promise<StorageResourceType | null>;
+    saveResource({ resource }: {
+        resource: StorageResourceType;
+    }): Promise<StorageResourceType>;
+    updateResource({ resourceId, workingMemory, metadata, }: {
+        resourceId: string;
+        workingMemory?: string;
+        metadata?: Record<string, unknown>;
+    }): Promise<StorageResourceType>;
+    getMessages<T extends MastraMessageV2[]>({ threadId, selectBy }: StorageGetMessagesArg): Promise<T>;
+    saveMessages(args: {
+        messages: MastraMessageV1[];
+        format?: undefined | 'v1';
+    }): Promise<MastraMessageV1[]>;
+    saveMessages(args: {
+        messages: MastraMessageV2[];
+        format: 'v2';
+    }): Promise<MastraMessageV2[]>;
+    updateMessages(args: {
+        messages: Partial<MastraMessageV2> & {
+            id: string;
+        }[];
+    }): Promise<MastraMessageV2[]>;
+    getTraces({ name, scope, page, perPage, attributes, filters, fromDate, toDate, }: {
+        name?: string;
+        scope?: string;
+        page: number;
+        perPage: number;
+        attributes?: Record<string, string>;
+        filters?: Record<string, any>;
+        fromDate?: Date;
+        toDate?: Date;
+    }): Promise<any[]>;
+    getEvalsByAgentName(agentName: string, type?: 'test' | 'live'): Promise<EvalRow[]>;
+    getWorkflowRuns({ workflowName, fromDate, toDate, limit, offset, resourceId, }?: {
+        workflowName?: string;
+        fromDate?: Date;
+        toDate?: Date;
+        limit?: number;
+        offset?: number;
+        resourceId?: string;
+    }): Promise<WorkflowRuns>;
+    getWorkflowRunById({ runId, workflowName, }: {
+        runId: string;
+        workflowName?: string;
+    }): Promise<WorkflowRun | null>;
+    getTracesPaginated({ name, scope, attributes, page, perPage, fromDate, toDate, }: {
+        name?: string;
+        scope?: string;
+        attributes?: Record<string, string>;
+        page: number;
+        perPage: number;
+        fromDate?: Date;
+        toDate?: Date;
+    }): Promise<PaginationInfo & {
+        traces: Trace[];
+    }>;
+    getThreadsByResourceIdPaginated(args: {
+        resourceId: string;
+        page: number;
+        perPage: number;
+    }): Promise<PaginationInfo & {
+        threads: StorageThreadType[];
+    }>;
+    getMessagesPaginated({ threadId, selectBy, }: StorageGetMessagesArg & {
+        format?: 'v1' | 'v2';
+    }): Promise<PaginationInfo & {
+        messages: MastraMessageV1[] | MastraMessageV2[];
+    }>;
+}
+
+export { EvalRow, MastraStorage, MockStore, PaginationInfo, StorageColumn, StorageGetMessagesArg, StorageResourceType, TABLE_NAMES, WorkflowRun, WorkflowRuns };

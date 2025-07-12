@@ -1,0 +1,52 @@
+import { Handler, Context, MiddlewareHandler } from 'hono';
+import { DescribeRouteOptions } from 'hono-openapi';
+import { i as Methods, M as Mastra, j as ApiRoute, k as MastraAuthConfig } from '../base-CS5eSXbL.cjs';
+export { l as ContextWithMastra, m as MastraAuthProvider, n as MastraAuthProviderOptions } from '../base-CS5eSXbL.cjs';
+import 'ai';
+import '../base-B_y9sMg0.cjs';
+import '@opentelemetry/api';
+import '../logger-B8XXh6ya.cjs';
+import '../error/index.cjs';
+import 'stream';
+import '@opentelemetry/sdk-trace-base';
+import 'zod';
+import 'json-schema';
+import '../types-Bo1uigWx.cjs';
+import 'sift';
+import '../runtime-context/index.cjs';
+import 'xstate';
+import 'node:events';
+import '../vector/index.cjs';
+import '../vector/filter/index.cjs';
+import '../tts/index.cjs';
+import 'node:http';
+import 'stream/web';
+import 'events';
+import 'node:stream/web';
+import '../workflows/constants.cjs';
+import 'ai/test';
+import '../deployer/index.cjs';
+import '../bundler/index.cjs';
+import 'hono/cors';
+
+type ParamsFromPath<P extends string> = {
+    [K in P extends `${string}:${infer Param}/${string}` | `${string}:${infer Param}` ? Param : never]: string;
+};
+declare function registerApiRoute<P extends string>(path: P, options: P extends `/api/${string}` ? never : {
+    method: Methods;
+    openapi?: DescribeRouteOptions;
+    handler?: Handler<{
+        Variables: {
+            mastra: Mastra;
+        };
+    }, P, ParamsFromPath<P>>;
+    createHandler?: (c: Context) => Promise<Handler<{
+        Variables: {
+            mastra: Mastra;
+        };
+    }, P, ParamsFromPath<P>>>;
+    middleware?: MiddlewareHandler | MiddlewareHandler[];
+}): P extends `/api/${string}` ? never : ApiRoute;
+declare function defineAuth<TUser>(config: MastraAuthConfig<TUser>): MastraAuthConfig<TUser>;
+
+export { MastraAuthConfig, defineAuth, registerApiRoute };

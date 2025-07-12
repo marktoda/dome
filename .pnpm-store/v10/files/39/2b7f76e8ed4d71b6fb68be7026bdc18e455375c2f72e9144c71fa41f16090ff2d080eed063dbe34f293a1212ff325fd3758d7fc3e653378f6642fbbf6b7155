@@ -1,0 +1,22 @@
+import { MastraBase } from './chunk-5IEKR756.js';
+import { readFile } from 'fs/promises';
+import { parse } from 'dotenv';
+
+var MastraBundler = class extends MastraBase {
+  constructor({ name, component = "BUNDLER" }) {
+    super({ component, name });
+  }
+  async loadEnvVars() {
+    const envVars = /* @__PURE__ */ new Map();
+    for (const file of await this.getEnvFiles()) {
+      const content = await readFile(file, "utf-8");
+      const config = parse(content);
+      Object.entries(config).forEach(([key, value]) => {
+        envVars.set(key, value);
+      });
+    }
+    return envVars;
+  }
+};
+
+export { MastraBundler };

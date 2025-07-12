@@ -1,0 +1,49 @@
+import { aY as MastraLanguageModel } from '../base-CS5eSXbL.cjs';
+import '../base-B_y9sMg0.cjs';
+import 'ai';
+import 'zod';
+import '../logger-B8XXh6ya.cjs';
+import '../error/index.cjs';
+import 'stream';
+import 'json-schema';
+import '../types-Bo1uigWx.cjs';
+import 'sift';
+import '../runtime-context/index.cjs';
+import '@opentelemetry/api';
+import 'xstate';
+import 'node:events';
+import '../vector/index.cjs';
+import '../vector/filter/index.cjs';
+import '../tts/index.cjs';
+import '@opentelemetry/sdk-trace-base';
+import 'node:http';
+import 'hono';
+import 'stream/web';
+import 'events';
+import 'node:stream/web';
+import '../workflows/constants.cjs';
+import 'ai/test';
+import '../deployer/index.cjs';
+import '../bundler/index.cjs';
+import 'hono/cors';
+import 'hono-openapi';
+
+interface RelevanceScoreProvider {
+    getRelevanceScore(text1: string, text2: string): Promise<number>;
+}
+declare function createSimilarityPrompt(query: string, text: string): string;
+
+declare class CohereRelevanceScorer implements RelevanceScoreProvider {
+    private client;
+    private model;
+    constructor(model: string, apiKey?: string);
+    getRelevanceScore(query: string, text: string): Promise<number>;
+}
+
+declare class MastraAgentRelevanceScorer implements RelevanceScoreProvider {
+    private agent;
+    constructor(name: string, model: MastraLanguageModel);
+    getRelevanceScore(query: string, text: string): Promise<number>;
+}
+
+export { CohereRelevanceScorer, MastraAgentRelevanceScorer, type RelevanceScoreProvider, createSimilarityPrompt };
