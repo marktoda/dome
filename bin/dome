@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+
+// Import and run the CLI
+import('../dist/cli/index.js').catch((error) => {
+  console.error('❌ Failed to start Dome CLI:', error.message);
+  process.exit(1);
+});

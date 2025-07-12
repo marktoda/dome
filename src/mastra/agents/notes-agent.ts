@@ -2,7 +2,7 @@ import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
-import { listNotesTool, getNoteTool, writeNoteTool } from '../tools/notes-tool';
+import { listNotesTool, getNoteTool, writeNoteTool } from '../tools/notes-tool.js';
 
 export const notesAgent = new Agent({
   name: 'Notes Agent',

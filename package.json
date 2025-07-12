@@ -2,11 +2,17 @@
   "name": "dome",
   "version": "1.0.0",
   "main": "index.js",
+  "bin": {
+    "dome": "./bin/dome"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "mastra dev",
     "build": "mastra build",
-    "start": "mastra start"
+    "start": "mastra start",
+    "cli:build": "tsc",
+    "cli:dev": "tsc && node bin/dome",
+    "cli:link": "npm link"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +29,7 @@
     "@mastra/loggers": "^0.10.3",
     "@mastra/memory": "^0.11.2",
     "@types/uuid": "^10.0.0",
+    "commander": "^14.0.0",
     "fast-glob": "^3.3.3",
     "gray-matter": "^4.0.3",
     "uuid": "^11.1.0",
