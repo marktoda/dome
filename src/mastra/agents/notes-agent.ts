@@ -2,7 +2,7 @@ import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
-import { listNotesTool, getNoteTool, writeNoteTool } from '../tools/notes-tool.js';
+import { listNotesTool, getNoteTool, writeNoteTool, searchNotesTool } from '../tools/notes-tool.js';
 
 export const notesAgent = new Agent({
   name: 'Notes Agent',
@@ -13,6 +13,7 @@ export const notesAgent = new Agent({
       - List all notes with their metadata (title, date, tags, etc.)
       - Retrieve and display specific notes by ID or path
       - Write notes (create new or append to existing) with proper YAML front-matter
+      - Search notes using semantic similarity to find content by meaning, not just keywords
       - Help users maintain running notes like meeting notes that grow over time
       - Help users find and organize their notes
 
@@ -31,10 +32,13 @@ export const notesAgent = new Agent({
       - Help them understand the structure and organization of their notes
       - If notes are not found, explain what might be wrong (wrong path, vault not set up, etc.)
 
+      Use the searchNotesTool first when users ask for information retrieval or "where did I write about X?".
       Use the listNotesTool to list notes, getNoteTool to retrieve specific notes by path, and writeNoteTool to create new notes or append to existing ones by path.
+      When searching finds relevant notes, you can follow up with getNoteTool to show full content.
+      Always cite note paths in your answers and do not hallucinate content.
 `,
   model: openai('gpt-4o-mini'),
-  tools: { listNotesTool, getNoteTool, writeNoteTool },
+  tools: { listNotesTool, getNoteTool, writeNoteTool, searchNotesTool },
   memory: new Memory({
     storage: new LibSQLStore({
       url: 'file:../mastra.db',

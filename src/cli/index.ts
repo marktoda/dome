@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import { handleAdd } from './commands/add.js';
 import { handleList } from './commands/list.js';
 import { handleChat } from './commands/chat.js';
+import { createIndexCommand } from './commands/indexNotes.js';
 
 const program = new Command();
 
@@ -27,6 +28,9 @@ program
   .option('--tags <tags>', 'filter by tags')
   .option('--json', 'output as JSON')
   .action(handleList);
+
+// Index command
+program.addCommand(createIndexCommand());
 
 // Default action - start interactive chat
 program

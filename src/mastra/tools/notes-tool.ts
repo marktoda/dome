@@ -62,3 +62,5 @@ export const writeNoteTool = createTool({
   }
 });
 
+// Export search tool
+export { searchNotesTool } from "./search-notes-tool.js";
