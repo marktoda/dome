@@ -33,7 +33,7 @@ export async function getNote(path: string): Promise<Note | null> {
   try {
     const fullPath = join(vaultPath, path);
     await fs.access(fullPath);
-    
+
     const raw = await fs.readFile(fullPath, "utf8");
     const { data, content } = matter(raw);
     const meta = await deriveMeta(data, fullPath);
@@ -52,31 +52,31 @@ export async function writeNote(
 ): Promise<{ path: string; title: string; action: "created" | "appended"; contentLength: number; fullPath: string }> {
   try {
     const fullPath = join(vaultPath, path);
-    
+
     // Ensure directory exists
     await fs.mkdir(dirname(fullPath), { recursive: true });
 
     // Check if note already exists
     const existingNote = await getNote(path);
-    
+
     if (existingNote) {
       // Append to existing note
       const { data: frontMatter, content: currentContent } = matter(await fs.readFile(fullPath, 'utf8'));
-      
+
       // Append new content with proper spacing
       const separator = currentContent.trim() ? '\n\n' : '';
       const updatedContent = currentContent + separator + content;
-      
+
       // Update modified timestamp
       const updatedFrontMatter = {
         ...frontMatter,
         modified: new Date().toISOString()
       };
-      
+
       // Write updated file
       const updatedFileContent = matter.stringify(updatedContent, updatedFrontMatter);
       await fs.writeFile(fullPath, updatedFileContent, 'utf8');
-      
+
       return {
         path,
         title: existingNote.title,
@@ -88,17 +88,17 @@ export async function writeNote(
       // Create new note
       const now = new Date();
       const noteTitle = title || basename(path, extname(path));
-      
+
       const frontMatter = {
         title: noteTitle,
         date: now.toISOString(),
         tags,
         source: "cli"
       };
-      
+
       const fileContent = matter.stringify(content, frontMatter);
       await fs.writeFile(fullPath, fileContent, 'utf8');
-      
+
       return {
         path,
         title: noteTitle,
@@ -116,13 +116,13 @@ export async function writeNote(
 export async function removeNote(path: string): Promise<{ path: string; success: boolean; message: string }> {
   try {
     const fullPath = join(vaultPath, path);
-    
+
     // Check if file exists
     await fs.access(fullPath);
-    
+
     // Remove the file
     await fs.unlink(fullPath);
-    
+
     return {
       path,
       success: true,
@@ -163,9 +163,9 @@ async function deriveMeta(data: any, fullPath: string): Promise<NoteMeta> {
   const stat = await fs.stat(fullPath).catch(() => ({ birthtime: new Date() }));
   const fileName = basename(fullPath, extname(fullPath));
   const relativePath = fullPath.replace(`${vaultPath}/`, "");
-  
+
   let title = data.title ?? fileName;
-  
+
   // If no title in front-matter, try to extract from first heading
   if (!data.title) {
     try {
@@ -178,7 +178,7 @@ async function deriveMeta(data: any, fullPath: string): Promise<NoteMeta> {
       // Keep fileName as fallback
     }
   }
-  
+
   return {
     title,
     date: data.date ?? stat.birthtime.toISOString(),

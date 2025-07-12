@@ -38,11 +38,9 @@ export const ChatApp: React.FC = () => {
   // Initialize the app
   useEffect(() => {
     const initialize = async () => {
-      // Set vault path
-      const path = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
-      setVaultPath(path);
+      const vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
+      setVaultPath(vaultPath);
 
-      // Add welcome message
       const welcomeMessage: Message = {
         id: 'welcome',
         type: 'system',
@@ -59,38 +57,35 @@ export const ChatApp: React.FC = () => {
         setNotesCount(0);
       }
 
-      // Start background indexing
+      // Configure and start background indexing
       try {
-        backgroundIndexer.setStatusDisplay(false); // We'll handle status display ourselves
+        backgroundIndexer.setStatusDisplay(false);
+        backgroundIndexer.setSilentMode(true);
         await backgroundIndexer.startBackgroundIndexing();
       } catch (error) {
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
+        addMessage({
           type: 'error',
-          content: `Failed to start background indexing: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, errorMessage]);
+          content: `Failed to start background indexing: ${error instanceof Error ? error.message : 'Unknown error'}`
+        });
       }
     };
 
     initialize();
 
-    // Cleanup on unmount
     return () => {
-      backgroundIndexer.stopBackgroundIndexing().catch(console.error);
+      backgroundIndexer.stopBackgroundIndexing().catch(() => {/* Silent cleanup */});
     };
   }, []);
 
-  // Update indexing status less frequently to reduce flicker
+  // Update indexing status with optimized frequency
   useEffect(() => {
     const updateStatus = () => {
       const status = backgroundIndexer.getStatus();
       setIndexingStatus(prev => {
-        // Only update if status actually changed
+        // Only update if status actually changed to prevent unnecessary renders
         if (prev.isRunning !== status.isRunning || 
             prev.isIndexing !== status.isIndexing || 
-            prev.lastIndexTime !== status.lastIndexTime) {
+            Math.abs(prev.lastIndexTime - status.lastIndexTime) > 1000) { // Only update time if >1s difference
           return status;
         }
         return prev;
@@ -98,7 +93,7 @@ export const ChatApp: React.FC = () => {
     };
 
     updateStatus();
-    const interval = setInterval(updateStatus, 2000); // Reduced frequency
+    const interval = setInterval(updateStatus, 5000); // Further reduced frequency for less flicker
 
     return () => clearInterval(interval);
   }, []);
@@ -116,7 +111,7 @@ export const ChatApp: React.FC = () => {
   const addMessage = useCallback((message: Omit<Message, 'id' | 'timestamp'>) => {
     const newMessage: Message = {
       ...message,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
       timestamp: new Date()
     };
     setMessages(prev => [...prev, newMessage]);
@@ -126,18 +121,12 @@ export const ChatApp: React.FC = () => {
     const trimmedInput = input.trim();
     if (!trimmedInput) return;
 
-    // Add user message
-    addMessage({
-      type: 'user',
-      content: trimmedInput
-    });
+    addMessage({ type: 'user', content: trimmedInput });
 
-    // Handle built-in commands
     if (await handleBuiltinCommand(trimmedInput)) {
       return;
     }
 
-    // Process with AI agent
     setIsProcessing(true);
     try {
       const agent = mastra.getAgent('notesAgent');
@@ -145,10 +134,8 @@ export const ChatApp: React.FC = () => {
         throw new Error('Notes agent not found');
       }
 
-      const response = await agent.generate([
-        { role: 'user', content: trimmedInput }
-      ]);
-
+      const response = await agent.generate([{ role: 'user', content: trimmedInput }]);
+      
       addMessage({
         type: 'assistant',
         content: response.text || 'I apologize, but I couldn\'t process your request. Please try rephrasing your question.'
@@ -304,9 +291,11 @@ export const ChatApp: React.FC = () => {
         indexingStatus={indexingStatus}
       />
       
-      <Box flexGrow={1} flexDirection="row">
-        <Box flexGrow={1} flexDirection="column">
-          <ChatHistory messages={messages} isProcessing={isProcessing} />
+      <Box flexGrow={1} flexDirection="row" minHeight={0}>
+        <Box flexGrow={1} flexDirection="column" minHeight={0}>
+          <Box flexGrow={1} minHeight={0}>
+            <ChatHistory messages={messages} isProcessing={isProcessing} />
+          </Box>
           <InputArea onSubmit={handleUserInput} isDisabled={isProcessing} />
         </Box>
         

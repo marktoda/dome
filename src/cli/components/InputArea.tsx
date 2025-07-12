@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 
 interface InputAreaProps {
@@ -9,12 +9,13 @@ interface InputAreaProps {
 export const InputArea: React.FC<InputAreaProps> = ({ onSubmit, isDisabled = false }) => {
   const [input, setInput] = useState('');
 
-  useInput((inputChar, key) => {
+  const handleInput = useCallback((inputChar: string, key: any) => {
     if (isDisabled) return;
 
     if (key.return) {
-      if (input.trim()) {
-        onSubmit(input.trim());
+      const trimmedInput = input.trim();
+      if (trimmedInput) {
+        onSubmit(trimmedInput);
         setInput('');
       }
       return;
@@ -26,15 +27,15 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSubmit, isDisabled = fal
     }
 
     if (key.ctrl) {
-      // Handle Ctrl combinations in parent component
-      return;
+      return; // Handle Ctrl combinations in parent component
     }
 
-    // Add regular characters
     if (inputChar) {
       setInput(prev => prev + inputChar);
     }
-  });
+  }, [input, isDisabled, onSubmit]);
+
+  useInput(handleInput);
 
   return (
     <Box paddingX={1} paddingY={1}>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { Message } from './ChatApp.js';
 
@@ -46,20 +46,25 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isProcessing
     }
   };
 
+  const messageElements = useMemo(() => 
+    messages.map((message) => (
+      <Box key={message.id}>
+        <Text color={getMessageColor(message.type)}>
+          {getMessagePrefix(message.type)} {message.content}
+        </Text>
+      </Box>
+    )), [messages]
+  );
+
   return (
     <Box 
       flexDirection="column" 
       flexGrow={1} 
       paddingX={1}
       paddingY={1}
+      minHeight={0}
     >
-      {messages.map((message) => (
-        <Box key={message.id}>
-          <Text color={getMessageColor(message.type)}>
-            {getMessagePrefix(message.type)} {message.content}
-          </Text>
-        </Box>
-      ))}
+      {messageElements}
       
       {isProcessing && (
         <Box>

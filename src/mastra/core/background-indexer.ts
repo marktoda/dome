@@ -9,6 +9,7 @@ interface IndexingState {
   pendingFiles: Set<string>;
   indexingPromise: Promise<void> | null;
   showStatus: boolean;
+  silentMode: boolean;
 }
 
 class BackgroundIndexer {
@@ -17,7 +18,8 @@ class BackgroundIndexer {
     lastIndexTime: 0,
     pendingFiles: new Set(),
     indexingPromise: null,
-    showStatus: true
+    showStatus: true,
+    silentMode: false
   };
 
   private vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
@@ -36,9 +38,11 @@ class BackgroundIndexer {
     }
     
     // Initial quick check (non-blocking)
-    this.scheduleIndexingIfNeeded().catch(err => 
-      console.error('Initial indexing check failed:', err)
-    );
+    this.scheduleIndexingIfNeeded().catch(err => {
+      if (!this.state.silentMode) {
+        console.error('Initial indexing check failed:', err);
+      }
+    });
     
     // Set up periodic indexing
     this.schedulePeriodicIndexing();
@@ -55,7 +59,9 @@ class BackgroundIndexer {
       await this.state.indexingPromise;
     }
     
-    console.log('🔍 Background indexing stopped');
+    if (!this.state.silentMode) {
+      console.log('🔍 Background indexing stopped');
+    }
   }
 
   /**
@@ -72,7 +78,9 @@ class BackgroundIndexer {
         this.state.indexingPromise = null;
       }
     } catch (error) {
-      console.error('Background indexing check failed:', error);
+      if (!this.state.silentMode) {
+        console.error('Background indexing check failed:', error);
+      }
       this.state.indexingPromise = null;
     }
   }
@@ -122,7 +130,9 @@ class BackgroundIndexer {
 
       return false;
     } catch (error) {
-      console.error('Error checking indexing needs:', error);
+      if (!this.state.silentMode) {
+        console.error('Error checking indexing needs:', error);
+      }
       return false;
     }
   }
@@ -141,7 +151,9 @@ class BackgroundIndexer {
         this.logStatus('✅ Background indexing completed');
       }
     } catch (error) {
-      console.error('❌ Background indexing failed:', error);
+      if (!this.state.silentMode) {
+        console.error('❌ Background indexing failed:', error);
+      }
     }
   }
 
@@ -149,6 +161,8 @@ class BackgroundIndexer {
    * Log status messages without disrupting chat input
    */
   private logStatus(message: string): void {
+    if (this.state.silentMode) return;
+    
     // Clear current line, print status, then restore prompt
     process.stdout.write('\r\x1b[K'); // Clear line
     console.log(message);
@@ -160,7 +174,9 @@ class BackgroundIndexer {
    */
   async forceIndex(): Promise<void> {
     if (this.state.indexingPromise) {
-      console.log('Indexing already in progress, waiting...');
+      if (!this.state.silentMode) {
+        console.log('Indexing already in progress, waiting...');
+      }
       await this.state.indexingPromise;
       return;
     }
@@ -186,6 +202,13 @@ class BackgroundIndexer {
    */
   setStatusDisplay(show: boolean): void {
     this.state.showStatus = show;
+  }
+
+  /**
+   * Enable or disable all console output (for TUI mode)
+   */
+  setSilentMode(silent: boolean): void {
+    this.state.silentMode = silent;
   }
 }
 

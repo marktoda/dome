@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { IndexingStatus } from './ChatApp.js';
 
@@ -13,36 +13,31 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   notesCount, 
   indexingStatus 
 }) => {
-  const getIndexingIndicator = () => {
+  const { indicator, text } = useMemo(() => {
     if (!indexingStatus.isRunning) {
-      return <Text color="red">●</Text>;
+      return {
+        indicator: <Text color="red">●</Text>,
+        text: 'Indexing: Stopped'
+      };
     }
     
     if (indexingStatus.isIndexing) {
-      return <Text color="yellow">●</Text>;
+      return {
+        indicator: <Text color="yellow">●</Text>,
+        text: 'Indexing: In Progress'
+      };
     }
     
-    return <Text color="green">●</Text>;
-  };
+    return {
+      indicator: <Text color="green">●</Text>,
+      text: 'Indexing: Ready'
+    };
+  }, [indexingStatus.isRunning, indexingStatus.isIndexing]);
 
-  const getIndexingText = () => {
-    if (!indexingStatus.isRunning) {
-      return 'Indexing: Stopped';
-    }
-    
-    if (indexingStatus.isIndexing) {
-      return 'Indexing: In Progress';
-    }
-    
-    return 'Indexing: Ready';
-  };
-
-  const formatPath = (path: string) => {
-    if (path.startsWith(process.env.HOME || '')) {
-      return path.replace(process.env.HOME || '', '~');
-    }
-    return path;
-  };
+  const formattedPath = useMemo(() => {
+    const home = process.env.HOME || '';
+    return vaultPath.startsWith(home) ? vaultPath.replace(home, '~') : vaultPath;
+  }, [vaultPath]);
 
   return (
     <Box 
@@ -53,14 +48,12 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     >
       <Box>
         <Text bold color="blue">🏠 Dome AI Assistant</Text>
-        <Text> - </Text>
-        <Text>{formatPath(vaultPath)}</Text>
-        <Text> ({notesCount} notes)</Text>
+        <Text> - {formattedPath} ({notesCount} notes)</Text>
       </Box>
       
       <Box>
-        {getIndexingIndicator()}
-        <Text> {getIndexingText()}</Text>
+        {indicator}
+        <Text> {text}</Text>
       </Box>
     </Box>
   );

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { handleAdd } from './commands/add.js';
+import { handleFind } from './commands/find.js';
 import { handleList } from './commands/list.js';
 import { handleChat } from './commands/chat.js';
 import { createIndexCommand } from './commands/indexNotes.js';
@@ -14,12 +14,12 @@ program
   .description('AI-powered note-taking system')
   .version('1.0.0');
 
-// Add command
+// Find command
 program
-  .command('add')
-  .argument('<topic>', 'note topic')
-  .description('create or edit a note on the given topic')
-  .action(handleAdd);
+  .command('find')
+  .argument('<topic>', 'search term for finding existing notes')
+  .description('find and open an existing note')
+  .action(handleFind);
 
 // List command
 program
