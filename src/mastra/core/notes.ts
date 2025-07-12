@@ -39,7 +39,7 @@ export async function getNote(path: string): Promise<Note | null> {
     const meta = await deriveMeta(data, fullPath);
     return { ...meta, body: content, fullPath };
   } catch (error) {
-    console.error("Error getting note:", error);
+    // Don't log error - file might not exist, which is normal
     return null;
   }
 }
