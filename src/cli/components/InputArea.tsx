@@ -37,21 +37,12 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSubmit, isDisabled = fal
   });
 
   return (
-    <Box 
-      borderStyle="single" 
-      borderColor={isDisabled ? "gray" : "green"}
-      paddingX={1}
-    >
-      <Text color="green">❯ </Text>
+    <Box paddingX={1} paddingY={1}>
+      <Text color="green">{'> '}</Text>
       <Text>
         {input}
-        <Text backgroundColor={isDisabled ? "gray" : "green"}> </Text>
+        {!isDisabled && <Text backgroundColor="green"> </Text>}
       </Text>
-      {isDisabled && (
-        <Box marginLeft={2}>
-          <Text color="yellow">(Processing...)</Text>
-        </Box>
-      )}
     </Box>
   );
 };

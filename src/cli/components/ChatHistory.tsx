@@ -51,36 +51,19 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isProcessing
       flexDirection="column" 
       flexGrow={1} 
       paddingX={1}
-      borderStyle="single"
-      borderColor="gray"
+      paddingY={1}
     >
       {messages.map((message) => (
-        <Box key={message.id} marginBottom={1}>
-          <Box minWidth={8}>
-            <Text dimColor>[{formatTime(message.timestamp)}]</Text>
-          </Box>
-          <Box marginLeft={1}>
-            <Text>{getMessagePrefix(message.type)}</Text>
-          </Box>
-          <Box marginLeft={1} flexDirection="column">
-            <Text color={getMessageColor(message.type)}>
-              {message.content}
-            </Text>
-          </Box>
+        <Box key={message.id}>
+          <Text color={getMessageColor(message.type)}>
+            {getMessagePrefix(message.type)} {message.content}
+          </Text>
         </Box>
       ))}
       
       {isProcessing && (
-        <Box marginBottom={1}>
-          <Box minWidth={8}>
-            <Text dimColor>[{formatTime(new Date())}]</Text>
-          </Box>
-          <Box marginLeft={1}>
-            <Text>🤖</Text>
-          </Box>
-          <Box marginLeft={1}>
-            <Text color="yellow">Thinking...</Text>
-          </Box>
+        <Box>
+          <Text color="yellow">🤖 Thinking...</Text>
         </Box>
       )}
     </Box>

@@ -82,15 +82,23 @@ export const ChatApp: React.FC = () => {
     };
   }, []);
 
-  // Update indexing status periodically
+  // Update indexing status less frequently to reduce flicker
   useEffect(() => {
     const updateStatus = () => {
       const status = backgroundIndexer.getStatus();
-      setIndexingStatus(status);
+      setIndexingStatus(prev => {
+        // Only update if status actually changed
+        if (prev.isRunning !== status.isRunning || 
+            prev.isIndexing !== status.isIndexing || 
+            prev.lastIndexTime !== status.lastIndexTime) {
+          return status;
+        }
+        return prev;
+      });
     };
 
     updateStatus();
-    const interval = setInterval(updateStatus, 1000);
+    const interval = setInterval(updateStatus, 2000); // Reduced frequency
 
     return () => clearInterval(interval);
   }, []);
@@ -303,14 +311,10 @@ export const ChatApp: React.FC = () => {
         </Box>
         
         {showHelp && (
-          <Box width={40} borderStyle="single" borderColor="blue">
+          <Box width={35} borderStyle="single" borderColor="blue" paddingX={1}>
             <HelpPanel />
           </Box>
         )}
-      </Box>
-      
-      <Box borderStyle="single" borderColor="gray">
-        <Text dimColor> Ctrl+C: Exit | Ctrl+H: Toggle Help | Commands: help, list, status, clear, exit </Text>
       </Box>
     </Box>
   );
