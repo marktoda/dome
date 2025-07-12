@@ -3,13 +3,12 @@ import { mastra } from '../../mastra/index.js';
 
 export function createReorganizeCommand(): Command {
   const command = new Command('reorganize');
-  
+
   command
     .description('AI-powered reorganization of notes using Mastra workflows')
     .option('--dry-run', 'Show what would be done without making changes', false)
     .option('--verbose', 'Show detailed progress information', false)
     .option('--no-merge', 'Skip merging duplicate notes', false)
-    .option('--no-summaries', 'Skip adding summaries to notes', false)
     .option('--no-cleanup', 'Skip cleaning up empty files', false)
     .action(async (options) => {
       await handleReorganize(options);
@@ -20,12 +19,11 @@ export function createReorganizeCommand(): Command {
 
 export async function handleReorganize(options: any): Promise<void> {
   console.log('🤖 Starting AI-powered notes reorganization...');
-  
+
   const reorganizeOptions = {
     dryRun: options.dryRun || false,
     verbose: options.verbose || false,
     mergeDuplicates: !options.noMerge,
-    addSummaries: !options.noSummaries, 
     cleanupEmpty: !options.noCleanup
   };
 
@@ -42,7 +40,7 @@ export async function handleReorganize(options: any): Promise<void> {
 
     // Create and start workflow run
     const run = await workflow.createRunAsync();
-    
+
     const result = await run.start({
       inputData: {
         options: reorganizeOptions
@@ -53,14 +51,12 @@ export async function handleReorganize(options: any): Promise<void> {
       // Display results
       console.log('\n📊 AI-Powered Reorganization Results:');
       console.log('====================================');
-      
-      console.log(`📚 Notes analyzed: ${result.result.notesAnalyzed}`);
-      console.log(`🧹 Low-quality notes removed: ${result.result.lowQualityRemoved}`);
-      console.log(`🔄 Duplicate groups found: ${result.result.duplicatesFound}`);
-      console.log(`🔗 Duplicates merged: ${result.result.duplicatesMerged}`);
-      console.log(`📝 AI summaries added: ${result.result.summariesAdded}`);
 
-      const totalActions = result.result.lowQualityRemoved + result.result.duplicatesMerged + result.result.summariesAdded;
+      console.log(`🔗 Merge groups identified: ${result.result.mergeGroupsFound}`);
+      console.log(`🗑️ Notes removed: ${result.result.notesRemoved}`);
+      console.log(`📝 Notes merged: ${result.result.notesMerged}`);
+
+      const totalActions = result.result.notesRemoved + result.result.notesMerged;
       if (totalActions === 0) {
         console.log('✨ No actions needed - your notes are already well organized!');
       }
@@ -98,7 +94,7 @@ export async function handleReorganize(options: any): Promise<void> {
 
   } catch (error) {
     console.error('❌ Failed to run reorganization workflow:', error instanceof Error ? error.message : 'Unknown error');
-    
+
     if (error instanceof Error && error.message.includes('Notes agent not available')) {
       console.log('\n💡 Tip: Make sure you have configured the OpenAI API key for AI-powered reorganization.');
       console.log('Set the OPENAI_API_KEY environment variable or check your Mastra configuration.');

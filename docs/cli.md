@@ -78,7 +78,6 @@ dome list --json           # Machine-readable output
 **Features**:
 
 - **Natural language queries**: "Show me all meeting notes from this week"
-- **Content summarization**: "Summarize my project notes"
 - **Note manipulation**: "Create a todo list from my meeting notes"
 - **Search and discovery**: "Find notes about the new feature"
 
@@ -255,7 +254,7 @@ class DomeChatSession implements ChatSession {
       input,
       context: {
         vaultPath,
-        availableCommands: ['list', 'search', 'summarize', 'create']
+        availableCommands: ['list', 'search', 'create']
       }
     });
 
@@ -463,4 +462,3 @@ dome-cli/
 - **Sync Integration**: Git-based synchronization across devices
 - **Plugin System**: Extensible architecture for custom commands
 - **Mobile Companion**: Basic mobile app for quick note capture
-

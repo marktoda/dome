@@ -113,6 +113,31 @@ export async function writeNote(
   }
 }
 
+export async function removeNote(path: string): Promise<{ path: string; success: boolean; message: string }> {
+  try {
+    const fullPath = join(vaultPath, path);
+    
+    // Check if file exists
+    await fs.access(fullPath);
+    
+    // Remove the file
+    await fs.unlink(fullPath);
+    
+    return {
+      path,
+      success: true,
+      message: `Successfully removed note: ${path}`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      path,
+      success: false,
+      message: `Failed to remove note ${path}: ${message}`
+    };
+  }
+}
+
 async function parseMeta(relativePath: string): Promise<NoteMeta> {
   const full = join(vaultPath, relativePath);
   try {

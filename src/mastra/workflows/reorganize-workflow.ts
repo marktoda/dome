@@ -1,670 +1,510 @@
 import { createWorkflow, createStep } from "@mastra/core/workflows";
 import { z } from "zod";
-import { listNotes, getNote, type Note } from "../core/notes.js";
-import fs from "node:fs/promises";
-import matter from "gray-matter";
-import path from "node:path";
-
-const vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
 
 // Types
 interface ReorganizeOptions {
   dryRun: boolean;
   verbose: boolean;
   mergeDuplicates: boolean;
-  addSummaries: boolean;
   cleanupEmpty: boolean;
 }
 
-interface QualityAssessment {
-  path: string;
-  shouldRemove: boolean;
-  quality: "high" | "medium" | "low";
+interface MergeGroup {
+  notePaths: string[];
+  proposedTitle: string;
+  proposedLocation: string;
   reason: string;
-  suggestions?: string;
-}
-
-interface DuplicateGroup {
-  primaryNote: Note;
-  duplicates: Note[];
-  mergeStrategy: string;
   confidence: number;
 }
 
-interface StepExecutionContext {
-  input: any;
-  mastra: any;
-}
+// Input/Output schemas
+const MergeGroupSchema = z.object({
+  notePaths: z.array(z.string()),
+  proposedTitle: z.string(),
+  proposedLocation: z.string(),
+  reason: z.string(),
+  confidence: z.number().min(0).max(1)
+}).strict();
+
+const RemovalCandidateSchema = z.object({
+  path: z.string(),
+  reason: z.string(),
+  confidence: z.number().min(0).max(1)
+}).strict();
 
 // Structured output schemas for AI responses
-const QualityAssessmentResponseSchema = z.object({
-  assessments: z.array(z.object({
-    path: z.string(),
-    shouldRemove: z.boolean(),
-    quality: z.enum(["high", "medium", "low"]),
-    reason: z.string(),
-    suggestions: z.string().optional()
-  }))
-});
+const MergeNotesResponseSchema = z.object({
+  mergeGroups: z.array(MergeGroupSchema),
+  reasoning: z.string()
+}).strict();
 
-const DuplicateDetectionResponseSchema = z.object({
-  duplicates: z.array(z.object({
-    candidatePath: z.string(),
-    isDuplicate: z.boolean(),
-    confidence: z.number().min(0).max(1),
-    reason: z.string(),
-    mergeStrategy: z.string()
-  }))
-});
+const RemoveNotesResponseSchema = z.object({
+  removalCandidates: z.array(RemovalCandidateSchema),
+  reasoning: z.string()
+}).strict();
 
-// Input/Output schemas
-const NoteSchema = z.object({
-  title: z.string(),
-  date: z.string(),
-  tags: z.array(z.string()),
-  path: z.string(),
-  body: z.string(),
-  fullPath: z.string(),
-  source: z.enum(["cli", "external"])
-});
-
-const QualityAssessmentSchema = z.object({
-  path: z.string(),
-  shouldRemove: z.boolean(),
-  quality: z.enum(["high", "medium", "low"]),
-  reason: z.string(),
-  suggestions: z.string().optional()
-});
-
-const DuplicateGroupSchema = z.object({
-  primaryNote: NoteSchema,
-  duplicates: z.array(NoteSchema),
-  mergeStrategy: z.string(),
-  confidence: z.number()
-});
+// Constants
+export const DEFAULT_OPTIONS: Readonly<ReorganizeOptions> = {
+  dryRun: false,
+  verbose: false,
+  mergeDuplicates: true,
+  cleanupEmpty: true
+} as const;
 
 // Shared options schema
 const OptionsSchema = z.object({
   dryRun: z.boolean(),
   verbose: z.boolean(),
   mergeDuplicates: z.boolean(),
-  addSummaries: z.boolean(),
   cleanupEmpty: z.boolean()
-});
+}).strict();
 
 const ReorganizeInputSchema = z.object({
   options: z.object({
     dryRun: z.boolean().default(false),
     verbose: z.boolean().default(false),
     mergeDuplicates: z.boolean().default(true),
-    addSummaries: z.boolean().default(true),
     cleanupEmpty: z.boolean().default(true)
   })
 });
 
 const ReorganizeOutputSchema = z.object({
-  notesAnalyzed: z.number(),
-  lowQualityRemoved: z.number(),
-  duplicatesFound: z.number(),
-  duplicatesMerged: z.number(),
-  summariesAdded: z.number(),
+  mergeGroupsFound: z.number(),
+  notesRemoved: z.number(),
+  notesMerged: z.number(),
   actions: z.array(z.string()),
   errors: z.array(z.string())
 });
 
-// Step 1: Load and analyze all notes
-const loadNotesStep = createStep({
-  id: "load-notes",
-  description: "Load all notes from the vault for analysis",
+// Step 1: Identify merge groups
+const identifyMergeGroupsStep = createStep({
+  id: "identify-merge-groups",
+  description: "Use AI agent to identify groups of notes that should be merged",
   inputSchema: ReorganizeInputSchema,
   outputSchema: z.object({
-    notes: z.array(NoteSchema),
+    mergeGroups: z.array(MergeGroupSchema),
     options: OptionsSchema
   }),
   execute: async (context: any) => {
     const { inputData: input, mastra } = context;
-    console.log("📚 Loading notes from vault...");
+    const options = { ...DEFAULT_OPTIONS, ...input?.options };
 
-    const defaultOptions: ReorganizeOptions = {
-      dryRun: false,
-      verbose: false,
-      mergeDuplicates: true,
-      addSummaries: true,
-      cleanupEmpty: true
-    };
+    console.log("🔍 AI agent identifying merge groups...");
+
+    if (!options.mergeDuplicates) {
+      return {
+        mergeGroups: [],
+        options
+      };
+    }
+
+    const agent = mastra.getAgent('notesAgent');
+    if (!agent) {
+      throw new Error('notesAgent not registered in mastra - check agent configuration');
+    }
+
+    const identifyPrompt = `You are helping reorganize a notes vault. Your task is to identify groups of notes that should be merged into single, well-organized notes.
+
+Please use your tools to:
+1. List all notes in the vault to get an overview
+2. Examine promising candidates for merging by reading their content
+3. Identify groups of 2-5 notes that cover similar topics and should be merged
+
+Look for notes that:
+- Cover the same topic but are scattered across multiple files
+- Are incomplete drafts that should be combined into a comprehensive note
+- Have overlapping content that would benefit from consolidation
+- Are follow-ups or continuations of previous notes
+
+For each merge group, propose:
+- Which notes should be merged (list their paths)
+- A good title for the merged note
+- A logical location/path for the merged note
+- Clear reasoning for why these notes should be merged
+- Confidence level (0.0-1.0) in your recommendation
+
+Focus on merges that will genuinely improve the organization and reduce redundancy. Be conservative - only suggest merges you're confident about.`;
 
     try {
-      const noteMetas = await listNotes();
-      const notes: Note[] = [];
+      const response = await agent.generate([{ role: 'user', content: identifyPrompt }], {
+        output: MergeNotesResponseSchema
+      });
 
-      for (const meta of noteMetas) {
-        try {
-          const note = await getNote(meta.path);
-          if (note) {
-            notes.push(note);
-          }
-        } catch (error) {
-          console.error(`Failed to load note ${meta.path}:`, error instanceof Error ? error.message : 'Unknown error');
-        }
+      const mergeGroups = response.object?.mergeGroups || [];
+
+      if (options.verbose) {
+        console.log(`Merge analysis complete: ${mergeGroups.length} merge groups identified`);
+        console.log(`Agent reasoning: ${response.object?.reasoning}`);
       }
 
-      console.log(`Found ${notes.length} notes to analyze`);
+      // Enhanced dry-run logging for merge groups
+      if (options.dryRun && mergeGroups.length > 0) {
+        console.log('\n📋 Merge Groups Identified:');
+        console.log('==========================');
+        mergeGroups.forEach((group: MergeGroup, index: number) => {
+          console.log(`\n${index + 1}. ${group.proposedTitle}`);
+          console.log(`   📁 Target location: ${group.proposedLocation}`);
+          console.log(`   🎯 Confidence: ${(group.confidence * 100).toFixed(1)}%`);
+          console.log(`   💭 Reason: ${group.reason}`);
+          console.log(`   📝 Notes to merge (${group.notePaths.length}):`);
+          group.notePaths.forEach((path: string) => {
+            console.log(`      - ${path}`);
+          });
+        });
+      }
 
       return {
-        notes,
-        options: input?.options || defaultOptions
+        mergeGroups,
+        options
       };
     } catch (error) {
-      throw new Error(`Failed to load notes: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-});
-
-// Step 2: AI-powered quality assessment
-const qualityAssessmentStep = createStep({
-  id: "quality-assessment",
-  description: "Use AI to assess note quality and identify low-value notes",
-  inputSchema: z.object({
-    notes: z.array(NoteSchema),
-    options: OptionsSchema
-  }),
-  outputSchema: z.object({
-    qualityAssessments: z.array(QualityAssessmentSchema),
-    remainingNotes: z.array(NoteSchema),
-    options: OptionsSchema
-  }),
-  execute: async (context: any) => {
-    const { inputData: input, mastra } = context;
-    
-    const defaultOptions: ReorganizeOptions = {
-      dryRun: false,
-      verbose: false,
-      mergeDuplicates: true,
-      addSummaries: true,
-      cleanupEmpty: true
-    };
-
-    if (!input?.options?.cleanupEmpty) {
+      console.error('Failed to identify merge candidates:', error instanceof Error ? error.message : 'Unknown error');
       return {
-        qualityAssessments: [],
-        remainingNotes: input?.notes || [],
-        options: input?.options || defaultOptions
+        mergeGroups: [],
+        options
       };
     }
-
-    console.log("🔍 AI-powered quality assessment...");
-
-    const agent = mastra.getAgent('notesAgent');
-    if (!agent) {
-      throw new Error('Notes agent not available for quality assessment');
-    }
-
-    const qualityAssessments: QualityAssessment[] = [];
-    const batchSize = 8;
-
-    const notes: Note[] = input?.notes || [];
-    for (let i = 0; i < notes.length; i += batchSize) {
-      const batch = notes.slice(i, i + batchSize);
-
-      const noteAnalysis = batch.map((note: Note) => ({
-        path: note.path,
-        title: note.title,
-        content: note.body.substring(0, 400),
-        wordCount: note.body.split(/\s+/).length,
-        tags: note.tags
-      }));
-
-      const prompt = `Analyze these notes for quality and value. Identify notes that should be removed because they are:
-- Empty or nearly empty (very little meaningful content)
-- Only placeholder text, TODOs, or drafts with no real information
-- Extremely low quality or garbled content
-- Test notes or temporary files
-
-For each note, assess if it should be kept or removed, and rate its quality.
-
-Notes to analyze:
-${JSON.stringify(noteAnalysis, null, 2)}`;
-
-      try {
-        const response = await agent.generate([{ role: 'user', content: prompt }], {
-          output: QualityAssessmentResponseSchema
-        });
-
-        if (response.object?.assessments) {
-          qualityAssessments.push(...response.object.assessments);
-        }
-      } catch (error) {
-        console.error(`Failed to analyze batch starting at index ${i}:`, error instanceof Error ? error.message : 'Unknown error');
-      }
-    }
-
-    // Filter remaining notes (those not marked for removal)
-    const notesToRemove = new Set(
-      qualityAssessments
-        .filter((assessment: QualityAssessment) => assessment.shouldRemove)
-        .map((assessment: QualityAssessment) => assessment.path)
-    );
-
-    const remainingNotes = notes.filter((note: Note) => !notesToRemove.has(note.path));
-
-    if (input?.options?.verbose) {
-      console.log(`Quality assessment complete: ${qualityAssessments.length} notes analyzed, ${notesToRemove.size} marked for removal`);
-    }
-
-    return {
-      qualityAssessments,
-      remainingNotes,
-      options: input.options
-    };
   }
 });
 
-// Step 3: AI-powered duplicate detection
-const duplicateDetectionStep = createStep({
-  id: "duplicate-detection",
-  description: "Use AI to identify duplicate and similar notes",
+// Step 2: Execute merges
+const executeMergesStep = createStep({
+  id: "execute-merges",
+  description: "Execute all high-confidence merges in a single operation",
   inputSchema: z.object({
-    qualityAssessments: z.array(QualityAssessmentSchema),
-    remainingNotes: z.array(NoteSchema),
+    mergeGroups: z.array(MergeGroupSchema),
     options: OptionsSchema
   }),
   outputSchema: z.object({
-    qualityAssessments: z.array(QualityAssessmentSchema),
-    duplicateGroups: z.array(DuplicateGroupSchema),
-    uniqueNotes: z.array(NoteSchema),
-    options: OptionsSchema
-  }),
-  execute: async (context: any) => {
-    const { inputData: input, mastra } = context;
-    const defaultOptions: ReorganizeOptions = {
-      dryRun: false,
-      verbose: false,
-      mergeDuplicates: true,
-      addSummaries: true,
-      cleanupEmpty: true
-    };
-
-    if (!input?.options?.mergeDuplicates) {
-      return {
-        qualityAssessments: input?.qualityAssessments || [],
-        duplicateGroups: [],
-        uniqueNotes: input?.remainingNotes || [],
-        options: input?.options || defaultOptions
-      };
-    }
-
-    console.log("🔍 AI-powered duplicate detection...");
-
-    const agent = mastra.getAgent('notesAgent');
-    if (!agent) {
-      throw new Error('Notes agent not available for duplicate detection');
-    }
-
-    const duplicateGroups: DuplicateGroup[] = [];
-    const processed = new Set<string>();
-    const notes: Note[] = input?.remainingNotes || [];
-
-    // Compare notes in batches to find duplicates
-    for (let i = 0; i < notes.length; i++) {
-      if (processed.has(notes[i].path)) continue;
-
-      const currentNote = notes[i];
-      const candidates = notes.slice(i + 1).filter((note: any) => !processed.has(note.path));
-
-      if (candidates.length === 0) {
-        processed.add(currentNote.path);
-        continue;
-      }
-
-      // Analyze this note against remaining candidates
-      const comparisons = candidates.slice(0, 5); // Limit comparisons to avoid overwhelming AI
-
-      const prompt = `Analyze if these notes are duplicates or contain substantially similar content that should be merged.
-
-Primary Note:
-Title: ${currentNote.title}
-Path: ${currentNote.path}
-Tags: ${currentNote.tags.join(', ')}
-Content: ${currentNote.body.substring(0, 800)}
-
-Candidate Notes:
-${comparisons.map((note: any, idx: number) => `
-${idx + 1}. Title: ${note.title}
-   Path: ${note.path}
-   Tags: ${note.tags.join(', ')}
-   Content: ${note.body.substring(0, 600)}
-`).join('')}
-
-Consider them duplicates if they:
-- Cover the same topic with similar information
-- One is clearly a draft/incomplete version of another
-- Have substantially overlapping content even with different titles
-- One clearly supersedes or contains the other`;
-
-      try {
-        const response = await agent.generate([{ role: 'user', content: prompt }], {
-          output: DuplicateDetectionResponseSchema
-        });
-
-        if (response.object?.duplicates) {
-          const foundDuplicates = response.object.duplicates
-            .filter((dup: any) => dup.isDuplicate && dup.confidence > 0.7)
-            .map((dup: any) => candidates.find((c: Note) => c.path === dup.candidatePath))
-            .filter((note: any): note is Note => note !== undefined);
-
-          if (foundDuplicates.length > 0) {
-            duplicateGroups.push({
-              primaryNote: currentNote,
-              duplicates: foundDuplicates,
-              mergeStrategy: response.object.duplicates[0].mergeStrategy || "keep primary and merge content",
-              confidence: Math.max(...response.object.duplicates.map((d: any) => d.confidence))
-            });
-
-            // Mark all as processed
-            processed.add(currentNote.path);
-            foundDuplicates.forEach((note: Note) => processed.add(note.path));
-
-            if (input?.options?.verbose) {
-              console.log(`Found duplicate group: ${currentNote.path} + ${foundDuplicates.length} duplicates`);
-            }
-          } else {
-            processed.add(currentNote.path);
-          }
-        } else {
-          processed.add(currentNote.path);
-        }
-      } catch (error) {
-        console.error(`Failed to analyze duplicates for ${currentNote.path}:`, error);
-        processed.add(currentNote.path);
-      }
-    }
-
-    const uniqueNotes = notes.filter((note: any) => !processed.has(note.path));
-
-    console.log(`Duplicate detection complete: ${duplicateGroups.length} groups found`);
-
-    return {
-      qualityAssessments: input.qualityAssessments,
-      duplicateGroups,
-      uniqueNotes,
-      options: input.options
-    };
-  }
-});
-
-// Step 4: Execute cleanup and merging
-const executeChangesStep = createStep({
-  id: "execute-changes",
-  description: "Execute the cleanup and merging operations",
-  inputSchema: z.object({
-    qualityAssessments: z.array(QualityAssessmentSchema),
-    duplicateGroups: z.array(DuplicateGroupSchema),
-    uniqueNotes: z.array(NoteSchema),
-    options: OptionsSchema
-  }),
-  outputSchema: z.object({
-    processedNotes: z.array(NoteSchema),
+    notesMerged: z.number(),
     actions: z.array(z.string()),
     errors: z.array(z.string()),
     options: OptionsSchema
   }),
   execute: async (context: any) => {
     const { inputData: input, mastra } = context;
-    console.log("⚡ Executing cleanup and merge operations...");
+    const options = { ...DEFAULT_OPTIONS, ...input?.options };
+    const mergeGroups = input?.mergeGroups || [];
+
+    console.log("🔗 AI agent executing merges...");
+
+    // Filter high-confidence merge groups
+    const highConfidenceGroups = mergeGroups.filter((group: MergeGroup) => group.confidence >= 0.7);
+
+    if (highConfidenceGroups.length === 0) {
+      return {
+        notesMerged: 0,
+        actions: [],
+        errors: [],
+        options
+      };
+    }
+
+    const agent = mastra.getAgent('notesAgent');
+    if (!agent) {
+      throw new Error('notesAgent not registered in mastra - check agent configuration');
+    }
 
     const actions: string[] = [];
     const errors: string[] = [];
-    const processedNotes: Note[] = [...(input?.uniqueNotes || [])];
 
-    // 1. Remove low-quality notes
-    const notesToRemove: QualityAssessment[] = (input?.qualityAssessments || []).filter((assessment: QualityAssessment) => assessment.shouldRemove);
-
-    for (const assessment of notesToRemove) {
-      const action = `Remove low-quality note: ${assessment.path} (${assessment.reason})`;
-      actions.push(action);
-
-      if (input?.options?.verbose) {
-        console.log(`  ${action}`);
-      }
-
-      if (!input?.options?.dryRun) {
-        try {
-          const fullPath = path.join(vaultPath, assessment.path);
-          await fs.unlink(fullPath);
-        } catch (error) {
-          errors.push(`Failed to remove ${assessment.path}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-      }
+    if (options.verbose) {
+      console.log(`Executing ${highConfidenceGroups.length} high-confidence merges...`);
     }
 
-    // 2. Merge duplicate groups
-    const agent = mastra.getAgent('notesAgent');
+    if (!options.dryRun) {
+      const executePrompt = `You need to execute ${highConfidenceGroups.length} note merges. For each merge group below, use your tools to:
 
-    for (const group of (input?.duplicateGroups || []) as DuplicateGroup[]) {
+1. Read all the source notes
+2. Create a well-organized merged note that combines all unique content
+3. Write the merged note to the proposed location
+4. Remove the original source notes using your removeNoteTool
+
+Here are the merge groups to execute:
+
+${highConfidenceGroups.map((group: MergeGroup, index: number) => `
+Merge Group ${index + 1}:
+- Notes to merge: ${JSON.stringify(group.notePaths)}
+- Merged note location: ${group.proposedLocation}
+- Merged note title: ${group.proposedTitle}
+- Reason: ${group.reason}
+- Confidence: ${group.confidence}
+`).join('\n')}
+
+Please execute all these merges systematically. Report back on your progress.`;
+
       try {
-        const mergedContent = await mergeNotesWithAI(group, agent);
-        const action = `Merge ${group.duplicates.length} duplicates into ${group.primaryNote.path}`;
-        actions.push(action);
+        await agent.generate([{ role: 'user', content: executePrompt }]);
 
-        if (input?.options?.verbose) {
-          console.log(`  ${action}`);
-        }
+        // Count merged notes and create action entries
+        let totalMerged = 0;
+        for (const group of highConfidenceGroups) {
+          totalMerged += group.notePaths.length;
+          const action = `Merged ${group.notePaths.length} notes into ${group.proposedLocation}`;
+          actions.push(action);
 
-        if (!input?.options?.dryRun) {
-          // Update primary note with merged content
-          await fs.writeFile(group.primaryNote.fullPath, mergedContent, 'utf8');
-
-          // Remove duplicate files
-          for (const duplicate of group.duplicates) {
-            await fs.unlink(duplicate.fullPath);
+          if (options.verbose) {
+            console.log(`  ${action}`);
           }
         }
 
-        // Add merged note to processed notes
-        const mergedNote: Note = { ...group.primaryNote };
-        if (!input?.options?.dryRun) {
-          const parsedContent = matter(mergedContent);
-          mergedNote.body = parsedContent.content;
-        }
-        processedNotes.push(mergedNote);
-
+        return {
+          notesMerged: totalMerged,
+          actions,
+          errors,
+          options
+        };
       } catch (error) {
-        errors.push(`Failed to merge group ${group.primaryNote.path}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        errors.push(`Failed to execute merges: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return {
+          notesMerged: 0,
+          actions,
+          errors,
+          options
+        };
       }
-    }
+    } else {
+      // Dry run - just count what would be merged
+      let totalMerged = 0;
 
-    return {
-      processedNotes,
-      actions,
-      errors,
-      options: input?.options
-    };
+      if (highConfidenceGroups.length > 0) {
+        console.log('\n🔗 High-Confidence Merges (≥70%) to Execute:');
+        console.log('=============================================');
+      }
+
+      for (const group of highConfidenceGroups) {
+        totalMerged += group.notePaths.length;
+        const action = `Would merge ${group.notePaths.length} notes into ${group.proposedLocation}`;
+        actions.push(action);
+
+        // Detailed dry-run output for each merge
+        console.log(`\n📝 ${group.proposedTitle}`);
+        console.log(`   📁 Target: ${group.proposedLocation}`);
+        console.log(`   🎯 Confidence: ${(group.confidence * 100).toFixed(1)}%`);
+        console.log(`   💭 Reason: ${group.reason}`);
+        console.log(`   📋 Source notes (${group.notePaths.length}):`);
+        group.notePaths.forEach((path: string) => {
+          console.log(`      → ${path}`);
+        });
+
+        if (options.verbose) {
+          console.log(`  ${action}`);
+        }
+      }
+
+      // Show lower confidence groups that won't be executed
+      const lowConfidenceGroups = mergeGroups.filter((group: MergeGroup) => group.confidence < 0.7);
+      if (lowConfidenceGroups.length > 0) {
+        console.log('\n⚠️  Lower-Confidence Merges (<70%) - Not Executed:');
+        console.log('==================================================');
+        lowConfidenceGroups.forEach((group: MergeGroup) => {
+          console.log(`\n📝 ${group.proposedTitle}`);
+          console.log(`   🎯 Confidence: ${(group.confidence * 100).toFixed(1)}% (too low)`);
+          console.log(`   💭 Reason: ${group.reason}`);
+          console.log(`   📋 Notes: ${group.notePaths.join(', ')}`);
+        });
+      }
+
+      return {
+        notesMerged: totalMerged,
+        actions,
+        errors,
+        options
+      };
+    }
   }
 });
 
-// Step 5: Add AI-generated summaries
-const addSummariesStep = createStep({
-  id: "add-summaries",
-  description: "Add AI-generated summaries and enhanced metadata",
+// Step 3: Agent-driven note removal
+const removeNotesStep = createStep({
+  id: "remove-notes",
+  description: "Use AI agent to autonomously identify and remove low-value notes",
   inputSchema: z.object({
-    processedNotes: z.array(NoteSchema),
+    notesMerged: z.number(),
     actions: z.array(z.string()),
     errors: z.array(z.string()),
     options: OptionsSchema
   }),
-  outputSchema: ReorganizeOutputSchema,
+  outputSchema: z.object({
+    notesMerged: z.number(),
+    notesRemoved: z.number(),
+    actions: z.array(z.string()),
+    errors: z.array(z.string()),
+    options: OptionsSchema
+  }),
   execute: async (context: any) => {
     const { inputData: input, mastra } = context;
-    const actions: string[] = input?.actions || [];
-    const errors: string[] = input?.errors || [];
-    const processedNotes: Note[] = input?.processedNotes || [];
+    const options = { ...DEFAULT_OPTIONS, ...input?.options };
 
-    if (!input?.options?.addSummaries) {
+    console.log("🗑️ AI agent cleaning up low-value notes...");
+
+    const actions = [...(input?.actions || [])];
+    const errors = [...(input?.errors || [])];
+
+    if (!options.cleanupEmpty) {
       return {
-        notesAnalyzed: processedNotes.length,
-        lowQualityRemoved: actions.filter((a: string) => a.includes('Remove')).length,
-        duplicatesFound: actions.filter((a: string) => a.includes('Merge')).length,
-        duplicatesMerged: actions.filter((a: string) => a.includes('Merge')).length,
-        summariesAdded: 0,
+        notesMerged: input?.notesMerged || 0,
+        notesRemoved: 0,
         actions,
-        errors
+        errors,
+        options
       };
     }
-
-    console.log("📝 Adding AI-generated summaries...");
 
     const agent = mastra.getAgent('notesAgent');
     if (!agent) {
-      console.log("Notes agent not available for summary generation");
-      return {
-        notesAnalyzed: processedNotes.length,
-        lowQualityRemoved: actions.filter((a: string) => a.includes('Remove')).length,
-        duplicatesFound: actions.filter((a: string) => a.includes('Merge')).length,
-        duplicatesMerged: actions.filter((a: string) => a.includes('Merge')).length,
-        summariesAdded: 0,
-        actions,
-        errors
-      };
+      throw new Error('notesAgent not registered in mastra - check agent configuration');
     }
 
-    let summariesAdded = 0;
-    const updatedActions = [...actions];
-    const updatedErrors = [...errors];
+    if (!options.dryRun) {
+      const cleanupPrompt = `You are cleaning up a notes vault by removing low-value notes. Please use your tools to:
 
-    for (const note of processedNotes) {
+1. List all notes in the vault to get an overview
+2. Examine notes that might be candidates for removal
+3. For notes that are clearly low-value, use your removeNoteTool to delete them
+
+Look for notes that should be removed:
+- Empty or nearly empty (just a title, minimal content)
+- Only placeholder text, TODOs with no actual content
+- Test notes or temporary files that serve no purpose
+- Extremely low quality, garbled, or broken content
+- Duplicate information that's better covered elsewhere
+
+Be conservative - only remove notes you're highly confident are worthless (confidence >= 0.7). When in doubt, keep the note.
+
+For each note you remove, briefly explain why it was removed. Count how many notes you remove and report back.`;
+
       try {
-        if (await needsSummary(note)) {
-          const summary = await generateSummary(note, agent);
-          const action = `Add AI summary to: ${note.path}`;
-          updatedActions.push(action);
+        const response = await agent.generate([{ role: 'user', content: cleanupPrompt }]);
 
-          if (input?.options?.verbose) {
-            console.log(`  ${action}`);
-          }
+        // Parse response to count removed notes
+        const responseText = response.text || '';
+        const countMatch = responseText.match(/(\d+)\s+notes?\s+(?:removed|deleted)/i);
+        const notesRemoved = countMatch ? parseInt(countMatch[1]) : 0;
 
-          if (!input?.options?.dryRun) {
-            await addSummaryToNote(note, summary);
-          }
+        actions.push(`Agent removed ${notesRemoved} low-value notes`);
 
-          summariesAdded++;
+        if (options.verbose) {
+          console.log(`  Agent removed ${notesRemoved} low-value notes`);
         }
+
+        return {
+          notesMerged: input?.notesMerged || 0,
+          notesRemoved,
+          actions,
+          errors,
+          options
+        };
       } catch (error) {
-        updatedErrors.push(`Failed to add summary to ${note.path}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        errors.push(`Failed to clean up notes: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return {
+          notesMerged: input?.notesMerged || 0,
+          notesRemoved: 0,
+          actions,
+          errors,
+          options
+        };
+      }
+    } else {
+      // Dry run - identify but don't remove
+      const analyzePrompt = `You are analyzing a notes vault for cleanup. Please use your tools to:
+
+1. List all notes in the vault
+2. Identify notes that would be candidates for removal
+3. For each removal candidate, provide the reason and confidence level
+
+Look for notes that should be removed:
+- Empty or nearly empty (just a title, minimal content)
+- Only placeholder text, TODOs with no actual content
+- Test notes or temporary files that serve no purpose
+- Extremely low quality, garbled, or broken content
+- Duplicate information that's better covered elsewhere
+
+Be conservative - only identify notes you're highly confident are worthless (confidence >= 0.7).
+
+Provide your analysis in this structured format:
+{
+  "removalCandidates": [
+    {
+      "path": "path/to/note.md",
+      "reason": "Specific reason for removal",
+      "confidence": 0.85
+    }
+  ],
+  "reasoning": "Overall analysis of the cleanup process"
+}`;
+
+      try {
+        const response = await agent.generate([{ role: 'user', content: analyzePrompt }], {
+          output: RemoveNotesResponseSchema
+        });
+
+        const removalCandidates = response.object?.removalCandidates || [];
+        const highConfidenceRemovals = removalCandidates.filter(candidate => candidate.confidence >= 0.7);
+        const lowConfidenceRemovals = removalCandidates.filter(candidate => candidate.confidence < 0.7);
+
+        // Enhanced dry-run logging for removals
+        if (highConfidenceRemovals.length > 0) {
+          console.log('\n🗑️  Notes to Remove (≥70% confidence):');
+          console.log('======================================');
+          highConfidenceRemovals.forEach((candidate, index) => {
+            console.log(`\n${index + 1}. ${candidate.path}`);
+            console.log(`   🎯 Confidence: ${(candidate.confidence * 100).toFixed(1)}%`);
+            console.log(`   💭 Reason: ${candidate.reason}`);
+          });
+        }
+
+        if (lowConfidenceRemovals.length > 0) {
+          console.log('\n⚠️  Lower-Confidence Removal Candidates (<70%) - Not Removed:');
+          console.log('=============================================================');
+          lowConfidenceRemovals.forEach((candidate, index) => {
+            console.log(`\n${index + 1}. ${candidate.path}`);
+            console.log(`   🎯 Confidence: ${(candidate.confidence * 100).toFixed(1)}% (too low)`);
+            console.log(`   💭 Reason: ${candidate.reason}`);
+          });
+        }
+
+        if (options.verbose && response.object?.reasoning) {
+          console.log(`\n🤖 AI Analysis: ${response.object.reasoning}`);
+        }
+
+        const notesRemoved = highConfidenceRemovals.length;
+        actions.push(`Would remove ${notesRemoved} low-value notes`);
+
+        if (options.verbose) {
+          console.log(`  Would remove ${notesRemoved} low-value notes`);
+        }
+
+        return {
+          notesMerged: input?.notesMerged || 0,
+          notesRemoved,
+          actions,
+          errors,
+          options
+        };
+      } catch (error) {
+        errors.push(`Failed to analyze notes for cleanup: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        return {
+          notesMerged: input?.notesMerged || 0,
+          notesRemoved: 0,
+          actions,
+          errors,
+          options
+        };
       }
     }
-
-    return {
-      notesAnalyzed: processedNotes.length,
-      lowQualityRemoved: actions.filter((a: string) => a.includes('Remove')).length,
-      duplicatesFound: actions.filter((a: string) => a.includes('Merge')).length,
-      duplicatesMerged: actions.filter((a: string) => a.includes('Merge')).length,
-      summariesAdded,
-      actions: updatedActions,
-      errors: updatedErrors
-    };
   }
 });
 
 // Create the reorganize workflow
 export const reorganizeWorkflow = createWorkflow({
   id: "reorganize-workflow",
-  description: "AI-powered notes reorganization workflow",
+  description: "AI-powered agent-driven notes reorganization workflow",
   inputSchema: ReorganizeInputSchema,
   outputSchema: ReorganizeOutputSchema
 })
-  .then(loadNotesStep)
-  .then(qualityAssessmentStep)
-  .then(duplicateDetectionStep)
-  .then(executeChangesStep)
-  .then(addSummariesStep)
+  .then(identifyMergeGroupsStep)
+  .then(executeMergesStep)
+  .then(removeNotesStep)
   .commit();
 
-// Helper functions
-
-async function mergeNotesWithAI(group: DuplicateGroup, agent: any): Promise<string> {
-  const prompt = `Merge these duplicate notes into a single, well-organized note. Combine all unique information while removing redundancy.
-
-Primary Note:
-Title: ${group.primaryNote.title}
-Content: ${group.primaryNote.body}
-
-Duplicate Notes:
-${group.duplicates.map((note: Note, idx: number) => `
-Note ${idx + 1}:
-Title: ${note.title}
-Content: ${note.body}
-`).join('')}
-
-Create a merged note that:
-- Keeps the best title
-- Combines all unique information
-- Removes redundant content
-- Maintains logical organization
-- Preserves important details from all notes
-
-Return the complete markdown file content including frontmatter:`;
-
-  const response = await agent.generate([{ role: 'user', content: prompt }]);
-
-  // Ensure proper frontmatter structure
-  const mergedContent = response.text || '';
-  if (!mergedContent.startsWith('---')) {
-    // Add frontmatter if missing
-    const frontMatter = {
-      title: group.primaryNote.title,
-      date: group.primaryNote.date,
-      modified: new Date().toISOString(),
-      tags: [...new Set([...group.primaryNote.tags, ...group.duplicates.flatMap((d: Note) => d.tags)])],
-      source: group.primaryNote.source,
-      merged_from: group.duplicates.map((d: Note) => d.path)
-    };
-
-    return matter.stringify(mergedContent, frontMatter);
-  }
-
-  return mergedContent;
-}
-
-async function needsSummary(note: Note): Promise<boolean> {
-  try {
-    const fileContent = await fs.readFile(note.fullPath, 'utf8');
-    const frontMatter = matter(fileContent);
-
-    return (
-      !frontMatter.data.summary &&
-      note.body.length > 200 &&
-      note.body.trim().length > 0
-    );
-  } catch (error) {
-    console.error(`Failed to check if note needs summary: ${note.path}`, error instanceof Error ? error.message : 'Unknown error');
-    return false;
-  }
-}
-
-async function generateSummary(note: Note, agent: any): Promise<string> {
-  const prompt = `Create a concise 1-2 sentence summary of this note:
-
-Title: ${note.title}
-Content: ${note.body.substring(0, 1000)}
-
-Summary should capture the main topic and key points:`;
-
-  const response = await agent.generate([{ role: 'user', content: prompt }]);
-  return response.text?.trim() || 'AI-generated summary unavailable';
-}
-
-async function addSummaryToNote(note: Note, summary: string): Promise<void> {
-  const fileContent = await fs.readFile(note.fullPath, 'utf8');
-  const { data, content } = matter(fileContent);
-
-  const updatedFrontMatter = {
-    ...data,
-    summary,
-    auto_summary_generated: new Date().toISOString(),
-    word_count: content.split(/\s+/).length,
-    modified: new Date().toISOString()
-  };
-
-  const updatedFileContent = matter.stringify(content, updatedFrontMatter);
-  await fs.writeFile(note.fullPath, updatedFileContent, 'utf8');
-}

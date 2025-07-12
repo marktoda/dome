@@ -1,6 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { listNotes, getNote, writeNote, type NoteMeta, type Note } from "../core/notes.js";
+import { listNotes, getNote, writeNote, removeNote, type NoteMeta, type Note } from "../core/notes.js";
 
 export const listNotesTool = createTool({
   id: "listNotes",
@@ -59,6 +59,22 @@ export const writeNoteTool = createTool({
   }),
   execute: async ({ context }) => {
     return writeNote(context.path, context.content, context.title, context.tags);
+  }
+});
+
+export const removeNoteTool = createTool({
+  id: "removeNote",
+  description: "Remove/delete a note from the vault. Use this to clean up unused, empty, or low-quality notes.",
+  inputSchema: z.object({
+    path: z.string().describe("Note path to remove (e.g., 'inbox/draft.md')")
+  }),
+  outputSchema: z.object({
+    path: z.string(),
+    success: z.boolean(),
+    message: z.string()
+  }),
+  execute: async ({ context }) => {
+    return removeNote(context.path);
   }
 });
 
