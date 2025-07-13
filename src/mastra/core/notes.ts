@@ -8,9 +8,7 @@ import fs from "node:fs/promises";
 import matter from "gray-matter";
 import { join, basename, extname } from "node:path";
 import { writeNoteWithContext } from "./context/notes-integration.js";
-
-/** Default vault path from environment or home directory */
-const vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
+import { config } from './config.js';
 
 /**
  * Metadata for a note without its content
@@ -72,14 +70,14 @@ export interface RemoveResult {
  */
 export async function listNotes(): Promise<NoteMeta[]> {
   try {
-    const paths = await fg("**/*.md", { 
-      cwd: vaultPath, 
+    const paths = await fg("**/*.md", {
+      cwd: config.DOME_VAULT_PATH,
       dot: false,
       ignore: ["**/node_modules/**", "**/.git/**"]
     });
-    
+
     const metas = await Promise.all(paths.map(parseMeta));
-    return metas.sort((a, b) => 
+    return metas.sort((a, b) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
   } catch (error) {
@@ -95,17 +93,17 @@ export async function listNotes(): Promise<NoteMeta[]> {
  */
 export async function getNote(path: string): Promise<Note | null> {
   try {
-    const fullPath = join(vaultPath, path);
+    const fullPath = join(config.DOME_VAULT_PATH, path);
     await fs.access(fullPath);
 
     const raw = await fs.readFile(fullPath, "utf8");
     const { data, content } = matter(raw);
     const meta = await deriveMeta(data, fullPath);
-    
-    return { 
-      ...meta, 
-      body: content, 
-      fullPath 
+
+    return {
+      ...meta,
+      body: content,
+      fullPath
     };
   } catch {
     // File doesn't exist or can't be read
@@ -135,7 +133,7 @@ export async function writeNote(
     tags,
     respectContext: true
   });
-  
+
   // Return standard result (without context-specific fields)
   return {
     path: result.path,
@@ -153,14 +151,14 @@ export async function writeNote(
  */
 export async function removeNote(path: string): Promise<RemoveResult> {
   try {
-    const fullPath = join(vaultPath, path);
-    
+    const fullPath = join(config.DOME_VAULT_PATH, path);
+
     // Verify file exists
     await fs.access(fullPath);
-    
+
     // Remove the file
     await fs.unlink(fullPath);
-    
+
     return {
       path,
       success: true,
@@ -182,8 +180,8 @@ export async function removeNote(path: string): Promise<RemoveResult> {
  * @returns Note metadata
  */
 async function parseMeta(relativePath: string): Promise<NoteMeta> {
-  const fullPath = join(vaultPath, relativePath);
-  
+  const fullPath = join(config.DOME_VAULT_PATH, relativePath);
+
   try {
     const raw = await fs.readFile(fullPath, "utf8");
     const { data } = matter(raw);
@@ -191,11 +189,11 @@ async function parseMeta(relativePath: string): Promise<NoteMeta> {
   } catch (error) {
     // If can't read file, return minimal metadata
     console.error(`Error parsing meta for ${relativePath}:`, error);
-    
-    const stat = await fs.stat(fullPath).catch(() => ({ 
-      birthtime: new Date() 
+
+    const stat = await fs.stat(fullPath).catch(() => ({
+      birthtime: new Date()
     }));
-    
+
     return {
       title: basename(fullPath, extname(fullPath)),
       date: stat.birthtime.toISOString(),
@@ -213,16 +211,16 @@ async function parseMeta(relativePath: string): Promise<NoteMeta> {
  * @returns Complete note metadata
  */
 async function deriveMeta(data: any, fullPath: string): Promise<NoteMeta> {
-  const stat = await fs.stat(fullPath).catch(() => ({ 
-    birthtime: new Date() 
+  const stat = await fs.stat(fullPath).catch(() => ({
+    birthtime: new Date()
   }));
-  
+
   const fileName = basename(fullPath, extname(fullPath));
-  const relativePath = fullPath.replace(`${vaultPath}/`, "");
-  
+  const relativePath = fullPath.replace(`${config.DOME_VAULT_PATH}/`, "");
+
   // Determine title: frontmatter > first heading > filename
   let title = data.title;
-  
+
   if (!title) {
     try {
       const raw = await fs.readFile(fullPath, "utf8");
@@ -234,7 +232,7 @@ async function deriveMeta(data: any, fullPath: string): Promise<NoteMeta> {
       // Ignore read errors
     }
   }
-  
+
   return {
     title: title || fileName,
     date: data.date || stat.birthtime.toISOString(),

@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import { join } from "node:path";
-import { listNotes, type NoteMeta } from "./notes.js";
-import { indexAllNotes, createVectorStore } from "./search-indexer.js";
+import { listNotes } from "./notes.js";
+import { indexNotes } from "./search-indexer.js";
+import { config } from './config.js';
 
 interface IndexingState {
   isRunning: boolean;
@@ -22,28 +23,26 @@ class BackgroundIndexer {
     silentMode: false
   };
 
-  private vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
   private readonly INDEXING_INTERVAL = 30000; // 30 seconds
-  private readonly DEBOUNCE_DELAY = 5000; // 5 seconds
 
   /**
    * Start background indexing during chat session
    */
   async startBackgroundIndexing(): Promise<void> {
     if (this.state.isRunning) return;
-    
+
     this.state.isRunning = true;
     if (this.state.showStatus) {
       this.logStatus('🔍 Background indexing started');
     }
-    
+
     // Initial quick check (non-blocking)
     this.scheduleIndexingIfNeeded().catch(err => {
       if (!this.state.silentMode) {
         console.error('Initial indexing check failed:', err);
       }
     });
-    
+
     // Set up periodic indexing
     this.schedulePeriodicIndexing();
   }
@@ -53,12 +52,12 @@ class BackgroundIndexer {
    */
   async stopBackgroundIndexing(): Promise<void> {
     this.state.isRunning = false;
-    
+
     // Wait for any ongoing indexing to complete
     if (this.state.indexingPromise) {
       await this.state.indexingPromise;
     }
-    
+
     if (!this.state.silentMode) {
       console.log('🔍 Background indexing stopped');
     }
@@ -105,8 +104,8 @@ class BackgroundIndexer {
   private async checkIfIndexingNeeded(): Promise<boolean> {
     try {
       const notes = await listNotes();
-      const dbPath = process.env.LANCE_DB_PATH ?? `${this.vaultPath}/.vector_db`;
-      
+      const dbPath = process.env.LANCE_DB_PATH ?? `${config.DOME_VAULT_PATH}/.vector_db`;
+
       // Check if vector DB exists
       try {
         await fs.access(dbPath);
@@ -116,7 +115,7 @@ class BackgroundIndexer {
 
       // Check if any notes are newer than last index time
       for (const note of notes) {
-        const fullPath = join(this.vaultPath, note.path);
+        const fullPath = join(config.DOME_VAULT_PATH, note.path);
         try {
           const stat = await fs.stat(fullPath);
           if (stat.mtime.getTime() > this.state.lastIndexTime) {
@@ -145,7 +144,7 @@ class BackgroundIndexer {
       if (this.state.showStatus) {
         this.logStatus('🔄 Indexing notes...');
       }
-      await indexAllNotes();
+      await indexNotes();
       this.state.lastIndexTime = Date.now();
       if (this.state.showStatus) {
         this.logStatus('✅ Background indexing completed');
@@ -162,7 +161,7 @@ class BackgroundIndexer {
    */
   private logStatus(message: string): void {
     if (this.state.silentMode) return;
-    
+
     // Clear current line, print status, then restore prompt
     process.stdout.write('\r\x1b[K'); // Clear line
     console.log(message);

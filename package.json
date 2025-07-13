@@ -31,6 +31,7 @@
     "@mastra/libsql": "^0.11.0",
     "@mastra/loggers": "^0.10.3",
     "@mastra/memory": "^0.11.2",
+    "@mastra/pg": "^0.12.2",
     "@mastra/rag": "^1.0.2",
     "@types/react": "^19.1.8",
     "@types/uuid": "^10.0.0",
@@ -43,7 +44,8 @@
     "p-map": "^7.0.3",
     "react": "^19.1.0",
     "uuid": "^11.1.0",
-    "zod": "^3"
+    "zod": "^4",
+    "zod-config": "^1.1.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.13",
@@ -51,3 +53,4 @@
     "typescript": "^5.8.3"
   }
 }
+

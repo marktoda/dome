@@ -9,7 +9,7 @@ import type { DomeContext, ValidationResult, ValidationError, ValidationWarning 
  * Schema for template configuration
  */
 export const templateSchema = z.object({
-  frontmatter: z.record(z.any()).optional(),
+  frontmatter: z.record(z.any(), z.any()).optional(),
   content: z.string().optional(),
 }).optional();
 
@@ -53,7 +53,7 @@ export function zodErrorsToValidationResult(zodError: z.ZodError): ValidationRes
 
   for (const issue of zodError.issues) {
     const path = issue.path.join('.');
-    
+
     errors.push({
       type: 'other',
       message: `${path ? `${path}: ` : ''}${issue.message}`,
@@ -76,13 +76,13 @@ export function validateFileNamingPattern(pattern: string): boolean {
   const validPlaceholders = ['{title}', '{date}', '{time}', '{uuid}'];
   const placeholderRegex = /\{[^}]+\}/g;
   const foundPlaceholders = pattern.match(placeholderRegex) || [];
-  
+
   for (const placeholder of foundPlaceholders) {
     if (!validPlaceholders.includes(placeholder)) {
       return false;
     }
   }
-  
+
   // Check for date format patterns
   const datePatterns = ['YYYY', 'MM', 'DD', 'HH', 'mm', 'ss'];
   for (const datePattern of datePatterns) {
@@ -94,7 +94,7 @@ export function validateFileNamingPattern(pattern: string): boolean {
       }
     }
   }
-  
+
   return true;
 }
 
@@ -103,14 +103,14 @@ export function validateFileNamingPattern(pattern: string): boolean {
  */
 export function parseContextYaml(yamlContent: any): { success: true; data: DomeContext } | { success: false; error: ValidationResult } {
   const validationResult = validateContext(yamlContent);
-  
+
   if (!validationResult.success) {
     return {
       success: false,
       error: zodErrorsToValidationResult(validationResult.errors),
     };
   }
-  
+
   // Additional validation for file naming pattern
   if (validationResult.data.rules?.fileNaming) {
     if (!validateFileNamingPattern(validationResult.data.rules.fileNaming)) {
@@ -128,6 +128,6 @@ export function parseContextYaml(yamlContent: any): { success: true; data: DomeC
       };
     }
   }
-  
+
   return { success: true, data: validationResult.data };
 }
