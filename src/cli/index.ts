@@ -37,7 +37,7 @@ program
   .option('-r, --recent', 'show only recent notes')
   .option('--tags <tags>', 'filter by tags')
   .option('--json', 'output as JSON')
-  .action(handleList);
+  .action(async () => await handleList());
 
 // Index command
 program.addCommand(createIndexCommand());
@@ -57,5 +57,6 @@ if (process.argv.length <= 2) {
   // No arguments provided, start chat mode
   handleChat();
 } else {
-  program.parse();
+  await program.parseAsync();
+  process.exit(0);
 }

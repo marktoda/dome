@@ -2,6 +2,7 @@ import { AINoteFinder } from '../actions/note-finder.js';
 import { DefaultEditorService } from '../services/editor-service.js';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
+import path from 'node:path';
 
 export async function handleFind(topic: string): Promise<void> {
   try {
@@ -34,39 +35,48 @@ export async function handleFind(topic: string): Promise<void> {
       return;
     }
     
-    // Display results with relevance scores
-    console.log(`\n📚 Found ${results.totalFound} matching notes:\n`);
+    // Remove duplicates based on file path
+    const uniqueResults = results.results.filter((result, index, self) => 
+      index === self.findIndex((r) => r.path === result.path)
+    );
     
-    // Prepare choices for inquirer
-    const choices: Array<{ name: string; value: string | null; short: string }> = results.results.map((result, index) => {
-      const relevanceBar = '█'.repeat(Math.round(result.relevanceScore * 10));
-      const emptyBar = '░'.repeat(10 - Math.round(result.relevanceScore * 10));
+    // Display results with relevance scores
+    console.log(`\n📚 Found ${uniqueResults.length} matching notes:\n`);
+    
+    // Prepare choices for inquirer with cleaner format
+    const choices: any[] = uniqueResults.map((result, index) => {
+      const num = (index + 1).toString().padStart(2, ' ');
+      const score = Math.round(result.relevanceScore * 100);
+      const fileName = path.basename(result.path);
+      const dirPath = path.dirname(result.path);
+      
+      // Color based on relevance
       const scoreColor = result.relevanceScore >= 0.8 ? chalk.green : 
                         result.relevanceScore >= 0.6 ? chalk.yellow : 
                         chalk.gray;
       
-      let name = `${index + 1}. ${result.title}`;
-      name += `\n   ${scoreColor(relevanceBar + emptyBar)} ${scoreColor((result.relevanceScore * 100).toFixed(0) + '%')}`;
-      name += chalk.dim(`\n   ${result.path}`);
-      
-      if (result.excerpt) {
-        name += chalk.dim(`\n   "${result.excerpt.substring(0, 50)}..."`);
-      }
-      
-      if (result.reason) {
-        name += chalk.italic(`\n   ${result.reason}`);
-      }
+      // Create a clean, single-line format
+      let name = chalk.bold(`${num}. ${result.path}`);
+      name += ` ${scoreColor(`[${score}%]`)}`;
       
       return {
         name,
         value: result.path,
-        short: result.title
+        short: fileName
       };
+    });
+    
+    // Add a separator before cancel option
+    choices.push({
+      name: chalk.dim('─'.repeat(60)),
+      value: 'separator',
+      short: '',
+      disabled: true
     });
     
     // Add cancel option
     choices.push({
-      name: chalk.red('\n❌ Cancel'),
+      name: chalk.red('❌ Cancel'),
       value: null,
       short: 'Cancel'
     });
@@ -78,7 +88,7 @@ export async function handleFind(topic: string): Promise<void> {
         name: 'selectedPath',
         message: 'Select a note to open:',
         choices,
-        pageSize: 10
+        pageSize: 20
       }
     ]);
     
