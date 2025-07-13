@@ -6,7 +6,8 @@
     "dome": "./bin/dome"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:context",
+    "test:context": "tsc && node dist/tests/run-tests.js",
     "dev": "mastra dev",
     "build": "mastra build",
     "start": "mastra start",

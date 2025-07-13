@@ -1,0 +1,36 @@
+---
+name: "Reading Notes"
+description: "Notes from books, articles, papers, and other reading materials"
+template:
+  frontmatter:
+    source_type: "book"
+    author: ""
+    url: ""
+    date_read: ""
+    rating: ""
+    key_takeaways: []
+  content: |
+    # {title}
+    Author: {author}
+    Type: {source_type}
+    Date Read: {date_read}
+
+    ## Summary
+
+    ## Key Takeaways
+
+    ## Notable Quotes
+
+    ## Personal Reflections
+
+    ## Action Items
+rules:
+  fileNaming: "{title}"
+  requiredFields: ["author", "source_type"]
+  autoTags: ["reading"]
+---
+When processing reading notes:
+- Extract and synthesize key concepts
+- Connect ideas to other readings
+- Identify actionable insights
+- Help build a personal knowledge base

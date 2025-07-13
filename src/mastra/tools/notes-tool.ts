@@ -78,5 +78,6 @@ export const removeNoteTool = createTool({
   }
 });
 
-// Export search tool
+// Export search tools
 export { searchNotesTool } from "./search-notes-tool.js";
+export { contextSearchTool } from "./context-search-tool.js";

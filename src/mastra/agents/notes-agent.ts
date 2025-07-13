@@ -2,7 +2,7 @@ import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
-import { listNotesTool, getNoteTool, writeNoteTool, removeNoteTool, searchNotesTool } from '../tools/notes-tool.js';
+import { listNotesTool, getNoteTool, writeNoteTool, removeNoteTool, searchNotesTool, contextSearchTool } from '../tools/notes-tool.js';
 
 export const notesAgent = new Agent({
   name: 'Notes Agent',
@@ -40,7 +40,7 @@ export const notesAgent = new Agent({
       Always cite note paths in your answers and do not hallucinate content.
 `,
   model: openai('gpt-4o-mini'),
-  tools: { listNotesTool, getNoteTool, writeNoteTool, removeNoteTool, searchNotesTool },
+  tools: { listNotesTool, getNoteTool, writeNoteTool, removeNoteTool, searchNotesTool, contextSearchTool },
   memory: new Memory({
     storage: new LibSQLStore({
       url: 'file:../mastra.db',

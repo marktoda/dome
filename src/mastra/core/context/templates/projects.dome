@@ -1,0 +1,35 @@
+---
+name: "Project Notes"
+description: "Project planning, progress tracking, and documentation"
+template:
+  frontmatter:
+    status: "planning"
+    start_date: ""
+    due_date: ""
+    stakeholders: []
+    goals: []
+    risks: []
+  content: |
+    # Project: {title}
+
+    ## Overview
+
+    ## Goals & Objectives
+
+    ## Timeline
+
+    ## Tasks
+
+    ## Progress Log
+
+    ## Notes & Resources
+rules:
+  fileNaming: "{title}"
+  requiredFields: ["status", "goals"]
+  autoTags: ["project"]
+---
+When managing project notes:
+- Track progress and milestones
+- Identify blockers and risks
+- Keep stakeholders and responsibilities clear
+- Link related notes and resources

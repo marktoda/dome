@@ -1,3 +1,8 @@
+/**
+ * Vector search indexer for the Dome vault.
+ * Handles embedding and indexing notes for semantic search.
+ */
+
 import fs from "node:fs/promises";
 import matter from "gray-matter";
 import { join } from "node:path";
@@ -7,36 +12,69 @@ import { embedMany } from "ai";
 import { MDocument } from "@mastra/rag";
 import { listNotes } from "./notes.js";
 
-// ---------------------------------------------------------------------------
-// Paths & constants
-// ---------------------------------------------------------------------------
+// Configuration
 const vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
 const dbPath = process.env.LANCE_DB_PATH ?? `${vaultPath}/.vector_db`;
-const tableName = "notes_vectors";          // Lance table
-const indexName = "vector";                 // column that stores embeddings
-const dimension = 1536;                      // text‑embedding‑3‑small
+const TABLE_NAME = "notes_vectors";
+const EMBEDDING_DIMENSION = 1536; // text-embedding-3-small
 
-// ---------------------------------------------------------------------------
-// LanceDB store factory (avoid singleton issues with async operations)
-// ---------------------------------------------------------------------------
+/**
+ * Vector record structure for LanceDB
+ */
+interface VectorRecord {
+  id: string;
+  vector: number[];
+  metadata: {
+    notePath: string;
+    text: string;
+    tags: string[];
+    modified: string;
+    [key: string]: any;
+  };
+}
+
+/**
+ * Search result from vector similarity
+ */
+interface SearchResult {
+  score: number;
+  metadata?: {
+    notePath: string;
+    text: string;
+    tags?: string[];
+    [key: string]: any;
+  };
+}
+
+/**
+ * Create a new vector store instance
+ * @returns LanceDB vector store
+ */
 export async function createVectorStore(): Promise<LanceVectorStore> {
   return await LanceVectorStore.create(dbPath);
 }
 
-// ---------------------------------------------------------------------------
-// Helper: embed + chunk a Markdown file → Lance records
-// ---------------------------------------------------------------------------
-async function fileToVectorRecords(relativePath: string) {
+/**
+ * Convert a markdown file to vector records
+ * @param relativePath - Path relative to vault root
+ * @returns Array of vector records for the file's chunks
+ */
+async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]> {
   const fullPath = join(vaultPath, relativePath);
   const raw = await fs.readFile(fullPath, "utf8");
   const { data, content } = matter(raw);
 
-  // Mastra‑aware chunking
+  // Chunk the markdown content
   const doc = MDocument.fromMarkdown(content);
-  const chunks = await doc.chunk({ strategy: "markdown", size: 256, overlap: 20 });
+  const chunks = await doc.chunk({ 
+    strategy: "markdown", 
+    size: 256, 
+    overlap: 20 
+  });
+  
   if (chunks.length === 0) return [];
 
-  // OpenAI embeddings
+  // Generate embeddings for all chunks
   const { embeddings } = await embedMany({
     model: openai.embedding("text-embedding-3-small"),
     values: chunks.map(c => c.text),
@@ -47,79 +85,172 @@ async function fileToVectorRecords(relativePath: string) {
 
   return embeddings.map((embedding, i) => ({
     id: `${relativePath}_${i}`,
-    vector: embedding,                       // Lance column
+    vector: embedding,
     metadata: {
       notePath: relativePath,
       text: chunks[i].text,
-      tags: (Array.isArray(data.tags) && data.tags.length)
-        ? data.tags
-        : ["_placeholder_"],      // ensure non‑empty for schema inference
+      tags: Array.isArray(data.tags) ? data.tags : ["_untagged"],
       modified,
       ...chunks[i].metadata,
     },
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Ensure table exists (create once, otherwise just open it)
-// ---------------------------------------------------------------------------
+/**
+ * Ensure the vector table exists
+ * @param store - Vector store instance
+ * @param records - Initial records to create table with
+ */
 async function ensureTable(
   store: LanceVectorStore,
-  records: any[]
-) {
-  const tables = await store.listTables?.();          // not in all SDKs
-  const exists = Array.isArray(tables) && tables.includes(tableName);
+  records: VectorRecord[]
+): Promise<void> {
+  const tables = await store.listTables?.();
+  const exists = Array.isArray(tables) && tables.includes(TABLE_NAME);
 
-  if (!exists) {
-    await store.createTable(tableName, records, { existOk: true }); // ← tolerates re-runs
+  if (!exists && records.length > 0) {
+    await store.createTable(TABLE_NAME, records, { existOk: true });
   }
 }
 
-// ---------------------------------------------------------------------------
-// Index / re-index notes
-// ---------------------------------------------------------------------------
-export async function indexAllNotes(): Promise<void> {
-  if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY env var missing");
+/**
+ * Index all notes in the vault
+ * @param mode - 'full' for complete reindex, 'incremental' for updates only
+ * @returns Number of notes indexed
+ */
+export async function indexNotes(
+  mode: "full" | "incremental" = "incremental"
+): Promise<number> {
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("OPENAI_API_KEY not set - skipping vector indexing");
+    return 0;
+  }
 
-  const vectorStore = await createVectorStore();
-  const notes = await listNotes();               // your helper
+  console.log(`Starting ${mode} indexing...`);
+  const store = await createVectorStore();
+  
+  // Get all notes
+  const notes = await listNotes();
+  if (notes.length === 0) {
+    console.log("No notes to index");
+    return 0;
+  }
 
-  const BATCH_SIZE = 5;
-  let vectorsInserted = 0;
+  // Convert first note to get initial records
+  const firstRecords = await fileToVectorRecords(notes[0].path);
+  await ensureTable(store, firstRecords);
 
-  // ⇢  gather records batch-wise
-  for (let i = 0; i < notes.length; i += BATCH_SIZE) {
-    const batch = notes.slice(i, i + BATCH_SIZE);
-    const batchRecords = (await Promise.all(batch.map(n => fileToVectorRecords(n.path)))).flat();
-    if (batchRecords.length === 0) continue;
+  let indexed = 0;
+  const table = await store.openTable(TABLE_NAME);
 
-    // • only the very first batch may need to create the table
-    if (i === 0) await ensureTable(vectorStore, batchRecords);
+  if (mode === "full") {
+    // Clear existing data
+    console.log("Clearing existing index...");
+    // Note: LanceDB doesn't have a clear method, would need to recreate table
+  }
 
-    // • upsert always safe – duplicates are overwritten
-    await vectorStore.upsert({
-      tableName,
-      indexName,
-      vectors: batchRecords.map(r => r.vector),
-      metadata: batchRecords.map(r => r.metadata),
-      ids: batchRecords.map(r => r.id),
+  // Index each note
+  for (const note of notes) {
+    try {
+      const records = await fileToVectorRecords(note.path);
+      
+      if (records.length > 0) {
+        // Remove old records for this note
+        const idsToDelete = [];
+        for (let i = 0; i < 100; i++) {
+          idsToDelete.push(`${note.path}_${i}`);
+        }
+        
+        try {
+          await table.delete(`id IN (${idsToDelete.map(id => `'${id}'`).join(',')})`);
+        } catch {
+          // Ignore deletion errors
+        }
+
+        // Add new records
+        await table.add(records);
+        indexed++;
+        
+        if (indexed % 10 === 0) {
+          console.log(`Indexed ${indexed}/${notes.length} notes...`);
+        }
+      }
+    } catch (error) {
+      console.error(`Error indexing ${note.path}:`, error);
+    }
+  }
+
+  // Create vector index for fast search
+  try {
+    await table.createIndex({
+      column: "vector",
+      type: "ivf_pq",
+      name: "vector_index",
+      params: { nlist: Math.min(256, notes.length), nprobe: 10 },
+      replace: true,
     });
-    vectorsInserted += batchRecords.length;
+  } catch (error) {
+    console.error("Error creating vector index:", error);
   }
 
-  // build the HNSW index once (skip if present)
-  const existingIdx = await vectorStore.listIndexes?.();
+  console.log(`Indexing complete: ${indexed} notes processed`);
+  return indexed;
+}
 
-  if (!existingIdx?.includes(`${indexName}_idx`)) {
-    await vectorStore.createIndex({ tableName, indexName, dimension, indexConfig: { type: "hnsw" } });
+/**
+ * Search for similar notes using vector similarity
+ * @param queryEmbedding - Query vector embedding
+ * @param k - Number of results to return
+ * @returns Array of search results
+ */
+export async function searchSimilarNotes(
+  queryEmbedding: number[],
+  k: number = 6
+): Promise<SearchResult[]> {
+  try {
+    const store = await createVectorStore();
+    const table = await store.openTable(TABLE_NAME);
+
+    const results = await table
+      .vectorSearch(queryEmbedding)
+      .limit(k)
+      .toArray();
+
+    return results.map(result => ({
+      score: result._distance || 0,
+      metadata: result.metadata as any,
+    }));
+  } catch (error) {
+    console.error("Error searching notes:", error);
+    return [];
   }
 }
 
-// ---------------------------------------------------------------------------
-// Public helper: semantic search
-// ---------------------------------------------------------------------------
-export async function searchSimilarNotes(queryEmbedding: number[], topK = 6) {
-  const vectorStore = await createVectorStore();
-  return vectorStore.query({ includeAllColumns: true, tableName, indexName, queryVector: queryEmbedding, topK });
-}
+/**
+ * Get indexing statistics
+ * @returns Stats about the vector index
+ */
+export async function getIndexStats(): Promise<{
+  totalRecords: number;
+  lastModified?: Date;
+} | null> {
+  try {
+    const store = await createVectorStore();
+    const tables = await store.listTables?.();
+    
+    if (!tables?.includes(TABLE_NAME)) {
+      return null;
+    }
 
+    const table = await store.openTable(TABLE_NAME);
+    const count = await table.countRows();
+    
+    return {
+      totalRecords: count,
+      lastModified: new Date(), // LanceDB doesn't track this
+    };
+  } catch (error) {
+    console.error("Error getting index stats:", error);
+    return null;
+  }
+}

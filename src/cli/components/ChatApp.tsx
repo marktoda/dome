@@ -7,6 +7,7 @@ import { HelpPanel } from './HelpPanel.js';
 import { mastra } from '../../mastra/index.js';
 import { backgroundIndexer } from '../../mastra/core/background-indexer.js';
 import { listNotes } from '../../mastra/core/notes.js';
+import { getAgentForContext } from '../../mastra/agents/agent-factory.js';
 
 export interface Message {
   id: string;
@@ -129,11 +130,9 @@ export const ChatApp: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      const agent = mastra.getAgent('notesAgent');
-      if (!agent) {
-        throw new Error('Notes agent not found');
-      }
-
+      // Get context-aware agent based on current working directory
+      const agent = await getAgentForContext(process.cwd());
+      
       const response = await agent.generate([{ role: 'user', content: trimmedInput }]);
       
       addMessage({
