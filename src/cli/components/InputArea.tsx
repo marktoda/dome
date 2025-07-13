@@ -6,7 +6,7 @@ interface InputAreaProps {
   isDisabled?: boolean;
 }
 
-export const InputArea: React.FC<InputAreaProps> = ({ onSubmit, isDisabled = false }) => {
+export const InputArea = React.memo<InputAreaProps>(({ onSubmit, isDisabled = false }) => {
   const [input, setInput] = useState('');
 
   const handleInput = useCallback((inputChar: string, key: any) => {
@@ -38,12 +38,14 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSubmit, isDisabled = fal
   useInput(handleInput);
 
   return (
-    <Box paddingX={1} paddingY={1}>
+    <Box paddingX={1} paddingY={1} flexDirection="row">
       <Text color="green">{'> '}</Text>
-      <Text>
-        {input}
-        {!isDisabled && <Text backgroundColor="green"> </Text>}
-      </Text>
+      <Box flexGrow={1}>
+        <Text>
+          {input}
+          {!isDisabled && <Text backgroundColor="green"> </Text>}
+        </Text>
+      </Box>
     </Box>
   );
-};
+});

@@ -1,18 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import { StatusBar } from './StatusBar.js';
 import { ChatHistory } from './ChatHistory.js';
 import { InputArea } from './InputArea.js';
 import { HelpPanel } from './HelpPanel.js';
+import { BottomStatusBar } from './BottomStatusBar.js';
+import { ActivityPanel, Activity } from './ActivityPanel.js';
 import { mastra } from '../../mastra/index.js';
 import { backgroundIndexer } from '../../mastra/core/search.js';
 import { listNotes } from '../../mastra/core/notes.js';
+import { setActivityTracker, analyzeAgentResponse } from '../utils/activityTracker.js';
 
 export interface Message {
   id: string;
   type: 'user' | 'assistant' | 'system' | 'error';
   content: string;
   timestamp: Date;
+  isCollapsed?: boolean;
 }
 
 export interface IndexingStatus {
@@ -29,22 +33,44 @@ export const ChatApp: React.FC = () => {
     lastIndexTime: 0
   });
   const [showHelp, setShowHelp] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [notesCount, setNotesCount] = useState<number>(0);
   const [vaultPath, setVaultPath] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [timestampMode, setTimestampMode] = useState<'off' | 'relative' | 'absolute'>('off');
+  const [selectedMessageIndex, setSelectedMessageIndex] = useState<number>(-1);
 
   const { exit } = useApp();
+  const { stdout } = useStdout();
+
+  const addActivity = useCallback((type: 'tool' | 'document', name: string) => {
+    const newActivity: Activity = {
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      type,
+      name,
+      timestamp: new Date()
+    };
+    setActivities(prev => {
+      // Keep only last 100 activities to prevent memory issues
+      const updated = [...prev, newActivity];
+      return updated.length > 100 ? updated.slice(-100) : updated;
+    });
+  }, []);
 
   // Initialize the app
   useEffect(() => {
     const initialize = async () => {
       const vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
       setVaultPath(vaultPath);
+      
+      // Set up the global activity tracker
+      setActivityTracker({ addActivity });
 
       const welcomeMessage: Message = {
         id: 'welcome',
         type: 'system',
-        content: '🏠 Welcome to Dome AI Assistant! Type your question or use commands like "help", "list", "status".',
+        content: '🏠 Welcome to Dome AI Assistant! Type your question or use commands like /help, /list, /status.',
         timestamp: new Date()
       };
       setMessages([welcomeMessage]);
@@ -75,7 +101,7 @@ export const ChatApp: React.FC = () => {
     return () => {
       backgroundIndexer.stopBackgroundIndexing().catch(() => {/* Silent cleanup */ });
     };
-  }, []);
+  }, [addActivity]);
 
   // Update indexing status with optimized frequency
   useEffect(() => {
@@ -85,7 +111,7 @@ export const ChatApp: React.FC = () => {
         // Only update if status actually changed to prevent unnecessary renders
         if (prev.isRunning !== status.isRunning ||
           prev.isIndexing !== status.isIndexing ||
-          Math.abs(prev.lastIndexTime - status.lastIndexTime) > 1000) { // Only update time if >1s difference
+          Math.abs(prev.lastIndexTime - status.lastIndexTime) > 60000) { // Only update time if >1min difference
           return status;
         }
         return prev;
@@ -93,7 +119,7 @@ export const ChatApp: React.FC = () => {
     };
 
     updateStatus();
-    const interval = setInterval(updateStatus, 5000); // Further reduced frequency for less flicker
+    const interval = setInterval(updateStatus, 10000); // Reduce frequency even more for less flicker
 
     return () => clearInterval(interval);
   }, []);
@@ -105,6 +131,47 @@ export const ChatApp: React.FC = () => {
     }
     if (key.ctrl && input === 'h') {
       setShowHelp(!showHelp);
+    }
+    if (key.ctrl && input === 'a') {
+      setShowActivity(!showActivity);
+    }
+    
+    // Navigation for message selection
+    if (key.upArrow) {
+      setSelectedMessageIndex(prev => {
+        const assistantMessages = messages.filter(m => m.type === 'assistant');
+        if (assistantMessages.length === 0) return -1;
+        if (prev === -1) return messages.indexOf(assistantMessages[assistantMessages.length - 1]);
+        const currentIdx = messages.indexOf(messages[prev]);
+        for (let i = currentIdx - 1; i >= 0; i--) {
+          if (messages[i].type === 'assistant') return i;
+        }
+        return prev;
+      });
+    }
+    
+    if (key.downArrow) {
+      setSelectedMessageIndex(prev => {
+        if (prev === -1) return -1;
+        const assistantMessages = messages.filter(m => m.type === 'assistant');
+        if (assistantMessages.length === 0) return -1;
+        for (let i = prev + 1; i < messages.length; i++) {
+          if (messages[i].type === 'assistant') return i;
+        }
+        return prev;
+      });
+    }
+    
+    // Toggle collapse with 's'
+    if (input === 's' && selectedMessageIndex !== -1) {
+      const message = messages[selectedMessageIndex];
+      if (message && message.type === 'assistant' && message.content.length > 200) {
+        setMessages(prev => prev.map((msg, idx) => 
+          idx === selectedMessageIndex 
+            ? { ...msg, isCollapsed: !msg.isCollapsed }
+            : msg
+        ));
+      }
     }
   });
 
@@ -132,11 +199,28 @@ export const ChatApp: React.FC = () => {
       // Get context-aware agent based on current working directory
       const agent = await mastra.getAgent("notesAgent");
 
+      // Track that we're using the notes agent
+      addActivity('tool', 'Notes Agent');
+
       const response = await agent.generate([{ role: 'user', content: trimmedInput }]);
+
+      // Analyze the response to detect tool usage and document references
+      const responseText = response.text || '';
+      const { tools, documents } = analyzeAgentResponse(responseText);
+      
+      // Track detected tool usage
+      for (const tool of tools) {
+        addActivity('tool', tool);
+      }
+      
+      // Track detected document references
+      for (const doc of documents) {
+        addActivity('document', doc);
+      }
 
       addMessage({
         type: 'assistant',
-        content: response.text || 'I apologize, but I couldn\'t process your request. Please try rephrasing your question.'
+        content: responseText || 'I apologize, but I couldn\'t process your request. Please try rephrasing your question.'
       });
     } catch (error) {
       addMessage({
@@ -146,10 +230,24 @@ export const ChatApp: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  }, [addMessage]);
+  }, [addMessage, addActivity]);
 
   const handleBuiltinCommand = useCallback(async (input: string): Promise<boolean> => {
-    const [command, ...args] = input.split(' ');
+    // Check if input starts with slash for commands
+    if (!input.startsWith('/')) {
+      // Check for common command typos without slash
+      const commandWords = ['help', 'exit', 'quit', 'q', 'clear', 'list', 'status', 'index', 'quiet', 'verbose'];
+      const firstWord = input.split(' ')[0].toLowerCase();
+      if (commandWords.includes(firstWord)) {
+        addMessage({
+          type: 'system',
+          content: `💡 Did you mean /${firstWord}? Commands now require a slash prefix to prevent accidental triggers.`
+        });
+      }
+      return false;
+    }
+
+    const [command, ...args] = input.slice(1).split(' '); // Remove the slash
 
     switch (command.toLowerCase()) {
       case 'help':
@@ -171,7 +269,7 @@ export const ChatApp: React.FC = () => {
         setMessages([]);
         addMessage({
           type: 'system',
-          content: '🏠 Welcome back to Dome AI Assistant!'
+          content: '🏠 Welcome back to Dome AI Assistant! Use /help for available commands.'
         });
         return true;
 
@@ -201,12 +299,42 @@ export const ChatApp: React.FC = () => {
         return true;
 
       default:
+        // Check for :timestamps command
+        if (input.startsWith(':timestamps')) {
+          const mode = args[0];
+          if (mode === 'on' || mode === 'relative') {
+            setTimestampMode('relative');
+            addMessage({
+              type: 'system',
+              content: 'Timestamps enabled (relative format)'
+            });
+          } else if (mode === 'absolute') {
+            setTimestampMode('absolute');
+            addMessage({
+              type: 'system',
+              content: 'Timestamps enabled (absolute format)'
+            });
+          } else if (mode === 'off') {
+            setTimestampMode('off');
+            addMessage({
+              type: 'system',
+              content: 'Timestamps disabled'
+            });
+          } else {
+            addMessage({
+              type: 'system',
+              content: 'Usage: :timestamps [on|off|relative|absolute]'
+            });
+          }
+          return true;
+        }
         return false;
     }
   }, [addMessage, showHelp, exit]);
 
   const handleListCommand = useCallback(async () => {
     try {
+      addActivity('tool', 'listNotes');
       const notes = await listNotes();
 
       if (notes.length === 0) {
@@ -243,7 +371,7 @@ export const ChatApp: React.FC = () => {
         content: `Failed to list notes: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
-  }, [addMessage]);
+  }, [addMessage, addActivity]);
 
   const handleStatusCommand = useCallback(() => {
     const status = backgroundIndexer.getStatus();
@@ -286,13 +414,17 @@ export const ChatApp: React.FC = () => {
       <StatusBar
         vaultPath={vaultPath}
         notesCount={notesCount}
-        indexingStatus={indexingStatus}
       />
 
-      <Box flexGrow={1} flexDirection="row" minHeight={0}>
-        <Box flexGrow={1} flexDirection="column" minHeight={0}>
-          <Box flexGrow={1} minHeight={0}>
-            <ChatHistory messages={messages} isProcessing={isProcessing} />
+      <Box flexDirection="row" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1}>
+          <Box flexGrow={1}>
+            <ChatHistory 
+              messages={messages} 
+              isProcessing={isProcessing} 
+              timestampMode={timestampMode}
+              selectedMessageIndex={selectedMessageIndex}
+            />
           </Box>
           <InputArea onSubmit={handleUserInput} isDisabled={isProcessing} />
         </Box>
@@ -302,7 +434,17 @@ export const ChatApp: React.FC = () => {
             <HelpPanel />
           </Box>
         )}
+        
+        {showActivity && (
+          <Box width={35} borderStyle="single" borderColor="magenta" paddingX={1}>
+            <ActivityPanel activities={activities} />
+          </Box>
+        )}
       </Box>
+      
+      {indexingStatus.isRunning && (
+        <BottomStatusBar indexingStatus={indexingStatus} />
+      )}
     </Box>
   );
 };
