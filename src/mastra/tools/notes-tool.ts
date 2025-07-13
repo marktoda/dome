@@ -1,20 +1,29 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { listNotes, getNote, writeNote, removeNote, type NoteMeta, type Note } from "../core/notes.js";
+import { listNotes, getNote, writeNote, removeNote } from "../core/notes.js";
+import { ContextManager } from "../core/context/manager.js";
 
 export const listNotesTool = createTool({
   id: "listNotes",
   description: "List all note metadata from the local vault",
   inputSchema: z.object({}),
-  outputSchema: z.array(z.object({
-    title: z.string(),
-    date: z.string(),
-    tags: z.array(z.string()),
-    path: z.string(),
-    source: z.enum(["cli", "external"])
-  })),
+  outputSchema: z.object({
+    notes: z.array(z.object({
+      title: z.string(),
+      date: z.string(),
+      tags: z.array(z.string()),
+      path: z.string(),
+      source: z.enum(["cli", "external"])
+    })),
+    context: z.string().nullable(),
+  }),
   execute: async () => {
-    return listNotes();
+    const manager = new ContextManager();
+    const notes = await listNotes();
+    return {
+      notes,
+      context: await manager.getIndex(),
+    }
   }
 });
 
@@ -80,4 +89,3 @@ export const removeNoteTool = createTool({
 
 // Export search tools
 export { searchNotesTool } from "./search-notes-tool.js";
-export { contextSearchTool } from "./context-search-tool.js";

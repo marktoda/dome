@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { indexNotes } from "../../mastra/core/search-indexer.js";
+import { indexNotes } from "../../mastra/core/search.js";
 
 export function createIndexCommand(): Command {
   const indexCommand = new Command("index");

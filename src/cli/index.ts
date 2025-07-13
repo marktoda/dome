@@ -6,8 +6,6 @@ import { handleList } from './commands/list.js';
 import { handleChat } from './commands/chat.js';
 import { createIndexCommand } from './commands/indexNotes.js';
 import { createReorganizeCommand } from './commands/reorganize.js';
-import { createContextCommand } from './commands/context.js';
-import { handleSetup } from './commands/setup.js';
 
 const program = new Command();
 
@@ -37,15 +35,6 @@ program.addCommand(createIndexCommand());
 
 // Reorganize command
 program.addCommand(createReorganizeCommand());
-
-// Context command
-program.addCommand(createContextCommand());
-
-// Setup command
-program
-  .command('setup')
-  .description('interactive wizard to set up context configurations for your vault')
-  .action(handleSetup);
 
 // Default action - start interactive chat
 program

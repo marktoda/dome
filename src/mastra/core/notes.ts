@@ -3,11 +3,11 @@
  * Handles reading, writing, listing, and removing markdown notes.
  */
 
+import { dirname } from "node:path";
 import fg from "fast-glob";
 import fs from "node:fs/promises";
 import matter from "gray-matter";
 import { join, basename, extname } from "node:path";
-import { writeNoteWithContext } from "./context/notes-integration.js";
 import { config } from './config.js';
 
 /**
@@ -125,23 +125,67 @@ export async function writeNote(
   title?: string,
   tags: string[] = []
 ): Promise<WriteResult> {
-  // Delegate to context-aware writing system
-  const result = await writeNoteWithContext({
-    path,
-    content,
-    title,
-    tags,
-    respectContext: true
-  });
+  try {
+    const fullPath = join(config.DOME_VAULT_PATH, path);
 
-  // Return standard result (without context-specific fields)
-  return {
-    path: result.path,
-    title: result.title,
-    action: result.action,
-    contentLength: result.contentLength,
-    fullPath: result.fullPath
-  };
+    // Ensure directory exists
+    await fs.mkdir(dirname(fullPath), { recursive: true });
+
+    // Check if note already exists
+    const existingNote = await getNote(path);
+
+    if (existingNote) {
+      // Append to existing note
+      const { data: frontMatter, content: currentContent } = matter(await fs.readFile(fullPath, 'utf8'));
+
+      // Append new content with proper spacing
+      const separator = currentContent.trim() ? '\n\n' : '';
+      const updatedContent = currentContent + separator + content;
+
+      // Update modified timestamp
+      const updatedFrontMatter = {
+        ...frontMatter,
+        modified: new Date().toISOString()
+      };
+
+      // Write updated file
+      const updatedFileContent = matter.stringify(updatedContent, updatedFrontMatter);
+      await fs.writeFile(fullPath, updatedFileContent, 'utf8');
+
+      return {
+        path,
+        title: existingNote.title,
+        action: "appended",
+        contentLength: content.length,
+        fullPath
+      };
+    } else {
+      // Create new note
+      const now = new Date();
+      const noteTitle = title || basename(path, extname(path));
+
+      const frontMatter = {
+        title: noteTitle,
+        date: now.toISOString(),
+        tags,
+        source: "cli"
+      };
+
+      const fileContent = matter.stringify(content, frontMatter);
+      await fs.writeFile(fullPath, fileContent, 'utf8');
+
+      return {
+        path,
+        title: noteTitle,
+        action: "created",
+        contentLength: content.length,
+        fullPath
+      };
+    }
+  } catch (error) {
+    console.error("Error writing note:", error);
+    throw new Error(`Failed to write note: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 /**

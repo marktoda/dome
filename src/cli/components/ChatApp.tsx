@@ -5,9 +5,8 @@ import { ChatHistory } from './ChatHistory.js';
 import { InputArea } from './InputArea.js';
 import { HelpPanel } from './HelpPanel.js';
 import { mastra } from '../../mastra/index.js';
-import { backgroundIndexer } from '../../mastra/core/background-indexer.js';
+import { backgroundIndexer } from '../../mastra/core/search.js';
 import { listNotes } from '../../mastra/core/notes.js';
-import { getAgentForContext } from '../../mastra/agents/agent-factory.js';
 
 export interface Message {
   id: string;
@@ -33,7 +32,7 @@ export const ChatApp: React.FC = () => {
   const [notesCount, setNotesCount] = useState<number>(0);
   const [vaultPath, setVaultPath] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
-  
+
   const { exit } = useApp();
 
   // Initialize the app
@@ -74,7 +73,7 @@ export const ChatApp: React.FC = () => {
     initialize();
 
     return () => {
-      backgroundIndexer.stopBackgroundIndexing().catch(() => {/* Silent cleanup */});
+      backgroundIndexer.stopBackgroundIndexing().catch(() => {/* Silent cleanup */ });
     };
   }, []);
 
@@ -84,9 +83,9 @@ export const ChatApp: React.FC = () => {
       const status = backgroundIndexer.getStatus();
       setIndexingStatus(prev => {
         // Only update if status actually changed to prevent unnecessary renders
-        if (prev.isRunning !== status.isRunning || 
-            prev.isIndexing !== status.isIndexing || 
-            Math.abs(prev.lastIndexTime - status.lastIndexTime) > 1000) { // Only update time if >1s difference
+        if (prev.isRunning !== status.isRunning ||
+          prev.isIndexing !== status.isIndexing ||
+          Math.abs(prev.lastIndexTime - status.lastIndexTime) > 1000) { // Only update time if >1s difference
           return status;
         }
         return prev;
@@ -131,10 +130,10 @@ export const ChatApp: React.FC = () => {
     setIsProcessing(true);
     try {
       // Get context-aware agent based on current working directory
-      const agent = await getAgentForContext(process.cwd());
-      
+      const agent = await mastra.getAgent("notesAgent");
+
       const response = await agent.generate([{ role: 'user', content: trimmedInput }]);
-      
+
       addMessage({
         type: 'assistant',
         content: response.text || 'I apologize, but I couldn\'t process your request. Please try rephrasing your question.'
@@ -151,12 +150,12 @@ export const ChatApp: React.FC = () => {
 
   const handleBuiltinCommand = useCallback(async (input: string): Promise<boolean> => {
     const [command, ...args] = input.split(' ');
-    
+
     switch (command.toLowerCase()) {
       case 'help':
         setShowHelp(!showHelp);
         return true;
-        
+
       case 'exit':
       case 'quit':
       case 'q':
@@ -167,7 +166,7 @@ export const ChatApp: React.FC = () => {
         });
         setTimeout(() => exit(), 1000);
         return true;
-        
+
       case 'clear':
         setMessages([]);
         addMessage({
@@ -175,16 +174,16 @@ export const ChatApp: React.FC = () => {
           content: '🏠 Welcome back to Dome AI Assistant!'
         });
         return true;
-        
+
       case 'list':
         await handleListCommand();
         return true;
-        
+
       case 'status':
       case 'index':
         handleStatusCommand();
         return true;
-        
+
       case 'quiet':
         backgroundIndexer.setStatusDisplay(false);
         addMessage({
@@ -192,7 +191,7 @@ export const ChatApp: React.FC = () => {
           content: '🔇 Background indexing status messages disabled'
         });
         return true;
-        
+
       case 'verbose':
         backgroundIndexer.setStatusDisplay(true);
         addMessage({
@@ -200,7 +199,7 @@ export const ChatApp: React.FC = () => {
           content: '🔊 Background indexing status messages enabled'
         });
         return true;
-        
+
       default:
         return false;
     }
@@ -209,7 +208,7 @@ export const ChatApp: React.FC = () => {
   const handleListCommand = useCallback(async () => {
     try {
       const notes = await listNotes();
-      
+
       if (notes.length === 0) {
         addMessage({
           type: 'system',
@@ -217,23 +216,23 @@ export const ChatApp: React.FC = () => {
         });
         return;
       }
-      
+
       // Show recent notes (last 10)
       const recentNotes = notes
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
         .slice(0, 10);
-      
+
       let content = `📚 ${notes.length} notes:\n\n`;
-      
+
       for (const note of recentNotes) {
         const timeAgo = formatTimeAgo(new Date(note.date));
         content += `📝 ${note.title} (${timeAgo})\n`;
       }
-      
+
       if (notes.length > 10) {
         content += `\n... and ${notes.length - 10} more notes`;
       }
-      
+
       addMessage({
         type: 'system',
         content
@@ -251,7 +250,7 @@ export const ChatApp: React.FC = () => {
     let content = '🔍 Background Indexing Status:\n\n';
     content += `Running: ${status.isRunning ? '✅ Yes' : '❌ No'}\n`;
     content += `Currently indexing: ${status.isIndexing ? '🔄 Yes' : '✅ No'}\n`;
-    
+
     if (status.lastIndexTime > 0) {
       const lastIndexDate = new Date(status.lastIndexTime);
       const timeAgo = formatTimeAgo(lastIndexDate);
@@ -259,7 +258,7 @@ export const ChatApp: React.FC = () => {
     } else {
       content += 'Last indexed: Never';
     }
-    
+
     addMessage({
       type: 'system',
       content
@@ -271,7 +270,7 @@ export const ChatApp: React.FC = () => {
     const diffMs = now.getTime() - date.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    
+
     if (diffDays > 0) {
       if (diffDays === 1) return 'yesterday';
       return `${diffDays}d ago`;
@@ -284,12 +283,12 @@ export const ChatApp: React.FC = () => {
 
   return (
     <Box flexDirection="column" height="100%">
-      <StatusBar 
+      <StatusBar
         vaultPath={vaultPath}
         notesCount={notesCount}
         indexingStatus={indexingStatus}
       />
-      
+
       <Box flexGrow={1} flexDirection="row" minHeight={0}>
         <Box flexGrow={1} flexDirection="column" minHeight={0}>
           <Box flexGrow={1} minHeight={0}>
@@ -297,7 +296,7 @@ export const ChatApp: React.FC = () => {
           </Box>
           <InputArea onSubmit={handleUserInput} isDisabled={isProcessing} />
         </Box>
-        
+
         {showHelp && (
           <Box width={35} borderStyle="single" borderColor="blue" paddingX={1}>
             <HelpPanel />

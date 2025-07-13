@@ -2,7 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { openai } from "@ai-sdk/openai";
 import { embed } from "ai";
-import { searchSimilarNotes } from "../core/search-indexer.js";
+import { searchSimilarNotes } from "../core/search.js";
 
 export const searchNotesTool = createTool({
   id: "searchNotes",
