@@ -8,8 +8,8 @@ import { z } from 'zod';
 import { DefaultEditorService } from '../services/editor-service.js';
 import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
-
-const vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
+import { prepareNoteFolder } from '../../mastra/core/notes.js';
+import { config } from '../../mastra/core/config.js';
 
 const contextSchema = z.object({
   name: z.string(),
@@ -43,10 +43,7 @@ async function createFolder(): Promise<void> {
       }
     }]);
 
-    const fullPath = path.isAbsolute(folderPath) ? folderPath : path.join(vaultPath, folderPath);
-
-    // Create the folder if it doesn't exist
-    await fs.mkdir(fullPath, { recursive: true });
+    const fullPath = await prepareNoteFolder(folderPath);
 
     // Check if .dome file already exists
     const domePath = path.join(fullPath, '.dome');
@@ -134,10 +131,10 @@ async function editFolder(folderPath?: string): Promise<void> {
     let targetPath: string;
 
     if (folderPath) {
-      targetPath = path.isAbsolute(folderPath) ? folderPath : path.join(vaultPath, folderPath);
+      targetPath = path.isAbsolute(folderPath) ? folderPath : path.join(config.DOME_VAULT_PATH, folderPath);
     } else {
       // If no path provided, find all .dome files
-      const domeFiles = await findDomeFiles(vaultPath);
+      const domeFiles = await findDomeFiles(config.DOME_VAULT_PATH);
 
       if (domeFiles.length === 0) {
         console.log(chalk.yellow('⚠️  No .dome files found in the vault.'));
@@ -149,7 +146,7 @@ async function editFolder(folderPath?: string): Promise<void> {
         name: 'selected',
         message: 'Select a folder context to edit:',
         choices: domeFiles.map(file => ({
-          name: `${path.dirname(file.replace(vaultPath + '/', ''))} - ${file}`,
+          name: `${path.dirname(file.replace(config.DOME_VAULT_PATH + '/', ''))} - ${file}`,
           value: file,
         })),
       }]);
@@ -179,7 +176,7 @@ async function editFolder(folderPath?: string): Promise<void> {
     // Open the file in the default editor
     console.log(chalk.blue(`📝 Opening .dome file in your editor...`));
     const editorService = new DefaultEditorService();
-    const success = await editorService.openNote(domePath.replace(vaultPath + '/', ''), false);
+    const success = await editorService.openNote(domePath.replace(config.DOME_VAULT_PATH + '/', ''), false);
 
     if (!success) {
       console.error(chalk.red('❌ Failed to open file in editor'));

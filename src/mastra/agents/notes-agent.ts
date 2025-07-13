@@ -1,7 +1,5 @@
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
-import { Memory } from '@mastra/memory';
-import { LibSQLStore } from '@mastra/libsql';
 import { getVaultContextTool, getNoteTool, writeNoteTool, removeNoteTool, searchNotesTool } from '../tools/notes-tool.js';
 
 export const notesAgent = new Agent({
@@ -42,9 +40,4 @@ export const notesAgent = new Agent({
 `,
   model: openai('gpt-4o-mini'),
   tools: { getVaultContextTool, getNoteTool, writeNoteTool, removeNoteTool, searchNotesTool },
-  memory: new Memory({
-    storage: new LibSQLStore({
-      url: 'file:../mastra.db',
-    }),
-  }),
 });

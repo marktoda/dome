@@ -2,10 +2,9 @@ import { AINoteFinder } from '../actions/note-finder.js';
 import { z } from 'zod';
 import { DefaultEditorService } from '../services/editor-service.js';
 import { ContextManager } from '../../mastra/core/context/manager.js';
-import { writeNote } from '../../mastra/core/notes.js';
+import { writeNote, prepareNoteFolder } from '../../mastra/core/notes.js';
 import { mastra } from '../../mastra/index.js';
-import { join, basename } from 'node:path';
-import { config } from '../../mastra/core/config.js';
+import { basename } from 'node:path';
 import fs from 'node:fs/promises';
 
 const CleanupNoteSchema = z.object({
@@ -22,15 +21,9 @@ export async function handleNew(topic: string): Promise<void> {
     console.log(`🔍 Searching for folders to place "${topic}"...`);
 
     // Find existing note only
-    const result = await finder.findFolder(topic);
-    const context = await contextManager.getContext(result.path);
-
-    // Generate filename with timestamp
-    const timestamp = new Date().toISOString().split('T')[0];
-    const sanitizedTopic = topic.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const filename = `${timestamp}-${sanitizedTopic}.md`;
-    const notePath = join(result.path, filename);
-    const fullPath = join(config.DOME_VAULT_PATH, notePath);
+    const { path, template } = await finder.findFolder(topic);
+    const fullPath = await prepareNoteFolder(path);
+    const context = await contextManager.getContext(path);
 
     // Check if file already exists
     let fileExists = false;
@@ -42,16 +35,16 @@ export async function handleNew(topic: string): Promise<void> {
     }
 
     if (fileExists) {
-      console.log(`⚠️  Note already exists at: ${notePath}`);
+      console.log(`⚠️  Note already exists at: ${path}`);
       console.log('📝 Opening existing note for editing...');
     } else {
       // Write template to file only if it doesn't exist
-      console.log(`📝 Creating note with template at: ${notePath}`);
-      await writeNote(notePath, result.template, basename(filename, '.md'));
+      console.log(`📝 Creating note with template at: ${path}`);
+      await writeNote(path, template, basename(path, '.md'));
     }
 
     // Open in editor
-    const success = await editor.openNote(notePath, false);
+    const success = await editor.openNote(path, false);
 
     if (!success) {
       console.error('❌ Error opening note');

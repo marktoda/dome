@@ -3,6 +3,7 @@
  * Handles reading, writing, listing, and removing markdown notes.
  */
 
+import * as path from 'path';
 import { dirname } from "node:path";
 import fg from "fast-glob";
 import fs from "node:fs/promises";
@@ -111,6 +112,12 @@ export async function getNote(path: string): Promise<Note | null> {
   }
 }
 
+export async function prepareNoteFolder(notePath: string): Promise<string> {
+  const fullPath = path.isAbsolute(notePath) ? notePath : path.join(config.DOME_VAULT_PATH, notePath);
+  await fs.mkdir(dirname(fullPath), { recursive: true });
+  return fullPath;
+}
+
 /**
  * Write a note (create new or append to existing)
  * @param path - Relative path where to write the note
@@ -126,10 +133,7 @@ export async function writeNote(
   tags: string[] = []
 ): Promise<WriteResult> {
   try {
-    const fullPath = join(config.DOME_VAULT_PATH, path);
-
-    // Ensure directory exists
-    await fs.mkdir(dirname(fullPath), { recursive: true });
+    const fullPath = await prepareNoteFolder(path);
 
     // Check if note already exists
     const existingNote = await getNote(path);
