@@ -37,14 +37,17 @@
     "@types/uuid": "^10.0.0",
     "ai": "^4.3.17",
     "apache-arrow": "^18.0.0",
+    "chalk": "^5.4.1",
     "commander": "^14.0.0",
     "fast-glob": "^3.3.3",
+    "gray": "^0.0.6",
     "gray-matter": "^4.0.3",
     "ink": "^6.0.1",
+    "inquirer": "^12.7.0",
     "p-map": "^7.0.3",
     "react": "^19.1.0",
     "uuid": "^11.1.0",
-    "zod": "^4",
+    "zod": "3.25.49",
     "zod-config": "^1.1.2"
   },
   "devDependencies": {
@@ -53,4 +56,3 @@
     "typescript": "^5.8.3"
   }
 }
-

@@ -4,8 +4,10 @@ import { Command } from 'commander';
 import { handleFind } from './commands/find.js';
 import { handleList } from './commands/list.js';
 import { handleChat } from './commands/chat.js';
+import { handleNew } from './commands/new.js';
 import { createIndexCommand } from './commands/indexNotes.js';
 import { createReorganizeCommand } from './commands/reorganize.js';
+import { createFolderCommand } from './commands/folder.js';
 
 const program = new Command();
 
@@ -17,9 +19,16 @@ program
 // Find command
 program
   .command('find')
-  .argument('<topic>', 'search term for finding existing notes')
+  .argument('<topic...>', 'topic or title for the note')
   .description('find and open an existing note')
-  .action(handleFind);
+  .action(async (topicWords) => await handleFind(topicWords.join(' ')));
+
+// New command
+program
+  .command('new')
+  .argument('<topic...>', 'topic or title for the new note')
+  .description('create a new note with AI-generated template')
+  .action(async (topicWords) => await handleNew(topicWords.join(' ')));
 
 // List command
 program
@@ -35,6 +44,9 @@ program.addCommand(createIndexCommand());
 
 // Reorganize command
 program.addCommand(createReorganizeCommand());
+
+// Folder command
+program.addCommand(createFolderCommand());
 
 // Default action - start interactive chat
 program

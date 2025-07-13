@@ -3,9 +3,9 @@ import { z } from "zod";
 import { listNotes, getNote, writeNote, removeNote } from "../core/notes.js";
 import { ContextManager } from "../core/context/manager.js";
 
-export const listNotesTool = createTool({
-  id: "listNotes",
-  description: "List all note metadata from the local vault",
+export const getVaultContextTool = createTool({
+  id: "getVaultContext",
+  description: "List all note metadata and context from the local vault",
   inputSchema: z.object({}),
   outputSchema: z.object({
     notes: z.array(z.object({

@@ -66,6 +66,7 @@ Your notes live in a vault (default: `~/dome`). You can organize them however yo
 ### Context System
 
 Each folder can have a `.dome` file that configures:
+
 - **Templates**: Default content for new notes
 - **File Naming**: Automatic naming patterns (e.g., `YYYY-MM-DD-{title}`)
 - **Validation**: Required fields and rules
@@ -74,6 +75,7 @@ Each folder can have a `.dome` file that configures:
 ### AI Assistant
 
 The AI assistant helps you:
+
 - Create and organize notes
 - Extract insights from your vault
 - Find related information
@@ -102,6 +104,7 @@ Built-in templates for common use cases:
 ### Semantic Search
 
 Find notes by meaning:
+
 ```bash
 dome
 > search for discussions about project architecture
@@ -110,6 +113,7 @@ dome
 ### Note Reorganization
 
 Clean up and organize your vault:
+
 ```bash
 dome reorganize --dry-run
 dome reorganize --merge-duplicates
@@ -118,6 +122,7 @@ dome reorganize --merge-duplicates
 ### Background Indexing
 
 Automatic search index updates:
+
 ```bash
 dome index --watch
 ```
@@ -125,6 +130,7 @@ dome index --watch
 ### Custom Contexts
 
 Create custom folder behaviors:
+
 ```bash
 dome context create research --name "Research Notes" \
   --description "Academic research and paper notes"
@@ -182,8 +188,14 @@ npm run cli:build
 ## Acknowledgments
 
 Built with:
+
 - [Mastra](https://mastra.ai) - AI application framework
 - [Commander.js](https://github.com/tj/commander.js) - CLI framework
 - [Ink](https://github.com/vadimdemedes/ink) - React for CLIs
 - [LanceDB](https://lancedb.com) - Vector database
 - [OpenAI](https://openai.com) - AI models
+
+# TODO
+
+- Chat feature should include the relevant documents on the side that I can click through
+  - it should also let me open the editor into a temp file with all of them included

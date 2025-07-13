@@ -2,8 +2,7 @@ import { spawn } from 'node:child_process';
 import { join, dirname, basename, extname } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { writeNote } from '../../mastra/core/notes.js';
-
-const vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
+import { config } from '../../mastra/core/config.js';
 
 export interface EditorService {
   openNote(path: string, isNew: boolean): Promise<boolean>;
@@ -19,7 +18,7 @@ export class DefaultEditorService implements EditorService {
 
   async openNote(path: string, isNew: boolean): Promise<boolean> {
     const editor = this.detectEditor();
-    const fullPath = join(vaultPath, path);
+    const fullPath = join(config.DOME_VAULT_PATH, path);
     
     try {
       // Ensure directory exists

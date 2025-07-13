@@ -1,5 +1,4 @@
 import { mastra } from '../../mastra/index.js';
-import { listNotes } from '../../mastra/core/notes.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 
@@ -11,105 +10,65 @@ const FindExistingNoteSchema = z.object({
 });
 
 const FindNoteCategorySchema = z.object({
-  type: z.enum(['note', 'category']),
   path: z.string(),
+  template: z.string(),
   reasoning: z.string().optional()
 });
 
-export type NoteFindResult = {
-  type: 'note',
-  path: string,
-} | {
-  type: 'category',
-  path: string,
-}
+export type FolderFindResult = z.infer<typeof FindNoteCategorySchema>;
 
-export interface NoteFinder {
-  findNoteOrCategory(topic: string): Promise<NoteFindResult>;
-  findExistingNote(topic: string): Promise<{ path: string } | null>;
-}
+export class AINoteFinder {
+  async findFolder(topic: string): Promise<FolderFindResult> {
+    const agent = mastra.getAgent('notesAgent');
+    if (!agent) {
+      throw new Error('Notes agent not available');
+    }
 
-export class AINoteFinder implements NoteFinder {
-  async findNoteOrCategory(topic: string): Promise<NoteFindResult> {
-    try {
-      const agent = mastra.getAgent('notesAgent');
-      if (!agent) {
-        console.warn('Notes agent not available, falling back to basic categorization');
-        return { type: 'category', path: this.generateCategoryPath(topic) };
-      }
-
-      // Get current notes
-      const notes = await listNotes();
-
-      // Create a summary of available notes and directories for the AI
-      const notesList = notes.map(n => `- ${n.path}: "${n.title}" (tags: ${n.tags.join(', ') || 'none'})`).join('\n');
-
-      // Get existing directories
-      const directories = [...new Set(notes.map(n => n.path.split('/')[0]))].sort();
-      const directoriesList = directories.join(', ');
-
-      // Use the AI agent to find the best match or suggest a category
-      const prompt = `
+    // Use the AI agent to find the best match or suggest a category
+    const prompt = `
 I'm looking for where to place a note about: "${topic}"
-
-Here are all existing notes:
-${notesList}
-
-Here are existing directories: ${directoriesList}
+Use the note tools at your disposal to suggest a folder.
 
 You must respond with a JSON object that matches this schema:
 {
-  "type": "note" | "category",
   "path": string,
+  "template": string,
   "reasoning": string (optional, explanation of your decision)
 }
 
-For type "note": provide the exact path to an existing note that would be perfect for appending this topic
-For type "category": provide either an existing directory name or suggest a new one
+For "path": provide either an existing directory path, ending in a forward slash (e.g., "meetings/"). If no good match, suggest a new one.
+For "template": include starter text for the user to begin filling in, in markdown. this may include headings, bullet points, or other markdown elements.
 
 Consider:
-- Exact or very similar note titles that would benefit from additional content
-- Related topics that belong in the same note (like meeting series, project updates)  
+- Folder context and readable layout
 - Logical directory organization (meetings, projects, journal, inbox, etc.)
 
 Topic: ${topic}
 `;
 
-      const response = await agent.generate([
-        { role: 'user', content: prompt }
-      ], {
-        experimental_output: FindNoteCategorySchema
-      });
+    const response = await agent.generate([
+      { role: 'user', content: prompt }
+    ], {
+      experimental_output: FindNoteCategorySchema
+    });
 
-      const result = response.object;
+    const result = response.object;
 
-      if (!result) {
-        return { type: 'category', path: this.generateCategoryPath(topic) };
-      }
-
-      if (result.type === 'note') {
-        return { type: 'note', path: result.path };
-      } else {
-        // For category type, we need to generate the full file path
-        const fileName = this.normalizeTopic(topic);
-        return { type: 'category', path: join(result.path, `${fileName}.md`) };
-      }
-
-      // Fallback if response format is unexpected
-      return { type: 'category', path: this.generateCategoryPath(topic) };
-
-    } catch (error) {
-      console.warn('AI note finding failed, falling back to basic categorization:', error);
-      return { type: 'category', path: this.generateCategoryPath(topic) };
+    if (!result) {
+      throw new Error('No note or category found');
     }
+
+    // For category type, we need to generate the full file path
+    const fileName = this.normalizeTopic(topic);
+    return { path: join(result.path, `${fileName}.md`), template: result.template, reasoning: result.reasoning, };
+
   }
 
   async findExistingNote(topic: string): Promise<{ path: string } | null> {
     try {
       const agent = mastra.getAgent('notesAgent');
       if (!agent) {
-        console.warn('Notes agent not available, falling back to basic search');
-        return await this.basicNoteSearch(topic);
+        throw new Error('Notes agent not available');
       }
 
       // Use the agent to search for existing notes using its tools
@@ -140,7 +99,7 @@ Search term: ${topic}
       const result = response.object;
 
       if (!result) {
-        return await this.basicNoteSearch(topic);
+        throw new Error('No note found');
       }
 
       if (result.found && result.path) {
@@ -150,47 +109,8 @@ Search term: ${topic}
       return null;
 
     } catch (error) {
-      console.warn('AI note search failed, falling back to basic search:', error);
-      return await this.basicNoteSearch(topic);
+      throw new Error('No note found');
     }
-  }
-
-  private async basicNoteSearch(topic: string): Promise<{ path: string } | null> {
-    try {
-      const notes = await listNotes();
-      const searchTerm = topic.toLowerCase();
-      
-      // Search for exact title match first
-      for (const note of notes) {
-        if (note.title.toLowerCase() === searchTerm) {
-          return { path: note.path };
-        }
-      }
-      
-      // Search for partial title match
-      for (const note of notes) {
-        if (note.title.toLowerCase().includes(searchTerm)) {
-          return { path: note.path };
-        }
-      }
-      
-      // Search for tag match
-      for (const note of notes) {
-        if (note.tags.some(tag => tag.toLowerCase().includes(searchTerm))) {
-          return { path: note.path };
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      console.warn('Basic note search failed:', error);
-      return null;
-    }
-  }
-
-  private generateCategoryPath(topic: string): string {
-    const fileName = this.normalizeTopic(topic);
-    return join('inbox', `${fileName}.md`);
   }
 
   private normalizeTopic(topic: string): string {
