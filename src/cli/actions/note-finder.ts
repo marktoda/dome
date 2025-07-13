@@ -22,6 +22,7 @@ const FindMultipleNotesSchema = z.object({
 
 const FindNoteCategorySchema = z.object({
   path: z.string(),
+  fileName: z.string(),
   template: z.string(),
   reasoning: z.string().optional()
 });
@@ -30,12 +31,12 @@ export type FolderFindResult = z.infer<typeof FindNoteCategorySchema>;
 export type MultipleNotesResult = z.infer<typeof FindMultipleNotesSchema>;
 
 export class AINoteFinder {
-  async findFolder(topic: string): Promise<FolderFindResult> {
+  async findPlaceForTopic(topic: string): Promise<FolderFindResult> {
     // Check for OpenAI API key
     if (!process.env.OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.');
     }
-    
+
     let agent;
     try {
       agent = mastra.getAgent('notesAgent');
@@ -52,21 +53,13 @@ export class AINoteFinder {
 I'm looking for where to place a note about: "${topic}"
 Use the note tools at your disposal to suggest folder path that would be appropriate for this topic.
 
-You must respond with a JSON object that matches this schema:
-{
-  "path": string,
-  "template": string,
-  "reasoning": string (optional, explanation of your decision)
-}
-
 For "path": provide the relative path to the suggested folder. It can be either an existing directory or if no good match, suggest a new one. The path should end in a forward slash (/) to indicate it's a folder.
+For "fileName": provide a suggested name for the file that the note will live in. Keep it concise and descriptive. Include filetype extension '.md'
 For "template": include starter text for the user to begin filling in, in markdown. this may include headings, bullet points, or other markdown elements.
 
 Consider:
 - Folder context and readable layout
 - Logical directory organization (meetings, projects, journal, inbox, etc.)
-
-Topic: ${topic}
 `;
 
     // Add timeout to prevent hanging
@@ -88,10 +81,7 @@ Topic: ${topic}
     if (!result) {
       throw new Error('No note or category found');
     }
-
-    // For category type, we need to generate the full file path
-    const fileName = this.normalizeTopic(topic);
-    return { path: join(result.path, `${fileName}.md`), template: result.template, reasoning: result.reasoning, };
+    return { fileName: result.fileName, path: join(result.path, `${result.fileName}`), template: result.template, reasoning: result.reasoning, };
   }
 
   async findMultipleNotes(topic: string, limit: number = 10): Promise<MultipleNotesResult> {
@@ -99,12 +89,12 @@ Topic: ${topic}
       if (process.env.DEBUG) {
         console.log('[AINoteFinder] Starting findMultipleNotes for topic:', topic);
       }
-      
+
       // Check for OpenAI API key
       if (!process.env.OPENAI_API_KEY) {
         throw new Error('OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.');
       }
-      
+
       let agent;
       try {
         agent = mastra.getAgent('notesAgent');
@@ -115,11 +105,11 @@ Topic: ${topic}
         console.error('Failed to initialize notes agent:', error);
         throw new Error(`Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
-      
+
       if (process.env.DEBUG) {
         console.log('[AINoteFinder] Agent initialized successfully');
       }
-      
+
       // Add timeout to prevent hanging
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('AI search timed out after 30 seconds')), 30000);
@@ -140,23 +130,7 @@ For each note found, assign a relevance score from 0 to 1:
 - 0.4-0.5: Somewhat relevant (indirect relation or minor mentions)
 - Below 0.4: Not relevant enough to include
 
-Return up to ${limit} most relevant results, sorted by relevance score (highest first).
-
-You must respond with a JSON object that matches this schema:
-{
-  "results": [
-    {
-      "path": string (file path),
-      "title": string (note title or filename),
-      "relevanceScore": number (0-1),
-      "excerpt": string (optional, brief excerpt showing relevance),
-      "reason": string (optional, why this note is relevant)
-    }
-  ],
-  "totalFound": number (total number of relevant notes found)
-}
-
-Search term: ${topic}
+Return up to ${limit} most relevant results, sorted by relevance score (highest first). Be sure to use the getVaultContext tool to get a full view of the vault structure.
 `;
 
       if (process.env.DEBUG) {
@@ -171,7 +145,7 @@ Search term: ${topic}
         }),
         timeoutPromise
       ]);
-      
+
       if (process.env.DEBUG) {
         console.log('[AINoteFinder] Received response from agent');
       }
@@ -196,7 +170,7 @@ Search term: ${topic}
       if (!process.env.OPENAI_API_KEY) {
         throw new Error('OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.');
       }
-      
+
       let agent;
       try {
         agent = mastra.getAgent('notesAgent');

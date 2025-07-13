@@ -21,7 +21,7 @@ export async function handleNew(topic: string): Promise<void> {
     console.log(`🔍 Searching for folders to place "${topic}"...`);
 
     // Find existing note only
-    const { path, template } = await finder.findFolder(topic);
+    const { path, template } = await finder.findPlaceForTopic(topic);
     const fullPath = await prepareNoteFolder(path);
     const context = await contextManager.getContext(path);
 

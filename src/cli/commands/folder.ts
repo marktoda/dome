@@ -113,7 +113,7 @@ The context should be specific, practical, and help maintain consistency for all
       console.log(chalk.blue(`📝 .dome file created with:`));
       console.log(`   Name: ${chalk.bold(context.name)}`);
       console.log(`   Description: ${context.description}`);
-      console.log(`   template: ${context.template}`);
+      console.log(`   template: ${context.template?.frontmatter}\n ${context.template?.content}`);
       console.log(`   Rules: ${context.rules}`);
     } catch (aiError) {
       console.error(chalk.red('❌ Error generating context with AI:'), aiError);

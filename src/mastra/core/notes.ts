@@ -112,10 +112,27 @@ export async function getNote(path: string): Promise<Note | null> {
   }
 }
 
+/**
+ * Ensures the parent folders exist and returns the *full* file path.
+ *
+ * @param notePath  Relative or absolute path the caller wants to write,
+ *                  e.g. "docs/Eric promotion doc.md" or "docs/Eric promotion doc"
+ * @returns         Absolute file path with ".md" extension guaranteed
+ */
 export async function prepareNoteFolder(notePath: string): Promise<string> {
-  const fullPath = path.isAbsolute(notePath) ? notePath : path.join(config.DOME_VAULT_PATH, notePath);
-  await fs.mkdir(dirname(fullPath), { recursive: true });
-  return fullPath;
+  // Resolve to an absolute path first
+  const resolved = path.isAbsolute(notePath)
+    ? notePath
+    : path.join(config.DOME_VAULT_PATH, notePath);
+
+  // If the caller forgot the extension, add it
+  const filePath = path.extname(resolved) ? resolved : `${resolved}.md`;
+
+  // Create only the parent directories
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+
+  // Hand back the full file path (dir + filename)
+  return filePath;
 }
 
 /**
