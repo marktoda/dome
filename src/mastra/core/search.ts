@@ -16,6 +16,7 @@ import { MDocument } from "@mastra/rag";
 import { listNotes } from "./notes.js";
 import { config } from './config.js';
 import { noteEvents } from './events.js';
+import { embedText } from './embedding.js';
 
 // Configuration
 const store = new PgVector({ connectionString: config.POSTGRES_URI });
@@ -58,6 +59,8 @@ async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]
   const raw = await fs.readFile(fullPath, "utf8");
   const { data, content } = matter(raw);
 
+  const titleText = data.title ?? relativePath.replace(/\.md$/, '').replace(/[-_]/g, ' ');
+
   // Chunk the markdown content
   const doc = MDocument.fromMarkdown(content);
   const chunks = await doc.chunk({
@@ -68,13 +71,28 @@ async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]
 
   if (chunks.length === 0) return [];
 
-  // Generate embeddings for all chunks (with cache)
-  const embeddings = await embedChunks(chunks.map(c => c.text));
+  // Generate embeddings for all chunks *and* the title snippet
+  const textsForEmbedding = [titleText, ...chunks.map(c => c.text)];
+  const embeddings = await embedChunks(textsForEmbedding);
 
   const stat = await fs.stat(fullPath);
   const modified = stat.mtime.toISOString();
 
-  return embeddings.map((embedding: number[], i: number) => ({
+  // First embedding corresponds to the title.
+  const titleRecord: VectorRecord = {
+    id: `${relativePath}_title`,
+    vector: embeddings[0],
+    metadata: {
+      notePath: relativePath,
+      text: titleText,
+      tags: Array.isArray(data.tags) ? data.tags : ["_untagged"],
+      modified,
+      isTitle: true,
+    },
+  };
+
+  // Map the rest to chunks (shift by 1)
+  const chunkRecords = embeddings.slice(1).map((embedding: number[], i: number) => ({
     id: `${relativePath}_${i}`,
     vector: embedding,
     metadata: {
@@ -85,6 +103,8 @@ async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]
       ...chunks[i].metadata,
     },
   }));
+
+  return [titleRecord, ...chunkRecords];
 }
 
 /**
@@ -156,6 +176,19 @@ export async function searchSimilarNotes(
     }));
   } catch (error) {
     console.error("Error searching notes:", error);
+    return [];
+  }
+}
+
+/**
+ * Convenience: embed a text query and run vector search.
+ */
+export async function searchNotesByText(query: string, k = 10): Promise<SearchResult[]> {
+  try {
+    const vector = await embedText(query);
+    return await searchSimilarNotes(vector, k);
+  } catch (err) {
+    console.error('searchNotesByText failed', err);
     return [];
   }
 }

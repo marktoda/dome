@@ -10,6 +10,10 @@ import { createIndexCommand } from './commands/indexNotes.js';
 import { createReorganizeCommand } from './commands/reorganize.js';
 import { createFolderCommand } from './commands/folder.js';
 
+// Suppress indexer status lines for CLI/to avoid prompt overwrites
+backgroundIndexer.setStatusDisplay(false);
+backgroundIndexer.setSilentMode(true);
+
 // Start the indexer eagerly so that *any* CLI command benefits from
 // up-to-date search without requiring each writer to call it.
 await backgroundIndexer.startBackgroundIndexing().catch(() => {/* logged internally */});

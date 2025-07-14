@@ -51,6 +51,22 @@ export async function embedChunks(texts: string[]): Promise<number[][]> {
   return vectors;
 }
 
+/**
+ * Embed a single text snippet with cache.
+ */
+export async function embedText(text: string): Promise<number[]> {
+  const key = sha1(text);
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const { embeddings } = await embedMany({
+    model: openai.embedding(EMBEDDING_MODEL),
+    values: [text],
+  });
+  cache.set(key, embeddings[0]);
+  return embeddings[0];
+}
+
 function sha1(data: string): string {
   return createHash('sha1').update(data).digest('hex');
 } 

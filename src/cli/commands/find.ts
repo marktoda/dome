@@ -1,4 +1,5 @@
 import { AINoteFinder } from '../actions/note-finder.js';
+import { vectorFindNotes } from '../actions/vector-finder.js';
 import { DefaultEditorService } from '../services/editor-service.js';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
@@ -8,11 +9,23 @@ export async function handleFind(topic: string): Promise<void> {
   try {
     const finder = new AINoteFinder();
     const editor = new DefaultEditorService();
-    
+
     console.log(`🔍 Searching for notes matching "${topic}"...`);
-    
-    // Find multiple notes sorted by relevance
-    const results = await finder.findMultipleNotes(topic);
+
+    // --- Fast local vector search first ---
+    let vectorResults = await vectorFindNotes(topic, 10);
+
+    let results;
+
+    if (vectorResults.length > 0) {
+      results = {
+        results: vectorResults,
+        totalFound: vectorResults.length,
+      };
+    } else {
+      // Fallback to AI search (slower)
+      results = await finder.findMultipleNotes(topic);
+    }
     
     if (results.totalFound === 0) {
       console.error(`❌ No notes found matching "${topic}"`);
@@ -40,7 +53,7 @@ export async function handleFind(topic: string): Promise<void> {
       index === self.findIndex((r) => r.path === result.path)
     );
     
-    // Display results with relevance scores
+    // Display header but rely on interactive list for entries
     console.log(`\n📚 Found ${uniqueResults.length} matching notes:\n`);
     
     // Prepare choices for inquirer with cleaner format
@@ -86,7 +99,7 @@ export async function handleFind(topic: string): Promise<void> {
       {
         type: 'list',
         name: 'selectedPath',
-        message: 'Select a note to open:',
+        message: '',
         choices,
         pageSize: 20
       }
