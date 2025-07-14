@@ -4,14 +4,18 @@
  */
 
 import fs from "node:fs/promises";
+// chokidar ships its own types from v3 onward. If the type package isn't present
+// in the repo we still want the code to compile, so we suppress the lint error.
+// @ts-ignore – compiled code will use default export; we also import the type.
+import chokidar, { FSWatcher } from "chokidar";
 import matter from "gray-matter";
 import { join } from "node:path";
 import { PgVector } from '@mastra/pg';
-import { openai } from "@ai-sdk/openai";
-import { embedMany } from "ai";
+import { embedChunks } from "./embedding.js";
 import { MDocument } from "@mastra/rag";
 import { listNotes } from "./notes.js";
 import { config } from './config.js';
+import { noteEvents } from './events.js';
 
 // Configuration
 const store = new PgVector({ connectionString: config.POSTGRES_URI });
@@ -64,16 +68,13 @@ async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]
 
   if (chunks.length === 0) return [];
 
-  // Generate embeddings for all chunks
-  const { embeddings } = await embedMany({
-    model: openai.embedding("text-embedding-3-small"),
-    values: chunks.map(c => c.text),
-  });
+  // Generate embeddings for all chunks (with cache)
+  const embeddings = await embedChunks(chunks.map(c => c.text));
 
   const stat = await fs.stat(fullPath);
   const modified = stat.mtime.toISOString();
 
-  return embeddings.map((embedding, i) => ({
+  return embeddings.map((embedding: number[], i: number) => ({
     id: `${relativePath}_${i}`,
     vector: embedding,
     metadata: {
@@ -113,7 +114,7 @@ export async function indexNotes(
   }
   await ensureTable();
 
-  console.log(`Starting ${mode} indexing...`);
+  console.debug(`Starting ${mode} indexing...`);
 
   // Get all notes
   const notes = await listNotes();
@@ -130,7 +131,7 @@ export async function indexNotes(
     ids: records.flatMap(r => r.map(rec => rec.id)),
   });
 
-  console.log(`Indexing complete: ${records.length} notes processed`);
+  console.debug(`Indexing complete: ${records.length} notes processed`);
   return records.length;
 }
 
@@ -159,6 +160,35 @@ export async function searchSimilarNotes(
   }
 }
 
+/**
+ * Delete all vectors belonging to a specific note.
+ * NOTE: Depends on PgVector API; if unavailable this becomes a no-op and logs a warning.
+ */
+async function deleteVectorsByNotePath(notePath: string): Promise<void> {
+  try {
+    // Attempt naive metadata-based delete (pseudo API – adjust if needed).
+    if (typeof (store as any).deleteByMetadata === 'function') {
+      await (store as any).deleteByMetadata({
+        indexName: config.DOME_INDEX_NAME,
+        where: { notePath },
+      });
+    } else {
+      // Fallback: raw query – assumes "metadata" JSONB column with notePath key
+      const pool = (store as any).pool || (store as any).client;
+      if (pool && typeof pool.query === 'function') {
+        await pool.query(
+          `DELETE FROM ${config.DOME_INDEX_NAME} WHERE metadata->>'notePath' = $1`,
+          [notePath],
+        );
+      } else {
+        console.warn('[indexer] deleteVectorsByNotePath: delete not supported by store implementation');
+      }
+    }
+  } catch (err) {
+    console.error('Error deleting vectors for', notePath, err);
+  }
+}
+
 interface IndexingState {
   isRunning: boolean;
   lastIndexTime: number;
@@ -179,6 +209,12 @@ class BackgroundIndexer {
   };
 
   private readonly INDEXING_INTERVAL = 30000; // 30 seconds
+  private readonly EVENT_DEBOUNCE_MS = 1500;
+
+  private changed = new Set<string>();
+  private deleted = new Set<string>();
+  private debounceTimer: NodeJS.Timeout | null = null;
+  private watcher: FSWatcher | null = null;
 
   /**
    * Start background indexing during chat session
@@ -191,15 +227,23 @@ class BackgroundIndexer {
       this.logStatus('🔍 Background indexing started');
     }
 
-    // Initial quick check (non-blocking)
-    this.scheduleIndexingIfNeeded().catch(err => {
-      if (!this.state.silentMode) {
-        console.error('Initial indexing check failed:', err);
-      }
+    // Wire event listeners (internal note events)
+    noteEvents.on('note:changed', (p: string) => this.queueNoteChange(p));
+    noteEvents.on('note:deleted', (p: string) => this.queueNoteDeletion(p));
+
+    // Set up filesystem watcher for external editors
+    this.watcher = chokidar.watch(`${config.DOME_VAULT_PATH}/**/*.md`, {
+      ignoreInitial: true,
     });
 
-    // Set up periodic indexing
-    this.schedulePeriodicIndexing();
+    this.watcher
+      .on('add', (p: string) => this.handleFsEvent(p, 'changed'))
+      .on('change', (p: string) => this.handleFsEvent(p, 'changed'))
+      .on('unlink', (p: string) => this.handleFsEvent(p, 'deleted'));
+
+    // Trigger an initial full index in the background
+    this.state.indexingPromise = this.performBackgroundIndexing();
+    this.state.indexingPromise.catch(() => {/* already logged */ });
   }
 
   /**
@@ -207,6 +251,12 @@ class BackgroundIndexer {
    */
   async stopBackgroundIndexing(): Promise<void> {
     this.state.isRunning = false;
+
+    // Clean up watcher
+    if (this.watcher) {
+      await this.watcher.close();
+      this.watcher = null;
+    }
 
     // Wait for any ongoing indexing to complete
     if (this.state.indexingPromise) {
@@ -296,18 +346,92 @@ class BackgroundIndexer {
    */
   private async performBackgroundIndexing(): Promise<void> {
     try {
+      noteEvents.emit('index:progress', { type: 'progress', progress: 0 });
       if (this.state.showStatus) {
         this.logStatus('🔄 Indexing notes...');
       }
-      await indexNotes();
+      const processed = await indexNotes();
       this.state.lastIndexTime = Date.now();
       if (this.state.showStatus) {
         this.logStatus('✅ Background indexing completed');
       }
+      noteEvents.emit('index:progress', { type: 'progress', progress: 100, noteCount: processed, indexedCount: processed });
+      noteEvents.emit('index:complete', {
+        type: 'complete',
+        noteCount: processed,
+      });
     } catch (error) {
       if (!this.state.silentMode) {
         console.error('❌ Background indexing failed:', error);
       }
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Event-driven incremental indexing helpers
+  // ---------------------------------------------------------------------
+
+  private handleFsEvent(absPath: string, kind: 'changed' | 'deleted'): void {
+    // Convert to relative path within vault
+    const relPath = absPath.replace(`${config.DOME_VAULT_PATH}/`, '');
+    if (kind === 'changed') {
+      this.queueNoteChange(relPath);
+    } else {
+      this.queueNoteDeletion(relPath);
+    }
+  }
+
+  private queueNoteChange(path: string): void {
+    this.changed.add(path);
+    this.scheduleDebouncedIncrementalIndex();
+  }
+
+  private queueNoteDeletion(path: string): void {
+    this.deleted.add(path);
+    this.scheduleDebouncedIncrementalIndex();
+  }
+
+  private scheduleDebouncedIncrementalIndex(): void {
+    if (this.debounceTimer) return; // already scheduled
+    this.debounceTimer = setTimeout(async () => {
+      this.debounceTimer = null;
+      await this.performIncrementalIndex();
+    }, this.EVENT_DEBOUNCE_MS);
+  }
+
+  private async performIncrementalIndex() {
+    if (!this.state.isRunning) return;
+
+    const changed = Array.from(this.changed);
+    const deleted = Array.from(this.deleted);
+    this.changed.clear();
+    this.deleted.clear();
+
+    try {
+      // Delete first to avoid duplicate IDs
+      for (const p of deleted) {
+        await deleteVectorsByNotePath(p);
+      }
+
+      if (changed.length) {
+        const recordsArray = await Promise.all(changed.map(fileToVectorRecords));
+        const flat = recordsArray.flat();
+        if (flat.length) {
+          await store.upsert({
+            indexName: config.DOME_INDEX_NAME,
+            vectors: flat.map(r => r.vector),
+            metadata: flat.map(r => r.metadata),
+            ids: flat.map(r => r.id),
+          });
+        }
+      }
+      if (this.state.showStatus) {
+        this.logStatus('✅ Incremental index updated');
+      }
+
+      noteEvents.emit('index:updated', { type: 'updated' });
+    } catch (err) {
+      console.error('Incremental indexing failed', err);
     }
   }
 

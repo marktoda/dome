@@ -4,12 +4,12 @@
  */
 
 import * as path from 'path';
-import { dirname } from "node:path";
 import fg from "fast-glob";
 import fs from "node:fs/promises";
 import matter from "gray-matter";
 import { join, basename, extname } from "node:path";
 import { config } from './config.js';
+import { noteEvents } from './events.js';
 
 /**
  * Metadata for a note without its content
@@ -173,6 +173,9 @@ export async function writeNote(
       const updatedFileContent = matter.stringify(updatedContent, updatedFrontMatter);
       await fs.writeFile(fullPath, updatedFileContent, 'utf8');
 
+      // Notify indexer BEFORE returning so the event is emitted
+      noteEvents.emit('note:changed', path);
+
       return {
         path,
         title: existingNote.title,
@@ -194,6 +197,9 @@ export async function writeNote(
 
       const fileContent = matter.stringify(content, frontMatter);
       await fs.writeFile(fullPath, fileContent, 'utf8');
+
+      // Notify indexer
+      noteEvents.emit('note:changed', path);
 
       return {
         path,
@@ -223,6 +229,9 @@ export async function removeNote(path: string): Promise<RemoveResult> {
 
     // Remove the file
     await fs.unlink(fullPath);
+
+    // Notify indexer about deletion
+    noteEvents.emit('note:deleted', path);
 
     return {
       path,

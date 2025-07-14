@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { backgroundIndexer } from '../mastra/core/search.js';
 import { handleFind } from './commands/find.js';
 import { handleList } from './commands/list.js';
 import { handleChat } from './commands/chat.js';
@@ -8,6 +9,10 @@ import { handleNew } from './commands/new.js';
 import { createIndexCommand } from './commands/indexNotes.js';
 import { createReorganizeCommand } from './commands/reorganize.js';
 import { createFolderCommand } from './commands/folder.js';
+
+// Start the indexer eagerly so that *any* CLI command benefits from
+// up-to-date search without requiring each writer to call it.
+await backgroundIndexer.startBackgroundIndexing().catch(() => {/* logged internally */});
 
 const program = new Command();
 
@@ -58,5 +63,9 @@ if (process.argv.length <= 2) {
   handleChat();
 } else {
   await program.parseAsync();
+
+  // Flush any pending incremental work then shut the watcher down so the
+  // process can exit promptly.
+  await backgroundIndexer.stopBackgroundIndexing().catch(() => {/* ignore */});
   process.exit(0);
 }

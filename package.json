@@ -38,6 +38,7 @@
     "ai": "^4.3.17",
     "apache-arrow": "^18.0.0",
     "chalk": "^5.4.1",
+    "chokidar": "^4.0.3",
     "commander": "^14.0.0",
     "fast-glob": "^3.3.3",
     "gray": "^0.0.6",

@@ -58,18 +58,10 @@ export function useVaultIndexer(vaultPath: string) {
       });
     });
     
-    worker.on('restarting', (attempt) => {
-      dispatch({
-        type: 'ADD_MESSAGE',
-        payload: {
-          type: 'system',
-          content: `Restarting indexer (attempt ${attempt})...`,
-        },
-      });
-    });
+    // The new implementation is in-process and should not crash; no restarting events.
     
     // Start the worker
-    worker.start(vaultPath).catch((error) => {
+    worker.start().catch((error) => {
       dispatch({
         type: 'ADD_MESSAGE',
         payload: {
