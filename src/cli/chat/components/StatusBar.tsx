@@ -18,11 +18,7 @@ export const StatusBar = React.memo<StatusBarProps>(({
   }, [vaultPath]);
 
   return (
-    <Box 
-      borderStyle="single" 
-      borderColor={COLORS.system} 
-      paddingX={1}
-    >
+    <Box paddingX={1}>
       <Text bold color={COLORS.system}>🏠 Dome AI Assistant</Text>
       <Text> - {formattedPath} ({notesCount} notes)</Text>
     </Box>

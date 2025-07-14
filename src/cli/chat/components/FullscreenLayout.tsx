@@ -39,8 +39,8 @@ export const FullscreenLayout = React.memo<FullscreenLayoutProps>(({
   }, [stdout]);
   
   // Calculate heights
-  const headerHeight = 3; // Fixed header height
-  const footerHeight = footer ? 3 : 0; // Fixed footer height if present
+  const headerHeight = 1;
+  const footerHeight = footer ? 3 : 0;
   const contentAreaHeight = dimensions.height - headerHeight - footerHeight;
   
   return (

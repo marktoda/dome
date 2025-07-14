@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from 'react';
-import { Box, Text, useInput } from 'ink';
+import React, { useState } from 'react';
+import { Box, Text } from 'ink';
+import TextInput from 'ink-text-input';
 import { COLORS } from '../constants.js';
 
 interface InputAreaProps {
@@ -8,45 +9,23 @@ interface InputAreaProps {
 }
 
 export const InputArea = React.memo<InputAreaProps>(({ onSubmit, isDisabled = false }) => {
-  const [input, setInput] = useState('');
-
-  const handleInput = useCallback((inputChar: string, key: any) => {
-    if (isDisabled) return;
-
-    if (key.return) {
-      const trimmedInput = input.trim();
-      if (trimmedInput) {
-        onSubmit(trimmedInput);
-        setInput('');
-      }
-      return;
-    }
-
-    if (key.backspace || key.delete) {
-      setInput(prev => prev.slice(0, -1));
-      return;
-    }
-
-    if (key.ctrl) {
-      return; // Handle Ctrl combinations in parent component
-    }
-
-    if (inputChar) {
-      setInput(prev => prev + inputChar);
-    }
-  }, [input, isDisabled, onSubmit]);
-
-  useInput(handleInput);
+  const [value, setValue] = useState('');
 
   return (
     <Box paddingX={1} paddingY={1} flexDirection="row">
       <Text color={COLORS.green}>{'> '}</Text>
-      <Box flexGrow={1}>
-        <Text>
-          {input}
-          {!isDisabled && <Text backgroundColor={COLORS.green}> </Text>}
-        </Text>
-      </Box>
+      <TextInput
+        value={value}
+        onChange={setValue}
+        onSubmit={(val: string) => {
+          const trimmed = val.trim();
+          if (trimmed) {
+            onSubmit(trimmed);
+          }
+          setValue('');
+        }}
+        focus={!isDisabled}
+      />
     </Box>
   );
 });

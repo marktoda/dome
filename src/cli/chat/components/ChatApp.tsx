@@ -1,5 +1,5 @@
-import React, { useEffect, useCallback, useRef, useState } from 'react';
-import { Box, Text, useInput, useApp, useStdout } from 'ink';
+import React, { useEffect, useCallback, useState } from 'react';
+import { Box, useApp } from 'ink';
 import { StatusBar } from './StatusBar.js';
 import { ChatHistory } from './ChatHistory.js';
 import { InputArea } from './InputArea.js';
@@ -16,6 +16,7 @@ import { useVaultIndexer } from '../hooks/useVaultIndexer.js';
 import { COLORS, LAYOUT } from '../constants.js';
 import { ChatMessage } from '../state/types.js';
 import { withRetry, createErrorMessage, isRetryableError } from '../utils/errorHandler.js';
+import { useGlobalShortcuts } from '../hooks/useGlobalShortcuts.js';
 
 // Types are now imported from state/types.ts
 
@@ -28,7 +29,6 @@ const ChatAppInner: React.FC = () => {
   const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
 
   const { exit } = useApp();
-  const { stdout } = useStdout();
 
   const addActivity = useCallback((type: 'tool' | 'document', name: string) => {
     dispatch({ type: 'ADD_ACTIVITY', payload: { type, name } });
@@ -73,54 +73,7 @@ const ChatAppInner: React.FC = () => {
   useVaultIndexer(state.header.vaultPath || process.env.DOME_VAULT_PATH || `${process.env.HOME}/dome`);
 
   // Global keyboard shortcuts
-  useInput((input, key) => {
-    if (key.ctrl && input === 'c') {
-      exit();
-    }
-    if (key.ctrl && input === 'h') {
-      dispatch({ type: 'TOGGLE_HELP' });
-    }
-    if (key.ctrl && input === 'a') {
-      dispatch({ type: 'TOGGLE_ACTIVITY' });
-    }
-    
-    // Navigation for message selection
-    if (key.upArrow) {
-      const assistantMessages = chat.messages.filter(m => m.type === 'assistant');
-      if (assistantMessages.length === 0) return;
-      
-      if (chat.selectedIdx === null) {
-        const lastAssistant = chat.messages.findIndex(m => m === assistantMessages[assistantMessages.length - 1]);
-        dispatch({ type: 'SELECT_MESSAGE', payload: lastAssistant });
-      } else {
-        for (let i = chat.selectedIdx - 1; i >= 0; i--) {
-          if (chat.messages[i].type === 'assistant') {
-            dispatch({ type: 'SELECT_MESSAGE', payload: i });
-            break;
-          }
-        }
-      }
-    }
-    
-    if (key.downArrow) {
-      if (chat.selectedIdx === null) return;
-      
-      for (let i = chat.selectedIdx + 1; i < chat.messages.length; i++) {
-        if (chat.messages[i].type === 'assistant') {
-          dispatch({ type: 'SELECT_MESSAGE', payload: i });
-          break;
-        }
-      }
-    }
-    
-    // Toggle collapse with 's'
-    if (input === 's' && chat.selectedIdx !== null) {
-      const message = chat.messages[chat.selectedIdx];
-      if (message && message.type === 'assistant' && message.content.length > 200) {
-        dispatch({ type: 'TOGGLE_COLLAPSE', payload: { id: message.id } });
-      }
-    }
-  });
+  useGlobalShortcuts(chat, dispatch, exit);
 
   const addMessage = useCallback((message: Omit<ChatMessage, 'id' | 'timestamp'>) => {
     dispatch({ type: 'ADD_MESSAGE', payload: message });
@@ -175,15 +128,31 @@ const ChatAppInner: React.FC = () => {
       const detectedTools = new Set<string>();
       const detectedDocs = new Set<string>();
       
+      // Prepare buffered appending to minimise rerenders
+      let buffer = '';
+      let flushTimeout: NodeJS.Timeout | null = null;
+      const flushBuffer = () => {
+        if (buffer) {
+          dispatch({
+            type: 'APPEND_TO_MESSAGE',
+            payload: { id: messageId, content: buffer }
+          });
+          buffer = '';
+        }
+      };
+
       // Process the stream
       for await (const chunk of stream.textStream) {
         fullResponse += chunk;
-        
-        // Update message content directly
-        dispatch({
-          type: 'APPEND_TO_MESSAGE',
-          payload: { id: messageId, content: chunk }
-        });
+        buffer += chunk;
+
+        // Schedule a buffered flush ~20fps (50 ms)
+        if (!flushTimeout) {
+          flushTimeout = setTimeout(() => {
+            flushBuffer();
+            flushTimeout = null;
+          }, 120);
+        }
         
         // Analyze new content for tool usage every 100 characters
         if (fullResponse.length - lastAnalyzedLength > 100) {
@@ -209,7 +178,10 @@ const ChatAppInner: React.FC = () => {
           lastAnalyzedLength = fullResponse.length;
         }
       }
-      
+
+      // Flush any remaining buffered text
+      flushBuffer();
+
       // Ensure all characters are displayed
       dispatch({
         type: 'FINISH_STREAMING',
@@ -501,7 +473,6 @@ const ChatAppInner: React.FC = () => {
           <Box flexGrow={1}>
             <ChatHistory 
               messages={chat.messages} 
-              isProcessing={isProcessing} 
               timestampMode={state.cfg.timestamps}
               selectedMessageIndex={chat.selectedIdx ?? -1}
             />

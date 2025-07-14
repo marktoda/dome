@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Box, Text } from 'ink';
+import Spinner from 'ink-spinner';
 import { IndexingStatus } from '../state/types.js';
 import { COLORS } from '../constants.js';
 
@@ -8,37 +9,25 @@ interface BottomStatusBarProps {
 }
 
 export const BottomStatusBar = React.memo<BottomStatusBarProps>(({ indexingStatus }) => {
-  const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-  const [frame, setFrame] = React.useState(0);
+  if (!indexingStatus.running) {
+    return null;
+  }
 
-  React.useEffect(() => {
-    if (indexingStatus.isIndexing) {
-      const timer = setInterval(() => {
-        setFrame(prev => (prev + 1) % spinnerFrames.length);
-      }, 80);
-      return () => clearInterval(timer);
-    }
-  }, [indexingStatus.isIndexing, spinnerFrames.length]);
+  let statusContent: React.ReactNode;
 
-  const statusContent = useMemo(() => {
-    if (!indexingStatus.running) {
-      return null;
-    }
-
-    if (indexingStatus.isIndexing) {
-      return (
-        <Box>
-          <Text color={COLORS.yellow}>{spinnerFrames[frame]} </Text>
-          <Text>Indexing in progress...</Text>
-        </Box>
-      );
-    }
-
+  if (indexingStatus.isIndexing) {
+    statusContent = (
+      <Box>
+        <Text color={COLORS.yellow}><Spinner type="dots" /> </Text>
+        <Text>Indexing in progress...</Text>
+      </Box>
+    );
+  } else {
     const lastIndexDate = new Date(indexingStatus.lastIndexTime);
     const now = new Date();
     const diffMs = now.getTime() - lastIndexDate.getTime();
     const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    
+
     let lastIndexText = 'Never indexed';
     if (indexingStatus.lastIndexTime > 0) {
       if (diffMinutes < 1) {
@@ -51,16 +40,12 @@ export const BottomStatusBar = React.memo<BottomStatusBarProps>(({ indexingStatu
       }
     }
 
-    return (
+    statusContent = (
       <Box>
         <Text color={COLORS.green}>● </Text>
         <Text>Indexing ready - {lastIndexText}</Text>
       </Box>
     );
-  }, [indexingStatus, frame, spinnerFrames]);
-
-  if (!statusContent) {
-    return null;
   }
 
   return (
