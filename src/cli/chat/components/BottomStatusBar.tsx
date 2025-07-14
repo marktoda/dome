@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
-import { IndexingStatus } from './ChatApp.js';
+import { IndexingStatus } from '../state/types.js';
+import { COLORS } from '../constants.js';
 
 interface BottomStatusBarProps {
   indexingStatus: IndexingStatus;
@@ -20,14 +21,14 @@ export const BottomStatusBar = React.memo<BottomStatusBarProps>(({ indexingStatu
   }, [indexingStatus.isIndexing, spinnerFrames.length]);
 
   const statusContent = useMemo(() => {
-    if (!indexingStatus.isRunning) {
+    if (!indexingStatus.running) {
       return null;
     }
 
     if (indexingStatus.isIndexing) {
       return (
         <Box>
-          <Text color="yellow">{spinnerFrames[frame]} </Text>
+          <Text color={COLORS.yellow}>{spinnerFrames[frame]} </Text>
           <Text>Indexing in progress...</Text>
         </Box>
       );
@@ -52,7 +53,7 @@ export const BottomStatusBar = React.memo<BottomStatusBarProps>(({ indexingStatu
 
     return (
       <Box>
-        <Text color="green">● </Text>
+        <Text color={COLORS.green}>● </Text>
         <Text>Indexing ready - {lastIndexText}</Text>
       </Box>
     );
@@ -65,7 +66,7 @@ export const BottomStatusBar = React.memo<BottomStatusBarProps>(({ indexingStatu
   return (
     <Box 
       borderStyle="single" 
-      borderColor="gray"
+      borderColor={COLORS.gray}
       paddingX={1}
     >
       {statusContent}

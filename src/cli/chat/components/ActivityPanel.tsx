@@ -1,15 +1,10 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-
-export interface Activity {
-  id: string;
-  type: 'tool' | 'document';
-  name: string;
-  timestamp: Date;
-}
+import { ActivityEvent } from '../state/types.js';
+import { COLORS } from '../constants.js';
 
 interface ActivityPanelProps {
-  activities: Activity[];
+  activities: ActivityEvent[];
   maxItems?: number;
 }
 
@@ -33,19 +28,19 @@ export const ActivityPanel = React.memo<ActivityPanelProps>(({
 
   return (
     <Box flexDirection="column" paddingY={1}>
-      <Text bold color="magenta">Activity Monitor</Text>
-      <Text color="gray">─────────────────</Text>
+      <Text bold color={COLORS.dome}>Activity Monitor</Text>
+      <Text color={COLORS.gray}>─────────────────</Text>
       
       {recentActivities.length === 0 ? (
         <Box marginTop={1}>
-          <Text color="gray" italic>No activity yet</Text>
+          <Text color={COLORS.gray} italic>No activity yet</Text>
         </Box>
       ) : (
         <Box flexDirection="column" marginTop={1}>
           {recentActivities.map((activity) => (
             <Box key={activity.id} marginBottom={0}>
               <Box width={3}>
-                <Text color={activity.type === 'tool' ? 'cyan' : 'green'}>
+                <Text color={activity.type === 'tool' ? COLORS.tool : COLORS.document}>
                   {activity.type === 'tool' ? '▸' : '◆'}
                 </Text>
               </Box>
@@ -54,7 +49,7 @@ export const ActivityPanel = React.memo<ActivityPanelProps>(({
                   {activity.name}
                 </Text>
               </Box>
-              <Text color="gray" dimColor>
+              <Text color={COLORS.gray} dimColor>
                 {formatTime(activity.timestamp)}
               </Text>
             </Box>
@@ -62,8 +57,8 @@ export const ActivityPanel = React.memo<ActivityPanelProps>(({
         </Box>
       )}
       
-      <Box marginTop={1} paddingTop={1} borderStyle="single" borderTop borderColor="gray">
-        <Text color="gray" dimColor>
+      <Box marginTop={1} paddingTop={1} borderStyle="single" borderTop borderColor={COLORS.gray}>
+        <Text color={COLORS.gray} dimColor>
           {activities.length} total • Ctrl+A toggle
         </Text>
       </Box>

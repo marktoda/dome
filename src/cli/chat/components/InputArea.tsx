@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { COLORS } from '../constants.js';
 
 interface InputAreaProps {
   onSubmit: (input: string) => void;
@@ -39,11 +40,11 @@ export const InputArea = React.memo<InputAreaProps>(({ onSubmit, isDisabled = fa
 
   return (
     <Box paddingX={1} paddingY={1} flexDirection="row">
-      <Text color="green">{'> '}</Text>
+      <Text color={COLORS.green}>{'> '}</Text>
       <Box flexGrow={1}>
         <Text>
           {input}
-          {!isDisabled && <Text backgroundColor="green"> </Text>}
+          {!isDisabled && <Text backgroundColor={COLORS.green}> </Text>}
         </Text>
       </Box>
     </Box>

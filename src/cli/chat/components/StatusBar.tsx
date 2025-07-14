@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Box, Text } from 'ink';
+import { COLORS } from '../constants.js';
 
 interface StatusBarProps {
   vaultPath: string;
@@ -19,10 +20,10 @@ export const StatusBar = React.memo<StatusBarProps>(({
   return (
     <Box 
       borderStyle="single" 
-      borderColor="blue" 
+      borderColor={COLORS.system} 
       paddingX={1}
     >
-      <Text bold color="blue">🏠 Dome AI Assistant</Text>
+      <Text bold color={COLORS.system}>🏠 Dome AI Assistant</Text>
       <Text> - {formattedPath} ({notesCount} notes)</Text>
     </Box>
   );

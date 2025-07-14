@@ -1,15 +1,29 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { Message } from './ChatApp.js';
+import { ChatMessage } from '../state/types.js';
+import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { COLORS, STREAMING, LIMITS } from '../constants.js';
 
 interface ChatHistoryProps {
-  messages: Message[];
+  messages: ChatMessage[];
   isProcessing: boolean;
   timestampMode: 'off' | 'relative' | 'absolute';
   selectedMessageIndex: number;
 }
 
-export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isProcessing, timestampMode, selectedMessageIndex }) => {
+export const ChatHistory = React.memo<ChatHistoryProps>(({ messages, isProcessing, timestampMode, selectedMessageIndex }) => {
+  const [showCursor, setShowCursor] = useState(true);
+  
+  // Blinking cursor effect
+  useEffect(() => {
+    if (isProcessing) {
+      const interval = setInterval(() => {
+        setShowCursor(prev => !prev);
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, [isProcessing]);
+  
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', { 
       hour12: false, 
@@ -43,22 +57,22 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isProcessing
     return formatRelativeTime(date);
   };
 
-  const getMessageColor = (type: Message['type']) => {
+  const getMessageColor = (type: ChatMessage['type']) => {
     switch (type) {
       case 'user':
-        return 'cyan';
+        return COLORS.you;
       case 'assistant':
-        return 'magenta';
+        return COLORS.dome;
       case 'system':
-        return 'blue';
+        return COLORS.system;
       case 'error':
-        return 'red';
+        return COLORS.error;
       default:
-        return 'white';
+        return COLORS.white;
     }
   };
 
-  const getMessagePrefix = (type: Message['type']) => {
+  const getMessagePrefix = (type: ChatMessage['type']) => {
     switch (type) {
       case 'user':
         return '[You]    ';
@@ -77,7 +91,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isProcessing
     messages.map((message, index) => {
       const timestamp = getTimestamp(message.timestamp);
       const isSelected = index === selectedMessageIndex;
-      const isLong = message.content.length > 200;
+      const isLong = message.content.length > LIMITS.COLLAPSE_THRESHOLD;
       const canCollapse = message.type === 'assistant' && isLong;
       
       let displayContent = message.content;
@@ -94,35 +108,47 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isProcessing
           borderStyle={isSelected && canCollapse ? 'single' : undefined}
           borderColor={isSelected ? 'yellow' : undefined}
         >
-          <Box>
-            <Text color={getMessageColor(message.type)} bold>{getMessagePrefix(message.type)}</Text>
-            <Text>{displayContent}</Text>
-            {timestamp && <Text color="gray"> {timestamp}</Text>}
+          <Box flexDirection="column">
+            <Box marginBottom={message.type === 'assistant' ? 1 : 0}>
+              <Text color={getMessageColor(message.type)} bold>{getMessagePrefix(message.type)}</Text>
+              {timestamp && <Text color="gray"> {timestamp}</Text>}
+            </Box>
+            {(message.type === 'assistant' || message.type === 'system') && !message.isCollapsed ? (
+              <Box>
+                <MarkdownRenderer content={displayContent} color={message.type === 'system' ? 'blue' : 'white'} />
+                {message.type === 'assistant' && message.isStreaming && index === messages.length - 1 && showCursor && (
+                  <Text color={COLORS.you}>{STREAMING.CURSOR}</Text>
+                )}
+              </Box>
+            ) : (
+              <Text color={message.type === 'error' ? 'red' : undefined}>{displayContent}</Text>
+            )}
             {canCollapse && !message.isCollapsed && isSelected && (
-              <Text color="yellow"> [press 's' to collapse]</Text>
+              <Box marginTop={1}>
+                <Text color="yellow">[press 's' to collapse]</Text>
+              </Box>
             )}
           </Box>
         </Box>
       );
-    }), [messages, timestampMode, selectedMessageIndex]
+    }), [messages, timestampMode, selectedMessageIndex, showCursor]
   );
 
+  // Only show the most recent messages that fit in the available space
+  // This creates a scrolling effect where old messages disappear at the top
+  const visibleMessages = messageElements.slice(-LIMITS.MAX_MESSAGES); // Keep last messages in memory
+  
   return (
     <Box 
       flexDirection="column" 
       flexGrow={1} 
       paddingX={1}
       paddingY={1}
-      minHeight={0}
+      overflow="hidden"
     >
-      {messageElements}
-      
-      {isProcessing && (
-        <Box marginBottom={1}>
-          <Text color="magenta" bold>[Dome]   </Text>
-          <Text color="yellow">Thinking...</Text>
-        </Box>
-      )}
+      {visibleMessages}
     </Box>
   );
-};
+});
+
+ChatHistory.displayName = 'ChatHistory';

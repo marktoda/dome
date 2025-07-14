@@ -1,10 +1,11 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { COLORS } from '../constants.js';
 
-export const HelpPanel: React.FC = () => {
+export const HelpPanel = React.memo(() => {
   return (
     <Box flexDirection="column">
-      <Text bold color="blue">Help</Text>
+      <Text bold color={COLORS.system}>Help</Text>
       <Text> </Text>
       
       <Text bold>Commands:</Text>
@@ -28,4 +29,6 @@ export const HelpPanel: React.FC = () => {
       <Text>Search topics</Text>
     </Box>
   );
-};
+});
+
+HelpPanel.displayName = 'HelpPanel';
