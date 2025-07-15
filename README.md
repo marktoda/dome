@@ -1,201 +1,184 @@
-# Dome - AI-Powered Personal Knowledge Management
+# Dome – AI-Powered Personal Knowledge Hub
 
-Dome is an intelligent note-taking system that combines the simplicity of markdown files with the power of AI assistance and semantic search.
+> Turn plain Markdown into a searchable, self-organising second brain – all from your terminal.
 
-## Features
+---
 
-- **📝 Markdown-Based**: All notes are plain markdown files in your local vault
-- **🤖 AI Assistant**: Context-aware AI that adapts to different types of notes
-- **🔍 Semantic Search**: Find notes by meaning, not just keywords
-- **📁 Context System**: Folder-specific templates, rules, and behaviors
-- **🔄 Auto-Organization**: AI-powered note reorganization and deduplication
-- **⚡ Background Indexing**: Automatic search index updates
-- **🎯 Smart Templates**: Pre-configured templates for meetings, journals, projects, etc.
+## ✨ Key Features
 
-## Quick Start
+- **Markdown First** – Your notes stay as simple `.md` files in a local folder that you own.
+- **Context-Aware AI** – Dome uses OpenAI models to suggest folders, templates and links that fit the *current* context.
+- **Semantic Search** – Find notes by meaning with blazing-fast local vector search and an optional cloud fallback.
+- **Smart Templates** – Built-in templates for meetings, journals, projects and more (add your own in seconds).
+- **AI-Powered Re-organisation** – Merge duplicates, clean up empty files and apply naming conventions automatically.
+- **Background Indexing** – A watch mode keeps your search index in sync without you thinking about it.
 
-### Installation
+---
 
-```bash
-npm install
-npm run cli:build
-npm link
+## 🚀 Quick Start
+
+1. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+2. **Build the CLI** (needed once after each pull)
+
+   ```bash
+   npm run cli:build
+   ```
+
+3. **Link the binary** so `dome` is available on your `PATH`:
+
+   ```bash
+   npm link
+   ```
+
+4. **Configure your environment**
+
+   ```bash
+   # Required for AI features
+   export OPENAI_API_KEY="sk-..."
+
+   # Optional – override defaults
+   export DOME_VAULT_PATH="$HOME/notes"     # Where markdown files live
+   export LANCE_DB_PATH="$HOME/.cache/dome" # Where the vector DB lives
+   ```
+
+5. **Start using Dome**
+
+   ```bash
+   # Launch interactive chat mode (default)
+   dome
+   ```
+
+---
+
+## 💻 CLI at a Glance
+
+Command | What it does | Example
+--------|--------------|---------
+`dome` | Interactive chat with the AI assistant | `dome`
+`dome find <query>` | Open a prompt to locate notes semantically | `dome find "project architecture"`
+`dome new <topic>` | Create (or open) a note pre-filled with the right template | `dome new "2025-Q1 roadmap"`
+`dome list` | List all notes grouped by folder (add `--tags` or `--json`) | `dome list --tags meeting,project`
+`dome folder create <name>` | Initialise a folder with a `.dome` context file | `dome folder create research --template academic`
+`dome reorganize` | Run the AI workflow that merges duplicates & cleans up | `dome reorganize --dry-run`
+`dome index` | Update the vector index once or in watch-mode | `dome index --watch`
+
+Run any command with `--help` for all flags.
+
+---
+
+## 🔍 Semantic Search (`dome find`)
+
+The `find` command performs a two-stage search:
+
+1. **Local vector search** using [LanceDB](https://lancedb.com) – instant and offline.
+2. **AI fallback** (optional) that queries the OpenAI API when nothing relevant is found locally.
+
+Results are sorted by relevance, colour-coded and de-duplicated. Open the note directly, create a new one, or cancel – all from an interactive list.
+
+---
+
+## 🏗 Folder Contexts
+
+Attach a `.dome` file to any folder to customise behaviour:
+
+```toml
+name        = "Research"
+description = "Academic research and paper notes"
+
+[template]
+file = "templates/research.md"
+
+[naming]
+pattern = "YYYY-MM-DD-{title}"
+
+[ai]
+instructions = "You are a helpful research assistant…"
 ```
 
-### Basic Usage
+Placeholders are substituted automatically when `dome new` is executed inside the folder.
 
-```bash
-# Start interactive chat
-dome
+---
 
-# Find and open a note
-dome find "meeting notes"
+## ⚙️ Configuration Reference
 
-# List all notes
-dome list
+Variable | Default | Description
+---------|---------|------------
+`DOME_VAULT_PATH` | `~/dome` | Root folder that contains your Markdown notes.
+`OPENAI_API_KEY` | – | OpenAI key for GPT-powered features.
+`LANCE_DB_PATH` | `vault/.vector_db` | Location of the vector search index.
 
-# Create context for a folder
-dome context create meetings --template meetings
+---
 
-# Setup contexts interactively
-dome setup
+## 🧩 Architecture Overview
+
+```mermaid
+graph TD;
+  subgraph CLI
+    A[dome] --> B[Commands];
+    B --> C[find];
+    B --> D[new];
+    B --> E[list];
+    B --> F[reorganize];
+  end
+
+  subgraph Core
+    G[Note Store] --> H[Vector Index (LanceDB)];
+    G --> I[Context Manager];
+  end
+
+  subgraph AI
+    J[OpenAI Completion] --> K[Mastra Agents];
+  end
+
+  C --> H;
+  D --> I;
+  F --> K;
+  B -.->|HTTP/FS| G;
 ```
 
-## Core Concepts
+- **CLI** – Thin wrappers that map user intent to core services.
+- **Core** – Everything related to reading, writing and indexing markdown files.
+- **AI** – A set of Mastra agents and workflows that call out to OpenAI when required.
 
-### Vault Structure
+---
 
-Your notes live in a vault (default: `~/dome`). You can organize them however you like:
+## 🛣 Roadmap
 
-```
-~/dome/
-├── meetings/
-│   ├── .dome              # Context configuration
-│   ├── 2024-01-15-standup.md
-│   └── 2024-01-16-planning.md
-├── projects/
-│   ├── .dome
-│   └── webapp/
-│       ├── architecture.md
-│       └── todo.md
-└── journal/
-    ├── .dome
-    └── 2024-01-15.md
-```
+- [ ] Offline-only embeddings (no API key required)
+- [ ] VS Code extension
+- [ ] Web-based vault explorer
+- [ ] Advanced templating with conditionals and loops
+- [ ] End-to-end encrypted remote sync
 
-### Context System
+---
 
-Each folder can have a `.dome` file that configures:
+## 🤝 Contributing
 
-- **Templates**: Default content for new notes
-- **File Naming**: Automatic naming patterns (e.g., `YYYY-MM-DD-{title}`)
-- **Validation**: Required fields and rules
-- **AI Behavior**: Custom instructions for the AI assistant
+1. Fork the repo & create a branch: `git checkout -b feature/my-cool-feature`  
+2. Run `npm test` and make sure everything passes.  
+3. Submit a PR – please describe *what* you changed and *why*.
 
-### AI Assistant
+We ❤️ documentation improvements and bug-fixes!
 
-The AI assistant helps you:
+---
 
-- Create and organize notes
-- Extract insights from your vault
-- Find related information
-- Maintain consistent formatting
+## 📜 License
 
-## Configuration
+Dome is released under the MIT License. See `LICENSE` for details.
 
-### Environment Variables
+---
 
-- `DOME_VAULT_PATH`: Location of your notes vault (default: `~/dome`)
-- `OPENAI_API_KEY`: Required for AI features and semantic search
-- `LANCE_DB_PATH`: Vector database location (default: `vault/.vector_db`)
+## 🙏 Acknowledgements
 
-### Context Templates
+Dome stands on the shoulders of giants:
 
-Built-in templates for common use cases:
-
-- **meetings**: Team meetings, 1-1s, standups
-- **journal**: Daily reflections and logs
-- **projects**: Project documentation and planning
-- **ideas**: Quick idea capture
-- **reading**: Book and article notes
-
-## Advanced Features
-
-### Semantic Search
-
-Find notes by meaning:
-
-```bash
-dome
-> search for discussions about project architecture
-```
-
-### Note Reorganization
-
-Clean up and organize your vault:
-
-```bash
-dome reorganize --dry-run
-dome reorganize --merge-duplicates
-```
-
-### Background Indexing
-
-Automatic search index updates:
-
-```bash
-dome index --watch
-```
-
-### Custom Contexts
-
-Create custom folder behaviors:
-
-```bash
-dome context create research --name "Research Notes" \
-  --description "Academic research and paper notes"
-```
-
-## Architecture
-
-- **Core Module** (`src/mastra/core/`): Note management, contexts, search
-- **CLI Module** (`src/cli/`): Command-line interface
-- **Agents** (`src/mastra/agents/`): AI assistants
-- **Tools** (`src/mastra/tools/`): AI tool implementations
-- **Workflows** (`src/mastra/workflows/`): Complex operations
-
-## Development
-
-### Project Structure
-
-```
-src/
-├── cli/              # CLI commands and UI
-├── mastra/
-│   ├── core/        # Core functionality
-│   │   ├── context/ # Context system
-│   │   └── ...      # Other core modules
-│   ├── agents/      # AI agents
-│   ├── tools/       # AI tools
-│   └── workflows/   # Complex workflows
-└── tests/           # Test suite
-```
-
-### Running Tests
-
-```bash
-npm test
-```
-
-### Building
-
-```bash
-npm run cli:build
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-[License information here]
-
-## Acknowledgments
-
-Built with:
-
-- [Mastra](https://mastra.ai) - AI application framework
-- [Commander.js](https://github.com/tj/commander.js) - CLI framework
-- [Ink](https://github.com/vadimdemedes/ink) - React for CLIs
-- [LanceDB](https://lancedb.com) - Vector database
-- [OpenAI](https://openai.com) - AI models
-
-# TODO
-
-- Chat feature should include the relevant documents on the side that I can click through
-  - it should also let me open the editor into a temp file with all of them included
+- [Mastra](https://mastra.ai) – AI application framework
+- [LanceDB](https://lancedb.com) – Vector database
+- [Commander.js](https://github.com/tj/commander.js) – CLI framework
+- [Ink](https://github.com/vadimdemedes/ink) – React for CLIs
+- [OpenAI](https://openai.com) – GPT models
