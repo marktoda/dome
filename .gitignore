@@ -4,3 +4,4 @@ dist/
 build/
 .mastra/
 .npm-global/
+bin/
