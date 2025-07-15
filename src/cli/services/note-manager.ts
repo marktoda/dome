@@ -3,7 +3,7 @@ import { getNote, writeNote } from '../../mastra/core/notes.js';
 import { ContextManager } from '../../mastra/core/context/manager.js';
 import { mastra } from '../../mastra/index.js';
 import { DefaultEditorService, EditorService } from './editor-service.js';
-import logger from '../utils/logger.js';
+import logger from '../../mastra/utils/logger.js';
 
 // Schema for parsing AI cleanup response
 const RewriteNoteSchema = z.object({

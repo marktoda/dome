@@ -9,7 +9,7 @@ import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { prepareNoteFolder } from '../../mastra/core/notes.js';
 import { config } from '../../mastra/core/config.js';
-import logger from '../utils/logger.js';
+import logger from '../../mastra/utils/logger.js';
 
 const contextSchema = z.object({
   name: z.string(),

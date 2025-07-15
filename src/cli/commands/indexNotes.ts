@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import { indexNotes } from "../../mastra/core/search.js";
-import logger from "../utils/logger.js";
+import logger from "../../mastra/utils/logger.js";
 
 export function createIndexCommand(): Command {
   const indexCommand = new Command("index");
-  
+
   indexCommand
     .description("Index all notes for semantic search")
     .action(async () => {

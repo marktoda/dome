@@ -4,7 +4,7 @@ import inquirer from 'inquirer';
 import path from 'node:path';
 import chalk from 'chalk';
 import { handleNew } from './new.js';
-import logger from '../utils/logger.js';
+import logger from '../../mastra/utils/logger.js';
 
 interface FindOptions {
   maxResults?: number;

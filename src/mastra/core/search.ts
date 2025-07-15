@@ -14,6 +14,7 @@ import { PgVector } from '@mastra/pg';
 import { embedChunks } from "./embedding.js";
 import { MDocument } from "@mastra/rag";
 import { listNotes } from "./notes.js";
+import logger from "../utils/logger.js";
 import { config } from './config.js';
 import { noteEvents } from './events.js';
 import { embedText } from './embedding.js';
@@ -129,7 +130,7 @@ export async function indexNotes(
   mode: "full" | "incremental" = "incremental"
 ): Promise<number> {
   if (!process.env.OPENAI_API_KEY) {
-    console.error("OPENAI_API_KEY not set - skipping vector indexing");
+    logger.error("OPENAI_API_KEY not set - skipping vector indexing");
     return 0;
   }
   await ensureTable();
@@ -140,21 +141,21 @@ export async function indexNotes(
       const pool = (store as any).pool || (store as any).client;
       if (pool && typeof pool.query === 'function') {
         await pool.query(`DELETE FROM ${config.DOME_INDEX_NAME}`);
-        console.debug('Cleared existing vectors for full reindex');
+        logger.debug('Cleared existing vectors for full reindex');
       } else {
-        console.warn('[indexer] Unable to clear index: no database client available');
+        logger.warn('[indexer] Unable to clear index: no database client available');
       }
     } catch (err) {
-      console.error('Failed to clear existing vectors:', err);
+      logger.error('Failed to clear existing vectors:', err);
     }
   }
 
-  console.debug(`Starting ${mode} indexing...`);
+  logger.debug(`tarting ${mode} indexing...`);
 
   // Get all notes
   const notes = await listNotes();
   if (notes.length === 0) {
-    console.log("No notes to index");
+    logger.info("No notes to index");
     return 0;
   }
 
@@ -166,7 +167,7 @@ export async function indexNotes(
     ids: records.flatMap(r => r.map(rec => rec.id)),
   });
 
-  console.debug(`Indexing complete: ${records.length} notes processed`);
+  logger.debug(`Indexing complete: ${records.length} notes processed`);
   return records.length;
 }
 
@@ -190,7 +191,7 @@ export async function searchSimilarNotes(
       metadata: result.metadata as VectorMeta,
     }));
   } catch (error) {
-    console.error("Error searching notes:", error);
+    logger.error("Error searching notes:", error);
     return [];
   }
 }
@@ -203,7 +204,7 @@ export async function searchNotesByText(query: string, k = 10): Promise<SearchRe
     const vector = await embedText(query);
     return await searchSimilarNotes(vector, k);
   } catch (err) {
-    console.error('searchNotesByText failed', err);
+    logger.error('searchNotesByText failed', err);
     return [];
   }
 }
@@ -229,11 +230,11 @@ async function deleteVectorsByNotePath(notePath: string): Promise<void> {
           [notePath],
         );
       } else {
-        console.warn('[indexer] deleteVectorsByNotePath: delete not supported by store implementation');
+        logger.warn('[indexer] deleteVectorsByNotePath: delete not supported by store implementation');
       }
     }
   } catch (err) {
-    console.error('Error deleting vectors for', notePath, err);
+    logger.error('Error deleting vectors for', notePath, err);
   }
 }
 
@@ -312,7 +313,7 @@ class BackgroundIndexer {
     }
 
     if (!this.state.silentMode) {
-      console.log('🔍 Background indexing stopped');
+      logger.info('🔍 Background indexing stopped');
     }
   }
 
@@ -331,7 +332,7 @@ class BackgroundIndexer {
       }
     } catch (error) {
       if (!this.state.silentMode) {
-        console.error('Background indexing check failed:', error);
+        logger.error('Background indexing check failed:', error);
       }
       this.state.indexingPromise = null;
     }
@@ -383,7 +384,7 @@ class BackgroundIndexer {
       return false;
     } catch (error) {
       if (!this.state.silentMode) {
-        console.error('Error checking indexing needs:', error);
+        logger.error('Error checking indexing needs:', error);
       }
       return false;
     }
@@ -410,7 +411,7 @@ class BackgroundIndexer {
       });
     } catch (error) {
       if (!this.state.silentMode) {
-        console.error('❌ Background indexing failed:', error);
+        logger.error('❌ Background indexing failed:', error);
       }
     }
   }
@@ -479,7 +480,7 @@ class BackgroundIndexer {
 
       noteEvents.emit('index:updated', { type: 'updated' });
     } catch (err) {
-      console.error('Incremental indexing failed', err);
+      logger.error('Incremental indexing failed', err);
     }
   }
 
@@ -491,7 +492,7 @@ class BackgroundIndexer {
 
     // Clear current line, print status, then restore prompt
     process.stdout.write('\r\x1b[K'); // Clear line
-    console.log(message);
+    logger.info(message);
     process.stdout.write('> '); // Restore prompt
   }
 
@@ -501,7 +502,7 @@ class BackgroundIndexer {
   async forceIndex(): Promise<void> {
     if (this.state.indexingPromise) {
       if (!this.state.silentMode) {
-        console.log('Indexing already in progress, waiting...');
+        logger.info('Indexing already in progress, waiting...');
       }
       await this.state.indexingPromise;
       return;

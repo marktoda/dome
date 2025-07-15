@@ -3,7 +3,7 @@ import { NoteManager } from '../services/note-manager.js';
 import { writeNote, prepareNoteFolder } from '../../mastra/core/notes.js';
 import { basename } from 'node:path';
 import fs from 'node:fs/promises';
-import logger from '../utils/logger.js';
+import logger from '../../mastra/utils/logger.js';
 
 export async function handleNew(topic: string): Promise<void> {
   try {

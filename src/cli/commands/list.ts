@@ -1,6 +1,6 @@
 import { listNotes } from '../../mastra/core/notes.js';
 import { dirname } from 'node:path';
-import logger from '../utils/logger.js';
+import logger from '../../mastra/utils/logger.js';
 
 interface ListOptions {
   tags?: string;

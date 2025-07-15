@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { mastra } from '../../mastra/index.js';
-import logger from '../utils/logger.js';
+import logger from '../../mastra/utils/logger.js';
 
 export function createReorganizeCommand(): Command {
   const command = new Command('reorganize');
