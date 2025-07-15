@@ -37,7 +37,6 @@ export class NoteManager {
     }
 
     const context = await this.contextManager.getContext(relPath);
-    console.log('context', context);
 
     // Open in editor (blocking until the editor is closed)
     const success = await this.editor.openNote(relPath, false);

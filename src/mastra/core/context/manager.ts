@@ -6,6 +6,7 @@
 import { join, dirname, resolve } from 'node:path';
 import fs from 'node:fs/promises';
 import { config } from '../config.js';
+import { NoteId } from '../note-store.js';
 
 const MAX_DEPTH = 10;
 
@@ -34,10 +35,10 @@ export class ContextManager {
    * @returns Merged context from all parents
    */
   async getContext(
-    notePath: string,
+    noteId: NoteId,
     maxDepth: number = 10
   ): Promise<string | null> {
-    const contexts = await this.getAllParentContexts(notePath, maxDepth);
+    const contexts = await this.getAllParentContexts(noteId, maxDepth);
     if (!contexts) return null;
 
     // Reverse to put parent contexts first
@@ -156,21 +157,35 @@ export class ContextManager {
    * @returns Array of context strings with level information
    */
   private async getAllParentContexts(
-    notePath: string,
+    notePath: NoteId | string,
     maxDepth: number = MAX_DEPTH
   ): Promise<Array<{ content: string; level: number; path: string }> | null> {
     const contexts: Array<{ content: string; level: number; path: string }> = [];
-    let currentDir = dirname(resolve(notePath));
+
+    // Ensure we are working with an absolute path *inside* the vault. If callers
+    // pass a vault-relative path (e.g. "projects/alpha.md"), prefix it with the
+    // configured vault root so that subsequent directory traversals work as
+    // expected even when the CLI is executed from arbitrary working
+    // directories.
+    const absoluteNotePath = notePath.startsWith('/')
+      ? notePath
+      : join(config.DOME_VAULT_PATH, notePath);
+
+    let currentDir = dirname(resolve(absoluteNotePath));
     let depth = 0;
 
-    // Collect all contexts from current to root
+    // Collect all contexts from the note's folder up to the filesystem root or
+    // until we reach the configured maximum depth.
     while (depth < maxDepth) {
       const context = await this.loadContext(currentDir);
-      if (context) {
+      // Push the context entry even if the file is empty (""), but only skip
+      // truly missing files (null). This allows users to create placeholder
+      // context files that are intentionally empty.
+      if (context !== null) {
         contexts.push({
           content: context,
           level: depth,
-          path: currentDir
+          path: currentDir,
         });
       }
 
