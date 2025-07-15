@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { mastra } from '../../../mastra/index.js';
+import { MarkdownRenderer } from './MarkdownRenderer.js';
 
 interface Message {
   id: string;
@@ -67,7 +68,11 @@ export const ChatApp: React.FC = () => {
     return (
       <Box key={msg.id} flexDirection="row" marginBottom={1}>
         <Text color={color}>{prefix}</Text>
-        <Text>{msg.content}</Text>
+        {msg.role === 'assistant' ? (
+          <MarkdownRenderer content={msg.content} />
+        ) : (
+          <Text>{msg.content}</Text>
+        )}
       </Box>
     );
   };
