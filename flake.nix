@@ -49,5 +49,35 @@
         '';
       };
     });
+
+    # Packages that can be imported / installed via `nix build` or `nix run`
+    packages = forEachSupportedSystem ({pkgs, ...}: let
+      dome = pkgs.buildNpmPackage rec {
+        pname = "dome";
+        version = "1.0.0";
+
+        # Build straight from the flake source
+        src = self;
+
+        # Type-script build step defined in package.json
+        npmBuildScript = "cli:build";
+
+        # Use the existing pnpm lock-file for reproducible deps
+        npmLockFile = ./pnpm-lock.yaml;
+
+        # Placeholder – run a build once to obtain the correct hash and
+        # replace this with the value shown by the error message.
+        npmDepsHash = pkgs.lib.fakeSha256;
+
+        meta = {
+          description = "Dome CLI tool";
+          mainProgram = "dome";
+        };
+      };
+    in {
+      inherit dome;
+      # `nix run` will default to the CLI
+      default = dome;
+    });
   };
 }
