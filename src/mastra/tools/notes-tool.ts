@@ -52,7 +52,7 @@ export const getNoteTool = createTool({
 
 export const writeNoteTool = createTool({
   id: "writeNote",
-  description: "Create a new note or append content to an existing note. Always uses auto mode - creates if path doesn't exist, appends if it does.",
+  description: "Create a new note or overwrite an existing note.",
   inputSchema: z.object({
     path: z.string().describe("Note path like 'meetings/weekly-standup.md' or 'inbox/ideas.md'"),
     content: z.string().describe("The markdown content to write or append"),
@@ -62,7 +62,7 @@ export const writeNoteTool = createTool({
   outputSchema: z.object({
     path: z.string(),
     title: z.string(),
-    action: z.enum(["created", "appended"]),
+    action: z.enum(["created", "updated"]),
     contentLength: z.number(),
     fullPath: z.string()
   }),

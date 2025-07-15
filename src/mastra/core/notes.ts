@@ -47,8 +47,8 @@ export interface WriteResult {
   path: string;
   /** Title of the note */
   title: string;
-  /** Whether note was created or appended to */
-  action: "created" | "appended";
+  /** Whether note was created or updated */
+  action: "created" | "updated";
   /** Length of content written */
   contentLength: number;
   /** Absolute filesystem path */
@@ -138,14 +138,6 @@ export async function prepareNoteFolder(notePath: string): Promise<string> {
   return filePath;
 }
 
-export async function writeNoteRaw(
-  path: string,
-  content: string,
-): Promise<void> {
-  const fullPath = await prepareNoteFolder(path);
-  await fs.writeFile(fullPath, content, 'utf8');
-}
-
 /**
  * Write a note (create new or append to existing)
  * @param path - Relative path where to write the note
@@ -163,42 +155,41 @@ export async function writeNote(
   try {
     const fullPath = await prepareNoteFolder(path);
 
-    // Check if note already exists
-    const existingNote = await getNote(path);
+    // Determine if the note already exists
+    const noteExists = await fs.access(fullPath).then(() => true).catch(() => false);
 
-    if (existingNote) {
-      // Append to existing note
-      const { data: frontMatter, content: currentContent } = matter(await fs.readFile(fullPath, 'utf8'));
+    // Decide on a title
+    const noteTitle = title ?? basename(path, extname(path));
 
-      // Append new content with proper spacing
-      const separator = currentContent.trim() ? '\n\n' : '';
-      const updatedContent = currentContent + separator + content;
+    // Build the file content. If the note already exists we try to reuse (and
+    // update) its existing front-matter. Otherwise we create a fresh one.
+    let fileContent: string;
 
-      // Update modified timestamp
-      const updatedFrontMatter = {
-        ...frontMatter,
-        modified: new Date().toISOString()
+    if (noteExists) {
+      // Read the current file and attempt to parse any existing front-matter
+      const rawExisting = await fs.readFile(fullPath, "utf8");
+      const parsed = matter(rawExisting);
+      const existingFrontMatter: Record<string, unknown> = parsed.data ?? {};
+
+      // Always refresh the modified timestamp
+      const updatedFrontMatter: Record<string, unknown> = {
+        ...existingFrontMatter,
+        modified: new Date().toISOString(),
       };
 
-      // Write updated file
-      const updatedFileContent = matter.stringify(updatedContent, updatedFrontMatter);
-      await fs.writeFile(fullPath, updatedFileContent, 'utf8');
+      // Respect caller-provided metadata overrides
+      if (tags.length > 0) {
+        updatedFrontMatter.tags = tags;
+      }
+      if (title) {
+        updatedFrontMatter.title = noteTitle;
+      } else if (!updatedFrontMatter.title) {
+        updatedFrontMatter.title = noteTitle;
+      }
 
-      // Notify indexer BEFORE returning so the event is emitted
-      noteEvents.emit('note:changed', path);
-
-      return {
-        path,
-        title: existingNote.title,
-        action: "appended",
-        contentLength: content.length,
-        fullPath
-      };
+      fileContent = matter.stringify(content, updatedFrontMatter);
     } else {
-      // Create new note
       const now = new Date();
-      const noteTitle = title || basename(path, extname(path));
-
       const frontMatter = {
         title: noteTitle,
         date: now.toISOString(),
@@ -206,20 +197,22 @@ export async function writeNote(
         source: "cli"
       };
 
-      const fileContent = matter.stringify(content, frontMatter);
-      await fs.writeFile(fullPath, fileContent, 'utf8');
-
-      // Notify indexer
-      noteEvents.emit('note:changed', path);
-
-      return {
-        path,
-        title: noteTitle,
-        action: "created",
-        contentLength: content.length,
-        fullPath
-      };
+      fileContent = matter.stringify(content, frontMatter);
     }
+
+    // Always overwrite the note – no append logic.
+    await fs.writeFile(fullPath, fileContent, "utf8");
+
+    // Notify interested listeners
+    noteEvents.emit('note:changed', path);
+
+    return {
+      path,
+      title: noteTitle,
+      action: noteExists ? "updated" : "created",
+      contentLength: content.length,
+      fullPath
+    };
   } catch (error) {
     console.error("Error writing note:", error);
     throw new Error(`Failed to write note: ${error instanceof Error ? error.message : 'Unknown error'}`);

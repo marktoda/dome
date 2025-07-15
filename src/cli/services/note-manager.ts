@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getNote, writeNoteRaw } from '../../mastra/core/notes.js';
+import { getNote, writeNote } from '../../mastra/core/notes.js';
 import { ContextManager } from '../../mastra/core/context/manager.js';
 import { mastra } from '../../mastra/index.js';
 import { DefaultEditorService, EditorService } from './editor-service.js';
@@ -96,7 +96,7 @@ Return the complete improved note content including frontmatter.`;
 
     if (response.object?.noteText) {
       // Write cleaned version back to disk
-      await writeNoteRaw(path, response.object.noteText);
+      await writeNote(path, response.object.noteText);
       logger.info('✅ Note created and cleaned up successfully');
     } else {
       logger.info('✅ Note saved successfully');
