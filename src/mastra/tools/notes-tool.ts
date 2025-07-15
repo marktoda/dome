@@ -1,6 +1,8 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { listNotes, getNote, writeNote, removeNote } from "../core/notes.js";
+import { NoteId } from "../core/note-store.js";
+import { toRel } from "../utils/path-utils.js";
 import { ContextManager } from "../core/context/manager.js";
 
 export const getVaultContextTool = createTool({
@@ -46,7 +48,7 @@ export const getNoteTool = createTool({
     z.null()
   ]),
   execute: async ({ context }) => {
-    return getNote(context.path);
+    return getNote(toRel(context.path) as NoteId);
   }
 });
 
@@ -67,7 +69,7 @@ export const writeNoteTool = createTool({
     fullPath: z.string()
   }),
   execute: async ({ context }) => {
-    return writeNote(context.path, context.content, context.title, context.tags);
+    return writeNote(toRel(context.path) as NoteId, context.content, context.title, context.tags);
   }
 });
 
@@ -83,7 +85,7 @@ export const removeNoteTool = createTool({
     message: z.string()
   }),
   execute: async ({ context }) => {
-    return removeNote(context.path);
+    return removeNote(toRel(context.path) as NoteId);
   }
 });
 

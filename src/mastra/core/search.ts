@@ -150,7 +150,7 @@ export async function indexNotes(
     }
   }
 
-  logger.debug(`tarting ${mode} indexing...`);
+  logger.debug(`Starting ${mode} indexing...`);
 
   // Get all notes
   const notes = await listNotes();

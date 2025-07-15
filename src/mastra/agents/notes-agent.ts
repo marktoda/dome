@@ -38,6 +38,7 @@ export const notesAgent = new Agent({
       When searching finds relevant notes, you can follow up with getNoteTool to show full content.
       Always cite note paths in your answers and do not hallucinate content.
 `,
-  model: openai('gpt-4o-mini'),
+  // model: openai('gpt-4o-mini'),
+  model: openai('gpt-4.1-mini'),
   tools: { getVaultContextTool, getNoteTool, writeNoteTool, removeNoteTool, searchNotesTool },
 });

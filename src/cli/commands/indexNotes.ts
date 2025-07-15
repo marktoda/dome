@@ -13,7 +13,7 @@ export function createIndexCommand(): Command {
         await indexNotes('full');
         logger.info("✅ Note indexing completed successfully!");
       } catch (error) {
-        logger.error("❌ Error during indexing:", error);
+        logger.error(error, "❌ Error during indexing");
         process.exit(1);
       }
     });

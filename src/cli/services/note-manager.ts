@@ -1,9 +1,11 @@
 import { z } from 'zod';
-import { getNote, writeNote } from '../../mastra/core/notes.js';
+import { noteStore, NoteId } from '../../mastra/core/note-store.js';
+import { getNote } from '../../mastra/core/notes.js';
 import { ContextManager } from '../../mastra/core/context/manager.js';
 import { mastra } from '../../mastra/index.js';
 import { DefaultEditorService, EditorService } from './editor-service.js';
 import logger from '../../mastra/utils/logger.js';
+import { toRel } from '../../mastra/utils/path-utils.js';
 
 // Schema for parsing AI cleanup response
 const RewriteNoteSchema = z.object({
@@ -22,27 +24,44 @@ export class NoteManager {
 
   async editNote(
     topic: string,
-    path: string,
+    originalPath: string,
   ): Promise<void> {
-    const context = await this.contextManager.getContext(path);
+    // Ensure we operate on a vault-relative path.
+    const relPath: NoteId = toRel(originalPath);
+    // Capture the original content before opening the editor so we can
+    // determine whether the user actually made any changes.
+    const originalNote = await getNote(relPath);
+    if (!originalNote) {
+      logger.error('❌ Error reading note before edit');
+      process.exit(1);
+    }
 
-    // Open in editor
-    const success = await this.editor.openNote(path, false);
+    const context = await this.contextManager.getContext(relPath);
+    console.log('context', context);
+
+    // Open in editor (blocking until the editor is closed)
+    const success = await this.editor.openNote(relPath, false);
 
     if (!success) {
       logger.error('❌ Error opening note');
       process.exit(1);
     }
 
-    // Read the edited content
-    const note = await getNote(path);
-    if (!note) {
-      logger.error('❌ Error editing note');
+    // Read the content after the editor session
+    const editedNote = await getNote(relPath);
+    if (!editedNote) {
+      logger.error('❌ Error reading note after edit');
       process.exit(1);
     }
 
+    // If the user didn't modify the note, skip any cleanup / rewrite step
+    if (editedNote.raw.trim() === originalNote.raw.trim()) {
+      logger.info('✅ No changes detected – note left unchanged');
+      return;
+    }
+
     // Review and clean up the note via AI helper
-    await this.rewriteNote(topic, context, note.raw, path);
+    await this.rewriteNote(topic, context, editedNote.raw, relPath);
   }
 
   /**
@@ -58,10 +77,10 @@ export class NoteManager {
     topic: string,
     context: unknown,
     editedText: string,
-    path: string
+    path: NoteId
   ): Promise<void> {
     // Get the notes agent for summarization / cleanup
-    const agent = mastra.getAgent('notesAgent');
+    const agent = mastra.getAgent('readNotesAgent');
     if (!agent) {
       logger.info('✅ Note saved successfully');
       return;
@@ -98,7 +117,8 @@ Return the complete improved note content including frontmatter.`;
       const cleanedText = response.object.noteText;
       // Only rewrite the note if the cleaned text is actually different
       if (cleanedText.trim() !== editedText.trim()) {
-        await writeNote(path, cleanedText);
+        logger.info(`Writing cleaned up note at ${path}`);
+        await noteStore.store(path, cleanedText);
         logger.info('✅ Note cleaned up and saved successfully');
       } else {
         logger.info('✅ No cleanup needed – note unchanged');

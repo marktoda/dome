@@ -7,7 +7,8 @@ import { z } from 'zod';
 import { DefaultEditorService } from '../services/editor-service.js';
 import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
-import { prepareNoteFolder } from '../../mastra/core/notes.js';
+import { toRel, toAbs } from '../../mastra/utils/path-utils.js';
+import { mkdir } from 'node:fs/promises';
 import { config } from '../../mastra/core/config.js';
 import logger from '../../mastra/utils/logger.js';
 
@@ -43,7 +44,11 @@ async function createFolder(): Promise<void> {
       }
     }]);
 
-    const fullPath = await prepareNoteFolder(folderPath);
+    const relFolder = toRel(folderPath);
+    const fullPath = toAbs(relFolder);
+
+    // Ensure the folder structure exists
+    await mkdir(fullPath, { recursive: true });
 
     // Check if .dome file already exists
     const domePath = path.join(fullPath, '.dome');

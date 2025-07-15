@@ -4,12 +4,11 @@
  */
 
 import * as path from 'path';
-import fg from "fast-glob";
-import fs from "node:fs/promises";
-import matter from "gray-matter";
-import { join, basename, extname } from "node:path";
 import { config } from './config.js';
-import { noteEvents } from './events.js';
+import fs from 'node:fs/promises';
+import matter from 'gray-matter';
+import { RelPath, toAbs, toRel } from '../utils/path-utils.js';
+import { noteStore, NoteId } from './note-store.js';
 
 /**
  * Metadata for a note without its content
@@ -22,7 +21,7 @@ export interface NoteMeta {
   /** Array of tags from frontmatter */
   tags: string[];
   /** Relative path from vault root */
-  path: string;
+  path: NoteId;
   /** Source of the note (cli = created by dome, external = created outside) */
   source: "cli" | "external";
 }
@@ -44,7 +43,7 @@ export interface Note extends NoteMeta {
  */
 export interface WriteResult {
   /** Relative path of the note */
-  path: string;
+  path: NoteId;
   /** Title of the note */
   title: string;
   /** Whether note was created or updated */
@@ -60,7 +59,7 @@ export interface WriteResult {
  */
 export interface RemoveResult {
   /** Path of the removed note */
-  path: string;
+  path: NoteId;
   /** Whether removal was successful */
   success: boolean;
   /** Success or error message */
@@ -72,70 +71,60 @@ export interface RemoveResult {
  * @returns Array of note metadata
  */
 export async function listNotes(): Promise<NoteMeta[]> {
-  try {
-    const paths = await fg("**/*.md", {
-      cwd: config.DOME_VAULT_PATH,
-      dot: false,
-      ignore: ["**/node_modules/**", "**/.git/**"]
-    });
+  const entries = await noteStore.list();
+  const metas: NoteMeta[] = [];
 
-    const metas = await Promise.all(paths.map(parseMeta));
-    return metas.sort((a, b) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-  } catch (error) {
-    console.error("Error listing notes:", error);
-    return [];
+  for (const e of entries) {
+    try {
+      const raw = await fs.readFile(e.fullPath, 'utf8');
+      const { data } = matter(raw);
+      const meta = await deriveMeta(data, e.fullPath);
+      metas.push(meta);
+    } catch {
+      // skip broken files
+    }
   }
+
+  return metas.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 /**
- * Get a single note by its path
- * @param path - Relative path from vault root (e.g., "meetings/standup.md")
+ * Get a single note by its id
+ * @param id - NoteId (vault-relative path, e.g., "meetings/standup.md")
  * @returns Note with content, or null if not found
  */
-export async function getNote(path: string): Promise<Note | null> {
-  try {
-    const fullPath = join(config.DOME_VAULT_PATH, path);
-    await fs.access(fullPath);
+export async function getNote(id: NoteId): Promise<Note | null> {
+  const rawNote = await noteStore.get(id);
+  if (!rawNote) return null;
 
-    const raw = await fs.readFile(fullPath, "utf8");
-    const { data, content } = matter(raw);
-    const meta = await deriveMeta(data, fullPath);
-
-    return {
-      ...meta,
-      raw,
-      body: content,
-      fullPath
-    };
-  } catch {
-    // File doesn't exist or can't be read
-    return null;
-  }
+  const { data, content } = matter(rawNote.raw);
+  const meta = await deriveMeta(data, rawNote.fullPath);
+  return { ...meta, raw: rawNote.raw, body: content, fullPath: rawNote.fullPath };
 }
 
-/**
- * Ensures the parent folders exist and returns the *full* file path.
- *
- * @param notePath  Relative or absolute path the caller wants to write,
- *                  e.g. "docs/Eric promotion doc.md" or "docs/Eric promotion doc"
- * @returns         Absolute file path with ".md" extension guaranteed
- */
-export async function prepareNoteFolder(notePath: string): Promise<string> {
-  // Resolve to an absolute path first
-  const resolved = path.isAbsolute(notePath)
-    ? notePath
-    : path.join(config.DOME_VAULT_PATH, notePath);
+async function deriveMeta(data: any, fullPath: string): Promise<NoteMeta> {
+  const stat = await fs.stat(fullPath).catch(() => ({ birthtime: new Date() }));
+  const fileName = path.basename(fullPath, path.extname(fullPath));
+  // Compute the vault-relative path reliably so we don’t duplicate the vault prefix later
+  const relativePath = path.relative(config.DOME_VAULT_PATH, fullPath);
 
-  // If the caller forgot the extension, add it
-  const filePath = path.extname(resolved) ? resolved : `${resolved}.md`;
+  let title = data.title;
+  if (!title) {
+    const headingMatch = rawHeading(await fs.readFile(fullPath, 'utf8'));
+    if (headingMatch) title = headingMatch;
+  }
+  return {
+    title: title || fileName,
+    date: data.date || stat.birthtime.toISOString(),
+    tags: Array.isArray(data.tags) ? data.tags : [],
+    path: relativePath as NoteId,
+    source: data.source || 'external',
+  };
+}
 
-  // Create only the parent directories
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-
-  // Hand back the full file path (dir + filename)
-  return filePath;
+function rawHeading(raw: string): string | undefined {
+  const m = raw.match(/^#\s+(.*)$/m);
+  return m ? m[1] : undefined;
 }
 
 /**
@@ -147,76 +136,58 @@ export async function prepareNoteFolder(notePath: string): Promise<string> {
  * @returns Write operation result
  */
 export async function writeNote(
-  path: string,
+  notePath: NoteId,
   content: string,
   title?: string,
   tags: string[] = []
 ): Promise<WriteResult> {
-  try {
-    const fullPath = await prepareNoteFolder(path);
+  const relPath: NoteId = toRel(notePath);
 
-    // Determine if the note already exists
-    const noteExists = await fs.access(fullPath).then(() => true).catch(() => false);
+  // Does the note already exist?
+  const existedBefore = await noteStore.exists(relPath);
 
-    // Decide on a title
-    const noteTitle = title ?? basename(path, extname(path));
+  // Decide on a title
+  const noteTitle = title ?? path.basename(relPath, path.extname(relPath));
 
-    // Build the file content. If the note already exists we try to reuse (and
-    // update) its existing front-matter. Otherwise we create a fresh one.
-    let fileContent: string;
+  // Build the file content with updated front-matter
+  let fileContent: string;
 
-    if (noteExists) {
-      // Read the current file and attempt to parse any existing front-matter
-      const rawExisting = await fs.readFile(fullPath, "utf8");
-      const parsed = matter(rawExisting);
-      const existingFrontMatter: Record<string, unknown> = parsed.data ?? {};
+  if (existedBefore) {
+    // Load existing raw to merge front-matter (if any)
+    const existing = await noteStore.get(relPath);
+    const existingFront = existing ? matter(existing.raw).data ?? {} : {};
 
-      // Always refresh the modified timestamp
-      const updatedFrontMatter: Record<string, unknown> = {
-        ...existingFrontMatter,
-        modified: new Date().toISOString(),
-      };
+    const updatedFront: Record<string, unknown> = {
+      ...existingFront,
+      modified: new Date().toISOString(),
+    };
 
-      // Respect caller-provided metadata overrides
-      if (tags.length > 0) {
-        updatedFrontMatter.tags = tags;
-      }
-      if (title) {
-        updatedFrontMatter.title = noteTitle;
-      } else if (!updatedFrontMatter.title) {
-        updatedFrontMatter.title = noteTitle;
-      }
-
-      fileContent = matter.stringify(content, updatedFrontMatter);
-    } else {
-      const now = new Date();
-      const frontMatter = {
-        title: noteTitle,
-        date: now.toISOString(),
-        tags,
-        source: "cli"
-      };
-
-      fileContent = matter.stringify(content, frontMatter);
+    if (tags.length) updatedFront.tags = tags;
+    if (title) {
+      updatedFront.title = noteTitle;
+    } else if (!updatedFront.title) {
+      updatedFront.title = noteTitle;
     }
 
-    // Always overwrite the note – no append logic.
-    await fs.writeFile(fullPath, fileContent, "utf8");
-
-    // Notify interested listeners
-    noteEvents.emit('note:changed', path);
-
-    return {
-      path,
+    fileContent = matter.stringify(content, updatedFront);
+  } else {
+    fileContent = matter.stringify(content, {
       title: noteTitle,
-      action: noteExists ? "updated" : "created",
-      contentLength: content.length,
-      fullPath
-    };
-  } catch (error) {
-    console.error("Error writing note:", error);
-    throw new Error(`Failed to write note: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      date: new Date().toISOString(),
+      tags,
+      source: 'cli',
+    });
   }
+
+  const writeInfo = await noteStore.store(relPath, fileContent);
+
+  return {
+    path: relPath,
+    title: noteTitle,
+    action: writeInfo.existedBefore ? 'updated' : 'created',
+    contentLength: content.length,
+    fullPath: writeInfo.fullPath,
+  };
 }
 
 /**
@@ -224,98 +195,6 @@ export async function writeNote(
  * @param path - Relative path of note to remove
  * @returns Removal result with success status
  */
-export async function removeNote(path: string): Promise<RemoveResult> {
-  try {
-    const fullPath = join(config.DOME_VAULT_PATH, path);
-
-    // Verify file exists
-    await fs.access(fullPath);
-
-    // Remove the file
-    await fs.unlink(fullPath);
-
-    // Notify indexer about deletion
-    noteEvents.emit('note:deleted', path);
-
-    return {
-      path,
-      success: true,
-      message: `Successfully removed note: ${path}`
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return {
-      path,
-      success: false,
-      message: `Failed to remove note ${path}: ${message}`
-    };
-  }
-}
-
-/**
- * Parse metadata from a note file
- * @param relativePath - Path relative to vault root
- * @returns Note metadata
- */
-async function parseMeta(relativePath: string): Promise<NoteMeta> {
-  const fullPath = join(config.DOME_VAULT_PATH, relativePath);
-
-  try {
-    const raw = await fs.readFile(fullPath, "utf8");
-    const { data } = matter(raw);
-    return deriveMeta(data, fullPath);
-  } catch (error) {
-    // If can't read file, return minimal metadata
-    console.error(`Error parsing meta for ${relativePath}:`, error);
-
-    const stat = await fs.stat(fullPath).catch(() => ({
-      birthtime: new Date()
-    }));
-
-    return {
-      title: basename(fullPath, extname(fullPath)),
-      date: stat.birthtime.toISOString(),
-      tags: [],
-      path: relativePath,
-      source: "external"
-    };
-  }
-}
-
-/**
- * Derive complete metadata from frontmatter and file info
- * @param data - Parsed frontmatter data
- * @param fullPath - Absolute path to the file
- * @returns Complete note metadata
- */
-async function deriveMeta(data: any, fullPath: string): Promise<NoteMeta> {
-  const stat = await fs.stat(fullPath).catch(() => ({
-    birthtime: new Date()
-  }));
-
-  const fileName = basename(fullPath, extname(fullPath));
-  const relativePath = fullPath.replace(`${config.DOME_VAULT_PATH}/`, "");
-
-  // Determine title: frontmatter > first heading > filename
-  let title = data.title;
-
-  if (!title) {
-    try {
-      const raw = await fs.readFile(fullPath, "utf8");
-      const headingMatch = raw.match(/^#\s+(.*)$/m);
-      if (headingMatch) {
-        title = headingMatch[1];
-      }
-    } catch {
-      // Ignore read errors
-    }
-  }
-
-  return {
-    title: title || fileName,
-    date: data.date || stat.birthtime.toISOString(),
-    tags: Array.isArray(data.tags) ? data.tags : [],
-    path: relativePath,
-    source: data.source || "external"
-  };
+export function removeNote(id: NoteId): Promise<RemoveResult> {
+  return noteStore.remove(id);
 }

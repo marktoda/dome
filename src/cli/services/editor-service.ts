@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
-import { join, dirname, basename, extname } from 'node:path';
+import { dirname, basename, extname } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { writeNote } from '../../mastra/core/notes.js';
-import { config } from '../../mastra/core/config.js';
+import { noteStore, NoteId } from '../../mastra/core/note-store.js';
+import { toAbs, RelPath, toRel } from '../../mastra/utils/path-utils.js';
 
 export interface EditorService {
   openNote(path: string, isNew: boolean): Promise<boolean>;
@@ -16,9 +16,12 @@ export class DefaultEditorService implements EditorService {
            (process.platform === 'win32' ? 'notepad' : 'nano');
   }
 
-  async openNote(path: string, isNew: boolean): Promise<boolean> {
+  async openNote(relPath: string, isNew: boolean): Promise<boolean> {
+    // Accept unknown string but immediately treat it as vault-relative.
+    const rel = relPath as RelPath;
+
     const editor = this.detectEditor();
-    const fullPath = join(config.DOME_VAULT_PATH, path);
+    const fullPath = toAbs(rel);
     
     try {
       // Ensure directory exists
@@ -26,8 +29,8 @@ export class DefaultEditorService implements EditorService {
       
       if (isNew) {
         // Create note with basic template
-        const title = this.extractTitle(path);
-        await this.createNoteTemplate(path, title);
+        const title = this.extractTitle(relPath);
+        await this.createNoteTemplate(relPath, title);
       }
       
       // Check if editor exists
@@ -62,19 +65,19 @@ export class DefaultEditorService implements EditorService {
     }
   }
 
-  private async createNoteTemplate(path: string, title: string): Promise<void> {
+  private async createNoteTemplate(relPath: string, title: string): Promise<void> {
     const content = `# ${title}\n\n`;
     
     try {
-      await writeNote(path, content, title);
+      await noteStore.store(toRel(relPath) as NoteId, content);
     } catch (error) {
       console.error('Failed to create note template:', error);
       throw error;
     }
   }
 
-  private extractTitle(path: string): string {
-    const filename = basename(path, extname(path));
+  private extractTitle(relPath: string): string {
+    const filename = basename(relPath, extname(relPath));
     // Convert kebab-case to Title Case
     return filename
       .split('-')
