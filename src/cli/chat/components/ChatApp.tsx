@@ -42,14 +42,17 @@ export const ChatApp: React.FC = () => {
     setIsProcessing(true);
     try {
       const agent = await mastra.getAgent('notesAgent');
+
+      // Create empty assistant message to be filled progressively
+      const assistantId = `${Date.now()}-a`;
+      addMessage({ id: assistantId, role: 'assistant', content: '' });
+
       const stream = await agent.stream([{ role: 'user', content: trimmed }]);
 
-      let full = '';
       for await (const chunk of stream.textStream) {
-        full += chunk;
+        const text = chunk;
+        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + text } : m));
       }
-
-      addMessage({ id: `${Date.now()}-a`, role: 'assistant', content: full });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       addMessage({ id: `${Date.now()}-e`, role: 'error', content: `Error: ${message}` });

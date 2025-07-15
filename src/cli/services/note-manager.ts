@@ -95,9 +95,14 @@ Return the complete improved note content including frontmatter.`;
     });
 
     if (response.object?.noteText) {
-      // Write cleaned version back to disk
-      await writeNote(path, response.object.noteText);
-      logger.info('✅ Note created and cleaned up successfully');
+      const cleanedText = response.object.noteText;
+      // Only rewrite the note if the cleaned text is actually different
+      if (cleanedText.trim() !== editedText.trim()) {
+        await writeNote(path, cleanedText);
+        logger.info('✅ Note cleaned up and saved successfully');
+      } else {
+        logger.info('✅ No cleanup needed – note unchanged');
+      }
     } else {
       logger.info('✅ Note saved successfully');
     }
