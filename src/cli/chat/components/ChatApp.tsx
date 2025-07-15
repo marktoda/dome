@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
+import Spinner from 'ink-spinner';
 import TextInput from 'ink-text-input';
 import { mastra } from '../../../mastra/index.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
@@ -83,7 +84,7 @@ export const ChatApp: React.FC = () => {
       <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="visible">
         {messages.map(renderMessage)}
         {isProcessing && (
-          <Text color="cyan">…thinking…</Text>
+          <Text color="cyan"><Spinner type="dots" /> thinking…</Text>
         )}
       </Box>
 
