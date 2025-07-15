@@ -13,7 +13,7 @@ import { listNotes } from '../../../mastra/core/notes.js';
 import { setActivityTracker, analyzeAgentResponse } from '../utils/activityTracker.js';
 import { AppProvider, useAppState, useChatState, useUIState, useIndexingState } from '../state/AppContext.js';
 import { useVaultIndexer } from '../hooks/useVaultIndexer.js';
-import { COLORS, LAYOUT } from '../constants.js';
+import { COLORS, LAYOUT, STREAMING } from '../constants.js';
 import { ChatMessage } from '../state/types.js';
 import { withRetry, createErrorMessage, isRetryableError } from '../utils/errorHandler.js';
 import { useGlobalShortcuts } from '../hooks/useGlobalShortcuts.js';
@@ -151,7 +151,7 @@ const ChatAppInner: React.FC = () => {
           flushTimeout = setTimeout(() => {
             flushBuffer();
             flushTimeout = null;
-          }, 120);
+          }, STREAMING.FLUSH_INTERVAL_MS);
         }
         
         // Analyze new content for tool usage every 100 characters

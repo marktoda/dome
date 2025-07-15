@@ -1,23 +1,17 @@
 import { mastra } from '../../mastra/index.js';
+import { searchNotesByText } from '../../mastra/core/search.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 
-// Zod schemas for structured output
-const FindExistingNoteSchema = z.object({
-  found: z.boolean(),
-  path: z.string().optional(),
-  reason: z.string().optional()
+const FindNoteSchema = z.object({
+  path: z.string(),
+  title: z.string(),
+  reason: z.string().optional(),
+  relevanceScore: z.number().min(0).max(1)
 });
 
 const FindMultipleNotesSchema = z.object({
-  results: z.array(z.object({
-    path: z.string(),
-    title: z.string(),
-    relevanceScore: z.number().min(0).max(1),
-    excerpt: z.string().optional(),
-    reason: z.string().optional()
-  })),
-  totalFound: z.number()
+  notes: z.array(FindNoteSchema),
 });
 
 const FindNoteCategorySchema = z.object({
@@ -27,8 +21,8 @@ const FindNoteCategorySchema = z.object({
   reasoning: z.string().optional()
 });
 
+export type FindNoteResult = z.infer<typeof FindNoteSchema>;
 export type FolderFindResult = z.infer<typeof FindNoteCategorySchema>;
-export type MultipleNotesResult = z.infer<typeof FindMultipleNotesSchema>;
 
 export class AINoteFinder {
   async findPlaceForTopic(topic: string): Promise<FolderFindResult> {
@@ -84,38 +78,64 @@ Consider:
     return { fileName: result.fileName, path: join(result.path, `${result.fileName}`), template: result.template, reasoning: result.reasoning, };
   }
 
-  async findMultipleNotes(topic: string, limit: number = 10): Promise<MultipleNotesResult> {
-    try {
-      if (process.env.DEBUG) {
-        console.log('[AINoteFinder] Starting findMultipleNotes for topic:', topic);
-      }
+  /**
+   * Find multiple notes with parallel vector and AI search
+   * Returns immediate vector results and a promise for AI results
+   */
+  async findNotes(topic: string, limit: number = 10): Promise<{
+    vectorResults: FindNoteResult[];
+    aiResultsPromise: Promise<FindNoteResult[]>;
+  }> {
+    // Start vector search immediately
+    const vectorResultsPromise = this.vectorFindNotes(topic, limit);
 
-      // Check for OpenAI API key
-      if (!process.env.OPENAI_API_KEY) {
-        throw new Error('OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.');
-      }
-
-      let agent;
-      try {
-        agent = mastra.getAgent('notesAgent');
-        if (!agent) {
-          throw new Error('Notes agent not available');
-        }
-      } catch (error) {
-        console.error('Failed to initialize notes agent:', error);
-        throw new Error(`Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-
-      if (process.env.DEBUG) {
-        console.log('[AINoteFinder] Agent initialized successfully');
-      }
-
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('AI search timed out after 30 seconds')), 30000);
+    // Start AI search in parallel
+    const aiResultsPromise = this.aiFindNotes(topic, limit)
+      .catch(error => {
+        console.error('AI search failed:', error);
+        return [];
       });
 
-      const prompt = `
+    return {
+      vectorResults: await vectorResultsPromise,
+      aiResultsPromise
+    };
+  }
+
+  /**
+   * Perform AI-powered search (extracted from findMultipleNotes)
+   */
+  private async aiFindNotes(topic: string, limit: number): Promise<FindNoteResult[]> {
+    if (process.env.DEBUG) {
+      console.log('[AINoteFinder] Starting AI search for topic:', topic);
+    }
+
+    // Check for OpenAI API key
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.');
+    }
+
+    let agent;
+    try {
+      agent = mastra.getAgent('notesAgent');
+      if (!agent) {
+        throw new Error('Notes agent not available');
+      }
+    } catch (error) {
+      console.error('Failed to initialize notes agent:', error);
+      throw new Error(`Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+
+    if (process.env.DEBUG) {
+      console.log('[AINoteFinder] Agent initialized successfully');
+    }
+
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('AI search timed out after 30 seconds')), 30000);
+    });
+
+    const prompt = `
 Search for existing notes that match the topic: "${topic}"
 
 Use your available tools to search through all notes and find ALL relevant matches. Look for:
@@ -133,112 +153,49 @@ For each note found, assign a relevance score from 0 to 1:
 Return up to ${limit} most relevant results, sorted by relevance score (highest first). Be sure to use the getVaultContext tool to get a full view of the vault structure.
 `;
 
-      if (process.env.DEBUG) {
-        console.log('[AINoteFinder] Sending prompt to agent...');
-      }
-
-      const response = await Promise.race([
-        agent.generate([
-          { role: 'user', content: prompt }
-        ], {
-          experimental_output: FindMultipleNotesSchema
-        }),
-        timeoutPromise
-      ]);
-
-      if (process.env.DEBUG) {
-        console.log('[AINoteFinder] Received response from agent');
-      }
-
-      const result = response.object;
-
-      if (!result) {
-        return { results: [], totalFound: 0 };
-      }
-
-      return result;
-
-    } catch (error) {
-      console.error('Error finding notes:', error);
-      return { results: [], totalFound: 0 };
+    if (process.env.DEBUG) {
+      console.log('[AINoteFinder] Sending prompt to agent...');
     }
+
+    const response = await Promise.race([
+      agent.generate([
+        { role: 'user', content: prompt }
+      ], {
+        experimental_output: FindMultipleNotesSchema
+      }),
+      timeoutPromise
+    ]);
+
+    if (process.env.DEBUG) {
+      console.log('[AINoteFinder] Received response from agent');
+    }
+
+    const result = response.object;
+
+    if (!result) {
+      return [];
+    }
+
+    return result.notes;
   }
 
-  async findExistingNote(topic: string): Promise<{ path: string } | null> {
-    try {
-      // Check for OpenAI API key
-      if (!process.env.OPENAI_API_KEY) {
-        throw new Error('OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.');
+  async vectorFindNotes(query: string, limit = 10): Promise<FindNoteResult[]> {
+    const results = await searchNotesByText(query, limit * 2);
+
+    const byPath = new Map<string, { path: string; title: string; relevanceScore: number }>();
+
+    for (const r of results) {
+      const path = r.metadata?.notePath ?? r.id;
+      const score = r.score;
+      const title = r.metadata?.text ?? '';
+      const existing = byPath.get(path);
+      if (!existing || score > existing.relevanceScore) {
+        byPath.set(path, { path, title, relevanceScore: score });
       }
-
-      let agent;
-      try {
-        agent = mastra.getAgent('notesAgent');
-        if (!agent) {
-          throw new Error('Notes agent not available');
-        }
-      } catch (error) {
-        console.error('Failed to initialize notes agent:', error);
-        throw new Error(`Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-
-      // Use the agent to search for existing notes using its tools
-      const prompt = `
-Search for existing notes that match the topic: "${topic}"
-
-Use your available tools to search through all notes and find the best match. Look for:
-1. Notes with titles that closely match the search term
-2. Notes with content that is relevant to the topic
-3. Notes with tags that relate to the topic
-
-You must respond with a JSON object that matches this schema:
-{
-  "found": boolean,
-  "path": string (optional, only if found is true),
-  "reason": string (optional, explanation of why this note was chosen or why none were found)
-}
-
-Search term: ${topic}
-`;
-
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('AI search timed out after 30 seconds')), 30000);
-      });
-
-      const response = await Promise.race([
-        agent.generate([
-          { role: 'user', content: prompt }
-        ], {
-          experimental_output: FindExistingNoteSchema
-        }),
-        timeoutPromise
-      ]);
-
-      const result = response.object;
-
-      if (!result) {
-        throw new Error('No note found');
-      }
-
-      if (result.found && result.path) {
-        return { path: result.path };
-      }
-
-      return null;
-
-    } catch (error) {
-      throw new Error('No note found');
     }
-  }
 
-  private normalizeTopic(topic: string): string {
-    return topic
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '') // Remove special chars except spaces and hyphens
-      .replace(/\s+/g, '-') // Replace spaces with hyphens
-      .replace(/-+/g, '-') // Collapse multiple hyphens
-      .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
+    return Array.from(byPath.values())
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, limit);
   }
 }

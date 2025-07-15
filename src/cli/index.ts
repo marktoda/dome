@@ -10,6 +10,11 @@ import { createIndexCommand } from './commands/indexNotes.js';
 import { createReorganizeCommand } from './commands/reorganize.js';
 import { createFolderCommand } from './commands/folder.js';
 
+// Suppress noisy debug logs in non-debug CLI mode
+if (!process.env.DEBUG) {
+  console.debug = () => {};
+}
+
 // Suppress indexer status lines for CLI/to avoid prompt overwrites
 backgroundIndexer.setStatusDisplay(false);
 backgroundIndexer.setSilentMode(true);
@@ -30,7 +35,18 @@ program
   .command('find')
   .argument('<topic...>', 'topic or title for the note')
   .description('find and open an existing note')
-  .action(async (topicWords) => await handleFind(topicWords.join(' ')));
+  .option('--no-ai', 'disable AI fallback search')
+  .option('-n, --max-results <number>', 'maximum number of results to show', '10')
+  .option('-m, --min-relevance <number>', 'minimum relevance score (0-1)', '0.4')
+  .action(async (topicWords, options) => {
+    const topic = topicWords.join(' ');
+    const findOptions = {
+      useAIFallback: options.ai !== false,
+      maxResults: parseInt(options.maxResults, 10),
+      minRelevance: parseFloat(options.minRelevance)
+    };
+    await handleFind(topic, findOptions);
+  });
 
 // New command
 program

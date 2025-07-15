@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Box, useStdout } from 'ink';
 import { LAYOUT } from '../constants.js';
 
@@ -38,10 +38,18 @@ export const FullscreenLayout = React.memo<FullscreenLayoutProps>(({
     };
   }, [stdout]);
   
-  // Calculate heights
+  // Calculate dynamic sizes
   const headerHeight = 1;
   const footerHeight = footer ? 3 : 0;
   const contentAreaHeight = dimensions.height - headerHeight - footerHeight;
+
+  // Sidebar width logic – keep it proportional but within sane bounds
+  const sidebarWidth = useMemo(() => {
+    const pct = 0.25; // 25% of available width
+    const calculated = Math.floor(dimensions.width * pct);
+    // Clamp to avoid extreme sizes on tiny/huge terminals
+    return Math.max(20, Math.min(45, calculated));
+  }, [dimensions.width]);
   
   return (
     <Box flexDirection="column" width={dimensions.width} height={dimensions.height}>
@@ -54,7 +62,7 @@ export const FullscreenLayout = React.memo<FullscreenLayoutProps>(({
       <Box flexDirection="row" height={contentAreaHeight} flexGrow={1}>
         {/* Left Sidebar */}
         {leftSidebar && (
-          <Box width={35} flexShrink={0}>
+          <Box width={sidebarWidth} flexShrink={0}>
             {leftSidebar}
           </Box>
         )}
@@ -66,7 +74,7 @@ export const FullscreenLayout = React.memo<FullscreenLayoutProps>(({
         
         {/* Right Sidebar */}
         {rightSidebar && (
-          <Box width={35} flexShrink={0}>
+          <Box width={sidebarWidth} flexShrink={0}>
             {rightSidebar}
           </Box>
         )}
