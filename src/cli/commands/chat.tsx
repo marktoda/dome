@@ -1,11 +1,12 @@
 import React from 'react';
 import { render } from 'ink';
 import { ChatApp } from '../chat/index.js';
+import logger from '../utils/logger.js';
 
 export async function handleChat(): Promise<void> {
   try {
     // Clear the screen first
-    console.clear();
+    process.stdout.write('\u001B[2J\u001B[0;0f');
     
     // Use fullscreen mode to prevent flickering and ensure proper layout
     const { waitUntilExit } = render(<ChatApp />, {
@@ -18,8 +19,9 @@ export async function handleChat(): Promise<void> {
     
     await waitUntilExit();
   } catch (error) {
-    console.log('🏠 Dome AI Assistant');
-    console.log('❌ Error starting TUI interface:', error instanceof Error ? error.message : 'Unknown error');
-    console.log('Please ensure you are running this in a proper terminal.');
+    logger.info('🏠 Dome AI Assistant');
+    logger.error('❌ Error starting TUI interface:');
+    logger.debug(error instanceof Error ? error.message : 'Unknown error');
+    logger.info('Please ensure you are running this in a proper terminal.');
   }
 }

@@ -134,6 +134,21 @@ export async function indexNotes(
   }
   await ensureTable();
 
+  // Clear existing vectors when performing a full reindex
+  if (mode === 'full') {
+    try {
+      const pool = (store as any).pool || (store as any).client;
+      if (pool && typeof pool.query === 'function') {
+        await pool.query(`DELETE FROM ${config.DOME_INDEX_NAME}`);
+        console.debug('Cleared existing vectors for full reindex');
+      } else {
+        console.warn('[indexer] Unable to clear index: no database client available');
+      }
+    } catch (err) {
+      console.error('Failed to clear existing vectors:', err);
+    }
+  }
+
   console.debug(`Starting ${mode} indexing...`);
 
   // Get all notes

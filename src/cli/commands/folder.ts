@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import chalk from 'chalk';
 import inquirer from 'inquirer';
 import matter from 'gray-matter';
 import { z } from 'zod';
@@ -10,6 +9,7 @@ import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { prepareNoteFolder } from '../../mastra/core/notes.js';
 import { config } from '../../mastra/core/config.js';
+import logger from '../utils/logger.js';
 
 const contextSchema = z.object({
   name: z.string(),
@@ -49,7 +49,7 @@ async function createFolder(): Promise<void> {
     const domePath = path.join(fullPath, '.dome');
     try {
       await fs.access(domePath);
-      console.log(chalk.yellow('⚠️  A .dome file already exists in this folder.'));
+      logger.warn('A .dome file already exists in this folder.');
       const { overwrite } = await inquirer.prompt([{
         type: 'confirm',
         name: 'overwrite',
@@ -57,7 +57,7 @@ async function createFolder(): Promise<void> {
         default: false,
       }]);
       if (!overwrite) {
-        console.log(chalk.blue('ℹ️  Folder creation cancelled.'));
+        logger.info('Folder creation cancelled.');
         return;
       }
     } catch {
@@ -81,7 +81,7 @@ async function createFolder(): Promise<void> {
     ]);
 
     // Generate context using AI
-    console.log(chalk.blue('🤖 Generating context file using AI...'));
+    logger.info('🤖 Generating context file using AI...');
 
     const prompt = `Create a comprehensive context file for a folder with the following specifications:
 
@@ -109,19 +109,19 @@ The context should be specific, practical, and help maintain consistency for all
       const fileContent = matter.stringify('', context as object);
       await fs.writeFile(domePath, fileContent);
 
-      console.log(chalk.green(`✅ Successfully created folder context at: ${chalk.bold(fullPath)}`));
-      console.log(chalk.blue(`📝 .dome file created with:`));
-      console.log(`   Name: ${chalk.bold(context.name)}`);
-      console.log(`   Description: ${context.description}`);
-      console.log(`   template: ${context.template?.frontmatter}\n ${context.template?.content}`);
-      console.log(`   Rules: ${context.rules}`);
+      logger.info(`✅ Successfully created folder context at: ${fullPath}`);
+      logger.info(`📝 .dome file created with:`);
+      logger.info(`   Name: ${context.name}`);
+      logger.info(`   Description: ${context.description}`);
+      logger.info(`   template: ${context.template?.frontmatter}\n ${context.template?.content}`);
+      logger.info(`   Rules: ${context.rules}`);
     } catch (aiError) {
-      console.error(chalk.red('❌ Error generating context with AI:'), aiError);
+      logger.error('❌ Error generating context with AI:', aiError);
       throw aiError;
     }
 
   } catch (error) {
-    console.error(chalk.red('❌ Error creating folder:'), error);
+    logger.error('❌ Error creating folder:', error);
     process.exit(1);
   }
 }
@@ -137,7 +137,7 @@ async function editFolder(folderPath?: string): Promise<void> {
       const domeFiles = await findDomeFiles(config.DOME_VAULT_PATH);
 
       if (domeFiles.length === 0) {
-        console.log(chalk.yellow('⚠️  No .dome files found in the vault.'));
+        logger.warn('⚠️  No .dome files found in the vault.');
         return;
       }
 
@@ -160,7 +160,7 @@ async function editFolder(folderPath?: string): Promise<void> {
     try {
       await fs.access(domePath);
     } catch {
-      console.log(chalk.yellow(`⚠️  No .dome file found at: ${targetPath}`));
+      logger.warn(`⚠️  No .dome file found at: ${targetPath}`);
       const { create } = await inquirer.prompt([{
         type: 'confirm',
         name: 'create',
@@ -174,20 +174,20 @@ async function editFolder(folderPath?: string): Promise<void> {
     }
 
     // Open the file in the default editor
-    console.log(chalk.blue(`📝 Opening .dome file in your editor...`));
+    logger.info(`📝 Opening .dome file in your editor...`);
     const editorService = new DefaultEditorService();
     const success = await editorService.openNote(domePath.replace(config.DOME_VAULT_PATH + '/', ''), false);
 
     if (!success) {
-      console.error(chalk.red('❌ Failed to open file in editor'));
+      logger.error('❌ Failed to open file in editor');
       process.exit(1);
     } else {
-      console.log(chalk.green('✅ Successfully edited .dome file'));
+      logger.info('✅ Successfully edited .dome file');
       process.exit(0);
     }
 
   } catch (error) {
-    console.error(chalk.red('❌ Error editing folder:'), error);
+    logger.error('❌ Error editing folder:', error);
     process.exit(1);
   }
 }

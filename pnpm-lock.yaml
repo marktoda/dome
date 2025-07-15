@@ -80,6 +80,12 @@ importers:
       p-map:
         specifier: ^7.0.3
         version: 7.0.3
+      pino:
+        specifier: ^9.7.0
+        version: 9.7.0
+      pino-pretty:
+        specifier: ^13.0.0
+        version: 13.0.0
       react:
         specifier: ^19.1.0
         version: 19.1.0

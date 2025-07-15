@@ -37,6 +37,7 @@
 
           npm install -g @astrotask/cli
           npm install -g @astrotask/mcp
+          npm install -g .
 
           # Set Biome binary path for consistency
           export BIOME_BINARY="${pkgs.biome}/bin/biome"

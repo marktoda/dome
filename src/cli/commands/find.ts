@@ -1,9 +1,10 @@
-import { AINoteFinder, FindNoteResult } from '../actions/note-finder.js';
-import { DefaultEditorService } from '../services/editor-service.js';
+import { AINoteFinder, FindNoteResult } from '../services/note-finder.js';
+import { NoteManager } from '../services/note-manager.js';
 import inquirer from 'inquirer';
-import chalk from 'chalk';
 import path from 'node:path';
+import chalk from 'chalk';
 import { handleNew } from './new.js';
+import logger from '../utils/logger.js';
 
 interface FindOptions {
   maxResults?: number;
@@ -16,75 +17,75 @@ interface FindOptions {
  * and uses AI results only when vector search has no results
  */
 export async function handleFind(topic: string, options: FindOptions = {}): Promise<void> {
-  const { 
-    maxResults = 10, 
+  const {
+    maxResults = 10,
     useAIFallback = true,
-    minRelevance = 0.4 
+    minRelevance = 0.4
   } = options;
-  
+
   try {
     const finder = new AINoteFinder();
-    const editor = new DefaultEditorService();
+    const noteManager = new NoteManager();
 
-    console.log(chalk.blue(`🔍 Searching for notes matching "${topic}"...`));
+    logger.info(`🔍 Searching for notes matching "${topic}"...`);
 
     // Get both vector and AI search started
     const { vectorResults, aiResultsPromise } = await finder.findNotes(topic, maxResults * 2);
-    
+
     // Filter vector results
     const filteredVectorResults = vectorResults
       .filter(r => r.relevanceScore >= minRelevance)
       .slice(0, maxResults);
-    
+
     // If we have vector results, use them
     if (filteredVectorResults.length > 0) {
       // Single result - open directly
       if (filteredVectorResults.length === 1) {
-        await openNote(filteredVectorResults[0], editor);
+        await noteManager.editNote(topic, filteredVectorResults[0].path);
         return;
       }
-      
+
       // Multiple results - show selection
-      await showSelection(topic, filteredVectorResults, editor);
+      await showSelection(topic, filteredVectorResults, noteManager);
       return;
     }
-    
+
     // No vector results - try AI if enabled
     if (useAIFallback) {
-      console.log(chalk.gray('No local results found, waiting for AI search...'));
-      
+      logger.debug('No local results found, waiting for AI search...');
+
       try {
         const aiResults = await aiResultsPromise;
         const filteredAIResults = aiResults
           .filter(r => r.relevanceScore >= minRelevance)
           .slice(0, maxResults);
-        
+
         if (filteredAIResults.length > 0) {
           // Single AI result - open directly
           if (filteredAIResults.length === 1) {
-            await openNote(filteredAIResults[0], editor);
+            await noteManager.editNote(topic, filteredAIResults[0].path);
             return;
           }
-          
+
           // Multiple AI results - show selection
-          console.log(chalk.green('✨ Found results with AI search!'));
-          await showSelection(topic, filteredAIResults, editor);
+          logger.info('✨ Found results with AI search!');
+          await showSelection(topic, filteredAIResults, noteManager);
           return;
         }
       } catch (error) {
-        console.error(chalk.yellow('⚠️  AI search failed:'), error instanceof Error ? error.message : 'Unknown error');
+        logger.warn('⚠️  AI search failed:', error instanceof Error ? error.message : 'Unknown error');
       }
     }
-    
+
     // No results found
-    console.log(chalk.yellow(`⚠️  No notes found matching "${topic}" with relevance >= ${Math.round(minRelevance * 100)}%`));
+    logger.warn(`⚠️  No notes found matching "${topic}" with relevance >= ${Math.round(minRelevance * 100)}%`);
     await promptCreateNew(topic);
-    
+
   } catch (error) {
     if (error instanceof Error && error.message.includes('SIGINT')) {
-      console.log(chalk.yellow('\n🚫 Search cancelled'));
+      logger.warn('\n🚫 Search cancelled');
     } else {
-      console.error(chalk.red('❌ Failed to find notes:'), error instanceof Error ? error.message : 'Unknown error');
+      logger.error('❌ Failed to find notes:', error instanceof Error ? error.message : 'Unknown error');
     }
     process.exit(1);
   }
@@ -96,10 +97,10 @@ export async function handleFind(topic: string, options: FindOptions = {}): Prom
 async function showSelection(
   topic: string,
   results: FindNoteResult[],
-  editor: DefaultEditorService
+  noteManager: NoteManager
 ): Promise<void> {
   const choices = buildChoices(results);
-  
+
   const { selectedPath } = await inquirer.prompt([
     {
       type: 'list',
@@ -110,17 +111,17 @@ async function showSelection(
       loop: false
     }
   ]);
-  
+
   // Handle selection
   if (selectedPath === '__CREATE_NEW__') {
     await handleNew(topic);
   } else if (!selectedPath) {
-    console.log(chalk.yellow('🚫 Operation cancelled'));
+    logger.info('🚫 Operation cancelled');
     process.exit(0);
   } else {
     const selectedNote = results.find(r => r.path === selectedPath);
     if (selectedNote) {
-      await openNote(selectedNote, editor);
+      await noteManager.editNote(topic, selectedNote.path);
     }
   }
 }
@@ -133,42 +134,41 @@ function buildChoices(results: FindNoteResult[]): any[] {
     const num = (index + 1).toString().padStart(2, ' ');
     const score = Math.round(result.relevanceScore * 100);
     const fileName = path.basename(result.path);
-    
-    // Color code based on relevance
-    const scoreColor = getScoreColor(result.relevanceScore);
-    
-    // Format the display name
-    const displayName = `${chalk.bold(num)}. ${result.path} ${scoreColor(`[${score}%]`)}`;
-    
+    const scoreText = getScoreColor(result.relevanceScore)(`[${score}%]`);
+    const pathText = chalk.cyan(result.path);
+
+    // Format the display name with colored components
+    const displayName = `${num}. ${pathText} ${scoreText}`;
+
     return {
       name: displayName,
       value: result.path,
       short: fileName
     };
   });
-  
+
   // Add separator
   choices.push({
-    name: chalk.dim('─'.repeat(60)),
+    name: '─'.repeat(60),
     value: 'separator',
     short: '',
     disabled: true
   });
-  
+
   // Add create new note option
   choices.push({
-    name: chalk.green('✨ Create new note'),
+    name: '✨ Create new note',
     value: '__CREATE_NEW__',
     short: 'Create new'
   });
-  
+
   // Add cancel option
   choices.push({
-    name: chalk.red('❌ Cancel'),
+    name: '❌ Cancel',
     value: null,
     short: 'Cancel'
   });
-  
+
   return choices;
 }
 
@@ -184,7 +184,7 @@ async function promptCreateNew(topic: string): Promise<void> {
       default: true
     }
   ]);
-  
+
   if (createNew) {
     await handleNew(topic);
   } else {
@@ -193,26 +193,10 @@ async function promptCreateNew(topic: string): Promise<void> {
 }
 
 /**
- * Open a note in the editor
- */
-async function openNote(note: FindNoteResult, editor: DefaultEditorService): Promise<void> {
-  console.log(chalk.green(`📖 Opening note: ${note.path}`));
-  
-  const success = await editor.openNote(note.path, false);
-  
-  if (success) {
-    console.log(chalk.green('✅ Note opened successfully'));
-  } else {
-    console.error(chalk.red('❌ Error opening note'));
-    process.exit(1);
-  }
-}
-
-/**
  * Get color for relevance score
  */
 function getScoreColor(score: number): (text: string) => string {
-  if (score >= 0.8) return chalk.green;
-  if (score >= 0.6) return chalk.yellow;
-  return chalk.gray;
+  if (score >= 0.8) return chalk.greenBright;
+  if (score >= 0.6) return chalk.yellowBright;
+  return chalk.redBright;
 }

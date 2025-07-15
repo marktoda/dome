@@ -33,6 +33,8 @@ export interface NoteMeta {
 export interface Note extends NoteMeta {
   /** Markdown content without frontmatter */
   body: string;
+  /** raw text of the note */
+  raw: string;
   /** Absolute filesystem path */
   fullPath: string;
 }
@@ -103,6 +105,7 @@ export async function getNote(path: string): Promise<Note | null> {
 
     return {
       ...meta,
+      raw,
       body: content,
       fullPath
     };
@@ -133,6 +136,14 @@ export async function prepareNoteFolder(notePath: string): Promise<string> {
 
   // Hand back the full file path (dir + filename)
   return filePath;
+}
+
+export async function writeNoteRaw(
+  path: string,
+  content: string,
+): Promise<void> {
+  const fullPath = await prepareNoteFolder(path);
+  await fs.writeFile(fullPath, content, 'utf8');
 }
 
 /**

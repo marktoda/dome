@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { indexNotes } from "../../mastra/core/search.js";
+import logger from "../utils/logger.js";
 
 export function createIndexCommand(): Command {
   const indexCommand = new Command("index");
@@ -8,11 +9,11 @@ export function createIndexCommand(): Command {
     .description("Index all notes for semantic search")
     .action(async () => {
       try {
-        console.log("Starting note indexing for semantic search...");
-        await indexNotes();
-        console.log("✅ Note indexing completed successfully!");
+        logger.info("Starting note indexing for semantic search...");
+        await indexNotes('full');
+        logger.info("✅ Note indexing completed successfully!");
       } catch (error) {
-        console.error("❌ Error during indexing:", error);
+        logger.error("❌ Error during indexing:", error);
         process.exit(1);
       }
     });

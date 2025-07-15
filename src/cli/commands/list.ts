@@ -1,5 +1,6 @@
 import { listNotes } from '../../mastra/core/notes.js';
 import { dirname } from 'node:path';
+import logger from '../utils/logger.js';
 
 interface ListOptions {
   tags?: string;
@@ -8,12 +9,12 @@ interface ListOptions {
 
 export async function handleList(options: ListOptions = {}): Promise<void> {
   try {
-    console.log('📚 Loading notes...');
+    logger.info('📚 Loading notes...');
 
     const notes = await listNotes();
 
     if (notes.length === 0) {
-      console.log('📭 No notes found. Use "dome add <topic>" to create your first note!');
+      logger.info('📭 No notes found. Use "dome add <topic>" to create your first note!');
       return;
     }
 
@@ -32,7 +33,7 @@ export async function handleList(options: ListOptions = {}): Promise<void> {
     }
 
     if (options.json) {
-      console.log(JSON.stringify(filteredNotes, null, 2));
+      logger.info(JSON.stringify(filteredNotes, null, 2));
       return;
     }
 
@@ -41,23 +42,22 @@ export async function handleList(options: ListOptions = {}): Promise<void> {
 
     // Display results
     const vaultPath = process.env.DOME_VAULT_PATH ?? `${process.env.HOME}/dome`;
-    console.log(`\nNotes in ${vaultPath}:\n`);
+    logger.info(`\nNotes in ${vaultPath}:\n`);
 
     for (const [dir, dirNotes] of Object.entries(groupedNotes)) {
-      console.log(`📁 ${dir}/`);
+      let dirLog = `📁 ${dir}/\n`;
 
       for (const note of dirNotes) {
         const timeAgo = formatTimeAgo(new Date(note.date));
         const tags = note.tags.length > 0 ? ` [${note.tags.join(', ')}]` : '';
-        console.log(`  📝 ${note.path.split('/').pop()}${' '.repeat(Math.max(1, 30 - note.path.split('/').pop()!.length))} (${timeAgo})${tags}`);
+        dirLog += `  📝 ${note.path.split('/').pop()}${' '.repeat(Math.max(1, 30 - note.path.split('/').pop()!.length))} (${timeAgo})${tags}\n`;
       }
-
-      console.log('');
+      logger.info(dirLog);
     }
 
-    console.log(`Total: ${filteredNotes.length} note${filteredNotes.length !== 1 ? 's' : ''}`);
+    logger.info(`Total: ${filteredNotes.length} note${filteredNotes.length !== 1 ? 's' : ''}`);
   } catch (error) {
-    console.error('❌ Failed to list notes:', error instanceof Error ? error.message : 'Unknown error');
+    logger.error('❌ Failed to list notes:', error instanceof Error ? error.message : 'Unknown error');
     process.exit(1);
   }
 }
