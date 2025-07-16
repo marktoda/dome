@@ -9,6 +9,7 @@ import fs from 'node:fs/promises';
 import matter from 'gray-matter';
 import { RelPath, toAbs, toRel } from '../utils/path-utils.js';
 import { noteStore, NoteId } from './note-store.js';
+import logger from '../utils/logger.js';
 
 /**
  * Metadata for a note without its content
@@ -97,7 +98,15 @@ export async function getNote(id: NoteId): Promise<Note | null> {
   const rawNote = await noteStore.get(id);
   if (!rawNote) return null;
 
-  const { data, content } = matter(rawNote.raw);
+  let data: any = {};
+  let content: string = rawNote.raw;
+  try {
+    ({ data, content } = matter(rawNote.raw));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`⚠️  Failed to parse frontmatter for note ${id}: ${msg}`);
+  }
+
   const meta = await deriveMeta(data, rawNote.fullPath);
   return { ...meta, raw: rawNote.raw, body: content, fullPath: rawNote.fullPath };
 }

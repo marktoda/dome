@@ -1,18 +1,23 @@
 {
   "name": "dome",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "./dist/cli/index.js",
   "bin": {
-    "dome": "./bin/dome"
+    "dome": "./dist/cli/index.js"
   },
   "scripts": {
+    "clean": "rimraf dist",
+    "build": "npm run clean && npm run cli:build && mastra build",
+    "dev": "mastra dev",
+    "cli:dev": "tsx src/cli/index.ts",
+    "cli:build": "tsc -p tsconfig.json",
+    "mastra:build": "mastra build",
+    "start": "mastra start",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "npm run test:context",
     "test:context": "tsc && node dist/tests/run-tests.js",
-    "dev": "mastra dev",
-    "build": "mastra build",
-    "start": "mastra start",
-    "cli:build": "tsc",
-    "cli:dev": "tsc && node bin/dome",
     "cli:link": "npm link"
   },
   "keywords": [],
@@ -55,9 +60,26 @@
     "zod": "3.25.49",
     "zod-config": "^1.1.2"
   },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/cli/index.js"
+    }
+  },
   "devDependencies": {
     "@types/node": "^24.0.13",
+    "@typescript-eslint/eslint-plugin": "^7.8.0",
+    "@typescript-eslint/parser": "^7.8.0",
+    "eslint": "^9.3.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-unused-imports": "^3.1.0",
     "mastra": "^0.10.12",
+    "prettier": "^3.2.5",
+    "rimraf": "^5.0.5",
+    "tsx": "^4.7.1",
     "typescript": "^5.8.3",
     "why-is-node-running": "^3.2.2"
   }

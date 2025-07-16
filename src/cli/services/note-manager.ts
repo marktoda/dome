@@ -116,7 +116,6 @@ Return the complete improved note content including frontmatter.`;
       const cleanedText = response.object.noteText;
       // Only rewrite the note if the cleaned text is actually different
       if (cleanedText.trim() !== editedText.trim()) {
-        logger.info(`Writing cleaned up note at ${path}`);
         await noteStore.store(path, cleanedText);
         logger.info('✅ Note cleaned up and saved successfully');
       } else {

@@ -39,6 +39,11 @@
           npm install -g @astrotask/mcp
           npm install -g .
 
+          # Add convenient alias so the `dome` command always points to
+          # the locally-built CLI binary in the repository, independent of
+          # whatever might already be installed on the system.
+          alias dome="$PWD/dist/cli/index.js"
+
           # Set Biome binary path for consistency
           export BIOME_BINARY="${pkgs.biome}/bin/biome"
 
@@ -66,8 +71,8 @@
         npmLockFile = ./pnpm-lock.yaml;
 
         # Placeholder – run a build once to obtain the correct hash and
-        # replace this with the value shown by the error message.
-        npmDepsHash = pkgs.lib.fakeSha256;
+        # replace this with the value shown by the error message. Needs to be a typed hash string.
+        npmDepsHash = pkgs.lib.fakeHash;
 
         meta = {
           description = "Dome CLI tool";

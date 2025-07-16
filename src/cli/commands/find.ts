@@ -85,7 +85,7 @@ export async function handleFind(topic: string, options: FindOptions = {}): Prom
     if (error instanceof Error && error.message.includes('SIGINT')) {
       logger.warn('\n🚫 Search cancelled');
     } else {
-      logger.error('❌ Failed to find notes:', error instanceof Error ? error.message : 'Unknown error');
+      logger.error(`❌ Failed to find notes:, ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
     process.exit(1);
   }
