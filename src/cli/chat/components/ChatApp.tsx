@@ -211,7 +211,15 @@ export const ChatApp: React.FC = () => {
         const assistantId = `${Date.now()}-a`;
         addMessage({ id: assistantId, role: 'assistant', content: '' });
 
-        const stream = await agent.stream([{ role: 'user', content: trimmed }]);
+        // Build conversation history, filtering out error messages
+        const conversationHistory = messages
+          .filter(m => m.role !== 'error')
+          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+        
+        // Add the current message to the history
+        conversationHistory.push({ role: 'user' as const, content: trimmed });
+
+        const stream = await agent.stream(conversationHistory);
 
         for await (const chunk of stream.textStream) {
           const text = chunk;
@@ -226,7 +234,7 @@ export const ChatApp: React.FC = () => {
         setIsProcessing(false);
       }
     },
-    [addMessage, exit]
+    [addMessage, exit, messages]
   );
 
   const renderMessage = (msg: Message) => {
