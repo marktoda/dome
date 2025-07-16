@@ -90,10 +90,6 @@ export class EditorManager extends EventEmitter {
       // Prepare terminal for external editor
       const terminalState = await this.prepareTerminal();
       
-      if (!terminalState) {
-        throw new Error('Failed to prepare terminal for editor');
-      }
-
       // Spawn editor process
       const args = this.getEditorArgs(editor, fullPath);
       this.activeProcess = spawn(editor, args, {
