@@ -20,11 +20,13 @@ export const NoteLogPanel: React.FC<NoteLogPanelProps> = ({
   // Guard against empty list
   if (notes.length === 0) {
     return (
-      <Box flexDirection="column" paddingX={1} paddingY={0}>
-        <Text bold>Note Access Log</Text>
-        <Text dimColor italic>
-          — no notes accessed —
-        </Text>
+      <Box flexDirection="column" paddingX={1} paddingY={0} height="100%" justifyContent="flex-end">
+        <Box flexDirection="column">
+          <Text bold>Note Access Log</Text>
+          <Text dimColor italic>
+            — no notes accessed —
+          </Text>
+        </Box>
       </Box>
     );
   }
@@ -35,28 +37,30 @@ export const NoteLogPanel: React.FC<NoteLogPanelProps> = ({
   const windowed = notes.slice(start, end);
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0}>
-      <Text bold>Note Access Log</Text>
-      <Text color="gray">────────────────────</Text>
-      {windowed.map((path, idx) => {
-        const globalIdx = start + idx;
-        const isSelected = globalIdx === selectedIdx;
-        const fileName = path.split('/').pop() || path;
-        return (
-          <Text
-            key={globalIdx}
-            inverse={isSelected}
-            wrap="truncate-end"
-            color={isSelected ? 'black' : 'white'}
-          >
-            {`${fileName}`}
+    <Box flexDirection="column" paddingX={1} paddingY={0} height="100%" justifyContent="flex-end">
+      <Box flexDirection="column">
+        <Text bold>Note Access Log</Text>
+        <Text color="gray">────────────────────</Text>
+        {windowed.map((path, idx) => {
+          const globalIdx = start + idx;
+          const isSelected = globalIdx === selectedIdx;
+          const fileName = path.split('/').pop() || path;
+          return (
+            <Text
+              key={globalIdx}
+              inverse={isSelected}
+              wrap="truncate-end"
+              color={isSelected ? 'black' : 'white'}
+            >
+              {`${fileName}`}
+            </Text>
+          );
+        })}
+        <Box marginTop={1}>
+          <Text dimColor>
+            Ctrl+↑/↓ Navigate • Tab Open
           </Text>
-        );
-      })}
-      <Box marginTop={1}>
-        <Text dimColor>
-          Ctrl+↑/↓ Navigate • Tab Open
-        </Text>
+        </Box>
       </Box>
     </Box>
   );
