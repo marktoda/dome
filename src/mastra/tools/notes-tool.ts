@@ -1,6 +1,7 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { listNotes, getNote, writeNote, removeNote } from '../core/notes.js';
+import { trackActivity } from '../../cli/chat/utils/activityTracker.js';
 import { NoteId } from '../core/note-store.js';
 import { toRel } from '../utils/path-utils.js';
 import { ContextManager } from '../core/context/manager.js';
@@ -50,6 +51,8 @@ export const getNoteTool = createTool({
     z.null(),
   ]),
   execute: async ({ context }) => {
+    // Track note access for the Chat TUI sidebar
+    trackActivity('document', context.path);
     return getNote(toRel(context.path) as NoteId);
   },
 });
