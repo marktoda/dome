@@ -1,6 +1,5 @@
 import React, { ReactNode, useEffect, useState, useMemo } from 'react';
 import { Box, useStdout } from 'ink';
-import { LAYOUT } from '../constants.js';
 
 interface FullscreenLayoutProps {
   header: ReactNode;

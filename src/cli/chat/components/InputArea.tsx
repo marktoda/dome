@@ -4,7 +4,7 @@ import TextInput from 'ink-text-input';
 import { COLORS } from '../constants.js';
 
 interface InputAreaProps {
-  onSubmit: (input: string) => void;
+  onSubmit: (_input: string) => void;
   isDisabled?: boolean;
 }
 

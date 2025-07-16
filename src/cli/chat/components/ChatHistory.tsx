@@ -124,7 +124,7 @@ export const ChatHistory = React.memo<ChatHistoryProps>(
     return (
       <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={1} overflow="hidden">
         <Static items={staticMessages}>
-          {(msg: ChatMessage, idx: number) => (
+          {(msg: ChatMessage) => (
             <MessageRow
               key={msg.id}
               message={msg}

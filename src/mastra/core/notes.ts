@@ -7,7 +7,7 @@ import * as path from 'path';
 import { config } from './config.js';
 import fs from 'node:fs/promises';
 import matter from 'gray-matter';
-import { RelPath, toAbs, toRel } from '../utils/path-utils.js';
+import { toRel } from '../utils/path-utils.js';
 import { noteStore, NoteId } from './note-store.js';
 import logger from '../utils/logger.js';
 

@@ -23,7 +23,6 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(
 
     const renderInlineMarkdown = (text: string): React.ReactNode[] => {
       const parts: React.ReactNode[] = [];
-      let currentText = text;
       let key = 0;
 
       // Process inline code

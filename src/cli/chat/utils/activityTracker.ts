@@ -1,4 +1,3 @@
-import { ActivityEvent } from '../state/types.js';
 
 export interface ActivityTracker {
   addActivity: (type: 'tool' | 'document', name: string) => void;

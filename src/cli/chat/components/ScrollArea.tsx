@@ -1,4 +1,4 @@
-import React, { useReducer, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Box, useInput, measureElement } from 'ink';
 
 interface ScrollAreaProps {
