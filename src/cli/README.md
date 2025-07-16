@@ -110,7 +110,9 @@ The default chat interface provides:
 
 - `Ctrl+C` - Exit
 - `Ctrl+L` - Clear screen
-- `Shift+Enter` - Multi-line input
+- `Ctrl+A` - Toggle note log panel
+- `Ctrl+↑/↓` or `Ctrl+J/K` - Navigate note log
+- `Tab` - Open selected note in editor
 
 ## Error Handling
 

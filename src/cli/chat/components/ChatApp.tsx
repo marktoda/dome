@@ -1,12 +1,13 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { Box, Text, useApp, useInput, useStdout, useStdin } from 'ink';
 import Spinner from 'ink-spinner';
 import TextInput from 'ink-text-input';
 import { mastra } from '../../../mastra/index.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 import { NoteLogPanel } from './NoteLogPanel.js';
 import { setActivityTracker } from '../utils/activityTracker.js';
-import { NoteManager } from '../../services/note-manager.js';
+import { editorManager } from '../../services/editor-manager.js';
+import { setInkIO } from '../../ink/ink-io.js';
 
 interface Message {
   id: string;
@@ -23,9 +24,21 @@ export const ChatApp: React.FC = () => {
   // Note access log state
   const [noteLog, setNoteLog] = useState<string[]>([]);
   const [selectedNoteIdx, setSelectedNoteIdx] = useState(0);
+  const [showNoteLog, setShowNoteLog] = useState(true);
+  
+  // Editor state tracking
+  const [editorState, setEditorState] = useState(() => editorManager.getState());
+  const inputRef = useRef<{ focus: () => void } | null>(null);
 
   // Terminal dimensions for responsive layout
   const { stdout } = useStdout();
+  const { stdin, setRawMode, isRawModeSupported } = useStdin();
+
+  // Expose Ink IO globally for editor-service
+  useEffect(() => {
+    setInkIO({ stdin, setRawMode, isRawModeSupported });
+  }, [stdin, setRawMode, isRawModeSupported]);
+
   const sidebarWidth = Math.max(20, Math.floor((stdout?.columns || 80) * 0.2));
 
   // Register global tracker for document accesses
@@ -45,16 +58,43 @@ export const ChatApp: React.FC = () => {
     });
   }, []);
 
+  // Subscribe to editor state changes
+  useEffect(() => {
+    const handleStateChange = (state: typeof editorState) => {
+      setEditorState(state);
+    };
+
+    editorManager.on('state:changed', handleStateChange);
+    return () => {
+      editorManager.off('state:changed', handleStateChange);
+    };
+  }, []);
+
   // Global keyboard handlers
   useInput((input, key) => {
+    // Don't process keys when editor is open or transitioning
+    if (editorState.isOpen || editorState.isTransitioning) {
+      return;
+    }
+
+    // Toggle note log visibility – Ctrl+A
+    if (key.ctrl && input === 'a') {
+      setShowNoteLog(v => !v);
+      return;
+    }
+
     // Quit
     if (key.ctrl && input === 'c') {
+      // Force close editor if open
+      if (editorState.isOpen) {
+        editorManager.forceClose();
+      }
       exit();
       return;
     }
 
     // Scroll note log – Ctrl+J / Ctrl+Down
-    if (noteLog.length > 0) {
+    if (noteLog.length > 0 && showNoteLog) {
       if (
         key.ctrl &&
         ((input === 'j' && !key.shift && !key.meta) || key.downArrow)
@@ -69,26 +109,81 @@ export const ChatApp: React.FC = () => {
         return;
       }
 
-      // Open selected note with Enter (when not processing)
-      if (key.return && !isProcessing) {
+      // Open selected note with Tab (when not processing)
+      if (key.tab && !isProcessing) {
+        // Check if enough time has passed since last editor close
+        if (!editorManager.canOpenEditor()) {
+          return;
+        }
+
         const path = noteLog[selectedNoteIdx];
         if (path) {
-          const manager = new NoteManager();
-          // Topic is unknown in this context – pass empty string
-          manager
-            .editNote('', path)
-            .catch(err => {
-              const msg = err instanceof Error ? err.message : 'Unknown error';
-              addMessage({ id: `${Date.now()}-e`, role: 'error', content: `Error: ${msg}` });
-            })
-            .finally(() => {
-              // no-op
-            });
+          openNoteInEditor(path);
         }
         return;
       }
     }
   });
+
+  // Function to open note in editor
+  const openNoteInEditor = useCallback(async (path: string) => {
+    try {
+      await editorManager.openEditor({
+        path,
+        isNew: false,
+        onOpen: () => {
+          // Editor opened successfully
+          addMessage({
+            id: `${Date.now()}-s`,
+            role: 'assistant',
+            content: `Opening ${path} in editor...`,
+          });
+        },
+        onClose: (success) => {
+          // Editor closed
+          if (!success) {
+            addMessage({
+              id: `${Date.now()}-e`,
+              role: 'error',
+              content: 'Editor closed with an error',
+            });
+          }
+          // Re-focus the input after editor closes
+          setTimeout(() => {
+            inputRef.current?.focus();
+          }, 100);
+        },
+        onError: (error) => {
+          addMessage({
+            id: `${Date.now()}-e`,
+            role: 'error',
+            content: `Error opening editor: ${error.message}`,
+          });
+        },
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      addMessage({
+        id: `${Date.now()}-e`,
+        role: 'error',
+        content: `Failed to open editor: ${msg}`,
+      });
+    }
+  }, []);
+
+  // Fallback: ensure SIGINT always exits even if Ink input gets detached
+  useEffect(() => {
+    const onSigInt = () => {
+      if (editorState.isOpen) {
+        editorManager.forceClose();
+      }
+      exit();
+    };
+    process.once('SIGINT', onSigInt);
+    return () => {
+      process.off('SIGINT', onSigInt);
+    };
+  }, [exit, editorState.isOpen]);
 
   const addMessage = useCallback((msg: Message) => {
     setMessages(prev => [...prev, msg]);
@@ -149,40 +244,61 @@ export const ChatApp: React.FC = () => {
     );
   };
 
+  // Show editor status when active
+  const showEditorStatus = editorState.isOpen || editorState.isTransitioning;
+
   return (
-    <Box flexDirection="row" height="100%">
-      {/* Main chat area */}
-      <Box flexDirection="column" flexGrow={1}>
-        {/* Message history */}
-        <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="visible">
-          {messages.map(renderMessage)}
-          {isProcessing && (
-            <Text color="cyan">
-              <Spinner type="dots" /> thinking…
-            </Text>
-          )}
+    <Box flexDirection="column" height="100%">
+      {showEditorStatus && (
+        <Box paddingX={1} paddingY={1} borderStyle="single" borderColor="yellow">
+          <Text color="yellow">
+            {editorState.isTransitioning
+              ? '⏳ Transitioning to editor...'
+              : '📝 Editor is open - terminal input disabled'}
+          </Text>
+        </Box>
+      )}
+
+      <Box flexDirection="row" flexGrow={1}>
+        {/* Main chat area */}
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} overflow="hidden">
+          {/* Message history */}
+          <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="hidden">
+            {messages.map(renderMessage)}
+            {isProcessing && (
+              <Text color="cyan">
+                <Spinner type="dots" /> thinking…
+              </Text>
+            )}
+          </Box>
+
+          {/* Input area */}
+          <Box paddingX={1} marginBottom={1} flexShrink={0}>
+            <Text color="green">{'› '}</Text>
+            <TextInput
+              value={input}
+              onChange={setInput}
+              onSubmit={handleSubmit}
+              focus={!isProcessing && !editorState.isOpen && !editorState.isTransitioning}
+            />
+          </Box>
         </Box>
 
-        {/* Input area */}
-        <Box paddingX={1} marginBottom={1}>
-          <Text color="green">{'› '}</Text>
-          <TextInput
-            value={input}
-            onChange={setInput}
-            onSubmit={handleSubmit}
-            focus={!isProcessing}
-          />
-        </Box>
-      </Box>
-
-      {/* Note access log sidebar */}
-      <Box
-        width={sidebarWidth}
-        flexDirection="column"
-        borderStyle="single"
-        paddingLeft={1}
-      >
-        <NoteLogPanel notes={noteLog} selectedIdx={selectedNoteIdx} />
+        {showNoteLog && (
+          <Box
+            width={sidebarWidth}
+            flexShrink={0}
+            flexDirection="column"
+            borderStyle="single"
+            paddingLeft={1}
+            borderColor={editorState.isOpen ? 'gray' : 'white'}
+          >
+            <NoteLogPanel 
+              notes={noteLog} 
+              selectedIdx={selectedNoteIdx}
+            />
+          </Box>
+        )}
       </Box>
     </Box>
   );

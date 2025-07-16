@@ -3,7 +3,7 @@ import { noteStore, NoteId } from '../../mastra/core/note-store.js';
 import { getNote } from '../../mastra/core/notes.js';
 import { ContextManager } from '../../mastra/core/context/manager.js';
 import { mastra } from '../../mastra/index.js';
-import { DefaultEditorService, EditorService } from './editor-service.js';
+import { editorManager } from './editor-manager.js';
 import logger from '../../mastra/utils/logger.js';
 import { toRel } from '../../mastra/utils/path-utils.js';
 
@@ -14,11 +14,9 @@ const RewriteNoteSchema = z.object({
 });
 
 export class NoteManager {
-  private editor: EditorService;
   private contextManager: ContextManager;
 
   constructor() {
-    this.editor = new DefaultEditorService();
     this.contextManager = new ContextManager();
   }
 
@@ -35,8 +33,20 @@ export class NoteManager {
 
     const context = await this.contextManager.getContext(relPath);
 
-    // Open in editor (blocking until the editor is closed)
-    const success = await this.editor.openNote(relPath, false);
+    // Open in editor using the new EditorManager
+    const success = await editorManager.openEditor({
+      path: relPath,
+      isNew: false,
+      onOpen: () => {
+        logger.debug(`Opening note: ${relPath}`);
+      },
+      onClose: (success) => {
+        logger.debug(`Editor closed with success: ${success}`);
+      },
+      onError: (error) => {
+        logger.error(`Editor error: ${error.message}`);
+      },
+    });
 
     if (!success) {
       logger.error('❌ Error opening note');

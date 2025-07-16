@@ -121,7 +121,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(
                   </Text>
                 )}
                 {codeBlockContent.map((codeLine, idx) => (
-                  <Text key={idx} color={COLORS.green}>
+                  <Text key={idx} color={COLORS.green} wrap="wrap">
                     {codeLine}
                   </Text>
                 ))}
@@ -150,6 +150,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(
               <Text
                 bold
                 color={level === 1 ? COLORS.you : level === 2 ? COLORS.system : COLORS.dome}
+                wrap="wrap"
               >
                 {headerText}
               </Text>
@@ -221,7 +222,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(
       if (line.trim()) {
         elements.push(
           <Box key={`p-${lineIndex}`} marginBottom={line.trim() ? 0 : 1}>
-            <Text color={color}>{renderInlineMarkdown(line)}</Text>
+            <Text color={color} wrap="wrap">{renderInlineMarkdown(line)}</Text>
           </Box>
         );
       } else if (lineIndex < lines.length - 1) {
