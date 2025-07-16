@@ -45,7 +45,10 @@ export interface RootState {
 }
 
 export type ChatAction =
-  | { type: 'ADD_MESSAGE'; payload: Omit<ChatMessage, 'id' | 'timestamp'> & { id?: string; timestamp?: Date } }
+  | {
+      type: 'ADD_MESSAGE';
+      payload: Omit<ChatMessage, 'id' | 'timestamp'> & { id?: string; timestamp?: Date };
+    }
   | { type: 'UPDATE_MESSAGE'; payload: { id: string; content: string; isStreaming?: boolean } }
   | { type: 'APPEND_TO_MESSAGE'; payload: { id: string; content: string } }
   | { type: 'FINISH_STREAMING'; payload: { id: string } }
@@ -68,7 +71,11 @@ export type UIAction =
   | { type: 'SET_HELP_VISIBLE'; payload: boolean }
   | { type: 'SET_ACTIVITY_VISIBLE'; payload: boolean };
 
-export type RootAction = ChatAction | ActivityAction | ConfigAction | UIAction | 
-  { type: 'SET_VAULT_PATH'; payload: string } |
-  { type: 'SET_NOTE_COUNT'; payload: number } |
-  { type: 'UPDATE_INDEXING_STATUS'; payload: Partial<IndexingStatus> };
+export type RootAction =
+  | ChatAction
+  | ActivityAction
+  | ConfigAction
+  | UIAction
+  | { type: 'SET_VAULT_PATH'; payload: string }
+  | { type: 'SET_NOTE_COUNT'; payload: number }
+  | { type: 'UPDATE_INDEXING_STATUS'; payload: Partial<IndexingStatus> };

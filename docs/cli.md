@@ -119,10 +119,7 @@ import { setupMastra } from './mastra-setup.js';
 
 const program = new Command();
 
-program
-  .name('dome')
-  .description('AI-powered note-taking system')
-  .version('1.0.0');
+program.name('dome').description('AI-powered note-taking system').version('1.0.0');
 
 program
   .command('add')
@@ -151,10 +148,10 @@ interface TopicMatcher {
 
 class SmartTopicMatcher implements TopicMatcher {
   private categories = {
-    'meetings': ['1-1', 'meeting', 'standup', 'review', 'sync'],
-    'journal': ['daily', 'journal', 'log', 'reflection'],
-    'projects': ['project', 'roadmap', 'planning', 'feature'],
-    'inbox': [] // default fallback
+    meetings: ['1-1', 'meeting', 'standup', 'review', 'sync'],
+    journal: ['daily', 'journal', 'log', 'reflection'],
+    projects: ['project', 'roadmap', 'planning', 'feature'],
+    inbox: [], // default fallback
   };
 
   async findBestMatch(topic: string): Promise<string | null> {
@@ -162,16 +159,14 @@ class SmartTopicMatcher implements TopicMatcher {
     const normalized = this.normalizeTopic(topic);
 
     // Exact title match
-    const exactMatch = notes.find(n =>
-      n.title.toLowerCase() === topic.toLowerCase()
-    );
+    const exactMatch = notes.find(n => n.title.toLowerCase() === topic.toLowerCase());
     if (exactMatch) return exactMatch.path;
 
     // Fuzzy matching using similarity scoring
     const candidates = notes
       .map(n => ({
         note: n,
-        score: this.calculateSimilarity(normalized, n.title)
+        score: this.calculateSimilarity(normalized, n.title),
       }))
       .filter(c => c.score > 0.7)
       .sort((a, b) => b.score - a.score);
@@ -191,9 +186,11 @@ interface EditorService {
 
 class EditorService {
   detectEditor(): string {
-    return process.env.EDITOR ||
-           process.env.VISUAL ||
-           (process.platform === 'win32' ? 'notepad' : 'nano');
+    return (
+      process.env.EDITOR ||
+      process.env.VISUAL ||
+      (process.platform === 'win32' ? 'notepad' : 'nano')
+    );
   }
 
   async openNote(path: string, isNew: boolean): Promise<boolean> {
@@ -209,10 +206,10 @@ class EditorService {
     const { spawn } = await import('child_process');
     return new Promise((resolve, reject) => {
       const child = spawn(editor, [fullPath], {
-        stdio: 'inherit'
+        stdio: 'inherit',
       });
 
-      child.on('exit', (code) => {
+      child.on('exit', code => {
         resolve(code === 0);
       });
     });
@@ -237,7 +234,7 @@ class DomeChatSession implements ChatSession {
     this.rl = createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: '> '
+      prompt: '> ',
     });
 
     console.log('🏠 Dome AI Assistant\n');
@@ -254,8 +251,8 @@ class DomeChatSession implements ChatSession {
       input,
       context: {
         vaultPath,
-        availableCommands: ['list', 'search', 'create']
-      }
+        availableCommands: ['list', 'search', 'create'],
+      },
     });
 
     return response.text;
@@ -281,10 +278,7 @@ export async function handleAdd(topic: string) {
   const targetPath = existingPath || matcher.generatePath(topic);
   const isNew = !existingPath;
 
-  console.log(isNew ?
-    `Creating new note: ${targetPath}` :
-    `Opening existing note: ${targetPath}`
-  );
+  console.log(isNew ? `Creating new note: ${targetPath}` : `Opening existing note: ${targetPath}`);
 
   // Open in editor
   const success = await editor.openNote(targetPath, isNew);
@@ -307,12 +301,13 @@ export class FuzzyMatcher {
     // Levenshtein distance + semantic weighting
     const distance = this.levenshteinDistance(a, b);
     const maxLength = Math.max(a.length, b.length);
-    return 1 - (distance / maxLength);
+    return 1 - distance / maxLength;
   }
 
   extractKeywords(text: string): string[] {
     // Extract meaningful words, ignore common stopwords
-    return text.toLowerCase()
+    return text
+      .toLowerCase()
       .split(/\s+/)
       .filter(word => !this.isStopword(word))
       .filter(word => word.length > 2);
@@ -326,10 +321,10 @@ export class FuzzyMatcher {
 // src/chat/session.ts
 export class ChatSession {
   private commands = {
-    'help': () => this.showHelp(),
-    'list': () => this.listNotes(),
-    'search': (query: string) => this.searchNotes(query),
-    'exit': () => this.exit()
+    help: () => this.showHelp(),
+    list: () => this.listNotes(),
+    search: (query: string) => this.searchNotes(query),
+    exit: () => this.exit(),
   };
 
   async handleInput(input: string) {

@@ -24,11 +24,7 @@ export async function handleList(options: ListOptions = {}): Promise<void> {
     if (options.tags) {
       const targetTags = options.tags.split(',').map(tag => tag.trim().toLowerCase());
       filteredNotes = filteredNotes.filter(note =>
-        note.tags.some(tag =>
-          targetTags.some(targetTag =>
-            tag.toLowerCase().includes(targetTag)
-          )
-        )
+        note.tags.some(tag => targetTags.some(targetTag => tag.toLowerCase().includes(targetTag)))
       );
     }
 
@@ -57,7 +53,10 @@ export async function handleList(options: ListOptions = {}): Promise<void> {
 
     logger.info(`Total: ${filteredNotes.length} note${filteredNotes.length !== 1 ? 's' : ''}`);
   } catch (error) {
-    logger.error('❌ Failed to list notes:', error instanceof Error ? error.message : 'Unknown error');
+    logger.error(
+      '❌ Failed to list notes:',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
     process.exit(1);
   }
 }

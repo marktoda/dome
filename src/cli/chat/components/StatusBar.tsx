@@ -7,11 +7,7 @@ interface StatusBarProps {
   notesCount: number;
 }
 
-export const StatusBar = React.memo<StatusBarProps>(({ 
-  vaultPath, 
-  notesCount
-}) => {
-
+export const StatusBar = React.memo<StatusBarProps>(({ vaultPath, notesCount }) => {
   const formattedPath = useMemo(() => {
     const home = process.env.HOME || '';
     return vaultPath.startsWith(home) ? vaultPath.replace(home, '~') : vaultPath;
@@ -19,8 +15,13 @@ export const StatusBar = React.memo<StatusBarProps>(({
 
   return (
     <Box paddingX={1}>
-      <Text bold color={COLORS.system}>🏠 Dome AI Assistant</Text>
-      <Text> - {formattedPath} ({notesCount} notes)</Text>
+      <Text bold color={COLORS.system}>
+        🏠 Dome AI Assistant
+      </Text>
+      <Text>
+        {' '}
+        - {formattedPath} ({notesCount} notes)
+      </Text>
     </Box>
   );
 });

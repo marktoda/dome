@@ -72,4 +72,4 @@ export const useGlobalShortcuts = (
   // Bind once.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useInput(handler);
-}; 
+};

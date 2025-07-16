@@ -40,4 +40,4 @@ export function isRel(p: string): p is RelPath {
 
 export function isAbs(p: string): p is AbsPath {
   return path.isAbsolute(p);
-} 
+}

@@ -25,7 +25,7 @@ export const config = loadConfigSync({
         DOME_TABLE_NAME: 'dome',
         DOME_INDEX_NAME: 'notes_vectors',
         POSTGRES_URI: 'postgres://postgres:password@localhost:5432/dome',
-      }
+      },
     }),
     envAdapter({ silent: true }),
     dotEnvAdapter({ path: path.join(__dirname, '.env'), silent: true }),

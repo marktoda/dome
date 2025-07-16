@@ -11,9 +11,11 @@ export interface EditorService {
 
 export class DefaultEditorService implements EditorService {
   detectEditor(): string {
-    return process.env.EDITOR || 
-           process.env.VISUAL || 
-           (process.platform === 'win32' ? 'notepad' : 'nano');
+    return (
+      process.env.EDITOR ||
+      process.env.VISUAL ||
+      (process.platform === 'win32' ? 'notepad' : 'nano')
+    );
   }
 
   async openNote(relPath: string, isNew: boolean): Promise<boolean> {
@@ -22,17 +24,17 @@ export class DefaultEditorService implements EditorService {
 
     const editor = this.detectEditor();
     const fullPath = toAbs(rel);
-    
+
     try {
       // Ensure directory exists
       await mkdir(dirname(fullPath), { recursive: true });
-      
+
       if (isNew) {
         // Create note with basic template
         const title = this.extractTitle(relPath);
         await this.createNoteTemplate(relPath, title);
       }
-      
+
       // Check if editor exists
       if (!(await this.editorExists(editor))) {
         console.error(`❌ Editor '${editor}' not found. Please set EDITOR environment variable.`);
@@ -42,32 +44,34 @@ export class DefaultEditorService implements EditorService {
         console.log('  export EDITOR=code');
         return false;
       }
-      
+
       // Open in editor
-      return new Promise((resolve) => {
+      return new Promise(resolve => {
         const args = this.getEditorArgs(editor, fullPath);
-        const child = spawn(editor, args, { 
-          stdio: 'inherit' 
+        const child = spawn(editor, args, {
+          stdio: 'inherit',
         });
-        
-        child.on('exit', (code) => {
+
+        child.on('exit', code => {
           resolve(code === 0);
         });
-        
-        child.on('error', (error) => {
+
+        child.on('error', error => {
           console.error(`❌ Failed to open editor: ${error.message}`);
           resolve(false);
         });
       });
     } catch (error) {
-      console.error(`❌ Error opening note: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(
+        `❌ Error opening note: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
       return false;
     }
   }
 
   private async createNoteTemplate(relPath: string, title: string): Promise<void> {
     const content = `# ${title}\n\n`;
-    
+
     try {
       await noteStore.store(toRel(relPath) as NoteId, content);
     } catch (error) {
@@ -86,9 +90,9 @@ export class DefaultEditorService implements EditorService {
   }
 
   private async editorExists(editor: string): Promise<boolean> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const child = spawn('which', [editor], { stdio: 'ignore' });
-      child.on('exit', (code) => resolve(code === 0));
+      child.on('exit', code => resolve(code === 0));
       child.on('error', () => resolve(false));
     });
   }

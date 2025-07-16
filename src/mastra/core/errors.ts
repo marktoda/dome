@@ -41,11 +41,11 @@ export class ContextValidationError extends DomeError {
  */
 export class FileOperationError extends DomeError {
   constructor(operation: string, path: string, originalError?: Error) {
-    super(
-      `File operation '${operation}' failed for: ${path}`,
-      'FILE_OPERATION_ERROR',
-      { operation, path, originalError: originalError?.message }
-    );
+    super(`File operation '${operation}' failed for: ${path}`, 'FILE_OPERATION_ERROR', {
+      operation,
+      path,
+      originalError: originalError?.message,
+    });
     this.name = 'FileOperationError';
   }
 }
@@ -84,11 +84,7 @@ export function getErrorMessage(error: unknown): string {
  * @param code - Node error code (e.g., 'ENOENT')
  */
 export function isNodeError(error: unknown, code: string): boolean {
-  return (
-    error instanceof Error &&
-    'code' in error &&
-    error.code === code
-  );
+  return error instanceof Error && 'code' in error && error.code === code;
 }
 
 /**
@@ -117,7 +113,7 @@ export function createErrorResponse(error: unknown): ErrorResponse {
       },
     };
   }
-  
+
   return {
     success: false,
     error: {

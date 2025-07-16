@@ -36,7 +36,10 @@ export async function handleNew(topic: string): Promise<void> {
     // Open in editor (pass the cleaned id to the manager)
     await noteManager.editNote(topic, noteId);
   } catch (error) {
-    logger.error('❌ Failed to create note:', error instanceof Error ? error.message : 'Unknown error');
+    logger.error(
+      '❌ Failed to create note:',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
     process.exit(1);
   }
 }

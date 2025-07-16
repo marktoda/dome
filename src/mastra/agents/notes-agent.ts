@@ -1,6 +1,12 @@
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
-import { getVaultContextTool, getNoteTool, writeNoteTool, removeNoteTool, searchNotesTool } from '../tools/notes-tool.js';
+import {
+  getVaultContextTool,
+  getNoteTool,
+  writeNoteTool,
+  removeNoteTool,
+  searchNotesTool,
+} from '../tools/notes-tool.js';
 
 export const notesAgent = new Agent({
   name: 'Notes Agent',

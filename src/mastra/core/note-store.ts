@@ -12,11 +12,11 @@ export interface RawNote {
 }
 
 export interface WriteResult {
-  path: NoteId;          // relative
+  path: NoteId; // relative
   title: string;
   action: 'created' | 'updated';
   contentLength: number;
-  fullPath: string;      // absolute
+  fullPath: string; // absolute
 }
 
 export interface RemoveResult {
@@ -81,7 +81,10 @@ class FileSystemNoteStore implements NoteStore {
     const relPath = id;
     const fullPath = await this.prepareNoteFolder(relPath);
 
-    const existedBefore = await fs.access(fullPath).then(() => true).catch(() => false);
+    const existedBefore = await fs
+      .access(fullPath)
+      .then(() => true)
+      .catch(() => false);
 
     await fs.writeFile(fullPath, rawContent, 'utf8');
     noteEvents.emit('note:changed', relPath);

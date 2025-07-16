@@ -7,7 +7,7 @@
 ## ✨ Key Features
 
 - **Markdown First** – Your notes stay as simple `.md` files in a local folder that you own.
-- **Context-Aware AI** – Dome uses OpenAI models to suggest folders, templates and links that fit the *current* context.
+- **Context-Aware AI** – Dome uses OpenAI models to suggest folders, templates and links that fit the _current_ context.
 - **Semantic Search** – Find notes by meaning with blazing-fast local vector search and an optional cloud fallback.
 - **Smart Templates** – Built-in templates for meetings, journals, projects and more (add your own in seconds).
 - **AI-Powered Re-organisation** – Merge duplicates, clean up empty files and apply naming conventions automatically.
@@ -57,15 +57,15 @@
 
 ## 💻 CLI at a Glance
 
-Command | What it does | Example
---------|--------------|---------
-`dome` | Interactive chat with the AI assistant | `dome`
-`dome find <query>` | Open a prompt to locate notes semantically | `dome find "project architecture"`
-`dome new <topic>` | Create (or open) a note pre-filled with the right template | `dome new "2025-Q1 roadmap"`
-`dome list` | List all notes grouped by folder (add `--tags` or `--json`) | `dome list --tags meeting,project`
-`dome folder create <name>` | Initialise a folder with a `.dome` context file | `dome folder create research --template academic`
-`dome reorganize` | Run the AI workflow that merges duplicates & cleans up | `dome reorganize --dry-run`
-`dome index` | Update the vector index once or in watch-mode | `dome index --watch`
+| Command                     | What it does                                                | Example                                           |
+| --------------------------- | ----------------------------------------------------------- | ------------------------------------------------- |
+| `dome`                      | Interactive chat with the AI assistant                      | `dome`                                            |
+| `dome find <query>`         | Open a prompt to locate notes semantically                  | `dome find "project architecture"`                |
+| `dome new <topic>`          | Create (or open) a note pre-filled with the right template  | `dome new "2025-Q1 roadmap"`                      |
+| `dome list`                 | List all notes grouped by folder (add `--tags` or `--json`) | `dome list --tags meeting,project`                |
+| `dome folder create <name>` | Initialise a folder with a `.dome` context file             | `dome folder create research --template academic` |
+| `dome reorganize`           | Run the AI workflow that merges duplicates & cleans up      | `dome reorganize --dry-run`                       |
+| `dome index`                | Update the vector index once or in watch-mode               | `dome index --watch`                              |
 
 Run any command with `--help` for all flags.
 
@@ -106,11 +106,11 @@ Placeholders are substituted automatically when `dome new` is executed inside th
 
 ## ⚙️ Configuration Reference
 
-Variable | Default | Description
----------|---------|------------
-`DOME_VAULT_PATH` | `~/dome` | Root folder that contains your Markdown notes.
-`OPENAI_API_KEY` | – | OpenAI key for GPT-powered features.
-`LANCE_DB_PATH` | `vault/.vector_db` | Location of the vector search index.
+| Variable          | Default            | Description                                    |
+| ----------------- | ------------------ | ---------------------------------------------- |
+| `DOME_VAULT_PATH` | `~/dome`           | Root folder that contains your Markdown notes. |
+| `OPENAI_API_KEY`  | –                  | OpenAI key for GPT-powered features.           |
+| `LANCE_DB_PATH`   | `vault/.vector_db` | Location of the vector search index.           |
 
 ---
 
@@ -159,9 +159,9 @@ graph TD;
 
 ## 🤝 Contributing
 
-1. Fork the repo & create a branch: `git checkout -b feature/my-cool-feature`  
-2. Run `npm test` and make sure everything passes.  
-3. Submit a PR – please describe *what* you changed and *why*.
+1. Fork the repo & create a branch: `git checkout -b feature/my-cool-feature`
+2. Run `npm test` and make sure everything passes.
+3. Submit a PR – please describe _what_ you changed and _why_.
 
 We ❤️ documentation improvements and bug-fixes!
 

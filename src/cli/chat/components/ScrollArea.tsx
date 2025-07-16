@@ -7,9 +7,9 @@ interface ScrollAreaProps {
 }
 
 type State = {
-  height: number;       // visible area height
-  innerHeight: number;  // total height of content
-  scrollTop: number;    // number of lines scrolled from top
+  height: number; // visible area height
+  innerHeight: number; // total height of content
+  scrollTop: number; // number of lines scrolled from top
 };
 
 type Action =
@@ -26,22 +26,19 @@ const reducer = (state: State, action: Action): State => {
       return {
         ...state,
         innerHeight: action.innerHeight,
-        scrollTop: atBottom ? maxScroll : state.scrollTop
+        scrollTop: atBottom ? maxScroll : state.scrollTop,
       };
     }
     case 'SCROLL_DOWN': {
       return {
         ...state,
-        scrollTop: Math.min(
-          Math.max(state.innerHeight - state.height, 0),
-          state.scrollTop + 1
-        )
+        scrollTop: Math.min(Math.max(state.innerHeight - state.height, 0), state.scrollTop + 1),
       };
     }
     case 'SCROLL_UP': {
       return {
         ...state,
-        scrollTop: Math.max(0, state.scrollTop - 1)
+        scrollTop: Math.max(0, state.scrollTop - 1),
       };
     }
     default:
@@ -53,7 +50,7 @@ export const ScrollArea: React.FC<ScrollAreaProps> = ({ height, children }) => {
   const [state, dispatch] = React.useReducer(reducer, {
     height,
     innerHeight: 0,
-    scrollTop: 0
+    scrollTop: 0,
   });
 
   const innerRef = useRef<any>(null);
@@ -78,14 +75,9 @@ export const ScrollArea: React.FC<ScrollAreaProps> = ({ height, children }) => {
 
   return (
     <Box height={height} flexDirection="column" overflow="hidden">
-      <Box
-        ref={innerRef}
-        flexShrink={0}
-        flexDirection="column"
-        marginTop={-state.scrollTop as any}
-      >
+      <Box ref={innerRef} flexShrink={0} flexDirection="column" marginTop={-state.scrollTop as any}>
         {children}
       </Box>
     </Box>
   );
-}; 
+};

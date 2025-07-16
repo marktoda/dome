@@ -5,11 +5,13 @@ The Dome Context System allows you to configure how notes behave in different fo
 ## Quick Start
 
 1. **Check which folders need contexts:**
+
    ```bash
    dome setup
    ```
 
 2. **Create a context for a folder:**
+
    ```bash
    dome context create meetings --template meetings
    ```
@@ -22,6 +24,7 @@ The Dome Context System allows you to configure how notes behave in different fo
 ## What is a Context?
 
 A context is a configuration file (`.dome`) placed in a folder that defines:
+
 - **Templates**: Default content and frontmatter for new notes
 - **Naming Rules**: How files should be named (e.g., `YYYY-MM-DD-{title}`)
 - **Required Fields**: Frontmatter fields that must be present
@@ -33,31 +36,41 @@ A context is a configuration file (`.dome`) placed in a folder that defines:
 Dome comes with several pre-configured templates:
 
 ### Meetings (`meetings`)
+
 For 1-1s, team meetings, and discussions
+
 - Auto-names files with date prefix
 - Tracks attendees, action items, and decisions
 - Template includes agenda and discussion sections
 
 ### Daily Journal (`journal`)
+
 For personal reflections and daily logs
+
 - One file per day (YYYY-MM-DD format)
 - Tracks mood, highlights, challenges, and gratitude
 - Private and personal focus
 
 ### Projects (`projects`)
+
 For project planning and documentation
+
 - Tracks status, timeline, and stakeholders
 - Includes goals, tasks, and progress sections
 - Links related resources
 
 ### Ideas (`ideas`)
+
 For brainstorming and creative thoughts
+
 - Quick capture format
 - Tracks inspiration and potential
 - Minimal required fields
 
 ### Reading Notes (`reading`)
+
 For books, articles, and research
+
 - Tracks author, source type, and ratings
 - Includes summary and key takeaways sections
 - Action items from readings
@@ -65,17 +78,20 @@ For books, articles, and research
 ## Creating Contexts
 
 ### Using a Template
+
 ```bash
 dome context create <folder> --template <template-name>
 ```
 
 Example:
+
 ```bash
 dome context create meetings --template meetings
 dome context create projects/webapp --template projects
 ```
 
 ### Custom Context
+
 ```bash
 dome context create <folder> --name "Custom Name" --description "What this folder is for"
 ```
@@ -102,8 +118,8 @@ Context files use YAML format:
 
 ```yaml
 ---
-name: "Meeting Notes"
-description: "Notes from team meetings and 1-1s"
+name: 'Meeting Notes'
+description: 'Notes from team meetings and 1-1s'
 template:
   frontmatter:
     attendees: []
@@ -112,26 +128,27 @@ template:
   content: |
     # Meeting: {title}
     Date: {date}
-    
+
     ## Agenda
-    
+
     ## Discussion
-    
+
     ## Action Items
 rules:
-  fileNaming: "YYYY-MM-DD-{title}"
-  requiredFields: ["attendees"]
-  autoTags: ["meeting"]
+  fileNaming: 'YYYY-MM-DD-{title}'
+  requiredFields: ['attendees']
+  autoTags: ['meeting']
 ---
 When working with meeting notes:
-- Extract action items and assign owners
-- Summarize key decisions
-- Identify follow-up topics
+  - Extract action items and assign owners
+  - Summarize key decisions
+  - Identify follow-up topics
 ```
 
 ## File Naming Patterns
 
 Available placeholders for `fileNaming` rules:
+
 - `YYYY` - Four-digit year
 - `MM` - Two-digit month
 - `DD` - Two-digit day
@@ -141,6 +158,7 @@ Available placeholders for `fileNaming` rules:
 - `{uuid}` - Random unique identifier
 
 Examples:
+
 - `YYYY-MM-DD-{title}` → `2023-12-01-team-standup.md`
 - `{title}` → `project-overview.md`
 - `{date}-meeting` → `2023-12-01-meeting.md`
@@ -148,26 +166,34 @@ Examples:
 ## Context-Aware Features
 
 ### 1. Note Creation
+
 When you create a note in a folder with a context, Dome automatically:
+
 - Applies the template
 - Uses the file naming pattern
 - Adds required frontmatter fields
 - Includes auto-tags
 
 ### 2. Note Validation
+
 Check if a note follows its context rules:
+
 ```bash
 dome context validate path/to/note.md
 ```
 
 ### 3. AI Assistant
+
 The AI assistant adapts its behavior based on the context's `aiInstructions`. For example:
+
 - In meeting folders: Focuses on extracting action items
 - In journal folders: Maintains privacy and focuses on reflection
 - In project folders: Tracks progress and milestones
 
 ### 4. Context-Aware Search
+
 Search within specific contexts:
+
 ```python
 # Search only in meeting notes
 dome> search "budget discussion" in meetings/
@@ -187,6 +213,7 @@ dome> search "deployment" in projects/
 ## Examples
 
 ### Research Project Setup
+
 ```bash
 # Create project structure
 mkdir -p research/papers research/notes research/data
@@ -199,6 +226,7 @@ dome context create research/notes --name "Research Notes" \
 ```
 
 ### Personal Knowledge Base
+
 ```bash
 # Create structure
 mkdir -p kb/tech kb/business kb/personal
@@ -216,16 +244,19 @@ dome context create kb/personal --template journal
 ## Troubleshooting
 
 ### Context Not Applied
+
 - Check if the `.dome` file exists in the folder
 - Validate the YAML syntax in the `.dome` file
 - Ensure the context has a `name` and `description`
 
 ### File Naming Issues
+
 - Verify the pattern uses valid placeholders
 - Check if the pattern includes `.md` extension (it's added automatically)
 - Ensure date formats are uppercase (YYYY, not yyyy)
 
 ### Validation Errors
+
 - Run `dome context validate` to see specific issues
 - Check if required fields are present in frontmatter
 - Verify tags include both manual and auto-tags
@@ -233,20 +264,26 @@ dome context create kb/personal --template journal
 ## Advanced Usage
 
 ### Dynamic Templates
+
 Use placeholders in templates that get replaced when creating notes:
+
 - `{title}` - The note title
 - `{date}` - Current date
 - `{time}` - Current time
 - `{attendees}` - From frontmatter
 
 ### Multiple Contexts
+
 While each folder can only have one `.dome` file, you can:
+
 1. Use inheritance from parent folders
 2. Create sub-folders with different contexts
 3. Override parent settings in child contexts
 
 ### Context Migration
+
 To apply a context to existing notes:
+
 1. Create the context configuration
 2. Use `dome reorganize` to update notes
 3. Validate with `dome context validate`

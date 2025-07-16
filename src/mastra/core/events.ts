@@ -17,4 +17,4 @@ export interface IndexProgressEvent {
   progress?: number; // 0–100
   noteCount?: number;
   indexedCount?: number;
-} 
+}

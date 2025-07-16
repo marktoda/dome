@@ -21,14 +21,13 @@ backgroundIndexer.setSilentMode(true);
 
 // Start the indexer eagerly so that *any* CLI command benefits from
 // up-to-date search without requiring each writer to call it.
-await backgroundIndexer.startBackgroundIndexing().catch(() => {/* logged internally */});
+await backgroundIndexer.startBackgroundIndexing().catch(() => {
+  /* logged internally */
+});
 
 const program = new Command();
 
-program
-  .name('dome')
-  .description('AI-powered note-taking system')
-  .version('1.0.0');
+program.name('dome').description('AI-powered note-taking system').version('1.0.0');
 
 // Find command
 program
@@ -43,7 +42,7 @@ program
     const findOptions = {
       useAIFallback: options.ai !== false,
       maxResults: parseInt(options.maxResults, 10),
-      minRelevance: parseFloat(options.minRelevance)
+      minRelevance: parseFloat(options.minRelevance),
     };
     await handleFind(topic, findOptions);
   });
@@ -53,7 +52,7 @@ program
   .command('new')
   .argument('<topic...>', 'topic or title for the new note')
   .description('create a new note with AI-generated template')
-  .action(async (topicWords) => await handleNew(topicWords.join(' ')));
+  .action(async topicWords => await handleNew(topicWords.join(' ')));
 
 // List command
 program
@@ -74,8 +73,7 @@ program.addCommand(createReorganizeCommand());
 program.addCommand(createFolderCommand());
 
 // Default action - start interactive chat
-program
-  .action(handleChat);
+program.action(handleChat);
 
 // Parse command line arguments
 if (process.argv.length <= 2) {
@@ -86,6 +84,8 @@ if (process.argv.length <= 2) {
 
   // Flush any pending incremental work then shut the watcher down so the
   // process can exit promptly.
-  await backgroundIndexer.stopBackgroundIndexing().catch(() => {/* ignore */});
+  await backgroundIndexer.stopBackgroundIndexing().catch(() => {
+    /* ignore */
+  });
   process.exit(0);
 }

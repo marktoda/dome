@@ -5,11 +5,11 @@ import { IndexWorker } from '../services/IndexWorker.js';
 export function useVaultIndexer(vaultPath: string) {
   const { dispatch } = useAppState();
   const workerRef = useRef<IndexWorker | undefined>(undefined);
-  
+
   useEffect(() => {
     const worker = new IndexWorker();
     workerRef.current = worker;
-    
+
     // Set up event listeners
     worker.on('progress', ({ progress, noteCount, indexedCount }) => {
       dispatch({
@@ -21,7 +21,7 @@ export function useVaultIndexer(vaultPath: string) {
         },
       });
     });
-    
+
     worker.on('complete', ({ noteCount }) => {
       dispatch({
         type: 'UPDATE_INDEXING_STATUS',
@@ -32,15 +32,15 @@ export function useVaultIndexer(vaultPath: string) {
           lastIndexTime: Date.now(),
         },
       });
-      
+
       // Update note count
       dispatch({
         type: 'SET_NOTE_COUNT',
         payload: noteCount,
       });
     });
-    
-    worker.on('error', (error) => {
+
+    worker.on('error', error => {
       dispatch({
         type: 'ADD_MESSAGE',
         payload: {
@@ -48,7 +48,7 @@ export function useVaultIndexer(vaultPath: string) {
           content: `Indexing error: ${error.message}`,
         },
       });
-      
+
       dispatch({
         type: 'UPDATE_INDEXING_STATUS',
         payload: {
@@ -57,11 +57,11 @@ export function useVaultIndexer(vaultPath: string) {
         },
       });
     });
-    
+
     // The new implementation is in-process and should not crash; no restarting events.
-    
+
     // Start the worker
-    worker.start().catch((error) => {
+    worker.start().catch(error => {
       dispatch({
         type: 'ADD_MESSAGE',
         payload: {
@@ -70,7 +70,7 @@ export function useVaultIndexer(vaultPath: string) {
         },
       });
     });
-    
+
     // Cleanup
     return () => {
       worker.stop().catch(() => {
@@ -78,6 +78,6 @@ export function useVaultIndexer(vaultPath: string) {
       });
     };
   }, [vaultPath, dispatch]);
-  
+
   return workerRef.current;
 }

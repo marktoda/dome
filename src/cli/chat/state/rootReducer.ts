@@ -27,33 +27,34 @@ export const initialRootState: RootState = {
 
 export function rootReducer(state: RootState, action: RootAction): RootState {
   // Handle chat-specific actions
-  if ('type' in action && (
-    action.type === 'ADD_MESSAGE' ||
-    action.type === 'UPDATE_MESSAGE' ||
-    action.type === 'APPEND_TO_MESSAGE' ||
-    action.type === 'FINISH_STREAMING' ||
-    action.type === 'TOGGLE_COLLAPSE' ||
-    action.type === 'SELECT_MESSAGE' ||
-    action.type === 'CLEAR_MESSAGES' ||
-    action.type === 'SET_STREAMING'
-  )) {
+  if (
+    'type' in action &&
+    (action.type === 'ADD_MESSAGE' ||
+      action.type === 'UPDATE_MESSAGE' ||
+      action.type === 'APPEND_TO_MESSAGE' ||
+      action.type === 'FINISH_STREAMING' ||
+      action.type === 'TOGGLE_COLLAPSE' ||
+      action.type === 'SELECT_MESSAGE' ||
+      action.type === 'CLEAR_MESSAGES' ||
+      action.type === 'SET_STREAMING')
+  ) {
     return {
       ...state,
       chat: chatReducer(state.chat, action as any),
     };
   }
-  
+
   // Handle activity-specific actions
-  if ('type' in action && (
-    action.type === 'ADD_ACTIVITY' ||
-    action.type === 'CLEAR_OLD_ACTIVITIES'
-  )) {
+  if (
+    'type' in action &&
+    (action.type === 'ADD_ACTIVITY' || action.type === 'CLEAR_OLD_ACTIVITIES')
+  ) {
     return {
       ...state,
       activity: activityReducer(state.activity, action as any),
     };
   }
-  
+
   switch (action.type) {
     case 'SET_TIMESTAMP_MODE':
       return {
@@ -63,7 +64,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           timestamps: action.payload,
         },
       };
-      
+
     case 'SET_VERBOSE':
       return {
         ...state,
@@ -72,7 +73,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           verbose: action.payload,
         },
       };
-      
+
     case 'SET_VAULT_PATH':
       return {
         ...state,
@@ -81,7 +82,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           vaultPath: action.payload,
         },
       };
-      
+
     case 'SET_NOTE_COUNT':
       return {
         ...state,
@@ -90,7 +91,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           noteCount: action.payload,
         },
       };
-      
+
     case 'UPDATE_INDEXING_STATUS':
       return {
         ...state,
@@ -99,7 +100,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           ...action.payload,
         },
       };
-      
+
     case 'TOGGLE_HELP':
       return {
         ...state,
@@ -108,7 +109,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           showHelp: !state.ui.showHelp,
         },
       };
-      
+
     case 'TOGGLE_ACTIVITY':
       return {
         ...state,
@@ -117,7 +118,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           showActivity: !state.ui.showActivity,
         },
       };
-      
+
     case 'SET_HELP_VISIBLE':
       return {
         ...state,
@@ -126,7 +127,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           showHelp: action.payload,
         },
       };
-      
+
     case 'SET_ACTIVITY_VISIBLE':
       return {
         ...state,
@@ -135,7 +136,7 @@ export function rootReducer(state: RootState, action: RootAction): RootState {
           showActivity: action.payload,
         },
       };
-      
+
     default:
       return state;
   }

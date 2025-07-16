@@ -69,4 +69,4 @@ export async function embedText(text: string): Promise<number[]> {
 
 function sha1(data: string): string {
   return createHash('sha1').update(data).digest('hex');
-} 
+}

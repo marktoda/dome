@@ -34,10 +34,7 @@ export class ContextManager {
    * @param maxDepth - Maximum levels to search up
    * @returns Merged context from all parents
    */
-  async getContext(
-    noteId: NoteId,
-    maxDepth: number = 10
-  ): Promise<string | null> {
+  async getContext(noteId: NoteId, maxDepth: number = 10): Promise<string | null> {
     const contexts = await this.getAllParentContexts(noteId, maxDepth);
     if (!contexts) return null;
 
@@ -45,9 +42,9 @@ export class ContextManager {
     const reversedContexts = [...contexts].reverse();
 
     // Append all contexts together with level information
-    return reversedContexts.map(ctx =>
-      `# Context from level ${ctx.level} (${ctx.path})\n\n${ctx.content}`
-    ).join('\n\n---\n\n');
+    return reversedContexts
+      .map(ctx => `# Context from level ${ctx.level} (${ctx.path})\n\n${ctx.content}`)
+      .join('\n\n---\n\n');
   }
 
   /**
@@ -76,7 +73,7 @@ export class ContextManager {
         contextData.push({
           path: dirPath,
           depth,
-          content
+          content,
         });
       }
     }
@@ -91,7 +88,7 @@ export class ContextManager {
       `Total contexts: ${contextData.length}`,
       '',
       '='.repeat(80),
-      ''
+      '',
     ];
 
     // Add each context with formatting
@@ -105,7 +102,10 @@ export class ContextManager {
         `${indent}Full path: ${ctx.path}`,
         '',
         `${indent}### Content:`,
-        ctx.content.split('\n').map(line => `${indent}${line}`).join('\n'),
+        ctx.content
+          .split('\n')
+          .map(line => `${indent}${line}`)
+          .join('\n'),
         '',
         '-'.repeat(80),
         ''
@@ -120,10 +120,7 @@ export class ContextManager {
    * @param folderPath - Absolute path to the folder
    * @param context - Context configuration to save
    */
-  async createContext(
-    folderPath: string,
-    context: string
-  ): Promise<void> {
+  async createContext(folderPath: string, context: string): Promise<void> {
     const contextPath = join(folderPath, '.dome');
     await fs.writeFile(contextPath, context, 'utf-8');
   }
@@ -132,17 +129,17 @@ export class ContextManager {
    * List all contexts in the vault
    * @returns Array of context paths and configurations
    */
-  async listContexts(): Promise<Array<{
-    path: string;
-    context: string | null;
-  }>> {
+  async listContexts(): Promise<
+    Array<{
+      path: string;
+      context: string | null;
+    }>
+  > {
     const contextFiles = await this.listContextFiles();
 
     const contexts = await Promise.all(
-      contextFiles.map(async (filePath) => ({
-        path: dirname(filePath)
-          .replace(config.DOME_VAULT_PATH, '')
-          .replace(/^\//, '') || '/',
+      contextFiles.map(async filePath => ({
+        path: dirname(filePath).replace(config.DOME_VAULT_PATH, '').replace(/^\//, '') || '/',
         context: await this.loadContext(dirname(filePath)),
       }))
     );
@@ -198,7 +195,6 @@ export class ContextManager {
 
     return contexts.length > 0 ? contexts : null;
   }
-
 
   /**
    * Helper method to list all context files in the vault

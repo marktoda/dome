@@ -11,7 +11,7 @@ export function createReorganizeCommand(): Command {
     .option('--verbose', 'Show detailed progress information', false)
     .option('--no-merge', 'Skip merging duplicate notes', false)
     .option('--no-cleanup', 'Skip cleaning up empty files', false)
-    .action(async (options) => {
+    .action(async options => {
       await handleReorganize(options);
     });
 
@@ -25,7 +25,7 @@ export async function handleReorganize(options: any): Promise<void> {
     dryRun: options.dryRun || false,
     verbose: options.verbose || false,
     mergeDuplicates: !options.noMerge,
-    cleanupEmpty: !options.noCleanup
+    cleanupEmpty: !options.noCleanup,
   };
 
   if (reorganizeOptions.dryRun) {
@@ -44,8 +44,8 @@ export async function handleReorganize(options: any): Promise<void> {
 
     const result = await run.start({
       inputData: {
-        options: reorganizeOptions
-      }
+        options: reorganizeOptions,
+      },
     });
 
     if (result.status === 'success' && result.result) {
@@ -75,9 +75,10 @@ export async function handleReorganize(options: any): Promise<void> {
       }
 
       if (reorganizeOptions.dryRun && result.result.actions.length > 0) {
-        logger.info('\n💡 To apply these AI-recommended changes, run the command without --dry-run');
+        logger.info(
+          '\n💡 To apply these AI-recommended changes, run the command without --dry-run'
+        );
       }
-
     } else if (result.status === 'failed') {
       logger.error(`❌ Workflow failed: ${result.error}`);
       if (reorganizeOptions.verbose && result.steps) {
@@ -92,13 +93,19 @@ export async function handleReorganize(options: any): Promise<void> {
     } else if (result.status === 'suspended') {
       logger.warn('⏸️ Workflow suspended. This is unexpected for the reorganize workflow.');
     }
-
   } catch (error) {
-    logger.error('❌ Failed to run reorganization workflow:', error instanceof Error ? error.message : 'Unknown error');
+    logger.error(
+      '❌ Failed to run reorganization workflow:',
+      error instanceof Error ? error.message : 'Unknown error'
+    );
 
     if (error instanceof Error && error.message.includes('Notes agent not available')) {
-      logger.info('\n💡 Tip: Make sure you have configured the OpenAI API key for AI-powered reorganization.');
-      logger.info('Set the OPENAI_API_KEY environment variable or check your Mastra configuration.');
+      logger.info(
+        '\n💡 Tip: Make sure you have configured the OpenAI API key for AI-powered reorganization.'
+      );
+      logger.info(
+        'Set the OPENAI_API_KEY environment variable or check your Mastra configuration.'
+      );
     }
   }
 

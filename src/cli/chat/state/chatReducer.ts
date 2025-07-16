@@ -22,50 +22,50 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         id: action.payload.id || `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
         timestamp: action.payload.timestamp || new Date(),
       };
-      
+
       let messages = [...state.messages, newMessage];
-      
+
       // Keep only the last MAX_MESSAGES to prevent memory issues
       if (messages.length > MAX_MESSAGES) {
         messages = messages.slice(-MAX_MESSAGES);
       }
-      
+
       return {
         ...state,
         messages,
       };
     }
-    
+
     case 'UPDATE_MESSAGE': {
       return {
         ...state,
         messages: state.messages.map(msg =>
           msg.id === action.payload.id
-            ? { 
-                ...msg, 
+            ? {
+                ...msg,
                 content: action.payload.content,
-                isStreaming: action.payload.isStreaming ?? msg.isStreaming
+                isStreaming: action.payload.isStreaming ?? msg.isStreaming,
               }
             : msg
         ),
       };
     }
-    
+
     case 'APPEND_TO_MESSAGE': {
       return {
         ...state,
         messages: state.messages.map(msg =>
           msg.id === action.payload.id
-            ? { 
-                ...msg, 
+            ? {
+                ...msg,
                 content: msg.content + action.payload.content,
-                streamingContent: (msg.streamingContent || '') + action.payload.content
+                streamingContent: (msg.streamingContent || '') + action.payload.content,
               }
             : msg
         ),
       };
     }
-    
+
     case 'FINISH_STREAMING': {
       return {
         ...state,
@@ -77,25 +77,23 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         streaming: false,
       };
     }
-    
+
     case 'TOGGLE_COLLAPSE': {
       return {
         ...state,
         messages: state.messages.map(msg =>
-          msg.id === action.payload.id
-            ? { ...msg, isCollapsed: !msg.isCollapsed }
-            : msg
+          msg.id === action.payload.id ? { ...msg, isCollapsed: !msg.isCollapsed } : msg
         ),
       };
     }
-    
+
     case 'SELECT_MESSAGE': {
       return {
         ...state,
         selectedIdx: action.payload,
       };
     }
-    
+
     case 'CLEAR_MESSAGES': {
       return {
         ...state,
@@ -103,14 +101,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         selectedIdx: null,
       };
     }
-    
+
     case 'SET_STREAMING': {
       return {
         ...state,
         streaming: action.payload,
       };
     }
-    
+
     default:
       return state;
   }

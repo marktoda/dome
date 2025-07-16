@@ -10,7 +10,7 @@ import { toRel } from '../../mastra/utils/path-utils.js';
 // Schema for parsing AI cleanup response
 const RewriteNoteSchema = z.object({
   noteText: z.string(),
-  reasoning: z.string().optional()
+  reasoning: z.string().optional(),
 });
 
 export class NoteManager {
@@ -22,10 +22,7 @@ export class NoteManager {
     this.contextManager = new ContextManager();
   }
 
-  async editNote(
-    topic: string,
-    originalPath: string,
-  ): Promise<void> {
+  async editNote(topic: string, originalPath: string): Promise<void> {
     // Ensure we operate on a vault-relative path.
     const relPath: NoteId = toRel(originalPath);
     // Capture the original content before opening the editor so we can
@@ -106,10 +103,8 @@ Please:
 
 Return the complete improved note content including frontmatter.`;
 
-    const response = await agent.generate([
-      { role: 'user', content: summarizePrompt }
-    ], {
-      experimental_output: RewriteNoteSchema
+    const response = await agent.generate([{ role: 'user', content: summarizePrompt }], {
+      experimental_output: RewriteNoteSchema,
     });
 
     if (response.object?.noteText) {
@@ -126,4 +121,3 @@ Return the complete improved note content including frontmatter.`;
     }
   }
 }
-

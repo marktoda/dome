@@ -15,10 +15,12 @@ import logger from '../../mastra/utils/logger.js';
 const contextSchema = z.object({
   name: z.string(),
   description: z.string(),
-  template: z.object({
-    frontmatter: z.record(z.string(), z.string()).optional(),
-    content: z.string().optional(),
-  }).optional(),
+  template: z
+    .object({
+      frontmatter: z.record(z.string(), z.string()).optional(),
+      content: z.string().optional(),
+    })
+    .optional(),
   rules: z.string(),
   instructions: z.string(),
 });
@@ -28,21 +30,23 @@ type Context = z.infer<typeof contextSchema>;
 async function createFolder(): Promise<void> {
   try {
     // First, prompt for the folder path
-    const { folderPath } = await inquirer.prompt([{
-      type: 'input',
-      name: 'folderPath',
-      message: 'Enter the folder path (relative to vault root or absolute):',
-      validate: (input: string) => {
-        if (input.trim().length === 0) {
-          return 'Folder path is required';
-        }
-        // Check for invalid characters in path
-        if (input.includes('..')) {
-          return 'Path cannot contain ".."';
-        }
-        return true;
-      }
-    }]);
+    const { folderPath } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'folderPath',
+        message: 'Enter the folder path (relative to vault root or absolute):',
+        validate: (input: string) => {
+          if (input.trim().length === 0) {
+            return 'Folder path is required';
+          }
+          // Check for invalid characters in path
+          if (input.includes('..')) {
+            return 'Path cannot contain ".."';
+          }
+          return true;
+        },
+      },
+    ]);
 
     const relFolder = toRel(folderPath);
     const fullPath = toAbs(relFolder);
@@ -55,12 +59,14 @@ async function createFolder(): Promise<void> {
     try {
       await fs.access(domePath);
       logger.warn('A .dome file already exists in this folder.');
-      const { overwrite } = await inquirer.prompt([{
-        type: 'confirm',
-        name: 'overwrite',
-        message: 'Do you want to overwrite it?',
-        default: false,
-      }]);
+      const { overwrite } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'overwrite',
+          message: 'Do you want to overwrite it?',
+          default: false,
+        },
+      ]);
       if (!overwrite) {
         logger.info('Folder creation cancelled.');
         return;
@@ -81,7 +87,8 @@ async function createFolder(): Promise<void> {
       {
         type: 'input',
         name: 'addRules',
-        message: 'Please describe any formatting rules for documents in this folder. i.e. file naming conventions, text templates, metadata fields, etc. [Empty for none]',
+        message:
+          'Please describe any formatting rules for documents in this folder. i.e. file naming conventions, text templates, metadata fields, etc. [Empty for none]',
       },
     ]);
 
@@ -124,7 +131,6 @@ The context should be specific, practical, and help maintain consistency for all
       logger.error('❌ Error generating context with AI:', aiError);
       throw aiError;
     }
-
   } catch (error) {
     logger.error('❌ Error creating folder:', error);
     process.exit(1);
@@ -136,7 +142,9 @@ async function editFolder(folderPath?: string): Promise<void> {
     let targetPath: string;
 
     if (folderPath) {
-      targetPath = path.isAbsolute(folderPath) ? folderPath : path.join(config.DOME_VAULT_PATH, folderPath);
+      targetPath = path.isAbsolute(folderPath)
+        ? folderPath
+        : path.join(config.DOME_VAULT_PATH, folderPath);
     } else {
       // If no path provided, find all .dome files
       const domeFiles = await findDomeFiles(config.DOME_VAULT_PATH);
@@ -146,15 +154,17 @@ async function editFolder(folderPath?: string): Promise<void> {
         return;
       }
 
-      const { selected } = await inquirer.prompt([{
-        type: 'list',
-        name: 'selected',
-        message: 'Select a folder context to edit:',
-        choices: domeFiles.map(file => ({
-          name: `${path.dirname(file.replace(config.DOME_VAULT_PATH + '/', ''))} - ${file}`,
-          value: file,
-        })),
-      }]);
+      const { selected } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'selected',
+          message: 'Select a folder context to edit:',
+          choices: domeFiles.map(file => ({
+            name: `${path.dirname(file.replace(config.DOME_VAULT_PATH + '/', ''))} - ${file}`,
+            value: file,
+          })),
+        },
+      ]);
 
       targetPath = path.dirname(selected);
     }
@@ -166,12 +176,14 @@ async function editFolder(folderPath?: string): Promise<void> {
       await fs.access(domePath);
     } catch {
       logger.warn(`⚠️  No .dome file found at: ${targetPath}`);
-      const { create } = await inquirer.prompt([{
-        type: 'confirm',
-        name: 'create',
-        message: 'Would you like to create one?',
-        default: true,
-      }]);
+      const { create } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'create',
+          message: 'Would you like to create one?',
+          default: true,
+        },
+      ]);
       if (create) {
         await createFolder();
       }
@@ -181,7 +193,10 @@ async function editFolder(folderPath?: string): Promise<void> {
     // Open the file in the default editor
     logger.info(`📝 Opening .dome file in your editor...`);
     const editorService = new DefaultEditorService();
-    const success = await editorService.openNote(domePath.replace(config.DOME_VAULT_PATH + '/', ''), false);
+    const success = await editorService.openNote(
+      domePath.replace(config.DOME_VAULT_PATH + '/', ''),
+      false
+    );
 
     if (!success) {
       logger.error('❌ Failed to open file in editor');
@@ -190,7 +205,6 @@ async function editFolder(folderPath?: string): Promise<void> {
       logger.info('✅ Successfully edited .dome file');
       process.exit(0);
     }
-
   } catch (error) {
     logger.error('❌ Error editing folder:', error);
     process.exit(1);
@@ -218,8 +232,9 @@ async function findDomeFiles(dir: string, files: string[] = []): Promise<string[
 }
 
 export function createFolderCommand(): Command {
-  const folderCommand = new Command('folder')
-    .description('Manage folder contexts with .dome files');
+  const folderCommand = new Command('folder').description(
+    'Manage folder contexts with .dome files'
+  );
 
   folderCommand
     .command('new')

@@ -3,18 +3,18 @@
  * Handles embedding and indexing notes for semantic search.
  */
 
-import fs from "node:fs/promises";
+import fs from 'node:fs/promises';
 // chokidar ships its own types from v3 onward. If the type package isn't present
 // in the repo we still want the code to compile, so we suppress the lint error.
 // @ts-ignore – compiled code will use default export; we also import the type.
-import chokidar, { FSWatcher } from "chokidar";
-import matter from "gray-matter";
-import { join } from "node:path";
+import chokidar, { FSWatcher } from 'chokidar';
+import matter from 'gray-matter';
+import { join } from 'node:path';
 import { PgVector } from '@mastra/pg';
-import { embedChunks } from "./embedding.js";
-import { MDocument } from "@mastra/rag";
-import { listNotes } from "./notes.js";
-import logger from "../utils/logger.js";
+import { embedChunks } from './embedding.js';
+import { MDocument } from '@mastra/rag';
+import { listNotes } from './notes.js';
+import logger from '../utils/logger.js';
 import { config } from './config.js';
 import { noteEvents } from './events.js';
 import { embedText } from './embedding.js';
@@ -38,7 +38,6 @@ interface VectorMeta {
   tags: string[];
   modified: string;
   [key: string]: any;
-
 }
 
 /**
@@ -57,7 +56,7 @@ interface SearchResult {
  */
 async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]> {
   const fullPath = join(config.DOME_VAULT_PATH, relativePath);
-  const raw = await fs.readFile(fullPath, "utf8");
+  const raw = await fs.readFile(fullPath, 'utf8');
   const { data, content } = matter(raw);
 
   const titleText = data.title ?? relativePath.replace(/\.md$/, '').replace(/[-_]/g, ' ');
@@ -65,9 +64,9 @@ async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]
   // Chunk the markdown content
   const doc = MDocument.fromMarkdown(content);
   const chunks = await doc.chunk({
-    strategy: "markdown",
+    strategy: 'markdown',
     size: 256,
-    overlap: 20
+    overlap: 20,
   });
 
   if (chunks.length === 0) return [];
@@ -86,7 +85,7 @@ async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]
     metadata: {
       notePath: relativePath,
       text: titleText,
-      tags: Array.isArray(data.tags) ? data.tags : ["_untagged"],
+      tags: Array.isArray(data.tags) ? data.tags : ['_untagged'],
       modified,
       isTitle: true,
     },
@@ -99,7 +98,7 @@ async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]
     metadata: {
       notePath: relativePath,
       text: chunks[i].text,
-      tags: Array.isArray(data.tags) ? data.tags : ["_untagged"],
+      tags: Array.isArray(data.tags) ? data.tags : ['_untagged'],
       modified,
       ...chunks[i].metadata,
     },
@@ -126,11 +125,9 @@ async function ensureTable(): Promise<void> {
  * @param mode - 'full' for complete reindex, 'incremental' for updates only
  * @returns Number of notes indexed
  */
-export async function indexNotes(
-  mode: "full" | "incremental" = "incremental"
-): Promise<number> {
+export async function indexNotes(mode: 'full' | 'incremental' = 'incremental'): Promise<number> {
   if (!process.env.OPENAI_API_KEY) {
-    logger.error("OPENAI_API_KEY not set - skipping vector indexing");
+    logger.error('OPENAI_API_KEY not set - skipping vector indexing');
     return 0;
   }
   await ensureTable();
@@ -155,7 +152,7 @@ export async function indexNotes(
   // Get all notes
   const notes = await listNotes();
   if (notes.length === 0) {
-    logger.info("No notes to index");
+    logger.info('No notes to index');
     return 0;
   }
 
@@ -182,8 +179,7 @@ export async function searchSimilarNotes(
   k: number = 6
 ): Promise<SearchResult[]> {
   try {
-    const results = await store
-      .query({ indexName: config.DOME_INDEX_NAME, queryVector, topK: k, });
+    const results = await store.query({ indexName: config.DOME_INDEX_NAME, queryVector, topK: k });
 
     return results.map(result => ({
       id: result.id,
@@ -191,7 +187,7 @@ export async function searchSimilarNotes(
       metadata: result.metadata as VectorMeta,
     }));
   } catch (error) {
-    logger.error("Error searching notes:", error);
+    logger.error('Error searching notes:', error);
     return [];
   }
 }
@@ -225,12 +221,13 @@ async function deleteVectorsByNotePath(notePath: string): Promise<void> {
       // Fallback: raw query – assumes "metadata" JSONB column with notePath key
       const pool = (store as any).pool || (store as any).client;
       if (pool && typeof pool.query === 'function') {
-        await pool.query(
-          `DELETE FROM ${config.DOME_INDEX_NAME} WHERE metadata->>'notePath' = $1`,
-          [notePath],
-        );
+        await pool.query(`DELETE FROM ${config.DOME_INDEX_NAME} WHERE metadata->>'notePath' = $1`, [
+          notePath,
+        ]);
       } else {
-        logger.warn('[indexer] deleteVectorsByNotePath: delete not supported by store implementation');
+        logger.warn(
+          '[indexer] deleteVectorsByNotePath: delete not supported by store implementation'
+        );
       }
     }
   } catch (err) {
@@ -254,7 +251,7 @@ class BackgroundIndexer {
     pendingFiles: new Set(),
     indexingPromise: null,
     showStatus: true,
-    silentMode: false
+    silentMode: false,
   };
 
   private readonly INDEXING_INTERVAL = 30000; // 30 seconds
@@ -292,7 +289,9 @@ class BackgroundIndexer {
 
     // Trigger an initial full index in the background
     this.state.indexingPromise = this.performBackgroundIndexing();
-    this.state.indexingPromise.catch(() => {/* already logged */ });
+    this.state.indexingPromise.catch(() => {
+      /* already logged */
+    });
   }
 
   /**
@@ -404,7 +403,12 @@ class BackgroundIndexer {
       if (this.state.showStatus) {
         this.logStatus('✅ Background indexing completed');
       }
-      noteEvents.emit('index:progress', { type: 'progress', progress: 100, noteCount: processed, indexedCount: processed });
+      noteEvents.emit('index:progress', {
+        type: 'progress',
+        progress: 100,
+        noteCount: processed,
+        indexedCount: processed,
+      });
       noteEvents.emit('index:complete', {
         type: 'complete',
         noteCount: processed,
@@ -520,7 +524,7 @@ class BackgroundIndexer {
     return {
       isRunning: this.state.isRunning,
       isIndexing: this.state.indexingPromise !== null,
-      lastIndexTime: this.state.lastIndexTime
+      lastIndexTime: this.state.lastIndexTime,
     };
   }
 

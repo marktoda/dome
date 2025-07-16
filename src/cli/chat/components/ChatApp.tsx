@@ -28,40 +28,45 @@ export const ChatApp: React.FC = () => {
     setMessages(prev => [...prev, msg]);
   }, []);
 
-  const handleSubmit = useCallback(async (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
+  const handleSubmit = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return;
 
-    // Echo user message
-    addMessage({ id: `${Date.now()}-u`, role: 'user', content: trimmed });
-    setInput('');
-    if (trimmed === '/exit') {
-      exit();
-      return;
-    }
-
-    // Ask assistant
-    setIsProcessing(true);
-    try {
-      const agent = await mastra.getAgent('notesAgent');
-
-      // Create empty assistant message to be filled progressively
-      const assistantId = `${Date.now()}-a`;
-      addMessage({ id: assistantId, role: 'assistant', content: '' });
-
-      const stream = await agent.stream([{ role: 'user', content: trimmed }]);
-
-      for await (const chunk of stream.textStream) {
-        const text = chunk;
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: m.content + text } : m));
+      // Echo user message
+      addMessage({ id: `${Date.now()}-u`, role: 'user', content: trimmed });
+      setInput('');
+      if (trimmed === '/exit') {
+        exit();
+        return;
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      addMessage({ id: `${Date.now()}-e`, role: 'error', content: `Error: ${message}` });
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [addMessage, exit]);
+
+      // Ask assistant
+      setIsProcessing(true);
+      try {
+        const agent = await mastra.getAgent('notesAgent');
+
+        // Create empty assistant message to be filled progressively
+        const assistantId = `${Date.now()}-a`;
+        addMessage({ id: assistantId, role: 'assistant', content: '' });
+
+        const stream = await agent.stream([{ role: 'user', content: trimmed }]);
+
+        for await (const chunk of stream.textStream) {
+          const text = chunk;
+          setMessages(prev =>
+            prev.map(m => (m.id === assistantId ? { ...m, content: m.content + text } : m))
+          );
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        addMessage({ id: `${Date.now()}-e`, role: 'error', content: `Error: ${message}` });
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [addMessage, exit]
+  );
 
   const renderMessage = (msg: Message) => {
     const prefix = msg.role === 'user' ? 'You: ' : msg.role === 'assistant' ? 'Dome: ' : 'Error: ';
@@ -84,7 +89,9 @@ export const ChatApp: React.FC = () => {
       <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="visible">
         {messages.map(renderMessage)}
         {isProcessing && (
-          <Text color="cyan"><Spinner type="dots" /> thinking…</Text>
+          <Text color="cyan">
+            <Spinner type="dots" /> thinking…
+          </Text>
         )}
       </Box>
 

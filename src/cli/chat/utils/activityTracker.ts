@@ -27,21 +27,21 @@ export function extractNoteInfo(content: string): { title: string; path: string 
       return { title: titleMatch[1], path: '' };
     }
   }
-  
+
   // Try to extract title from first heading
   const headingMatch = content.match(/^#\s+(.+)$/m);
   if (headingMatch) {
     return { title: headingMatch[1], path: '' };
   }
-  
+
   return null;
 }
 
 // Analyze agent responses to detect tool usage patterns
-export function analyzeAgentResponse(response: string): { tools: string[], documents: string[] } {
+export function analyzeAgentResponse(response: string): { tools: string[]; documents: string[] } {
   const tools: string[] = [];
   const documents: string[] = [];
-  
+
   // Common patterns that indicate tool usage
   const toolPatterns = [
     { pattern: /searching\s+for\s+notes?/i, tool: 'searchNotesTool' },
@@ -53,22 +53,22 @@ export function analyzeAgentResponse(response: string): { tools: string[], docum
     { pattern: /writing\s+to\s+note/i, tool: 'writeNoteTool' },
     { pattern: /deleting\s+note/i, tool: 'removeNoteTool' },
     { pattern: /removing\s+note/i, tool: 'removeNoteTool' },
-    { pattern: /vault\s+context/i, tool: 'getVaultContextTool' }
+    { pattern: /vault\s+context/i, tool: 'getVaultContextTool' },
   ];
-  
+
   for (const { pattern, tool } of toolPatterns) {
     if (pattern.test(response) && !tools.includes(tool)) {
       tools.push(tool);
     }
   }
-  
+
   // Extract document references
   const notePatterns = [
     /(?:note|file|document):\s*['"]?([^'"]+\.md)['"]?/gi,
     /(?:reading|found|retrieved)\s+['"]?([^'"]+\.md)['"]?/gi,
-    /\b(\w+[-\w]*\.md)\b/gi
+    /\b(\w+[-\w]*\.md)\b/gi,
   ];
-  
+
   for (const pattern of notePatterns) {
     const matches = response.matchAll(pattern);
     for (const match of matches) {
@@ -78,6 +78,6 @@ export function analyzeAgentResponse(response: string): { tools: string[], docum
       }
     }
   }
-  
+
   return { tools, documents };
 }

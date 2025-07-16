@@ -2,9 +2,9 @@
 
 ## 1 Goals
 
-* **Natural‑language recall** – Let users find notes by meaning, not exact words.
-* **Zero‑friction addition** – Add one self‑contained Mastra tool; no breaking changes to existing `list/get/write` APIs.
-* **Local‑first** – Run entirely on the user’s machine or self‑hosted Postgres; no external SaaS beyond OpenAI embeddings.
+- **Natural‑language recall** – Let users find notes by meaning, not exact words.
+- **Zero‑friction addition** – Add one self‑contained Mastra tool; no breaking changes to existing `list/get/write` APIs.
+- **Local‑first** – Run entirely on the user’s machine or self‑hosted Postgres; no external SaaS beyond OpenAI embeddings.
 
 ---
 
@@ -16,16 +16,14 @@ query (text) ──► embed ► similarity search (PgVector) ──► top‑k 
                 offline cron ──► embed notes ▲
 ```
 
-* **Indexing path**
-
+- **Indexing path**
   1. Scan vault for `.md` files (reuse `fast-glob`).
   2. Chunk each note (e.g., 256–512 tokens, 20 token overlap).
   3. Generate embeddings with `text-embedding-3-small`.
   4. Upsert vectors + metadata (`notePath`, `chunkText`, `heading?`, `tags`) into a PgVector index `notes_vectors`.
   5. Store `lastModified` → re‑embed only changed notes.
 
-* **Query path**
-
+- **Query path**
   1. Tool receives `{ query: string, k?: number }`.
   2. Embed query.
   3. `SELECT chunk_text, note_path, score FROM notes_vectors ORDER BY vector <-> $query LIMIT k`.
@@ -46,7 +44,7 @@ output: {
 }[]
 ```
 
-*Implements `createVectorQueryTool` from **@mastra/rag***.
+\*Implements `createVectorQueryTool` from **@mastra/rag\***.
 Returned objects are small and directly suitable for constructing a RAG prompt.
 
 ---
@@ -54,19 +52,19 @@ Returned objects are small and directly suitable for constructing a RAG prompt.
 ## 4 Agent Integration
 
 ```ts
-import { createVectorQueryTool } from "@mastra/rag";
+import { createVectorQueryTool } from '@mastra/rag';
 const searchNotesTool = createVectorQueryTool({
-  vectorStoreName: "pgVector",
-  indexName: "notes_vectors",
-  model: openai.embedding("text-embedding-3-small"),
+  vectorStoreName: 'pgVector',
+  indexName: 'notes_vectors',
+  model: openai.embedding('text-embedding-3-small'),
 });
 
 export const notesAgent = new Agent({
-  name: "Notes Assistant",
+  name: 'Notes Assistant',
   instructions: `You manage a markdown vault.
     Use searchNotesTool first when the user asks for information retrieval.
     Cite note paths in your answers. Do *not* hallucinate content.`,
-  model: openai("gpt-4o-mini"),
+  model: openai('gpt-4o-mini'),
   tools: { listNotesTool, getNoteTool, writeNoteTool, searchNotesTool },
 });
 ```
@@ -83,7 +81,7 @@ Agent behavior:
 ```ts
 const pgVector = new PgVector({ connectionString: process.env.POSTGRES_CONNECTION_STRING! });
 await pgVector.createIndex({
-  indexName: "notes_vectors",
+  indexName: 'notes_vectors',
   dimension: 1536,
 });
 ```
@@ -92,9 +90,9 @@ await pgVector.createIndex({
 
 ```json5
 {
-  "notePath": "projects/architecture-notes.md",
-  "tags": ["architecture", "design"],
-  "modified": "2025-07-12T09:30:00Z"
+  notePath: 'projects/architecture-notes.md',
+  tags: ['architecture', 'design'],
+  modified: '2025-07-12T09:30:00Z',
 }
 ```
 
@@ -105,28 +103,28 @@ await pgVector.createIndex({
 `src/indexNotes.ts`
 
 ```ts
-const vaultPath = process.env.DOME_VAULT_PATH ?? "~/dome";
-const mdFiles = await fg("**/*.md", { cwd: vaultPath });
+const vaultPath = process.env.DOME_VAULT_PATH ?? '~/dome';
+const mdFiles = await fg('**/*.md', { cwd: vaultPath });
 
 for (const file of mdFiles) {
   if (unchangedSinceLastRun(file)) continue;
 
-  const note = await fs.readFile(file, "utf8");
-  const chunks = chunkMarkdown(note);          // size 256, overlap 20
+  const note = await fs.readFile(file, 'utf8');
+  const chunks = chunkMarkdown(note); // size 256, overlap 20
   const { embeddings } = await embedMany({
-    model: openai.embedding("text-embedding-3-small"),
+    model: openai.embedding('text-embedding-3-small'),
     values: chunks.map(c => c.text),
   });
 
   await pgVector.upsert({
-    indexName: "notes_vectors",
+    indexName: 'notes_vectors',
     vectors: embeddings,
     metadata: chunks.map(c => ({ notePath: file, ...c.meta })),
   });
 }
 ```
 
-*Run via `npm run index:notes` or a daily cron.*
+_Run via `npm run index:notes` or a daily cron._
 
 ---
 
@@ -162,10 +160,10 @@ EMBED_CHUNK_SIZE=256        # optional tuning
 
 ## 10 Future Enhancements
 
-* **Hybrid rank (BM25 + vectors)** to boost recall.
-* **On‑device embeddings** (e.g., `ggml` models) for offline privacy.
-* **Real‑time streaming index** triggered by `writeNoteTool` success.
-* **UI helpers** – VS Code extension surfacing `searchNotes` inline.
+- **Hybrid rank (BM25 + vectors)** to boost recall.
+- **On‑device embeddings** (e.g., `ggml` models) for offline privacy.
+- **Real‑time streaming index** triggered by `writeNoteTool` success.
+- **UI helpers** – VS Code extension surfacing `searchNotes` inline.
 
 ---
 
@@ -183,4 +181,3 @@ EMBED_CHUNK_SIZE=256        # optional tuning
 ---
 
 By cleanly isolating semantic search in a single Mastra tool and leveraging the same embedding workflow shown in the RAG tutorial, we enhance the notes system without disturbing existing workflows, while keeping the codebase minimal and comprehensible.
-

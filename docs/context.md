@@ -22,26 +22,26 @@ Technical Specification
 1.1 Context Configuration Schema
 typescript// src/types/context.ts
 interface DomeContext {
-  name: string;
-  description: string;
-  template?: {
-    frontmatter?: Record<string, any>;
-    content?: string;
-  };
-  rules?: {
-    fileNaming?: string; // e.g., "YYYY-MM-DD-{title}"
-    requiredFields?: string[];
-    autoTags?: string[];
-  };
-  aiInstructions?: string; // Instructions for AI when working with notes in this context
+name: string;
+description: string;
+template?: {
+frontmatter?: Record<string, any>;
+content?: string;
+};
+rules?: {
+fileNaming?: string; // e.g., "YYYY-MM-DD-{title}"
+requiredFields?: string[];
+autoTags?: string[];
+};
+aiInstructions?: string; // Instructions for AI when working with notes in this context
 }
 1.2 Context Manager
 typescript// src/mastra/core/context-manager.ts
 class ContextManager {
-  async loadContext(folderPath: string): Promise<DomeContext | null>
-  async findContextForPath(notePath: string): Promise<DomeContext | null>
-  async createContext(folderPath: string, context: DomeContext): Promise<void>
-  async validateNoteAgainstContext(notePath: string, content: string): Promise<ValidationResult>
+async loadContext(folderPath: string): Promise<DomeContext | null>
+async findContextForPath(notePath: string): Promise<DomeContext | null>
+async createContext(folderPath: string, context: DomeContext): Promise<void>
+async validateNoteAgainstContext(notePath: string, content: string): Promise<ValidationResult>
 }
 1.3 Default Contexts
 Create starter .dome files for common use cases:
@@ -49,14 +49,13 @@ meetings/.dome
 yamlname: "Meeting Notes"
 description: "Notes from 1-1s, team meetings, and discussions"
 template:
-  frontmatter:
-    attendees: []
-    action_items: []
-    decisions: []
-  content: |
-    # Meeting: {title}
-    Date: {date}
-    Attendees: {attendees}
+frontmatter:
+attendees: []
+action_items: []
+decisions: []
+content: | # Meeting: {title}
+Date: {date}
+Attendees: {attendees}
 
     ## Agenda
 
@@ -65,16 +64,17 @@ template:
     ## Action Items
 
     ## Decisions
+
 rules:
-  fileNaming: "YYYY-MM-DD-{meeting-name}"
-  requiredFields: ["attendees"]
+fileNaming: "YYYY-MM-DD-{meeting-name}"
+requiredFields: ["attendees"]
 aiInstructions: |
-  When creating meeting notes:
+When creating meeting notes:
 
 - Extract action items and assign owners
 - Summarize key decisions
 - Identify follow-up topics
-Implementation Tasks
+  Implementation Tasks
 
 Create Context Types and Schema (2 days)
 
@@ -99,6 +99,7 @@ Preview and edit before saving
 Setup Wizard Flow
 typescript// Example interaction flow
 dome setup
+
 > Scanning your vault structure...
 > Found 5 folders without context files:
 >

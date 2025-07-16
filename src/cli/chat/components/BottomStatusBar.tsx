@@ -18,7 +18,9 @@ export const BottomStatusBar = React.memo<BottomStatusBarProps>(({ indexingStatu
   if (indexingStatus.isIndexing) {
     statusContent = (
       <Box>
-        <Text color={COLORS.yellow}><Spinner type="dots" /> </Text>
+        <Text color={COLORS.yellow}>
+          <Spinner type="dots" />{' '}
+        </Text>
         <Text>Indexing in progress...</Text>
       </Box>
     );
@@ -49,11 +51,7 @@ export const BottomStatusBar = React.memo<BottomStatusBarProps>(({ indexingStatu
   }
 
   return (
-    <Box 
-      borderStyle="single" 
-      borderColor={COLORS.gray}
-      paddingX={1}
-    >
+    <Box borderStyle="single" borderColor={COLORS.gray} paddingX={1}>
       {statusContent}
     </Box>
   );

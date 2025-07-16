@@ -2,27 +2,22 @@
 export { ChatApp } from './components/ChatApp.js';
 
 // Type exports
-export type { 
-  ChatMessage, 
-  ActivityEvent, 
-  IndexingStatus,
-  RootState 
-} from './state/types.js';
+export type { ChatMessage, ActivityEvent, IndexingStatus, RootState } from './state/types.js';
 
 // Hook exports
 export { useStream } from './hooks/useStream.js';
 export { useVaultIndexer } from './hooks/useVaultIndexer.js';
 export { useMessageRenderer } from './hooks/useMessageRenderer.js';
 
-// State exports  
-export { 
+// State exports
+export {
   AppProvider,
   useAppState,
   useChatState,
   useActivityState,
   useConfigState,
   useUIState,
-  useIndexingState
+  useIndexingState,
 } from './state/AppContext.js';
 
 // Utility exports

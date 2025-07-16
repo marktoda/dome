@@ -24,7 +24,7 @@ export interface NoteMeta {
   /** Relative path from vault root */
   path: NoteId;
   /** Source of the note (cli = created by dome, external = created outside) */
-  source: "cli" | "external";
+  source: 'cli' | 'external';
 }
 
 /**
@@ -48,7 +48,7 @@ export interface WriteResult {
   /** Title of the note */
   title: string;
   /** Whether note was created or updated */
-  action: "created" | "updated";
+  action: 'created' | 'updated';
   /** Length of content written */
   contentLength: number;
   /** Absolute filesystem path */
@@ -164,7 +164,7 @@ export async function writeNote(
   if (existedBefore) {
     // Load existing raw to merge front-matter (if any)
     const existing = await noteStore.get(relPath);
-    const existingFront = existing ? matter(existing.raw).data ?? {} : {};
+    const existingFront = existing ? (matter(existing.raw).data ?? {}) : {};
 
     const updatedFront: Record<string, unknown> = {
       ...existingFront,

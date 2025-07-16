@@ -17,7 +17,7 @@ export async function handleChat(): Promise<void> {
       // Enable alternate screen buffer for better fullscreen experience
       stdout: process.stdout,
       stdin: process.stdin,
-      debug: false
+      debug: false,
     });
 
     await waitUntilExit();

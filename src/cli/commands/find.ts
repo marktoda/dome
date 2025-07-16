@@ -17,11 +17,7 @@ interface FindOptions {
  * and uses AI results only when vector search has no results
  */
 export async function handleFind(topic: string, options: FindOptions = {}): Promise<void> {
-  const {
-    maxResults = 10,
-    useAIFallback = true,
-    minRelevance = 0.4
-  } = options;
+  const { maxResults = 10, useAIFallback = true, minRelevance = 0.4 } = options;
 
   try {
     const finder = new AINoteFinder();
@@ -73,19 +69,25 @@ export async function handleFind(topic: string, options: FindOptions = {}): Prom
           return;
         }
       } catch (error) {
-        logger.warn('⚠️  AI search failed:', error instanceof Error ? error.message : 'Unknown error');
+        logger.warn(
+          '⚠️  AI search failed:',
+          error instanceof Error ? error.message : 'Unknown error'
+        );
       }
     }
 
     // No results found
-    logger.warn(`⚠️  No notes found matching "${topic}" with relevance >= ${Math.round(minRelevance * 100)}%`);
+    logger.warn(
+      `⚠️  No notes found matching "${topic}" with relevance >= ${Math.round(minRelevance * 100)}%`
+    );
     await promptCreateNew(topic);
-
   } catch (error) {
     if (error instanceof Error && error.message.includes('SIGINT')) {
       logger.warn('\n🚫 Search cancelled');
     } else {
-      logger.error(`❌ Failed to find notes:, ${error instanceof Error ? error.message : 'Unknown error'}`);
+      logger.error(
+        `❌ Failed to find notes:, ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
     process.exit(1);
   }
@@ -108,8 +110,8 @@ async function showSelection(
       message: `Found ${results.length} matching notes:`,
       choices,
       pageSize: 15,
-      loop: false
-    }
+      loop: false,
+    },
   ]);
 
   // Handle selection
@@ -143,7 +145,7 @@ function buildChoices(results: FindNoteResult[]): any[] {
     return {
       name: displayName,
       value: result.path,
-      short: fileName
+      short: fileName,
     };
   });
 
@@ -152,21 +154,21 @@ function buildChoices(results: FindNoteResult[]): any[] {
     name: '─'.repeat(60),
     value: 'separator',
     short: '',
-    disabled: true
+    disabled: true,
   });
 
   // Add create new note option
   choices.push({
     name: '✨ Create new note',
     value: '__CREATE_NEW__',
-    short: 'Create new'
+    short: 'Create new',
   });
 
   // Add cancel option
   choices.push({
     name: '❌ Cancel',
     value: null,
-    short: 'Cancel'
+    short: 'Cancel',
   });
 
   return choices;
@@ -181,8 +183,8 @@ async function promptCreateNew(topic: string): Promise<void> {
       type: 'confirm',
       name: 'createNew',
       message: 'Would you like to create a new note?',
-      default: true
-    }
+      default: true,
+    },
   ]);
 
   if (createNew) {

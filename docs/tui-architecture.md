@@ -96,7 +96,7 @@ dome-chat-tui/
 
 ```ts
 interface RootState {
-  cfg: { timestamps: "off" | "relative" | "absolute"; verbose: boolean };
+  cfg: { timestamps: 'off' | 'relative' | 'absolute'; verbose: boolean };
   header: { vaultPath: string; noteCount: number };
   chat: {
     messages: ChatMessage[]; // kept ≤ 50
@@ -143,12 +143,12 @@ Handled globally in `<App>` via `useInput`:
 
 ```ts
 useInput((input, key) => {
-  if (key.ctrl && input === "c") exit();
-  else if (key.ctrl && input === "h") toggleHelp();
-  else if (key.ctrl && input === "a") toggleActivity();
+  if (key.ctrl && input === 'c') exit();
+  else if (key.ctrl && input === 'h') toggleHelp();
+  else if (key.ctrl && input === 'a') toggleActivity();
   else if (key.upArrow) selectPrev();
   else if (key.downArrow) selectNext();
-  else if (input === "s") toggleCollapse();
+  else if (input === 's') toggleCollapse();
 });
 ```
 

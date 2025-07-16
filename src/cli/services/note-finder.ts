@@ -7,7 +7,7 @@ const FindNoteSchema = z.object({
   path: z.string(),
   title: z.string(),
   reason: z.string().optional(),
-  relevanceScore: z.number().min(0).max(1)
+  relevanceScore: z.number().min(0).max(1),
 });
 
 const FindMultipleNotesSchema = z.object({
@@ -18,7 +18,7 @@ const FindNoteCategorySchema = z.object({
   path: z.string(),
   fileName: z.string(),
   template: z.string(),
-  reasoning: z.string().optional()
+  reasoning: z.string().optional(),
 });
 
 export type FindNoteResult = z.infer<typeof FindNoteSchema>;
@@ -28,7 +28,9 @@ export class AINoteFinder {
   async findPlaceForTopic(topic: string): Promise<FolderFindResult> {
     // Check for OpenAI API key
     if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.');
+      throw new Error(
+        'OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.'
+      );
     }
 
     let agent;
@@ -39,7 +41,9 @@ export class AINoteFinder {
       }
     } catch (error) {
       console.error('Failed to initialize notes agent:', error);
-      throw new Error(`Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
 
     // Use the AI agent to find the best match or suggest a category
@@ -62,12 +66,10 @@ Consider:
     });
 
     const response = await Promise.race([
-      agent.generate([
-        { role: 'user', content: prompt }
-      ], {
-        experimental_output: FindNoteCategorySchema
+      agent.generate([{ role: 'user', content: prompt }], {
+        experimental_output: FindNoteCategorySchema,
       }),
-      timeoutPromise
+      timeoutPromise,
     ]);
 
     const result = response.object;
@@ -75,14 +77,22 @@ Consider:
     if (!result) {
       throw new Error('No note or category found');
     }
-    return { fileName: result.fileName, path: join(result.path, `${result.fileName}`), template: result.template, reasoning: result.reasoning, };
+    return {
+      fileName: result.fileName,
+      path: join(result.path, `${result.fileName}`),
+      template: result.template,
+      reasoning: result.reasoning,
+    };
   }
 
   /**
    * Find multiple notes with parallel vector and AI search
    * Returns immediate vector results and a promise for AI results
    */
-  async findNotes(topic: string, limit: number = 10): Promise<{
+  async findNotes(
+    topic: string,
+    limit: number = 10
+  ): Promise<{
     vectorResults: FindNoteResult[];
     aiResultsPromise: Promise<FindNoteResult[]>;
   }> {
@@ -90,15 +100,14 @@ Consider:
     const vectorResultsPromise = this.vectorFindNotes(topic, limit);
 
     // Start AI search in parallel
-    const aiResultsPromise = this.aiFindNotes(topic, limit)
-      .catch(error => {
-        console.error('AI search failed:', error);
-        return [];
-      });
+    const aiResultsPromise = this.aiFindNotes(topic, limit).catch(error => {
+      console.error('AI search failed:', error);
+      return [];
+    });
 
     return {
       vectorResults: await vectorResultsPromise,
-      aiResultsPromise
+      aiResultsPromise,
     };
   }
 
@@ -112,7 +121,9 @@ Consider:
 
     // Check for OpenAI API key
     if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.');
+      throw new Error(
+        'OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.'
+      );
     }
 
     let agent;
@@ -123,7 +134,9 @@ Consider:
       }
     } catch (error) {
       console.error('Failed to initialize notes agent:', error);
-      throw new Error(`Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
 
     if (process.env.DEBUG) {
@@ -158,12 +171,10 @@ Return up to ${limit} most relevant results, sorted by relevance score (highest 
     }
 
     const response = await Promise.race([
-      agent.generate([
-        { role: 'user', content: prompt }
-      ], {
-        experimental_output: FindMultipleNotesSchema
+      agent.generate([{ role: 'user', content: prompt }], {
+        experimental_output: FindMultipleNotesSchema,
       }),
-      timeoutPromise
+      timeoutPromise,
     ]);
 
     if (process.env.DEBUG) {
