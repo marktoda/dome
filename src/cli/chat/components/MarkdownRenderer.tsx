@@ -56,163 +56,153 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(
       return parts.length > 0 ? parts : [text];
     };
 
-    const renderFormattedText = (text: string, baseKey: number): React.ReactNode[] => {
-      const parts: React.ReactNode[] = [];
-      let remaining = text;
-      let key = baseKey * 100;
-
+    const renderFormattedText = (text: string, key: number): React.ReactNode => {
       // Process bold
       const boldRegex = /\*\*([^*]+)\*\*/g;
-      const boldParts = remaining.split(boldRegex);
+      const boldParts: React.ReactNode[] = [];
+      let lastBoldIndex = 0;
+      let boldMatch;
 
-      boldParts.forEach((part, index) => {
-        if (index % 2 === 0) {
-          // Regular text - check for italics
-          const italicRegex = /\*([^*]+)\*/g;
-          const italicParts = part.split(italicRegex);
-
-          italicParts.forEach((italicPart, italicIndex) => {
-            if (italicIndex % 2 === 0) {
-              if (italicPart) parts.push(<Text key={key++}>{italicPart}</Text>);
-            } else {
-              parts.push(
-                <Text key={key++} italic>
-                  {italicPart}
-                </Text>
-              );
-            }
-          });
-        } else {
-          // Bold text
-          parts.push(
-            <Text key={key++} bold>
-              {part}
-            </Text>
-          );
+      while ((boldMatch = boldRegex.exec(text)) !== null) {
+        if (boldMatch.index > lastBoldIndex) {
+          boldParts.push(text.slice(lastBoldIndex, boldMatch.index));
         }
-      });
+        boldParts.push(
+          <Text key={`b-${key}-${boldMatch.index}`} bold>
+            {boldMatch[1]}
+          </Text>
+        );
+        lastBoldIndex = boldMatch.index + boldMatch[0].length;
+      }
 
-      return parts.length > 0 ? parts : [<Text key={key}>{text}</Text>];
+      if (lastBoldIndex < text.length) {
+        boldParts.push(text.slice(lastBoldIndex));
+      }
+
+      if (boldParts.length === 0) {
+        return text;
+      }
+
+      return <React.Fragment key={key}>{boldParts}</React.Fragment>;
+    };
+
+    const renderCodeBlock = (
+      lang: string,
+      content: string[],
+      lineIndex: number
+    ): React.ReactNode => {
+      return (
+        <Box key={`code-${lineIndex}`} flexDirection="column" marginY={1}>
+          {lang && (
+            <Box marginBottom={0}>
+              <Text color={COLORS.gray}>{lang}</Text>
+            </Box>
+          )}
+          <Box
+            borderStyle="single"
+            borderColor={COLORS.gray}
+            paddingX={1}
+            flexDirection="column"
+          >
+            {content.map((line, i) => (
+              <Text key={i} color={COLORS.green}>
+                {line || ' '}
+              </Text>
+            ))}
+          </Box>
+        </Box>
+      );
     };
 
     lines.forEach((line, lineIndex) => {
-      // Handle code blocks
-      if (line.startsWith('```')) {
+      // Check for code block markers
+      if (line.trim().startsWith('```')) {
         if (!inCodeBlock) {
+          // Starting a code block
           inCodeBlock = true;
-          codeBlockLang = line.slice(3).trim();
+          codeBlockLang = line.trim().slice(3);
           codeBlockContent = [];
         } else {
-          // End code block
+          // Ending a code block
           inCodeBlock = false;
-          elements.push(
-            <Box
-              key={`code-${lineIndex}`}
-              marginY={1}
-              paddingLeft={2}
-              paddingRight={2}
-              borderStyle="round"
-              borderColor={COLORS.gray}
-            >
-              <Box flexDirection="column">
-                {codeBlockLang && (
-                  <Text color={COLORS.you} dimColor>
-                    {codeBlockLang}
-                  </Text>
-                )}
-                {codeBlockContent.map((codeLine, idx) => (
-                  <Text key={idx} color={COLORS.green} wrap="wrap">
-                    {codeLine}
-                  </Text>
-                ))}
-              </Box>
-            </Box>
-          );
+          elements.push(renderCodeBlock(codeBlockLang, codeBlockContent, lineIndex));
           codeBlockContent = [];
           codeBlockLang = '';
         }
         return;
       }
 
+      // If we're in a code block, collect the content
       if (inCodeBlock) {
         codeBlockContent.push(line);
         return;
       }
 
-      // Handle headers
+      // Headers
       if (line.startsWith('#')) {
-        const headerMatch = line.match(/^(#+)\s+(.+)$/);
-        if (headerMatch) {
-          const level = headerMatch[1].length;
-          const headerText = headerMatch[2];
-          elements.push(
-            <Box key={`h${level}-${lineIndex}`} marginTop={lineIndex > 0 ? 1 : 0}>
-              <Text
-                bold
-                color={level === 1 ? COLORS.you : level === 2 ? COLORS.system : COLORS.dome}
-                wrap="wrap"
-              >
-                {headerText}
-              </Text>
-            </Box>
-          );
-          return;
-        }
-      }
+        const level = line.match(/^#+/)?.[0].length || 1;
+        const headerText = line.slice(level).trim();
+        const headerColor = level === 1 ? COLORS.dome : level === 2 ? COLORS.you : COLORS.system;
 
-      // Handle lists
-      if (line.match(/^[\s]*[-*+]\s+/)) {
-        const listMatch = line.match(/^([\s]*)([-*+])\s+(.+)$/);
-        if (listMatch) {
-          const indent = listMatch[1].length;
-          const bullet = '•';
-          const text = listMatch[3];
-          elements.push(
-            <Box key={`list-${lineIndex}`} paddingLeft={Math.floor(indent / 2)}>
-              <Text color={COLORS.yellow}>{bullet} </Text>
-              <Text>{renderInlineMarkdown(text)}</Text>
-            </Box>
-          );
-          return;
-        }
-      }
-
-      // Handle numbered lists
-      if (line.match(/^[\s]*\d+\.\s+/)) {
-        const listMatch = line.match(/^([\s]*)(\d+)\.\s+(.+)$/);
-        if (listMatch) {
-          const indent = listMatch[1].length;
-          const number = listMatch[2];
-          const text = listMatch[3];
-          elements.push(
-            <Box key={`olist-${lineIndex}`} paddingLeft={Math.floor(indent / 2)}>
-              <Text color={COLORS.yellow}>{number}. </Text>
-              <Text>{renderInlineMarkdown(text)}</Text>
-            </Box>
-          );
-          return;
-        }
-      }
-
-      // Handle blockquotes
-      if (line.startsWith('>')) {
-        const quoteText = line.replace(/^>\s*/, '');
         elements.push(
-          <Box key={`quote-${lineIndex}`} paddingLeft={2} marginY={0}>
-            <Text color={COLORS.gray}>│ </Text>
-            <Text color={COLORS.gray} italic>
-              {renderInlineMarkdown(quoteText)}
+          <Box key={`h-${lineIndex}`} marginY={1}>
+            <Text color={headerColor} bold>
+              {renderInlineMarkdown(headerText)}
             </Text>
           </Box>
         );
         return;
       }
 
-      // Handle horizontal rules
-      if (line.match(/^[-*_]{3,}$/)) {
+      // Bullet points
+      if (line.trim().match(/^[-*+]\s+/)) {
+        const bulletContent = line.trim().slice(2);
+        elements.push(
+          <Box key={`ul-${lineIndex}`} marginLeft={2}>
+            <Text color={COLORS.gray}>• </Text>
+            <Text color={color}>{renderInlineMarkdown(bulletContent)}</Text>
+          </Box>
+        );
+        return;
+      }
+
+      // Numbered lists
+      const numberedMatch = line.trim().match(/^(\d+)\.\s+(.*)$/);
+      if (numberedMatch) {
+        elements.push(
+          <Box key={`ol-${lineIndex}`} marginLeft={2}>
+            <Text color={COLORS.gray}>{numberedMatch[1]}. </Text>
+            <Text color={color}>{renderInlineMarkdown(numberedMatch[2])}</Text>
+          </Box>
+        );
+        return;
+      }
+
+      // Blockquotes
+      if (line.trim().startsWith('>')) {
+        const quoteContent = line.trim().slice(1).trim();
+        elements.push(
+          <Box
+            key={`bq-${lineIndex}`}
+            marginLeft={2}
+            borderStyle="single"
+            borderColor={COLORS.gray}
+            paddingX={1}
+            marginY={1}
+          >
+            <Text color={COLORS.gray} italic>
+              {renderInlineMarkdown(quoteContent)}
+            </Text>
+          </Box>
+        );
+        return;
+      }
+
+      // Horizontal rule
+      if (line.trim().match(/^---+$/)) {
         elements.push(
           <Box key={`hr-${lineIndex}`} marginY={1}>
-            <Text color={COLORS.gray}>{'─'.repeat(30)}</Text>
+            <Text color={COLORS.gray}>{'─'.repeat(50)}</Text>
           </Box>
         );
         return;
@@ -232,6 +222,10 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(
     });
 
     return <Box flexDirection="column">{elements}</Box>;
+  },
+  // Custom comparison - only re-render if content or color changes
+  (prevProps, nextProps) => {
+    return prevProps.content === nextProps.content && prevProps.color === nextProps.color;
   }
 );
 

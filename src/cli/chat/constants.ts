@@ -28,12 +28,12 @@ export const COLORS = {
 export const STREAMING = {
   // Number of UI refreshes per second while streaming.
   // Lower values reduce redraw jitter at the expense of latency.
-  FPS: 10,
+  FPS: 33, // ~33 fps for smooth streaming
   CURSOR: '▊', // Blinking cursor character
   CURSOR_BLINK_MS: 500, // Cursor blink interval
   // Derived convenience – milliseconds between buffer flushes.
   // Keep this in sync with FPS in the rest of the codebase.
-  FLUSH_INTERVAL_MS: 100,
+  FLUSH_INTERVAL_MS: 30, // 30ms ≈ 33 fps
 } as const;
 
 // Message limits

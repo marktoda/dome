@@ -1,34 +1,34 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Box, Text, useApp, useInput, useStdout, useStdin } from 'ink';
 import Spinner from 'ink-spinner';
 import TextInput from 'ink-text-input';
 import { mastra } from '../../../mastra/index.js';
-import { MarkdownRenderer } from './MarkdownRenderer.js';
+import { ChatHistory } from './ChatHistory.js';
 import { NoteLogPanel } from './NoteLogPanel.js';
 import { setActivityTracker } from '../utils/activityTracker.js';
 import { editorManager } from '../../services/editor-manager.js';
 import { setInkIO } from '../../ink/ink-io.js';
+import { ChatMessage } from '../state/types.js';
+import { STREAMING } from '../constants.js';
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'error';
-  content: string;
-}
+// Throttle interval for stream updates (30ms ≈ 33 fps)
+const FLUSH_INTERVAL = STREAMING.FLUSH_INTERVAL_MS || 30;
 
 export const ChatApp: React.FC = () => {
   const { exit } = useApp();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedMessageIndex, setSelectedMessageIndex] = useState(-1);
+  const [timestampMode] = useState<'off' | 'relative' | 'absolute'>('relative');
 
   // Note access log state
   const [noteLog, setNoteLog] = useState<string[]>([]);
   const [selectedNoteIdx, setSelectedNoteIdx] = useState(0);
   const [showNoteLog, setShowNoteLog] = useState(true);
-  
+
   // Editor state tracking
   const [editorState, setEditorState] = useState(() => editorManager.getState());
-  const inputRef = useRef<{ focus: () => void } | null>(null);
 
   // Terminal dimensions for responsive layout
   const { stdout } = useStdout();
@@ -135,8 +135,9 @@ export const ChatApp: React.FC = () => {
           // Editor opened successfully
           addMessage({
             id: `${Date.now()}-s`,
-            role: 'assistant',
+            type: 'system',
             content: `Opening ${path} in editor...`,
+            timestamp: new Date(),
           });
         },
         onClose: (success) => {
@@ -144,20 +145,19 @@ export const ChatApp: React.FC = () => {
           if (!success) {
             addMessage({
               id: `${Date.now()}-e`,
-              role: 'error',
+              type: 'error',
               content: 'Editor closed with an error',
+              timestamp: new Date(),
             });
           }
-          // Re-focus the input after editor closes
-          setTimeout(() => {
-            inputRef.current?.focus();
-          }, 100);
+          // Input will auto-focus when editor closes
         },
         onError: (error) => {
           addMessage({
             id: `${Date.now()}-e`,
-            role: 'error',
+            type: 'error',
             content: `Error opening editor: ${error.message}`,
+            timestamp: new Date(),
           });
         },
       });
@@ -165,8 +165,9 @@ export const ChatApp: React.FC = () => {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       addMessage({
         id: `${Date.now()}-e`,
-        role: 'error',
+        type: 'error',
         content: `Failed to open editor: ${msg}`,
+        timestamp: new Date(),
       });
     }
   }, []);
@@ -185,7 +186,7 @@ export const ChatApp: React.FC = () => {
     };
   }, [exit, editorState.isOpen]);
 
-  const addMessage = useCallback((msg: Message) => {
+  const addMessage = useCallback((msg: ChatMessage) => {
     setMessages(prev => [...prev, msg]);
   }, []);
 
@@ -195,7 +196,12 @@ export const ChatApp: React.FC = () => {
       if (!trimmed) return;
 
       // Echo user message
-      addMessage({ id: `${Date.now()}-u`, role: 'user', content: trimmed });
+      addMessage({
+        id: `${Date.now()}-u`,
+        type: 'user',
+        content: trimmed,
+        timestamp: new Date(),
+      });
       setInput('');
       if (trimmed === '/exit') {
         exit();
@@ -209,48 +215,78 @@ export const ChatApp: React.FC = () => {
 
         // Create empty assistant message to be filled progressively
         const assistantId = `${Date.now()}-a`;
-        addMessage({ id: assistantId, role: 'assistant', content: '' });
+        const assistantMessage: ChatMessage = {
+          id: assistantId,
+          type: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          isStreaming: true,
+        };
+        addMessage(assistantMessage);
 
         // Build conversation history, filtering out error messages
         const conversationHistory = messages
-          .filter(m => m.role !== 'error')
-          .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-        
+          .filter(m => m.type !== 'error')
+          .map(m => ({ role: m.type as 'user' | 'assistant', content: m.content }));
+
         // Add the current message to the history
         conversationHistory.push({ role: 'user' as const, content: trimmed });
 
         const stream = await agent.stream(conversationHistory);
 
+        // Buffer for throttled updates
+        let buffer = '';
+        let flushTimer: NodeJS.Timeout | null = null;
+
+        const flushBuffer = () => {
+          if (buffer) {
+            const text = buffer;
+            buffer = '';
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantId ? { ...m, content: m.content + text } : m
+              )
+            );
+          }
+        };
+
         for await (const chunk of stream.textStream) {
-          const text = chunk;
-          setMessages(prev =>
-            prev.map(m => (m.id === assistantId ? { ...m, content: m.content + text } : m))
-          );
+          buffer += chunk;
+
+          if (!flushTimer) {
+            flushTimer = setTimeout(() => {
+              flushTimer = null;
+              flushBuffer();
+            }, FLUSH_INTERVAL);
+          }
         }
+
+        // Final flush and mark as complete
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+        }
+        flushBuffer();
+
+        // Mark streaming as complete
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantId ? { ...m, isStreaming: false } : m
+          )
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
-        addMessage({ id: `${Date.now()}-e`, role: 'error', content: `Error: ${message}` });
+        addMessage({
+          id: `${Date.now()}-e`,
+          type: 'error',
+          content: `Error: ${message}`,
+          timestamp: new Date(),
+        });
       } finally {
         setIsProcessing(false);
       }
     },
     [addMessage, exit, messages]
   );
-
-  const renderMessage = (msg: Message) => {
-    const prefix = msg.role === 'user' ? 'You: ' : msg.role === 'assistant' ? 'Dome: ' : 'Error: ';
-    const color = msg.role === 'user' ? 'green' : msg.role === 'assistant' ? 'cyan' : 'red';
-    return (
-      <Box key={msg.id} flexDirection="row" marginBottom={1}>
-        <Text color={color}>{prefix}</Text>
-        {msg.role === 'assistant' ? (
-          <MarkdownRenderer content={msg.content} />
-        ) : (
-          <Text>{msg.content}</Text>
-        )}
-      </Box>
-    );
-  };
 
   // Show editor status when active
   const showEditorStatus = editorState.isOpen || editorState.isTransitioning;
@@ -270,15 +306,21 @@ export const ChatApp: React.FC = () => {
       <Box flexDirection="row" flexGrow={1}>
         {/* Main chat area */}
         <Box flexDirection="column" flexGrow={1} flexShrink={1} overflow="hidden">
-          {/* Message history */}
-          <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="hidden">
-            {messages.map(renderMessage)}
-            {isProcessing && (
+          {/* Message history using optimized ChatHistory component */}
+          <ChatHistory
+            messages={messages}
+            timestampMode={timestampMode}
+            selectedMessageIndex={selectedMessageIndex}
+          />
+
+          {/* Processing indicator */}
+          {isProcessing && messages.length > 0 && !messages[messages.length - 1]?.isStreaming && (
+            <Box paddingX={1}>
               <Text color="cyan">
                 <Spinner type="dots" /> thinking…
               </Text>
-            )}
-          </Box>
+            </Box>
+          )}
 
           {/* Input area */}
           <Box paddingX={1} marginBottom={1} flexShrink={0}>
@@ -301,8 +343,8 @@ export const ChatApp: React.FC = () => {
             paddingLeft={1}
             borderColor={editorState.isOpen ? 'gray' : 'white'}
           >
-            <NoteLogPanel 
-              notes={noteLog} 
+            <NoteLogPanel
+              notes={noteLog}
               selectedIdx={selectedNoteIdx}
             />
           </Box>
