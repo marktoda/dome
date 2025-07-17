@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Box, Text, useApp, useInput, useStdout, useStdin } from 'ink';
+import { Box, Text, useApp, useStdout, useStdin } from 'ink';
 import Spinner from 'ink-spinner';
 import TextInput from 'ink-text-input';
 import { mastra } from '../../../mastra/index.js';
@@ -10,6 +10,8 @@ import { editorManager } from '../../services/editor-manager.js';
 import { setInkIO } from '../../ink/ink-io.js';
 import { ChatMessage } from '../state/types.js';
 import { STREAMING } from '../constants.js';
+import { useKeybindings } from '../hooks/useKeybindings.js';
+import { ChatCommandRegistryImpl, defaultChatCommands, ChatCommandContext } from '../commands/index.js';
 
 // Throttle interval for stream updates (30ms ≈ 33 fps)
 const FLUSH_INTERVAL = STREAMING.FLUSH_INTERVAL_MS || 30;
@@ -20,7 +22,7 @@ export const ChatApp: React.FC = () => {
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedMessageIndex, setSelectedMessageIndex] = useState(-1);
-  const [timestampMode] = useState<'off' | 'relative' | 'absolute'>('relative');
+  const [timestampMode, setTimestampMode] = useState<'off' | 'relative' | 'absolute'>('relative');
 
   // Note access log state
   const [noteLog, setNoteLog] = useState<string[]>([]);
@@ -33,6 +35,21 @@ export const ChatApp: React.FC = () => {
   // Terminal dimensions for responsive layout
   const { stdout } = useStdout();
   const { stdin, setRawMode, isRawModeSupported } = useStdin();
+
+  // Chat command registry
+  const commandRegistryRef = useRef<ChatCommandRegistryImpl | undefined>(undefined);
+
+  // Initialize chat command registry
+  useEffect(() => {
+    const registry = new ChatCommandRegistryImpl();
+    
+    // Register default commands
+    for (const command of defaultChatCommands) {
+      registry.register(command);
+    }
+    
+    commandRegistryRef.current = registry;
+  }, []);
 
   // Expose Ink IO globally for editor-service
   useEffect(() => {
@@ -69,61 +86,6 @@ export const ChatApp: React.FC = () => {
       editorManager.off('state:changed', handleStateChange);
     };
   }, []);
-
-  // Global keyboard handlers
-  useInput((input, key) => {
-    // Don't process keys when editor is open or transitioning
-    if (editorState.isOpen || editorState.isTransitioning) {
-      return;
-    }
-
-    // Toggle note log visibility – Ctrl+A
-    if (key.ctrl && input === 'a') {
-      setShowNoteLog(v => !v);
-      return;
-    }
-
-    // Quit
-    if (key.ctrl && input === 'c') {
-      // Force close editor if open
-      if (editorState.isOpen) {
-        editorManager.forceClose();
-      }
-      exit();
-      return;
-    }
-
-    // Scroll note log – Ctrl+J / Ctrl+Down
-    if (noteLog.length > 0 && showNoteLog) {
-      if (
-        key.ctrl &&
-        ((input === 'j' && !key.shift && !key.meta) || key.downArrow)
-      ) {
-        setSelectedNoteIdx(idx => Math.min(idx + 1, noteLog.length - 1));
-        return;
-      }
-
-      // Scroll up – Ctrl+K / Ctrl+Up
-      if (key.ctrl && ((input === 'k' && !key.shift && !key.meta) || key.upArrow)) {
-        setSelectedNoteIdx(idx => Math.max(idx - 1, 0));
-        return;
-      }
-
-      // Open selected note with Tab (when not processing)
-      if (key.tab && !isProcessing) {
-        // Check if enough time has passed since last editor close
-        if (!editorManager.canOpenEditor()) {
-          return;
-        }
-
-        const path = noteLog[selectedNoteIdx];
-        if (path) {
-          openNoteInEditor(path);
-        }
-        return;
-      }
-    }
-  });
 
   // Function to open note in editor
   const openNoteInEditor = useCallback(async (path: string) => {
@@ -190,10 +152,71 @@ export const ChatApp: React.FC = () => {
     setMessages(prev => [...prev, msg]);
   }, []);
 
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+  }, []);
+
+  // Use the new keybinding system
+  const { getHelpText } = useKeybindings({
+    messages,
+    selectedMessageIndex,
+    noteLog,
+    selectedNoteIdx,
+    showNoteLog,
+    isProcessing,
+    editorState,
+    setSelectedMessageIndex,
+    setSelectedNoteIdx,
+    setShowNoteLog,
+    exit,
+    openNoteInEditor,
+    addMessage,
+    clearMessages,
+  });
+
   const handleSubmit = useCallback(
     async (value: string) => {
       const trimmed = value.trim();
       if (!trimmed) return;
+
+      // Check if it's a chat command
+      if (commandRegistryRef.current?.isCommand(trimmed)) {
+        // Create command context
+        const context: ChatCommandContext = {
+          addMessage: (msg) => addMessage({
+            id: `${Date.now()}-${msg.type[0]}`,
+            type: msg.type,
+            content: msg.content,
+            timestamp: new Date(),
+          }),
+          exit,
+          clearMessages,
+          showHelp: () => {
+            const helpText = commandRegistryRef.current!.generateHelp();
+            addMessage({
+              id: `${Date.now()}-s`,
+              type: 'system',
+              content: helpText,
+              timestamp: new Date(),
+            });
+          },
+          toggleTimestamps: setTimestampMode,
+          getState: () => ({
+            cfg: { timestamps: timestampMode, verbose: false },
+            header: { vaultPath: '~/vault', noteCount: noteLog.length },
+            chat: { messages, selectedIdx: selectedMessageIndex, streaming: false },
+            activity: [],
+            index: { progress: 100, running: true, isIndexing: false, lastIndexTime: Date.now() },
+            noteLog,
+            editorOpen: editorState.isOpen,
+          }),
+        };
+
+        // Execute the command
+        await commandRegistryRef.current.execute(trimmed, context);
+        setInput('');
+        return;
+      }
 
       // Echo user message
       addMessage({
@@ -203,10 +226,6 @@ export const ChatApp: React.FC = () => {
         timestamp: new Date(),
       });
       setInput('');
-      if (trimmed === '/exit') {
-        exit();
-        return;
-      }
 
       // Ask assistant
       setIsProcessing(true);
@@ -285,7 +304,7 @@ export const ChatApp: React.FC = () => {
         setIsProcessing(false);
       }
     },
-    [addMessage, exit, messages]
+    [addMessage, exit, clearMessages, messages, setTimestampMode, timestampMode, noteLog, selectedMessageIndex, editorState.isOpen]
   );
 
   // Show editor status when active

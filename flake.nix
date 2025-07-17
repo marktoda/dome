@@ -39,11 +39,6 @@
           npm install -g @astrotask/mcp
           npm install -g .
 
-          # Add convenient alias so the `dome` command always points to
-          # the locally-built CLI binary in the repository, independent of
-          # whatever might already be installed on the system.
-          alias dome="$PWD/dist/cli/index.js"
-
           # Set Biome binary path for consistency
           export BIOME_BINARY="${pkgs.biome}/bin/biome"
 
