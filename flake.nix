@@ -52,28 +52,60 @@
 
     # Packages that can be imported / installed via `nix build` or `nix run`
     packages = forEachSupportedSystem ({pkgs, ...}: let
-      dome = pkgs.buildNpmPackage rec {
+      dome = pkgs.stdenv.mkDerivation (finalAttrs: {
         pname = "dome";
         version = "1.0.0";
 
         # Build straight from the flake source
         src = self;
 
-        # Type-script build step defined in package.json
-        npmBuildScript = "cli:build";
+        nativeBuildInputs = with pkgs; [
+          nodejs_22
+          pnpm_9.configHook
+        ];
 
-        # Use the existing pnpm lock-file for reproducible deps
-        npmLockFile = ./pnpm-lock.yaml;
+        pnpmDeps = pkgs.pnpm_9.fetchDeps {
+          inherit (finalAttrs) pname version src;
+          # Placeholder – run a build once to obtain the correct hash and
+          # replace this with the value shown by the error message.
+          hash = "sha256-BUvCKH7D1appKJS+5C5X5KuHIERFYxFUaOzFMe7OY0o=";
+        };
 
-        # Placeholder – run a build once to obtain the correct hash and
-        # replace this with the value shown by the error message. Needs to be a typed hash string.
-        npmDepsHash = pkgs.lib.fakeHash;
+        buildPhase = ''
+          runHook preBuild
+
+          # Run the TypeScript build
+          pnpm run cli:build
+
+          runHook postBuild
+        '';
+
+        installPhase = ''
+          runHook preInstall
+
+          # Create the output directory
+          mkdir -p $out/bin $out/lib/dome
+
+          # Copy built files
+          cp -r dist $out/lib/dome/
+          cp -r package.json $out/lib/dome/
+
+          # Create wrapper script
+          cat > $out/bin/dome <<EOF
+          #!${pkgs.runtimeShell}
+          exec ${pkgs.nodejs_22}/bin/node $out/lib/dome/dist/cli/index.js "\$@"
+          EOF
+
+          chmod +x $out/bin/dome
+
+          runHook postInstall
+        '';
 
         meta = {
           description = "Dome CLI tool";
           mainProgram = "dome";
         };
-      };
+      });
     in {
       inherit dome;
       # `nix run` will default to the CLI
