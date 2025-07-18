@@ -5,3 +5,4 @@ build/
 .mastra/
 .npm-global/
 bin/
+result

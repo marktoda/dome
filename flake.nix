@@ -1,115 +1,122 @@
 {
-  description = "Astrolabe - A local-first, MCP-compatible task-navigation platform";
+  description = "Dome";
+
+  ######################################################################
+  # 1. Inputs
+  ######################################################################
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
   };
+
+  ######################################################################
+  # 2. Outputs
+  ######################################################################
   outputs = {
     self,
     nixpkgs,
+    ...
   }: let
-    supportedSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
-    forEachSupportedSystem = f:
-      nixpkgs.lib.genAttrs supportedSystems (system:
-        f {
-          pkgs = import nixpkgs {
-            inherit system;
-          };
-        });
+    # Supported CPU / OS pairs
+    systems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
+
+    # Helper: map over every system
+    forSystems = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs {inherit system;}));
   in {
-    devShells = forEachSupportedSystem ({pkgs, ...}: {
+    ##################################################################
+    ## 3. Dev‑shell
+    ##################################################################
+    devShells = forSystems (pkgs: {
       default = pkgs.mkShell {
         packages = with pkgs; [
-          openssl
-          prisma
-          # Node.js ecosystem
           nodejs_22
           pnpm
-
-          # Development tools
+          openssl
+          prisma
           biome
         ];
 
         shellHook = ''
-          # Setup npm global directory in project
+          # Local global‑npm dir (avoids polluting $HOME)
           export NPM_CONFIG_PREFIX="$PWD/.npm-global"
           export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
           mkdir -p "$NPM_CONFIG_PREFIX"
 
-          npm install -g @astrotask/cli
-          npm install -g @astrotask/mcp
-          npm install -g .
-
-          # Set Biome binary path for consistency
-          export BIOME_BINARY="${pkgs.biome}/bin/biome"
-
-          echo "🚀 Astrolabe development environment ready!"
-          echo "   Node.js: $(node --version)"
-          echo "   pnpm: $(pnpm --version)"
-          echo "   Task Master: $(task-master --version 2>/dev/null || echo 'installing...')"
+          echo "🧑‍💻 Astrolabe dev‑shell ready:"
+          node --version
+          pnpm --version
         '';
       };
     });
 
-    # Packages that can be imported / installed via `nix build` or `nix run`
-    packages = forEachSupportedSystem ({pkgs, ...}: let
-      dome = pkgs.stdenv.mkDerivation (finalAttrs: {
+    ##################################################################
+    ## 4. Packages  (build with `nix build .#dome`, run with `nix run`)
+    ##################################################################
+    packages = forSystems (pkgs: let
+      node = pkgs.nodejs_22;
+      pnpm = pkgs.pnpm;
+    in rec {
+      dome = pkgs.stdenv.mkDerivation rec {
         pname = "dome";
         version = "1.0.0";
+        src = self; # repo root (contains pnpm‑lock.yaml)
 
-        # Build straight from the flake source
-        src = self;
-
-        nativeBuildInputs = with pkgs; [
-          nodejs_22
-          pnpm_9.configHook
+        ##############################
+        # Build‑time dependencies
+        ##############################
+        nativeBuildInputs = [
+          node
+          pnpm
+          pnpm.configHook # installs deps from pnpm‑lock.yaml, offline
+          pkgs.makeWrapper
         ];
 
-        pnpmDeps = pkgs.pnpm_9.fetchDeps {
-          inherit (finalAttrs) pname version src;
-          # Placeholder – run a build once to obtain the correct hash and
-          # replace this with the value shown by the error message.
-          hash = "sha256-BUvCKH7D1appKJS+5C5X5KuHIERFYxFUaOzFMe7OY0o=";
+        ##############################
+        # Vendored node_modules store
+        ##############################
+        pnpmDeps = pnpm.fetchDeps {
+          inherit pname version src;
+          fetcherVersion = 2; # permission‑normalisation fix
+          # First build with lib.fakeHash, copy the printed hash here:
+          hash = "sha256-/JxO5wM680siWFjIezAKlAohKFuqLqM8gycP602x9OA=";
         };
 
+        ##############################
+        # Build phase
+        ##############################
         buildPhase = ''
           runHook preBuild
-
-          # Run the TypeScript build
-          pnpm run cli:build
-
+          pnpm run cli:build                 # must exist in package.json
           runHook postBuild
         '';
 
+        ##############################
+        # Install phase
+        ##############################
         installPhase = ''
           runHook preInstall
 
-          # Create the output directory
-          mkdir -p $out/bin $out/lib/dome
+          mkdir -p $out/lib/dome $out/bin
+          cp -R dist package.json pnpm-lock.yaml node_modules $out/lib/dome/
 
-          # Copy built files
-          cp -r dist $out/lib/dome/
-          cp -r package.json $out/lib/dome/
-
-          # Create wrapper script
-          cat > $out/bin/dome <<EOF
-          #!${pkgs.runtimeShell}
-          exec ${pkgs.nodejs_22}/bin/node $out/lib/dome/dist/cli/index.js "\$@"
-          EOF
-
-          chmod +x $out/bin/dome
+          # Lightweight launcher
+          makeWrapper ${node}/bin/node \
+            $out/bin/dome \
+            --add-flags "$out/lib/dome/dist/cli/index.js" \
+            --set NODE_PATH "$out/lib/dome/node_modules"
 
           runHook postInstall
         '';
 
-        meta = {
-          description = "Dome CLI tool";
-          mainProgram = "dome";
+        meta = with pkgs.lib; {
+          description = "Astrolabe / Dome – task‑navigation CLI";
+          homepage = "https://github.com/astrotask/astrolabe";
+          license = licenses.mit;
+          maintainers = []; # add your GitHub handle if you like
+          mainProgram = "dome"; # enables `nix run .#dome`
         };
-      });
-    in {
-      inherit dome;
-      # `nix run` will default to the CLI
-      default = dome;
+      };
+
+      default = dome; # `nix build` / `nix run` default
     });
   };
 }
