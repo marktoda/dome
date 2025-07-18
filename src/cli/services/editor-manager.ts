@@ -314,8 +314,18 @@ export class EditorManager extends EventEmitter {
       // 2. Return to alternate screen buffer
       stdout.write('\u001b[?1049h');
 
-      // 3. Clear screen to remove any editor artifacts
-      stdout.write('\u001b[2J\u001b[H');
+      // 3. Previously we cleared the screen here to remove any artifacts left
+      //    by the external editor. Unfortunately, that also wipes everything
+      //    that Ink has already rendered – effectively erasing the chat
+      //    history from the alternate screen buffer. The alternate buffer
+      //    already gets restored to its previous contents when we re-enter it
+      //    (sequence \u001b[?1049h above), so we can safely skip the extra
+      //    clear without leaving stray editor output.
+      //    Removing this command preserves the chat history for the user.
+
+      // NOTE: If any residual artefacts from certain editors become a problem
+      //       in future, consider forcing a React refresh instead of a hard
+      //       terminal clear so that Ink re-renders the current frame.
 
       // 4. Resume stdin for Ink input handling
       if (terminalState.wasListening) {

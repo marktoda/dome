@@ -358,6 +358,7 @@ export const ChatApp: React.FC = () => {
             width={sidebarWidth}
             flexShrink={0}
             flexDirection="column"
+            justifyContent="flex-end"
             borderStyle="single"
             paddingLeft={1}
             borderColor={editorState.isOpen ? 'gray' : 'white'}

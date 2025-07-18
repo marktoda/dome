@@ -20,7 +20,7 @@ export const NoteLogPanel: React.FC<NoteLogPanelProps> = ({
   // Guard against empty list
   if (notes.length === 0) {
     return (
-      <Box flexDirection="column" paddingX={1} paddingY={0} height="100%" justifyContent="flex-end">
+      <Box flexDirection="column" paddingX={1} paddingY={0} justifyContent="flex-end">
         <Box flexDirection="column">
           <Text bold>Note Access Log</Text>
           <Text dimColor italic>
@@ -37,7 +37,7 @@ export const NoteLogPanel: React.FC<NoteLogPanelProps> = ({
   const windowed = notes.slice(start, end);
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0} height="100%" justifyContent="flex-end">
+    <Box flexDirection="column" paddingX={1} paddingY={0} justifyContent="flex-end">
       <Box flexDirection="column">
         <Text bold>Note Access Log</Text>
         <Text color="gray">────────────────────</Text>

@@ -11,6 +11,7 @@ import { toRel, toAbs } from '../../mastra/utils/path-utils.js';
 import { mkdir } from 'node:fs/promises';
 import { config } from '../../mastra/core/config.js';
 import logger from '../../mastra/utils/logger.js';
+import { ContextManager } from '../../mastra/core/context/manager.js';
 
 const contextSchema = z.object({
   name: z.string(),
@@ -231,6 +232,49 @@ async function findDomeFiles(dir: string, files: string[] = []): Promise<string[
   return files;
 }
 
+async function listFolders(): Promise<void> {
+  try {
+    const manager = new ContextManager();
+    const contexts = await manager.listContexts();
+
+    if (contexts.length === 0) {
+      logger.info('📭 No folder contexts (.dome) found in the vault.');
+      return;
+    }
+
+    logger.info(`\n📂 Found ${contexts.length} folder context${contexts.length !== 1 ? 's' : ''}:\n`);
+
+    for (const ctx of contexts) {
+      logger.info(` • ${ctx.path || '/'}${ctx.context && ctx.context.trim() === '' ? ' (empty)' : ''}`);
+    }
+  } catch (error) {
+    logger.error('❌ Failed to list folders:', error);
+    process.exit(1);
+  }
+}
+
+async function showContext(folderName: string): Promise<void> {
+  try {
+    const folderPath = path.isAbsolute(folderName)
+      ? folderName
+      : path.join(config.DOME_VAULT_PATH, folderName);
+
+    const manager = new ContextManager();
+    const context = await manager.loadContext(folderPath);
+
+    if (context === null) {
+      logger.warn(`⚠️  No .dome context found for folder: ${folderName}`);
+      return;
+    }
+
+    logger.info(`\n📄 Context for ${folderName}:\n`);
+    logger.info(context);
+  } catch (error) {
+    logger.error('❌ Failed to load folder context:', error);
+    process.exit(1);
+  }
+}
+
 export function createFolderCommand(): Command {
   const folderCommand = new Command('folder').description(
     'Manage folder contexts with .dome files'
@@ -245,6 +289,16 @@ export function createFolderCommand(): Command {
     .command('edit [path]')
     .description('Edit an existing .dome context file')
     .action(editFolder);
+
+  folderCommand
+    .command('list')
+    .description('List all folders that contain a .dome context file')
+    .action(listFolders);
+
+  folderCommand
+    .command('context <folder>')
+    .description('Show the context for a specific folder')
+    .action(showContext);
 
   return folderCommand;
 }

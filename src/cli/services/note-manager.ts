@@ -9,8 +9,9 @@ import { toRel } from '../../mastra/utils/path-utils.js';
 
 // Schema for parsing AI cleanup response
 const RewriteNoteSchema = z.object({
-  noteText: z.string(),
-  reasoning: z.string().optional(),
+  noteText: z.string().describe('the full improved note, including unchanged front‑matter'),
+  suggestedNoteFilename: z.string().describe('e.g. topic-key-points.md'),
+  reasoning: z.string().optional().describe('brief rationale for major changes (optional)'),
 });
 
 export class NoteManager {
@@ -94,26 +95,30 @@ export class NoteManager {
 
     logger.info('🤖 Summarizing and cleaning up note...');
 
-    // Build prompt
-    const summarizePrompt = `
-Please review and improve this note. The note is about: "${topic}"
+    const rewritePrompt = /* md */ `
+You are **Notes Agent**.
+Goal → Rewrite the note below for clarity and structure while **preserving every important fact** and the existing YAML front‑matter.
 
-Context about this folder:
+INPUTS
+• **Topic**: "${topic}"
+• **Vault‑folder context (JSON)**:
 ${JSON.stringify(context, null, 2)}
 
-Current note content:
+• **Current note markdown**:
 ${editedText}
 
-Please:
-1. Clean up and format the content for clarity
-2. Add appropriate structure with markdown headings
-3. Ensure the content is well-organized
-4. Keep all important information but improve readability
-5. Maintain the existing frontmatter
+TASKS
+1. Re‑organize and clean the prose for readability.
+2. Add logical Markdown headings / lists where helpful.
+3. Keep the original front‑matter unchanged and at the top.
+4. DO NOT remove or truncate information unless explicitly instructed.
+5. Propose a succinct, kebab‑case filename that matches the note’s content and folder context.
 
-Return the complete improved note content including frontmatter.`;
+Respond **with nothing else** — only the valid JSON.`
 
-    const response = await agent.generate([{ role: 'user', content: summarizePrompt }], {
+    console.log('context', context);
+
+    const response = await agent.generate([{ role: 'user', content: rewritePrompt }], {
       experimental_output: RewriteNoteSchema,
     });
 
@@ -122,7 +127,7 @@ Return the complete improved note content including frontmatter.`;
       // Only rewrite the note if the cleaned text is actually different
       if (cleanedText.trim() !== editedText.trim()) {
         await noteStore.store(path, cleanedText);
-        logger.info('✅ Note cleaned up and saved successfully');
+        logger.info(`✅ Note cleaned up and saved successfully: ${response.object.reasoning}`);
       } else {
         logger.info('✅ No cleanup needed – note unchanged');
       }
