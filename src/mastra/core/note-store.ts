@@ -53,6 +53,14 @@ export interface NoteStore {
 
   /** Delete a note */
   remove(id: NoteId): Promise<RemoveResult>;
+
+  /** Rename a note to a new relative path */
+  rename(from: NoteId, to: NoteId): Promise<{
+    from: NoteId;
+    to: NoteId;
+    success: boolean;
+    message: string;
+  }>;
 }
 
 class FileSystemNoteStore implements NoteStore {
@@ -126,6 +134,54 @@ class FileSystemNoteStore implements NoteStore {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return { path: id, success: false, message: `Failed to remove note ${id}: ${message}` };
     }
+  }
+
+  async rename(from: NoteId, to: NoteId): Promise<{
+    from: NoteId;
+    to: NoteId;
+    success: boolean;
+    message: string;
+  }> {
+    const fromAbs = toAbs(from);
+    const toAbsPath = toAbs(to);
+
+    try {
+      // Ensure source exists
+      await fs.access(fromAbs);
+
+      // Ensure destination folder exists
+      await fs.mkdir(path.dirname(toAbsPath), { recursive: true });
+
+      // Perform rename (will fail if destination exists)
+      await fs.rename(fromAbs, toAbsPath);
+
+      noteEvents.emit('note:changed', from);
+      noteEvents.emit('note:changed', to);
+
+      return {
+        from,
+        to,
+        success: true,
+        message: `Renamed ${from} → ${to}`,
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      return {
+        from,
+        to,
+        success: false,
+        message: `Failed to rename ${from} → ${to}: ${msg}`,
+      };
+    }
+
+    // Should never reach here, but TypeScript demands a return.
+    /* c8 ignore next */
+    return {
+      from,
+      to,
+      success: false,
+      message: 'Unknown error',
+    };
   }
 }
 

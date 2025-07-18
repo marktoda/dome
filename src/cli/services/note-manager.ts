@@ -6,6 +6,7 @@ import { mastra } from '../../mastra/index.js';
 import { editorManager } from './editor-manager.js';
 import logger from '../../mastra/utils/logger.js';
 import { toRel } from '../../mastra/utils/path-utils.js';
+import { join } from 'node:path';
 
 // Schema for parsing AI cleanup response
 const RewriteNoteSchema = z.object({
@@ -72,6 +73,89 @@ export class NoteManager {
   }
 
   /**
+   * Analyse arbitrary note content and let the AI suggest
+   * a suitable topic/title and destination folder+filename.
+   * Returns the chosen topic and the vault-relative path
+   * (including the filename) where the note should live.
+   */
+  async autoCategorize(noteContent: string): Promise<{ topic: string; path: string }> {
+    // Zod schema for the AI response
+    const CategorizeSchema = z.object({
+      title: z.string().min(1).describe('A concise title for the note'),
+      folderPath: z
+        .string()
+        .min(1)
+        .describe("Relative vault folder ending with '/' e.g. 'projects/'"),
+      fileName: z.string().min(1).describe('File name including .md extension'),
+      reasoning: z.string().optional(),
+    });
+
+    // Ensure AI features are enabled
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY not set – cannot categorise quick note');
+    }
+
+    const agent = mastra.getAgent('notesAgent');
+    if (!agent) {
+      throw new Error('notesAgent not registered in Mastra – cannot categorise quick note');
+    }
+
+    const prompt = /* md */ `
+You are **Notes Agent**.
+
+GOAL
+Analyse the Markdown note below and propose the most suitable vault location and filename.
+
+WORKFLOW
+1. Run **getVaultContextTool** to load the current folder structure.
+2. If helpful, run **searchNotesTool** to see where similar notes live.
+3. Pick the best existing folder; create a sensible new folder only if nothing fits.
+
+GUIDELINES
+• Keep folder organisation logical (projects/, meetings/, journal/, inbox/, etc.).
+• Use kebab‑case filenames with the .md extension.
+• Do **not** write, edit, or delete any notes—classification only.
+
+NOTE CONTENT START
+${noteContent.trim().slice(0, 4000)}
+NOTE CONTENT END
+`;
+
+    const response = await agent.generate([{ role: 'user', content: prompt }], {
+      experimental_output: CategorizeSchema,
+    });
+
+    const obj = response.object;
+    if (!obj) {
+      throw new Error('AI categorisation failed – no response object');
+    }
+
+    const fullRelPath = join(obj.folderPath, obj.fileName);
+
+    return {
+      topic: obj.title,
+      path: fullRelPath,
+    };
+  }
+
+  /**
+   * Run the AI clean-up pass on an existing note **without** opening the editor.
+   * Useful after quick-note capture where the file is already written.
+   */
+  async cleanupNote(topic: string, relPath: NoteId): Promise<void> {
+    // Load the current content
+    const note = await getNote(relPath);
+    if (!note) {
+      logger.warn(`Note ${relPath} not found – skipping cleanup`);
+      return;
+    }
+
+    const context = await this.contextManager.getContext(relPath);
+
+    await this.rewriteNote(topic, context, note.raw, relPath);
+  }
+
+  /**
    * Review and clean up the given note using the `notesAgent`.
    * If the agent is not available, the function simply logs a success message and exits.
    *
@@ -113,10 +197,10 @@ TASKS
 3. Keep the original front‑matter unchanged and at the top.
 4. DO NOT remove or truncate information unless explicitly instructed.
 5. Propose a succinct, kebab‑case filename that matches the note’s content and folder context.
+5. Try to adhere to the structure and template from the context file, without messing up the file content
 
 Respond **with nothing else** — only the valid JSON.`
 
-    console.log('context', context);
 
     const response = await agent.generate([{ role: 'user', content: rewritePrompt }], {
       experimental_output: RewriteNoteSchema,

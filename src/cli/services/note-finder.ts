@@ -48,17 +48,21 @@ export class AINoteFinder {
 
     // Use the AI agent to find the best match or suggest a category
     const prompt = `
-I'm looking for where to place a note about: "${topic}"
-Use the note tools at your disposal to suggest folder path that would be appropriate for this topic.
+You are ** Notes Agent ** in read‑only mode.
 
-For "path": provide the relative path to the suggested folder. It can be either an existing directory or if no good match, suggest a new one. The path should end in a forward slash (/) to indicate it's a folder.
-For "fileName": provide a suggested name for the file that the note will live in. Keep it concise and descriptive. Include filetype extension '.md'
-For "template": include starter text for the user to begin filling in, in markdown. this may include headings, bullet points, or other markdown elements.
+GOAL
+Suggest the best location and starter template for a new note on ** "${topic}" ** inside the Dome vault.
 
-Consider:
-- Folder context and readable layout
-- Logical directory organization (meetings, projects, journal, inbox, etc.)
-`;
+WORKFLOW
+1. Call ** getVaultContextTool ** to load the current directory tree.
+2. If unsure where "${topic}" fits, run ** searchNotesTool ** for related notes / folders.
+3. Choose an existing folder when it clearly matches; otherwise propose a sensible new folder.
+
+GUIDELINES
+• Keep folder structure logical(e.g.meetings /, projects /, journal /, inbox /).
+• Use kebab‑case for filenames; always include “.md”.
+• The template may include headings, checklists, or bullet points to help the user start writing.
+• Do ** not ** create, edit, or delete any notes—this is a planning step only.`
 
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -79,7 +83,7 @@ Consider:
     }
     return {
       fileName: result.fileName,
-      path: join(result.path, `${result.fileName}`),
+      path: join(result.path, `${result.fileName} `),
       template: result.template,
       reasoning: result.reasoning,
     };
@@ -135,7 +139,7 @@ Consider:
     } catch (error) {
       console.error('Failed to initialize notes agent:', error);
       throw new Error(
-        `Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'} `
       );
     }
 
@@ -151,19 +155,19 @@ Consider:
     const prompt = `
 Search for existing notes that match the topic: "${topic}"
 
-Use your available tools to search through all notes and find ALL relevant matches. Look for:
-1. Notes with titles that closely match the search term
-2. Notes with content that is relevant to the topic
-3. Notes with tags that relate to the topic
+Use your available tools to search through all notes and find ALL relevant matches.Look for:
+      1. Notes with titles that closely match the search term
+    2. Notes with content that is relevant to the topic
+    3. Notes with tags that relate to the topic
 
 For each note found, assign a relevance score from 0 to 1:
-- 1.0: Perfect match (title exactly matches or content is highly relevant)
-- 0.8-0.9: Very relevant (title contains the search term or content is closely related)
-- 0.6-0.7: Relevant (partial title match or moderately related content)
-- 0.4-0.5: Somewhat relevant (indirect relation or minor mentions)
-- Below 0.4: Not relevant enough to include
+    - 1.0: Perfect match(title exactly matches or content is highly relevant)
+      - 0.8 - 0.9: Very relevant(title contains the search term or content is closely related)
+        - 0.6 - 0.7: Relevant(partial title match or moderately related content)
+          - 0.4 - 0.5: Somewhat relevant(indirect relation or minor mentions)
+            - Below 0.4: Not relevant enough to include
 
-Return up to ${limit} most relevant results, sorted by relevance score (highest first). Be sure to use the getVaultContext tool to get a full view of the vault structure.
+Return up to ${limit} most relevant results, sorted by relevance score(highest first).Be sure to use the getVaultContext tool to get a full view of the vault structure.
 `;
 
     if (process.env.DEBUG) {

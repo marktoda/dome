@@ -50,9 +50,16 @@ program
 // New command
 program
   .command('new')
-  .argument('<topic...>', 'topic or title for the new note')
-  .description('create a new note with AI-generated template')
-  .action(async topicWords => await handleNew(topicWords.join(' ')));
+  .argument('[topic...]', 'topic or title for the new note (leave blank for a quick note)')
+  .description('create a new note – when no topic is given it captures a quick note')
+  .action(async topicWords => {
+    if (!topicWords || topicWords.length === 0) {
+      const { handleQuickNew } = await import('./commands/new.js');
+      await handleQuickNew();
+    } else {
+      await handleNew(topicWords.join(' '));
+    }
+  });
 
 // List command
 program
