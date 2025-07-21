@@ -5,6 +5,7 @@ import path from 'node:path';
 import chalk from 'chalk';
 import { handleNew } from './new.js';
 import logger from '../../mastra/utils/logger.js';
+import { promptWithCleanTerminal } from '../utils/prompt-helper.js';
 
 interface FindOptions {
   maxResults?: number;
@@ -103,7 +104,7 @@ async function showSelection(
 ): Promise<void> {
   const choices = buildChoices(results);
 
-  const { selectedPath } = await inquirer.prompt([
+  const { selectedPath } = await promptWithCleanTerminal<{ selectedPath: string | null }>([
     {
       type: 'list',
       name: 'selectedPath',
@@ -178,7 +179,7 @@ function buildChoices(results: FindNoteResult[]): any[] {
  * Prompt to create a new note
  */
 async function promptCreateNew(topic: string): Promise<void> {
-  const { createNew } = await inquirer.prompt([
+  const { createNew } = await promptWithCleanTerminal<{ createNew: boolean }>([
     {
       type: 'confirm',
       name: 'createNew',

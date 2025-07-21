@@ -15,6 +15,12 @@ if (!process.env.DEBUG) {
   console.debug = () => {};
 }
 
+// Disable pino-pretty for non-interactive commands to prevent terminal issues
+// This prevents logger output from interfering with inquirer prompts
+if (process.argv.length > 2 && process.argv[2] !== 'chat') {
+  process.env.NODE_ENV = 'production';
+}
+
 // Suppress indexer status lines for CLI/to avoid prompt overwrites
 backgroundIndexer.setStatusDisplay(false);
 backgroundIndexer.setSilentMode(true);

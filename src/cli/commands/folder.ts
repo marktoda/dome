@@ -12,6 +12,7 @@ import { mkdir } from 'node:fs/promises';
 import { config } from '../../mastra/core/config.js';
 import logger from '../../mastra/utils/logger.js';
 import { ContextManager } from '../../mastra/core/context/manager.js';
+import { promptWithCleanTerminal } from '../utils/prompt-helper.js';
 
 const contextSchema = z.object({
   name: z.string(),
@@ -31,7 +32,7 @@ type Context = z.infer<typeof contextSchema>;
 async function createFolder(): Promise<void> {
   try {
     // First, prompt for the folder path
-    const { folderPath } = await inquirer.prompt([
+    const { folderPath } = await promptWithCleanTerminal<{ folderPath: string }>([
       {
         type: 'input',
         name: 'folderPath',
@@ -60,7 +61,8 @@ async function createFolder(): Promise<void> {
     try {
       await fs.access(domePath);
       logger.warn('A .dome file already exists in this folder.');
-      const { overwrite } = await inquirer.prompt([
+      
+      const { overwrite } = await promptWithCleanTerminal<{ overwrite: boolean }>([
         {
           type: 'confirm',
           name: 'overwrite',
@@ -68,6 +70,7 @@ async function createFolder(): Promise<void> {
           default: false,
         },
       ]);
+      
       if (!overwrite) {
         logger.info('Folder creation cancelled.');
         return;
@@ -78,7 +81,7 @@ async function createFolder(): Promise<void> {
     const folderName = path.basename(fullPath);
 
     // Prompt for folder context information
-    const answers = await inquirer.prompt([
+    const answers = await promptWithCleanTerminal<{ description: string; addRules: string }>([
       {
         type: 'input',
         name: 'description',
@@ -155,7 +158,7 @@ async function editFolder(folderPath?: string): Promise<void> {
         return;
       }
 
-      const { selected } = await inquirer.prompt([
+      const { selected } = await promptWithCleanTerminal<{ selected: string }>([
         {
           type: 'list',
           name: 'selected',
@@ -177,7 +180,7 @@ async function editFolder(folderPath?: string): Promise<void> {
       await fs.access(domePath);
     } catch {
       logger.warn(`⚠️  No .dome file found at: ${targetPath}`);
-      const { create } = await inquirer.prompt([
+      const { create } = await promptWithCleanTerminal<{ create: boolean }>([
         {
           type: 'confirm',
           name: 'create',
@@ -185,6 +188,7 @@ async function editFolder(folderPath?: string): Promise<void> {
           default: true,
         },
       ]);
+      
       if (create) {
         await createFolder();
       }

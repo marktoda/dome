@@ -83,7 +83,7 @@ GUIDELINES
     }
     return {
       fileName: result.fileName,
-      path: join(result.path, `${result.fileName} `),
+      path: join(result.path, result.fileName),
       template: result.template,
       reasoning: result.reasoning,
     };
@@ -139,7 +139,7 @@ GUIDELINES
     } catch (error) {
       console.error('Failed to initialize notes agent:', error);
       throw new Error(
-        `Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'} `
+        `Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
 
