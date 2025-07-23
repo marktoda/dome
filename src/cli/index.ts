@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { backgroundIndexer } from '../mastra/core/search.js';
 import { handleFind } from './commands/find.js';
 import { handleList } from './commands/list.js';
 import { handleChat } from './commands/chat.js';
@@ -12,7 +11,7 @@ import { createFolderCommand } from './commands/folder.js';
 
 // Suppress noisy debug logs in non-debug CLI mode
 if (!process.env.DEBUG) {
-  console.debug = () => {};
+  console.debug = () => { };
 }
 
 // Disable pino-pretty for non-interactive commands to prevent terminal issues
@@ -20,16 +19,6 @@ if (!process.env.DEBUG) {
 if (process.argv.length > 2 && process.argv[2] !== 'chat') {
   process.env.NODE_ENV = 'production';
 }
-
-// Suppress indexer status lines for CLI/to avoid prompt overwrites
-backgroundIndexer.setStatusDisplay(false);
-backgroundIndexer.setSilentMode(true);
-
-// Start the indexer eagerly so that *any* CLI command benefits from
-// up-to-date search without requiring each writer to call it.
-await backgroundIndexer.startBackgroundIndexing().catch(() => {
-  /* logged internally */
-});
 
 const program = new Command();
 
@@ -94,11 +83,5 @@ if (process.argv.length <= 2) {
   handleChat();
 } else {
   await program.parseAsync();
-
-  // Flush any pending incremental work then shut the watcher down so the
-  // process can exit promptly.
-  await backgroundIndexer.stopBackgroundIndexing().catch(() => {
-    /* ignore */
-  });
   process.exit(0);
 }

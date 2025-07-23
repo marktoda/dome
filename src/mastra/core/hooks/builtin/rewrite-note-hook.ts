@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { mastra } from '../../../index.js';
 import { ContextManager } from '../../context/manager.js';
-import { NoteSaveContext } from '../note-hooks.js';
+import { beforeSaveHook, NoteSaveContext } from '../note-hooks.js';
 import { NoteId } from '../../note-store.js';
 import { z } from 'zod';
 import logger from '../../../utils/logger.js';
@@ -20,9 +20,8 @@ function topicFromPath(relPath: string): string {
   return path.basename(relPath, path.extname(relPath)).replace(/[-_]+/g, ' ');
 }
 
-export async function rewriteNoteHook(ctx: NoteSaveContext): Promise<void> {
-  // Bail early if no OpenAI key or agent missing (keeps flow fast for non-AI setups)
-  if (!process.env.OPENAI_API_KEY) return;
+async function rewriteNoteImpl(ctx: NoteSaveContext): Promise<void> {
+  // Bail early if the agent is missing (keeps flow fast for non-AI setups)
 
   const agent = mastra.getAgent('readNotesAgent');
   if (!agent) return;
@@ -31,8 +30,6 @@ export async function rewriteNoteHook(ctx: NoteSaveContext): Promise<void> {
   const folderContext = await contextManager.getContext(ctx.relPath as unknown as NoteId);
 
   const topic = topicFromPath(ctx.relPath);
-
-  logger.info(`🤖 (hook) Cleaning up note: ${ctx.relPath}`);
 
   const rewritePrompt = /* md */ `
 You are **Notes Agent**.
@@ -72,4 +69,11 @@ TASKS
   }
 }
 
-// registration moved to central initialization
+// Expose as RegisteredHook object for registration in mastra/index.ts
+export const rewriteNoteHook = beforeSaveHook(
+  'Rewrite Note',
+  rewriteNoteImpl,
+  'AI-powered cleanup and restructuring of note before save'
+);
+
+// registration still happens centrally in mastra/index.ts

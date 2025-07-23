@@ -76,11 +76,6 @@ export class NoteManager {
       reasoning: z.string().optional(),
     });
 
-    // Ensure AI features are enabled
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY not set – cannot categorise quick note');
-    }
-
     const agent = mastra.getAgent('notesAgent');
     if (!agent) {
       throw new Error('notesAgent not registered in Mastra – cannot categorise quick note');

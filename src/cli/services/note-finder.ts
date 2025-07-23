@@ -26,13 +26,6 @@ export type FolderFindResult = z.infer<typeof FindNoteCategorySchema>;
 
 export class AINoteFinder {
   async findPlaceForTopic(topic: string): Promise<FolderFindResult> {
-    // Check for OpenAI API key
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error(
-        'OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.'
-      );
-    }
-
     let agent;
     try {
       agent = mastra.getAgent('notesAgent');
@@ -127,13 +120,6 @@ GUIDELINES
   private async aiFindNotes(topic: string, limit: number): Promise<FindNoteResult[]> {
     if (process.env.DEBUG) {
       console.log('[AINoteFinder] Starting AI search for topic:', topic);
-    }
-
-    // Check for OpenAI API key
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error(
-        'OPENAI_API_KEY environment variable is not set. Please set it to use AI-powered search.'
-      );
     }
 
     let agent;

@@ -126,10 +126,6 @@ async function ensureTable(): Promise<void> {
  * @returns Number of notes indexed
  */
 export async function indexNotes(mode: 'full' | 'incremental' = 'incremental'): Promise<number> {
-  if (!process.env.OPENAI_API_KEY) {
-    logger.error('OPENAI_API_KEY not set - skipping vector indexing');
-    return 0;
-  }
   await ensureTable();
 
   // Clear existing vectors when performing a full reindex
@@ -166,6 +162,26 @@ export async function indexNotes(mode: 'full' | 'incremental' = 'incremental'): 
 
   logger.debug(`Indexing complete: ${records.length} notes processed`);
   return records.length;
+}
+
+/**
+ * Index a single note – called by after-save hook.
+ * Fast path that avoids scanning the whole vault.
+ */
+export async function indexSingleNote(notePath: string): Promise<void> {
+  try {
+    await ensureTable();
+    const records = await fileToVectorRecords(notePath);
+    await store.upsert({
+      indexName: config.DOME_INDEX_NAME,
+      vectors: records.map(r => r.vector),
+      metadata: records.map(r => r.metadata),
+      ids: records.map(r => r.id),
+    });
+    logger.debug(`[vector] indexed ${notePath}`);
+  } catch (err) {
+    logger.error('Error indexing note', notePath, err);
+  }
 }
 
 /**

@@ -13,6 +13,7 @@ const configSchema = z.object({
   DOME_TABLE_NAME: z.string(),
   DOME_INDEX_NAME: z.string(),
   POSTGRES_URI: z.string(),
+  OPENAI_API_KEY: z.string().min(1),
 });
 
 // using default env (process.env)

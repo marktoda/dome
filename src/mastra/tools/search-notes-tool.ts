@@ -21,12 +21,6 @@ export const searchNotesTool = createTool({
   ),
   execute: async ({ context }) => {
     try {
-      // Check if we have the required environment variable
-      if (!process.env.OPENAI_API_KEY) {
-        console.error('OPENAI_API_KEY not found, cannot perform semantic search');
-        return [];
-      }
-
       // Generate embedding for the query
       const { embedding } = await embed({
         model: openai.embedding('text-embedding-3-small'),

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { NoteSaveContext } from '../note-hooks.js';
+import { beforeSaveHook, NoteSaveContext } from '../note-hooks.js';
 import logger from '../../../utils/logger.js';
 import { config } from '../../config.js';
 import { z } from 'zod';
@@ -19,7 +19,7 @@ const TasksSchema = z.object({
 
 async function extractOpenTasksLLM(markdown: string): Promise<string[]> {
   const agent = mastra.getAgent('tasksAgent');
-  if (!agent || !process.env.OPENAI_API_KEY) {
+  if (!agent) {
     return naiveExtract(markdown);
   }
 
@@ -90,11 +90,19 @@ async function upsertTasks(relPath: string, newTasks: string[]): Promise<void> {
  * Hook registration
  * ---------------------------------------------------------*/
 
-export async function todoExtractHook(ctx: NoteSaveContext): Promise<void> {
+async function todoExtractImpl(ctx: NoteSaveContext): Promise<void> {
   try {
     const tasks = await extractOpenTasksLLM(ctx.raw);
     await upsertTasks(ctx.relPath, tasks);
   } catch (err) {
-    logger.warn(`⚠️  todo-extract hook failed: ${err instanceof Error ? err.message : 'unknown'}`);
+    logger.warn(
+      `⚠️  todo-extract hook failed: ${err instanceof Error ? err.message : 'unknown'}`
+    );
   }
-} 
+}
+
+export const todoExtractHook = beforeSaveHook(
+  'Extract TODOs',
+  todoExtractImpl,
+  'Extract open tasks from note and update central todo list'
+); 
