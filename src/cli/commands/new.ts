@@ -76,7 +76,7 @@ export async function handleQuickNew(): Promise<void> {
     }
 
     // Step 3: ask AI for best topic & location
-    const { topic, path: suggestedPath } = await noteManager.autoCategorize(quickNote.raw);
+    const { path: suggestedPath } = await noteManager.autoCategorize(quickNote.raw);
 
     // Ensure resulting path has .md extension & is vault-relative
     let destRel = toRel(suggestedPath) as NoteId;
@@ -94,7 +94,7 @@ export async function handleQuickNew(): Promise<void> {
     logger.info(`📁 ${renameResult.message}`);
 
     // Step 5: directly run the AI clean-up (no second manual edit required)
-    await noteManager.cleanupNote(topic, destRel);
+    await noteManager.cleanupNote(destRel);
   } catch (error) {
     logger.error('❌ Failed to create quick note:', error instanceof Error ? error.message : error);
     process.exit(1);

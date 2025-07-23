@@ -4,6 +4,11 @@ import * as path from 'node:path';
 import fg from 'fast-glob';
 import { config } from './config.js';
 import { noteEvents } from './events.js';
+import {
+  runBeforeSaveHooks,
+  runAfterSaveHooks,
+  NoteSaveContext,
+} from './hooks/note-hooks.js';
 
 export interface RawNote {
   path: NoteId;
@@ -86,6 +91,19 @@ class FileSystemNoteStore implements NoteStore {
   }
 
   async store(id: NoteId, rawContent: string): Promise<FileWriteResult> {
+    // -------------------------------
+    // Run before-save hooks (allows mutation of `raw`)
+    // -------------------------------
+    const ctx: NoteSaveContext = {
+      relPath: id,
+      raw: rawContent,
+    };
+
+    await runBeforeSaveHooks(ctx);
+
+    // The hook may have modified the raw text
+    const contentToWrite = ctx.raw;
+
     const relPath = id;
     const fullPath = await this.prepareNoteFolder(relPath);
 
@@ -94,14 +112,24 @@ class FileSystemNoteStore implements NoteStore {
       .then(() => true)
       .catch(() => false);
 
-    await fs.writeFile(fullPath, rawContent, 'utf8');
+    await fs.writeFile(fullPath, contentToWrite, 'utf8');
     noteEvents.emit('note:changed', relPath);
+
+    // -------------------------------
+    // Run after-save hooks (non-blocking heavy logic can enqueue workflows)
+    // -------------------------------
+    ctx.fullPath = fullPath;
+    ctx.existedBefore = existedBefore;
+    ctx.bytesWritten = contentToWrite.length;
+
+    // Fire and await – hooks should be fast; any lengthy work should spawn async jobs
+    await runAfterSaveHooks(ctx);
 
     return {
       path: relPath,
       fullPath,
       existedBefore,
-      bytesWritten: rawContent.length,
+      bytesWritten: contentToWrite.length,
     };
   }
 

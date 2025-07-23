@@ -1,27 +1,13 @@
 import { z } from 'zod';
 import { noteStore, NoteId } from '../../mastra/core/note-store.js';
 import { getNote } from '../../mastra/core/notes.js';
-import { ContextManager } from '../../mastra/core/context/manager.js';
 import { mastra } from '../../mastra/index.js';
 import { editorManager } from './editor-manager.js';
 import logger from '../../mastra/utils/logger.js';
 import { toRel } from '../../mastra/utils/path-utils.js';
 import { join } from 'node:path';
 
-// Schema for parsing AI cleanup response
-const RewriteNoteSchema = z.object({
-  noteText: z.string().describe('the full improved note, including unchanged front‑matter'),
-  suggestedNoteFilename: z.string().describe('e.g. topic-key-points.md'),
-  reasoning: z.string().optional().describe('brief rationale for major changes (optional)'),
-});
-
 export class NoteManager {
-  private contextManager: ContextManager;
-
-  constructor() {
-    this.contextManager = new ContextManager();
-  }
-
   async editNote(topic: string, originalPath: string): Promise<void> {
     // Ensure we operate on a vault-relative path.
     const relPath: NoteId = toRel(originalPath);
@@ -32,8 +18,6 @@ export class NoteManager {
       logger.error('❌ Error reading note before edit');
       process.exit(1);
     }
-
-    const context = await this.contextManager.getContext(relPath);
 
     // Open in editor using the new EditorManager
     const success = await editorManager.openEditor({
@@ -68,8 +52,10 @@ export class NoteManager {
       return;
     }
 
-    // Review and clean up the note via AI helper
-    await this.rewriteNote(topic, context, editedNote.raw, relPath);
+    // Persist the note – hooks will handle cleanup/rewrite automatically
+    await noteStore.store(relPath, editedNote.raw);
+
+    logger.info(`✅ Note saved successfully for "${topic}" (cleanup handled by hooks)`);
   }
 
   /**
@@ -142,7 +128,7 @@ NOTE CONTENT END
    * Run the AI clean-up pass on an existing note **without** opening the editor.
    * Useful after quick-note capture where the file is already written.
    */
-  async cleanupNote(topic: string, relPath: NoteId): Promise<void> {
+  async cleanupNote(relPath: NoteId): Promise<void> {
     // Load the current content
     const note = await getNote(relPath);
     if (!note) {
@@ -150,73 +136,7 @@ NOTE CONTENT END
       return;
     }
 
-    const context = await this.contextManager.getContext(relPath);
-
-    await this.rewriteNote(topic, context, note.raw, relPath);
-  }
-
-  /**
-   * Review and clean up the given note using the `notesAgent`.
-   * If the agent is not available, the function simply logs a success message and exits.
-   *
-   * @param topic       Topic of the note(used to build the prompt)
-   * @param context     Folder context information for the note
-   * @param editedText  Current(user - edited) note text
-   * @param fullPath    Absolute path to the note file on disk
-   */
-  private async rewriteNote(
-    topic: string,
-    context: unknown,
-    editedText: string,
-    path: NoteId
-  ): Promise<void> {
-    // Get the notes agent for summarization / cleanup
-    const agent = mastra.getAgent('readNotesAgent');
-    if (!agent) {
-      logger.info('✅ Note saved successfully');
-      return;
-    }
-
-    logger.info('🤖 Summarizing and cleaning up note...');
-
-    const rewritePrompt = /* md */ `
-You are **Notes Agent**.
-Goal → Rewrite the note below for clarity and structure while **preserving every important fact** and the existing YAML front‑matter.
-
-INPUTS
-• **Topic**: "${topic}"
-• **Vault‑folder context (JSON)**:
-${JSON.stringify(context, null, 2)}
-
-• **Current note markdown**:
-${editedText}
-
-TASKS
-1. Re‑organize and clean the prose for readability.
-2. Add logical Markdown headings / lists where helpful.
-3. Keep the original front‑matter unchanged and at the top.
-4. DO NOT remove or truncate information unless explicitly instructed.
-5. Propose a succinct, kebab‑case filename that matches the note’s content and folder context.
-5. Try to adhere to the structure and template from the context file, without messing up the file content
-
-Respond **with nothing else** — only the valid JSON.`
-
-
-    const response = await agent.generate([{ role: 'user', content: rewritePrompt }], {
-      experimental_output: RewriteNoteSchema,
-    });
-
-    if (response.object?.noteText) {
-      const cleanedText = response.object.noteText;
-      // Only rewrite the note if the cleaned text is actually different
-      if (cleanedText.trim() !== editedText.trim()) {
-        await noteStore.store(path, cleanedText);
-        logger.info(`✅ Note cleaned up and saved successfully: ${response.object.reasoning}`);
-      } else {
-        logger.info('✅ No cleanup needed – note unchanged');
-      }
-    } else {
-      logger.info('✅ Note saved successfully');
-    }
+    // Re-save the note to trigger cleanup hooks
+    await noteStore.store(relPath, note.raw);
   }
 }
