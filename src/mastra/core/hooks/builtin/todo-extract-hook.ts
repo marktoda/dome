@@ -9,15 +9,22 @@ import { mastra } from '../../../index.js';
 // Absolute path to the central TODO list inside the vault
 const TODO_FILE = path.join(config.DOME_VAULT_PATH, 'todo.md');
 
+type TaskStatus = 'pending' | 'in-progress' | 'done';
+
+interface ExtractedTask {
+  text: string;
+  status: TaskStatus;
+}
+
 // -------------------------
 // LLM extraction helpers
 // -------------------------
 
 const TasksSchema = z.object({
-  tasks: z.array(z.string()).describe('one todo item per element'),
+  tasks: z.array(z.string()).describe('one pending todo item per element'),
 });
 
-async function extractOpenTasksLLM(markdown: string): Promise<string[]> {
+async function extractTasksLLM(markdown: string): Promise<ExtractedTask[]> {
   const agent = mastra.getAgent('tasksAgent');
   if (!agent) {
     return naiveExtract(markdown);
@@ -25,9 +32,9 @@ async function extractOpenTasksLLM(markdown: string): Promise<string[]> {
 
   const prompt = /* md */ `Extract all OPEN tasks from the following Markdown note. Return strictly JSON per schema.
 
-NOTE START
-${markdown}
-NOTE END`;
+ NOTE START
+ ${markdown}
+ NOTE END`;
 
   try {
     const result = await agent.generate([{ role: 'user', content: prompt }], {
@@ -35,7 +42,7 @@ NOTE END`;
     });
 
     if (result.object) {
-      return result.object.tasks;
+      return result.object.tasks.map(t => ({ text: t, status: 'pending' }));
     }
     logger.warn('⚠️  tasksAgent returned no object – fallback to naive');
     return naiveExtract(markdown);
@@ -45,13 +52,20 @@ NOTE END`;
   }
 }
 
-// simple fallback regex extractor
-function naiveExtract(markdown: string): string[] {
-  const tasks: string[] = [];
+// simple fallback regex extractor (handles status)
+function naiveExtract(markdown: string): ExtractedTask[] {
+  const tasks: ExtractedTask[] = [];
   const lines = markdown.split('\n');
   for (const line of lines) {
-    const m = line.match(/^\s*[-*]\s+\[\s*\]\s+(.+)/);
-    if (m) tasks.push(m[1].trim());
+    const m = line.match(/^\s*[-*]\s+\[([ x\/])\]\s+(.+)/i);
+    if (m) {
+      const mark = m[1].toLowerCase();
+      const text = m[2].trim();
+      let status: TaskStatus = 'pending';
+      if (mark === 'x') status = 'done';
+      else if (mark === '/') status = 'in-progress';
+      tasks.push({ text, status });
+    }
   }
   return tasks;
 }
@@ -61,7 +75,7 @@ function naiveExtract(markdown: string): string[] {
  * For simplicity we store each task on its own line with a backlink:
  *   - [ ] Buy milk <!-- from: projects/grocery.md -->
  */
-async function upsertTasks(relPath: string, newTasks: string[]): Promise<void> {
+async function upsertTasks(relPath: string, newTasks: ExtractedTask[]): Promise<void> {
   // Read current todo file (ignore if missing)
   let existing = '';
   try {
@@ -70,18 +84,71 @@ async function upsertTasks(relPath: string, newTasks: string[]): Promise<void> {
     /* file might not exist – that's fine */
   }
 
-  const byLine = existing.split('\n');
   const tag = `from: ${relPath}`;
 
-  // Remove any previous task lines for this note
-  const filtered = byLine.filter(l => !l.includes(tag));
+  // Helper containers for each section
+  const sections: Record<TaskStatus, string[]> = {
+    pending: [],
+    'in-progress': [],
+    done: [],
+  };
 
-  // Append freshly extracted tasks
-  for (const task of newTasks) {
-    filtered.push(`- [ ] ${task} <!-- ${tag} -->`);
+  // Parse existing content & keep tasks not belonging to this note
+  const parseLine = (line: string, status: TaskStatus) => {
+    if (!line.includes(tag)) sections[status].push(line);
+  };
+
+  const lines = existing.split('\n');
+  let current: TaskStatus | null = null;
+  for (const line of lines) {
+    const headerMatch = line.match(/^##\s+(.*)/i);
+    if (headerMatch) {
+      const title = headerMatch[1].toLowerCase();
+      if (title.startsWith('pending')) current = 'pending';
+      else if (title.includes('progress')) current = 'in-progress';
+      else if (title.startsWith('done')) current = 'done';
+      else current = null;
+      continue;
+    }
+
+    const taskMatch = line.match(/^\s*[-*]\s+\[([ x\/])\]/i);
+    if (taskMatch && current) {
+      parseLine(line, current);
+    }
   }
 
-  const nextContent = filtered.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+  // Append freshly extracted tasks in the correct section
+  const statusChar: Record<TaskStatus, string> = {
+    pending: ' ',
+    'in-progress': '/',
+    done: 'x',
+  };
+
+  for (const task of newTasks) {
+    const line = `- [${statusChar[task.status]}] ${task.text} <!-- ${tag} -->`;
+    sections[task.status].push(line);
+  }
+
+  // Sort tasks alphabetically within each section for cleanliness
+  (Object.keys(sections) as TaskStatus[]).forEach(key => {
+    sections[key].sort((a, b) => a.localeCompare(b));
+  });
+
+  // Reconstruct file
+  const buildSection = (title: string, linesArr: string[]): string => {
+    return [`## ${title}`, ...linesArr, ''].join('\n');
+  };
+
+  const nextContent = [
+    '# TODO',
+    '',
+    buildSection('Pending', sections.pending),
+    buildSection('In Progress', sections['in-progress']),
+    buildSection('Done', sections.done),
+  ]
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd() + '\n';
 
   await fs.writeFile(TODO_FILE, nextContent, 'utf8');
 }
@@ -92,7 +159,7 @@ async function upsertTasks(relPath: string, newTasks: string[]): Promise<void> {
 
 async function todoExtractImpl(ctx: NoteSaveContext): Promise<void> {
   try {
-    const tasks = await extractOpenTasksLLM(ctx.raw);
+    const tasks = await extractTasksLLM(ctx.raw);
     await upsertTasks(ctx.relPath, tasks);
   } catch (err) {
     logger.warn(

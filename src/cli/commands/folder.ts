@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import inquirer from 'inquirer';
 import matter from 'gray-matter';
 import { z } from 'zod';
-import { DefaultEditorService } from '../services/editor-service.js';
+import { editorManager } from '../services/editor-manager.js';
 import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { toRel, toAbs } from '../../mastra/utils/path-utils.js';
@@ -197,11 +197,10 @@ async function editFolder(folderPath?: string): Promise<void> {
 
     // Open the file in the default editor
     logger.info(`📝 Opening .dome file in your editor...`);
-    const editorService = new DefaultEditorService();
-    const success = await editorService.openNote(
-      domePath.replace(config.DOME_VAULT_PATH + '/', ''),
-      false
-    );
+    const success = await editorManager.openEditor({
+      path: domePath.replace(config.DOME_VAULT_PATH + '/', ''),
+      isNew: false,
+    });
 
     if (!success) {
       logger.error('❌ Failed to open file in editor');
