@@ -12,10 +12,12 @@ import { registerAfterSaveHook } from './core/hooks/note-hooks.js';
 import { rewriteNoteHook } from './core/hooks/builtin/rewrite-note-hook.js';
 import { todoExtractHook } from './core/hooks/builtin/todo-extract-hook.js';
 import { vectorEmbeddingHook } from './core/hooks/builtin/vector-embed-hook.js';
+import { backlinkIndexHook } from './core/hooks/builtin/backlink-index-hook.js';
 
 registerBeforeSaveHook(rewriteNoteHook);
 registerBeforeSaveHook(todoExtractHook);
 registerAfterSaveHook(vectorEmbeddingHook);
+registerAfterSaveHook(backlinkIndexHook);
 
 export const mastra = new Mastra({
   workflows: { reorganizeWorkflow },

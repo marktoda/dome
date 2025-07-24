@@ -8,6 +8,11 @@ import logger from '../../utils/logger.js';
 // hot paths; heavyweight async work can enqueue a workflow from an
 // after-save hook instead.
 
+enum HookSite {
+  BeforeSave = 'BeforeSave',
+  AfterSave = 'AfterSave',
+}
+
 export interface NoteSaveContext {
   /** Vault-relative path: e.g. `projects/foo.md` */
   relPath: string;
@@ -29,13 +34,18 @@ export interface RegisteredHook {
   fn: HookFn;
   displayName: string;
   description?: string;
+  hookSite: HookSite;
 }
 
-// Type accepted by registration helpers – allows passing a bare function
-export type RawHook = HookFn | RegisteredHook;
+export interface BeforeSaveHook extends RegisteredHook {
+  hookSite: HookSite.BeforeSave;
+}
+export interface AfterSaveHook extends RegisteredHook {
+  hookSite: HookSite.AfterSave;
+}
 
-const beforeSaveHooks: RegisteredHook[] = [];
-const afterSaveHooks: RegisteredHook[] = [];
+const beforeSaveHooks: BeforeSaveHook[] = [];
+const afterSaveHooks: AfterSaveHook[] = [];
 
 // -------------------------------------------------------------
 // Helper – consistent log formatting for hook execution
@@ -46,13 +56,13 @@ function phaseLabel(phase: 'BeforeSave' | 'AfterSave', hook: RegisteredHook): st
 }
 
 /** Register a function to run *before* the note is written to disk. */
-export function registerBeforeSaveHook(hook: RawHook): void {
-  beforeSaveHooks.push(toRegistered(hook));
+export function registerBeforeSaveHook(hook: BeforeSaveHook): void {
+  beforeSaveHooks.push(hook);
 }
 
 /** Register a function to run *after* the note was successfully written. */
-export function registerAfterSaveHook(hook: RawHook): void {
-  afterSaveHooks.push(toRegistered(hook));
+export function registerAfterSaveHook(hook: AfterSaveHook): void {
+  afterSaveHooks.push(hook);
 }
 
 export async function runBeforeSaveHooks(ctx: NoteSaveContext): Promise<void> {
@@ -101,28 +111,14 @@ export function beforeSaveHook(
   name: string,
   fn: HookFn,
   description?: string
-): RegisteredHook {
-  return { fn, displayName: name, description };
+): BeforeSaveHook {
+  return { fn, displayName: name, description, hookSite: HookSite.BeforeSave };
 }
 
 export function afterSaveHook(
   name: string,
   fn: HookFn,
   description?: string
-): RegisteredHook {
-  return { fn, displayName: name, description };
-}
-
-/* ------------------------------------------------------------------
- * Internal – converts various input forms into RegisteredHook objects
- * ----------------------------------------------------------------*/
-
-function toRegistered(input: RawHook): RegisteredHook {
-  if (typeof input === 'function') {
-    return {
-      fn: input,
-      displayName: input.name || 'anonymous',
-    };
-  }
-  return input;
+): AfterSaveHook {
+  return { fn, displayName: name, description, hookSite: HookSite.AfterSave };
 }
