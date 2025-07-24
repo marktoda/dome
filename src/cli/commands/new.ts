@@ -1,4 +1,4 @@
-import { AINoteFinder } from '../services/note-finder.js';
+import { NoteFinder } from '../domain/search/NoteFinder.js';
 import { NoteManager } from '../services/note-manager.js';
 import { noteStore, NoteId } from '../../mastra/core/note-store.js';
 import { toRel } from '../../mastra/utils/path-utils.js';
@@ -8,7 +8,7 @@ import logger from '../../mastra/utils/logger.js';
 
 export async function handleNew(topic: string): Promise<void> {
   try {
-    const finder = new AINoteFinder();
+    const finder = new NoteFinder();
     const noteManager = new NoteManager();
 
     logger.info(`🔍 Searching for folders to place "${topic}"...`);

@@ -1,4 +1,4 @@
-import { AINoteFinder, FindNoteResult } from '../services/note-finder.js';
+import { NoteFinder, FindNoteResult } from '../domain/search/NoteFinder.js';
 import { NoteManager } from '../services/note-manager.js';
 import inquirer from 'inquirer';
 import path from 'node:path';
@@ -21,7 +21,7 @@ export async function handleFind(topic: string, options: FindOptions = {}): Prom
   const { maxResults = 10, useAIFallback = true, minRelevance = 0.4 } = options;
 
   try {
-    const finder = new AINoteFinder();
+    const finder = new NoteFinder();
     const noteManager = new NoteManager();
 
     logger.info(`🔍 Searching for notes matching "${topic}"...`);

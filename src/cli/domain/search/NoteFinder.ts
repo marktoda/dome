@@ -1,5 +1,5 @@
-import { mastra } from '../../mastra/index.js';
-import { searchNotesByText } from '../../mastra/core/search.js';
+import { mastra } from '../../../mastra/index.js';
+import { searchNotesByText } from '../../../mastra/core/search.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 
@@ -24,7 +24,11 @@ const FindNoteCategorySchema = z.object({
 export type FindNoteResult = z.infer<typeof FindNoteSchema>;
 export type FolderFindResult = z.infer<typeof FindNoteCategorySchema>;
 
-export class AINoteFinder {
+/**
+ * NoteFinder combines fast local vector search with an optional AI fallback
+ * to locate existing notes or suggest the best folder for a new topic.
+ */
+export class NoteFinder {
   async findPlaceForTopic(topic: string): Promise<FolderFindResult> {
     let agent;
     try {
@@ -41,7 +45,7 @@ export class AINoteFinder {
 
     // Use the AI agent to find the best match or suggest a category
     const prompt = `
-You are ** Notes Agent ** in read‑only mode.
+You are ** Notes Agent ** in read-only mode.
 
 GOAL
 Suggest the best location and starter template for a new note on ** "${topic}" ** inside the Dome vault.
@@ -58,10 +62,10 @@ WORKFLOW
 
 GUIDELINES
 • Keep folder structure logical(e.g.meetings /, projects /, journal /, inbox /).
-• Use kebab‑case for filenames; always include ".md".
+• Use kebab-case for filenames; always include ".md".
 • **When a folder has a .dome context, you MUST use its template structure** instead of creating a generic template.
 • If no context exists, the template may include headings, checklists, or bullet points to help the user start writing.
-• Do ** not ** create, edit, or delete any notes—this is a planning step only.`
+• Do ** not ** create, edit, or delete any notes—this is a planning step only.`;
 
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -89,8 +93,8 @@ GUIDELINES
   }
 
   /**
-   * Find multiple notes with parallel vector and AI search
-   * Returns immediate vector results and a promise for AI results
+   * Find multiple notes with parallel vector and AI search.
+   * Returns immediate vector results and a promise for AI results.
    */
   async findNotes(
     topic: string,
@@ -115,11 +119,11 @@ GUIDELINES
   }
 
   /**
-   * Perform AI-powered search (extracted from findMultipleNotes)
+   * Perform AI-powered search (extracted from findNotes)
    */
   private async aiFindNotes(topic: string, limit: number): Promise<FindNoteResult[]> {
     if (process.env.DEBUG) {
-      console.log('[AINoteFinder] Starting AI search for topic:', topic);
+      console.log('[NoteFinder] Starting AI search for topic:', topic);
     }
 
     let agent;
@@ -136,7 +140,7 @@ GUIDELINES
     }
 
     if (process.env.DEBUG) {
-      console.log('[AINoteFinder] Agent initialized successfully');
+      console.log('[NoteFinder] Agent initialized successfully');
     }
 
     // Add timeout to prevent hanging
@@ -163,7 +167,7 @@ Return up to ${limit} most relevant results, sorted by relevance score(highest f
 `;
 
     if (process.env.DEBUG) {
-      console.log('[AINoteFinder] Sending prompt to agent...');
+      console.log('[NoteFinder] Sending prompt to agent...');
     }
 
     const response = await Promise.race([
@@ -174,7 +178,7 @@ Return up to ${limit} most relevant results, sorted by relevance score(highest f
     ]);
 
     if (process.env.DEBUG) {
-      console.log('[AINoteFinder] Received response from agent');
+      console.log('[NoteFinder] Received response from agent');
     }
 
     const result = response.object;
@@ -206,3 +210,6 @@ Return up to ${limit} most relevant results, sorted by relevance score(highest f
       .slice(0, limit);
   }
 }
+
+// TEMPORARY BACKWARD-COMPAT: export old name so existing code outside cli still compiles
+export const AINoteFinder = NoteFinder; 
