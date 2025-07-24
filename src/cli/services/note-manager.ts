@@ -15,8 +15,7 @@ export class NoteManager {
     // determine whether the user actually made any changes.
     const originalNote = await getNote(relPath);
     if (!originalNote) {
-      logger.error('❌ Error reading note before edit');
-      process.exit(1);
+      throw new Error('Error reading note before edit');
     }
 
     // Open in editor using the new EditorManager
@@ -35,15 +34,13 @@ export class NoteManager {
     });
 
     if (!success) {
-      logger.error('❌ Error opening note');
-      process.exit(1);
+      throw new Error('Error opening note');
     }
 
     // Read the content after the editor session
     const editedNote = await getNote(relPath);
     if (!editedNote) {
-      logger.error('❌ Error reading note after edit');
-      process.exit(1);
+      throw new Error('Error reading note after edit');
     }
 
     // If the user didn't modify the note, skip any cleanup / rewrite step
