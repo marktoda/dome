@@ -20,78 +20,67 @@ interface FindOptions {
 export async function handleFind(topic: string, options: FindOptions = {}): Promise<void> {
   const { maxResults = 10, useAIFallback = true, minRelevance = 0.4 } = options;
 
-  try {
-    const finder = new NoteFinder();
-    const noteManager = new NoteManager();
+  const finder = new NoteFinder();
+  const noteManager = new NoteManager();
 
-    logger.info(`🔍 Searching for notes matching "${topic}"...`);
+  logger.info(`🔍 Searching for notes matching "${topic}"...`);
 
-    // Get both vector and AI search started
-    const { vectorResults, aiResultsPromise } = await finder.findNotes(topic, maxResults * 2);
+  // Get both vector and AI search started
+  const { vectorResults, aiResultsPromise } = await finder.findNotes(topic, maxResults * 2);
 
-    // Filter vector results
-    const filteredVectorResults = vectorResults
-      .filter(r => r.relevanceScore >= minRelevance)
-      .slice(0, maxResults);
+  // Filter vector results
+  const filteredVectorResults = vectorResults
+    .filter(r => r.relevanceScore >= minRelevance)
+    .slice(0, maxResults);
 
-    // If we have vector results, use them
-    if (filteredVectorResults.length > 0) {
-      // Single result - open directly
-      if (filteredVectorResults.length === 1) {
-        await noteManager.editNote(topic, filteredVectorResults[0].path);
-        return;
-      }
-
-      // Multiple results - show selection
-      await showSelection(topic, filteredVectorResults, noteManager);
+  // If we have vector results, use them
+  if (filteredVectorResults.length > 0) {
+    // Single result - open directly
+    if (filteredVectorResults.length === 1) {
+      await noteManager.editNote(topic, filteredVectorResults[0].path);
       return;
     }
 
-    // No vector results - try AI if enabled
-    if (useAIFallback) {
-      logger.debug('No local results found, waiting for AI search...');
+    // Multiple results - show selection
+    await showSelection(topic, filteredVectorResults, noteManager);
+    return;
+  }
 
-      try {
-        const aiResults = await aiResultsPromise;
-        const filteredAIResults = aiResults
-          .filter(r => r.relevanceScore >= minRelevance)
-          .slice(0, maxResults);
+  // No vector results - try AI if enabled
+  if (useAIFallback) {
+    logger.debug('No local results found, waiting for AI search...');
 
-        if (filteredAIResults.length > 0) {
-          // Single AI result - open directly
-          if (filteredAIResults.length === 1) {
-            await noteManager.editNote(topic, filteredAIResults[0].path);
-            return;
-          }
+    try {
+      const aiResults = await aiResultsPromise;
+      const filteredAIResults = aiResults
+        .filter(r => r.relevanceScore >= minRelevance)
+        .slice(0, maxResults);
 
-          // Multiple AI results - show selection
-          logger.info('✨ Found results with AI search!');
-          await showSelection(topic, filteredAIResults, noteManager);
+      if (filteredAIResults.length > 0) {
+        // Single AI result - open directly
+        if (filteredAIResults.length === 1) {
+          await noteManager.editNote(topic, filteredAIResults[0].path);
           return;
         }
-      } catch (error) {
-        logger.warn(
-          '⚠️  AI search failed:',
-          error instanceof Error ? error.message : 'Unknown error'
-        );
-      }
-    }
 
-    // No results found
-    logger.warn(
-      `⚠️  No notes found matching "${topic}" with relevance >= ${Math.round(minRelevance * 100)}%`
-    );
-    await promptCreateNew(topic);
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('SIGINT')) {
-      logger.warn('\n🚫 Search cancelled');
-    } else {
-      logger.error(
-        `❌ Failed to find notes:, ${error instanceof Error ? error.message : 'Unknown error'}`
+        // Multiple AI results - show selection
+        logger.info('✨ Found results with AI search!');
+        await showSelection(topic, filteredAIResults, noteManager);
+        return;
+      }
+    } catch (error) {
+      logger.warn(
+        '⚠️  AI search failed:',
+        error instanceof Error ? error.message : 'Unknown error'
       );
     }
-    process.exit(1);
   }
+
+  // No results found
+  logger.warn(
+    `⚠️  No notes found matching "${topic}" with relevance >= ${Math.round(minRelevance * 100)}%`
+  );
+  await promptCreateNew(topic);
 }
 
 /**

@@ -8,6 +8,7 @@ import { handleNew } from './commands/new.js';
 import { createIndexCommand } from './commands/indexNotes.js';
 import { createReorganizeCommand } from './commands/reorganize.js';
 import { createFolderCommand } from './commands/folder.js';
+import { run } from './utils/command-runner.js';
 
 // Suppress noisy debug logs in non-debug CLI mode
 if (!process.env.DEBUG) {
@@ -30,17 +31,17 @@ program
   .argument('<topic...>', 'topic or title for the note')
   .description('find and open an existing note')
   .option('--no-ai', 'disable AI fallback search')
-  .option('-n, --max-results <number>', 'maximum number of results to show', '10')
-  .option('-m, --min-relevance <number>', 'minimum relevance score (0-1)', '0.4')
-  .action(async (topicWords, options) => {
-    const topic = topicWords.join(' ');
-    const findOptions = {
-      useAIFallback: options.ai !== false,
-      maxResults: parseInt(options.maxResults, 10),
-      minRelevance: parseFloat(options.minRelevance),
-    };
-    await handleFind(topic, findOptions);
-  });
+  .option('-n, --max-results <number>', 'maximum number of results to show', parseInt, 10)
+  .option('-m, --min-relevance <number>', 'minimum relevance score (0-1)', parseFloat, 0.4)
+  .action((topicWords, options) =>
+    run(() =>
+      handleFind(topicWords.join(' '), {
+        useAIFallback: options.ai !== false,
+        maxResults: options.maxResults,
+        minRelevance: options.minRelevance,
+      })
+    )
+  );
 
 // New command
 program
@@ -77,11 +78,5 @@ program.addCommand(createFolderCommand());
 // Default action - start interactive chat
 program.action(handleChat);
 
-// Parse command line arguments
-if (process.argv.length <= 2) {
-  // No arguments provided, start chat mode
-  handleChat();
-} else {
-  await program.parseAsync();
-  process.exit(0);
-}
+// Parse command line arguments (Commander will call handleChat when no sub-command is given)
+await program.parseAsync(process.argv);
