@@ -5,6 +5,7 @@ import logger from '../../../utils/logger.js';
 import { config } from '../../config.js';
 import { z } from 'zod';
 import { mastra } from '../../../index.js';
+import { promptService, PromptName } from '../../../prompts/prompt-service.js';
 
 // Absolute path to the central TODO list inside the vault
 const TODO_FILE = path.join(config.DOME_VAULT_PATH, 'todo.md');
@@ -30,11 +31,9 @@ async function extractTasksLLM(markdown: string): Promise<ExtractedTask[]> {
     return naiveExtract(markdown);
   }
 
-  const prompt = /* md */ `Extract all OPEN tasks from the following Markdown note. Return strictly JSON per schema.
-
- NOTE START
- ${markdown}
- NOTE END`;
+  const prompt = promptService.render(PromptName.ExtractOpenTasks, {
+    markdown,
+  });
 
   try {
     const result = await agent.generate([{ role: 'user', content: prompt }], {

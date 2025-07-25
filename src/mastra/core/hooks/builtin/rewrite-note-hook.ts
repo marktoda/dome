@@ -5,6 +5,7 @@ import { beforeSaveHook, NoteSaveContext } from '../note-hooks.js';
 import { NoteId } from '../../note-store.js';
 import { z } from 'zod';
 import logger from '../../../utils/logger.js';
+import { promptService, PromptName } from '../../../prompts/prompt-service.js';
 
 // -------------------------------------------------------------
 // Zod schema reused from NoteManager.rewriteNote
@@ -31,25 +32,11 @@ async function rewriteNoteImpl(ctx: NoteSaveContext): Promise<void> {
 
   const topic = topicFromPath(ctx.relPath);
 
-  const rewritePrompt = /* md */ `
-You are **Notes Agent**.
-Goal → Rewrite the note below for clarity and structure while **preserving every important fact** and the existing YAML front-matter.
-
-INPUTS
-• **Topic**: "${topic}"
-• **Vault-folder context (JSON)**:
-${JSON.stringify(folderContext, null, 2)}
-
-• **Current note markdown**:
-${ctx.raw}
-
-TASKS
-1. Re-organize and clean the prose for readability.
-2. Add logical Markdown headings / lists where helpful.
-3. Keep the original front-matter unchanged and at the top.
-4. DO NOT remove or truncate information unless explicitly instructed.
-5. Respond **with nothing else** — only the valid JSON.
-`;
+  const rewritePrompt = promptService.render(PromptName.RewriteNote, {
+    topic,
+    folderContext: JSON.stringify(folderContext, null, 2),
+    noteText: ctx.raw,
+  });
 
   try {
     const res = await agent.generate([{ role: 'user', content: rewritePrompt }], {

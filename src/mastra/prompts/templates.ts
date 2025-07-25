@@ -57,4 +57,28 @@ GUIDELINES
 
 NOTE CONTENT START
 ${content}
-NOTE CONTENT END`; 
+NOTE CONTENT END`;
+
+export const rewriteNote = ({ topic, folderContext, noteText }: { topic: string; folderContext: string; noteText: string }): string => `You are **Notes Agent**.
+Goal → Rewrite the note below for clarity and structure while **preserving every important fact** and the existing YAML front-matter.
+
+INPUTS
+• **Topic**: "${topic}"
+• **Vault-folder context (JSON)**:
+${folderContext}
+
+• **Current note markdown**:
+${noteText}
+
+TASKS
+1. Re-organize and clean the prose for readability.
+2. Add logical Markdown headings / lists where helpful.
+3. Keep the original front-matter unchanged and at the top.
+4. DO NOT remove or truncate information unless explicitly instructed.
+5. Respond **with nothing else** — only the valid JSON.`;
+
+export const extractOpenTasks = ({ markdown }: { markdown: string }): string => `Extract all OPEN tasks from the following Markdown note. Return strictly JSON per schema.
+
+ NOTE START
+ ${markdown}
+ NOTE END`; 

@@ -1,15 +1,19 @@
-import { notePlaceForTopic, aiSearchNotes, autoCategorizeNote } from './templates.js';
+import { notePlaceForTopic, aiSearchNotes, autoCategorizeNote, rewriteNote, extractOpenTasks } from './templates.js';
 
 export enum PromptName {
   NotePlaceForTopic = 'notePlaceForTopic',
   AiSearchNotes = 'aiSearchNotes',
   AutoCategorizeNote = 'autoCategorizeNote',
+  RewriteNote = 'rewriteNote',
+  ExtractOpenTasks = 'extractOpenTasks',
 }
 
 const templates = {
   [PromptName.NotePlaceForTopic]: notePlaceForTopic,
   [PromptName.AiSearchNotes]: aiSearchNotes,
   [PromptName.AutoCategorizeNote]: autoCategorizeNote,
+  [PromptName.RewriteNote]: rewriteNote,
+  [PromptName.ExtractOpenTasks]: extractOpenTasks,
 } as const;
 
 type Templates = typeof templates;
