@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { noteStore, NoteId } from '../../mastra/core/note-store.js';
 import { getNote } from '../../mastra/core/notes.js';
 import { mastra } from '../../mastra/index.js';
+import { promptService, PromptName } from '../../mastra/prompts/prompt-service.js';
 import { editorManager } from './editor-manager.js';
 import logger from '../../mastra/utils/logger.js';
 import { toRel } from '../../mastra/utils/path-utils.js';
@@ -78,26 +79,9 @@ export class NoteManager {
       throw new Error('notesAgent not registered in Mastra – cannot categorise quick note');
     }
 
-    const prompt = /* md */ `
-You are **Notes Agent**.
-
-GOAL
-Analyse the Markdown note below and propose the most suitable vault location and filename.
-
-WORKFLOW
-1. Run **getVaultContextTool** to load the current folder structure.
-2. If helpful, run **searchNotesTool** to see where similar notes live.
-3. Pick the best existing folder; create a sensible new folder only if nothing fits.
-
-GUIDELINES
-• Keep folder organisation logical (projects/, meetings/, journal/, inbox/, etc.).
-• Use kebab‑case filenames with the .md extension.
-• Do **not** write, edit, or delete any notes—classification only.
-
-NOTE CONTENT START
-${noteContent.trim().slice(0, 4000)}
-NOTE CONTENT END
-`;
+    const prompt = promptService.render(PromptName.AutoCategorizeNote, {
+      content: noteContent.trim().slice(0, 4000),
+    });
 
     const response = await agent.generate([{ role: 'user', content: prompt }], {
       experimental_output: CategorizeSchema,

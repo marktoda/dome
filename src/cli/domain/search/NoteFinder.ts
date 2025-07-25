@@ -2,6 +2,7 @@ import { mastra } from '../../../mastra/index.js';
 import { searchNotesByText } from '../../../mastra/core/search.js';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { promptService, PromptName } from '../../../mastra/prompts/prompt-service.js';
 
 const FindNoteSchema = z.object({
   path: z.string(),
@@ -43,29 +44,8 @@ export class NoteFinder {
       );
     }
 
-    // Use the AI agent to find the best match or suggest a category
-    const prompt = `
-You are ** Notes Agent ** in read-only mode.
-
-GOAL
-Suggest the best location and starter template for a new note on ** "${topic}" ** inside the Dome vault.
-
-WORKFLOW
-1. Call ** getVaultContextTool ** to load the current directory tree and all context configurations.
-2. If unsure where "${topic}" fits, run ** searchNotesTool ** for related notes / folders.
-3. Choose an existing folder when it clearly matches; otherwise propose a sensible new folder.
-4. **IMPORTANT**: Check if the chosen folder has a .dome context file in the vault context index.
-5. If a .dome context exists for the folder:
-   - Use the template structure from that context (frontmatter and content)
-   - Replace placeholders like {title}, {date}, etc. with appropriate values
-   - Follow any naming rules specified in the context
-
-GUIDELINES
-• Keep folder structure logical(e.g.meetings /, projects /, journal /, inbox /).
-• Use kebab-case for filenames; always include ".md".
-• **When a folder has a .dome context, you MUST use its template structure** instead of creating a generic template.
-• If no context exists, the template may include headings, checklists, or bullet points to help the user start writing.
-• Do ** not ** create, edit, or delete any notes—this is a planning step only.`;
+    // Load prompt template from file and substitute variables
+    const prompt = promptService.render(PromptName.NotePlaceForTopic, { topic: topic });
 
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -148,23 +128,7 @@ GUIDELINES
       setTimeout(() => reject(new Error('AI search timed out after 30 seconds')), 30000);
     });
 
-    const prompt = `
-Search for existing notes that match the topic: "${topic}"
-
-Use your available tools to search through all notes and find ALL relevant matches.Look for:
-      1. Notes with titles that closely match the search term
-    2. Notes with content that is relevant to the topic
-    3. Notes with tags that relate to the topic
-
-For each note found, assign a relevance score from 0 to 1:
-    - 1.0: Perfect match(title exactly matches or content is highly relevant)
-      - 0.8 - 0.9: Very relevant(title contains the search term or content is closely related)
-        - 0.6 - 0.7: Relevant(partial title match or moderately related content)
-          - 0.4 - 0.5: Somewhat relevant(indirect relation or minor mentions)
-            - Below 0.4: Not relevant enough to include
-
-Return up to ${limit} most relevant results, sorted by relevance score(highest first).Be sure to use the getVaultContext tool to get a full view of the vault structure.
-`;
+    const prompt = promptService.render(PromptName.AiSearchNotes, { topic, limit });
 
     if (process.env.DEBUG) {
       console.log('[NoteFinder] Sending prompt to agent...');
@@ -212,4 +176,4 @@ Return up to ${limit} most relevant results, sorted by relevance score(highest f
 }
 
 // TEMPORARY BACKWARD-COMPAT: export old name so existing code outside cli still compiles
-export const AINoteFinder = NoteFinder; 
+export const AINoteFinder = NoteFinder;
