@@ -55,8 +55,6 @@ export async function handleNew(topic: string): Promise<void> {
  */
 export async function handleQuickNew(): Promise<void> {
   try {
-    const noteManager = new NoteManager();
-
     // Timestamp-based temp filename
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     const tempRel: NoteId = `inbox/quick-note-${ts}.md` as NoteId;
@@ -75,26 +73,10 @@ export async function handleQuickNew(): Promise<void> {
       process.exit(1);
     }
 
-    // Step 3: ask AI for best topic & location
-    const { path: suggestedPath } = await noteManager.autoCategorize(quickNote.raw);
+    // Step 3: persist the note to trigger rewrite + auto-placement hooks
+    await noteStore.store(tempRel, quickNote.raw);
 
-    // Ensure resulting path has .md extension & is vault-relative
-    let destRel = toRel(suggestedPath) as NoteId;
-    if (!extname(destRel)) {
-      destRel = `${destRel}.md` as NoteId;
-    }
-
-    // Step 4: move file to the new location via noteStore
-    const renameResult = await noteStore.rename(tempRel, destRel);
-    if (!renameResult.success) {
-      logger.error(`❌ ${renameResult.message}`);
-      process.exit(1);
-    }
-
-    logger.info(`📁 ${renameResult.message}`);
-
-    // Step 5: directly run the AI clean-up (no second manual edit required)
-    await noteManager.cleanupNote(destRel);
+    logger.info('✅ Quick note saved – hooks will handle cleanup and categorisation');
   } catch (error) {
     logger.error('❌ Failed to create quick note:', error instanceof Error ? error.message : error);
     process.exit(1);
