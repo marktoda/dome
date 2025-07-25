@@ -3,6 +3,7 @@ import { searchNotesByText } from '../../../mastra/core/search.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { promptService, PromptName } from '../../../mastra/prompts/prompt-service.js';
+import logger from '../../../mastra/utils/logger.js';
 
 const FindNoteSchema = z.object({
   path: z.string(),
@@ -38,7 +39,7 @@ export class NoteFinder {
         throw new Error('Notes agent not available');
       }
     } catch (error) {
-      console.error('Failed to initialize notes agent:', error);
+      logger.error(error, 'Failed to initialize notes agent');
       throw new Error(
         `Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -88,7 +89,7 @@ export class NoteFinder {
 
     // Start AI search in parallel
     const aiResultsPromise = this.aiFindNotes(topic, limit).catch(error => {
-      console.error('AI search failed:', error);
+      logger.error(error, 'AI search failed');
       return [];
     });
 
@@ -102,9 +103,7 @@ export class NoteFinder {
    * Perform AI-powered search (extracted from findNotes)
    */
   private async aiFindNotes(topic: string, limit: number): Promise<FindNoteResult[]> {
-    if (process.env.DEBUG) {
-      console.log('[NoteFinder] Starting AI search for topic:', topic);
-    }
+    logger.debug(`[NoteFinder] Starting AI search for topic: ${topic}`);
 
     let agent;
     try {
@@ -113,15 +112,13 @@ export class NoteFinder {
         throw new Error('Notes agent not available');
       }
     } catch (error) {
-      console.error('Failed to initialize notes agent:', error);
+      logger.error(error, 'Failed to initialize notes agent');
       throw new Error(
         `Notes agent initialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
 
-    if (process.env.DEBUG) {
-      console.log('[NoteFinder] Agent initialized successfully');
-    }
+    logger.debug('[NoteFinder] Agent initialized successfully');
 
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -130,9 +127,7 @@ export class NoteFinder {
 
     const prompt = promptService.render(PromptName.AiSearchNotes, { topic, limit });
 
-    if (process.env.DEBUG) {
-      console.log('[NoteFinder] Sending prompt to agent...');
-    }
+    logger.debug('[NoteFinder] Sending prompt to agent...');
 
     const response = await Promise.race([
       agent.generate([{ role: 'user', content: prompt }], {
@@ -141,9 +136,7 @@ export class NoteFinder {
       timeoutPromise,
     ]);
 
-    if (process.env.DEBUG) {
-      console.log('[NoteFinder] Received response from agent');
-    }
+    logger.debug('[NoteFinder] Received response from agent');
 
     const result = response.object;
 
