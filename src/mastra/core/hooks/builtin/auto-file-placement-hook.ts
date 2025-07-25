@@ -59,11 +59,10 @@ async function autoPlacementImpl(ctx: NoteSaveContext): Promise<void> {
   // If suggestion equals current location, nothing to do
   if (targetRel === ctx.relPath) return;
 
-  const isNew = ctx.existedBefore === false;
   const isInbox = ctx.relPath.startsWith('inbox/');
 
   // --- 2. Decide whether to apply or just log
-  if (isNew && isInbox) {
+  if (isInbox) {
     // Safe to move/rename
     const renameRes = await noteStore.rename(ctx.relPath as NoteId, targetRel as NoteId);
     if (!renameRes.success) {
@@ -87,4 +86,4 @@ export const autoFilePlacementHook = afterSaveHook(
   'Auto File Placement',
   autoPlacementImpl,
   'Automatically categorises new inbox notes and moves/renames them'
-); 
+);

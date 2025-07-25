@@ -60,7 +60,7 @@ export async function handleQuickNew(): Promise<void> {
     const tempRel: NoteId = `inbox/quick-note-${ts}.md` as NoteId;
 
     // Step 1-2: open in editor (EditorManager will create the file)
-    const editorOk = await editorManager.openEditor({ path: tempRel, isNew: true });
+    const editorOk = await editorManager.openEditor({ path: tempRel, isNew: false });
     if (!editorOk) {
       logger.warn('🚫 Quick note creation cancelled');
       process.exit(0);
@@ -76,7 +76,7 @@ export async function handleQuickNew(): Promise<void> {
     // Step 3: persist the note to trigger rewrite + auto-placement hooks
     await noteStore.store(tempRel, quickNote.raw);
 
-    logger.info('✅ Quick note saved – hooks will handle cleanup and categorisation');
+    logger.info('✅ Quick note saved');
   } catch (error) {
     logger.error('❌ Failed to create quick note:', error instanceof Error ? error.message : error);
     process.exit(1);
