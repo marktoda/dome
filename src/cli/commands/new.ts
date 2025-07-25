@@ -77,6 +77,8 @@ export async function handleQuickNew(): Promise<void> {
     await noteStore.store(tempRel, quickNote.raw);
 
     logger.info('✅ Quick note saved');
+    // Explicitly exit to avoid lingering DB handles/open timers
+    process.exit(0);
   } catch (error) {
     logger.error('❌ Failed to create quick note:', error instanceof Error ? error.message : error);
     process.exit(1);
