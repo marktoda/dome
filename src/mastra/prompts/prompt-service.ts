@@ -1,4 +1,11 @@
-import { notePlaceForTopic, aiSearchNotes, autoCategorizeNote, rewriteNote, extractOpenTasks } from './templates.js';
+import {
+  notePlaceForTopic,
+  aiSearchNotes,
+  autoCategorizeNote,
+  rewriteNote,
+  extractOpenTasks,
+  updateTodoFile,
+} from './templates.js';
 
 export enum PromptName {
   NotePlaceForTopic = 'notePlaceForTopic',
@@ -6,6 +13,7 @@ export enum PromptName {
   AutoCategorizeNote = 'autoCategorizeNote',
   RewriteNote = 'rewriteNote',
   ExtractOpenTasks = 'extractOpenTasks',
+  UpdateTodoFile = 'updateTodoFile',
 }
 
 const templates = {
@@ -14,6 +22,7 @@ const templates = {
   [PromptName.AutoCategorizeNote]: autoCategorizeNote,
   [PromptName.RewriteNote]: rewriteNote,
   [PromptName.ExtractOpenTasks]: extractOpenTasks,
+  [PromptName.UpdateTodoFile]: updateTodoFile,
 } as const;
 
 type Templates = typeof templates;

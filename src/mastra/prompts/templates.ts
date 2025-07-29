@@ -77,8 +77,55 @@ TASKS
 4. DO NOT remove or truncate information unless explicitly instructed.
 5. Respond **with nothing else** — only the valid JSON.`;
 
-export const extractOpenTasks = ({ markdown }: { markdown: string }): string => `Extract all OPEN tasks from the following Markdown note. Return strictly JSON per schema.
+export const extractOpenTasks = ({ markdown }: { markdown: string }): string => `You are **Tasks Extraction Agent**.
 
- NOTE START
- ${markdown}
- NOTE END`; 
+GOAL
+Identify every TASK in the note and classify its current STATUS.
+• pending – not started
+• in-progress – actively being worked on (checkbox "-/]" or similar)
+• done – completed (checkbox "[x]", "✅" etc.)
+
+INCLUDE ONLY tasks that seem assigned to _me_ (the author/current user). Skip items clearly delegated to someone else.
+
+FORMATS TO RECOGNISE
+• GitHub-style checklists: "- [ ]", "- [/ ]", "- [x]" etc.
+• Inline TODO / TODO:, FIXME:, Action:, Next-step: sentences.
+• Bullet lists where the verb is imperative and addressed to me.
+
+EXCLUSIONS
+• Meeting agenda placeholders, questions, vague ideas.
+• Tasks with explicit other owners ("Bob to…" "→ Sarah").
+
+OUTPUT
+Return **strict JSON** following this schema:
+{
+  "tasks": [
+    { "text": "string", "status": "pending | in-progress | done" }
+  ]
+}
+
+NOTE START
+${markdown}
+NOTE END`;
+
+export const updateTodoFile = ({ existing, relPath, tasksJson }: { existing: string; relPath: string; tasksJson: string }): string => {
+  return `You are **Tasks Merge Agent**.
+
+GOAL
+Synchronise the central Todo list with the latest tasks extracted from the note **${relPath}**.
+
+INPUTS
+• **Current todo.md content**:
+${existing}
+
+• **Tasks extracted from ${relPath}** (JSON array):
+${tasksJson}
+
+RULES
+1. Each task line must include a checkbox and the backlink comment exactly as "<!-- from: ${relPath} -->".
+2. Keep three sections headed "## Pending", "## In Progress", and "## Done" (create if missing). Put tasks in the correct section based on status.
+3. Remove any existing task lines that contain the backlink for ${relPath} before inserting the new ones.
+4. Preserve tasks that belong to other notes unchanged.
+5. Keep the file title \`# TODO\` at the top.
+6. Respond with **strict JSON** that matches the provided schema: { "markdown": "...updated todo.md..." }. Do not include any other keys or commentary.`;
+}; 

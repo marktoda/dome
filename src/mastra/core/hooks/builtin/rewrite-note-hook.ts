@@ -49,7 +49,6 @@ async function rewriteNoteImpl(ctx: NoteSaveContext): Promise<void> {
     const cleaned = obj.noteText.trim();
     if (cleaned && cleaned !== ctx.raw.trim()) {
       ctx.raw = cleaned; // mutate for note-store to write
-      logger.info(`✅ Note cleaned and rewritten by AI${obj.reasoning ? ` – ${obj.reasoning}` : ''}`);
     }
   } catch (err) {
     logger.warn(`⚠️  AI cleanup hook failed: ${err instanceof Error ? err.message : 'unknown'}`);
