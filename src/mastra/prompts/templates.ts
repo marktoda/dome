@@ -92,6 +92,15 @@ FORMATS TO RECOGNISE
 • Inline TODO / TODO:, FIXME:, Action:, Next-step: sentences.
 • Bullet lists where the verb is imperative and addressed to me.
 
+SPECIAL RULES
+• A line beginning with "TODO:" (case-insensitive) is a task. If it ends with a colon and is followed by indented bullets, treat the *heading* line as the task text; ignore the explanatory sub-bullets.
+• Unless the line explicitly names a different person at the start ("Bob to …", "TODO (Bob): …"), assume the task is assigned to *me*.
+
+EXAMPLES
+• "TODO: Follow up on the Shio acquihire situation" → { "text": "Follow up on the Shio acquihire situation", "status": "pending" }
+• "TODO: Source feedback from Xin's report:" (plus indented details) → task text = "Source feedback from Xin's report"; ignore sub-bullets.
+• "TODO (Bob): Prepare slides for Q2" → SKIP (assigned to Bob).
+
 EXCLUSIONS
 • Meeting agenda placeholders, questions, vague ideas.
 • Tasks with explicit other owners ("Bob to…" "→ Sarah").
