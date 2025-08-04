@@ -42,7 +42,7 @@
     "@mastra/rag": "^1.0.2",
     "ai": "^4.3.17",
     "apache-arrow": "^18.0.0",
-    "chalk": "^5.4.1",
+    "chalk": "^5.5.0",
     "chokidar": "^4.0.3",
     "commander": "^14.0.0",
     "fast-glob": "^3.3.3",
