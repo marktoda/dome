@@ -7,11 +7,10 @@
   },
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run clean && npm run cli:build && mastra build",
+    "build": "npm run clean && npm run cli:build",
     "dev": "mastra dev",
     "cli:dev": "tsx src/cli/index.ts",
     "cli:build": "tsc -p tsconfig.json",
-    "mastra:build": "mastra build",
     "start": "mastra start",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write .",
@@ -20,10 +19,15 @@
     "test:context": "tsc && node dist/tests/run-tests.js",
     "cli:link": "npm link"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": ["ai", "mastra", "cli", "dome"],
+  "author": "marktoda",
+  "license": "MIT",
+  "description": "Dome - AI assistant powered by Mastra framework",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marktoda/dome.git"
+  },
+  "homepage": "https://github.com/marktoda/dome#readme",
   "type": "module",
   "engines": {
     "node": ">=20.9.0"
@@ -32,14 +36,10 @@
     "@ai-sdk/openai": "^1.3.23",
     "@lancedb/lancedb": "^0.21.1",
     "@mastra/core": "^0.10.12",
-    "@mastra/lance": "^0.2.0",
     "@mastra/libsql": "^0.11.0",
     "@mastra/loggers": "^0.10.3",
-    "@mastra/memory": "^0.11.2",
     "@mastra/pg": "^0.12.2",
     "@mastra/rag": "^1.0.2",
-    "@types/react": "^19.1.8",
-    "@types/uuid": "^10.0.0",
     "ai": "^4.3.17",
     "apache-arrow": "^18.0.0",
     "chalk": "^5.4.1",
@@ -70,6 +70,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.13",
+    "@types/react": "^19.1.8",
+    "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^7.8.0",
     "@typescript-eslint/parser": "^7.8.0",
     "eslint": "^9.3.0",
