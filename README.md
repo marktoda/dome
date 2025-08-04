@@ -17,8 +17,8 @@ Turn plain Markdown into a searchable, self-organising second brain – all from
 # Install dependencies
 npm install
 
-# Build the CLI (needed once after each pull)
-npm run cli:build
+# Build the project (needed once after each pull)
+npm run build
 
 # Link the binary so 'dome' is available on your PATH
 npm link
