@@ -9,6 +9,7 @@ import { createIndexCommand } from './commands/indexNotes.js';
 import { createReorganizeCommand } from './commands/reorganize.js';
 import { createFolderCommand } from './commands/folder.js';
 import { run } from './utils/command-runner.js';
+import { handleTodo } from './commands/todo.js';
 
 // Suppress noisy debug logs in non-debug CLI mode
 if (!process.env.DEBUG) {
@@ -74,6 +75,12 @@ program.addCommand(createReorganizeCommand());
 
 // Folder command
 program.addCommand(createFolderCommand());
+
+// Todo command
+program
+  .command('todo')
+  .description('list and update your open todos')
+  .action(() => run(handleTodo));
 
 // Default action - start interactive chat
 program.action(handleChat);

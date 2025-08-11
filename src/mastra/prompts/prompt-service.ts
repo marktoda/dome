@@ -5,6 +5,7 @@ import {
   rewriteNote,
   extractOpenTasks,
   updateTodoFile,
+  updateTodoLists,
 } from './templates.js';
 import os from 'node:os';
 
@@ -16,6 +17,7 @@ export enum PromptName {
   RewriteNote = 'rewriteNote',
   ExtractOpenTasks = 'extractOpenTasks',
   UpdateTodoFile = 'updateTodoFile',
+  UpdateTodoLists = 'updateTodoLists',
 }
 
 const templates = {
@@ -25,6 +27,7 @@ const templates = {
   [PromptName.RewriteNote]: rewriteNote,
   [PromptName.ExtractOpenTasks]: extractOpenTasks,
   [PromptName.UpdateTodoFile]: updateTodoFile,
+  [PromptName.UpdateTodoLists]: updateTodoLists,
 } as const;
 
 type Templates = typeof templates;
