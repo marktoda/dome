@@ -128,12 +128,14 @@ async function mergeTasksIntoTodoFile(relPath: string, extracted: ExtractedTask[
 
 async function todoExtractImpl(ctx: NoteSaveContext): Promise<void> {
   try {
+    const source = ctx.originalRaw ?? ctx.currentRaw;
+
     // Skip if content is too short to contain meaningful tasks
-    if (ctx.raw.length < 10) {
+    if (!source || source.length < 10) {
       return;
     }
 
-    const tasks = await extractTasksLLM(ctx.raw);
+    const tasks = await extractTasksLLM(source);
     
     if (tasks.length === 0) {
       logger.debug(`No tasks found in ${ctx.relPath}`);

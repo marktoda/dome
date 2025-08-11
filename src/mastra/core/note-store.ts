@@ -92,17 +92,18 @@ class FileSystemNoteStore implements NoteStore {
 
   async store(id: NoteId, rawContent: string): Promise<FileWriteResult> {
     // -------------------------------
-    // Run before-save hooks (allows mutation of `raw`)
+    // Run before-save hooks (allows mutation of `currentRaw`)
     // -------------------------------
     const ctx: NoteSaveContext = {
       relPath: id,
-      raw: rawContent,
+      currentRaw: rawContent,
+      originalRaw: rawContent,
     };
 
     await runBeforeSaveHooks(ctx);
 
     // The hook may have modified the raw text
-    const contentToWrite = ctx.raw;
+    const contentToWrite = ctx.currentRaw;
 
     const relPath = id;
     const fullPath = await this.prepareNoteFolder(relPath);

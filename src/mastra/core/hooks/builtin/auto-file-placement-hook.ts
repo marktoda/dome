@@ -28,11 +28,11 @@ async function autoPlacementImpl(ctx: NoteSaveContext): Promise<void> {
     return;
   }
 
-  if (!ctx.raw?.trim()) return; // nothing to analyse
+  if (!ctx.currentRaw?.trim()) return; // nothing to analyse
 
   // --- 1. Ask the LLM for an ideal location/filename
   const prompt = promptService.render(PromptName.AutoCategorizeNote, {
-    content: ctx.raw.trim().slice(0, 4000),
+    content: ctx.currentRaw.trim().slice(0, 4000),
   });
 
   let targetRel: NoteId;

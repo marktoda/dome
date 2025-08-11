@@ -16,8 +16,10 @@ enum HookSite {
 export interface NoteSaveContext {
   /** Vault-relative path: e.g. `projects/foo.md` */
   relPath: string;
-  /** The complete markdown that will be written to disk.  */
-  raw: string;
+  /** The complete markdown as it currently stands (may be mutated by hooks). */
+  currentRaw: string;
+  /** Original raw markdown as received by the store (pre-hook mutations). */
+  originalRaw: string;
   /** Absolute path (populated *after* the file is written). */
   fullPath?: string;
   /** Whether the file existed before this write (populated post-save). */

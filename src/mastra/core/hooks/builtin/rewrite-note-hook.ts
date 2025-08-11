@@ -35,7 +35,7 @@ async function rewriteNoteImpl(ctx: NoteSaveContext): Promise<void> {
   const rewritePrompt = promptService.render(PromptName.RewriteNote, {
     topic,
     folderContext: JSON.stringify(folderContext, null, 2),
-    noteText: ctx.raw,
+    noteText: ctx.currentRaw,
   });
 
   try {
@@ -47,8 +47,8 @@ async function rewriteNoteImpl(ctx: NoteSaveContext): Promise<void> {
     if (!obj?.noteText) return; // nothing to do
 
     const cleaned = obj.noteText.trim();
-    if (cleaned && cleaned !== ctx.raw.trim()) {
-      ctx.raw = cleaned; // mutate for note-store to write
+    if (cleaned && cleaned !== ctx.currentRaw.trim()) {
+      ctx.currentRaw = cleaned; // mutate for note-store to write
     }
   } catch (err) {
     logger.warn(`⚠️  AI cleanup hook failed: ${err instanceof Error ? err.message : 'unknown'}`);

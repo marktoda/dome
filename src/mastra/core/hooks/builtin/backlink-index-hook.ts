@@ -53,7 +53,7 @@ function extractLinks(markdown: string): RelPath[] {
  * Backlink updater implementation
  * ---------------------------------------------------------*/
 async function updateBacklinksIndex(ctx: NoteSaveContext): Promise<void> {
-  const targets = extractLinks(ctx.raw);
+  const targets = extractLinks(ctx.currentRaw);
   if (!targets.length) {
     // Still need to purge previous links if the note was edited.
     await purgeNoteFromBacklinks(ctx.relPath);

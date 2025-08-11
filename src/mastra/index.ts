@@ -15,9 +15,9 @@ import { vectorEmbeddingHook } from './core/hooks/builtin/vector-embed-hook.js';
 import { backlinkIndexHook } from './core/hooks/builtin/backlink-index-hook.js';
 import { autoFilePlacementHook } from './core/hooks/builtin/auto-file-placement-hook.js';
 
-// Ensure auto placement runs first so other hooks see final path
-registerBeforeSaveHook(rewriteNoteHook);
+// Ensure TODO extraction sees the original text before rewrite
 registerBeforeSaveHook(todoExtractHook);
+registerBeforeSaveHook(rewriteNoteHook);
 registerAfterSaveHook(autoFilePlacementHook);
 registerAfterSaveHook(vectorEmbeddingHook);
 registerAfterSaveHook(backlinkIndexHook);
