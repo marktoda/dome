@@ -119,5 +119,9 @@ async function purgeNoteFromBacklinks(relPath: string): Promise<void> {
 export const backlinkIndexHook = afterSaveHook(
   'Backlink Index',
   updateBacklinksIndex,
-  'Maintain central backlinks map in .backlinks.json after each note save'
+  'Maintain central backlinks map in .backlinks.json after each note save',
+  {
+    id: 'backlink-index',
+    pathIncludeGlobs: ['**/*.md', '**/*.markdown'],
+  }
 ); 

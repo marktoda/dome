@@ -15,5 +15,10 @@ async function vectorEmbeddingImpl(ctx: NoteSaveContext): Promise<void> {
 export const vectorEmbeddingHook = afterSaveHook(
   'Vector Embedding',
   vectorEmbeddingImpl,
-  'Upserts note into vector index after save'
+  'Upserts note into vector index after save',
+  {
+    id: 'vector-embed',
+    priority: 0,
+    pathIncludeGlobs: ['**/*.md', '**/*.markdown'],
+  }
 ); 

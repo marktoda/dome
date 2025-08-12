@@ -59,7 +59,12 @@ async function rewriteNoteImpl(ctx: NoteSaveContext): Promise<void> {
 export const rewriteNoteHook = beforeSaveHook(
   'Rewrite Note',
   rewriteNoteImpl,
-  'AI-powered cleanup and restructuring of note before save'
+  'AI-powered cleanup and restructuring of note before save',
+  {
+    id: 'rewrite-note',
+    priority: 0,
+    onError: undefined,
+  }
 );
 
 // registration still happens centrally in mastra/index.ts

@@ -85,5 +85,10 @@ async function autoPlacementImpl(ctx: NoteSaveContext): Promise<void> {
 export const autoFilePlacementHook = afterSaveHook(
   'Auto File Placement',
   autoPlacementImpl,
-  'Automatically categorises new inbox notes and moves/renames them'
+  'Automatically categorises new inbox notes and moves/renames them',
+  {
+    id: 'auto-file-placement',
+    priority: 10,
+    pathIncludeGlobs: ['**/*.md', '**/*.markdown'],
+  }
 );

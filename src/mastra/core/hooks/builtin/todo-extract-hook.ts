@@ -158,5 +158,10 @@ async function todoExtractImpl(ctx: NoteSaveContext): Promise<void> {
 export const todoExtractHook = beforeSaveHook(
   'Extract TODOs',
   todoExtractImpl,
-  'Extract open tasks from note and update central todo list'
+  'Extract open tasks from note and update central todo list',
+  {
+    id: 'todo-extract',
+    priority: 10,
+    pathIncludeGlobs: ['**/*.md', '**/*.markdown'],
+  }
 ); 
