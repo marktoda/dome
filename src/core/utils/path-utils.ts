@@ -2,7 +2,7 @@ export type RelPath = string & { __brand: 'RelPath' };
 export type AbsPath = string & { __brand: 'AbsPath' };
 
 import path from 'node:path';
-import { config } from '../core/config.js';
+import { config } from './config.js';
 
 /**
  * Convert a vault-relative note path (e.g. "projects/alpha.md") to an absolute

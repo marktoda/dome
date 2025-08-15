@@ -62,4 +62,4 @@ export function formatKeybinding(keys: KeyCombination): string {
   }
 
   return parts.join('+');
-} 
+}

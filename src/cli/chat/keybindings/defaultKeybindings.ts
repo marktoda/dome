@@ -123,4 +123,4 @@ export const defaultKeybindings: Keybinding[] = [
     description: 'Scroll down one page',
     group: 'Navigation',
   },
-]; 
+];

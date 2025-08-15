@@ -1,40 +1,40 @@
 // Key combination representation
 export interface KeyCombination {
-  key?: string;           // The key itself (e.g., 'a', 'Enter', 'Tab')
-  ctrl?: boolean;         // Ctrl/Cmd modifier
-  shift?: boolean;        // Shift modifier
-  alt?: boolean;          // Alt/Option modifier
-  meta?: boolean;         // Meta/Windows/Command modifier
-  upArrow?: boolean;      // Arrow keys
+  key?: string; // The key itself (e.g., 'a', 'Enter', 'Tab')
+  ctrl?: boolean; // Ctrl/Cmd modifier
+  shift?: boolean; // Shift modifier
+  alt?: boolean; // Alt/Option modifier
+  meta?: boolean; // Meta/Windows/Command modifier
+  upArrow?: boolean; // Arrow keys
   downArrow?: boolean;
   leftArrow?: boolean;
   rightArrow?: boolean;
-  tab?: boolean;          // Tab key
-  escape?: boolean;       // Escape key
-  return?: boolean;       // Enter/Return key
-  backspace?: boolean;    // Backspace key
-  delete?: boolean;       // Delete key
-  pageUp?: boolean;       // Page up
-  pageDown?: boolean;     // Page down
+  tab?: boolean; // Tab key
+  escape?: boolean; // Escape key
+  return?: boolean; // Enter/Return key
+  backspace?: boolean; // Backspace key
+  delete?: boolean; // Delete key
+  pageUp?: boolean; // Page up
+  pageDown?: boolean; // Page down
 }
 
 // Keybinding definition
 export interface Keybinding {
-  id: string;                      // Unique identifier
-  keys: KeyCombination;            // Key combination
-  command: string;                 // Command to execute
-  when?: string;                   // Context condition (e.g., "!editorOpen")
-  description?: string;            // Human-readable description
-  group?: string;                  // Grouping for help display
-  args?: Record<string, any>;      // Optional arguments for the command
+  id: string; // Unique identifier
+  keys: KeyCombination; // Key combination
+  command: string; // Command to execute
+  when?: string; // Context condition (e.g., "!editorOpen")
+  description?: string; // Human-readable description
+  group?: string; // Grouping for help display
+  args?: Record<string, any>; // Optional arguments for the command
 }
 
 // Command definition
 export interface Command {
-  id: string;                      // Unique identifier (matches keybinding command)
-  handler: CommandHandler;         // Function to execute
-  description?: string;            // Human-readable description
-  group?: string;                  // Grouping for help display
+  id: string; // Unique identifier (matches keybinding command)
+  handler: CommandHandler; // Function to execute
+  description?: string; // Human-readable description
+  group?: string; // Grouping for help display
 }
 
 // Command handler function type
@@ -71,4 +71,4 @@ export interface CommandRegistry {
   getCommand(id: string): Command | undefined;
   getCommands(): Command[];
   getCommandsByGroup(group: string): Command[];
-} 
+}

@@ -2,9 +2,9 @@ import path from 'node:path';
 import { mastra } from '../../../index.js';
 import { ContextManager } from '../../context/manager.js';
 import { beforeSaveHook, NoteSaveContext } from '../note-hooks.js';
-import { NoteId } from '../../note-store.js';
+import { NoteId } from '../../../../core/entities/Note.js';
 import { z } from 'zod';
-import logger from '../../../utils/logger.js';
+import logger from '../../../../core/utils/logger.js';
 import { promptService, PromptName } from '../../../prompts/prompt-service.js';
 
 // -------------------------------------------------------------

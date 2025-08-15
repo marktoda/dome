@@ -3,24 +3,22 @@ import { z } from 'zod';
 import { afterSaveHook, NoteSaveContext } from '../note-hooks.js';
 import { mastra } from '../../../index.js';
 import { promptService, PromptName } from '../../../prompts/prompt-service.js';
-import logger from '../../../utils/logger.js';
-import { noteStore, NoteId } from '../../note-store.js';
-import { toRel, toAbs } from '../../../utils/path-utils.js';
+import logger from '../../../../core/utils/logger.js';
+import { NoteService, NoteId } from '../../../../core/services/NoteService.js';
+import { toRel, toAbs } from '../../../../core/utils/path-utils.js';
 
 // -------------------------------------------------------------
 // Zod schema reused from NoteManager.autoCategorize
 // -------------------------------------------------------------
 const CategorizeSchema = z.object({
   title: z.string().min(1).describe('Proposed title for the note'),
-  folderPath: z
-    .string()
-    .min(1)
-    .describe("Relative vault folder ending with '/' e.g. 'projects/'"),
+  folderPath: z.string().min(1).describe("Relative vault folder ending with '/' e.g. 'projects/'"),
   fileName: z.string().min(1).describe('File name with .md extension'),
   reasoning: z.string().optional(),
 });
 
 async function autoPlacementImpl(ctx: NoteSaveContext): Promise<void> {
+  const noteService = new NoteService();
   // We need the AI agent; bail if unavailable
   const agent = mastra.getAgent('notesAgent');
   if (!agent) {
@@ -52,7 +50,9 @@ async function autoPlacementImpl(ctx: NoteSaveContext): Promise<void> {
     if (!extname(p)) p += '.md';
     targetRel = toRel(p) as NoteId;
   } catch (err) {
-    logger.warn(`⚠️  Auto placement hook failed: ${err instanceof Error ? err.message : 'unknown'}`);
+    logger.warn(
+      `⚠️  Auto placement hook failed: ${err instanceof Error ? err.message : 'unknown'}`
+    );
     return;
   }
 
@@ -64,13 +64,7 @@ async function autoPlacementImpl(ctx: NoteSaveContext): Promise<void> {
   // --- 2. Decide whether to apply or just log
   if (isInbox) {
     // Safe to move/rename
-    const renameRes = await noteStore.rename(ctx.relPath as NoteId, targetRel as NoteId);
-    if (!renameRes.success) {
-      logger.warn(`⚠️  Auto placement failed: ${renameRes.message}`);
-      return;
-    }
-
-    logger.info(`📁 ${renameRes.message}`);
+    await noteService.store.rename(ctx.relPath as NoteId, targetRel as NoteId);
 
     // Update context so subsequent hooks see the final location
     ctx.relPath = targetRel as NoteId;

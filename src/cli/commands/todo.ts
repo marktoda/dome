@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import logger from '../../mastra/utils/logger.js';
+import logger from '../../core/utils/logger.js';
 import readline from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';
 import {
@@ -32,7 +32,10 @@ export async function handleTodo(): Promise<void> {
       markdown = '# TODO\n\n## Pending\n\n## In Progress\n\n## Done\n';
     }
 
-    let tasks = parseTodoMarkdown(markdown).map((t, idx) => ({ ...t, id: idx + 1 })) as IndexedTask[];
+    let tasks = parseTodoMarkdown(markdown).map((t, idx) => ({
+      ...t,
+      id: idx + 1,
+    })) as IndexedTask[];
 
     if (tasks.length === 0) {
       logger.info('📭 No tasks found in your todo list.');
@@ -52,7 +55,9 @@ export async function handleTodo(): Promise<void> {
     function render() {
       // Clear screen
       output.write('\x1Bc');
-      output.write('TODOs – arrow keys to navigate, <space> to cycle status, <enter>/<q> to save & quit\n\n');
+      output.write(
+        'TODOs – arrow keys to navigate, <space> to cycle status, <enter>/<q> to save & quit\n\n'
+      );
       tasks.forEach((t, idx) => {
         const pointer = idx === cursor ? '❯' : ' ';
         const checkbox = t.status === 'pending' ? ' ' : t.status === 'in-progress' ? '~' : 'x';
@@ -71,7 +76,12 @@ export async function handleTodo(): Promise<void> {
         render();
       } else if (key.name === 'space') {
         const task = tasks[cursor];
-        task.status = task.status === 'pending' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'pending';
+        task.status =
+          task.status === 'pending'
+            ? 'in-progress'
+            : task.status === 'in-progress'
+              ? 'done'
+              : 'pending';
         modified = true;
         render();
       } else if (key.name === 'return' || key.name === 'q' || (key.ctrl && key.name === 'c')) {
@@ -95,4 +105,4 @@ export async function handleTodo(): Promise<void> {
     logger.error('❌ Failed to manage todo list:', err instanceof Error ? err.message : err);
     process.exit(1);
   }
-} 
+}

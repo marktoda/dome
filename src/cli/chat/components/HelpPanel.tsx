@@ -23,7 +23,7 @@ export const HelpPanel = React.memo<HelpPanelProps>(({ keybindingManager, comman
 
       <Text>{commandHelp}</Text>
       <Text> </Text>
-      
+
       <Text>{keybindingHelp}</Text>
       <Text> </Text>
 

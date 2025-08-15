@@ -11,10 +11,8 @@ export const noteEvents = new EventEmitter();
 // Guarantee max listeners – avoid potential memory-leak warnings when many components subscribe.
 noteEvents.setMaxListeners(50);
 
-// Indexing progress / complete events
-export interface IndexProgressEvent {
-  type: 'progress' | 'complete' | 'updated';
-  progress?: number; // 0–100
-  noteCount?: number;
-  indexedCount?: number;
+export enum NoteEventType {
+  NoteCreated = 'note:created',
+  NoteUpdated = 'note:updated',
+  NoteRemoved = 'note:removed',
 }

@@ -1,9 +1,4 @@
-import {
-  Keybinding,
-  KeyCombination,
-  KeybindingContext,
-  KeybindingRegistry,
-} from './types.js';
+import { Keybinding, KeyCombination, KeybindingContext, KeybindingRegistry } from './types.js';
 import { formatKeybinding as formatKeybindingStr } from './utils.js';
 
 interface CompiledKeybinding extends Keybinding {
@@ -20,7 +15,10 @@ export class KeybindingRegistryImpl implements KeybindingRegistry {
 
     // Detect duplicate key combinations in same context condition
     for (const existing of this.bindings.values()) {
-      if (this.keysEqual(existing.keys, binding.keys) && (existing.when || '') === (binding.when || '')) {
+      if (
+        this.keysEqual(existing.keys, binding.keys) &&
+        (existing.when || '') === (binding.when || '')
+      ) {
         console.warn(
           `Keybinding conflict: '${binding.id}' conflicts with existing binding '${existing.id}' using the same keys (${formatKeybindingStr(
             binding.keys
@@ -121,7 +119,10 @@ export class KeybindingRegistryImpl implements KeybindingRegistry {
       const bVal = b[prop];
 
       if (typeof aVal === 'string' || typeof bVal === 'string') {
-        return (aVal as string | undefined)?.toLowerCase() === (bVal as string | undefined)?.toLowerCase();
+        return (
+          (aVal as string | undefined)?.toLowerCase() ===
+          (bVal as string | undefined)?.toLowerCase()
+        );
       }
 
       return !!aVal === !!bVal; // Normalize to boolean then compare
@@ -172,4 +173,4 @@ export class KeybindingRegistryImpl implements KeybindingRegistry {
   static formatKeybinding(keys: KeyCombination): string {
     return formatKeybindingStr(keys);
   }
-} 
+}

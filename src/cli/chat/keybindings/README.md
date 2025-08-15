@@ -16,6 +16,7 @@ The keybinding system consists of several key components:
 ### KeybindingManager
 
 The central manager that:
+
 - Receives keyboard input from Ink's `useInput`
 - Converts key events to a standardized format
 - Finds matching keybindings based on context
@@ -24,6 +25,7 @@ The central manager that:
 ### KeybindingRegistry
 
 Manages keybinding definitions:
+
 - Stores keybindings with unique IDs
 - Matches pressed keys against registered bindings
 - Evaluates context conditions ("when" clauses)
@@ -32,6 +34,7 @@ Manages keybinding definitions:
 ### CommandRegistry
 
 Manages command execution:
+
 - Stores command handlers
 - Executes commands with optional arguments
 - Provides error handling
@@ -52,7 +55,7 @@ const { getHelpText } = useKeybindings({
   selectedMessageIndex,
   noteLog,
   // ... other state
-  
+
   // Actions
   exit,
   openNoteInEditor,
@@ -135,7 +138,7 @@ manager.initialize({
   // ... existing commands
   'custom.action': () => {
     // Your custom logic here
-  }
+  },
 });
 ```
 
@@ -152,17 +155,16 @@ For special key handling not covered by the default system:
 ```typescript
 keybindingManager.registerKeybinding({
   id: 'special.key',
-  keys: { /* your key combo */ },
+  keys: {
+    /* your key combo */
+  },
   command: 'special.handler',
-  when: 'customCondition'
+  when: 'customCondition',
 });
 
-keybindingManager.registerCommand(
-  'special.handler',
-  async () => {
-    // Custom handling logic
-  }
-);
+keybindingManager.registerCommand('special.handler', async () => {
+  // Custom handling logic
+});
 ```
 
 ## Best Practices
@@ -215,4 +217,4 @@ useInput((input, key) => {
 
 // In command handler
 'ui.toggleActivity': () => toggleActivity()
-``` 
+```

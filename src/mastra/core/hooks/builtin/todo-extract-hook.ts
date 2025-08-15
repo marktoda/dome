@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { beforeSaveHook, NoteSaveContext } from '../note-hooks.js';
-import logger from '../../../utils/logger.js';
-import { config } from '../../config.js';
+import logger from '../../../../core/utils/logger.js';
+import { config } from '../../../../core/utils/config.js';
 import { z } from 'zod';
 import { mastra } from '../../../index.js';
 import { promptService, PromptName } from '../../../prompts/prompt-service.js';
@@ -79,10 +79,10 @@ async function mergeTasksIntoTodoFile(relPath: string, extracted: ExtractedTask[
   if (!agent) throw new Error('tasksAgent not registered');
 
   // Ensure "from" is set on each incoming task so we can maintain backlink
-  const incomingTasks: Task[] = extracted.map(t => ({ 
+  const incomingTasks: Task[] = extracted.map(t => ({
     text: t.text,
     status: t.status,
-    from: relPath 
+    from: relPath,
   }));
 
   // Load and parse existing todo.md
@@ -116,7 +116,7 @@ async function mergeTasksIntoTodoFile(relPath: string, extracted: ExtractedTask[
 
   // Ensure directory exists
   await fs.mkdir(path.dirname(TODO_FILE), { recursive: true });
-  
+
   // Write the updated todo file
   await fs.writeFile(TODO_FILE, newMarkdown, 'utf8');
   logger.info(`✅ Updated todo.md with ${extracted.length} tasks from ${relPath}`);
@@ -136,7 +136,7 @@ async function todoExtractImpl(ctx: NoteSaveContext): Promise<void> {
     }
 
     const tasks = await extractTasksLLM(source);
-    
+
     if (tasks.length === 0) {
       logger.debug(`No tasks found in ${ctx.relPath}`);
       return;
@@ -164,4 +164,4 @@ export const todoExtractHook = beforeSaveHook(
     priority: 10,
     pathIncludeGlobs: ['**/*.md', '**/*.markdown'],
   }
-); 
+);

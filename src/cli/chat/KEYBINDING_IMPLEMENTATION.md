@@ -31,7 +31,9 @@ We've successfully refactored the Dome Chat TUI to use a robust, centralized key
 ## Key Features
 
 ### Context-Aware Keybindings
+
 Keybindings only activate when appropriate using "when" clauses:
+
 ```typescript
 {
   id: 'noteLog.openSelected',
@@ -43,6 +45,7 @@ Keybindings only activate when appropriate using "when" clauses:
 ```
 
 ### Organized Keybinding Groups
+
 - **Application**: Exit commands
 - **UI**: Toggle panels (help, activity)
 - **Note Log**: Navigation and opening notes
@@ -51,6 +54,7 @@ Keybindings only activate when appropriate using "when" clauses:
 - **Editor**: Quick actions
 
 ### Chat Commands with Aliases
+
 ```typescript
 {
   name: 'exit',
@@ -61,7 +65,9 @@ Keybindings only activate when appropriate using "when" clauses:
 ```
 
 ### Dynamic Help Generation
+
 The help panel now dynamically shows:
+
 - All registered keybindings with their contexts
 - All chat commands with aliases and usage
 - Grouped by category for easy discovery
@@ -69,6 +75,7 @@ The help panel now dynamically shows:
 ## Migration from Old System
 
 ### Before (Scattered):
+
 ```typescript
 useInput((input, key) => {
   if (key.ctrl && input === 'a') {
@@ -82,6 +89,7 @@ useInput((input, key) => {
 ```
 
 ### After (Centralized):
+
 All keybindings defined in `defaultKeybindings.ts` and handled through `useKeybindings` hook.
 
 ## Benefits
@@ -102,4 +110,4 @@ The system is now integrated into `ChatApp.tsx`. The keybinding hook handles all
 1. **Custom Keybindings**: Allow users to configure their own keybindings
 2. **Keybinding Conflicts**: Detect and warn about conflicting bindings
 3. **Macro Support**: Chain multiple commands together
-4. **Visual Keybinding Editor**: GUI for managing keybindings 
+4. **Visual Keybinding Editor**: GUI for managing keybindings

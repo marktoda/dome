@@ -3,9 +3,11 @@ import { EventEmitter } from 'node:events';
 import { basename, dirname } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { getInkIO } from '../ink/ink-io.js';
-import { toAbs, RelPath } from '../../mastra/utils/path-utils.js';
-import type { NoteId } from '../../mastra/core/note-store.js';
-import logger from '../../mastra/utils/logger.js';
+import { toAbs, toRel, RelPath } from '../../core/utils/path-utils.js';
+import { NoteService } from '../../core/services/NoteService.js';
+import type { NoteId } from '../../core/entities/Note.js';
+import logger from '../../core/utils/logger.js';
+import { NoteSearchService } from '../../core/services/NoteSearchService.js';
 
 export interface EditorOptions {
   path: string;
@@ -89,7 +91,7 @@ export class EditorManager extends EventEmitter {
 
       // Prepare terminal for external editor
       const terminalState = await this.prepareTerminal();
-      
+
       // Spawn editor process
       const args = this.getEditorArgs(editor, fullPath);
       this.activeProcess = spawn(editor, args, {
@@ -117,8 +119,8 @@ export class EditorManager extends EventEmitter {
       onOpen?.();
 
       // Wait for editor to close
-      return new Promise((resolve) => {
-        this.activeProcess!.on('exit', async (code) => {
+      return new Promise(resolve => {
+        this.activeProcess!.on('exit', async code => {
           const success = code === 0;
 
           // Begin cleanup transition
@@ -136,15 +138,15 @@ export class EditorManager extends EventEmitter {
               editorPid: undefined,
               lastCloseTime: Date.now(),
             });
-            
+
             this.emit('editor:closed', { success, path });
             onClose?.(success);
-            
+
             resolve(success);
           }, 100); // Small delay for terminal stabilization
         });
 
-        this.activeProcess!.on('error', (error) => {
+        this.activeProcess!.on('error', error => {
           this.handleProcessError(error, terminalState, onError);
           resolve(false);
         });
@@ -171,10 +173,10 @@ export class EditorManager extends EventEmitter {
   async forceClose(): Promise<void> {
     if (this.activeProcess && !this.activeProcess.killed) {
       this.activeProcess.kill('SIGTERM');
-      
+
       // Give it time to close gracefully
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       // Force kill if still running
       if (!this.activeProcess.killed) {
         this.activeProcess.kill('SIGKILL');
@@ -211,7 +213,7 @@ export class EditorManager extends EventEmitter {
 
   private getEditorArgs(editor: string, fullPath: string): string[] {
     const editorName = basename(editor);
-    
+
     // Special handling for common editors that need wait flags
     switch (editorName) {
       case 'code':
@@ -229,18 +231,16 @@ export class EditorManager extends EventEmitter {
   }
 
   private async createNoteTemplate(path: string): Promise<void> {
-    const { noteStore } = await import('../../mastra/core/note-store.js');
-    const { toRel } = await import('../../mastra/utils/path-utils.js');
-    
+    const noteService = new NoteService();
     const title = basename(path, '.md')
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
-    
+
     const content = `# ${title}\n\n`;
-    
+
     try {
-      await noteStore.store(toRel(path) as NoteId, content);
+      await noteService.writeNote(toRel(path) as NoteId, content);
       logger.debug(`Created note template for: ${path}`);
     } catch (error) {
       logger.error('Failed to create note template:', error);
@@ -302,7 +302,7 @@ export class EditorManager extends EventEmitter {
     if (!terminalState) return;
 
     const io = getInkIO();
-         const stdin = io?.stdin || process.stdin;
+    const stdin = io?.stdin || process.stdin;
     const stdout = process.stdout;
 
     try {
@@ -341,7 +341,6 @@ export class EditorManager extends EventEmitter {
 
       // 6. Force a small delay to let terminal stabilize
       await new Promise(resolve => setTimeout(resolve, 50));
-
     } catch (error) {
       logger.error('Failed to restore terminal:', error);
     }
@@ -373,4 +372,4 @@ export class EditorManager extends EventEmitter {
 }
 
 // Singleton instance
-export const editorManager = new EditorManager(); 
+export const editorManager = new EditorManager();

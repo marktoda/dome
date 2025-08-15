@@ -36,8 +36,8 @@ jobs:
           # claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY }}
           # Or use OAuth token instead:
           # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          timeout_minutes: "60"
-          model: "claude-opus-4-20250514"
+          timeout_minutes: '60'
+          model: 'claude-opus-4-20250514'
           # mode: tag  # Default: responds to @claude mentions
           # Optional: Restrict network access to specific domains only
           # experimental_allowed_domains: |

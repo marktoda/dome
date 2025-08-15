@@ -1,4 +1,4 @@
-import logger from '../../utils/logger.js';
+import logger from '../../../core/utils/logger.js';
 import { performance } from 'node:perf_hooks';
 
 // Note hooks registry – lightweight and synchronous-friendly
@@ -33,7 +33,10 @@ export interface NoteSaveContext {
 export type HookFn = (ctx: NoteSaveContext) => void | Promise<void>;
 
 // First-class policies
-export enum OnErrorPolicy { Propagate = 'propagate', Suppress = 'suppress' }
+export enum OnErrorPolicy {
+  Propagate = 'propagate',
+  Suppress = 'suppress',
+}
 
 export interface HookOptions {
   /** Unique, stable id to avoid double registration during hot reload. Defaults to displayName. */

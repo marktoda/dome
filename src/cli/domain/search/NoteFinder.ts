@@ -1,9 +1,9 @@
 import { mastra } from '../../../mastra/index.js';
-import { searchNotesByText } from '../../../mastra/core/search.js';
+import { NoteSearchService } from '../../../core/services/NoteSearchService.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { promptService, PromptName } from '../../../mastra/prompts/prompt-service.js';
-import logger from '../../../mastra/utils/logger.js';
+import logger from '../../../core/utils/logger.js';
 
 const FindNoteSchema = z.object({
   path: z.string(),
@@ -148,7 +148,8 @@ export class NoteFinder {
   }
 
   async vectorFindNotes(query: string, limit = 10): Promise<FindNoteResult[]> {
-    const results = await searchNotesByText(query, limit * 2);
+    const noteSearchService = new NoteSearchService();
+    const results = await noteSearchService.searchNotes(query, limit * 2);
 
     const byPath = new Map<string, { path: string; title: string; relevanceScore: number }>();
 

@@ -14,4 +14,4 @@ export function setInkIO(i: InkIO) {
 
 export function getInkIO(): InkIO | null {
   return io;
-} 
+}

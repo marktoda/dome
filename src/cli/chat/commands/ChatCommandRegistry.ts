@@ -8,9 +8,9 @@ export class ChatCommandRegistryImpl implements ChatCommandRegistry {
     if (this.commands.has(command.name)) {
       console.warn(`Chat command '${command.name}' already exists. Overwriting.`);
     }
-    
+
     this.commands.set(command.name, command);
-    
+
     // Register aliases
     if (command.aliases) {
       for (const alias of command.aliases) {
@@ -89,11 +89,11 @@ export class ChatCommandRegistryImpl implements ChatCommandRegistry {
   // Helper method to generate help text
   generateHelp(): string {
     const groups = new Map<string, ChatCommand[]>();
-    
+
     // Group commands
     for (const command of this.commands.values()) {
       if (command.hidden) continue;
-      
+
       const group = command.group || 'Other';
       if (!groups.has(group)) {
         groups.set(group, []);
@@ -103,22 +103,22 @@ export class ChatCommandRegistryImpl implements ChatCommandRegistry {
 
     // Generate help text
     const lines: string[] = ['Available Commands:'];
-    
+
     for (const [group, commands] of groups) {
       lines.push('');
       lines.push(`${group}:`);
-      
+
       for (const command of commands.sort((a, b) => a.name.localeCompare(b.name))) {
         let commandLine = `  /${command.name}`;
-        
+
         if (command.aliases && command.aliases.length > 0) {
           commandLine += ` (${command.aliases.map(a => `/${a}`).join(', ')})`;
         }
-        
+
         if (command.usage) {
           commandLine += ` ${command.usage}`;
         }
-        
+
         commandLine += ` - ${command.description}`;
         lines.push(commandLine);
       }
@@ -126,4 +126,4 @@ export class ChatCommandRegistryImpl implements ChatCommandRegistry {
 
     return lines.join('\n');
   }
-} 
+}

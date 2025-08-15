@@ -3,7 +3,7 @@ import { ChatMessage } from '../state/types.js';
 import { useCallback } from 'react';
 
 // Generic Dispatch type for our reducer actions
- 
+
 export type Dispatch = (action: any) => void;
 
 export interface ChatLikeState {

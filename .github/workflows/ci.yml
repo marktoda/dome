@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build-test-lint:
@@ -15,31 +15,31 @@ jobs:
         node-version: [20.x, 22.x]
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Install pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 9
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
-    - name: Setup Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'pnpm'
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
 
-    - name: Install dependencies
-      run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-    - name: Check formatting
-      run: pnpm run format:check
+      - name: Check formatting
+        run: pnpm run format:check
 
-    - name: Run linter
-      run: pnpm run lint
+      - name: Run linter
+        run: pnpm run lint
 
-    - name: Build project
-      run: pnpm run build
+      - name: Build project
+        run: pnpm run build
 
-    - name: Run tests
-      run: pnpm run test
+      - name: Run tests
+        run: pnpm run test

@@ -4,6 +4,7 @@ GOAL
 Analyse the Markdown note below and propose the most suitable vault location and filename.
 
 WORKFLOW
+
 1. Run **getVaultContextTool** to load the current folder structure.
 2. If helpful, run **searchNotesTool** to see where similar notes live.
 3. Pick the best existing folder; create a sensible new folder only if nothing fits.
@@ -15,4 +16,4 @@ GUIDELINES
 
 NOTE CONTENT START
 {{content}}
-NOTE CONTENT END 
+NOTE CONTENT END

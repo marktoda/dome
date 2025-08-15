@@ -7,10 +7,10 @@ import { z } from 'zod';
 import { editorManager } from '../services/editor-manager.js';
 import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
-import { toRel, toAbs } from '../../mastra/utils/path-utils.js';
+import { toRel, toAbs } from '../../core/utils/path-utils.js';
 import { mkdir } from 'node:fs/promises';
-import { config } from '../../mastra/core/config.js';
-import logger from '../../mastra/utils/logger.js';
+import { config } from '../../core/utils/config.js';
+import logger from '../../core/utils/logger.js';
 import { ContextManager } from '../../mastra/core/context/manager.js';
 import { promptWithCleanTerminal } from '../utils/prompt-helper.js';
 
@@ -61,7 +61,7 @@ async function createFolder(): Promise<void> {
     try {
       await fs.access(domePath);
       logger.warn('A .dome file already exists in this folder.');
-      
+
       const { overwrite } = await promptWithCleanTerminal<{ overwrite: boolean }>([
         {
           type: 'confirm',
@@ -70,7 +70,7 @@ async function createFolder(): Promise<void> {
           default: false,
         },
       ]);
-      
+
       if (!overwrite) {
         logger.info('Folder creation cancelled.');
         return;
@@ -188,7 +188,7 @@ async function editFolder(folderPath?: string): Promise<void> {
           default: true,
         },
       ]);
-      
+
       if (create) {
         await createFolder();
       }
@@ -245,10 +245,14 @@ async function listFolders(): Promise<void> {
       return;
     }
 
-    logger.info(`\n📂 Found ${contexts.length} folder context${contexts.length !== 1 ? 's' : ''}:\n`);
+    logger.info(
+      `\n📂 Found ${contexts.length} folder context${contexts.length !== 1 ? 's' : ''}:\n`
+    );
 
     for (const ctx of contexts) {
-      logger.info(` • ${ctx.path || '/'}${ctx.context && ctx.context.trim() === '' ? ' (empty)' : ''}`);
+      logger.info(
+        ` • ${ctx.path || '/'}${ctx.context && ctx.context.trim() === '' ? ' (empty)' : ''}`
+      );
     }
   } catch (error) {
     logger.error('❌ Failed to list folders:', error);

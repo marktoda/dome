@@ -1,4 +1,3 @@
-
 export interface ActivityTracker {
   addActivity: (type: 'tool' | 'document', name: string) => void;
 }

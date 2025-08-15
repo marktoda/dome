@@ -1,5 +1,5 @@
 import { ChatCommand } from './types.js';
-import { noteStore } from '../../../mastra/core/note-store.js';
+import { NoteService } from '../../../core/services/NoteService.js';
 
 export const defaultChatCommands: ChatCommand[] = [
   // === Core Commands ===
@@ -44,14 +44,15 @@ export const defaultChatCommands: ChatCommand[] = [
     usage: '[limit]',
     group: 'Notes',
     handler: async (args, context) => {
+      const noteService = new NoteService();
       const limit = args[0] ? parseInt(args[0], 10) : 10;
-      
+
       try {
-        const allNotes = await noteStore.list();
-        
+        const allNotes = await noteService.listNotes();
+
         // Sort by modification time (would need stats for this, for now just show first N)
         const notes = allNotes.slice(0, limit);
-        
+
         if (notes.length === 0) {
           context.addMessage({
             type: 'system',
@@ -60,9 +61,7 @@ export const defaultChatCommands: ChatCommand[] = [
           return;
         }
 
-        const noteList = notes
-          .map((note, index) => `${index + 1}. ${note.path}`)
-          .join('\n');
+        const noteList = notes.map((note, index) => `${index + 1}. ${note.path}`).join('\n');
 
         context.addMessage({
           type: 'system',
@@ -114,7 +113,7 @@ export const defaultChatCommands: ChatCommand[] = [
 
       let statusMessage = `Vault: ${header.vaultPath}\n`;
       statusMessage += `Notes: ${header.noteCount}\n`;
-      
+
       if (index.isIndexing) {
         statusMessage += `\nIndexing: ${index.progress}% complete`;
       } else if (index.lastIndexTime) {
@@ -172,7 +171,7 @@ export const defaultChatCommands: ChatCommand[] = [
     handler: async (args, context) => {
       const state = context.getState();
       const newVerbose = !state.cfg.verbose;
-      
+
       // This would need to be implemented in the actual app
       context.addMessage({
         type: 'system',
@@ -214,4 +213,4 @@ export const defaultChatCommands: ChatCommand[] = [
       });
     },
   },
-]; 
+];

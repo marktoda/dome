@@ -1,4 +1,4 @@
-import logger from '../../mastra/utils/logger.js';
+import logger from '../../core/utils/logger.js';
 
 /**
  * Wrap an async command function so any un-handled error is logged and the
@@ -19,4 +19,4 @@ export function run(fn: () => Promise<void>): void {
     }
     process.exit(1);
   });
-} 
+}

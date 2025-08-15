@@ -19,7 +19,12 @@
     "test:context": "tsc && node dist/tests/run-tests.js",
     "cli:link": "npm link"
   },
-  "keywords": ["ai", "mastra", "cli", "dome"],
+  "keywords": [
+    "ai",
+    "mastra",
+    "cli",
+    "dome"
+  ],
   "author": "marktoda",
   "license": "MIT",
   "description": "Dome - AI assistant powered by Mastra framework",

@@ -5,8 +5,8 @@
 
 import { join, dirname, resolve } from 'node:path';
 import fs from 'node:fs/promises';
-import { config } from '../config.js';
-import { NoteId } from '../note-store.js';
+import { config } from '../../../core/utils/config.js';
+import { NoteId } from '../../../core/entities/Note.js';
 
 const MAX_DEPTH = 10;
 

@@ -13,7 +13,7 @@ import { handleTodo } from './commands/todo.js';
 
 // Suppress noisy debug logs in non-debug CLI mode
 if (!process.env.DEBUG) {
-  console.debug = () => { };
+  console.debug = () => {};
 }
 
 // Disable pino-pretty for non-interactive commands to prevent terminal issues

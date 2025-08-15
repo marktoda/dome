@@ -1,6 +1,6 @@
-import { listNotes } from '../../mastra/core/notes.js';
+import { NoteService } from '../../core/services/NoteService.js';
 import { dirname } from 'node:path';
-import logger from '../../mastra/utils/logger.js';
+import logger from '../../core/utils/logger.js';
 
 interface ListOptions {
   tags?: string;
@@ -8,10 +8,11 @@ interface ListOptions {
 }
 
 export async function handleList(options: ListOptions = {}): Promise<void> {
+  const noteService = new NoteService();
   try {
     logger.info('📚 Loading notes...');
 
-    const notes = await listNotes();
+    const notes = await noteService.listNotes();
 
     if (notes.length === 0) {
       logger.info('📭 No notes found. Use "dome add <topic>" to create your first note!');

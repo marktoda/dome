@@ -6,7 +6,6 @@ export type { ChatMessage, ActivityEvent, IndexingStatus, RootState } from './st
 
 // Hook exports
 export { useStream } from './hooks/useStream.js';
-export { useVaultIndexer } from './hooks/useVaultIndexer.js';
 export { useMessageRenderer } from './hooks/useMessageRenderer.js';
 
 // State exports

@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterSaveHook, NoteSaveContext } from '../note-hooks.js';
-import { config } from '../../config.js';
-import logger from '../../../utils/logger.js';
-import { RelPath } from '../../../utils/path-utils.js';
+import { config } from '../../../../core/utils/config.js';
+import logger from '../../../../core/utils/logger.js';
+import { RelPath } from '../../../../core/utils/path-utils.js';
 
 // Path to the central backlinks file (human-readable so users can inspect it)
 const BACKLINKS_FILE = path.join(config.DOME_VAULT_PATH, '.backlinks.json');
@@ -86,7 +86,9 @@ async function updateBacklinksIndex(ctx: NoteSaveContext): Promise<void> {
     await fs.writeFile(BACKLINKS_FILE, JSON.stringify(map, null, 2) + '\n', 'utf8');
     logger.info(`🔗 Backlink index updated (${targets.length} links from ${ctx.relPath})`);
   } catch (err) {
-    logger.warn(`⚠️  backlink-index hook failed to write file: ${err instanceof Error ? err.message : 'unknown'}`);
+    logger.warn(
+      `⚠️  backlink-index hook failed to write file: ${err instanceof Error ? err.message : 'unknown'}`
+    );
   }
 }
 
@@ -103,7 +105,8 @@ async function purgeNoteFromBacklinks(relPath: string): Promise<void> {
     const next = arr.filter(src => src !== relPath);
     if (next.length !== arr.length) {
       changed = true;
-      if (next.length) map[key] = next; else delete map[key];
+      if (next.length) map[key] = next;
+      else delete map[key];
     }
   }
   if (changed) {
@@ -111,7 +114,9 @@ async function purgeNoteFromBacklinks(relPath: string): Promise<void> {
       await fs.writeFile(BACKLINKS_FILE, JSON.stringify(map, null, 2) + '\n', 'utf8');
       logger.info(`🔗 Purged backlinks for ${relPath}`);
     } catch (err) {
-      logger.warn(`⚠️  backlink-index hook purge failed: ${err instanceof Error ? err.message : 'unknown'}`);
+      logger.warn(
+        `⚠️  backlink-index hook purge failed: ${err instanceof Error ? err.message : 'unknown'}`
+      );
     }
   }
 }
@@ -124,4 +129,4 @@ export const backlinkIndexHook = afterSaveHook(
     id: 'backlink-index',
     pathIncludeGlobs: ['**/*.md', '**/*.markdown'],
   }
-); 
+);

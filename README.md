@@ -34,21 +34,22 @@ dome
 
 ## 💻 CLI Commands
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `dome` | Interactive chat with AI assistant | `dome` |
-| `dome find <query>` | Semantic search for notes | `dome find "project architecture"` |
-| `dome new <topic>` | Create note with appropriate template | `dome new "2025-Q1 roadmap"` |
-| `dome list` | List all notes grouped by folder | `dome list --tags meeting,project` |
-| `dome folder create <name>` | Initialize folder with context file | `dome folder create research --template academic` |
-| `dome reorganize` | AI workflow to merge duplicates & clean up | `dome reorganize --dry-run` |
-| `dome index` | Update vector index once or watch mode | `dome index --watch` |
+| Command                     | Description                                | Example                                           |
+| --------------------------- | ------------------------------------------ | ------------------------------------------------- |
+| `dome`                      | Interactive chat with AI assistant         | `dome`                                            |
+| `dome find <query>`         | Semantic search for notes                  | `dome find "project architecture"`                |
+| `dome new <topic>`          | Create note with appropriate template      | `dome new "2025-Q1 roadmap"`                      |
+| `dome list`                 | List all notes grouped by folder           | `dome list --tags meeting,project`                |
+| `dome folder create <name>` | Initialize folder with context file        | `dome folder create research --template academic` |
+| `dome reorganize`           | AI workflow to merge duplicates & clean up | `dome reorganize --dry-run`                       |
+| `dome index`                | Update vector index once or watch mode     | `dome index --watch`                              |
 
 Run any command with `--help` for all flags.
 
 ## 🔍 Semantic Search
 
 The `find` command performs two-stage search:
+
 1. **Local vector search** using [LanceDB](https://lancedb.com) – instant and offline
 2. **AI fallback** (optional) queries OpenAI API when nothing relevant is found locally
 
@@ -74,11 +75,11 @@ instructions = "You are a helpful research assistant…"
 
 ## ⚙️ Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DOME_VAULT_PATH` | `~/dome` | Root folder containing your Markdown notes |
-| `OPENAI_API_KEY` | – | OpenAI key for GPT-powered features |
-| `LANCE_DB_PATH` | `vault/.vector_db` | Location of the vector search index |
+| Variable          | Default            | Description                                |
+| ----------------- | ------------------ | ------------------------------------------ |
+| `DOME_VAULT_PATH` | `~/dome`           | Root folder containing your Markdown notes |
+| `OPENAI_API_KEY`  | –                  | OpenAI key for GPT-powered features        |
+| `LANCE_DB_PATH`   | `vault/.vector_db` | Location of the vector search index        |
 
 ## 🧩 Architecture
 
@@ -134,6 +135,7 @@ MIT License. See `LICENSE` for details.
 ## 🙏 Acknowledgements
 
 Built with:
+
 - [Mastra](https://mastra.ai) – AI application framework
 - [LanceDB](https://lancedb.com) – Vector database
 - [Commander.js](https://github.com/tj/commander.js) – CLI framework

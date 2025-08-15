@@ -11,7 +11,11 @@ import { setInkIO } from '../../ink/ink-io.js';
 import { ChatMessage } from '../state/types.js';
 import { STREAMING } from '../constants.js';
 import { useKeybindings } from '../hooks/useKeybindings.js';
-import { ChatCommandRegistryImpl, defaultChatCommands, ChatCommandContext } from '../commands/index.js';
+import {
+  ChatCommandRegistryImpl,
+  defaultChatCommands,
+  ChatCommandContext,
+} from '../commands/index.js';
 
 // Throttle interval for stream updates (30ms ≈ 33 fps)
 const FLUSH_INTERVAL = STREAMING.FLUSH_INTERVAL_MS || 30;
@@ -42,12 +46,12 @@ export const ChatApp: React.FC = () => {
   // Initialize chat command registry
   useEffect(() => {
     const registry = new ChatCommandRegistryImpl();
-    
+
     // Register default commands
     for (const command of defaultChatCommands) {
       registry.register(command);
     }
-    
+
     commandRegistryRef.current = registry;
   }, []);
 
@@ -102,7 +106,7 @@ export const ChatApp: React.FC = () => {
             timestamp: new Date(),
           });
         },
-        onClose: (success) => {
+        onClose: success => {
           // Editor closed
           if (!success) {
             addMessage({
@@ -114,7 +118,7 @@ export const ChatApp: React.FC = () => {
           }
           // Input will auto-focus when editor closes
         },
-        onError: (error) => {
+        onError: error => {
           addMessage({
             id: `${Date.now()}-e`,
             type: 'error',
@@ -183,12 +187,13 @@ export const ChatApp: React.FC = () => {
       if (commandRegistryRef.current?.isCommand(trimmed)) {
         // Create command context
         const context: ChatCommandContext = {
-          addMessage: (msg) => addMessage({
-            id: `${Date.now()}-${msg.type[0]}`,
-            type: msg.type,
-            content: msg.content,
-            timestamp: new Date(),
-          }),
+          addMessage: msg =>
+            addMessage({
+              id: `${Date.now()}-${msg.type[0]}`,
+              type: msg.type,
+              content: msg.content,
+              timestamp: new Date(),
+            }),
           exit,
           clearMessages,
           showHelp: () => {
@@ -262,9 +267,7 @@ export const ChatApp: React.FC = () => {
             const text = buffer;
             buffer = '';
             setMessages(prev =>
-              prev.map(m =>
-                m.id === assistantId ? { ...m, content: m.content + text } : m
-              )
+              prev.map(m => (m.id === assistantId ? { ...m, content: m.content + text } : m))
             );
           }
         };
@@ -288,9 +291,7 @@ export const ChatApp: React.FC = () => {
 
         // Mark streaming as complete
         setMessages(prev =>
-          prev.map(m =>
-            m.id === assistantId ? { ...m, isStreaming: false } : m
-          )
+          prev.map(m => (m.id === assistantId ? { ...m, isStreaming: false } : m))
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -304,7 +305,17 @@ export const ChatApp: React.FC = () => {
         setIsProcessing(false);
       }
     },
-    [addMessage, exit, clearMessages, messages, setTimestampMode, timestampMode, noteLog, selectedMessageIndex, editorState.isOpen]
+    [
+      addMessage,
+      exit,
+      clearMessages,
+      messages,
+      setTimestampMode,
+      timestampMode,
+      noteLog,
+      selectedMessageIndex,
+      editorState.isOpen,
+    ]
   );
 
   // Show editor status when active
@@ -363,10 +374,7 @@ export const ChatApp: React.FC = () => {
             paddingLeft={1}
             borderColor={editorState.isOpen ? 'gray' : 'white'}
           >
-            <NoteLogPanel
-              notes={noteLog}
-              selectedIdx={selectedNoteIdx}
-            />
+            <NoteLogPanel notes={noteLog} selectedIdx={selectedNoteIdx} />
           </Box>
         )}
       </Box>

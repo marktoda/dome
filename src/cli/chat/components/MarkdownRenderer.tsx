@@ -98,12 +98,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(
               <Text color={COLORS.gray}>{lang}</Text>
             </Box>
           )}
-          <Box
-            borderStyle="single"
-            borderColor={COLORS.gray}
-            paddingX={1}
-            flexDirection="column"
-          >
+          <Box borderStyle="single" borderColor={COLORS.gray} paddingX={1} flexDirection="column">
             {content.map((line, i) => (
               <Text key={i} color={COLORS.green}>
                 {line || ' '}
@@ -212,7 +207,9 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(
       if (line.trim()) {
         elements.push(
           <Box key={`p-${lineIndex}`} marginBottom={line.trim() ? 0 : 1}>
-            <Text color={color} wrap="wrap">{renderInlineMarkdown(line)}</Text>
+            <Text color={color} wrap="wrap">
+              {renderInlineMarkdown(line)}
+            </Text>
           </Box>
         );
       } else if (lineIndex < lines.length - 1) {

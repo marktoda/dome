@@ -20,7 +20,7 @@ const MessageRow = React.memo<{
   ({ message, isSelected, showCursor, timestampMode }) => {
     const isLong = message.content.length > LIMITS.COLLAPSE_THRESHOLD;
     const canCollapse = message.type === 'assistant' && isLong;
-    
+
     // Memoize timestamp calculation
     const timestamp = useMemo(() => {
       const now = new Date();
@@ -163,16 +163,13 @@ export const ChatHistory = React.memo<ChatHistoryProps>(
 
     // Split static vs streaming message to leverage <Static> optimisation
     // Memoize to keep array references stable
-    const recentMessages = useMemo(
-      () => messages.slice(-LIMITS.MAX_MESSAGES),
-      [messages]
-    );
-    
+    const recentMessages = useMemo(() => messages.slice(-LIMITS.MAX_MESSAGES), [messages]);
+
     const staticMessages = useMemo(
       () => recentMessages.slice(0, -1),
       [recentMessages.length] // Only recalculate when length changes
     );
-    
+
     const streamingMessage = recentMessages[recentMessages.length - 1];
 
     return (

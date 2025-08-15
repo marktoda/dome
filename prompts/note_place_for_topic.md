@@ -4,6 +4,7 @@ GOAL
 Suggest the best location and starter template for a new note on ** "{{topic}}" ** inside the Dome vault.
 
 WORKFLOW
+
 1. Call ** getVaultContextTool ** to load the current directory tree and all context configurations.
 2. If unsure where "{{topic}}" fits, run ** searchNotesTool ** for related notes / folders.
 3. Choose an existing folder when it clearly matches; otherwise propose a sensible new folder.
@@ -18,4 +19,4 @@ GUIDELINES
 • Use kebab-case for filenames; always include ".md".
 • **When a folder has a .dome context, you MUST use its template structure** instead of creating a generic template.
 • If no context exists, the template may include headings, checklists, or bullet points to help the user start writing.
-• Do **not** create, edit, or delete any notes—this is a planning step only. 
+• Do **not** create, edit, or delete any notes—this is a planning step only.

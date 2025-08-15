@@ -1,14 +1,13 @@
-import { indexSingleNote } from '../../search.js';
+import { NoteSearchService } from '../../../../core/services/NoteSearchService.js';
 import { afterSaveHook, NoteSaveContext } from '../note-hooks.js';
-import logger from '../../../utils/logger.js';
+import logger from '../../../../core/utils/logger.js';
 
 async function vectorEmbeddingImpl(ctx: NoteSaveContext): Promise<void> {
+  const noteSearchService = new NoteSearchService();
   try {
-    await indexSingleNote(ctx.relPath);
+    await noteSearchService.indexSingleNote(ctx.relPath);
   } catch (err) {
-    logger.warn(
-      `⚠️  vector-embed hook failed: ${err instanceof Error ? err.message : 'unknown'}`
-    );
+    logger.warn(`⚠️  vector-embed hook failed: ${err instanceof Error ? err.message : 'unknown'}`);
   }
 }
 
@@ -21,4 +20,4 @@ export const vectorEmbeddingHook = afterSaveHook(
     priority: 0,
     pathIncludeGlobs: ['**/*.md', '**/*.markdown'],
   }
-); 
+);

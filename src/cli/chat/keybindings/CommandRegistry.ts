@@ -39,4 +39,4 @@ export class CommandRegistryImpl implements CommandRegistry {
   getCommandsByGroup(group: string): Command[] {
     return this.getCommands().filter(command => command.group === group);
   }
-} 
+}

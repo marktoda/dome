@@ -15,7 +15,7 @@ interface UseKeybindingsOptions {
     isOpen: boolean;
     isTransitioning: boolean;
   };
-  
+
   // Actions
   setSelectedMessageIndex: (index: number) => void;
   setSelectedNoteIdx: (index: number) => void;
@@ -45,7 +45,7 @@ export function useKeybindings(options: UseKeybindingsOptions) {
   } = options;
 
   const managerRef = useRef<KeybindingManager | undefined>(undefined);
-  
+
   // Store the options in a ref to avoid stale closures
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -53,18 +53,18 @@ export function useKeybindings(options: UseKeybindingsOptions) {
   // Initialize keybinding manager
   useEffect(() => {
     const manager = new KeybindingManager();
-    
+
     // Register command handlers
     manager.initialize({
       // Application commands
       'app.exit': () => optionsRef.current.exit(),
-      
-      // UI toggle commands  
+
+      // UI toggle commands
       'ui.toggleActivity': () => {
         const { showNoteLog, setShowNoteLog } = optionsRef.current;
         setShowNoteLog(!showNoteLog);
       },
-      
+
       // Note log commands
       'noteLog.selectNext': () => {
         const { noteLog, selectedNoteIdx, showNoteLog, setSelectedNoteIdx } = optionsRef.current;
@@ -84,9 +84,9 @@ export function useKeybindings(options: UseKeybindingsOptions) {
           openNoteInEditor(noteLog[selectedNoteIdx]);
         }
       },
-      
+
       // (Message navigation keybindings removed)
-      
+
       // Chat commands
       'chat.clear': () => {
         const { addMessage } = optionsRef.current;
@@ -103,49 +103,52 @@ export function useKeybindings(options: UseKeybindingsOptions) {
         const { addMessage } = optionsRef.current;
         // This would show indexing status - implementation depends on state structure
         addMessage({
-          id: `${Date.now()}-s`, 
+          id: `${Date.now()}-s`,
           type: 'system',
           content: 'Status: Ready',
           timestamp: new Date(),
         });
       },
     });
-    
+
     managerRef.current = manager;
   }, []); // Only initialize once
 
   // Handle keyboard input
-  const handleInput = useCallback((input: string, key: Record<string, boolean>) => {
-    if (!managerRef.current) return;
-    
-    // Build context for keybinding evaluation
-    const context: KeybindingContext = {
-      editorOpen: editorState.isOpen,
-      editorTransitioning: editorState.isTransitioning,
-      processing: isProcessing,
-      hasMessages: messages.length > 0,
-      hasNoteLog: noteLog.length > 0,
-      noteLogVisible: showNoteLog,
-      helpVisible: false, // Would need to be tracked in state
-      activityVisible: showNoteLog, // Using note log as activity for now
-      selectedMessageIndex: selectedMessageIndex === -1 ? null : selectedMessageIndex,
-      inputFocused: !editorState.isOpen && !editorState.isTransitioning,
-    };
-    
-    // Let the keybinding manager handle it; if handled, stop further processing so TextInput doesn't receive it
-    const handled = managerRef.current.handleInput(input, key, context);
-    if (handled) {
-      return false; // prevent propagation to other useInput handlers (e.g. TextInput)
-    }
-  }, [
-    editorState.isOpen,
-    editorState.isTransitioning,
-    isProcessing,
-    messages.length,
-    noteLog.length,
-    showNoteLog,
-    selectedMessageIndex,
-  ]);
+  const handleInput = useCallback(
+    (input: string, key: Record<string, boolean>) => {
+      if (!managerRef.current) return;
+
+      // Build context for keybinding evaluation
+      const context: KeybindingContext = {
+        editorOpen: editorState.isOpen,
+        editorTransitioning: editorState.isTransitioning,
+        processing: isProcessing,
+        hasMessages: messages.length > 0,
+        hasNoteLog: noteLog.length > 0,
+        noteLogVisible: showNoteLog,
+        helpVisible: false, // Would need to be tracked in state
+        activityVisible: showNoteLog, // Using note log as activity for now
+        selectedMessageIndex: selectedMessageIndex === -1 ? null : selectedMessageIndex,
+        inputFocused: !editorState.isOpen && !editorState.isTransitioning,
+      };
+
+      // Let the keybinding manager handle it; if handled, stop further processing so TextInput doesn't receive it
+      const handled = managerRef.current.handleInput(input, key, context);
+      if (handled) {
+        return false; // prevent propagation to other useInput handlers (e.g. TextInput)
+      }
+    },
+    [
+      editorState.isOpen,
+      editorState.isTransitioning,
+      isProcessing,
+      messages.length,
+      noteLog.length,
+      showNoteLog,
+      selectedMessageIndex,
+    ]
+  );
 
   // Register with Ink's useInput
   useInput(handleInput);
@@ -153,4 +156,4 @@ export function useKeybindings(options: UseKeybindingsOptions) {
   return {
     getHelpText: () => managerRef.current?.generateHelpText() || '',
   };
-} 
+}

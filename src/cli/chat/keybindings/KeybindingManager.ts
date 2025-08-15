@@ -87,7 +87,12 @@ export class KeybindingManager {
   /**
    * Register a custom command
    */
-  registerCommand(id: string, handler: () => void | Promise<void>, description?: string, group?: string): void {
+  registerCommand(
+    id: string,
+    handler: () => void | Promise<void>,
+    description?: string,
+    group?: string
+  ): void {
     this.commandRegistry.register({
       id,
       handler,
@@ -115,7 +120,7 @@ export class KeybindingManager {
    */
   getKeybindingsByGroup() {
     const groups = new Map<string, Keybinding[]>();
-    
+
     for (const binding of this.keybindingRegistry.getBindings()) {
       const group = binding.group || 'Other';
       if (!groups.has(group)) {
@@ -123,7 +128,7 @@ export class KeybindingManager {
       }
       groups.get(group)!.push(binding);
     }
-    
+
     return groups;
   }
 
@@ -133,23 +138,23 @@ export class KeybindingManager {
   generateHelpText(): string {
     const groups = this.getKeybindingsByGroup();
     const lines: string[] = ['Keyboard Shortcuts:'];
-    
+
     for (const [group, bindings] of groups) {
       lines.push('');
       lines.push(`${group}:`);
-      
+
       for (const binding of bindings) {
         const keyStr = formatKeybindingStr(binding.keys);
         let line = `  ${keyStr.padEnd(20)} - ${binding.description || binding.command}`;
-        
+
         if (binding.when) {
           line += ` (when: ${binding.when})`;
         }
-        
+
         lines.push(line);
       }
     }
-    
+
     return lines.join('\n');
   }
-} 
+}

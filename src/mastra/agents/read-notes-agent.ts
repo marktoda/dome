@@ -1,6 +1,8 @@
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
-import { getVaultContextTool, getNoteTool, searchNotesTool } from '../tools/notes-tool.js';
+import { getNotesTools } from '../tools/notes-tool.js';
+
+const { vaultContextTool, getNoteTool, searchNotesTool } = getNotesTools();
 
 export const readNotesAgent = new Agent({
   name: 'Read-Only Notes Agent',
@@ -28,5 +30,5 @@ STYLE
 • If a note or path is missing, suggest likely causes and next steps
   `,
   model: openai('gpt-4.1-mini'),
-  tools: { getVaultContextTool, getNoteTool, searchNotesTool },
+  tools: { vaultContextTool, getNoteTool, searchNotesTool },
 });

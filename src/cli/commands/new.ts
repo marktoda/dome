@@ -1,12 +1,13 @@
 import { NoteFinder } from '../domain/search/NoteFinder.js';
 import { NoteManager } from '../services/note-manager.js';
-import { noteStore, NoteId } from '../../mastra/core/note-store.js';
-import { toRel } from '../../mastra/utils/path-utils.js';
+import { NoteService, NoteId } from '../../core/services/NoteService.js';
+import { toRel } from '../../core/utils/path-utils.js';
 import { extname } from 'node:path';
 import { editorManager } from '../services/editor-manager.js';
-import logger from '../../mastra/utils/logger.js';
+import logger from '../../core/utils/logger.js';
 
 export async function handleNew(topic: string): Promise<void> {
+  const noteService = new NoteService();
   try {
     const finder = new NoteFinder();
     const noteManager = new NoteManager();
@@ -23,7 +24,7 @@ export async function handleNew(topic: string): Promise<void> {
     }
 
     // Check if the note already exists in the vault
-    const fileExists = await noteStore.exists(noteId);
+    const fileExists = await noteService.store.exists(noteId);
 
     if (fileExists) {
       logger.warn(`⚠️  Note already exists at: ${path}`);
@@ -31,7 +32,7 @@ export async function handleNew(topic: string): Promise<void> {
     } else {
       // Write template to file only if it doesn't exist
       logger.info(`📝 Creating note with template at: ${path}`);
-      await noteStore.store(noteId, template);
+      await noteService.store.store(noteId, template);
     }
 
     // Open in editor (pass the cleaned id to the manager)
@@ -54,6 +55,7 @@ export async function handleNew(topic: string): Promise<void> {
  * 5. Run the standard NoteManager edit flow (which will summarise & tidy)
  */
 export async function handleQuickNew(): Promise<void> {
+  const noteService = new NoteService();
   try {
     // Timestamp-based temp filename
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -67,14 +69,14 @@ export async function handleQuickNew(): Promise<void> {
     }
 
     // Read the freshly written content
-    const quickNote = await noteStore.get(tempRel);
+    const quickNote = await noteService.getNote(tempRel);
     if (!quickNote) {
       logger.error('❌ Could not read quick note after editing');
       process.exit(1);
     }
 
     // Step 3: persist the note to trigger rewrite + auto-placement hooks
-    await noteStore.store(tempRel, quickNote.raw);
+    await noteService.writeNote(tempRel, quickNote.body);
 
     logger.info('✅ Quick note saved');
     // Explicitly exit to avoid lingering DB handles/open timers

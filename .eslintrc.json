@@ -6,16 +6,10 @@
   },
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
-    "project": [
-      "./tsconfig.json"
-    ],
+    "project": ["./tsconfig.json"],
     "sourceType": "module"
   },
-  "plugins": [
-    "@typescript-eslint",
-    "import",
-    "unused-imports"
-  ],
+  "plugins": ["@typescript-eslint", "import", "unused-imports"],
   "extends": [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",

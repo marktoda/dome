@@ -35,18 +35,20 @@ export class EditorManager extends EventEmitter {
 ### Key Improvements
 
 #### 1. **State Management**
+
 - Centralized editor state tracking with `EditorState` interface
 - Event-driven updates via EventEmitter pattern
 - Transition states to prevent race conditions
 - Timestamp tracking to prevent phantom keystrokes
 
 #### 2. **Terminal State Handling**
+
 The new system properly manages terminal transitions:
 
 ```typescript
 private async prepareTerminal(): Promise<TerminalState> {
   // 1. Exit raw mode
-  // 2. Pause stdin to stop Ink input processing  
+  // 2. Pause stdin to stop Ink input processing
   // 3. Clear input buffer
   // 4. Exit alternate screen buffer
   // 5. Show cursor
@@ -64,12 +66,14 @@ private async restoreTerminal(state: TerminalState): Promise<void> {
 ```
 
 #### 3. **Input Coordination**
+
 - The TUI now checks editor state before processing any keyboard input
 - Minimum delay enforcement between editor sessions (default 500ms)
 - Input buffer clearing to prevent phantom keystrokes
 - Proper focus management after editor closes
 
 #### 4. **Visual Feedback**
+
 - Editor status banner shows when editor is open or transitioning
 - Note panel border changes color when editor is active
 - Clear visual indication of terminal state
@@ -81,7 +85,7 @@ The `ChatApp` component now integrates cleanly with the EditorManager:
 ```typescript
 // Subscribe to editor state changes
 useEffect(() => {
-  const handleStateChange = (state) => setEditorState(state);
+  const handleStateChange = state => setEditorState(state);
   editorManager.on('state:changed', handleStateChange);
   return () => editorManager.off('state:changed', handleStateChange);
 }, []);
@@ -119,14 +123,15 @@ await editorManager.openEditor({
   path,
   isNew,
   onOpen: () => console.log('Editor opened'),
-  onClose: (success) => console.log('Editor closed:', success),
-  onError: (error) => console.error('Error:', error)
+  onClose: success => console.log('Editor closed:', success),
+  onError: error => console.error('Error:', error),
 });
 ```
 
 ### For New Features
 
 Use the EditorManager directly to take advantage of:
+
 - Event-based state updates
 - Transition detection
 - Force close capabilities
@@ -152,7 +157,7 @@ The refactored system uses proper ANSI escape sequences:
 ### Event Flow
 
 1. User presses Tab on a note (regular Enter is for chat messages)
-2. EditorManager checks `canOpenEditor()` 
+2. EditorManager checks `canOpenEditor()`
 3. Terminal prepared for external editor
 4. Editor process spawned
 5. State transitions tracked via events
@@ -164,4 +169,4 @@ The refactored system uses proper ANSI escape sequences:
 1. **Multiple Editor Support**: Queue multiple editor requests
 2. **Split Screen Mode**: Keep part of TUI visible while editing
 3. **Editor Profiles**: Different settings for different editors
-4. **Session Recovery**: Restore editor state after TUI crash 
+4. **Session Recovery**: Restore editor state after TUI crash

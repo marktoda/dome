@@ -57,11 +57,9 @@ export const NoteLogPanel: React.FC<NoteLogPanelProps> = ({
           );
         })}
         <Box marginTop={1}>
-          <Text dimColor>
-            Ctrl+↑/↓ Navigate • Tab Open
-          </Text>
+          <Text dimColor>Ctrl+↑/↓ Navigate • Tab Open</Text>
         </Box>
       </Box>
     </Box>
   );
-}; 
+};

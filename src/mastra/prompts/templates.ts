@@ -1,7 +1,11 @@
 // Prompt template functions. Closer to the logic so we can enjoy type safety and
 // editor autocompletion rather than scattering prompt .md files on disk.
 
-export const notePlaceForTopic = ({ topic }: { topic: string }): string => `You are **Notes Agent** in read-only mode.
+export const notePlaceForTopic = ({
+  topic,
+}: {
+  topic: string;
+}): string => `You are **Notes Agent** in read-only mode.
 
 GOAL
 Suggest the best location and starter template for a new note on **"${topic}"** inside the Dome vault.
@@ -23,7 +27,13 @@ GUIDELINES
 • If no context exists, the template may include headings, checklists, or bullet points to help the user start writing.
 • Do **not** create, edit, or delete any notes—this is a planning step only.`;
 
-export const aiSearchNotes = ({ topic, limit }: { topic: string; limit: number }): string => `Search for existing notes that match the topic: "${topic}"
+export const aiSearchNotes = ({
+  topic,
+  limit,
+}: {
+  topic: string;
+  limit: number;
+}): string => `Search for existing notes that match the topic: "${topic}"
 
 Use your available tools to search through all notes and find ALL relevant matches.
 Look for:
@@ -40,7 +50,11 @@ For each note found, assign a relevance score from 0 to 1:
 
 Return up to ${limit} most relevant results, sorted by relevance (highest first). Be sure to use **getVaultContextTool** for full vault view.`;
 
-export const autoCategorizeNote = ({ content }: { content: string }): string => `You are **Notes Agent**.
+export const autoCategorizeNote = ({
+  content,
+}: {
+  content: string;
+}): string => `You are **Notes Agent**.
 
 GOAL
 Analyse the Markdown note below and propose the most suitable vault location and filename.
@@ -59,7 +73,15 @@ NOTE CONTENT START
 ${content}
 NOTE CONTENT END`;
 
-export const rewriteNote = ({ topic, folderContext, noteText }: { topic: string; folderContext: string; noteText: string }): string => `You are **Notes Agent**.
+export const rewriteNote = ({
+  topic,
+  folderContext,
+  noteText,
+}: {
+  topic: string;
+  folderContext: string;
+  noteText: string;
+}): string => `You are **Notes Agent**.
 Goal → Rewrite the note below for clarity and structure while **preserving every important fact** and the existing YAML front-matter.
 
 INPUTS
@@ -82,7 +104,11 @@ TASKS
    - Keep task context and assignee information (e.g., "TODO (Bob):")
 6. Respond **with nothing else** — only the valid JSON.`;
 
-export const extractOpenTasks = ({ markdown }: { markdown: string }): string => `You are **Tasks Extraction Agent**.
+export const extractOpenTasks = ({
+  markdown,
+}: {
+  markdown: string;
+}): string => `You are **Tasks Extraction Agent**.
 
 GOAL
 Extract ALL actionable tasks from the note and accurately classify their current STATUS.
@@ -157,7 +183,15 @@ NOTE START
 ${markdown}
 NOTE END`;
 
-export const updateTodoFile = ({ existing, relPath, tasksJson }: { existing: string; relPath: string; tasksJson: string }): string => {
+export const updateTodoFile = ({
+  existing,
+  relPath,
+  tasksJson,
+}: {
+  existing: string;
+  relPath: string;
+  tasksJson: string;
+}): string => {
   return `You are **Tasks Merge Agent**.
 
 GOAL
@@ -179,7 +213,15 @@ RULES
 6. Respond with **strict JSON** that matches the provided schema: { "markdown": "...updated todo.md..." }. Do not include any other keys or commentary.`;
 };
 
-export const updateTodoLists = ({ existingListsJson, relPath, noteTasksJson }: { existingListsJson: string; relPath: string; noteTasksJson: string }): string => `You are **Tasks Merge Agent v2**.
+export const updateTodoLists = ({
+  existingListsJson,
+  relPath,
+  noteTasksJson,
+}: {
+  existingListsJson: string;
+  relPath: string;
+  noteTasksJson: string;
+}): string => `You are **Tasks Merge Agent v2**.
 
 GOAL
 Update the central task *lists* – not the markdown – for note **${relPath}**.
@@ -203,4 +245,4 @@ Respond with **strict JSON**:
   "pending":   [{"text": "...", "from": "..."}],
   "inProgress": [{...}],
   "done":       [{...}]
-}`; 
+}`;

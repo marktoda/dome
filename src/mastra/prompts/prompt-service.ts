@@ -9,7 +9,6 @@ import {
 } from './templates.js';
 import os from 'node:os';
 
-
 export enum PromptName {
   NotePlaceForTopic = 'notePlaceForTopic',
   AiSearchNotes = 'aiSearchNotes',
@@ -75,4 +74,4 @@ function buildSituationalContext(): string {
   }
 
   return `SITUATIONAL CONTEXT\n• DateTime: ${iso} (${tz})\n• User: ${user}`;
-} 
+}
