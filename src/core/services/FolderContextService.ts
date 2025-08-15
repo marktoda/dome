@@ -5,15 +5,15 @@
 
 import { join, dirname, resolve } from 'node:path';
 import fs from 'node:fs/promises';
-import { config } from '../../../core/utils/config.js';
-import { NoteId } from '../../../core/entities/Note.js';
+import { config } from '../utils/config.js';
+import { NoteId } from '../entities/Note.js';
 
 const MAX_DEPTH = 10;
 
 /**
  * Manages context configurations for the Dome vault
  */
-export class ContextManager {
+export class FolderContextService {
   /**
    * Load a context from a specific folder
    * @param folderPath - Absolute path to the folder

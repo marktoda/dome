@@ -4,7 +4,7 @@ import { NoteId, NoteService } from '../../core/services/NoteService.js';
 import { NoteSearchService } from '../../core/services/NoteSearchService.js';
 import { trackActivity } from '../../cli/chat/utils/activityTracker.js';
 import { toRel } from '../../core/utils/path-utils.js';
-import { ContextManager } from '../core/context/manager.js';
+import { FolderContextService } from '../../core/services/FolderContextService.js';
 
 interface NotesTools {
   vaultContextTool: any;
@@ -15,7 +15,7 @@ interface NotesTools {
 }
 
 export function getNotesTools(): NotesTools {
-  const contextManager = new ContextManager();
+  const contextService = new FolderContextService();
   const noteService = new NoteService();
   const noteSearchService = new NoteSearchService(noteService);
 
@@ -39,7 +39,7 @@ export function getNotesTools(): NotesTools {
         const notes = await noteService.listNotes();
         return {
           notes,
-          context: await contextManager.getIndex(),
+          context: await contextService.getIndex(),
         };
       },
     }),

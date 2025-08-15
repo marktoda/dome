@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { NoteId } from '../entities/Note';
 
 /**
  * Global event bus for note-related events.
@@ -15,4 +16,23 @@ export enum NoteEventType {
   NoteCreated = 'note:created',
   NoteUpdated = 'note:updated',
   NoteRemoved = 'note:removed',
+}
+
+export type NoteEvent =
+  | {
+      type: NoteEventType.NoteCreated;
+      noteId: NoteId;
+    }
+  | {
+      type: NoteEventType.NoteUpdated;
+      noteId: NoteId;
+    }
+  | {
+      type: NoteEventType.NoteRemoved;
+      noteId: string;
+    };
+
+// TODO: get generics working here
+export interface NoteEventHandler {
+  handle(event: NoteEvent): Promise<void>;
 }

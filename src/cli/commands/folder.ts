@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import inquirer from 'inquirer';
 import matter from 'gray-matter';
 import { z } from 'zod';
 import { editorManager } from '../services/editor-manager.js';
@@ -11,7 +10,7 @@ import { toRel, toAbs } from '../../core/utils/path-utils.js';
 import { mkdir } from 'node:fs/promises';
 import { config } from '../../core/utils/config.js';
 import logger from '../../core/utils/logger.js';
-import { ContextManager } from '../../mastra/core/context/manager.js';
+import { FolderContextService } from '../../core/services/FolderContextService.js';
 import { promptWithCleanTerminal } from '../utils/prompt-helper.js';
 
 const contextSchema = z.object({
@@ -237,8 +236,8 @@ async function findDomeFiles(dir: string, files: string[] = []): Promise<string[
 
 async function listFolders(): Promise<void> {
   try {
-    const manager = new ContextManager();
-    const contexts = await manager.listContexts();
+    const contextService = new FolderContextService();
+    const contexts = await contextService.listContexts();
 
     if (contexts.length === 0) {
       logger.info('📭 No folder contexts (.dome) found in the vault.');
@@ -266,8 +265,8 @@ async function showContext(folderName: string): Promise<void> {
       ? folderName
       : path.join(config.DOME_VAULT_PATH, folderName);
 
-    const manager = new ContextManager();
-    const context = await manager.loadContext(folderPath);
+    const contextService = new FolderContextService();
+    const context = await contextService.loadContext(folderPath);
 
     if (context === null) {
       logger.warn(`⚠️  No .dome context found for folder: ${folderName}`);
