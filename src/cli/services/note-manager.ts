@@ -49,16 +49,7 @@ export class NoteManager {
       throw new Error('Error reading note after edit');
     }
 
-    // If the user didn't modify the note, skip any cleanup / rewrite step
-    if (editedNote.body.trim() === originalNote.body.trim()) {
-      logger.info('✅ No changes detected – note left unchanged');
-      return;
-    }
-
-    // Persist the note – hooks will handle cleanup/rewrite automatically
-    await this.noteService.writeNote(relPath, editedNote.body);
-
-    logger.info(`✅ Note saved successfully for "${topic}" (cleanup handled by hooks)`);
+    logger.info(`✅ Note saved: "${topic}" at ${relPath}`);
   }
 
   /**
