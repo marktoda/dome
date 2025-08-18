@@ -77,7 +77,7 @@
           inherit pname version src;
           fetcherVersion = 2; # permission‑normalisation fix
           # First build with lib.fakeHash, copy the printed hash here:
-          hash = "sha256-/JxO5wM680siWFjIezAKlAohKFuqLqM8gycP602x9OA=";
+          hash = "sha256-St4e+evY6XEaqJ/zySwUAzq8LGaitZoMF3hqnhkWl3k=";
         };
 
         ##############################
