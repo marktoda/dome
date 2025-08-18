@@ -1,5 +1,7 @@
 import { mastra } from '../../../mastra/index.js';
 import { NoteSearchService } from '../../../core/services/NoteSearchService.js';
+import { NoteService } from '../../../core/services/NoteService.js';
+import { createNoOpEventBus } from '../../../core/events/index.js';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { promptService, PromptName } from '../../../mastra/prompts/prompt-service.js';
@@ -148,7 +150,8 @@ export class NoteFinder {
   }
 
   async vectorFindNotes(query: string, limit = 10): Promise<FindNoteResult[]> {
-    const noteSearchService = new NoteSearchService();
+    const noteService = new NoteService(createNoOpEventBus());
+    const noteSearchService = new NoteSearchService(noteService);
     const results = await noteSearchService.searchNotes(query, limit * 2);
 
     const byPath = new Map<string, { path: string; title: string; relevanceScore: number }>();

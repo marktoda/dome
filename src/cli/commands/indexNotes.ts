@@ -1,10 +1,13 @@
 import { Command } from 'commander';
 import { NoteSearchService } from '../../core/services/NoteSearchService.js';
+import { NoteService } from '../../core/services/NoteService.js';
+import { createNoOpEventBus } from '../../core/events/index.js';
 import logger from '../../core/utils/logger.js';
 
 export function createIndexCommand(): Command {
   const indexCommand = new Command('index');
-  const searchService = new NoteSearchService();
+  const noteService = new NoteService(createNoOpEventBus());
+  const searchService = new NoteSearchService(noteService);
 
   indexCommand.description('Index all notes for semantic search').action(async () => {
     try {

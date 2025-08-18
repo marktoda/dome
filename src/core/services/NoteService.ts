@@ -1,5 +1,6 @@
 import { NoteId, RawNote, NoteMeta, Note } from '../entities/Note.js';
-import { noteEvents, NoteEventType } from '../events/noteEvents.js';
+import { EventBus } from '../events/EventBus.js';
+import { NoteEventType, NoteCreatedEvent, NoteUpdatedEvent, NoteRemovedEvent } from '../events/types.js';
 import logger from '../utils/logger.js';
 import fs from 'node:fs/promises';
 import * as path from 'path';
@@ -17,7 +18,10 @@ import {
 export { NoteId };
 
 export class NoteService {
-  constructor(public store: NoteStore = new FileSystemNoteStore()) {}
+  constructor(
+    private eventBus: EventBus,
+    public store: NoteStore = new FileSystemNoteStore()
+  ) {}
 
   async listNotes(): Promise<Note[]> {
     const paths = await fg('**/*.md', {
@@ -43,20 +47,32 @@ export class NoteService {
     const writeResult = await this.store.store(id, content);
 
     if (writeResult.type === StoreType.Created) {
-      noteEvents.emit(NoteEventType.NoteCreated, { id, content });
+      const event: NoteCreatedEvent = {
+        type: NoteEventType.NoteCreated,
+        noteId: id,
+        content
+      };
+      await this.eventBus.emit(event);
     } else if (writeResult.type === StoreType.Updated) {
-      noteEvents.emit(NoteEventType.NoteUpdated, {
-        id,
+      const event: NoteUpdatedEvent = {
+        type: NoteEventType.NoteUpdated,
+        noteId: id,
         oldContent: writeResult.oldContent,
-        newContent: content,
-      });
+        newContent: content
+      };
+      await this.eventBus.emit(event);
     }
     return writeResult;
   }
 
   async removeNote(id: NoteId): Promise<RemoveResult> {
     const { removedContent } = await this.store.remove(id);
-    noteEvents.emit(NoteEventType.NoteRemoved, { id, removedContent });
+    const event: NoteRemovedEvent = {
+      type: NoteEventType.NoteRemoved,
+      noteId: id,
+      content: removedContent
+    };
+    await this.eventBus.emit(event);
     return { removedContent };
   }
 

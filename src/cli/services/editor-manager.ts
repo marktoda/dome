@@ -5,6 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import { getInkIO } from '../ink/ink-io.js';
 import { toAbs, toRel, RelPath } from '../../core/utils/path-utils.js';
 import { NoteService } from '../../core/services/NoteService.js';
+import { createNoOpEventBus } from '../../core/events/index.js';
 import type { NoteId } from '../../core/entities/Note.js';
 import logger from '../../core/utils/logger.js';
 import { NoteSearchService } from '../../core/services/NoteSearchService.js';
@@ -38,9 +39,12 @@ export class EditorManager extends EventEmitter {
 
   private activeProcess: ChildProcess | null = null;
   private transitionTimeoutId: NodeJS.Timeout | null = null;
+  private noteService: NoteService;
+
 
   constructor() {
     super();
+    this.noteService = new NoteService(createNoOpEventBus());
   }
 
   /**
@@ -231,7 +235,6 @@ export class EditorManager extends EventEmitter {
   }
 
   private async createNoteTemplate(path: string): Promise<void> {
-    const noteService = new NoteService();
     const title = basename(path, '.md')
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -240,7 +243,7 @@ export class EditorManager extends EventEmitter {
     const content = `# ${title}\n\n`;
 
     try {
-      await noteService.writeNote(toRel(path) as NoteId, content);
+      await this.noteService.writeNote(toRel(path) as NoteId, content);
       logger.debug(`Created note template for: ${path}`);
     } catch (error) {
       logger.error('Failed to create note template:', error);

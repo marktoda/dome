@@ -5,6 +5,7 @@ import { NoteSearchService } from '../../core/services/NoteSearchService.js';
 import { trackActivity } from '../../cli/chat/utils/activityTracker.js';
 import { toRel } from '../../core/utils/path-utils.js';
 import { FolderContextService } from '../../core/services/FolderContextService.js';
+import { createEventBus } from '../../core/events/index.js';
 
 interface NotesTools {
   vaultContextTool: any;
@@ -16,7 +17,10 @@ interface NotesTools {
 
 export function getNotesTools(): NotesTools {
   const contextService = new FolderContextService();
-  const noteService = new NoteService();
+  const noteService = new NoteService(createEventBus({
+    enableVectorEmbed: true,
+    enableTodoExtraction: true
+  }));
   const noteSearchService = new NoteSearchService(noteService);
 
   return {

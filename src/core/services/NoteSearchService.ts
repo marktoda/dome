@@ -19,7 +19,7 @@ const EMBEDDING_DIMENSION = 1536; // text-embedding-3-small
 export class NoteSearchService {
   private store: PgVector;
 
-  constructor(private notes: NoteService = new NoteService()) {
+  constructor(private notes: NoteService) {
     this.store = new PgVector({ connectionString: config.POSTGRES_URI });
   }
 

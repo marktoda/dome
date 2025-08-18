@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { NoteService, NoteId } from '../../core/services/NoteService.js';
+import { createNoOpEventBus } from '../../core/events/index.js';
 import { mastra } from '../../mastra/index.js';
 import { promptService, PromptName } from '../../mastra/prompts/prompt-service.js';
 import { editorManager } from './editor-manager.js';
@@ -8,13 +9,18 @@ import { toRel } from '../../core/utils/path-utils.js';
 import { join } from 'node:path';
 
 export class NoteManager {
+  private noteService: NoteService;
+
+  constructor() {
+    this.noteService = new NoteService(createNoOpEventBus());
+  }
+
   async editNote(topic: string, originalPath: string): Promise<void> {
-    const noteService = new NoteService();
     // Ensure we operate on a vault-relative path.
     const relPath: NoteId = toRel(originalPath);
     // Capture the original content before opening the editor so we can
     // determine whether the user actually made any changes.
-    const originalNote = await noteService.getNote(relPath);
+    const originalNote = await this.noteService.getNote(relPath);
     if (!originalNote) {
       throw new Error('Error reading note before edit');
     }
@@ -39,7 +45,7 @@ export class NoteManager {
     }
 
     // Read the content after the editor session
-    const editedNote = await noteService.getNote(relPath);
+    const editedNote = await this.noteService.getNote(relPath);
     if (!editedNote) {
       throw new Error('Error reading note after edit');
     }
@@ -51,7 +57,7 @@ export class NoteManager {
     }
 
     // Persist the note – hooks will handle cleanup/rewrite automatically
-    await noteService.writeNote(relPath, editedNote.body);
+    await this.noteService.writeNote(relPath, editedNote.body);
 
     logger.info(`✅ Note saved successfully for "${topic}" (cleanup handled by hooks)`);
   }
@@ -105,15 +111,14 @@ export class NoteManager {
    * Useful after quick-note capture where the file is already written.
    */
   async cleanupNote(relPath: NoteId): Promise<void> {
-    const noteService = new NoteService();
     // Load the current content
-    const note = await noteService.getNote(relPath);
+    const note = await this.noteService.getNote(relPath);
     if (!note) {
       logger.warn(`Note ${relPath} not found – skipping cleanup`);
       return;
     }
 
     // Re-save the note to trigger cleanup hooks
-    await noteService.writeNote(relPath, note.body);
+    await this.noteService.writeNote(relPath, note.body);
   }
 }
