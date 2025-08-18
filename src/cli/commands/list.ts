@@ -1,5 +1,5 @@
 import { NoteService } from '../../core/services/NoteService.js';
-import { createNoOpEventBus } from '../../core/events/index.js';
+
 import { dirname } from 'node:path';
 import logger from '../../core/utils/logger.js';
 
@@ -9,7 +9,7 @@ interface ListOptions {
 }
 
 export async function handleList(options: ListOptions = {}): Promise<void> {
-  const noteService = new NoteService(createNoOpEventBus());
+  const noteService = new NoteService();
   try {
     logger.info('📚 Loading notes...');
 

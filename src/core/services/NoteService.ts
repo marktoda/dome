@@ -1,6 +1,4 @@
 import { NoteId, RawNote, NoteMeta, Note } from '../entities/Note.js';
-import { EventBus } from '../events/EventBus.js';
-import { NoteEventType, NoteCreatedEvent, NoteUpdatedEvent, NoteRemovedEvent } from '../events/types.js';
 import logger from '../utils/logger.js';
 import fs from 'node:fs/promises';
 import * as path from 'path';
@@ -18,10 +16,7 @@ import {
 export { NoteId };
 
 export class NoteService {
-  constructor(
-    private eventBus: EventBus,
-    public store: NoteStore = new FileSystemNoteStore()
-  ) {}
+  constructor(public store: NoteStore = new FileSystemNoteStore()) {}
 
   async listNotes(): Promise<Note[]> {
     const paths = await fg('**/*.md', {
@@ -43,37 +38,11 @@ export class NoteService {
 
   async writeNote(id: NoteId, content: string): Promise<StoreResult> {
     // TODO: consider writing some frontmatter coersion here
-
-    const writeResult = await this.store.store(id, content);
-
-    if (writeResult.type === StoreType.Created) {
-      const event: NoteCreatedEvent = {
-        type: NoteEventType.NoteCreated,
-        noteId: id,
-        content
-      };
-      await this.eventBus.emit(event);
-    } else if (writeResult.type === StoreType.Updated) {
-      const event: NoteUpdatedEvent = {
-        type: NoteEventType.NoteUpdated,
-        noteId: id,
-        oldContent: writeResult.oldContent,
-        newContent: content
-      };
-      await this.eventBus.emit(event);
-    }
-    return writeResult;
+    return await this.store.store(id, content);
   }
 
   async removeNote(id: NoteId): Promise<RemoveResult> {
-    const { removedContent } = await this.store.remove(id);
-    const event: NoteRemovedEvent = {
-      type: NoteEventType.NoteRemoved,
-      noteId: id,
-      content: removedContent
-    };
-    await this.eventBus.emit(event);
-    return { removedContent };
+    return await this.store.remove(id);
   }
 
   // --------- HELPERS ------------

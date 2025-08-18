@@ -1,6 +1,5 @@
 import { ChatCommand } from './types.js';
 import { NoteService } from '../../../core/services/NoteService.js';
-import { createNoOpEventBus } from '../../../core/events/index.js';
 
 export const defaultChatCommands: ChatCommand[] = [
   // === Core Commands ===
@@ -45,7 +44,7 @@ export const defaultChatCommands: ChatCommand[] = [
     usage: '[limit]',
     group: 'Notes',
     handler: async (args, context) => {
-      const noteService = new NoteService(createNoOpEventBus());
+      const noteService = new NoteService();
       const limit = args[0] ? parseInt(args[0], 10) : 10;
 
       try {

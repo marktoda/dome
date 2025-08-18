@@ -8,6 +8,11 @@ import { handleNew } from './commands/new.js';
 import { createIndexCommand } from './commands/indexNotes.js';
 import { createReorganizeCommand } from './commands/reorganize.js';
 import { createFolderCommand } from './commands/folder.js';
+import {
+  createWatchCommand,
+  createWatchStopCommand,
+  createWatchStatusCommand,
+} from './commands/watch.js';
 import { run } from './utils/command-runner.js';
 
 // Suppress noisy debug logs in non-debug CLI mode
@@ -74,6 +79,11 @@ program.addCommand(createReorganizeCommand());
 
 // Folder command
 program.addCommand(createFolderCommand());
+
+// Watch commands
+program.addCommand(createWatchCommand());
+program.addCommand(createWatchStopCommand());
+program.addCommand(createWatchStatusCommand());
 
 // Default action - start interactive chat
 program.action(handleChat);

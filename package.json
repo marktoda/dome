@@ -11,7 +11,7 @@
     "dev": "mastra dev",
     "cli:dev": "tsx src/cli/index.ts",
     "cli:build": "tsc -p tsconfig.json",
-    "start": "mastra start",
+    "start": "node dist/cli/index.js",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -1,14 +1,14 @@
 import { NoteFinder } from '../domain/search/NoteFinder.js';
 import { NoteManager } from '../services/note-manager.js';
 import { NoteService, NoteId } from '../../core/services/NoteService.js';
-import { createNoOpEventBus } from '../../core/events/index.js';
+
 import { toRel } from '../../core/utils/path-utils.js';
 import { extname } from 'node:path';
 import { editorManager } from '../services/editor-manager.js';
 import logger from '../../core/utils/logger.js';
 
 export async function handleNew(topic: string): Promise<void> {
-  const noteService = new NoteService(createNoOpEventBus());
+  const noteService = new NoteService();
   try {
     const finder = new NoteFinder();
     const noteManager = new NoteManager();
@@ -56,7 +56,7 @@ export async function handleNew(topic: string): Promise<void> {
  * 5. Run the standard NoteManager edit flow (which will summarise & tidy)
  */
 export async function handleQuickNew(): Promise<void> {
-  const noteService = new NoteService(createNoOpEventBus());
+  const noteService = new NoteService();
   try {
     // Timestamp-based temp filename
     const ts = new Date().toISOString().replace(/[:.]/g, '-');

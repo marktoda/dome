@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { NoteService, NoteId } from '../../core/services/NoteService.js';
-import { createNoOpEventBus } from '../../core/events/index.js';
 import { mastra } from '../../mastra/index.js';
 import { promptService, PromptName } from '../../mastra/prompts/prompt-service.js';
 import { editorManager } from './editor-manager.js';
@@ -12,7 +11,7 @@ export class NoteManager {
   private noteService: NoteService;
 
   constructor() {
-    this.noteService = new NoteService(createNoOpEventBus());
+    this.noteService = new NoteService();
   }
 
   async editNote(topic: string, originalPath: string): Promise<void> {
