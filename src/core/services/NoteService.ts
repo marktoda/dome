@@ -69,8 +69,16 @@ export class NoteService {
       if (data.title) title = data.title;
       if (data.tags) tags = data.tags;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn(`⚠️  Failed to parse frontmatter for note ${raw.id}: ${msg}`);
+      // If gray-matter fails, try graceful fallback parsing
+      try {
+        const { parseFrontmatter } = await import('../utils/frontmatter.js');
+        const parsed = parseFrontmatter(raw.body);
+        if (parsed.frontmatter.title) title = parsed.frontmatter.title;
+        if (parsed.frontmatter.tags) tags = parsed.frontmatter.tags;
+      } catch (fallbackErr) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn(`⚠️  Failed to parse frontmatter for note ${raw.id}: ${msg}`);
+      }
     }
 
     return {
