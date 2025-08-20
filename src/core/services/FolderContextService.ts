@@ -1,71 +1,212 @@
 /**
- * Context Manager for the Dome vault system.
- * Handles loading, merging, and applying folder-based contexts.
+ * FolderContextService
+ * - Loads ancestor `.dome` files (root → leaf)
+ * - Loads the current folder's .index.json (if present)
+ * - Produces a small, typed bundle + optional prompt string
  */
 
-import { join, dirname, resolve } from 'node:path';
 import fs from 'node:fs/promises';
+import path, { join, dirname, resolve, isAbsolute, relative, sep } from 'node:path';
 import { config } from '../utils/config.js';
 import { NoteId } from '../entities/Note.js';
 
-const MAX_DEPTH = 10;
+const DOME_FILENAME = '.dome';
+const INDEX_JSON = '.index.json';
+const DEFAULT_MAX_DEPTH = 10;
 
-/**
- * Manages context configurations for the Dome vault
- */
+export type DomeEntry = {
+  absDir: string;     // absolute directory path
+  relDir: string;     // vault-relative directory path ('' means root folder)
+  content: string;    // raw .dome text (can be empty string)
+};
+
+export type ContextBundle = {
+  note: {
+    absPath: string;
+    relPath: string;
+    dirAbs: string;
+    dirRel: string;
+    name: string;     // basename (file.ext)
+  };
+  // Ancestor dome files ordered root → leaf (closest last)
+  domeChain: DomeEntry[];
+  // Current folder index (if present)
+  folderIndex: DirectoryIndex | null;
+  // Convenience view of siblings (optionally filtered and limited)
+  siblings: DirectoryIndexFile[];
+};
+
+type DirectoryIndexFile = {
+  name: string;
+  path: string;
+  title: string;
+  summary: string;
+  lastModified: string;
+  hash: string;
+};
+
+type DirectoryIndex = {
+  version: '1';
+  folder: string;
+  lastUpdated: string;
+  files: DirectoryIndexFile[];
+};
+
 export class FolderContextService {
+  constructor(private readonly vaultRoot: string = config.DOME_VAULT_PATH) {}
+
   /**
-   * Load a context from a specific folder
-   * @param folderPath - Absolute path to the folder
-   * @returns Context configuration or null if not found
+   * Get the merged context for a note:
+   * - Ancestor `.dome` files (root → leaf)
+   * - Current folder `.index.json` (if present)
+   * - Optional sibling filtering & limits
    */
-  async loadContext(folderPath: string): Promise<string | null> {
-    const contextPath = join(folderPath, '.dome');
-    try {
-      return await fs.readFile(contextPath, 'utf-8');
-    } catch {
-      return null;
+  async getContext(
+    noteId: NoteId | string,
+    opts?: {
+      maxDepth?: number;
+      includeSiblingsOnly?: boolean;
+      limitFiles?: number;
     }
+  ): Promise<ContextBundle> {
+    const maxDepth = opts?.maxDepth ?? DEFAULT_MAX_DEPTH;
+
+    const noteAbs = this.toAbsPath(String(noteId));
+    const noteRel = this.toRelPath(noteAbs);
+    const dirAbs = dirname(noteAbs);
+    const dirRel = this.toRelPath(dirAbs);
+    const name = path.basename(noteAbs);
+
+    // 1) Collect ancestor dome files (root → leaf)
+    const ancestors = this.ancestorDirs(dirAbs, maxDepth);
+    const domeChain: DomeEntry[] = [];
+    for (const absDir of ancestors) {
+      const domeText = await this.readDome(absDir);
+      if (domeText !== null) {
+        domeChain.push({
+          absDir,
+          relDir: this.toRelPath(absDir),
+          content: domeText,
+        });
+      }
+    }
+
+    // 2) Load current folder index
+    const folderIndex = await this.readIndex(dirAbs); // can be null
+
+    // 3) Siblings view
+    let siblings: DirectoryIndexFile[] = folderIndex?.files ?? [];
+    if (opts?.includeSiblingsOnly && folderIndex) {
+      // Siblings = files in this folder (which .index.json represents), excluding the current note
+      const noteRelNormalized = normalizeSlashes(noteRel);
+      siblings = folderIndex.files.filter(f => normalizeSlashes(f.path) !== noteRelNormalized);
+    }
+
+    // 4) Limit number of file summaries if requested
+    if (opts?.limitFiles && siblings.length > opts.limitFiles) {
+      siblings = siblings.slice(0, opts.limitFiles);
+    }
+
+    return {
+      note: { absPath: noteAbs, relPath: noteRel, dirAbs, dirRel, name },
+      domeChain,
+      folderIndex,
+      siblings,
+    };
   }
 
   /**
-   * Get merged context combining all parent contexts
-   * @param notePath - Path to the note
-   * @param maxDepth - Maximum levels to search up
-   * @returns Merged context from all parents
+   * Render a compact, LLM-friendly prompt from a ContextBundle.
+   * Keeps formatting minimal and explicit.
    */
-  async getContext(noteId: NoteId, maxDepth: number = 10): Promise<string | null> {
-    const contexts = await this.getAllParentContexts(noteId, maxDepth);
-    if (!contexts) return null;
+  formatPrompt(
+    bundle: ContextBundle,
+    opts?: {
+      includePaths?: boolean;     // defaults true
+      includeFolderIndex?: boolean; // defaults true
+      includeDomeChain?: boolean; // defaults true
+      heading?: string;           // optional custom heading
+      maxChars?: number;          // optional hard cap (simple clip)
+    }
+  ): string {
+    const includePaths = opts?.includePaths ?? true;
+    const includeFolderIndex = opts?.includeFolderIndex ?? true;
+    const includeDomeChain = opts?.includeDomeChain ?? true;
 
-    // Reverse to put parent contexts first
-    const reversedContexts = [...contexts].reverse();
+    const lines: string[] = [];
 
-    // Append all contexts together with level information
-    return reversedContexts
-      .map(ctx => `# Context from level ${ctx.level} (${ctx.path})\n\n${ctx.content}`)
-      .join('\n\n---\n\n');
+    if (opts?.heading !== '') {
+      lines.push(opts?.heading ?? '# Vault Context', '');
+    }
+
+    // Note info (lightweight)
+    lines.push('## Note', `Name: ${bundle.note.name}`);
+    if (includePaths) {
+      lines.push(`Folder: /${bundle.note.dirRel || ''}`, `Path: /${bundle.note.relPath}`, '');
+    } else {
+      lines.push('');
+    }
+
+    if (includeDomeChain && bundle.domeChain.length) {
+      lines.push('## Folder Rules (ancestor .dome, root → leaf)');
+      for (const d of bundle.domeChain) {
+        const header = includePaths ? `### /${d.relDir || ''} (.dome)` : '### .dome';
+        lines.push(header, d.content.trim() ? d.content.trim() : '*(empty)*', '');
+      }
+    }
+
+    if (includeFolderIndex && bundle.siblings.length) {
+      lines.push('## Folder File Summaries');
+      for (const f of bundle.siblings) {
+        const link = `./${encodeURI(path.basename(f.path))}`;
+        const title = f.title || path.basename(f.path);
+        const pathLine = includePaths ? ` — /${f.path}` : '';
+        lines.push(
+          `### ${title}`,
+          `Link: ${link}${pathLine}`,
+          `Summary: ${f.summary.trim()}`,
+          ''
+        );
+      }
+    }
+
+    let out = lines.join('\n');
+    if (opts?.maxChars && out.length > opts.maxChars) {
+      out = out.slice(0, opts.maxChars) + '\n\n…(truncated)';
+    }
+    return out;
   }
 
   /**
-   * Get a full index of all contexts in the vault
-   * @returns Formatted document with all contexts, their paths, and depths
+   * Get a full index of all contexts and indexes in the vault
+   * @returns Formatted document with all contexts, indexes, their paths, and depths
    */
   async getIndex(): Promise<string | null> {
     const contextFiles = await this.listContextFiles();
-    if (contextFiles.length === 0) return null;
+    const indexFiles = await this.listIndexFiles();
+    
+    if (contextFiles.length === 0 && indexFiles.length === 0) return null;
 
     const contextData: Array<{
       path: string;
       depth: number;
-      content: string;
+      content: string | null;
+      index: DirectoryIndex | null;
     }> = [];
 
-    // Process each context file
-    for (const filePath of contextFiles) {
-      const dirPath = dirname(filePath);
-      const content = await this.loadContext(dirPath);
-      if (content) {
+    // Create a set of all unique directories
+    const allDirs = new Set<string>();
+    contextFiles.forEach(f => allDirs.add(dirname(f)));
+    indexFiles.forEach(f => allDirs.add(dirname(f)));
+
+    // Process each directory
+    for (const dirPath of allDirs) {
+      const [content, index] = await Promise.all([
+        this.readDome(dirPath),
+        this.readIndex(dirPath)
+      ]);
+      
+      if (content || index) {
         // Calculate depth relative to vault root
         const relativePath = dirPath.replace(config.DOME_VAULT_PATH, '').replace(/^\//, '') || '/';
         const depth = relativePath === '/' ? 0 : relativePath.split('/').length;
@@ -74,6 +215,7 @@ export class FolderContextService {
           path: dirPath,
           depth,
           content,
+          index,
         });
       }
     }
@@ -83,9 +225,9 @@ export class FolderContextService {
 
     // Format the index document
     const indexParts = [
-      '# Dome Context Index',
+      '# Dome Context & Index Overview',
       `Generated at: ${new Date().toISOString()}`,
-      `Total contexts: ${contextData.length}`,
+      `Total folders with context/index: ${contextData.length}`,
       '',
       '='.repeat(80),
       '',
@@ -97,32 +239,64 @@ export class FolderContextService {
       const relativePath = ctx.path.replace(config.DOME_VAULT_PATH, '') || '/';
 
       indexParts.push(
-        `${indent}## Context at: ${relativePath}`,
+        `${indent}## Folder: ${relativePath}`,
         `${indent}Depth: ${ctx.depth}`,
         `${indent}Full path: ${ctx.path}`,
-        '',
-        `${indent}### Content:`,
-        ctx.content
-          .split('\n')
-          .map(line => `${indent}${line}`)
-          .join('\n'),
-        '',
-        '-'.repeat(80),
         ''
       );
+
+      // Add .dome content if present
+      if (ctx.content) {
+        indexParts.push(
+          `${indent}### Context (.dome):`,
+          ctx.content
+            .split('\n')
+            .map(line => `${indent}${line}`)
+            .join('\n'),
+          ''
+        );
+      }
+
+      // Add index summary if present
+      if (ctx.index?.files && ctx.index.files.length > 0) {
+        indexParts.push(
+          `${indent}### Index (.index.json):`,
+          `${indent}Files: ${ctx.index.files.length}`,
+          ''
+        );
+        
+        for (const file of ctx.index.files) {
+          indexParts.push(`${indent}- **${file.title}** (${file.name})`);
+          if (file.summary) {
+            indexParts.push(`${indent}  ${file.summary}`);
+          }
+        }
+        indexParts.push('');
+      }
+
+      indexParts.push('-'.repeat(80), '');
     }
 
     return indexParts.join('\n');
   }
 
   /**
-   * Create a new context in a folder
+   * Get both .dome context and .index.json for a specific folder
    * @param folderPath - Absolute path to the folder
-   * @param context - Context configuration to save
+   * @returns Object with dome content and index
    */
-  async createContext(folderPath: string, context: string): Promise<void> {
-    const contextPath = join(folderPath, '.dome');
-    await fs.writeFile(contextPath, context, 'utf-8');
+  async getFolderContext(folderPath: string): Promise<{ dome: string | null; index: DirectoryIndex | null }> {
+    const [dome, index] = await Promise.all([
+      this.readDome(folderPath),
+      this.readIndex(folderPath)
+    ]);
+    return { dome, index };
+  }
+
+  /** Create or overwrite a `.dome` file in a folder */
+  async createContext(folderPath: string, content: string): Promise<void> {
+    const p = join(folderPath, DOME_FILENAME);
+    await fs.writeFile(p, content, 'utf-8');
   }
 
   /**
@@ -140,60 +314,66 @@ export class FolderContextService {
     const contexts = await Promise.all(
       contextFiles.map(async filePath => ({
         path: dirname(filePath).replace(config.DOME_VAULT_PATH, '').replace(/^\//, '') || '/',
-        context: await this.loadContext(dirname(filePath)),
+        context: await this.readDome(dirname(filePath)),
       }))
     );
 
     return contexts.filter(c => c.context !== null);
   }
 
-  /**
-   * Get all parent contexts for a given note path
-   * @param notePath - Path to the note file
-   * @param maxDepth - Maximum levels to search up (defaults to MAX_DEPTH)
-   * @returns Array of context strings with level information
-   */
-  private async getAllParentContexts(
-    notePath: NoteId | string,
-    maxDepth: number = MAX_DEPTH
-  ): Promise<Array<{ content: string; level: number; path: string }> | null> {
-    const contexts: Array<{ content: string; level: number; path: string }> = [];
+  /* ---------------- private helpers ---------------- */
 
-    // Ensure we are working with an absolute path *inside* the vault. If callers
-    // pass a vault-relative path (e.g. "projects/alpha.md"), prefix it with the
-    // configured vault root so that subsequent directory traversals work as
-    // expected even when the CLI is executed from arbitrary working
-    // directories.
-    const absoluteNotePath = notePath.startsWith('/')
-      ? notePath
-      : join(config.DOME_VAULT_PATH, notePath);
+  /** Return absolute path inside the vault for a note or absolute path as-is */
+  private toAbsPath(notePath: string): string {
+    return isAbsolute(notePath) ? notePath : join(this.vaultRoot, notePath);
+  }
 
-    let currentDir = dirname(resolve(absoluteNotePath));
+  /** Return vault-relative path ('' for root dir) with forward slashes */
+  private toRelPath(absPath: string): string {
+    const rel = relative(this.vaultRoot, absPath);
+    return normalizeSlashes(rel || '');
+  }
+
+  /** Build list of ancestor dirs from vault root → given dir (bounded by maxDepth) */
+  private ancestorDirs(leafDirAbs: string, maxDepth: number): string[] {
+    const dirs: string[] = [];
+    let current = resolve(leafDirAbs);
     let depth = 0;
 
-    // Collect all contexts from the note's folder up to the filesystem root or
-    // until we reach the configured maximum depth.
-    while (depth < maxDepth) {
-      const context = await this.loadContext(currentDir);
-      // Push the context entry even if the file is empty (""), but only skip
-      // truly missing files (null). This allows users to create placeholder
-      // context files that are intentionally empty.
-      if (context !== null) {
-        contexts.push({
-          content: context,
-          level: depth,
-          path: currentDir,
-        });
-      }
-
-      const parentDir = dirname(currentDir);
-      if (parentDir === currentDir) break; // Reached root
-
-      currentDir = parentDir;
+    // Gather leaf → root, then reverse
+    while (true) {
+      dirs.push(current);
+      const parent = dirname(current);
+      if (parent === current) break;
+      current = parent;
       depth++;
+      if (depth >= maxDepth) break;
     }
 
-    return contexts.length > 0 ? contexts : null;
+    // Cut off ancestors outside the vault
+    const withinVault = dirs.filter(d => normalizeSlashes(d).startsWith(normalizeSlashes(this.vaultRoot)));
+    return withinVault.reverse(); // root → leaf
+  }
+
+  private async readDome(dirAbs: string): Promise<string | null> {
+    try {
+      const p = join(dirAbs, DOME_FILENAME);
+      return await fs.readFile(p, 'utf-8');
+    } catch {
+      return null;
+    }
+  }
+
+  private async readIndex(dirAbs: string): Promise<DirectoryIndex | null> {
+    try {
+      const p = join(dirAbs, INDEX_JSON);
+      const raw = await fs.readFile(p, 'utf-8');
+      const parsed = JSON.parse(raw) as DirectoryIndex;
+      if (parsed?.version !== '1' || !Array.isArray(parsed.files)) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -211,7 +391,7 @@ export class FolderContextService {
 
           if (entry.isDirectory()) {
             await walkDir(fullPath);
-          } else if (entry.name === '.dome') {
+          } else if (entry.name === DOME_FILENAME) {
             files.push(fullPath);
           }
         }
@@ -223,4 +403,38 @@ export class FolderContextService {
     await walkDir(config.DOME_VAULT_PATH);
     return files;
   }
+
+  /**
+   * Helper method to list all index files in the vault
+   */
+  private async listIndexFiles(): Promise<string[]> {
+    const files: string[] = [];
+
+    const walkDir = async (dir: string) => {
+      try {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+          const fullPath = join(dir, entry.name);
+
+          if (entry.isDirectory()) {
+            await walkDir(fullPath);
+          } else if (entry.name === INDEX_JSON) {
+            files.push(fullPath);
+          }
+        }
+      } catch {
+        // Ignore directories we can't read
+      }
+    };
+
+    await walkDir(config.DOME_VAULT_PATH);
+    return files;
+  }
+}
+
+/* ---------- local utils ---------- */
+
+function normalizeSlashes(p: string): string {
+  return p.split(sep).join('/');
 }

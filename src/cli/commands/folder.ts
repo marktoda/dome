@@ -266,15 +266,35 @@ async function showContext(folderName: string): Promise<void> {
       : path.join(config.DOME_VAULT_PATH, folderName);
 
     const contextService = new FolderContextService();
-    const context = await contextService.loadContext(folderPath);
-
-    if (context === null) {
-      logger.warn(`⚠️  No .dome context found for folder: ${folderName}`);
+    const { dome, index } = await contextService.getFolderContext(folderPath);
+    
+    if (!dome && !index) {
+      logger.warn(`⚠️  No .dome context or .index.json found for folder: ${folderName}`);
       return;
     }
 
     logger.info(`\n📄 Context for ${folderName}:\n`);
-    logger.info(context);
+    
+    if (dome) {
+      logger.info('=== Folder Rules (.dome) ===\n');
+      logger.info(dome);
+      logger.info('');
+    }
+    
+    if (index && index.files.length > 0) {
+      logger.info('=== Folder Index (.index.json) ===');
+      logger.info(`Last updated: ${new Date(index.lastUpdated).toLocaleString()}`);
+      logger.info(`Files: ${index.files.length}\n`);
+      
+      for (const file of index.files) {
+        logger.info(`📄 ${file.title}`);
+        logger.info(`   File: ${file.name}`);
+        if (file.summary) {
+          logger.info(`   Summary: ${file.summary}`);
+        }
+        logger.info('');
+      }
+    }
   } catch (error) {
     logger.error('❌ Failed to load folder context:', error);
     process.exit(1);
