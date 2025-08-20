@@ -3,24 +3,18 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { config } from '../core/utils/config.js';
 import logger from '../core/utils/logger.js';
+import { FileEvent, FileEventType } from './types.js';
 
-export enum FileEventType {
-  Added = 'added',
-  Changed = 'changed',
-  Deleted = 'deleted',
-}
-
-export interface FileEvent {
-  type: FileEventType;
-  path: string;
-  relativePath: string;
-}
+// Re-export for backward compatibility
+export { FileEvent, FileEventType } from './types.js';
 
 export interface WatcherOptions {
   vaultPath?: string;
   ignored?: string[];
   debounceMs?: number;
   awaitWriteFinish?: boolean;
+  ignoreInitial?: boolean;
+  depth?: number;
 }
 
 export class FileWatcher extends EventEmitter {
@@ -29,22 +23,26 @@ export class FileWatcher extends EventEmitter {
   private readonly ignored: string[];
   private readonly debounceMs: number;
   private readonly awaitWriteFinish: boolean;
-  private readonly processingFiles = new Set<string>();
   private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
+  private readonly ignoreInitial: boolean;
+  private readonly depth: number;
 
   constructor(options: WatcherOptions = {}) {
     super();
     this.vaultPath = options.vaultPath || config.DOME_VAULT_PATH;
     this.debounceMs = options.debounceMs ?? 500;
     this.awaitWriteFinish = options.awaitWriteFinish ?? true;
+    this.ignoreInitial = options.ignoreInitial ?? true;
+    this.depth = options.depth ?? 10;
 
-    // Default ignore patterns
     this.ignored = [
       '**/.git/**',
       '**/.dome/**',
       '**/node_modules/**',
       '**/.DS_Store',
-      '**/todo.md', // Prevent loops from our own todo file
+      '**/todo.md',
+      '**/.index.json',
+      '**/INDEX.md',
       ...(options.ignored || []),
     ];
   }
@@ -61,92 +59,50 @@ export class FileWatcher extends EventEmitter {
     this.watcher = watch(this.vaultPath, {
       ignored: this.ignored,
       persistent: true,
-      ignoreInitial: true, // Don't process existing files on startup
+      ignoreInitial: this.ignoreInitial,
       awaitWriteFinish: this.awaitWriteFinish
-        ? {
-            stabilityThreshold: 300,
-            pollInterval: 100,
-          }
+        ? { stabilityThreshold: 300, pollInterval: 100 }
         : false,
-      depth: 10, // Watch nested directories
+      depth: this.depth,
       followSymlinks: false,
     });
 
     this.watcher
-      .on('add', filePath => this.handleFileEvent(filePath, FileEventType.Added))
-      .on('change', filePath => this.handleFileEvent(filePath, FileEventType.Changed))
-      .on('unlink', filePath => this.handleFileEvent(filePath, FileEventType.Deleted))
-      .on('error', error => logger.error('Watcher error:', error))
+      .on('add', p => this.handleRaw(p, FileEventType.Added))
+      .on('change', p => this.handleRaw(p, FileEventType.Changed))
+      .on('unlink', p => this.handleRaw(p, FileEventType.Deleted))
+      .on('error', err => logger.error('Watcher error:', err))
       .on('ready', () => logger.info('File watcher ready'));
   }
 
   async stop(): Promise<void> {
-    if (!this.watcher) {
-      return;
-    }
+    if (!this.watcher) return;
 
     logger.info('Stopping file watcher');
 
-    // Clear all pending debounce timers
-    for (const timer of this.debounceTimers.values()) {
-      clearTimeout(timer);
-    }
+    // Clear pending debounce timers
+    for (const t of this.debounceTimers.values()) clearTimeout(t);
     this.debounceTimers.clear();
-
-    // Wait for any in-flight processing
-    while (this.processingFiles.size > 0) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
 
     await this.watcher.close();
     this.watcher = undefined;
   }
 
-  private handleFileEvent(filePath: string, type: FileEventType): void {
-    // Only process markdown files
-    if (!filePath.endsWith('.md')) {
-      return;
-    }
+  private handleRaw(filePath: string, type: FileEventType): void {
+    if (!filePath.endsWith('.md')) return;
 
-    // Clear existing timer for this file
-    const existingTimer = this.debounceTimers.get(filePath);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
+    const existing = this.debounceTimers.get(filePath);
+    if (existing) clearTimeout(existing);
 
-    // Set new debounced timer
     const timer = setTimeout(() => {
       this.debounceTimers.delete(filePath);
-      this.emitFileEvent(filePath, type);
+      const relativePath = path.relative(this.vaultPath, filePath);
+      const event: FileEvent = { type, path: filePath, relativePath };
+      this.emit('file', event);
+      logger.debug(`File ${type}: ${relativePath}`);
     }, this.debounceMs);
 
     this.debounceTimers.set(filePath, timer);
-  }
-
-  private emitFileEvent(filePath: string, type: FileEventType): void {
-    // Skip if already processing this file
-    if (this.processingFiles.has(filePath)) {
-      logger.debug(`Skipping ${filePath} - already processing`);
-      return;
-    }
-
-    const relativePath = path.relative(this.vaultPath, filePath);
-
-    const event: FileEvent = {
-      type,
-      path: filePath,
-      relativePath,
-    };
-
-    logger.debug(`File ${type}: ${relativePath}`);
-
-    this.processingFiles.add(filePath);
-    this.emit('file', event);
-
-    // Remove from processing set after a reasonable timeout
-    setTimeout(() => {
-      this.processingFiles.delete(filePath);
-    }, 30000); // 30 second max processing time
   }
 
   isWatching(): boolean {

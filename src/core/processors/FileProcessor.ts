@@ -1,14 +1,6 @@
-export enum FileEventType {
-  Added = 'added',
-  Changed = 'changed',
-  Deleted = 'deleted',
-}
-
-export interface FileEvent {
-  type: FileEventType;
-  path: string;
-  relativePath: string;
-}
+// Import and re-export types from the watcher module for backward compatibility
+import { FileEventType, FileEvent } from '../../watcher/types.js';
+export { FileEventType, FileEvent };
 
 export interface ProcessorResult {
   success: boolean;

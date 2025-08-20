@@ -7,6 +7,7 @@ export interface WatcherConfig {
   processors: {
     todos: boolean;
     embeddings: boolean;
+    index: boolean;
   };
   debounce: {
     fileChangeMs: number;
@@ -25,6 +26,7 @@ export function getWatcherConfig(): WatcherConfig {
     processors: {
       todos: process.env.DOME_DISABLE_TODOS !== 'true',
       embeddings: process.env.DOME_DISABLE_EMBEDDINGS !== 'true',
+      index: process.env.DOME_DISABLE_INDEX !== 'true',
     },
     debounce: {
       fileChangeMs: parseInt(process.env.DOME_WATCHER_DEBOUNCE || '500', 10),
@@ -36,6 +38,8 @@ export function getWatcherConfig(): WatcherConfig {
       '**/node_modules/**',
       '**/.DS_Store',
       '**/todo.md',
+      '**/.index.json',
+      '**/INDEX.md',
       '**/*.tmp',
       '**/*~',
       '**/.#*',

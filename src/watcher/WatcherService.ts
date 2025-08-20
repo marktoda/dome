@@ -1,66 +1,66 @@
-import { FileWatcher, FileEvent } from './FileWatcher.js';
-import { FileProcessor, ProcessorResult } from '../core/processors/FileProcessor.js';
+import path from 'node:path';
+import logger from '../core/utils/logger.js';
+
+import { FileWatcher } from './FileWatcher.js';
+import { FileStateStore } from './FileStateStore.js';
+import { KeyedQueue } from './KeyedQueue.js';
+import { coalesceFileEvents } from './coalesce.js';
+import { FileEvent, FileEventType } from './types.js';
+
+import { FileProcessor } from '../core/processors/FileProcessor.js';
 import { TodoProcessor } from '../core/processors/TodoProcessor.js';
 import { EmbeddingProcessor } from '../core/processors/EmbeddingProcessor.js';
-import logger from '../core/utils/logger.js';
-import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import { IndexProcessor } from '../core/processors/IndexProcessor.js';
 import { getWatcherConfig, WatcherConfig } from './config.js';
 
 interface ProcessorConfig {
   todos?: boolean;
   embeddings?: boolean;
-}
-
-interface FileState {
-  hash: string;
-  lastProcessed: Date;
+  index?: boolean;
 }
 
 export class WatcherService {
-  private watcher: FileWatcher;
-  private processors: FileProcessor[] = [];
-  private fileStates = new Map<string, FileState>();
-  private stateFile: string;
-  private isProcessing = false;
+  private readonly watcher: FileWatcher;
+  private readonly processors: FileProcessor[] = [];
+  private readonly state: FileStateStore;
+  private readonly config: WatcherConfig;
+
+  private saveInterval?: NodeJS.Timeout;
+
+  private readonly queue = new KeyedQueue<string, FileEvent>(
+    async (_key, event) => await this.processOne(event),
+    // Coalesce events by relativePath
+    (a, b) => coalesceFileEvents(a, b)
+  );
+
   private shutdownRequested = false;
-  private config: WatcherConfig;
 
   constructor(processorConfig: ProcessorConfig = {}) {
     this.config = getWatcherConfig();
-    const { todos = true, embeddings = true } = processorConfig;
+    const { todos = true, embeddings = true, index = true } = processorConfig;
 
     this.watcher = new FileWatcher({
       vaultPath: this.config.vaultPath,
       ignored: this.config.ignore,
       debounceMs: this.config.debounce.fileChangeMs,
       awaitWriteFinish: this.config.debounce.awaitWriteFinish,
+      ignoreInitial: true,
     });
-    this.stateFile = path.join(this.config.stateDir, 'watcher-state.json');
 
-    // Initialize processors based on config
-    if (todos) {
-      this.processors.push(new TodoProcessor());
-    }
-    if (embeddings) {
-      this.processors.push(new EmbeddingProcessor());
-    }
+    const stateFile = path.join(this.config.stateDir, 'watcher-state.json');
+    this.state = new FileStateStore(stateFile);
 
-    // Bind event handler
-    this.watcher.on('file', this.handleFileEvent.bind(this));
+    if (todos) this.processors.push(new TodoProcessor());
+    if (embeddings) this.processors.push(new EmbeddingProcessor());
+    if (index) this.processors.push(new IndexProcessor());
+
+    this.watcher.on('file', (e: FileEvent) => this.queue.add(e.relativePath, e));
   }
 
   async start(): Promise<void> {
     logger.info('Starting watcher service');
-
-    // Load state from disk
-    await this.loadState();
-
-    // Register shutdown handlers
+    await this.state.load();
     this.registerShutdownHandlers();
-
-    // Start watching
     await this.watcher.start();
 
     logger.info(`Watcher service started with ${this.processors.length} processor(s)`);
@@ -71,148 +71,63 @@ export class WatcherService {
     logger.info('Stopping watcher service');
     this.shutdownRequested = true;
 
-    // Stop accepting new events
     await this.watcher.stop();
+    await this.queue.onIdle();
 
-    // Wait for current processing to complete
-    while (this.isProcessing) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+    await this.state.save();
+
+    if (this.saveInterval) {
+      clearInterval(this.saveInterval);
+      this.saveInterval = undefined;
     }
-
-    // Save state to disk
-    await this.saveState();
 
     logger.info('Watcher service stopped');
   }
 
-  private async handleFileEvent(event: FileEvent): Promise<void> {
-    if (this.shutdownRequested) {
-      return;
-    }
-
-    this.isProcessing = true;
-
+  private async processOne(event: FileEvent): Promise<void> {
     try {
-      // Check if file has changed since last processing
-      if (await this.shouldSkipFile(event)) {
+      if (event.type === FileEventType.Deleted) {
+        // Let processors react to deletions; then clear state
+        await this.runProcessors(event);
+        this.state.delete(event.relativePath);
+        return;
+      }
+
+      // Only compute hash once; also avoid reading twice.
+      const hash = await this.state.computeHash(event.path);
+      const prev = this.state.get(event.relativePath);
+
+      if (prev && prev.hash === hash) {
         logger.debug(`Skipping unchanged file: ${event.relativePath}`);
         return;
       }
 
-      // Run all processors in parallel
-      const results = await Promise.allSettled(
-        this.processors.map(processor => processor.process(event))
-      );
+      await this.runProcessors(event);
 
-      // Log results
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-          const { success, processorName, duration, error } = result.value;
-          if (success) {
-            logger.debug(`✓ ${processorName} completed in ${duration}ms`);
-          } else {
-            logger.error(`✗ ${processorName} failed:`, error);
-          }
+      this.state.upsert(event.relativePath, hash);
+    } catch (err) {
+      logger.error(`Error processing ${event.relativePath}:`, err);
+    }
+  }
+
+  private async runProcessors(event: FileEvent): Promise<void> {
+    const results = await Promise.allSettled(
+      this.processors.map(p => p.process(event))
+    );
+
+    results.forEach((r, i) => {
+      const name = this.processors[i].name;
+      if (r.status === 'fulfilled') {
+        const { success, processorName, duration, error } = r.value;
+        if (success) {
+          logger.debug(`✓ ${processorName ?? name} completed in ${duration}ms`);
         } else {
-          logger.error(`Processor ${this.processors[index].name} crashed:`, result.reason);
+          logger.error(`✗ ${processorName ?? name} failed:`, error);
         }
-      });
-
-      // Update file state
-      await this.updateFileState(event);
-    } catch (error) {
-      logger.error('Error processing file event:', error);
-    } finally {
-      this.isProcessing = false;
-    }
-  }
-
-  private async shouldSkipFile(event: FileEvent): Promise<boolean> {
-    // Always process deletions
-    if (event.type === 'deleted') {
-      return false;
-    }
-
-    try {
-      const content = await fs.readFile(event.path, 'utf-8');
-      const hash = this.hashContent(content);
-
-      const state = this.fileStates.get(event.relativePath);
-      if (state && state.hash === hash) {
-        return true; // File hasn't changed
+      } else {
+        logger.error(`Processor ${name} crashed:`, r.reason);
       }
-    } catch (error) {
-      // File might not exist or be readable, process it anyway
-      return false;
-    }
-
-    return false;
-  }
-
-  private async updateFileState(event: FileEvent): Promise<void> {
-    if (event.type === 'deleted') {
-      this.fileStates.delete(event.relativePath);
-      return;
-    }
-
-    try {
-      const content = await fs.readFile(event.path, 'utf-8');
-      const hash = this.hashContent(content);
-
-      this.fileStates.set(event.relativePath, {
-        hash,
-        lastProcessed: new Date(),
-      });
-    } catch (error) {
-      logger.error(`Failed to update state for ${event.relativePath}:`, error);
-    }
-  }
-
-  private hashContent(content: string): string {
-    return crypto.createHash('sha256').update(content).digest('hex');
-  }
-
-  private async loadState(): Promise<void> {
-    try {
-      const stateData = await fs.readFile(this.stateFile, 'utf-8');
-      const parsed = JSON.parse(stateData);
-
-      // Reconstruct the Map from the saved data
-      this.fileStates = new Map(
-        Object.entries(parsed).map(([key, value]: [string, any]) => [
-          key,
-          {
-            hash: value.hash,
-            lastProcessed: new Date(value.lastProcessed),
-          },
-        ])
-      );
-
-      logger.debug(`Loaded state for ${this.fileStates.size} files`);
-    } catch (error) {
-      // State file doesn't exist or is invalid, start fresh
-      logger.debug('No existing state file, starting fresh');
-      this.fileStates = new Map();
-    }
-  }
-
-  private async saveState(): Promise<void> {
-    try {
-      // Ensure .dome directory exists
-      const domeDir = path.dirname(this.stateFile);
-      await fs.mkdir(domeDir, { recursive: true });
-
-      // Convert Map to plain object for JSON serialization
-      const stateObj: Record<string, FileState> = {};
-      for (const [key, value] of this.fileStates.entries()) {
-        stateObj[key] = value;
-      }
-
-      await fs.writeFile(this.stateFile, JSON.stringify(stateObj, null, 2));
-      logger.debug(`Saved state for ${this.fileStates.size} files`);
-    } catch (error) {
-      logger.error('Failed to save state:', error);
-    }
+    });
   }
 
   private registerShutdownHandlers(): void {
@@ -227,16 +142,13 @@ export class WatcherService {
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 
-    // Save state periodically (every 5 minutes)
-    setInterval(
-      () => {
-        if (!this.shutdownRequested) {
-          this.saveState().catch(err =>
-            logger.error('Failed to save state during periodic save:', err)
-          );
-        }
-      },
-      5 * 60 * 1000
-    );
+    // Periodic save (every 5 minutes), cleared on stop()
+    this.saveInterval = setInterval(() => {
+      if (!this.shutdownRequested) {
+        this.state.save().catch(err =>
+          logger.error('Failed to save state during periodic save:', err)
+        );
+      }
+    }, 5 * 60 * 1000);
   }
 }

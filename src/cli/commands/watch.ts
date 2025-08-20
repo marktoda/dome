@@ -10,6 +10,7 @@ export function createWatchCommand(): Command {
     .description('watch vault for changes and process files automatically')
     .option('--no-todos', 'disable todo extraction')
     .option('--no-embeddings', 'disable embedding generation')
+    .option('--no-index', 'disable index generation')
     .option('-v, --verbose', 'enable verbose logging')
     .option('-d, --daemon', 'run as daemon (background process)')
     .action(async options => {
@@ -22,6 +23,7 @@ export function createWatchCommand(): Command {
 async function handleWatch(options: {
   todos: boolean;
   embeddings: boolean;
+  index: boolean;
   verbose?: boolean;
   daemon?: boolean;
 }): Promise<void> {
@@ -42,6 +44,7 @@ async function handleWatch(options: {
   const watcher = new WatcherService({
     todos: options.todos,
     embeddings: options.embeddings,
+    index: options.index,
   });
 
   try {
@@ -51,6 +54,7 @@ async function handleWatch(options: {
     const processors = [];
     if (options.todos) processors.push('TODO extraction');
     if (options.embeddings) processors.push('embeddings');
+    if (options.index) processors.push('index generation');
 
     console.log(chalk.green('✓ Watcher running with:'));
     processors.forEach(p => console.log(chalk.gray(`  • ${p}`)));
@@ -66,7 +70,7 @@ async function handleWatch(options: {
   }
 }
 
-async function runAsDaemon(options: { todos: boolean; embeddings: boolean }): Promise<void> {
+async function runAsDaemon(options: { todos: boolean; embeddings: boolean; index: boolean }): Promise<void> {
   const { spawn } = await import('node:child_process');
   console.log(chalk.cyan('Starting watcher daemon...'));
 
@@ -85,6 +89,7 @@ async function runAsDaemon(options: { todos: boolean; embeddings: boolean }): Pr
       'watch',
       ...(options.todos ? [] : ['--no-todos']),
       ...(options.embeddings ? [] : ['--no-embeddings']),
+      ...(options.index ? [] : ['--no-index']),
     ],
     {
       detached: true,
