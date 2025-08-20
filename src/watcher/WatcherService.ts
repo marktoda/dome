@@ -11,13 +11,8 @@ import { FileProcessor } from '../core/processors/FileProcessor.js';
 import { TodoProcessor } from '../core/processors/TodoProcessor.js';
 import { EmbeddingProcessor } from '../core/processors/EmbeddingProcessor.js';
 import { IndexProcessor } from '../core/processors/IndexProcessor.js';
+import { NoteSummarizer } from '../core/services/NoteSummarizer.js';
 import { getWatcherConfig, WatcherConfig } from './config.js';
-
-interface ProcessorConfig {
-  todos?: boolean;
-  embeddings?: boolean;
-  index?: boolean;
-}
 
 export class WatcherService {
   private readonly watcher: FileWatcher;
@@ -35,9 +30,8 @@ export class WatcherService {
 
   private shutdownRequested = false;
 
-  constructor(processorConfig: ProcessorConfig = {}) {
+  constructor() {
     this.config = getWatcherConfig();
-    const { todos = true, embeddings = true, index = true } = processorConfig;
 
     this.watcher = new FileWatcher({
       vaultPath: this.config.vaultPath,
@@ -50,9 +44,10 @@ export class WatcherService {
     const stateFile = path.join(this.config.stateDir, 'watcher-state.json');
     this.state = new FileStateStore(stateFile);
 
-    if (todos) this.processors.push(new TodoProcessor());
-    if (embeddings) this.processors.push(new EmbeddingProcessor());
-    if (index) this.processors.push(new IndexProcessor());
+    this.processors.push(new TodoProcessor());
+    this.processors.push(new EmbeddingProcessor());
+    const summarizer = new NoteSummarizer({ model: 'gpt-4o-mini' });
+    this.processors.push(new IndexProcessor({ summarizer }));
 
     this.watcher.on('file', (e: FileEvent) => this.queue.add(e.relativePath, e));
   }

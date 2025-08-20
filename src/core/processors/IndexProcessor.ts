@@ -1,258 +1,152 @@
 import { FileProcessor, FileEvent, FileEventType } from './FileProcessor.js';
-import { openai } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import logger from '../utils/logger.js';
-import { z } from 'zod';
 import matter from 'gray-matter';
+import crypto from 'node:crypto';
+import logger from '../utils/logger.js';
 import { getWatcherConfig } from '../../watcher/config.js';
+import { NoteSummarizer } from '../services/NoteSummarizer.js';
 
-const FileIndexSchema = z.object({
-  summary: z.string().describe('A brief 1-2 sentence summary of the file content'),
-  keywords: z.array(z.string()).describe('5-10 relevant keywords or tags for searching'),
-  topics: z.array(z.string()).describe('Main topics or themes covered in the file'),
-});
-
-type FileIndexEntry = z.infer<typeof FileIndexSchema> & {
+type DirectoryIndexFile = {
+  name: string;
   path: string;
+  title: string;
+  summary: string;
   lastModified: string;
-  title?: string;
+  hash: string;
 };
 
-interface FolderIndex {
-  version: string;
+type DirectoryIndex = {
+  version: '1';
+  folder: string;
   lastUpdated: string;
-  files: Record<string, FileIndexEntry>;
-}
+  files: DirectoryIndexFile[];
+};
 
 export class IndexProcessor extends FileProcessor {
-  readonly name = 'IndexGenerator';
-  private indexCache = new Map<string, FolderIndex>();
+  readonly name = 'IndexProcessor';
+
+  private readonly summarizer: NoteSummarizer;
+  private readonly cfg = getWatcherConfig();
+
+  constructor(opts: { summarizer: NoteSummarizer }) {
+    super();
+    this.summarizer = opts.summarizer;
+  }
 
   protected async processFile(event: FileEvent): Promise<void> {
-    const { type, path: filePath, relativePath } = event;
+    const rel = event.relativePath;
 
-    // Skip non-markdown files
-    if (!relativePath.endsWith('.md')) {
-      return;
-    }
+    if (!rel.endsWith('.md')) return;
+    if (path.basename(rel).startsWith('.')) return;
 
-    // Get folder path
-    const folderPath = path.dirname(filePath);
-
-    if (type === FileEventType.Deleted) {
-      await this.removeFromIndex(folderPath, relativePath);
-      logger.info(`[IndexProcessor] Removed ${relativePath} from index`);
-    } else {
-      await this.updateIndex(folderPath, filePath, relativePath);
-      logger.info(`[IndexProcessor] Updated index for ${relativePath}`);
-    }
+    const dirAbs = path.dirname(event.path);
+    await this.rebuildDirectoryIndex(dirAbs);
   }
 
-  private async updateIndex(folderPath: string, filePath: string, relativePath: string): Promise<void> {
-    try {
-      // Read the file content
-      const content = await fs.readFile(filePath, 'utf-8');
+  private async rebuildDirectoryIndex(dirAbs: string): Promise<void> {
+    const vaultRoot = this.cfg.vaultPath;
+    const dirRel = path.relative(vaultRoot, dirAbs) || '.';
 
-      // Parse frontmatter if present
-      const { data: frontmatter, content: bodyContent } = matter(content);
+    logger.info(`[IndexProcessor] Rebuilding index for directory: ${dirRel}`);
 
-      // Skip if file is too short
-      if (bodyContent.trim().length < 50) {
-        logger.debug(`[IndexProcessor] Skipping ${relativePath} - content too short`);
-        return;
-      }
-
-      // Generate summary and keywords using LLM
-      logger.debug(`[IndexProcessor] Generating summary for ${relativePath}`);
-
-      const analysis = await this.analyzeContent(bodyContent, frontmatter);
-
-      // Load or create index for this folder
-      const index = await this.loadOrCreateIndex(folderPath);
-
-      // Update the index entry
-      index.files[relativePath] = {
-        path: relativePath,
-        title: frontmatter.title || path.basename(relativePath, '.md'),
-        summary: analysis.summary,
-        keywords: analysis.keywords,
-        topics: analysis.topics,
-        lastModified: new Date().toISOString(),
-      };
-
-      index.lastUpdated = new Date().toISOString();
-
-      // Save the updated index
-      await this.saveIndex(folderPath, index);
-
-    } catch (error) {
-      logger.error(`[IndexProcessor] Failed to update index for ${relativePath}:`, error);
-      throw error;
-    }
-  }
-
-  private async removeFromIndex(folderPath: string, relativePath: string): Promise<void> {
-    try {
-      const index = await this.loadOrCreateIndex(folderPath);
-
-      if (index.files[relativePath]) {
-        delete index.files[relativePath];
-        index.lastUpdated = new Date().toISOString();
-        await this.saveIndex(folderPath, index);
-      }
-    } catch (error) {
-      logger.error(`[IndexProcessor] Failed to remove ${relativePath} from index:`, error);
-    }
-  }
-
-  private async analyzeContent(
-    content: string,
-    frontmatter: Record<string, any>
-  ): Promise<z.infer<typeof FileIndexSchema>> {
-    try {
-      // Truncate content if too long (to manage token usage)
-      const maxLength = 4000;
-      const truncatedContent = content.length > maxLength
-        ? content.substring(0, maxLength) + '...'
-        : content;
-
-      const prompt = `Analyze the following markdown document and provide a summary, keywords, and main topics.
-
-Frontmatter:
-${JSON.stringify(frontmatter, null, 2)}
-
-Content:
-${truncatedContent}
-
-Focus on:
-1. The main purpose and key points of the document
-2. Relevant searchable keywords (technical terms, concepts, names)
-3. High-level topics or themes covered`;
-
-      const { object } = await generateObject({
-        model: openai('gpt-4o-mini'),
-        schema: FileIndexSchema,
-        prompt,
-      });
-
-      return object;
-    } catch (error) {
-      logger.error('[IndexProcessor] LLM analysis failed:', error);
-
-      // Fallback to basic extraction
-      return {
-        summary: 'Document analysis pending',
-        keywords: this.extractBasicKeywords(content),
-        topics: [],
-      };
-    }
-  }
-
-  private extractBasicKeywords(content: string): string[] {
-    // Basic keyword extraction as fallback
-    const words = content
-      .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
-      .split(/\s+/)
-      .filter(word => word.length > 4);
-
-    // Count word frequency
-    const wordFreq = new Map<string, number>();
-    words.forEach(word => {
-      wordFreq.set(word, (wordFreq.get(word) || 0) + 1);
-    });
-
-    // Get top 10 most frequent words
-    return Array.from(wordFreq.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([word]) => word);
-  }
-
-  private async loadOrCreateIndex(folderPath: string): Promise<FolderIndex> {
-    // Check cache first
-    const cached = this.indexCache.get(folderPath);
-    if (cached) {
-      return cached;
-    }
-
-    const indexPath = path.join(folderPath, '.index.json');
-
-    try {
-      const data = await fs.readFile(indexPath, 'utf-8');
-      const index = JSON.parse(data) as FolderIndex;
-
-      // Validate version
-      if (index.version !== '1.0.0') {
-        throw new Error(`Unsupported index version: ${index.version}`);
-      }
-
-      this.indexCache.set(folderPath, index);
-      return index;
-    } catch (error) {
-      // Create new index if it doesn't exist or is invalid
-      const newIndex: FolderIndex = {
-        version: '1.0.0',
-        lastUpdated: new Date().toISOString(),
-        files: {},
-      };
-
-      this.indexCache.set(folderPath, newIndex);
-      return newIndex;
-    }
-  }
-
-  private async saveIndex(folderPath: string, index: FolderIndex): Promise<void> {
-    const indexPath = path.join(folderPath, '.index.json');
-
-    // Update cache
-    this.indexCache.set(folderPath, index);
-
-    // Write to disk with pretty formatting
-    await fs.writeFile(
-      indexPath,
-      JSON.stringify(index, null, 2),
-      'utf-8'
+    const prevIndex = await this.loadIndex(dirAbs);
+    const prevByPath = new Map<string, DirectoryIndexFile>(
+      prevIndex?.files.map(f => [f.path, f]) ?? []
     );
 
-    // Also create a human-readable markdown index
-    await this.createMarkdownIndex(folderPath, index);
-  }
+    const entries = await fs.readdir(dirAbs, { withFileTypes: true });
+    const mdFiles = entries
+      .filter(e => e.isFile())
+      .map(e => e.name)
+      .filter(n => n.toLowerCase().endsWith('.md'))
+      .filter(n => !n.startsWith('.'));
 
-  private async createMarkdownIndex(folderPath: string, index: FolderIndex): Promise<void> {
-    const indexMdPath = path.join(folderPath, 'INDEX.md');
+    logger.debug(`[IndexProcessor] Found ${mdFiles.length} markdown files in ${dirRel}`);
 
-    let markdown = `# Folder Index
+    const outFiles: DirectoryIndexFile[] = [];
 
-*Last updated: ${new Date(index.lastUpdated).toLocaleString()}*
+    for (const name of mdFiles) {
+      const fileAbs = path.join(dirAbs, name);
+      const fileRel = path.relative(vaultRoot, fileAbs).replace(/\\/g, '/');
 
-## Files
+      try {
+        const [buf, stat] = await Promise.all([fs.readFile(fileAbs), fs.stat(fileAbs)]);
+        const hash = sha256(buf);
 
-`;
+        const raw = buf.toString('utf-8');
+        const { data: fm, content } = matter(raw);
+        const title = resolveTitle(fm?.title, content, name);
 
-    // Sort files by path
-    const sortedFiles = Object.values(index.files).sort((a, b) =>
-      a.path.localeCompare(b.path)
-    );
+        const prev = prevByPath.get(fileRel);
+        let summary: string;
 
-    for (const file of sortedFiles) {
-      markdown += `### ${file.title || path.basename(file.path)}\n`;
-      markdown += `**Path:** \`${file.path}\`\n\n`;
-      markdown += `**Summary:** ${file.summary}\n\n`;
+        if (prev && prev.hash === hash && prev.summary) {
+          summary = prev.summary;
+          logger.debug(`[IndexProcessor] Reusing cached summary for ${name}`);
+        } else {
+          logger.debug(`[IndexProcessor] Generating new summary for ${name}`);
+          summary = await this.summarizer.summarize({
+            path: fileRel,
+            title,
+            content: raw,
+            frontmatter: fm ?? {},
+          });
+        }
 
-      if (file.topics.length > 0) {
-        markdown += `**Topics:** ${file.topics.join(', ')}\n\n`;
+        outFiles.push({
+          name,
+          path: fileRel,
+          title,
+          summary,
+          lastModified: stat.mtime.toISOString(),
+          hash,
+        });
+      } catch (err) {
+        logger.warn(`[IndexProcessor] Skipping ${fileRel}: ${String(err)}`);
       }
-
-      if (file.keywords.length > 0) {
-        markdown += `**Keywords:** ${file.keywords.map(k => `\`${k}\``).join(', ')}\n\n`;
-      }
-
-      markdown += `---\n\n`;
     }
 
-    await fs.writeFile(indexMdPath, markdown, 'utf-8');
+    const nextIndex: DirectoryIndex = {
+      version: '1',
+      folder: dirRel.replace(/\\/g, '/'),
+      lastUpdated: new Date().toISOString(),
+      files: outFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    };
+
+    const jsonPath = path.join(dirAbs, '.index.json');
+    await atomicWrite(jsonPath, JSON.stringify(nextIndex, null, 2));
+    logger.info(`[IndexProcessor] Updated index with ${outFiles.length} files: ${path.relative(vaultRoot, jsonPath)}`);
   }
+
+  private async loadIndex(dirAbs: string): Promise<DirectoryIndex | undefined> {
+    try {
+      const p = path.join(dirAbs, '.index.json');
+      const raw = await fs.readFile(p, 'utf-8');
+      const parsed = JSON.parse(raw) as DirectoryIndex;
+      if (parsed.version !== '1' || !Array.isArray(parsed.files)) return undefined;
+      return parsed;
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function resolveTitle(fmTitle: unknown, content: string, fallbackName: string): string {
+  const fromFm = typeof fmTitle === 'string' ? fmTitle.trim() : '';
+  if (fromFm) return fromFm;
+  const h1 = content.match(/^\s*#\s+(.+?)\s*$/m)?.[1]?.trim();
+  if (h1) return h1;
+  return path.basename(fallbackName, '.md');
+}
+
+function sha256(buf: Buffer): string {
+  return crypto.createHash('sha256').update(buf).digest('hex');
+}
+
+async function atomicWrite(filePath: string, data: string): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tmp, data, 'utf-8');
+  await fs.rename(tmp, filePath);
 }
