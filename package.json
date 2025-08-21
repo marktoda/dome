@@ -7,10 +7,8 @@
   },
   "scripts": {
     "clean": "rimraf dist",
-    "build": "npm run clean && npm run cli:build",
-    "dev": "mastra dev",
-    "cli:dev": "tsx src/cli/index.ts",
-    "cli:build": "tsc -p tsconfig.json",
+    "dev": "pnpm build && pnpm start",
+    "build": "tsc -p tsconfig.json",
     "start": "node dist/cli/index.js",
     "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
     "format": "prettier --write .",

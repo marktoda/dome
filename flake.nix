@@ -85,7 +85,7 @@
         ##############################
         buildPhase = ''
           runHook preBuild
-          pnpm run cli:build                 # must exist in package.json
+          pnpm run build                 # must exist in package.json
           runHook postBuild
         '';
 
@@ -108,7 +108,7 @@
         '';
 
         meta = with pkgs.lib; {
-          description = "Astrolabe / Dome – task‑navigation CLI";
+          description = "Dome – task‑navigation CLI";
           homepage = "https://github.com/astrotask/astrolabe";
           license = licenses.mit;
           maintainers = []; # add your GitHub handle if you like
