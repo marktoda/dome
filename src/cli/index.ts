@@ -13,9 +13,7 @@ import {
   createWatchStopCommand,
   createWatchStatusCommand,
 } from './commands/watch.js';
-import { createConfigCommand } from './commands/config.js';
 import { run } from './utils/command-runner.js';
-import { autoStartWatcher } from './utils/auto-start-watcher.js';
 
 // Suppress noisy debug logs in non-debug CLI mode
 if (!process.env.DEBUG) {
@@ -26,13 +24,6 @@ if (!process.env.DEBUG) {
 // This prevents logger output from interfering with inquirer prompts
 if (process.argv.length > 2 && process.argv[2] !== 'chat') {
   process.env.NODE_ENV = 'production';
-}
-
-// Auto-start watcher if enabled and not running watch commands
-const watchCommands = ['watch', 'watch:stop', 'watch:status'];
-const currentCommand = process.argv[2];
-if (!watchCommands.includes(currentCommand) && !process.env.DOME_DAEMON) {
-  await autoStartWatcher();
 }
 
 const program = new Command();
@@ -93,9 +84,6 @@ program.addCommand(createFolderCommand());
 program.addCommand(createWatchCommand());
 program.addCommand(createWatchStopCommand());
 program.addCommand(createWatchStatusCommand());
-
-// Config command
-program.addCommand(createConfigCommand());
 
 // Default action - start interactive chat
 program.action(handleChat);
