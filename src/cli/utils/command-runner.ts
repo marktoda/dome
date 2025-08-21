@@ -6,17 +6,23 @@ import logger from '../../core/utils/logger.js';
  *   program.command('foo').action((...args) => run(() => foo(args)))
  */
 export function run(fn: () => Promise<void>): void {
-  fn().catch(err => {
-    if (err instanceof Error && err.message?.includes('SIGINT')) {
-      logger.warn('\n🚫 Operation cancelled');
+  fn()
+    .then(() => {
+      // Force process exit to prevent hanging from unclosed database connections
+      // or other resources that keep the event loop alive
       process.exit(0);
-    }
-    // Commander already prints the stack when DEBUG – keep it tidy otherwise
-    if (err instanceof Error) {
-      logger.error(`❌ ${err.message}`);
-    } else {
-      logger.error(err);
-    }
-    process.exit(1);
-  });
+    })
+    .catch(err => {
+      if (err instanceof Error && err.message?.includes('SIGINT')) {
+        logger.warn('\n🚫 Operation cancelled');
+        process.exit(0);
+      }
+      // Commander already prints the stack when DEBUG – keep it tidy otherwise
+      if (err instanceof Error) {
+        logger.error(`❌ ${err.message}`);
+      } else {
+        logger.error(err);
+      }
+      process.exit(1);
+    });
 }

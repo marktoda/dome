@@ -1,4 +1,5 @@
-import { NoteFinder, FindNoteResult } from '../domain/search/NoteFinder.js';
+import { NoteSearchService } from '../../core/services/NoteSearchService.js';
+import { NoteService } from '../../core/services/NoteService.js';
 import { NoteManager } from '../services/note-manager.js';
 import path from 'node:path';
 import chalk from 'chalk';
@@ -11,33 +12,42 @@ interface FindOptions {
   minRelevance?: number;
 }
 
+interface FindNoteResult {
+  path: string;
+  title: string;
+  score: number;
+}
+
 /**
  * Find command using vector search only
  */
 export async function handleFind(topic: string, options: FindOptions = {}): Promise<void> {
   const { maxResults = 10, minRelevance = 0.4 } = options;
 
-  const finder = new NoteFinder();
+  const noteService = new NoteService();
+  const noteSearchService = new NoteSearchService(noteService);
   const noteManager = new NoteManager();
 
   logger.info(`🔍 Searching for notes matching "${topic}"...`);
 
   // Get vector search results
-  const vectorResults = await finder.vectorFindNotes(topic, maxResults * 2);
+  const searchResults = await noteSearchService.searchNotes(topic, maxResults * 2);
+
+  // Process results to deduplicate by path and convert to FindNoteResult format
+  const results = searchResults.map(r => ({
+    path: r.metadata?.notePath ?? r.id,
+    score: r.score,
+    title: r.metadata?.text ?? '',
+
+  }));
 
   // Filter vector results
-  const filteredResults = vectorResults
-    .filter(r => r.relevanceScore >= minRelevance)
+  const filteredResults = results
+    .filter(r => r.score >= minRelevance)
     .slice(0, maxResults);
 
   // If we have results, use them
   if (filteredResults.length > 0) {
-    // Single result - open directly
-    if (filteredResults.length === 1) {
-      await noteManager.editNote(topic, filteredResults[0].path);
-      return;
-    }
-
     // Multiple results - show selection
     await showSelection(topic, filteredResults, noteManager);
     return;
@@ -91,9 +101,9 @@ async function showSelection(
 function buildChoices(results: FindNoteResult[]): any[] {
   const choices: any[] = results.map((result, index) => {
     const num = (index + 1).toString().padStart(2, ' ');
-    const score = Math.round(result.relevanceScore * 100);
+    const score = Math.round(result.score * 100);
     const fileName = path.basename(result.path);
-    const scoreText = getScoreColor(result.relevanceScore)(`[${score}%]`);
+    const scoreText = getScoreColor(result.score)(`[${score}%]`);
     const pathText = chalk.cyan(result.path);
 
     // Format the display name with colored components
