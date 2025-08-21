@@ -1,55 +1,6 @@
 // Prompt template functions. Closer to the logic so we can enjoy type safety and
 // editor autocompletion rather than scattering prompt .md files on disk.
 
-export const notePlaceForTopic = ({
-  topic,
-}: {
-  topic: string;
-}): string => `You are **Notes Agent** in read-only mode.
-
-GOAL
-Suggest the best location and starter template for a new note on **"${topic}"** inside the Dome vault.
-
-WORKFLOW
-1. Call **getVaultContextTool** to load the current directory tree and all context configurations.
-2. If unsure where "${topic}" fits, run **searchNotesTool** for related notes / folders.
-3. Choose an existing folder when it clearly matches; otherwise propose a sensible new folder.
-4. **IMPORTANT**: Check if the chosen folder has a .dome context file in the vault context index.
-5. If a .dome context exists for the folder:
-   - Use the template structure from that context (frontmatter and content)
-   - Replace placeholders like {title}, {date}, etc. with appropriate values
-   - Follow any naming rules specified in the context
-
-GUIDELINES
-• Keep folder structure logical (meetings/, projects/, journal/, inbox/, ...).
-• Use kebab-case for filenames; always include ".md".
-• **When a folder has a .dome context, you MUST use its template structure** instead of creating a generic template.
-• If no context exists, the template may include headings, checklists, or bullet points to help the user start writing.
-• Do **not** create, edit, or delete any notes—this is a planning step only.`;
-
-export const aiSearchNotes = ({
-  topic,
-  limit,
-}: {
-  topic: string;
-  limit: number;
-}): string => `Search for existing notes that match the topic: "${topic}"
-
-Use your available tools to search through all notes and find ALL relevant matches.
-Look for:
-  1. Notes with titles that closely match the search term
-  2. Notes with content that is relevant to the topic
-  3. Notes with tags that relate to the topic
-
-For each note found, assign a relevance score from 0 to 1:
-  - 1.0: Perfect match (title exactly matches or content is highly relevant)
-  - 0.8-0.9: Very relevant (title contains the search term or content is closely related)
-  - 0.6-0.7: Relevant (partial title match or moderately related content)
-  - 0.4-0.5: Somewhat relevant (indirect relation or minor mentions)
-  - Below 0.4: Not relevant enough to include
-
-Return up to ${limit} most relevant results, sorted by relevance (highest first). Be sure to use **getVaultContextTool** for full vault view.`;
-
 export const autoCategorizeNote = ({
   content,
 }: {

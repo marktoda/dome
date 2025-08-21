@@ -35,13 +35,11 @@ program
   .command('find')
   .argument('<topic...>', 'topic or title for the note')
   .description('find and open an existing note')
-  .option('--no-ai', 'disable AI fallback search')
   .option('-n, --max-results <number>', 'maximum number of results to show', parseInt, 10)
   .option('-m, --min-relevance <number>', 'minimum relevance score (0-1)', parseFloat, 0.4)
   .action((topicWords, options) =>
     run(() =>
       handleFind(topicWords.join(' '), {
-        useAIFallback: options.ai !== false,
         maxResults: options.maxResults,
         minRelevance: options.minRelevance,
       })

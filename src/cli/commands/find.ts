@@ -1,6 +1,5 @@
 import { NoteFinder, FindNoteResult } from '../domain/search/NoteFinder.js';
 import { NoteManager } from '../services/note-manager.js';
-import inquirer from 'inquirer';
 import path from 'node:path';
 import chalk from 'chalk';
 import { handleNew } from './new.js';
@@ -9,71 +8,39 @@ import { promptWithCleanTerminal } from '../utils/prompt-helper.js';
 
 interface FindOptions {
   maxResults?: number;
-  useAIFallback?: boolean;
   minRelevance?: number;
 }
 
 /**
- * Find command that shows vector results immediately
- * and uses AI results only when vector search has no results
+ * Find command using vector search only
  */
 export async function handleFind(topic: string, options: FindOptions = {}): Promise<void> {
-  const { maxResults = 10, useAIFallback = true, minRelevance = 0.4 } = options;
+  const { maxResults = 10, minRelevance = 0.4 } = options;
 
   const finder = new NoteFinder();
   const noteManager = new NoteManager();
 
   logger.info(`🔍 Searching for notes matching "${topic}"...`);
 
-  // Get both vector and AI search started
-  const { vectorResults, aiResultsPromise } = await finder.findNotes(topic, maxResults * 2);
+  // Get vector search results
+  const vectorResults = await finder.vectorFindNotes(topic, maxResults * 2);
 
   // Filter vector results
-  const filteredVectorResults = vectorResults
+  const filteredResults = vectorResults
     .filter(r => r.relevanceScore >= minRelevance)
     .slice(0, maxResults);
 
-  // If we have vector results, use them
-  if (filteredVectorResults.length > 0) {
+  // If we have results, use them
+  if (filteredResults.length > 0) {
     // Single result - open directly
-    if (filteredVectorResults.length === 1) {
-      await noteManager.editNote(topic, filteredVectorResults[0].path);
+    if (filteredResults.length === 1) {
+      await noteManager.editNote(topic, filteredResults[0].path);
       return;
     }
 
     // Multiple results - show selection
-    await showSelection(topic, filteredVectorResults, noteManager);
+    await showSelection(topic, filteredResults, noteManager);
     return;
-  }
-
-  // No vector results - try AI if enabled
-  if (useAIFallback) {
-    logger.debug('No local results found, waiting for AI search...');
-
-    try {
-      const aiResults = await aiResultsPromise;
-      const filteredAIResults = aiResults
-        .filter(r => r.relevanceScore >= minRelevance)
-        .slice(0, maxResults);
-
-      if (filteredAIResults.length > 0) {
-        // Single AI result - open directly
-        if (filteredAIResults.length === 1) {
-          await noteManager.editNote(topic, filteredAIResults[0].path);
-          return;
-        }
-
-        // Multiple AI results - show selection
-        logger.info('✨ Found results with AI search!');
-        await showSelection(topic, filteredAIResults, noteManager);
-        return;
-      }
-    } catch (error) {
-      logger.warn(
-        '⚠️  AI search failed:',
-        error instanceof Error ? error.message : 'Unknown error'
-      );
-    }
   }
 
   // No results found

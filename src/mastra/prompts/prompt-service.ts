@@ -1,6 +1,4 @@
 import {
-  notePlaceForTopic,
-  aiSearchNotes,
   autoCategorizeNote,
   rewriteNote,
   extractOpenTasks,
@@ -10,8 +8,6 @@ import {
 import os from 'node:os';
 
 export enum PromptName {
-  NotePlaceForTopic = 'notePlaceForTopic',
-  AiSearchNotes = 'aiSearchNotes',
   AutoCategorizeNote = 'autoCategorizeNote',
   RewriteNote = 'rewriteNote',
   ExtractOpenTasks = 'extractOpenTasks',
@@ -20,8 +16,6 @@ export enum PromptName {
 }
 
 const templates = {
-  [PromptName.NotePlaceForTopic]: notePlaceForTopic,
-  [PromptName.AiSearchNotes]: aiSearchNotes,
   [PromptName.AutoCategorizeNote]: autoCategorizeNote,
   [PromptName.RewriteNote]: rewriteNote,
   [PromptName.ExtractOpenTasks]: extractOpenTasks,

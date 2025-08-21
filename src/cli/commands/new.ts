@@ -1,42 +1,32 @@
-import { NoteFinder } from '../domain/search/NoteFinder.js';
 import { NoteManager } from '../services/note-manager.js';
 import { NoteService, NoteId } from '../../core/services/NoteService.js';
 
-import { toRel } from '../../core/utils/path-utils.js';
-import { extname } from 'node:path';
 import { editorManager } from '../services/editor-manager.js';
 import logger from '../../core/utils/logger.js';
 
 export async function handleNew(topic: string): Promise<void> {
   const noteService = new NoteService();
   try {
-    const finder = new NoteFinder();
     const noteManager = new NoteManager();
 
-    logger.info(`🔍 Searching for folders to place "${topic}"...`);
-
-    // Find existing note only
-    const { path, template } = await finder.findPlaceForTopic(topic);
-
-    // Ensure vault-relative identifier and .md extension
-    let noteId = toRel(path) as NoteId;
-    if (!extname(noteId)) {
-      noteId = `${noteId}.md` as NoteId;
-    }
+    // Create a simple filename from the topic
+    const filename = topic.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+    const noteId = `${filename}.md` as NoteId;
 
     // Check if the note already exists in the vault
     const fileExists = await noteService.store.exists(noteId);
 
     if (fileExists) {
-      logger.warn(`⚠️  Note already exists at: ${path}`);
+      logger.warn(`⚠️  Note already exists: ${noteId}`);
       logger.info('📝 Opening existing note for editing...');
     } else {
-      // Write template to file only if it doesn't exist
-      logger.info(`📝 Creating note with template at: ${path}`);
+      // Create a basic template
+      const template = `# ${topic}\n\n`;
+      logger.info(`📝 Creating new note: ${noteId}`);
       await noteService.store.store(noteId, template);
     }
 
-    // Open in editor (pass the cleaned id to the manager)
+    // Open in editor
     await noteManager.editNote(topic, noteId);
   } catch (error) {
     logger.error(
