@@ -54,11 +54,10 @@ export class NoteManager {
 
   /**
    * Analyse arbitrary note content and let the AI suggest
-   * a suitable topic/title and destination folder+filename.
-   * Returns the chosen topic and the vault-relative path
-   * (including the filename) where the note should live.
+   * a suitable topic/title, destination folder+filename, and appropriate template.
+   * Returns the chosen topic, path, and template content.
    */
-  async autoCategorize(noteContent: string): Promise<{ topic: string; path: string }> {
+  async autoCategorize(noteContent: string): Promise<{ topic: string; path: string; template: string }> {
     // Zod schema for the AI response
     const CategorizeSchema = z.object({
       title: z.string().min(1).describe('A concise title for the note'),
@@ -67,6 +66,7 @@ export class NoteManager {
         .min(1)
         .describe("Relative vault folder ending with '/' e.g. 'projects/'"),
       fileName: z.string().min(1).describe('File name including .md extension'),
+      template: z.string().min(1).describe('Complete markdown template for the note, with frontmatter if needed'),
       reasoning: z.string().optional(),
     });
 
@@ -93,6 +93,7 @@ export class NoteManager {
     return {
       topic: obj.title,
       path: fullRelPath,
+      template: obj.template,
     };
   }
 

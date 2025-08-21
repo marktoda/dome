@@ -8,10 +8,32 @@ export async function handleNew(topic: string): Promise<void> {
   const noteService = new NoteService();
   try {
     const noteManager = new NoteManager();
-
-    // Create a simple filename from the topic
-    const filename = topic.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
-    const noteId = `${filename}.md` as NoteId;
+    
+    let suggestedTitle = topic;
+    let noteId: NoteId;
+    let template: string;
+    
+    try {
+      logger.info(`🤖 Using AI to find the best location and template for "${topic}"...`);
+      
+      // Use AI to categorize the note, find location, and suggest template
+      const aiResult = await noteManager.autoCategorize(topic);
+      suggestedTitle = aiResult.topic;
+      noteId = aiResult.path as NoteId;
+      template = aiResult.template;
+      
+      logger.info(`📍 AI suggests: "${suggestedTitle}" at ${noteId}`);
+    } catch (aiError) {
+      logger.warn('⚠️  AI categorization failed, using simple approach');
+      logger.debug('AI Error:', aiError instanceof Error ? aiError.message : aiError);
+      
+      // Fallback to simple filename creation and basic template
+      const filename = topic.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
+      noteId = `${filename}.md` as NoteId;
+      template = `# ${topic}\n\n`;
+      
+      logger.info(`📝 Creating note: ${noteId}`);
+    }
 
     // Check if the note already exists in the vault
     const fileExists = await noteService.store.exists(noteId);
@@ -20,14 +42,12 @@ export async function handleNew(topic: string): Promise<void> {
       logger.warn(`⚠️  Note already exists: ${noteId}`);
       logger.info('📝 Opening existing note for editing...');
     } else {
-      // Create a basic template
-      const template = `# ${topic}\n\n`;
       logger.info(`📝 Creating new note: ${noteId}`);
       await noteService.store.store(noteId, template);
     }
 
     // Open in editor
-    await noteManager.editNote(topic, noteId);
+    await noteManager.editNote(suggestedTitle, noteId);
   } catch (error) {
     logger.error(
       '❌ Failed to create note:',
@@ -36,6 +56,7 @@ export async function handleNew(topic: string): Promise<void> {
     process.exit(1);
   }
 }
+
 
 /**
  * Quick-capture flow when the user runs `dome new` with **no** topic.
