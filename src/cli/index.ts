@@ -51,14 +51,16 @@ program
   .command('new')
   .argument('[topic...]', 'topic or title for the new note (leave blank for a quick note)')
   .description('create a new note – when no topic is given it captures a quick note')
-  .action(async topicWords => {
-    if (!topicWords || topicWords.length === 0) {
-      const { handleQuickNew } = await import('./commands/new.js');
-      await handleQuickNew();
-    } else {
-      await handleNew(topicWords.join(' '));
-    }
-  });
+  .action((topicWords) =>
+    run(async () => {
+      if (!topicWords || topicWords.length === 0) {
+        const { handleQuickNew } = await import('./commands/new.js');
+        await handleQuickNew();
+      } else {
+        await handleNew(topicWords.join(' '));
+      }
+    })
+  );
 
 // List command
 program
@@ -67,7 +69,7 @@ program
   .option('-r, --recent', 'show only recent notes')
   .option('--tags <tags>', 'filter by tags')
   .option('--json', 'output as JSON')
-  .action(async () => await handleList());
+  .action(() => run(() => handleList()));
 
 // Index command
 program.addCommand(createIndexCommand());
@@ -84,7 +86,7 @@ program.addCommand(createWatchStopCommand());
 program.addCommand(createWatchStatusCommand());
 
 // Default action - start interactive chat
-program.action(handleChat);
+program.action(() => run(() => handleChat()));
 
 // Parse command line arguments (Commander will call handleChat when no sub-command is given)
 await program.parseAsync(process.argv);

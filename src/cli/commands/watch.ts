@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { WatcherService } from '../../watcher/WatcherService.js';
+import { run } from '../utils/command-runner.js';
 import chalk from 'chalk';
 
 export function createWatchCommand(): Command {
@@ -9,9 +10,7 @@ export function createWatchCommand(): Command {
     .description('watch vault for changes and process files automatically')
     .option('-v, --verbose', 'enable verbose logging')
     .option('-d, --daemon', 'run as daemon (background process)')
-    .action(async options => {
-      await handleWatch(options);
-    });
+    .action((options) => run(() => handleWatch(options)));
 
   return command;
 }
@@ -124,7 +123,7 @@ function getPidFilePath(): string {
 export function createWatchStopCommand(): Command {
   const command = new Command('watch:stop');
 
-  command.description('stop the watcher daemon').action(async () => {
+  command.description('stop the watcher daemon').action(() => run(async () => {
     console.log(chalk.cyan('Stopping watcher daemon...'));
 
     try {
@@ -140,7 +139,7 @@ export function createWatchStopCommand(): Command {
     } catch (error) {
       console.error(chalk.red('Failed to stop daemon (might not be running)'));
     }
-  });
+  }));
 
   return command;
 }
@@ -148,7 +147,7 @@ export function createWatchStopCommand(): Command {
 export function createWatchStatusCommand(): Command {
   const command = new Command('watch:status');
 
-  command.description('check watcher daemon status').action(async () => {
+  command.description('check watcher daemon status').action(() => run(async () => {
     const isRunning = await isDaemonRunning();
 
     if (isRunning) {
@@ -176,7 +175,7 @@ export function createWatchStatusCommand(): Command {
       console.log(chalk.yellow('⚠ Watcher daemon is not running'));
       console.log(chalk.gray('Start it with: dome watch --daemon'));
     }
-  });
+  }));
 
   return command;
 }

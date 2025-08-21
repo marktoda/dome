@@ -12,6 +12,7 @@ import { config } from '../../core/utils/config.js';
 import logger from '../../core/utils/logger.js';
 import { FolderContextService } from '../../core/services/FolderContextService.js';
 import { promptWithCleanTerminal } from '../utils/prompt-helper.js';
+import { run } from '../utils/command-runner.js';
 
 const contextSchema = z.object({
   name: z.string(),
@@ -309,22 +310,22 @@ export function createFolderCommand(): Command {
   folderCommand
     .command('new')
     .description('Create a new folder with a .dome context file')
-    .action(createFolder);
+    .action(() => run(createFolder));
 
   folderCommand
     .command('edit [path]')
     .description('Edit an existing .dome context file')
-    .action(editFolder);
+    .action((path) => run(() => editFolder(path)));
 
   folderCommand
     .command('list')
     .description('List all folders that contain a .dome context file')
-    .action(listFolders);
+    .action(() => run(listFolders));
 
   folderCommand
     .command('context <folder>')
     .description('Show the context for a specific folder')
-    .action(showContext);
+    .action((folder) => run(() => showContext(folder)));
 
   return folderCommand;
 }

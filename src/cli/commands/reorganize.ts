@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { mastra } from '../../mastra/index.js';
+import { run } from '../utils/command-runner.js';
 import logger from '../../core/utils/logger.js';
 
 export function createReorganizeCommand(): Command {
@@ -11,9 +12,7 @@ export function createReorganizeCommand(): Command {
     .option('--verbose', 'Show detailed progress information', false)
     .option('--no-merge', 'Skip merging duplicate notes', false)
     .option('--no-cleanup', 'Skip cleaning up empty files', false)
-    .action(async options => {
-      await handleReorganize(options);
-    });
+    .action((options) => run(() => handleReorganize(options)));
 
   return command;
 }
