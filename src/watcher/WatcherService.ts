@@ -7,6 +7,8 @@ import { EventProcessor } from './EventProcessor.js';
 import { TodoProcessor } from '../core/processors/TodoProcessor.js';
 import { EmbeddingProcessor } from '../core/processors/EmbeddingProcessor.js';
 import { IndexProcessor } from '../core/processors/IndexProcessor.js';
+import { FrontmatterProcessor } from '../core/processors/FrontmatterProcessor.js';
+import { SequentialProcessor } from '../core/processors/SequentialProcessor.js';
 import { NoteSummarizer } from '../core/services/NoteSummarizer.js';
 import { getWatcherConfig } from './config.js';
 
@@ -32,12 +34,21 @@ export class WatcherService {
       path.join(config.stateDir, 'watcher-state.json')
     );
 
-    const processors = [
-      new TodoProcessor(),
-      new EmbeddingProcessor(),
+    const sequentialProcessors = [
+      new FrontmatterProcessor({
+        model: 'gpt-5-mini',
+        overwriteExisting: false,
+        fieldsToExtract: ['title', 'tags', 'participants', 'summary', 'topics', 'type']
+      }),
       new IndexProcessor({
         summarizer: new NoteSummarizer({ model: 'gpt-5-mini' })
       }),
+    ];
+
+    const processors = [
+      new TodoProcessor(),
+      new EmbeddingProcessor(),
+      new SequentialProcessor(sequentialProcessors, 'FrontmatterAndIndex'),
     ];
 
     this.processor = new EventProcessor(this.queue, this.state, processors);

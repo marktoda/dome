@@ -16,10 +16,10 @@ export class TodoProcessor extends FileProcessor {
     }
 
     logger.info(`[TODOProcessor] Looking for todos in: ${relativePath}`);
-    
+
     // Read file content
     const content = await fs.readFile(filePath, 'utf-8');
-    
+
     // Use Mastra workflow to extract todos with LLM
     const tasks = await this.extractTodosWithLLM(content, relativePath);
 
@@ -34,7 +34,7 @@ export class TodoProcessor extends FileProcessor {
     try {
       // Execute the parseTodos workflow
       const workflow = mastra.getWorkflow('parseTodosWorkflow');
-      
+
       if (!workflow) {
         logger.error('[TODOProcessor] parseTodos workflow not found in Mastra');
         return [];
