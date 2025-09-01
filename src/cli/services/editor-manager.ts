@@ -245,7 +245,7 @@ export class EditorManager extends EventEmitter {
       await this.noteService.writeNote(toRel(path) as NoteId, content);
       logger.debug(`Created note template for: ${path}`);
     } catch (error) {
-      logger.error('Failed to create note template:', error);
+      logger.error(`Failed to create note template: ${error}`);
       throw error;
     }
   }
@@ -295,7 +295,7 @@ export class EditorManager extends EventEmitter {
 
       return terminalState;
     } catch (error) {
-      logger.error('Failed to prepare terminal:', error);
+      logger.error(`Failed to prepare terminal: ${error}`);
       return terminalState;
     }
   }
@@ -344,7 +344,7 @@ export class EditorManager extends EventEmitter {
       // 6. Force a small delay to let terminal stabilize
       await new Promise(resolve => setTimeout(resolve, 50));
     } catch (error) {
-      logger.error('Failed to restore terminal:', error);
+      logger.error(`Failed to restore terminal: ${error}`);
     }
   }
 
@@ -353,11 +353,11 @@ export class EditorManager extends EventEmitter {
     terminalState: any,
     onError?: (error: Error) => void
   ): void {
-    logger.error('Editor process error:', error);
+    logger.error(`Editor process error: ${error}`);
 
     // Attempt to restore terminal
     this.restoreTerminal(terminalState).catch(err => {
-      logger.error('Failed to restore terminal after error:', err);
+      logger.error(`Failed to restore terminal after error: ${err}`);
     });
 
     // Reset state

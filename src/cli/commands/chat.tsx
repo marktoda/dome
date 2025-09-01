@@ -44,7 +44,7 @@ export async function handleChat(): Promise<void> {
   // Handle uncaught exceptions
   process.on('uncaughtException', error => {
     cleanupTerminal();
-    logger.error('Uncaught exception:', error);
+    logger.error(`Uncaught exception: ${error}`);
     process.exit(1);
   });
 

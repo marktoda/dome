@@ -56,8 +56,7 @@ export async function handleList(options: ListOptions = {}): Promise<void> {
     logger.info(`Total: ${filteredNotes.length} note${filteredNotes.length !== 1 ? 's' : ''}`);
   } catch (error) {
     logger.error(
-      '❌ Failed to list notes:',
-      error instanceof Error ? error.message : 'Unknown error'
+      `❌ Failed to list notes: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
     process.exit(1);
   }

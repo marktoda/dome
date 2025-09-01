@@ -29,6 +29,6 @@ STYLE
 • Be concise, clear, and markdown‑friendly.
 • If a note or path is missing, suggest likely causes and next steps
   `,
-  model: openai('gpt-4.1-mini'),
+  model: openai('gpt-5-mini'),
   tools: { vaultContextTool, getNoteTool, searchNotesTool },
 });

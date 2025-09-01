@@ -132,11 +132,11 @@ The context should be specific, practical, and help maintain consistency for all
       logger.info(`   template: ${context.template?.frontmatter}\n ${context.template?.content}`);
       logger.info(`   Rules: ${context.rules}`);
     } catch (aiError) {
-      logger.error('❌ Error generating context with AI:', aiError);
+      logger.error(`❌ Error generating context with AI: ${aiError}`);
       throw aiError;
     }
   } catch (error) {
-    logger.error('❌ Error creating folder:', error);
+    logger.error(`❌ Error creating folder: ${error}`);
     process.exit(1);
   }
 }
@@ -210,7 +210,7 @@ async function editFolder(folderPath?: string): Promise<void> {
       process.exit(0);
     }
   } catch (error) {
-    logger.error('❌ Error editing folder:', error);
+    logger.error(`❌ Error editing folder: ${error}`);
     process.exit(1);
   }
 }
@@ -255,7 +255,7 @@ async function listFolders(): Promise<void> {
       );
     }
   } catch (error) {
-    logger.error('❌ Failed to list folders:', error);
+    logger.error(`❌ Failed to list folders: ${error}`);
     process.exit(1);
   }
 }
@@ -297,7 +297,7 @@ async function showContext(folderName: string): Promise<void> {
       }
     }
   } catch (error) {
-    logger.error('❌ Failed to load folder context:', error);
+    logger.error(`❌ Failed to load folder context: ${error}`);
     process.exit(1);
   }
 }

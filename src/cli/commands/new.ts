@@ -25,7 +25,7 @@ export async function handleNew(topic: string): Promise<void> {
       logger.info(`📍 AI suggests: "${suggestedTitle}" at ${noteId}`);
     } catch (aiError) {
       logger.warn('⚠️  AI categorization failed, using simple approach');
-      logger.debug('AI Error:', aiError instanceof Error ? aiError.message : aiError);
+      logger.debug(`AI Error: ${aiError instanceof Error ? aiError.message : aiError}`);
       
       // Fallback to simple filename creation and basic template
       const filename = topic.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-');
@@ -50,8 +50,7 @@ export async function handleNew(topic: string): Promise<void> {
     await noteManager.editNote(suggestedTitle, noteId);
   } catch (error) {
     logger.error(
-      '❌ Failed to create note:',
-      error instanceof Error ? error.message : 'Unknown error'
+      `❌ Failed to create note: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
     process.exit(1);
   }
@@ -94,7 +93,7 @@ export async function handleQuickNew(): Promise<void> {
     // Explicitly exit to avoid lingering DB handles/open timers
     process.exit(0);
   } catch (error) {
-    logger.error('❌ Failed to create quick note:', error instanceof Error ? error.message : error);
+    logger.error(`❌ Failed to create quick note: ${error instanceof Error ? error.message : error}`);
     process.exit(1);
   }
 }

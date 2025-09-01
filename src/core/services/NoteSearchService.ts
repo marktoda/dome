@@ -41,7 +41,7 @@ export class NoteSearchService {
         metadata: result.metadata as VectorMeta,
       }));
     } catch (err) {
-      logger.error('searchNotes failed', err);
+      logger.error(`searchNotes failed: ${err}`);
       return [];
     }
   }
@@ -62,7 +62,7 @@ export class NoteSearchService {
       });
       logger.debug(`[vector] indexed ${notePath}`);
     } catch (err) {
-      logger.error('Error indexing note', notePath, err);
+      logger.error(`Error indexing note ${notePath}: ${err}`);
     }
   }
 
@@ -80,7 +80,7 @@ export class NoteSearchService {
         await this.store.pool.query(`DELETE FROM ${config.DOME_INDEX_NAME}`);
         logger.debug('Cleared existing vectors for full reindex');
       } catch (err) {
-        logger.error('Failed to clear existing vectors:', err);
+        logger.error(`Failed to clear existing vectors: ${err}`);
       }
     }
 

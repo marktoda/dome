@@ -71,7 +71,7 @@ export class FileWatcher extends EventEmitter {
       .on('add', p => this.handleRaw(p, FileEventType.Added))
       .on('change', p => this.handleRaw(p, FileEventType.Changed))
       .on('unlink', p => this.handleRaw(p, FileEventType.Deleted))
-      .on('error', err => logger.error('Watcher error:', err))
+      .on('error', err => logger.error(`Watcher error: ${err}`))
       .on('ready', () => logger.info('File watcher ready'));
   }
 

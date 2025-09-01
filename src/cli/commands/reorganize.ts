@@ -94,8 +94,7 @@ export async function handleReorganize(options: any): Promise<void> {
     }
   } catch (error) {
     logger.error(
-      '❌ Failed to run reorganization workflow:',
-      error instanceof Error ? error.message : 'Unknown error'
+      `❌ Failed to run reorganization workflow: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
 
     if (error instanceof Error && error.message.includes('Notes agent not available')) {

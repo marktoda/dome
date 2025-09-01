@@ -17,6 +17,6 @@ RULES
 3. Ignore tasks clearly assigned to someone else (mentioning another name).
 4. Output strict JSON matching the provided schema. No extra keys or commentary.`,
   // Use a tiny fast model – enough for extraction work
-  model: openai('gpt-4o-mini'),
+  model: openai('gpt-5-mini'),
   tools: {},
 });

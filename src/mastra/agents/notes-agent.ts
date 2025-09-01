@@ -40,6 +40,6 @@ GUIDELINES
 • If a path is wrong or a note is missing, suggest likely causes and fixes.
 `,
   // model: openai('gpt-4o-mini'),
-  model: openai('gpt-4.1-mini'),
+  model: openai('gpt-5-mini'),
   tools: { ...getNotesTools() },
 });
