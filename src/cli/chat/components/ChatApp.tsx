@@ -34,27 +34,27 @@ export const ChatApp: React.FC = () => {
   const [noteLog, setNoteLog] = useState<string[]>([]);
   const [selectedNoteIdx, setSelectedNoteIdx] = useState(0);
   const [showNoteLog, setShowNoteLog] = useState(true);
-  
+
   // Debug log state
   const [showDebugLog, setShowDebugLog] = useState(false);
   const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([]);
 
   // Editor state tracking
   const [editorState, setEditorState] = useState(() => editorManager.getState());
-  
+
   // Subscribe to debug logs
   useEffect(() => {
     // Get initial logs
     setDebugLogs(debugLogger.getLogs());
-    
+
     // Subscribe to new logs
     const unsubscribe = debugLogger.subscribe((log) => {
       setDebugLogs(prev => [...prev, log]);
     });
-    
+
     // Log that debug mode is available
     debugLogger.info('Chat TUI started. Press Ctrl+D to toggle debug logs', 'ChatApp');
-    
+
     return unsubscribe;
   }, []);
 
@@ -255,7 +255,7 @@ export const ChatApp: React.FC = () => {
         timestamp: new Date(),
       });
       setInput('');
-      
+
       // Log to debug
       debugLogger.debug(`User message: ${trimmed}`, 'Chat');
 
@@ -283,7 +283,9 @@ export const ChatApp: React.FC = () => {
         // Add the current message to the history
         conversationHistory.push({ role: 'user' as const, content: trimmed });
 
-        const stream = await agent.stream(conversationHistory);
+        // The new AI SDK expects messages in a different format
+        // Use streamVNext for V2 models
+        const stream = await agent.streamVNext(conversationHistory as any);
         debugLogger.debug('Started streaming AI response', 'Chat');
 
         // Buffer for throttled updates
@@ -406,7 +408,7 @@ export const ChatApp: React.FC = () => {
             <NoteLogPanel notes={noteLog} selectedIdx={selectedNoteIdx} />
           </Box>
         )}
-        
+
         {showDebugLog && (
           <Box
             width={Math.floor((stdout?.columns || 80) * 0.4)}

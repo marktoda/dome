@@ -27,7 +27,7 @@ export async function aiGenerateText(
           model: openai(options.model || config.ai.models.default),
           prompt,
           temperature: options.temperature ?? config.ai.temperature.default,
-          maxTokens: options.maxTokens || config.ai.maxTokens,
+          maxRetries: 2,
         }),
         30000
       );
@@ -61,7 +61,7 @@ export async function aiGenerateObject<T>(
           prompt,
           schema,
           temperature: options.temperature ?? config.ai.temperature.default,
-          maxTokens: options.maxTokens || config.ai.maxTokens,
+          maxRetries: 2,
         }),
         30000
       );
@@ -125,7 +125,6 @@ export async function aiSummarize(
   return aiGenerateText(prompt, {
     model: config.ai.models.summarizer,
     temperature: config.ai.temperature.summarizer,
-    maxTokens: 180,
   });
 }
 

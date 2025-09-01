@@ -58,17 +58,15 @@ export function getNotesTools(): NotesTools {
       inputSchema: z.object({
         path: z.string().describe("Note file path (e.g., 'inbox/my-note.md')"),
       }),
-      outputSchema: z.union([
-        z.object({
-          path: z.string(),
-          title: z.string(),
-          date: z.string(),
-          tags: z.array(z.string()),
-          body: z.string(),
-          fullPath: z.string(),
-        }),
-        z.null(),
-      ]),
+      outputSchema: z.object({
+        found: z.boolean(),
+        path: z.string().optional(),
+        title: z.string().optional(),
+        date: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        body: z.string().optional(),
+        fullPath: z.string().optional(),
+      }),
       execute: async ({ context }) => {
         debugLogger.debug(`getNoteTool called for: ${context.path}`, 'AI-Tool');
         // Track note access for the Chat TUI sidebar
@@ -76,10 +74,16 @@ export function getNotesTools(): NotesTools {
         const note = await noteService.getNote(toRel(context.path) as NoteId);
         if (note) {
           debugLogger.debug(`Successfully retrieved note: ${context.path}`, 'AI-Tool');
+          return {
+            found: true,
+            ...note
+          };
         } else {
           debugLogger.warn(`Note not found: ${context.path}`, 'AI-Tool');
+          return {
+            found: false
+          };
         }
-        return note;
       },
     }),
     writeNoteTool: createTool({
