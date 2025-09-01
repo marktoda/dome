@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import * as path from 'path';
-import * as fs from 'fs/promises';
+import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
 import { frontmatterService } from '../../core/services/FrontmatterService.js';
 import { z } from 'zod';
 import { editorManager } from '../services/editor-manager.js';

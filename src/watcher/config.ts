@@ -1,5 +1,9 @@
-import { config as appConfig } from '../core/utils/config.js';
-import path from 'node:path';
+/**
+ * Watcher-specific configuration wrapper.
+ * Provides backward compatibility while using centralized configuration.
+ */
+
+import { config } from '../core/utils/config.js';
 
 export interface WatcherConfig {
   vaultPath: string;
@@ -16,33 +20,39 @@ export interface WatcherConfig {
   ignore: string[];
 }
 
+/**
+ * Get watcher configuration from centralized config
+ * @returns {WatcherConfig} Watcher-specific configuration
+ */
 export function getWatcherConfig(): WatcherConfig {
-  const vaultPath = appConfig.DOME_VAULT_PATH;
-  const stateDir = path.join(vaultPath, '.dome');
-
+  // Default ignore patterns plus any custom ones from environment
+  const defaultIgnore = [
+    '**/.git/**',
+    '**/.dome/**',
+    '**/node_modules/**',
+    '**/.DS_Store',
+    '**/todo.md',
+    '**/.index.json',
+    '**/INDEX.md',
+    '**/*.tmp',
+    '**/*~',
+    '**/.#*',
+  ];
+  
+  const customIgnore = config.watcherIgnore || [];
+  
   return {
-    vaultPath,
-    stateDir,
+    vaultPath: config.paths.vault,
+    stateDir: config.paths.state,
     processors: {
-      todos: process.env.DOME_DISABLE_TODOS !== 'true',
-      embeddings: process.env.DOME_DISABLE_EMBEDDINGS !== 'true',
-      index: process.env.DOME_DISABLE_INDEX !== 'true',
+      todos: config.features.todos,
+      embeddings: config.features.embeddings,
+      index: config.features.index,
     },
     debounce: {
-      fileChangeMs: parseInt(process.env.DOME_WATCHER_DEBOUNCE || '500', 10),
-      awaitWriteFinish: process.env.DOME_WATCHER_AWAIT_WRITE !== 'false',
+      fileChangeMs: config.debounce?.fileChangeMs || 300,
+      awaitWriteFinish: (config.debounce?.awaitWriteFinish?.stabilityThreshold || 2000) > 0,
     },
-    ignore: [
-      '**/.git/**',
-      '**/.dome/**',
-      '**/node_modules/**',
-      '**/.DS_Store',
-      '**/todo.md',
-      '**/.index.json',
-      '**/INDEX.md',
-      '**/*.tmp',
-      '**/*~',
-      '**/.#*',
-    ],
+    ignore: [...defaultIgnore, ...customIgnore],
   };
 }

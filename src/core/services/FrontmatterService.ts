@@ -215,7 +215,7 @@ export class FrontmatterService {
    * Read frontmatter from a file path (utility method)
    */
   async readFile(filePath: string): Promise<ParsedDocument> {
-    const { readFile } = await import('fs/promises');
+    const { readFile } = await import('node:fs/promises');
     const content = await readFile(filePath, 'utf-8');
     return this.parse(content);
   }
@@ -224,7 +224,7 @@ export class FrontmatterService {
    * Write content with frontmatter to a file (utility method)
    */
   async writeFile(filePath: string, content: string, data: FrontmatterData): Promise<void> {
-    const { writeFile } = await import('fs/promises');
+    const { writeFile } = await import('node:fs/promises');
     const output = this.stringify(content, data);
     await writeFile(filePath, output, 'utf-8');
   }

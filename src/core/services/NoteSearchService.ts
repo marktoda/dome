@@ -30,7 +30,7 @@ export class NoteSearchService {
     try {
       const queryVector = await embedText(query);
       const results = await this.store.query({
-        indexName: config.DOME_INDEX_NAME,
+        indexName: config.DOME_INDEX_NAME || 'notes_vectors',
         queryVector,
         topK: k,
       });
@@ -55,7 +55,7 @@ export class NoteSearchService {
       await this.ensureTable();
       const records = await fileToVectorRecords(notePath);
       await this.store.upsert({
-        indexName: config.DOME_INDEX_NAME,
+        indexName: config.DOME_INDEX_NAME || 'notes_vectors',
         vectors: records.map(r => r.vector),
         metadata: records.map(r => r.metadata),
         ids: records.map(r => r.id),
@@ -95,7 +95,7 @@ export class NoteSearchService {
 
     const records = await Promise.all(notes.map(note => fileToVectorRecords(note.path)));
     await this.store.upsert({
-      indexName: config.DOME_INDEX_NAME,
+      indexName: config.DOME_INDEX_NAME || 'notes_vectors',
       vectors: records.flatMap(r => r.map(rec => rec.vector)),
       metadata: records.flatMap(r => r.map(rec => rec.metadata)),
       ids: records.flatMap(r => r.map(rec => rec.id)),
@@ -113,7 +113,7 @@ export class NoteSearchService {
   async ensureTable(): Promise<void> {
     // TODO: only create if needed
     await this.store.createIndex({
-      indexName: config.DOME_INDEX_NAME,
+      indexName: config.DOME_INDEX_NAME || 'notes_vectors',
       dimension: EMBEDDING_DIMENSION,
     });
   }

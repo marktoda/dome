@@ -1,7 +1,7 @@
 import { NoteId, RawNote, NoteMeta, Note } from '../entities/Note.js';
 import logger from '../utils/logger.js';
 import fs from 'node:fs/promises';
-import * as path from 'path';
+import * as path from 'node:path';
 import { frontmatterService } from './FrontmatterService.js';
 import { toRel } from '../utils/path-utils.js';
 import fg from 'fast-glob';

@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 import { embedMany } from 'ai';
 import { openai } from '@ai-sdk/openai';
 

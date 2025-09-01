@@ -3,9 +3,9 @@ import { FrontmatterService, FrontmatterData, FrontmatterSchema } from '../servi
 import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { z } from 'zod';
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import logger from '../utils/logger.js';
-import path from 'path';
+import path from 'node:path';
 
 // Extended schema for AI extraction with descriptions
 const ExtractSchema = z.object({
