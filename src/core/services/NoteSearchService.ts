@@ -4,7 +4,7 @@
  */
 
 import fs from 'node:fs/promises';
-import matter from 'gray-matter';
+import { frontmatterService } from './FrontmatterService.js';
 import { join } from 'node:path';
 import { PgVector } from '@mastra/pg';
 import { embedText, embedChunks } from '../utils/embedding.js';
@@ -153,7 +153,8 @@ interface SearchResult {
 async function fileToVectorRecords(relativePath: string): Promise<VectorRecord[]> {
   const fullPath = join(config.DOME_VAULT_PATH, relativePath);
   const raw = await fs.readFile(fullPath, 'utf8');
-  const { data, content } = matter(raw);
+  const parsed = frontmatterService.parse(raw);
+  const { data, content } = parsed;
 
   const titleText = data.title ?? relativePath.replace(/\.md$/, '').replace(/[-_]/g, ' ');
 

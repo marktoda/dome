@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import matter from 'gray-matter';
+import { frontmatterService } from '../../core/services/FrontmatterService.js';
 import { z } from 'zod';
 import { editorManager } from '../services/editor-manager.js';
 import { openai } from '@ai-sdk/openai';
@@ -122,7 +122,7 @@ The context should be specific, practical, and help maintain consistency for all
       });
 
       // Create the .dome file
-      const fileContent = matter.stringify('', context as object);
+      const fileContent = frontmatterService.stringify('', context as object);
       await fs.writeFile(domePath, fileContent);
 
       logger.info(`✅ Successfully created folder context at: ${fullPath}`);

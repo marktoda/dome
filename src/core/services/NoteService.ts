@@ -2,7 +2,7 @@ import { NoteId, RawNote, NoteMeta, Note } from '../entities/Note.js';
 import logger from '../utils/logger.js';
 import fs from 'node:fs/promises';
 import * as path from 'path';
-import matter from 'gray-matter';
+import { frontmatterService } from './FrontmatterService.js';
 import { toRel } from '../utils/path-utils.js';
 import fg from 'fast-glob';
 import { config } from '../utils/config.js';
@@ -61,24 +61,17 @@ export class NoteService {
     // Compute the vault-relative path reliably so we don’t duplicate the vault prefix later
     const relativePath = toRel(raw.fullPath);
 
-    // TODO: clean up how we handle frontmatter
+    // Parse frontmatter using centralized service
     let title = fileName;
-    let tags = [];
+    let tags: string[] = [];
+    
     try {
-      const { data } = matter(raw.body);
-      if (data.title) title = data.title;
-      if (data.tags) tags = data.tags;
+      const parsed = frontmatterService.parse(raw.body);
+      if (parsed.data.title) title = parsed.data.title;
+      if (parsed.data.tags) tags = parsed.data.tags;
     } catch (err) {
-      // If gray-matter fails, try graceful fallback parsing
-      try {
-        const { parseFrontmatter } = await import('../utils/frontmatter.js');
-        const parsed = parseFrontmatter(raw.body);
-        if (parsed.frontmatter.title) title = parsed.frontmatter.title;
-        if (parsed.frontmatter.tags) tags = parsed.frontmatter.tags;
-      } catch (fallbackErr) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.warn(`⚠️  Failed to parse frontmatter for note ${raw.id}: ${msg}`);
-      }
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(`⚠️  Failed to parse frontmatter for note ${raw.id}: ${msg}`);
     }
 
     return {

@@ -1,7 +1,7 @@
 import { FileProcessor, FileEvent, FileEventType } from './FileProcessor.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { frontmatterService } from '../services/FrontmatterService.js';
 import crypto from 'node:crypto';
 import logger from '../utils/logger.js';
 import { getWatcherConfig } from '../../watcher/config.js';
@@ -75,7 +75,8 @@ export class IndexProcessor extends FileProcessor {
         const hash = sha256(buf);
 
         const raw = buf.toString('utf-8');
-        const { data: fm, content } = matter(raw);
+        const parsed = frontmatterService.parse(raw);
+        const { data: fm, content } = parsed;
         const title = resolveTitle(fm?.title, content, name);
 
         const prev = prevByPath.get(fileRel);
