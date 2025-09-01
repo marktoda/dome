@@ -1,5 +1,6 @@
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
+import { config } from '../../core/utils/config.js';
 import { getNotesTools } from '../tools/notes-tool.js';
 
 const { vaultContextTool, getNoteTool, searchNotesTool } = getNotesTools();
@@ -29,6 +30,6 @@ STYLE
 • Be concise, clear, and markdown‑friendly.
 • If a note or path is missing, suggest likely causes and next steps
   `,
-  model: openai('gpt-5-mini'),
+  model: openai(config.ai.models.notesAgent),
   tools: { vaultContextTool, getNoteTool, searchNotesTool },
 });

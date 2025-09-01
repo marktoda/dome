@@ -1,7 +1,7 @@
 import { createWorkflow, createStep } from '@mastra/core/workflows';
 import { z } from 'zod';
-import { openai } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
+import { aiGenerateObject } from '../services/AIService.js';
+import { prompts } from '../prompts/PromptRegistry.js';
 
 // Schema for a parsed TODO item
 const TodoItemSchema = z.object({
@@ -35,44 +35,33 @@ const parseTodosStep = createStep({
     const { inputData: input } = context;
     const { content, filePath } = input;
 
-    const prompt = `You are a TODO extraction assistant. Analyze the following text content and extract all TODO items, action items, and tasks mentioned.
+    // Use centralized prompt with file context
+    const fullPrompt = `${prompts.extractTodos(content)}
+
+File: ${filePath}
 
 Look for:
 1. Explicit TODO markers (TODO:, FIXME:, HACK:, NOTE:, XXX:)
 2. Markdown checkboxes (- [ ], - [x], - [/])
-3. Action items in natural language (e.g., "need to fix", "should implement", "must add", "remember to")
-4. Future work mentioned (e.g., "will need to", "later we should", "eventually")
-5. Questions that imply actions (e.g., "How do we handle...?", "What about...?")
+3. Action items in natural language (e.g., "need to fix", "should implement")
+4. Future work mentioned (e.g., "will need to", "later we should")
+5. Questions that imply actions
 6. Comments indicating incomplete work
-7. Numbered or bulleted lists that describe tasks
 
-For each TODO item found:
+For each TODO:
 - Extract the core task description
-- Determine status: 
-  - 'pending' for uncompleted tasks ([ ], TODO, etc.)
-  - 'in-progress' for partially done ([/], WIP, etc.) 
-  - 'done' for completed ([x], DONE, etc.)
-- Assign priority based on language cues:
-  - 'high' for urgent/critical/must/asap
-  - 'medium' for should/need/important
-  - 'low' for could/maybe/nice-to-have
-- Extract any tags or categories mentioned
+- Determine status: pending ([ ], TODO), in-progress ([/], WIP), done ([x], DONE)
+- Assign priority based on language: high (urgent/critical), medium (should/need), low (could/maybe)
+- Extract any tags or categories
 - Look for due dates or time references
 
-Be comprehensive but avoid duplicates. Focus on actionable items, not general observations.
-
-File: ${filePath}
-Content:
-${content}`;
+Be comprehensive but avoid duplicates. Focus on actionable items.`;
 
     try {
-      const response = await generateObject({
-        model: openai('gpt-4o-mini'),
-        schema: ParseTodosOutputSchema,
-        prompt,
-      });
-
-      const result = response.object;
+      const result = await aiGenerateObject(
+        fullPrompt,
+        ParseTodosOutputSchema
+      );
 
       return {
         todos: result.todos,
@@ -80,22 +69,21 @@ ${content}`;
         reasoning: result.reasoning,
       };
     } catch (error) {
-      console.error('Failed to parse todos:', error);
+      console.error('Error parsing todos:', error);
       return {
         todos: [],
         totalFound: 0,
-        reasoning: `Error parsing todos: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        reasoning: 'Failed to parse todos due to an error',
       };
     }
   },
 });
 
-// Create and export the workflow
+// Create the workflow
 export const parseTodosWorkflow = createWorkflow({
-  id: 'parse-todos',
-  description: 'Extract and structure TODO items from file content using LLM',
+  id: 'parse-todos-workflow',
+  description: 'Extract and structure TODO items from text content using AI',
   inputSchema: ParseTodosInputSchema,
   outputSchema: ParseTodosOutputSchema,
-})
-  .then(parseTodosStep)
-  .commit();
+  steps: [parseTodosStep],
+});

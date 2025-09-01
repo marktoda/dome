@@ -361,7 +361,7 @@ DOME_VAULT_PATH=~/dome
 EDITOR=code  # or vim, nano, etc.
 
 # AI model settings
-DOME_MODEL=gpt-4o-mini
+DOME_MODEL=gpt-5-mini
 DOME_MAX_TOKENS=2000
 ```
 

@@ -64,7 +64,7 @@ export const notesAgent = new Agent({
   instructions: `You manage a markdown vault.
     Use searchNotesTool first when the user asks for information retrieval.
     Cite note paths in your answers. Do *not* hallucinate content.`,
-  model: openai('gpt-4o-mini'),
+  model: openai('gpt-5-mini'),
   tools: { listNotesTool, getNoteTool, writeNoteTool, searchNotesTool },
 });
 ```

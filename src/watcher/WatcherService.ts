@@ -35,13 +35,9 @@ export class WatcherService {
     );
 
     const sequentialProcessors = [
-      new FrontmatterProcessor({
-        model: 'gpt-5-mini',
-        overwriteExisting: false,
-        fieldsToExtract: ['title', 'tags', 'participants', 'summary', 'topics', 'type']
-      }),
+      new FrontmatterProcessor(true), // skipExisting = true
       new IndexProcessor({
-        summarizer: new NoteSummarizer({ model: 'gpt-5-mini' })
+        summarizer: new NoteSummarizer()
       }),
     ];
 

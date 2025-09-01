@@ -5,6 +5,8 @@ import TextInput from 'ink-text-input';
 import { mastra } from '../../../mastra/index.js';
 import { ChatHistory } from './ChatHistory.js';
 import { NoteLogPanel } from './NoteLogPanel.js';
+import { DebugLogPanel, DebugLogEntry } from './DebugLogPanel.js';
+import { debugLogger } from '../utils/debugLogger.js';
 import { setActivityTracker } from '../utils/activityTracker.js';
 import { editorManager } from '../../services/editor-manager.js';
 import { setInkIO } from '../../ink/ink-io.js';
@@ -32,9 +34,29 @@ export const ChatApp: React.FC = () => {
   const [noteLog, setNoteLog] = useState<string[]>([]);
   const [selectedNoteIdx, setSelectedNoteIdx] = useState(0);
   const [showNoteLog, setShowNoteLog] = useState(true);
+  
+  // Debug log state
+  const [showDebugLog, setShowDebugLog] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([]);
 
   // Editor state tracking
   const [editorState, setEditorState] = useState(() => editorManager.getState());
+  
+  // Subscribe to debug logs
+  useEffect(() => {
+    // Get initial logs
+    setDebugLogs(debugLogger.getLogs());
+    
+    // Subscribe to new logs
+    const unsubscribe = debugLogger.subscribe((log) => {
+      setDebugLogs(prev => [...prev, log]);
+    });
+    
+    // Log that debug mode is available
+    debugLogger.info('Chat TUI started. Press Ctrl+D to toggle debug logs', 'ChatApp');
+    
+    return unsubscribe;
+  }, []);
 
   // Terminal dimensions for responsive layout
   const { stdout } = useStdout();
@@ -167,11 +189,13 @@ export const ChatApp: React.FC = () => {
     noteLog,
     selectedNoteIdx,
     showNoteLog,
+    showDebugLog,
     isProcessing,
     editorState,
     setSelectedMessageIndex,
     setSelectedNoteIdx,
     setShowNoteLog,
+    setShowDebugLog,
     exit,
     openNoteInEditor,
     addMessage,
@@ -231,6 +255,9 @@ export const ChatApp: React.FC = () => {
         timestamp: new Date(),
       });
       setInput('');
+      
+      // Log to debug
+      debugLogger.debug(`User message: ${trimmed}`, 'Chat');
 
       // Ask assistant
       setIsProcessing(true);
@@ -257,6 +284,7 @@ export const ChatApp: React.FC = () => {
         conversationHistory.push({ role: 'user' as const, content: trimmed });
 
         const stream = await agent.stream(conversationHistory);
+        debugLogger.debug('Started streaming AI response', 'Chat');
 
         // Buffer for throttled updates
         let buffer = '';
@@ -295,6 +323,7 @@ export const ChatApp: React.FC = () => {
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
+        debugLogger.error(`AI response error: ${message}`, 'Chat');
         addMessage({
           id: `${Date.now()}-e`,
           type: 'error',
@@ -364,7 +393,7 @@ export const ChatApp: React.FC = () => {
           </Box>
         </Box>
 
-        {showNoteLog && (
+        {showNoteLog && !showDebugLog && (
           <Box
             width={sidebarWidth}
             flexShrink={0}
@@ -375,6 +404,17 @@ export const ChatApp: React.FC = () => {
             borderColor={editorState.isOpen ? 'gray' : 'white'}
           >
             <NoteLogPanel notes={noteLog} selectedIdx={selectedNoteIdx} />
+          </Box>
+        )}
+        
+        {showDebugLog && (
+          <Box
+            width={Math.floor((stdout?.columns || 80) * 0.4)}
+            flexShrink={0}
+            flexDirection="column"
+            justifyContent="flex-end"
+          >
+            <DebugLogPanel logs={debugLogs} maxHeight={stdout?.rows ? stdout.rows - 5 : 20} />
           </Box>
         )}
       </Box>

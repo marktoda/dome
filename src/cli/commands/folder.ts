@@ -4,8 +4,8 @@ import * as fs from 'node:fs/promises';
 import { frontmatterService } from '../../core/services/FrontmatterService.js';
 import { z } from 'zod';
 import { editorManager } from '../services/editor-manager.js';
-import { openai } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
+import { aiGenerateObject } from '../../mastra/services/AIService.js';
+import { prompts } from '../../mastra/prompts/PromptRegistry.js';
 import { toRel, toAbs } from '../../core/utils/path-utils.js';
 import { mkdir } from 'node:fs/promises';
 import { config } from '../../core/utils/config.js';
@@ -99,27 +99,17 @@ async function createFolder(): Promise<void> {
     // Generate context using AI
     logger.info('🤖 Generating context file using AI...');
 
-    const prompt = `Create a comprehensive context file for a folder with the following specifications:
-
-Folder Name: ${folderName}
-Purpose: ${answers.description}
-${answers.addRules ? `Additional Rules: ${answers.addRules}` : ''}
-
-Generate a well-structured context that includes:
-1. A clear, descriptive name
-2. A comprehensive description
-3. Appropriate template with frontmatter fields and content structure
-4. Relevant rules (file naming, required fields, auto-tags)
-5. AI instructions for working with notes in this folder
-
-The context should be specific, practical, and help maintain consistency for all notes in this folder.`;
+    const prompt = prompts.folderContext(
+      folderName,
+      answers.description,
+      answers.addRules
+    );
 
     try {
-      const { object: context } = await generateObject<Context>({
-        model: openai('gpt-4o-mini'),
-        schema: contextSchema,
+      const context = await aiGenerateObject<Context>(
         prompt,
-      });
+        contextSchema
+      );
 
       // Create the .dome file
       const fileContent = frontmatterService.stringify('', context as object);

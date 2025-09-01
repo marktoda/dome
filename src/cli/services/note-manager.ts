@@ -4,7 +4,7 @@ import { mastra } from '../../mastra/index.js';
 import { promptService, PromptName } from '../../mastra/prompts/prompt-service.js';
 import { editorManager } from './editor-manager.js';
 import logger from '../../core/utils/logger.js';
-import { toRel } from '../../core/utils/path-utils.js';
+import { toRel, isAbs } from '../../core/utils/path-utils.js';
 import { join } from 'node:path';
 
 export class NoteManager {
@@ -16,11 +16,16 @@ export class NoteManager {
 
   async editNote(topic: string, originalPath: string): Promise<void> {
     // Ensure we operate on a vault-relative path.
-    const relPath: NoteId = toRel(originalPath);
+    // If the path is absolute, convert it. Otherwise use as-is.
+    const relPath: NoteId = isAbs(originalPath) ? toRel(originalPath) : originalPath;
+    
+    logger.debug(`editNote: originalPath="${originalPath}", relPath="${relPath}"`);
+    
     // Capture the original content before opening the editor so we can
     // determine whether the user actually made any changes.
     const originalNote = await this.noteService.getNote(relPath);
     if (!originalNote) {
+      logger.error(`Failed to read note at path: ${relPath}`);
       throw new Error('Error reading note before edit');
     }
 

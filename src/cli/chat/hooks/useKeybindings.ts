@@ -10,6 +10,7 @@ interface UseKeybindingsOptions {
   noteLog: string[];
   selectedNoteIdx: number;
   showNoteLog: boolean;
+  showDebugLog?: boolean;
   isProcessing: boolean;
   editorState: {
     isOpen: boolean;
@@ -20,6 +21,7 @@ interface UseKeybindingsOptions {
   setSelectedMessageIndex: (index: number) => void;
   setSelectedNoteIdx: (index: number) => void;
   setShowNoteLog: (show: boolean) => void;
+  setShowDebugLog?: (show: boolean) => void;
   exit: () => void;
   openNoteInEditor: (path: string) => void;
   addMessage: (message: ChatMessage) => void;
@@ -33,11 +35,13 @@ export function useKeybindings(options: UseKeybindingsOptions) {
     noteLog,
     selectedNoteIdx,
     showNoteLog,
+    showDebugLog = false,
     isProcessing,
     editorState,
     setSelectedMessageIndex,
     setSelectedNoteIdx,
     setShowNoteLog,
+    setShowDebugLog,
     exit,
     openNoteInEditor,
     addMessage,
@@ -63,6 +67,12 @@ export function useKeybindings(options: UseKeybindingsOptions) {
       'ui.toggleActivity': () => {
         const { showNoteLog, setShowNoteLog } = optionsRef.current;
         setShowNoteLog(!showNoteLog);
+      },
+      'ui.toggleDebug': () => {
+        const { showDebugLog, setShowDebugLog } = optionsRef.current;
+        if (setShowDebugLog) {
+          setShowDebugLog(!showDebugLog);
+        }
       },
 
       // Note log commands

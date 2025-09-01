@@ -100,7 +100,7 @@ Required environment variables:
 - `DOME_VAULT_PATH` - Path to notes vault (default: ~/dome)
 
 Optional configuration:
-- `DOME_DEFAULT_MODEL` - AI model for generation (default: gpt-4o-mini)
+- `DOME_DEFAULT_MODEL` - AI model for generation (default: gpt-5-mini)
 - `DOME_EMBEDDING_MODEL` - Model for embeddings (default: text-embedding-3-small)
 - `LOG_LEVEL` - Logging level (default: info)
 - `NODE_ENV` - Environment (development/production/test)

@@ -27,6 +27,14 @@ export const defaultKeybindings: Keybinding[] = [
     description: 'Toggle activity/note log panel',
     group: 'UI',
   },
+  {
+    id: 'ui.toggleDebug',
+    keys: { ctrl: true, key: 'd' },
+    command: 'ui.toggleDebug',
+    when: '!editorOpen',
+    description: 'Toggle debug log panel',
+    group: 'UI',
+  },
 
   // === Note Log Navigation ===
   {

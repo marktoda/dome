@@ -19,15 +19,19 @@ export class NoteService {
   constructor(public store: NoteStore = new FileSystemNoteStore()) {}
 
   async listNotes(): Promise<Note[]> {
+    logger.debug(`Searching for notes in: ${config.DOME_VAULT_PATH}`);
     const paths = await fg('**/*.md', {
       cwd: config.DOME_VAULT_PATH,
       dot: false,
       ignore: ['**/node_modules/**', '**/.git/**'],
     });
-    const rawNotes: RawNote[] = await Promise.all(
-      paths.map(p => this.store.get(toRel(p)) as Promise<RawNote>)
+    logger.debug(`Found ${paths.length} markdown files`);
+    const rawNotes = await Promise.all(
+      paths.map(p => this.store.get(toRel(p)))
     );
-    return await Promise.all(rawNotes.map(r => this.hydrateNote(r)));
+    // Filter out null values and hydrate only valid notes
+    const validRawNotes = rawNotes.filter((r): r is RawNote => r !== null);
+    return await Promise.all(validRawNotes.map(r => this.hydrateNote(r)));
   }
 
   async getNote(id: NoteId): Promise<Note | null> {

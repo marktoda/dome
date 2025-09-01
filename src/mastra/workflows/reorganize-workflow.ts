@@ -1,5 +1,6 @@
 import { createWorkflow, createStep } from '@mastra/core/workflows';
 import { z } from 'zod';
+import { prompts } from '../prompts/PromptRegistry.js';
 
 // Types
 interface ReorganizeOptions {
@@ -105,27 +106,7 @@ const identifyMergeGroupsStep = createStep({
       throw new Error('notesAgent not registered in mastra - check agent configuration');
     }
 
-    const identifyPrompt = `You are helping reorganize a notes vault. Your task is to identify groups of notes that should be merged into single, well-organized notes.
-
-Please use your tools to:
-1. List all notes in the vault to get an overview
-2. Examine promising candidates for merging by reading their content
-3. Identify groups of 2-5 notes that cover similar topics and should be merged
-
-Look for notes that:
-- Cover the same topic but are scattered across multiple files
-- Are incomplete drafts that should be combined into a comprehensive note
-- Have overlapping content that would benefit from consolidation
-- Are follow-ups or continuations of previous notes
-
-For each merge group, propose:
-- Which notes should be merged (list their paths)
-- A good title for the merged note
-- A logical location/path for the merged note
-- Clear reasoning for why these notes should be merged
-- Confidence level (0.0-1.0) in your recommendation
-
-Focus on merges that will genuinely improve the organization and reduce redundancy. Be conservative - only suggest merges you're confident about.`;
+    const identifyPrompt = prompts.identifyMergeGroups();
 
     try {
       const response = await agent.generate([{ role: 'user', content: identifyPrompt }], {
@@ -218,29 +199,7 @@ const executeMergesStep = createStep({
     }
 
     if (!options.dryRun) {
-      const executePrompt = `You need to execute ${highConfidenceGroups.length} note merges. For each merge group below, use your tools to:
-
-1. Read all the source notes
-2. Create a well-organized merged note that combines all unique content
-3. Write the merged note to the proposed location
-4. Remove the original source notes using your removeNoteTool
-
-Here are the merge groups to execute:
-
-${highConfidenceGroups
-  .map(
-    (group: MergeGroup, index: number) => `
-Merge Group ${index + 1}:
-- Notes to merge: ${JSON.stringify(group.notePaths)}
-- Merged note location: ${group.proposedLocation}
-- Merged note title: ${group.proposedTitle}
-- Reason: ${group.reason}
-- Confidence: ${group.confidence}
-`
-  )
-  .join('\n')}
-
-Please execute all these merges systematically. Report back on your progress.`;
+      const executePrompt = prompts.executeMerges(highConfidenceGroups);
 
       try {
         await agent.generate([{ role: 'user', content: executePrompt }]);
@@ -368,22 +327,7 @@ const removeNotesStep = createStep({
     }
 
     if (!options.dryRun) {
-      const cleanupPrompt = `You are cleaning up a notes vault by removing low-value notes. Please use your tools to:
-
-1. List all notes in the vault to get an overview
-2. Examine notes that might be candidates for removal
-3. For notes that are clearly low-value, use your removeNoteTool to delete them
-
-Look for notes that should be removed:
-- Empty or nearly empty (just a title, minimal content)
-- Only placeholder text, TODOs with no actual content
-- Test notes or temporary files that serve no purpose
-- Extremely low quality, garbled, or broken content
-- Duplicate information that's better covered elsewhere
-
-Be conservative - only remove notes you're highly confident are worthless (confidence >= 0.7). When in doubt, keep the note.
-
-For each note you remove, briefly explain why it was removed. Count how many notes you remove and report back.`;
+      const cleanupPrompt = prompts.cleanupNotes();
 
       try {
         const response = await agent.generate([{ role: 'user', content: cleanupPrompt }]);
@@ -420,32 +364,7 @@ For each note you remove, briefly explain why it was removed. Count how many not
       }
     } else {
       // Dry run - identify but don't remove
-      const analyzePrompt = `You are analyzing a notes vault for cleanup. Please use your tools to:
-
-1. List all notes in the vault
-2. Identify notes that would be candidates for removal
-3. For each removal candidate, provide the reason and confidence level
-
-Look for notes that should be removed:
-- Empty or nearly empty (just a title, minimal content)
-- Only placeholder text, TODOs with no actual content
-- Test notes or temporary files that serve no purpose
-- Extremely low quality, garbled, or broken content
-- Duplicate information that's better covered elsewhere
-
-Be conservative - only identify notes you're highly confident are worthless (confidence >= 0.7).
-
-Provide your analysis in this structured format:
-{
-  "removalCandidates": [
-    {
-      "path": "path/to/note.md",
-      "reason": "Specific reason for removal",
-      "confidence": 0.85
-    }
-  ],
-  "reasoning": "Overall analysis of the cleanup process"
-}`;
+      const analyzePrompt = prompts.analyzeNotesForCleanup();
 
       try {
         const response = await agent.generate([{ role: 'user', content: analyzePrompt }], {

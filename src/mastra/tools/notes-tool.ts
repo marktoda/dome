@@ -5,6 +5,7 @@ import { NoteSearchService } from '../../core/services/NoteSearchService.js';
 import { trackActivity } from '../../cli/chat/utils/activityTracker.js';
 import { toRel } from '../../core/utils/path-utils.js';
 import { FolderContextService } from '../../core/services/FolderContextService.js';
+import { debugLogger } from '../../cli/chat/utils/debugLogger.js';
 
 interface NotesTools {
   vaultContextTool: any;
@@ -36,11 +37,19 @@ export function getNotesTools(): NotesTools {
         context: z.string().nullable(),
       }),
       execute: async () => {
-        const notes = await noteService.listNotes();
-        return {
-          notes,
-          context: await contextService.getIndex(),
-        };
+        debugLogger.debug('vaultContextTool called', 'AI-Tool');
+        try {
+          const notes = await noteService.listNotes();
+          const context = await contextService.getIndex();
+          debugLogger.debug(`Found ${notes.length} notes in vault`, 'AI-Tool');
+          return {
+            notes,
+            context,
+          };
+        } catch (error) {
+          debugLogger.error(`vaultContextTool error: ${error}`, 'AI-Tool');
+          throw error;
+        }
       },
     }),
     getNoteTool: createTool({
@@ -61,9 +70,16 @@ export function getNotesTools(): NotesTools {
         z.null(),
       ]),
       execute: async ({ context }) => {
+        debugLogger.debug(`getNoteTool called for: ${context.path}`, 'AI-Tool');
         // Track note access for the Chat TUI sidebar
         trackActivity('document', context.path);
-        return noteService.getNote(toRel(context.path) as NoteId);
+        const note = await noteService.getNote(toRel(context.path) as NoteId);
+        if (note) {
+          debugLogger.debug(`Successfully retrieved note: ${context.path}`, 'AI-Tool');
+        } else {
+          debugLogger.warn(`Note not found: ${context.path}`, 'AI-Tool');
+        }
+        return note;
       },
     }),
     writeNoteTool: createTool({
@@ -88,7 +104,10 @@ export function getNotesTools(): NotesTools {
         oldContent: z.string().optional(),
       }),
       execute: async ({ context }) => {
-        return noteService.writeNote(toRel(context.path) as NoteId, context.content);
+        debugLogger.debug(`writeNoteTool called for: ${context.path}`, 'AI-Tool');
+        const result = await noteService.writeNote(toRel(context.path) as NoteId, context.content);
+        debugLogger.info(`Note written: ${context.path} (${result.type})`, 'AI-Tool');
+        return result;
       },
     }),
     removeNoteTool: createTool({
@@ -102,7 +121,10 @@ export function getNotesTools(): NotesTools {
         removedContent: z.string(),
       }),
       execute: async ({ context }) => {
-        return noteService.removeNote(toRel(context.path) as NoteId);
+        debugLogger.debug(`removeNoteTool called for: ${context.path}`, 'AI-Tool');
+        const result = await noteService.removeNote(toRel(context.path) as NoteId);
+        debugLogger.info(`Note removed: ${context.path}`, 'AI-Tool');
+        return result;
       },
     }),
     searchNotesTool: createTool({
@@ -122,6 +144,7 @@ export function getNotesTools(): NotesTools {
         })
       ),
       execute: async ({ context }) => {
+        debugLogger.debug(`searchNotesTool called with query: "${context.query}"`, 'AI-Tool');
         try {
           const results = await noteSearchService.searchNotes(context.query);
 
@@ -132,14 +155,18 @@ export function getNotesTools(): NotesTools {
           }
 
           // Transform results to match expected output schema
-          return results.map(result => ({
+          const transformed = results.map(result => ({
             notePath: result.metadata?.notePath || '',
             score: result.score || 0,
             excerpt: result.metadata?.text || '',
             tags: Array.isArray(result.metadata?.tags) ? result.metadata.tags : [],
           }));
+          debugLogger.debug(`Search returned ${transformed.length} results`, 'AI-Tool');
+          return transformed;
         } catch (error) {
-          console.error('Error searching notes:', error instanceof Error ? error.message : error);
+          const errMsg = error instanceof Error ? error.message : String(error);
+          debugLogger.error(`Error searching notes: ${errMsg}`, 'AI-Tool');
+          console.error('Error searching notes:', errMsg);
           // Return empty array instead of throwing to allow agent to fall back
           return [];
         }
