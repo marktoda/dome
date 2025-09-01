@@ -1,13 +1,8 @@
 import { FileProcessor, FileEvent, FileEventType } from './FileProcessor.js';
 import { getTodoPath, parseTodoMarkdown, buildTodoMarkdown, Task } from '../utils/todo.js';
+import { mastra } from '../../mastra/index.js';
 import fs from 'node:fs/promises';
 import logger from '../utils/logger.js';
-
-const TODO_PATTERNS = [
-  /^[-*]\s*\[\s*\]\s+(.+)$/gm, // - [ ] task
-  /^TODO:\s*(.+)$/gim, // TODO: task
-  /^FIXME:\s*(.+)$/gim, // FIXME: task
-];
 
 export class TodoProcessor extends FileProcessor {
   readonly name = 'TodoExtractor';
@@ -21,9 +16,12 @@ export class TodoProcessor extends FileProcessor {
     }
 
     logger.info(`[TODOProcessor] Looking for todos in: ${relativePath}`);
-    // For added or changed files, extract todos
+    
+    // Read file content
     const content = await fs.readFile(filePath, 'utf-8');
-    const tasks = this.extractTodos(content, relativePath);
+    
+    // Use Mastra workflow to extract todos with LLM
+    const tasks = await this.extractTodosWithLLM(content, relativePath);
 
     await this.updateCentralTodoList(relativePath, tasks);
 
@@ -32,27 +30,45 @@ export class TodoProcessor extends FileProcessor {
     }
   }
 
-  private extractTodos(content: string, noteId: string): Task[] {
-    const tasks: Task[] = [];
-
-    for (const pattern of TODO_PATTERNS) {
-      // Reset the regex state for each use
-      pattern.lastIndex = 0;
-      const matches = content.matchAll(pattern);
-
-      for (const match of matches) {
-        const text = match[1].trim();
-        if (text) {
-          tasks.push({
-            text,
-            status: 'pending',
-            from: noteId,
-          });
-        }
+  private async extractTodosWithLLM(content: string, noteId: string): Promise<Task[]> {
+    try {
+      // Execute the parseTodos workflow
+      const workflow = mastra.getWorkflow('parseTodosWorkflow');
+      
+      if (!workflow) {
+        logger.error('[TODOProcessor] parseTodos workflow not found in Mastra');
+        return [];
       }
-    }
 
-    return tasks;
+      const run = await workflow.createRunAsync();
+      const result = await run.start({
+        inputData: {
+          content,
+          filePath: noteId,
+        }
+      });
+
+      if (result.status !== 'success') {
+        logger.error(`[TODOProcessor] Workflow failed: ${result.status}`);
+        return [];
+      }
+
+      // Convert workflow todos to our Task format
+      const tasks: Task[] = result.result.todos.map((todo: any) => ({
+        text: todo.text,
+        status: todo.status as 'pending' | 'in-progress' | 'done',
+        from: noteId,
+      }));
+
+      if (result.result.totalFound > 0) {
+        logger.debug(`[TODOProcessor] LLM found ${result.result.totalFound} todos: ${result.result.reasoning}`);
+      }
+
+      return tasks;
+    } catch (error) {
+      logger.error(`[TODOProcessor] Failed to extract todos with LLM: ${error}`);
+      return [];
+    }
   }
 
   private async updateCentralTodoList(noteId: string, newTasks: Task[]): Promise<void> {
