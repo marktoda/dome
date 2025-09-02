@@ -35,7 +35,7 @@ export class WatcherService {
     );
 
     const sequentialProcessors = [
-      new FrontmatterProcessor(true), // skipExisting = true
+      new FrontmatterProcessor(false), // skipExisting = true
       new IndexProcessor({
         summarizer: new NoteSummarizer()
       }),

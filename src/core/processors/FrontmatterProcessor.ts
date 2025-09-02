@@ -22,7 +22,7 @@ const FrontmatterSchema = z.object({
 
 export class FrontmatterProcessor extends FileProcessor {
   readonly name = 'FrontmatterProcessor';
-  
+
   constructor(private readonly skipExisting = true) {
     super();
   }
@@ -35,7 +35,7 @@ export class FrontmatterProcessor extends FileProcessor {
     try {
       const content = await readFile(event.path, 'utf-8');
       const parsed = frontmatterService.parse(content);
-      
+
       // Skip if has frontmatter and configured to skip
       if (this.skipExisting && Object.keys(parsed.data).length > 0) return;
 
@@ -46,16 +46,16 @@ export class FrontmatterProcessor extends FileProcessor {
         temperature: 0.3,
         maxTokens: 300,
       });
-      
+
       // Skip if nothing extracted
       if (!extracted || Object.keys(extracted).length === 0) return;
-      
+
       // Merge and update
       const merged = { ...extracted, ...parsed.data };
       const updated = frontmatterService.stringify(parsed.content, merged);
-      
+
       await writeFile(event.path, updated, 'utf-8');
-      logger.info(`Updated frontmatter: ${event.path}`);
+      logger.info(`[FrontmatterProcessor] Updated frontmatter: ${event.path}`);
     } catch (error) {
       logger.error(`Frontmatter processing failed for ${event.path}: ${error}`);
     }

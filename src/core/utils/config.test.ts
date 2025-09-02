@@ -24,7 +24,7 @@ vi.mock('pino', () => ({
 }));
 
 // Default mock configuration
-const mockRawConfig = {
+const mockRawConfig: Record<string, any> = {
   DOME_VAULT_PATH: '/home/user/dome',
   DOME_STATE_DIR: '/home/user/.dome/state',
   POSTGRES_URI: 'postgres://test:password@localhost:5432/dome',
@@ -402,7 +402,7 @@ describe('Config Module', () => {
     it('should parse comma-separated ignore patterns', async () => {
       vi.resetModules();
 
-      mockRawConfig.DOME_WATCHER_IGNORE = ['*.tmp', 'node_modules', '.git'];
+      mockRawConfig.DOME_WATCHER_IGNORE = '*.tmp,node_modules,.git';
 
       const configModule = await import('./config.js');
       config = configModule.config;
