@@ -1,4 +1,5 @@
 import { createWorkflow, createStep } from '@mastra/core/workflows';
+import { config } from '../../core/utils/config.js'
 import { z } from 'zod';
 import { aiGenerateObject } from '../services/AIService.js';
 import { prompts } from '../prompts/PromptRegistry.js';
@@ -60,7 +61,9 @@ Be comprehensive but avoid duplicates. Focus on actionable items.`;
     try {
       const result = await aiGenerateObject(
         fullPrompt,
-        ParseTodosOutputSchema
+        ParseTodosOutputSchema, {
+        model: config.ai.models.todoExtraction,
+      }
       );
 
       return {

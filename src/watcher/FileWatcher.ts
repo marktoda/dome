@@ -10,7 +10,7 @@ export { FileEvent, FileEventType } from './types.js';
 
 export interface WatcherOptions {
   vaultPath?: string;
-  ignored?: string[];
+  ignored?: (string | RegExp)[];
   debounceMs?: number;
   awaitWriteFinish?: boolean;
   ignoreInitial?: boolean;
@@ -20,7 +20,7 @@ export interface WatcherOptions {
 export class FileWatcher extends EventEmitter {
   private watcher?: FSWatcher;
   private readonly vaultPath: string;
-  private readonly ignored: string[];
+  private readonly ignored: (string | RegExp)[];
   private readonly debounceMs: number;
   private readonly awaitWriteFinish: boolean;
   private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
@@ -40,9 +40,9 @@ export class FileWatcher extends EventEmitter {
       '**/.dome/**',
       '**/node_modules/**',
       '**/.DS_Store',
-      '**/todo.md',
-      '**/.index.json',
-      '**/INDEX.md',
+      /todo\.md$/,      // Use regex for todo.md files
+      /\.index\.json$/, // Use regex for .index.json files
+      /INDEX\.md$/,     // Use regex for INDEX.md files
       ...(options.ignored || []),
     ];
   }

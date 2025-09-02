@@ -17,7 +17,7 @@ export interface WatcherConfig {
     fileChangeMs: number;
     awaitWriteFinish: boolean;
   };
-  ignore: string[];
+  ignore: (string | RegExp)[];
 }
 
 /**
@@ -26,14 +26,15 @@ export interface WatcherConfig {
  */
 export function getWatcherConfig(): WatcherConfig {
   // Default ignore patterns plus any custom ones from environment
-  const defaultIgnore = [
+  // Note: Using regex patterns for better matching with chokidar
+  const defaultIgnore: (string | RegExp)[] = [
     '**/.git/**',
     '**/.dome/**',
     '**/node_modules/**',
     '**/.DS_Store',
-    '**/todo.md',
-    '**/.index.json',
-    '**/INDEX.md',
+    /todo\.md$/,       // Matches any todo.md file
+    /\.index\.json$/,  // Matches any .index.json file  
+    /INDEX\.md$/,      // Matches any INDEX.md file
     '**/*.tmp',
     '**/*~',
     '**/.#*',

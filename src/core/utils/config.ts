@@ -186,10 +186,11 @@ export const config = {
   // AI settings
   ai: {
     models: {
-      default: rawConfig.DOME_DEFAULT_MODEL || 'gpt-5-mini',
+      default: rawConfig.DOME_DEFAULT_MODEL || 'gpt-4o-mini',
       embedding: rawConfig.DOME_EMBEDDING_MODEL || 'text-embedding-3-small',
-      summarizer: rawConfig.DOME_SUMMARIZER_MODEL || 'gpt-5-mini',
-      frontmatter: rawConfig.DOME_FRONTMATTER_MODEL || 'gpt-5-mini',
+      summarizer: rawConfig.DOME_SUMMARIZER_MODEL || 'gpt-4.1-mini',
+      todoExtraction: 'gpt-4o-mini',
+      frontmatter: rawConfig.DOME_FRONTMATTER_MODEL || 'gpt-4o-mini',
       notesAgent: rawConfig.DOME_NOTES_AGENT_MODEL || 'gpt-5-mini',
       tasksAgent: rawConfig.DOME_TASKS_AGENT_MODEL || 'gpt-5-mini',
     },
