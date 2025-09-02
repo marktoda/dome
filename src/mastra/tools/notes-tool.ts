@@ -7,15 +7,7 @@ import { toRel } from '../../core/utils/path-utils.js';
 import { FolderContextService } from '../../core/services/FolderContextService.js';
 import { debugLogger } from '../../cli/chat/utils/debugLogger.js';
 
-interface NotesTools {
-  vaultContextTool: any;
-  getNoteTool: any;
-  writeNoteTool: any;
-  removeNoteTool: any;
-  searchNotesTool: any;
-}
-
-export function getNotesTools(): NotesTools {
+export function getNotesTools() {
   const contextService = new FolderContextService();
   const noteService = new NoteService();
   const noteSearchService = new NoteSearchService(noteService);
@@ -67,19 +59,22 @@ export function getNotesTools(): NotesTools {
         body: z.string().optional(),
         fullPath: z.string().optional(),
       }),
-      execute: async ({ context }) => {
-        debugLogger.debug(`getNoteTool called for: ${context.path}`, 'AI-Tool');
+      execute: async (executionContext) => {
+        const { path } = executionContext.context;
+        debugLogger.debug(`getNoteTool called for: ${path}`, 'AI-Tool');
         // Track note access for the Chat TUI sidebar
-        trackActivity('document', context.path);
-        const note = await noteService.getNote(toRel(context.path) as NoteId);
+        trackActivity('document', path);
+        const note = await noteService.getNote(toRel(path) as NoteId);
         if (note) {
-          debugLogger.debug(`Successfully retrieved note: ${context.path}`, 'AI-Tool');
+          debugLogger.debug(`Successfully retrieved note: ${path}`, 'AI-Tool');
+          debugLogger.debug(`Note content length: ${note.body?.length || 0} chars`, 'AI-Tool');
+          debugLogger.debug(`Note has body: ${!!note.body}`, 'AI-Tool');
           return {
             found: true,
             ...note
           };
         } else {
-          debugLogger.warn(`Note not found: ${context.path}`, 'AI-Tool');
+          debugLogger.warn(`Note not found: ${path}`, 'AI-Tool');
           return {
             found: false
           };
@@ -107,10 +102,11 @@ export function getNotesTools(): NotesTools {
         type: z.enum(['created', 'updated']),
         oldContent: z.string().optional(),
       }),
-      execute: async ({ context }) => {
-        debugLogger.debug(`writeNoteTool called for: ${context.path}`, 'AI-Tool');
-        const result = await noteService.writeNote(toRel(context.path) as NoteId, context.content);
-        debugLogger.info(`Note written: ${context.path} (${result.type})`, 'AI-Tool');
+      execute: async (executionContext) => {
+        const { path, content, title, tags } = executionContext.context;
+        debugLogger.debug(`writeNoteTool called for: ${path}`, 'AI-Tool');
+        const result = await noteService.writeNote(toRel(path) as NoteId, content);
+        debugLogger.info(`Note written: ${path} (${result.type})`, 'AI-Tool');
         return result;
       },
     }),
@@ -124,10 +120,11 @@ export function getNotesTools(): NotesTools {
       outputSchema: z.object({
         removedContent: z.string(),
       }),
-      execute: async ({ context }) => {
-        debugLogger.debug(`removeNoteTool called for: ${context.path}`, 'AI-Tool');
-        const result = await noteService.removeNote(toRel(context.path) as NoteId);
-        debugLogger.info(`Note removed: ${context.path}`, 'AI-Tool');
+      execute: async (executionContext) => {
+        const { path } = executionContext.context;
+        debugLogger.debug(`removeNoteTool called for: ${path}`, 'AI-Tool');
+        const result = await noteService.removeNote(toRel(path) as NoteId);
+        debugLogger.info(`Note removed: ${path}`, 'AI-Tool');
         return result;
       },
     }),
@@ -147,10 +144,11 @@ export function getNotesTools(): NotesTools {
           tags: z.array(z.string()).optional(),
         })
       ),
-      execute: async ({ context }) => {
-        debugLogger.debug(`searchNotesTool called with query: "${context.query}"`, 'AI-Tool');
+      execute: async (executionContext) => {
+        const { query, k } = executionContext.context;
+        debugLogger.debug(`searchNotesTool called with query: "${query}"`, 'AI-Tool');
         try {
-          const results = await noteSearchService.searchNotes(context.query);
+          const results = await noteSearchService.searchNotes(query);
 
           // Ensure results is an array and handle potential undefined values
           if (!Array.isArray(results)) {

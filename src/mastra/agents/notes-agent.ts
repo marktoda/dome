@@ -4,9 +4,11 @@ import { getNotesTools } from '../tools/notes-tool.js';
 import { config } from '../../core/utils/config.js';
 import { agentInstructions } from '../prompts/PromptRegistry.js';
 
+const tools = getNotesTools();
+
 export const notesAgent = new Agent({
   name: 'Notes Agent',
   instructions: agentInstructions.notesAgent,
   model: openai(config.ai.models.notesAgent),
-  tools: { ...getNotesTools() },
+  tools,
 });
