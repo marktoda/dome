@@ -85,5 +85,6 @@ export const parseTodosWorkflow = createWorkflow({
   description: 'Extract and structure TODO items from text content using AI',
   inputSchema: ParseTodosInputSchema,
   outputSchema: ParseTodosOutputSchema,
-  steps: [parseTodosStep],
-});
+})
+  .then(parseTodosStep)
+  .commit();
