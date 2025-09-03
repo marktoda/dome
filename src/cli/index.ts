@@ -13,6 +13,7 @@ import {
   createWatchStopCommand,
   createWatchStatusCommand,
 } from './commands/watch.js';
+import { createTodoCommand } from './commands/todo.js';
 import { run } from './utils/command-runner.js';
 
 // Suppress noisy debug logs in non-debug CLI mode
@@ -79,6 +80,9 @@ program.addCommand(createReorganizeCommand());
 
 // Folder command
 program.addCommand(createFolderCommand());
+
+// Todo command
+program.addCommand(createTodoCommand());
 
 // Watch commands
 program.addCommand(createWatchCommand());

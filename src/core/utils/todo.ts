@@ -1,4 +1,3 @@
-import { config } from '../../core/utils/config.js';
 import path from 'node:path';
 
 export type TaskStatus = 'pending' | 'in-progress' | 'done';
@@ -9,7 +8,13 @@ export interface Task {
   from: string;
 }
 
-export function getTodoPath(): string {
+export async function getTodoPath(vaultPath?: string): Promise<string> {
+  // Allow passing vault path directly, fall back to config if available
+  if (vaultPath) {
+    return path.join(vaultPath, 'todo.md');
+  }
+  // Lazy load config only when needed
+  const { config } = await import('../../core/utils/config.js');
   return path.join(config.DOME_VAULT_PATH, 'todo.md');
 }
 

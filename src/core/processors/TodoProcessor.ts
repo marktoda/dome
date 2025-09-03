@@ -72,7 +72,7 @@ export class TodoProcessor extends FileProcessor {
   }
 
   private async updateCentralTodoList(noteId: string, newTasks: Task[]): Promise<void> {
-    const todoPath = getTodoPath();
+    const todoPath = await getTodoPath();
 
     // Read existing todos
     let existingTasks: Task[] = [];
