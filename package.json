@@ -76,8 +76,8 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^24.0.13",
-    "@types/react": "^19.1.8",
+    "@types/node": "^24.4.0",
+    "@types/react": "^19.1.13",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^7.8.0",
     "@typescript-eslint/parser": "^7.8.0",
