@@ -39,7 +39,7 @@
     "node": ">=20.9.0"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.23",
+    "@ai-sdk/openai": "^2.0.39",
     "@lancedb/lancedb": "^0.21.1",
     "@mastra/core": "^0.15.2",
     "@mastra/libsql": "^0.13.7",
