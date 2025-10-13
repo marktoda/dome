@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.23",
-    "@lancedb/lancedb": "^0.21.1",
+    "@lancedb/lancedb": "^0.22.2",
     "@mastra/core": "^0.15.2",
     "@mastra/libsql": "^0.13.7",
     "@mastra/loggers": "^0.10.9",
