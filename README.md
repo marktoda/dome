@@ -14,23 +14,47 @@ Turn plain Markdown into a searchable, self-organising second brain – all from
 ## 🚀 Quick Start
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 npm install
 
-# Build the CLI (needed once after each pull)
+# 2. Set up environment configuration
+cp .env.example .env
+# Edit .env with your OpenAI API key and other settings
+
+# 3. Build the CLI
 npm run build
 
-# Link the binary so 'dome' is available on your PATH
+# 4. Link the binary so 'dome' is available on your PATH
 npm link
 
-# Configure your environment
-export OPENAI_API_KEY="sk-..."                  # Required for AI features
-export DOME_VAULT_PATH="$HOME/notes"            # Optional (default: ~/dome)
-export LANCE_DB_PATH="$HOME/.cache/dome"        # Optional (default: vault/.vector_db)
+# 5. Set up PostgreSQL with vector support (for semantic search)
+docker run --name dome-postgres \
+  -e POSTGRES_DB=dome \
+  -e POSTGRES_USER=dome \
+  -e POSTGRES_PASSWORD=dome123 \
+  -p 5433:5432 \
+  -d pgvector/pgvector:pg15
 
-# Launch interactive chat mode
-dome
+# Enable vector extension
+docker exec dome-postgres psql -U dome -d dome -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 6. Test the setup
+dome list
+
+# 7. Create your first note
+dome new "My first note"
+
+# 8. Index notes for search
+dome index
 ```
+
+### Environment Configuration
+
+Copy `.env.example` to `.env` and configure:
+
+- **`OPENAI_API_KEY`** - Required for AI features ([Get one here](https://platform.openai.com/api-keys))
+- **`DOME_VAULT_PATH`** - Where your notes are stored (default: `~/dome`)
+- **`POSTGRES_URI`** - Database connection for vector search
 
 ## 💻 CLI Commands
 

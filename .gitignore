@@ -6,3 +6,5 @@ build/
 .npm-global/
 bin/
 result
+
+.env
