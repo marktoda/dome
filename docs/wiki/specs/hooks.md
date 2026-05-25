@@ -94,22 +94,22 @@ hooks:
     auto-cross-reference: disabled    # for vaults that don't want auto-backlinking
 ```
 
-## Opt-in intake patterns (opt-in — not active by default)
+## Intake patterns — shipped-default and opt-in
 
-The SDK ships hook *templates* for common intake patterns. These are NOT active in a fresh vault; the user enables them by copying the template YAML from the SDK's `hooks/templates/` into `<vault>/.dome/hooks/` and creating the `inbox/<bucket>/` directory the template listens on. A future "packs" mechanism may layer convenience over this; v0.5 keeps activation explicit.
+The SDK ships five hook *templates* for intake patterns. One is shipped-default; the other four are opt-in:
 
-| Template name | Path pattern | Workflow invoked |
-|---|---|---|
-| `intake-raw` | `inbox/raw/*` | `ingest` |
-| `intake-voice` | `inbox/voice/*` | `voice-ingest` |
-| `intake-research` | `inbox/research/*` | `research` |
-| `intake-clip` | `inbox/clip/*` | `clip-integrate` |
+| Template name | Tier | Path pattern | Workflow invoked |
+|---|---|---|---|
+| `intake-raw` | shipped default | `inbox/raw/*` | `ingest` |
+| `intake-voice` | opt-in | `inbox/voice/*` | `voice-ingest` |
+| `intake-research` | opt-in | `inbox/research/*` | `research` |
+| `intake-clip` | opt-in | `inbox/clip/*` | `clip-integrate` |
+
+`dome init` creates `inbox/raw/` AND ships `.dome/hooks/intake-raw.yaml` — quick-capture works out of the box. The other four templates are inert until the user activates them by copying the template YAML from the SDK's `hooks/templates/` directory into `<vault>/.dome/hooks/` and creating the corresponding `inbox/<bucket>/` directory. A vault never has an `inbox/<bucket>/` it didn't explicitly enable (other than the default `inbox/raw/`).
 
 The `sensitivity-classify` workflow is NOT in this table. It is not a hook — it is a sub-workflow invoked *inside* the `ingest` workflow when the `SENSITIVE_GOES_TO_INBOX` invariant is enabled. See [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] §"Activation checklist" for the override mechanism. The classification must run *before* `writeDocument` is called (so the invariant can gate the write destination); a post-write hook would not have that property.
 
-Activation is manual in v0.5: copy the template YAML from the SDK's `hooks/templates/` directory into `<vault>/.dome/hooks/`, then create the `inbox/<bucket>/` directory the template listens on. A vault never has an `inbox/<bucket>/` it didn't explicitly create.
-
-`dome init` does not pre-create any intake. The vault ships bare; users add what they need. Future "packs" or "presets" may layer one-command activation over this; v0.5 keeps the activation flow minimal.
+A future "packs" or "presets" mechanism may layer one-command activation over the manual opt-in flow; v0.5 keeps the activation explicit.
 
 ### `inbox/review/` — opt-in sensitivity destination
 
@@ -277,7 +277,7 @@ Tools are the only mutation surface. Hooks are the only reaction surface. Every 
 - "Schedule daily lint" → declarative hook on `clock.tick.daily` invoking the `lint` workflow.
 - "Auto-cross-reference new entities" → the shipped `auto-cross-reference` hook (or your own variant).
 
-If a feature can't be expressed as Tool registration + Hook registration, the four-concept core is missing something. The intent is to keep the core stable; new behavior surfaces should not appear.
+If a feature can't be expressed as Tool registration + Hook registration, the four-concept core is missing something. The four-concept core is sealed; new behavior surfaces do not appear in v0.5. Future extension lands via Tool registration + Hook registration, never as new core primitives.
 
 ## Why this design
 

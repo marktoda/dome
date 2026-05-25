@@ -17,7 +17,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 ## Invariants
 
-Five axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline.
+Six axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline.
 
 - [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces an appendLog call.
 - [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Hooks observe and call Tools; never mutate directly.
