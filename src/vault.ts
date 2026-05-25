@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ok, err, type Result, type ToolError } from "./types";
+import { ok, err, type Effect, type Result, type ToolError, type ToolReturn } from "./types";
 import { isGitRepo } from "./git";
 import { makeDispatcher, type Dispatcher } from "./dispatcher";
 import { readDocument, type ReadDocumentInput } from "./tools/read-document";
@@ -12,6 +12,11 @@ import { searchIndex, type SearchIndexInput } from "./tools/search-index";
 import { wikilinkResolve, type WikilinkResolveInput } from "./tools/wikilink-resolve";
 import { moveDocument, type MoveDocumentInput } from "./tools/move-document";
 import { deleteDocument, type DeleteDocumentInput } from "./tools/delete-document";
+import { HookRegistry } from "./hook-registry";
+import { HookDispatcher } from "./hook-dispatcher";
+import { autoUpdateIndex } from "./hooks/auto-update-index";
+import { autoCrossReference } from "./hooks/auto-cross-reference";
+import { projectEffectsToEvents } from "./event-projection";
 
 export interface VaultConfig {
   invariants: Record<string, "enabled" | "disabled">;
@@ -45,6 +50,12 @@ export interface Vault {
   readonly pageTypes: PageTypesConfig;
   readonly dispatcher: Dispatcher;
   readonly tools: BoundToolSurface;
+  /**
+   * Wait for all async hooks dispatched so far to settle.
+   * Built-in shipped-default hooks are async by default; tests and reconcile
+   * call this to ensure deterministic state.
+   */
+  drainHooks: () => Promise<void>;
 }
 
 async function findVaultRoot(start: string): Promise<string | null> {
@@ -111,14 +122,68 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   }
   const dispatcher = makeDispatcher(root);
   const partial = { path: root, config, pageTypes, dispatcher } as Vault;
+
+  // Hook wiring — shipped-default registrations gated by config.
+  const registry = new HookRegistry();
+  if (config.hooks.builtin["auto-update-index"] === "enabled") {
+    registry.register({
+      id: "auto-update-index",
+      pattern: "document.written.wiki.*",
+      handler: autoUpdateIndex,
+      source: "sdk",
+      async: true,
+      idempotent: true,
+    });
+  }
+  if (config.hooks.builtin["auto-cross-reference"] === "enabled") {
+    registry.register({
+      id: "auto-cross-reference",
+      pattern: "document.written.wiki.entity",
+      handler: autoCrossReference,
+      source: "sdk",
+      async: true,
+      idempotent: true,
+    });
+  }
+  const hookDispatcher = new HookDispatcher(registry, {
+    maxCausationDepth: config.hooks.max_causation_depth,
+  });
+
+  // wrap: after a Tool returns, project its Effects into events and dispatch.
+  // Built-in handlers receive `dispatcher` in their HookContext (per
+  // HOOKS_CANNOT_BYPASS_TOOLS — only built-in handlers may use the privileged
+  // dispatcher API for index/log writes).
+  const wrap = <I, R extends ToolReturn<unknown>>(
+    fn: (input: I) => Promise<R>
+  ): ((input: I) => Promise<R>) => {
+    return async (input: I): Promise<R> => {
+      const out = await fn(input);
+      const effects: ReadonlyArray<Effect> = out.effects;
+      const events = projectEffectsToEvents(effects);
+      if (events.length > 0) {
+        const ctx = { tools, vault: { path: root }, dispatcher };
+        await hookDispatcher.dispatchEvents(events, ctx);
+      }
+      return out;
+    };
+  };
+
   const tools: BoundToolSurface = {
     readDocument: (input) => readDocument(partial, input),
-    writeDocument: (input) => writeDocument(partial, dispatcher, input),
-    appendLog: (input) => appendLog(partial, dispatcher, input),
+    writeDocument: wrap((input: WriteDocumentInput) => writeDocument(partial, dispatcher, input)),
+    appendLog: wrap((input: AppendLogInput) => appendLog(partial, dispatcher, input)),
     searchIndex: (input) => searchIndex(partial, input),
     wikilinkResolve: (input) => wikilinkResolve(partial, input),
-    moveDocument: (input) => moveDocument(partial, dispatcher, input),
-    deleteDocument: (input) => deleteDocument(partial, dispatcher, input),
+    moveDocument: wrap((input: MoveDocumentInput) => moveDocument(partial, dispatcher, input)),
+    deleteDocument: wrap((input: DeleteDocumentInput) => deleteDocument(partial, dispatcher, input)),
   };
-  return ok({ path: root, config, pageTypes, dispatcher, tools });
+
+  return ok({
+    path: root,
+    config,
+    pageTypes,
+    dispatcher,
+    tools,
+    drainHooks: () => hookDispatcher.drain(),
+  });
 }
