@@ -37,11 +37,9 @@ A Dome vault is a directory containing:
     hooks/              # vault-local hooks: *.ts (programmatic) and *.yaml (declarative)
     tools/              # vault-local tool additions (rarely used)
     cli/                # vault-local CLI command additions (rarely used)
-    in-flight/          # derived: lockfiles for in-flight hooks (gitignored)
     state/              # derived: scheduled.json, last-reconciled-sha.txt (gitignored)
-    cache/              # derived: reserved for plugin per-handler caches (gitignored)
   .git/                 # git repository (axiom: every Dome vault is a git repo)
-  .gitignore            # excludes .dome/in-flight/, .dome/state/, .dome/cache/
+  .gitignore            # excludes .dome/state/ (per-machine operational state)
 ```
 
 `dome init` creates the tier-1 axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `.git/` via `git init`. Additional `inbox/<bucket>/` directories (`voice/`, `research/`, `clip/`, `review/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Opt-in intake patterns."
@@ -55,18 +53,18 @@ What gets committed to git:
 - `VISION.md`, `README.md`, `index.md`, `log.md` — committed.
 - `raw/`, `notes/`, `wiki/`, `inbox/` — all committed. Reconciliation works against committed AND uncommitted state.
 - `.dome/page-types.yaml`, `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/`, `.dome/tools/`, `.dome/cli/` — committed (these are the vault's identity).
-- `.dome/in-flight/`, `.dome/state/`, `.dome/cache/` — **gitignored** (per-machine operational state).
+- `.dome/state/` — **gitignored** (per-machine operational state: `last-reconciled-sha.txt` + `scheduled.json`).
 
 ### Derived operational state under `.dome/`
 
 | Path | Role | If deleted |
 |---|---|---|
-| `.dome/in-flight/<handler>-<event-id>.json` | Lockfile written when a hook starts; deleted on completion | In-flight hooks lose recovery info; next reconcile re-fires what can be detected from git/inbox state |
 | `.dome/state/last-reconciled-sha.txt` | The SHA at which the last `dome reconcile` completed | Next reconcile treats every file as changed; idempotent so safe |
 | `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next reconcile fires every scheduled hook once |
-| `.dome/cache/` | Reserved for plugin-defined per-handler caches | Plugins rebuild on next event |
 
-All four are derived state: deleting them doesn't lose canonical knowledge; deleting them just causes the next reconciliation to do more work. The vault's markdown content (under `wiki/`, `raw/`, etc.) is the only canonical surface.
+Both files are derived state: deleting them doesn't lose canonical knowledge; deleting them just causes the next reconciliation to do more work. The vault's markdown content (under `wiki/`, `raw/`, etc.) is the only canonical surface.
+
+(Plugins that need their own caches create their own subdirectories under `.dome/<plugin-name>/cache/` and gitignore them in the vault's `.gitignore`. The SDK base ships no `.dome/cache/` directory.)
 
 ## Category derivation
 
@@ -103,14 +101,14 @@ extensions:
   - <vault-defined>
 ```
 
-`writePage` rejects writes whose path implies an unknown type. See [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]].
+`writeDocument` rejects writes whose path implies an unknown type. See [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]].
 
 ## Ownership rules
 
 | Directory | Owner | Mutability |
 |---|---|---|
 | `raw/` | User (or `dome capture`) | Immutable after creation. `RAW_IS_IMMUTABLE`. |
-| `wiki/` | Dome (via Tools) | Mutable through `writePage`, `moveDocument`. |
+| `wiki/` | Dome (via Tools) | Mutable through `writeDocument`, `moveDocument`. |
 | `notes/` | User | Dome reads, never writes. |
 | `inbox/` | User writes; Dome's intake hooks consume | Writes by user are normal; Dome consumes (moves or deletes) during processing. |
 | `index.md` | Dome (via `updateIndex`) | Mutable through one Tool only. |

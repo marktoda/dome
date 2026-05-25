@@ -14,7 +14,7 @@ tier: axiom
 
 **Why:** Trust in the synthesized wiki depends on knowing the inputs were not retroactively rewritten. If raw sources were mutable, the agent could revise its own "evidence" — a corruption surface that breaks provenance. The wiki cites raws; raws cite reality.
 
-**Structural enforcement:** `writePage` and `moveDocument` both check `document.category` (derived from `path`) and refuse with `Result.err({ kind: 'invariant-violated', invariant: 'RAW_IS_IMMUTABLE' })` if the target is under `raw/`. There is no Tool that modifies raw file frontmatter; reverse references from raws to wiki pages are computed on demand from wiki frontmatter (via `dome doctor --show raw-citations`), not stored.
+**Structural enforcement:** `writeDocument` and `moveDocument` both check `document.category` (derived from `path`) and refuse with `Result.err({ kind: 'invariant-violated', invariant: 'RAW_IS_IMMUTABLE' })` if the target is under `raw/`. There is no Tool that modifies raw file frontmatter; reverse references from raws to wiki pages are computed on demand from wiki frontmatter (via `dome doctor --show raw-citations`), not stored.
 
 **Counter-example:** An agent attempts `writePage('raw/2026-05-25-voice-note.md', body, frontmatter)`. The Tool detects `category === 'raw'` and refuses. The Effect is `{ kind: 'invariant-violation', invariant: 'RAW_IS_IMMUTABLE', attempted_path: ... }`; the violation is logged but no mutation occurs.
 

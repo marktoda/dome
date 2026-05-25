@@ -16,11 +16,11 @@ tier: shipped-default
 
 **Structural enforcement:** `writePage(path, ...)` parses `path`, extracts the directory immediately under `wiki/`, and checks against the allowed-types list from `page-types.yaml`. Writes to unknown subdirectories (e.g., `wiki/decisions/`) are rejected. Writes to allowed subdirectories must carry a matching `type:` frontmatter value or the Tool rejects with `kind: 'frontmatter-mismatch'`.
 
-**Counter-example:** A new contributor decides "decision" deserves its own page type and starts writing `wiki/decisions/atlas-platform-split.md`. Without an entry in `page-types.yaml`, `writePage` refuses. The right path: add `decisions` to the `extensions:` block in `.dome/page-types.yaml`; declare any per-type frontmatter schema; then writes succeed. The decision to expand the type system is explicit and vault-scoped, not accidental.
+**Counter-example:** A new contributor decides "decision" deserves its own page type and starts writing `wiki/decisions/atlas-platform-split.md`. Without an entry in `page-types.yaml`, `writeDocument` refuses. The right path: add `decisions` to the `extensions:` block in `.dome/page-types.yaml`; declare any per-type frontmatter schema; then writes succeed. The decision to expand the type system is explicit and vault-scoped, not accidental.
 
-**Counter-example #2:** A page at `wiki/entities/danny.md` carries `type: concept` in its frontmatter (typo). The directory says entity; the frontmatter says concept. `writePage` rejects with `kind: 'frontmatter-mismatch'`; the directory wins. `dome doctor` reports any pre-existing pages with this drift.
+**Counter-example #2:** A page at `wiki/entities/danny.md` carries `type: concept` in its frontmatter (typo). The directory says entity; the frontmatter says concept. `writeDocument` rejects with `kind: 'frontmatter-mismatch'`; the directory wins. `dome doctor` reports any pre-existing pages with this drift.
 
-**Test guarantee:** `tests/invariants/page-type-by-directory.test.ts` — for each default page type, asserts `writePage` accepts a matching directory + frontmatter pair. Asserts it rejects unknown subdirectories. Asserts it rejects directory/frontmatter mismatches. Asserts `dome doctor` reports both kinds of drift.
+**Test guarantee:** `tests/invariants/page-type-by-directory.test.ts` — for each default page type, asserts `writeDocument` accepts a matching directory + frontmatter pair. Asserts it rejects unknown subdirectories. Asserts it rejects directory/frontmatter mismatches. Asserts `dome doctor` reports both kinds of drift.
 
 **Related:**
 - [[wiki/specs/page-schema]]

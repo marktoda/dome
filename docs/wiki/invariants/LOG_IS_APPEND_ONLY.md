@@ -14,7 +14,7 @@ tier: axiom
 
 **Why:** The log is the audit trail. Operations on the vault are reconstructable from the log alone. If entries could be rewritten, agent behavior would lose its history-of-record property and trust falls.
 
-**Structural enforcement:** `appendLog(entry)` is the only Tool whose `effects` array contains `{ kind: 'appended-log' }`. It opens `log.md`, seeks to the end, writes the formatted entry, and closes. `writePage` and `moveDocument` explicitly do not accept `log.md` as a target.
+**Structural enforcement:** `appendLog(entry)` is the only Tool whose `effects` array contains `{ kind: 'appended-log' }`. It opens `log.md`, seeks to the end, writes the formatted entry, and closes. `writeDocument` and `moveDocument` explicitly do not accept `log.md` as a target.
 
 **Counter-example:** A "log compaction" plugin decides log.md is too large and rewrites it with summarized entries. Violation. The right design: a separate archival tool that writes a frozen copy to `log-archive/YYYY-MM.md` and starts a fresh log.md — the original is never mutated in place.
 

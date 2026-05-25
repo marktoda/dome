@@ -7,7 +7,7 @@ sources: ["[[raw/original-architecture]]", "[[cohesive/brainstorms/2026-05-25-do
 
 # Page schema
 
-This spec is normative for the frontmatter contract on Dome pages. `writePage` validates frontmatter against this schema and rejects malformed input. The schema is intentionally minimal — required fields capture provenance and identity; optional fields are open for extension.
+This spec is normative for the frontmatter contract on Dome pages. `writeDocument` validates frontmatter against this schema and rejects malformed input. The schema is intentionally minimal — required fields capture provenance and identity; optional fields are open for extension.
 
 ## Universal frontmatter (every wiki page)
 
@@ -123,7 +123,7 @@ extensions:
       severity: low | medium | high
 ```
 
-`writePage` validates the type-specific frontmatter for extension types against this declaration. Unknown fields trigger a soft warning (logged to `log.md`) but not a rejection — pages can carry vault-specific metadata that the SDK doesn't validate.
+`writeDocument` validates the type-specific frontmatter for extension types against this declaration. Unknown fields trigger a soft warning (logged to `log.md`) but not a rejection — pages can carry vault-specific metadata that the SDK doesn't validate.
 
 ## Body conventions
 
@@ -145,7 +145,7 @@ When a page type's frontmatter schema changes:
 ## Related
 
 - [[wiki/specs/vault-layout]] — directory structure.
-- [[wiki/specs/sdk-surface]] — `writePage` Tool.
+- [[wiki/specs/sdk-surface]] — `writeDocument` Tool.
 - [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]] — type is the directory.
 - [[wiki/invariants/WIKILINKS_ARE_FULLPATH]] — wikilink convention.
 - [[wiki/invariants/PAGE_CREATION_REQUIRES_RECURRENCE]] — new pages need a reason.

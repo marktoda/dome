@@ -9,7 +9,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 # Out-of-band vault edits
 
-**Symptom:** The user edits a wiki page in Obsidian. The next Dome `writePage` to that page references stale data, or the page now violates an invariant (e.g., the user added a short-form wikilink that breaks `WIKILINKS_ARE_FULLPATH`). The index doesn't reflect the user's edit until something rebuilds it.
+**Symptom:** The user edits a wiki page in Obsidian. The next Dome `writeDocument` to that page references stale data, or the page now violates an invariant (e.g., the user added a short-form wikilink that breaks `WIKILINKS_ARE_FULLPATH`). The index doesn't reflect the user's edit until something rebuilds it.
 
 **Root cause:** Markdown is the source of truth (`MARKDOWN_IS_SOURCE_OF_TRUTH`). The user is welcome to edit anywhere — Obsidian, vim, GitHub web editor, anywhere. Dome's Tools are not the only mutation path; they're the only *Dome-managed* mutation path. Out-of-band edits are *expected*, not an error.
 
@@ -17,7 +17,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 - The filesystem watcher (started by `dome serve`) detects out-of-band writes and emits `vault.out-of-band-edit` events. Hooks observing this event can invalidate caches, sync to remote, alert, etc.
 - `dome doctor` reads the markdown directly and reports any invariant violations introduced by out-of-band edits (short-form wikilinks, missing index entries, type/directory mismatches, frontmatter schema drift).
-- The next Dome `writePage` to a page that has out-of-band edits will fail if those edits introduced an invariant violation. The user sees the error, runs `dome doctor` to identify the violation, fixes it (in Obsidian or via Dome), then retries.
+- The next Dome `writeDocument` to a page that has out-of-band edits will fail if those edits introduced an invariant violation. The user sees the error, runs `dome doctor` to identify the violation, fixes it (in Obsidian or via Dome), then retries.
 
 **Why this is design, not a bug:**
 

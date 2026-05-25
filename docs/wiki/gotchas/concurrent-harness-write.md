@@ -9,14 +9,14 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 # Concurrent harness write
 
-**Symptom:** Two Claude Code sessions are open in the same vault. Both ingest something at the same time. Both call `writePage` to the same target. The second write clobbers the first. The first user's intended update is lost.
+**Symptom:** Two Claude Code sessions are open in the same vault. Both ingest something at the same time. Both call `writeDocument` to the same target. The second write clobbers the first. The first user's intended update is lost.
 
 **Root cause:** v0.5's SDK is single-process per Vault instance, but nothing prevents multiple instances from running concurrently against the same vault directory. Each MCP server (one per harness session) opens its own Vault instance; neither knows about the other.
 
-**Structural mitigation:** **Timestamp-based optimistic locking on `writePage`.**
+**Structural mitigation:** **Timestamp-based optimistic locking on `writeDocument`.**
 
-- Every `writePage` call records the target page's `mtime` (or git revision SHA if the vault is dirty-free) when the page is read.
-- At write time, `writePage` checks: is the on-disk `mtime` still what we read? If yes, write. If no, fail with `Result.err({ kind: 'concurrent-write-conflict', expected_mtime, actual_mtime })`.
+- Every `writeDocument` call records the target page's `mtime` (or git revision SHA if the vault is dirty-free) when the page is read.
+- At write time, `writeDocument` checks: is the on-disk `mtime` still what we read? If yes, write. If no, fail with `Result.err({ kind: 'concurrent-write-conflict', expected_mtime, actual_mtime })`.
 - The agent receiving the conflict error re-reads the page, integrates the other harness's update, and re-proposes. The user sees a brief "the page was updated by another session; merging..." in chat.
 
 **Specific scenarios:**
@@ -36,6 +36,6 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 Concurrent writes across devices (laptop and phone) are structurally identical to concurrent writes across harness sessions. The same optimistic-locking primitive scales, but the conflict-resolution UI needs care: the user sees the conflict on their phone or laptop and the surfacing must be device-appropriate.
 
 **Related:**
-- [[wiki/specs/sdk-surface]] §"Tool catalog" (`writePage`)
+- [[wiki/specs/sdk-surface]] §"Tool catalog" (`writeDocument`)
 - [[wiki/gotchas/multi-page-partial-write]]
 - [[wiki/gotchas/out-of-band-vault-edits]]

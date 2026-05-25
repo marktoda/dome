@@ -67,22 +67,25 @@ type Effect =
 
 Tools never throw on invariant violations. They return `Result.err({ kind: 'invariant-violated', invariant: 'RAW_IS_IMMUTABLE', detail: ... })`. Throwing is reserved for SDK bugs.
 
-#### Tool catalog (the six)
+#### Tool catalog (the seven)
 
-The SDK ships exactly **six Tools**. Anything beyond mutation primitives is a workflow (a prompt the agent loads) or a hook (a handler against events) — see the anti-concept list below.
+The SDK ships exactly **seven Tools**. Anything beyond mutation primitives is a workflow (a prompt the agent loads) or a hook (a handler against events) — see the anti-concept list below.
+
+Naming convention: Tools that operate on any Document use `<verb>Document`; Tools that operate on a specific Dome surface (`log.md`, the index, wikilinks) use their surface-specific name.
 
 | Tool | Purpose | Invariants enforced (axioms in **bold**) |
 |---|---|---|
-| `readPage` | Read a Document by path. | — |
-| `writePage` | Create or update a Document anywhere in the vault. | **`RAW_IS_IMMUTABLE`**, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `EVERY_WRITE_IS_LOGGED` (auto), opt-in: `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE` |
+| `readDocument` | Read a Document by path. | — |
+| `writeDocument` | Create or update a Document anywhere in the vault. | **`RAW_IS_IMMUTABLE`**, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `EVERY_WRITE_IS_LOGGED` (auto), opt-in: `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE` |
 | `appendLog` | Append an entry to `log.md`. The only mutation primitive for `log.md`. | **`LOG_IS_APPEND_ONLY`** |
 | `searchIndex` | Search the index + page bodies for matches. | — |
 | `wikilinkResolve` | Resolve a wikilink to a Document or `null`. | `WIKILINKS_ARE_FULLPATH` |
-| `moveDocument` | Move a Document. Refuses if either path is under `raw/`. | **`RAW_IS_IMMUTABLE`**, `EVERY_WRITE_IS_LOGGED` (auto), `PAGE_TYPE_BY_DIRECTORY` |
+| `moveDocument` | Move a Document; rewrites incoming wikilinks atomically. Refuses if either path is under `raw/`. | **`RAW_IS_IMMUTABLE`**, `EVERY_WRITE_IS_LOGGED` (auto), `PAGE_TYPE_BY_DIRECTORY` |
+| `deleteDocument` | Delete a Document. Refuses under `raw/`. Fires `document.deleted.<category>.<type>` so cleanup hooks can react. | **`RAW_IS_IMMUTABLE`**, `EVERY_WRITE_IS_LOGGED` (auto) |
 
-`writePage` is the universal mutation entrypoint. Sensitive content writes to `inbox/review/<file>.md`; ingest writes to `wiki/<type>/<name>.md`; quick-capture writes to `inbox/raw/<ts>.md`. The path determines the category and the invariant-enforcement profile.
+`writeDocument` is the universal mutation entrypoint for creates and updates. `moveDocument` atomically relocates + rewrites backlinks. `deleteDocument` removes pages cleanly (lint proposes deleting orphan pages; users retire obsolete syntheses; migrate may delete superseded files). Sensitive content writes to `inbox/review/<file>.md`; ingest writes to `wiki/<type>/<name>.md`; quick-capture writes to `inbox/raw/<ts>.md`. The path determines the category and the invariant-enforcement profile.
 
-The catalog is open: plugins register additional Tools through the registration mechanism. The six above are the entirety of what the SDK ships.
+The catalog is open: plugins register additional Tools through the registration mechanism. The seven above are the entirety of what the SDK ships.
 
 ### Hook
 
@@ -98,7 +101,7 @@ Events are derived from Effects automatically; there is no `fireEvent` API. See 
 **Two shipped default hooks** ride in the SDK as enabled-by-default:
 
 - `auto-update-index` — on `document.written.wiki.*` and `document.deleted.wiki.*`, writes the affected index entries via `writePage(index.md, ...)`.
-- `auto-cross-reference` — on `document.written.wiki.entity`, searches the wiki for mentions of the new entity and proposes backlinks via `writePage`.
+- `auto-cross-reference` — on `document.written.wiki.entity`, searches the wiki for mentions of the new entity and proposes backlinks via `writeDocument`.
 
 Both can be disabled in `.dome/config.yaml` for vaults that don't want them. The Dome project's docs vault leaves both enabled.
 
@@ -170,14 +173,22 @@ Bun built-ins used directly (no extra dependency): `Bun.write` (atomic file writ
 
 ### Derived operational state on disk
 
-Three directories under `<vault>/.dome/` hold operational state that is NOT canonical (gitignored, rebuildable):
+Two files under `<vault>/.dome/` hold operational state that is NOT canonical (gitignored, rebuildable):
 
-- `.dome/in-flight/<handler>-<event-id>.json` — lockfiles for hooks currently executing. Written at hook start, deleted at completion. Reconciliation walks this directory to re-fire crashed hooks.
 - `.dome/state/last-reconciled-sha.txt` — the git SHA of the last successful `dome reconcile`. Reconciliation diffs against this.
 - `.dome/state/scheduled.json` — last-fire timestamps for scheduled hooks. Reconciliation uses these to catch up missed intervals.
-- `.dome/cache/` — reserved for plugin-defined caches; empty in the v0.5 SDK base.
 
-All four are derived state. Deleting them does not lose canonical knowledge — it just causes the next reconciliation pass to do more work (fire more events, re-fire scheduled hooks once). The vault's markdown content (`wiki/`, `raw/`, etc.) is the only canonical surface, per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
+Both are derived state. Deleting them does not lose canonical knowledge — it just causes the next reconciliation pass to do more work (fire `document.written.*` for every file once via git-diff-from-root; re-fire every scheduled hook once). The vault's markdown content (`wiki/`, `raw/`, etc.) is the only canonical surface, per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
+
+**Why no lockfile / in-flight tracking?** Earlier designs included `.dome/in-flight/<handler>-<event-id>.json` lockfiles for crash recovery. They're not needed: with per-workflow atomic commits (see §"Commit policy" below), idempotency contract on hooks (see [[wiki/specs/hooks]]), and `scheduled.json` for scheduled-event catchup, every hook-crash recovery case is covered by `git status` + `git diff` + `scheduled.json`. Adding lockfiles is overhead without solving a real problem.
+
+### Commit policy
+
+Dome workflows commit at completion (per-workflow atomic commit). See [[wiki/specs/hooks]] §"Commit policy" for the full mechanism. The short version: each workflow accumulates Effects in memory; applies them atomically; writes the log.md entry; runs `git add <touched-paths>` then `git commit -m "<log-subject>"`. Hooks (which run as their own workflows) commit independently.
+
+User out-of-band edits remain uncommitted unless the user explicitly commits. Reconciliation handles both via `git diff` (committed) + `git status --porcelain` (uncommitted).
+
+`.dome/config.yaml` `git.auto_commit_workflows` defaults to `true`; set to `false` for manual-only commit control.
 
 ## Why this design
 

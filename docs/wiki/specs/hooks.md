@@ -74,7 +74,7 @@ async: true
 handler: builtin:auto-cross-reference
 ```
 
-Subscribes to new or updated entity-page writes. The handler searches the wiki for **exact name matches** of the entity (case-sensitive; surrounded by word boundaries) in other pages' bodies, and calls `writePage` to add `[[wiki/entities/<name>]]` cross-references at the matching positions. The write is idempotent (the second run produces no diff because the wikilink is already there).
+Subscribes to new or updated entity-page writes. The handler searches the wiki for **exact name matches** of the entity (case-sensitive; surrounded by word boundaries) in other pages' bodies, and calls `writeDocument` to add `[[wiki/entities/<name>]]` cross-references at the matching positions. The write is idempotent (the second run produces no diff because the wikilink is already there).
 
 The handler is conservative: only exact matches trigger writes. Ambiguous matches (e.g., "Mark" could be one of several entities; pluralized forms; case-variants) emit a `cross-reference-candidate` event with the candidates and source; plugins or user hooks can subscribe and apply fuzzy-match heuristics. The shipped default doesn't try to be smart — fewer false positives is more important than catching every reference.
 
@@ -107,7 +107,7 @@ Activation is manual in v0.5: copy the template YAML from the SDK's `hooks/templ
 
 ### `inbox/review/` — opt-in sensitivity destination
 
-`inbox/review/` is the destination for content the `sensitivity-classify` workflow flags as sensitive. It is NOT an intake (no workflow runs on writes to it). It is the user's manual-review queue. When the `SENSITIVE_GOES_TO_INBOX` invariant is enabled (see [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]]) and a vault activates the `sensitivity-classify-on-ingest` hook template, content that's classified sensitive lands in `inbox/review/<filename>.md` via `writePage`. The user opens it in Obsidian or via `dome doctor --show review-queue` and resolves each item.
+`inbox/review/` is the destination for content the `sensitivity-classify` workflow flags as sensitive. It is NOT an intake (no workflow runs on writes to it). It is the user's manual-review queue. When the `SENSITIVE_GOES_TO_INBOX` invariant is enabled (see [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]]) and a vault activates the `sensitivity-classify-on-ingest` hook template, content that's classified sensitive lands in `inbox/review/<filename>.md` via `writeDocument`. The user opens it in Obsidian or via `dome doctor --show review-queue` and resolves each item.
 
 Vaults that don't enable sensitivity classification never have an `inbox/review/` directory.
 
@@ -123,41 +123,50 @@ Vaults that don't enable sensitivity classification never have an `inbox/review/
 
 Hooks are **durable** (crash-safe) and **at-least-once guaranteed** (every event that should have fired eventually does fire, even when `dome serve` isn't running). The mechanism is **state-based reconciliation** built on git (see [[wiki/invariants/VAULT_IS_GIT_REPO]]) — not an event log.
 
-The durability story rests on four observations:
+The durability story rests on three observations:
 
 1. **The vault is canonical.** Filesystem state under `wiki/`, `raw/`, `inbox/`, etc. is the source of truth (per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]). Any "did this hook fire?" question can be answered by comparing current state to a reconciliation checkpoint.
-2. **Git tracks every content change.** `git diff --name-only <last-reconciled-sha> HEAD` + `git status --porcelain` together give us every file that changed since the last successful reconciliation. No custom hash-cache needed.
+2. **Git tracks every content change.** `git diff --name-only <last-reconciled-sha> HEAD` + `git status --porcelain` together give us every file that changed since the last successful reconciliation. No custom hash-cache needed; no per-hook lockfiles needed.
 3. **Inbox files signal pending work.** Per [[wiki/invariants/INBOX_IS_EPHEMERAL]], intake hooks MUST move/delete inbox files on completion. A file's presence in `inbox/<bucket>/` IS the "this is pending" signal.
-4. **In-flight hooks leave lockfiles.** When a hook starts, it writes `.dome/in-flight/<handler-id>-<event-id>.json`. On completion, the lockfile is deleted. On crash, the lockfile survives. Reconciliation re-fires every event whose lockfile is still present.
 
-These four signals are the inputs to `dome reconcile`. No event log is parsed; no log.md scanning; no separate event store.
+These three signals are the inputs to `dome reconcile`. No event log is parsed; no log.md scanning; no separate event store; no per-hook lockfiles.
 
-### The four reconciliation phases
+### Crash recovery without lockfiles
 
-`dome reconcile` (invoked manually or automatically at `dome serve` startup) runs four phases:
+Per-workflow atomic commits (see §"Commit policy" below) combined with the idempotency contract make every hook-crash recovery case derivable from git + filesystem state alone — no lockfile mechanism needed:
+
+| Crash scenario | Recovery |
+|---|---|
+| Workflow committed, hook hasn't fired yet, process died | `git diff <last-sha> HEAD` shows the workflow's commit; reconcile fires the event; hook runs |
+| Workflow committed, hook started but applied no effects, crashed | Same as above — reconcile re-fires from git diff; hook runs from scratch (idempotent) |
+| Workflow committed, hook applied partial effects, didn't commit, crashed | `git status` shows uncommitted partial work. User resolves (`git commit` if intentional; `git reset --hard HEAD` if broken). Reconcile then re-fires; idempotent hook re-runs cleanly. |
+| Workflow committed, hook completed and committed, then crashed | Already complete; no diff visible to reconcile. |
+| Scheduled hook fired, crashed before completion | `scheduled.json.last_fire` wasn't updated. Next reconcile sees interval elapsed; fires again. |
+| External-side-effect hook (notify, sync) crashed mid-call | Hook declared `idempotent: false`; reconcile doesn't re-fire. User accepts at-most-once for external sinks. |
+
+Every case is covered. Lockfiles would add complexity without solving a real problem.
+
+### The three reconciliation phases
+
+`dome reconcile` (invoked manually or automatically at `dome serve` startup) runs three phases:
 
 ```
-Phase 1 — In-flight recovery:
-  for each <handler>-<event-id>.json in .dome/in-flight/:
-    re-fire the event from the lockfile's payload
-    (idempotency contract makes re-fire safe)
-
-Phase 2 — Inbox processing:
+Phase 1 — Inbox processing:
   for each file in inbox/<bucket>/:
     fire document.written.inbox.<bucket>
     (matching intake hook runs workflow, moves file to raw/<...>, completes)
-  inbox/ ends empty when phase 2 completes successfully
+  inbox/ ends empty when phase 1 completes successfully
 
-Phase 3 — Git diff:
+Phase 2 — Git diff:
   read .dome/state/last-reconciled-sha.txt
-  changed_files = git.statusMatrix(...)  # via isomorphic-git
-                  + git diff --name-only <last_sha> HEAD
+  changed_files = git.statusMatrix(...)  # via isomorphic-git: uncommitted + staged
+                  + git diff --name-only <last_sha> HEAD  # committed since last reconcile
   for each changed file in wiki/<type>/, raw/, etc.:
     fire document.written.<category>.<type> (or .deleted, .moved as appropriate)
     (auto-update-index, auto-cross-reference, etc. respond)
   write .dome/state/last-reconciled-sha.txt = current HEAD sha
 
-Phase 4 — Scheduled catch-up:
+Phase 3 — Scheduled catch-up:
   read .dome/state/scheduled.json
   for each scheduled hook whose (now - last_fire) > interval:
     fire clock.tick.<interval>
@@ -198,28 +207,44 @@ For human readability, the dispatcher also appends `hook-started`, `hook-complet
 
 ### Derived operational state
 
-Three directories under `.dome/` are derived operational state, not canonical knowledge:
+Two files under `.dome/` are derived operational state, not canonical knowledge:
 
 | Path | Purpose | If deleted, what happens |
 |---|---|---|
-| `.dome/cache/` | (reserved for future per-handler caches; empty in v0.5 base SDK) | N/A |
-| `.dome/in-flight/<handler>-<event-id>.json` | Lockfiles for hooks in progress | Crash recovery loses any in-flight events that were running at delete time; reconcile re-fires what it can detect from git/inbox state |
 | `.dome/state/last-reconciled-sha.txt` | Last reconciliation HEAD SHA | Next reconcile treats every file as changed (fires events for the whole vault once); idempotent so safe |
 | `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next reconcile fires every scheduled hook once |
 
-These are all gitignored — they're per-machine operational state and shouldn't sync across devices. The `.gitignore` shipped by `dome init` excludes them.
+Both are gitignored — they're per-machine operational state and shouldn't sync across devices. The `.gitignore` shipped by `dome init` excludes them.
+
+### Commit policy
+
+Workflows commit at completion (per-workflow atomic commit). The mechanism:
+
+1. **Workflow accumulates Effects in memory.** Each Tool call within the workflow appends to an in-memory effect list; no on-disk changes yet.
+2. **At workflow completion**, the Effect list is applied to disk in one atomic batch: all writes happen via `writeDocument` / `moveDocument` / `deleteDocument` / `appendLog` against the filesystem.
+3. **The workflow writes its `log.md` entry** via `appendLog` as part of the batch.
+4. **The workflow commits**: `git add <paths-touched-by-workflow>` (selective, not `git add -A`); `git commit -m "<verb>: <subject>"`; commit body = log entry body. The commit message subject and the log.md entry's `## [date] verb | subject` line are byte-identical (modulo prefix conventions).
+5. **On failure during steps 2-4**: `git reset --hard HEAD` rolls back working-tree changes; no commit is made; reconciliation will re-fire the originating event on next run.
+
+Hooks run as their own workflows. The `auto-cross-reference` hook that writes backlinks across N pages commits all N writes + its log entry as ONE commit. The git history shows one commit per logical operation, not one per file write.
+
+User out-of-band edits remain uncommitted unless the user explicitly commits. Reconciliation handles both committed (`git diff`) and uncommitted (`git status`) state.
+
+**Configuration override**: `.dome/config.yaml` `git.auto_commit_workflows: false` disables per-workflow auto-commit. Reconciliation still works (uses `git status` for everything). Useful for users who want full manual commit control.
+
+**Why this is the right default**: each workflow becomes an atomic, undoable unit; `git revert <commit>` is universal undo; `git log` and `cat log.md` give the same operation history; reconciliation simplifies because committed state IS the latest known-reconciled state.
 
 ### Why this design beats a log-based event source
 
 | Property | log.md as event source | State-based (this) |
 |---|---|---|
-| Source for "did X fire?" | Parse log.md | git diff + inbox files + lockfiles |
+| Source for "did X fire?" | Parse log.md | git diff + inbox files |
 | Bootstrap cost | Parse entire log.md | Walk vault state (bounded by # files, not # operations) |
 | log.md role | Audit + execution state (mixed) | Audit only |
-| Honors MARKDOWN_IS_SOURCE_OF_TRUTH | Mixed — log.md becomes load-bearing | Clean — `.dome/*` is derived; vault is canonical |
+| Honors MARKDOWN_IS_SOURCE_OF_TRUTH | Mixed — log.md becomes load-bearing | Clean — `.dome/state/*` is derived; vault is canonical |
 | Reuses existing infra | No (custom log parsing) | Yes (git, already required by [[wiki/invariants/VAULT_IS_GIT_REPO]]) |
-| Out-of-band edit detection | Needs separate tracking | Native (git status / git diff) |
-| In-flight recovery | log.md `hook-started` w/o matching `hook-completed` | `.dome/in-flight/` lockfile presence |
+| Out-of-band edit detection | Needs separate tracking | Native (`git status` / `git diff`) |
+| Crash recovery | log.md `hook-started` w/o matching `hook-completed` | Per-workflow atomic commits + idempotency contract make recovery filesystem-derivable |
 
 State-based wins on every axis except "everything in one file," which isn't a property anyone needs.
 
@@ -238,7 +263,7 @@ Tools are the only mutation surface. Hooks are the only reaction surface. Every 
 
 - "Run X workflow on Y kind of input" → declarative hook on `document.written` with a path filter and a workflow name.
 - "Notify me when Z happens" → programmatic hook on event Z calling an external notification.
-- "Maintain a derived view of pages" → programmatic hook on `document.written.*` that updates an index page via `writePage`.
+- "Maintain a derived view of pages" → programmatic hook on `document.written.*` that updates an index page via `writeDocument`.
 - "Schedule daily lint" → declarative hook on `clock.tick.daily` invoking the `lint` workflow.
 - "Auto-cross-reference new entities" → the shipped `auto-cross-reference` hook (or your own variant).
 

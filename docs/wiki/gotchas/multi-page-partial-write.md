@@ -11,7 +11,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 **Symptom:** An ingest operation that should update 7 pages updates 3, then fails (process killed, disk full, harness terminated mid-operation, LLM timeout). The vault is now in a partially-updated state — some pages reflect the new claim, others don't. Cross-references are broken.
 
-**Root cause:** A single ingest invocation produces multiple `writePage` Tool calls. These calls happen sequentially. If the process dies between calls, the partial state is on disk.
+**Root cause:** A single ingest invocation produces multiple `writeDocument` Tool calls. These calls happen sequentially. If the process dies between calls, the partial state is on disk.
 
 **Structural mitigation (v0.5):** **Collect-and-apply with git rollback.**
 

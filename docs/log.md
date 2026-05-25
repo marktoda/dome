@@ -96,4 +96,47 @@ Third architectural pass after substrate landed. User pushed back on log-md-as-e
 - `~` [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — explicit "derived zone" note about `.dome/{in-flight,state,cache}/`
 - `~` [[index]] — added 4 new docs (2 invariants, 2 gotchas, 2 entities, 1 source); restructured invariants section with tier markers
 
+## [2026-05-25] update | Per-workflow commits + Tool naming consistency + drop lockfiles
+
+Fourth refinement pass. User pushed for: simplifications enabled by git-as-required; cleaner Tool naming; questioning whether `.dome/in-flight/` is necessary.
+
+**Five concrete changes:**
+
+1. **Per-workflow atomic commits as the v0.5 default.** Workflows accumulate Effects in memory; at completion they apply atomically, write the log.md entry, `git add` touched paths, `git commit -m "<verb>: <subject>"`. The log.md `## [date] verb | subject` header equals the commit subject. log.md and `git log` are two views of the same operation history. `git revert <commit>` is universal undo.
+
+2. **Tool naming consistency: `readPage` → `readDocument`, `writePage` → `writeDocument`.** The data model says Document is the unifying abstraction; the Tools should match. `appendLog`, `searchIndex`, `wikilinkResolve` keep their surface-specific names. Final 7 Tools: readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve, moveDocument, deleteDocument.
+
+3. **`deleteDocument` Tool added** (carry-over from earlier pass; pushed to 7 Tools after naming-consistency rename).
+
+4. **Drop `.dome/in-flight/` lockfiles entirely.** With per-workflow atomic commits + idempotency contract + `scheduled.json` for scheduled-event catch-up, every hook-crash recovery case is derivable from git state. Lockfiles add overhead without solving a real problem. Reconciliation drops from 4 phases to 3 (no in-flight-recovery phase).
+
+5. **Drop `.dome/cache/` from v0.5.** Reserved-but-unused. Plugins that need caches create their own `.dome/<plugin-name>/cache/` subdirs.
+
+Final derived-state set under `.dome/`: just `.dome/state/last-reconciled-sha.txt` + `.dome/state/scheduled.json`. Two files, both gitignored, both rebuildable.
+
+**Per-file changes:**
+
+- `~` [[wiki/specs/sdk-surface]] — Tool catalog 6 → 7 (added deleteDocument); renames; new §"Commit policy"; dropped in-flight + cache from derived-state section
+- `~` [[wiki/specs/hooks]] — added §"Crash recovery without lockfiles" with full case analysis; 4 phases → 3 phases; full Commit policy section explaining how per-workflow commits work; derived-state set reduced to 2 files; updated comparison table
+- `~` [[wiki/specs/cli]] — `dome reconcile` now describes 3 phases; `.gitignore` excludes only `.dome/state/`
+- `~` [[wiki/specs/vault-layout]] — dropped in-flight/cache from the directory tree and the ownership table; derived-state section reduced to 2 files; added plugin-cache convention note
+- `~` [[wiki/specs/mcp-surface]] — added `dome.delete_document`; renamed `dome.read_page` → `dome.read_document`, `dome.write_page` → `dome.write_document`; 6 → 7 MCP tools
+- `~` [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — derived-zone reference reduced to `.dome/state/` only
+- `~` [[wiki/invariants/VAULT_IS_GIT_REPO]] — `.gitignore` excludes only `.dome/state/`
+- `~` [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — Tool list updated (`writePage` → `writeDocument`); mutating-Tool list cleaned up
+- `~` [[wiki/invariants/RAW_IS_IMMUTABLE]], [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]], [[wiki/invariants/PAGE_CREATION_REQUIRES_RECURRENCE]], [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]], [[wiki/invariants/WIKILINKS_ARE_FULLPATH]] — `writePage` → `writeDocument` references updated
+- `~` [[wiki/matrices/tool-invariant-enforcement]] — added `deleteDocument` row; rename `readPage`→`readDocument`, `writePage`→`writeDocument` throughout; matrix is now 7×9 (VAULT_IS_GIT_REPO is enforced at vault-open boundary, noted but not in matrix)
+- `~` [[wiki/matrices/intent-prompt-tools]] — tool subsets renamed
+- `~` [[wiki/gotchas/hook-non-idempotent]] — dropped in-flight-resumption from the "where events re-fire" list (now 2 places: state diff + scheduled catch-up); updated rationale to mention atomic commits as the recovery primitive
+- `~` [[wiki/gotchas/agent-prompt-regression]], [[wiki/gotchas/out-of-band-vault-edits]], [[wiki/gotchas/concurrent-harness-write]], [[wiki/gotchas/multi-page-partial-write]], [[wiki/gotchas/dirty-git-state-at-reconcile]] — Tool references updated via bulk rename
+- `~` [[index]] — updated tier descriptions; corrected derived-state references
+
+Net effect:
+- Tool catalog: 7 (renamed for consistency: 4 Document Tools + 3 surface-specific)
+- Derived state files: 2 (was 4; dropped in-flight + cache)
+- Reconciliation phases: 3 (was 4; dropped in-flight recovery)
+- Commit semantics: per-workflow atomic auto-commit (was: no auto-commit)
+- Invariant count unchanged: 10 (5 axiom + 3 default + 2 opt-in)
+
+
 

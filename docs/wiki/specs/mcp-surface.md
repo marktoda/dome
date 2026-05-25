@@ -24,16 +24,17 @@ The server holds exactly one Vault open per invocation. To serve multiple vaults
 
 ## Tool catalog (mirrors SDK)
 
-The MCP server exposes one MCP tool per SDK Tool, name-preserving. The SDK has six Tools; the MCP surface has six matching MCP tools.
+The MCP server exposes one MCP tool per SDK Tool, name-preserving (snake_case in MCP, camelCase in the SDK). The SDK has seven Tools; the MCP surface has seven matching MCP tools.
 
 | MCP tool name | SDK Tool | Input schema | Output |
 |---|---|---|---|
-| `dome.read_page` | `readPage` | `{ path: string }` | Document (frontmatter, body, links_out) |
-| `dome.write_page` | `writePage` | `{ path, body, frontmatter, reason?, sensitivity_classified? }` | `{ ok, effects }` or `{ ok: false, error }` |
+| `dome.read_document` | `readDocument` | `{ path: string }` | Document (frontmatter, body, links_out) |
+| `dome.write_document` | `writeDocument` | `{ path, body, frontmatter, reason?, sensitivity_classified? }` | `{ ok, effects }` or `{ ok: false, error }` |
 | `dome.append_log` | `appendLog` | `{ verb, subject, body, refs }` | `{ ok }` |
 | `dome.search_index` | `searchIndex` | `{ query, filters? }` | array of matches with paths and excerpts |
 | `dome.wikilink_resolve` | `wikilinkResolve` | `{ link: string }` | Document or null |
 | `dome.move_document` | `moveDocument` | `{ from, to, reason }` | `{ ok, effects }` or `{ ok: false, error }` |
+| `dome.delete_document` | `deleteDocument` | `{ path, reason }` | `{ ok, effects }` or `{ ok: false, error }` |
 
 Input schemas are Zod-derived JSON Schema; MCP clients (Claude Code, etc.) consume these to render the tool to the LLM. Output shapes preserve the SDK's `Result<T, E>` discrimination: errors come back as `{ ok: false, error: { kind, detail } }` so the harness can present them.
 
@@ -79,7 +80,7 @@ v0.5: none. The MCP server runs as a child process of the user's harness or on t
 
 ## Versioning
 
-The MCP server reports its version via the standard MCP `serverInfo` field. Tool names are versioned via the `dome.` prefix; breaking changes (a Tool's input shape changes incompatibly) bump the package major version and rename the affected MCP tool (`dome.v2.write_page`) for the transition window. Plugin and vault-local Tools are not version-managed by Dome — plugin authors own their compatibility.
+The MCP server reports its version via the standard MCP `serverInfo` field. Tool names are versioned via the `dome.` prefix; breaking changes (a Tool's input shape changes incompatibly) bump the package major version and rename the affected MCP tool (`dome.v2.write_document`) for the transition window. Plugin and vault-local Tools are not version-managed by Dome — plugin authors own their compatibility.
 
 ## Why MCP is the only protocol surface in v0.5
 

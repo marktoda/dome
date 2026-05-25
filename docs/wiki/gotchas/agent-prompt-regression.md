@@ -34,7 +34,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 - Recent log entries are scannable: `dome doctor --recent-activity` surfaces "the last N writes by tool and target." A user noticing weird recent activity can spot regression.
 - The vault is git-backed: `git revert <bad-commit>` is the universal undo.
-- For high-stakes flows (sensitivity classification especially), the `dry_run: true` mode on `writePage` lets a workflow propose changes to a review buffer first. Vault config can require `dry_run` for selected page types.
+- For high-stakes flows (sensitivity classification especially), the `dry_run: true` mode on `writeDocument` lets a workflow propose changes to a review buffer first. Vault config can require `dry_run` for selected page types.
 
 **What NOT to do:**
 

@@ -10,7 +10,7 @@ tier: shipped-default
 
 **Tier:** Shipped default — enabled in every vault; can be disabled in `.dome/config.yaml` for privacy-focused vaults that don't want detailed audit logging.
 
-**Statement:** Every page mutation produces an `appendLog` call within the same Tool invocation. The mutating Tools (`writePage`, `moveDocument`, plus any plugin-registered Tools that mutate the vault) all emit a log entry as part of their Effect array.
+**Statement:** Every page mutation produces an `appendLog` call within the same Tool invocation. The mutating Tools (`writeDocument`, `moveDocument`, plus any plugin-registered Tools that mutate the vault) all emit a log entry as part of their Effect array.
 
 **Why:** Combined with `LOG_IS_APPEND_ONLY`, this gives the vault a complete audit trail. Any change to the wiki is recoverable in `log.md`. Combined with the vault being git-backed, `git revert` is a viable universal undo because the log entry tells the user what to revert.
 

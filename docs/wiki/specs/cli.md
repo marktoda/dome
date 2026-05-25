@@ -25,7 +25,7 @@ Creates:
 - `.dome/page-types.yaml` with the four default types.
 - `.dome/config.yaml` with tier-2 defaults enabled and tier-3 features disabled.
 - `.dome/hooks/intake-raw.yaml` — the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow.
-- `.gitignore` — excludes `.dome/in-flight/`, `.dome/state/`, `.dome/cache/`.
+- `.gitignore` — excludes `.dome/state/` (per-machine operational state).
 - `index.md` and `log.md` (with one bootstrap entry).
 - A `CLAUDE.md` template at vault root the user can copy to their Claude Code config.
 - **Initializes a git repository** and makes the initial commit (per [[wiki/invariants/VAULT_IS_GIT_REPO]]). The commit message: `chore: initialize Dome vault`. The user starts with a clean working tree and a vault that's immediately ready for use.
@@ -84,10 +84,11 @@ cd ~/vaults/work && dome reconcile
 
 Runs four phases in order (see [[wiki/specs/hooks]] §"Durability and reconciliation" for full detail):
 
-1. **In-flight recovery** — re-fire events for any lockfiles in `.dome/in-flight/`.
-2. **Inbox processing** — fire `document.written.inbox.<bucket>` for each file in `inbox/<bucket>/`. Intake hooks move the files out on completion (per [[wiki/invariants/INBOX_IS_EPHEMERAL]]).
-3. **Git diff** — fire `document.written.<category>.<type>` for each file changed since `.dome/state/last-reconciled-sha.txt`, using `git status --porcelain` + `git diff --name-only`.
-4. **Scheduled catch-up** — fire `clock.tick.<interval>` for each scheduled hook whose interval has elapsed.
+1. **Inbox processing** — fire `document.written.inbox.<bucket>` for each file in `inbox/<bucket>/`. Intake hooks move the files out on completion (per [[wiki/invariants/INBOX_IS_EPHEMERAL]]).
+2. **Git diff** — fire `document.written.<category>.<type>` for each file changed since `.dome/state/last-reconciled-sha.txt`, using `git status --porcelain` + `git diff --name-only`.
+3. **Scheduled catch-up** — fire `clock.tick.<interval>` for each scheduled hook whose interval has elapsed.
+
+(No in-flight-recovery phase — see [[wiki/specs/hooks]] §"Crash recovery without lockfiles" for why per-workflow atomic commits + idempotency contract cover every recovery case.)
 
 Refuses to run if the vault is mid-merge, mid-rebase, or mid-cherry-pick — see [[wiki/gotchas/dirty-git-state-at-reconcile]] for the detection and the recovery path.
 

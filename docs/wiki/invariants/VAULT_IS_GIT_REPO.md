@@ -30,7 +30,7 @@ tier: axiom
 
 - The user is encouraged to commit periodically; Dome does not auto-commit. Reconciliation handles both committed and uncommitted state.
 - `.git/` is treated as `category: external` by Dome's tools — never modified by Dome, never enumerated.
-- The `.gitignore` shipped by `dome init` excludes `.dome/cache/`, `.dome/in-flight/`, and `.dome/state/` from version control. Everything else under the vault — including `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/` — is tracked.
+- The `.gitignore` shipped by `dome init` excludes `.dome/state/` from version control. Everything else under the vault — including `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/` — is tracked.
 
 **Related:**
 - [[wiki/specs/vault-layout]] §"Git repository structure"
