@@ -18,6 +18,7 @@
     "p-queue": "^8.0.0",
     "remark": "^15.0.0",
     "unified": "^11.0.0",
+    "yaml": "^2.9.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
