@@ -24,6 +24,14 @@ export async function writeDocument(
   dispatcher: Dispatcher,
   input: WriteDocumentInput
 ): Promise<ToolReturn<Document>> {
+  // INDEX_AND_LOG_ARE_DISPATCHER_OWNED — axiom; refuse unconditionally.
+  if (input.path === "index.md" || input.path === "log.md") {
+    return {
+      result: err({ kind: "dispatcher-owned-path", path: input.path, requested_tool: "writeDocument" }),
+      effects: [],
+    };
+  }
+
   const abs = join(vault.path, input.path);
   const exists = await pathExists(abs);
 
