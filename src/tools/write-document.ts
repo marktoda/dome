@@ -109,6 +109,18 @@ export async function writeDocument(
     }
   }
 
+  // SENSITIVE_GOES_TO_INBOX — opt-in; when enabled, sensitive content can't land in wiki/.
+  if (
+    vault.config.invariants.SENSITIVE_GOES_TO_INBOX === "enabled" &&
+    input.opts?.sensitivity_classified === "sensitive" &&
+    doc0.category === "wiki"
+  ) {
+    return {
+      result: err({ kind: "sensitive-must-route-to-inbox", path: input.path }),
+      effects: [],
+    };
+  }
+
   await mkdir(dirname(abs), { recursive: true });
   const before = exists ? await readFile(abs, "utf8") : "";
   const text = stringifyFrontmatter(input.frontmatter, input.body);
