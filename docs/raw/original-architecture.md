@@ -1,3 +1,17 @@
+---
+id: raw_2026-05-25_original-architecture
+source_type: design-seed
+status: preserved
+sensitivity: normal
+created: 2026-05-25
+---
+
+# Original architecture seed
+
+This is the immutable original `docs/ARCHITECTURE.md` from this repo's first commit. Preserved verbatim as the design seed that the Dome v0.5 brainstorm refined. Its positions on data model (raw / wiki / index / log), ingestion pipeline, and lightweight-over-structured trade-off were the starting substrate for the Dome design. The brainstorm at `[[wiki/syntheses/v0.5-build-plan]]` documents which positions survived and which were revised. See also: `[[wiki/concepts/llm-wiki-pattern]]`, `[[wiki/concepts/four-concept-core]]`.
+
+---
+
 Yes — I think your instinct is right. The first build should **not** over-model the world with hard-coded objects like decisions, risks, people profiles, strategy records, and so on.
 
 The Karpathy LLM Wiki pattern is much simpler: there are basically **raw sources**, an **LLM-maintained wiki**, and a **schema/prompt file** that teaches the LLM how to maintain the wiki. The raw sources are immutable; the wiki is generated and updated by the LLM; and the schema is the key configuration layer that evolves over time. Karpathy also emphasizes that the specific directory structure and conventions should depend on the user/domain, not be fixed upfront. ([Gist][1])

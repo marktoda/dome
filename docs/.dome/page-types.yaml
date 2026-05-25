@@ -1,0 +1,20 @@
+# Dome vault page-types configuration
+#
+# Declares which page types are allowed under wiki/<type>/.
+# Tools enforce PAGE_TYPE_BY_DIRECTORY against this list:
+# write_page rejects writes to unknown types.
+#
+# Defaults are the four shipped types Dome ships with.
+# Extensions are vault-specific types this project adds.
+
+defaults:
+  - entity      # people, organizations, projects, products, protocols
+  - concept     # ideas, patterns, principles, technical topics
+  - source      # summaries of one ingested raw source
+  - synthesis   # cross-cutting analysis, comparisons, design memos
+
+extensions:
+  - spec        # this project's authoritative specs (Dome SDK architecture)
+  - invariant   # named invariants the Tool layer enforces
+  - matrix      # behavior matrices (tool × invariant, intent × prompt, event × payload)
+  - gotcha      # design gotchas / scars / failure modes

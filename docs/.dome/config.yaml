@@ -1,0 +1,29 @@
+# Dome vault configuration
+#
+# This vault is the Dome project's own design substrate. It dogfoods Dome
+# on Dome — proof that Dome generalizes beyond personal notes to systems
+# thinking, project design, and software documentation.
+
+vault:
+  name: "Dome design substrate"
+  purpose: "Design substrate for the Dome project itself"
+  kind: "project"   # vs. "personal"
+
+# Invariant configuration.
+# Some default invariants don't apply to a project-design vault.
+invariants:
+  PAGE_CREATION_REQUIRES_RECURRENCE:
+    enabled: false
+    reason: "Specs, invariants, matrices, and gotchas are authored explicitly upfront, not extracted from recurring conversational mentions."
+  SENSITIVE_GOES_TO_INBOX:
+    enabled: false
+    reason: "This is a project vault, not a personal vault. No people-performance / HR / health / legal content lives here."
+
+# Hook execution model.
+hooks:
+  default_mode: async
+  queue_backend: in_process   # v0.5 default; can be swapped for redis/bullmq later
+
+# Wikilink convention.
+wikilinks:
+  format: full_path           # [[wiki/entities/x]] not [[x]]

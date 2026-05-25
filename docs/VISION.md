@@ -19,7 +19,7 @@ The result is what we mean by a *brain companion*: ambient, always accessible, s
 ## What Dome is
 
 - **A typed markdown vault.** Raw notes, sources, and clips on one side; a compiled wiki of entities, concepts, sources, and syntheses on the other. Bidirectional wikilinks. Index and log files. Standard Obsidian-compatible markdown — open it in any editor and everything works.
-- **A small, hardened tool surface.** A typed SDK of operations (read, write, link, search, route, lint, research) that enforces the vault's invariants at every call site. The wiki cannot bifurcate; raw cannot be rewritten; sensitive content cannot land in the wrong place. The agent owns *what* to do; the SDK owns *whether it is allowed*.
+- **A small, hardened tool surface.** Four concepts in the core — **Vault, Document, Tool, Hook** — and nothing else. A typed SDK of operations (read, write, link, search, route, lint, research) that enforces the vault's invariants at every call site. The wiki cannot bifurcate; raw cannot be rewritten; sensitive content cannot land in the wrong place. The agent owns *what* to do; the SDK owns *whether it is allowed*.
 - **A prompt library.** Workflows (ingest, query, lint, research, capture) are markdown prompts loaded by whatever agent is driving. Behavior lives in prose, not code, so it evolves with the user and the model — not with a release cycle.
 - **An interface-agnostic surface.** Any MCP-capable agent (Claude Code today; Cursor, Codex, OpenCode, whatever ships next year) becomes Dome-aware by mounting one MCP server. Native mobile, web, and voice clients sit on the same surface later.
 
@@ -41,6 +41,8 @@ The result is what we mean by a *brain companion*: ambient, always accessible, s
 
 **4. The user always wins.** Sensitive content waits for review. Provenance is mandatory: every claim cites its source. Contradictions are surfaced, never silently overwritten. The wiki records the user's claims, not the AI's interpretation of them. When the AI is uncertain, it says so and asks.
 
+**5. Extensibility lives at the hook boundary.** New behavior — auto-cross-reference, sync to a remote, drop-zone intakes, scheduled lint, plugin integrations — registers as a Hook against an event pattern. The four-concept core never changes. Years of features can land without touching the primitives. This is what keeps Dome stable enough to be a long-term substrate.
+
 ## How it works
 
 **You talk to your agent.** Today, that is Claude Code, or a phone-side voice client once one ships. You say what is on your mind: a thought walking between meetings, a reaction to a paper, a worry about a colleague, an open question on a project. The agent — equipped with Dome's tools and prompts — decides what to do: read the relevant pages, propose updates, route sensitive content to inbox, do background research, append the log, suggest a new cross-reference, ask for confirmation when ambiguous.
@@ -61,7 +63,9 @@ But the constraint that makes Dome work for them — *the AI does the structural
 
 ## Shape over time
 
-**v0.5 — Demo.** A Python SDK, an MCP server, a prompt library, a small CLI. Claude Code is the first official harness; Obsidian is the browser; git is the history. This phase exists to prove the pattern compiles in real use, in real vaults, against real workflows. The author of Dome is its first user.
+**v0.5 — Demo.** A TypeScript SDK on Bun, an MCP server, a prompt library, a small CLI. Claude Code is the first official harness; Obsidian is the browser; git is the history. This phase exists to prove the pattern compiles in real use, in real vaults, against real workflows. The author of Dome is its first user.
+
+Notably, this repo's own `docs/` directory is itself a Dome vault — proof that the pattern generalizes beyond personal notes to systems-thinking substrate. Specs, invariants, behavior matrices, gotchas, syntheses about the project all live as Dome pages, maintained the same way a personal vault is.
 
 **v1+ — Product.** Native mobile app: voice-first capture, structured browse, prep mode, inbox review. Native desktop. Voice client. Optional cloud sync over the markdown vault. Onboarding that meets each user where they are — a new vault, an existing Obsidian vault, a pile of Apple Notes, a stack of Google Docs. Same SDK underneath. Different surfaces above.
 

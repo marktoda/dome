@@ -1,0 +1,67 @@
+# Dome design substrate — Index
+
+The catalog of all wiki pages in this vault. Maintained by Dome's tools; entries added when pages are created, sorted alphabetically within each section.
+
+This vault is the Dome project's own design substrate — a Dome instance dogfooding Dome itself.
+
+## Specs
+
+- [[wiki/specs/cli]] — The 5-command Dome CLI: init, migrate, serve, lint, doctor, export-context.
+- [[wiki/specs/harnesses]] — How Claude Code, Cursor, and future native clients mount Dome via MCP.
+- [[wiki/specs/hooks]] — Hook registration (programmatic + declarative), shipped defaults (auto-update-index, auto-cross-reference), opt-in intake patterns.
+- [[wiki/specs/mcp-surface]] — MCP server: one MCP tool per SDK tool.
+- [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
+- [[wiki/specs/prompts-and-workflows]] — Prompt library; workflows as prompts with frontmatter; override layering; prompts-as-contract principle.
+- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Document, Tool, Hook), 6 Tools, tiered feature model, why-this-design principles.
+- [[wiki/specs/vault-layout]] — Directory structure, category from path, ownership rules per category.
+
+## Invariants (9 total: 4 axiom + 3 shipped-default + 2 opt-in)
+
+- [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces an appendLog call.
+- [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Hooks observe and call Tools; never mutate directly.
+- [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by appendLog.
+- [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Derived state rebuildable from markdown.
+- [[wiki/invariants/PAGE_CREATION_REQUIRES_RECURRENCE]] — *(opt-in)* New pages require an explicit creation reason.
+- [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]] — *(shipped default)* Page type from immediate wiki/ subdirectory.
+- [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* writePage refuses raw/.
+- [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] — *(opt-in)* Sensitive content routes via writePage to inbox/review/.
+- [[wiki/invariants/WIKILINKS_ARE_FULLPATH]] — *(shipped default)* [[wiki/entities/x]] not [[x]].
+
+## Matrices
+
+- [[wiki/matrices/event-types-and-payloads]] — Event name × emitting tool × payload × example hooks.
+- [[wiki/matrices/intent-prompt-tools]] — User intent × workflow prompt × bound tools × effects.
+- [[wiki/matrices/tool-invariant-enforcement]] — 6 Tools × 9 invariants enforcement matrix.
+
+## Gotchas
+
+- [[wiki/gotchas/agent-prompt-regression]] — Model upgrades or prompt edits can change behavior silently.
+- [[wiki/gotchas/async-read-after-write-staleness]] — Reads immediately after writes may not see hook follow-on.
+- [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes.
+- [[wiki/gotchas/hook-cycle]] — Hook A triggers Tool that fires event that triggers hook A.
+- [[wiki/gotchas/multi-page-partial-write]] — Multi-page updates that fail partway through.
+- [[wiki/gotchas/out-of-band-vault-edits]] — Obsidian or vim writes that bypass Dome's tools.
+
+## Entities
+
+- [[wiki/entities/andrej-karpathy]] — Source of the LLM-wiki pattern.
+- [[wiki/entities/anthropic]] — Vendor of the model + SDK Dome's harnesses depend on.
+- [[wiki/entities/bun]] — JavaScript runtime + toolkit; the Dome SDK runtime.
+- [[wiki/entities/claude-code]] — Anthropic's CLI; Dome v0.5's first official harness.
+- [[wiki/entities/mcp-protocol]] — Model Context Protocol; how Dome exposes tools to harnesses.
+- [[wiki/entities/obsidian]] — Markdown editor; Dome's recommended browse surface.
+- [[wiki/entities/typescript]] — Dome SDK's implementation language.
+
+## Concepts
+
+- [[wiki/concepts/brain-companion]] — Dome's product framing: ambient, always-accessible memory.
+- [[wiki/concepts/llm-wiki-pattern]] — Karpathy's pattern: LLM as wiki maintainer, raw immutable, wiki synthesized.
+
+## Sources
+
+- [[wiki/sources/karpathy-llm-wiki-gist]] — Summary of Andrej Karpathy's LLM-wiki gist and its influence on Dome.
+
+## Syntheses
+
+- [[wiki/syntheses/v0.5-build-plan]] — The v0.5 → v1+ → long-term sequencing.
+- [[wiki/syntheses/why-dome-vs-mem-tana-granola]] — Positioning against the existing PKM landscape.
