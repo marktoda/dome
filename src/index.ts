@@ -30,3 +30,12 @@ export { makeDispatcher, type Dispatcher, type IndexEntry } from "./dispatcher";
 
 export { parseFrontmatter, stringifyFrontmatter } from "./frontmatter";
 export { parseWikilinks, isFullPathLink, suggestFullPath } from "./wikilinks";
+
+export { HookRegistry, type RegisteredHook, type HookSource } from "./hook-registry";
+export { HookDispatcher, type CausationLink, type CycleInfo, type HookDispatcherOpts } from "./hook-dispatcher";
+export { autoUpdateIndex } from "./hooks/auto-update-index";
+export { autoCrossReference } from "./hooks/auto-cross-reference";
+export { VaultWatcher, type OOBEvent } from "./watcher";
+export { reconcile, type ReconcileOpts, type ReconcileResult } from "./reconcile";
+export { commitWorkflow, type WorkflowCommitInput } from "./workflow-commit";
+export { projectEffectToEvents, projectEffectsToEvents } from "./event-projection";
