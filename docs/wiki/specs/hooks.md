@@ -69,7 +69,7 @@ async: true
 handler: builtin:auto-update-index
 ```
 
-Subscribes to all wiki write effects (and `document.deleted.wiki.*`). The handler reads the modified Document, computes the index entry, and writes the updated `index.md` via `writeDocument(index.md, ...)`. The handler is idempotent and cycle-safe (the index write itself doesn't match `document.written.wiki.*` because index.md is not under `wiki/`).
+Subscribes to all wiki write effects (and `document.deleted.wiki.*`). The handler reads the modified Document, computes the index entry, and writes the updated `index.md` via `dispatcher.writeIndex(entry)` — the privileged internal API documented in [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. (Public Tools refuse `index.md`; the dispatcher field is present on shipped-default `HookContext`s only.) The handler is idempotent and cycle-safe (the index write itself doesn't match `document.written.wiki.*` because index.md is not under `wiki/`).
 
 ### `auto-cross-reference`
 

@@ -134,7 +134,7 @@ Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply 
 
 **Flags:**
 
-- `--rebuild-index` — regenerate `index.md` from the current `wiki/` contents. Used when `auto-update-index` is disabled (so the index has gone stale) or when the user explicitly wants a from-scratch rebuild. The rebuild bypasses the normal Tool-rejection of `writeDocument('index.md', ...)` because dispatcher-owned files are writable only through the dispatcher's privileged path.
+- `--rebuild-index` — calls `dispatcher.writeIndex` directly to regenerate the full `index.md` from the wiki/ contents. Used when `auto-update-index` is disabled (so the index has gone stale) or when the user wants a from-scratch rebuild. The dispatcher's privileged API is the only mutation path for `index.md` per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]; `writeDocument` refuses `index.md` unconditionally.
 - `--show review-queue` — list pending items in `inbox/review/` (only meaningful when `SENSITIVE_GOES_TO_INBOX` is enabled).
 - `--show raw-citations` — list which wiki pages cite each raw source (derived from `sources:` frontmatter on wiki pages; not a stored index).
 - `--show workflows` — list the resolved workflow set (shipped defaults + plugin + vault-local overrides), with their bound tool subsets and triggers.

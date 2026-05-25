@@ -22,6 +22,7 @@ Five axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariant
 - [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces an appendLog call.
 - [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Hooks observe and call Tools; never mutate directly.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake hooks must move/delete inbox files on completion; presence = pending.
+- [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]] — *(axiom)* index.md and log.md mutated only by dispatcher.writeIndex / dispatcher.appendLogEntry; public Tools reject these paths.
 - [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by appendLog.
 - [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — *(axiom)* Derived state rebuildable from markdown; `.dome/state/` is explicitly derived.
 - [[wiki/invariants/PAGE_CREATION_REQUIRES_RECURRENCE]] — *(opt-in)* New pages require an explicit creation reason.

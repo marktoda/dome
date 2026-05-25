@@ -59,7 +59,7 @@ The SDK ships these workflow prompts. Shipped-default workflows are loaded into 
 | `ingest` | shipped default | `intake:inbox/raw/*` (when activated), `intent:capture-thought` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Process a raw source into wiki updates. |
 | `query` | shipped default | `intent:ask` | readDocument, searchIndex, wikilinkResolve, writeDocument (synthesis-page proposal only) | Answer a question from the vault with citations. May propose synthesis page creation. |
 | `lint` | shipped default | `manual:lint`, `clock:weekly` (when scheduled) | readDocument, searchIndex, wikilinkResolve, writeDocument (proposals to inbox/review or returned report), appendLog | Detect drift: orphans, missing cross-refs, contradictions, schema violations. Propose fixes. |
-| `migrate` | shipped default | `manual:migrate` | readDocument, writeDocument, moveDocument, appendLog, searchIndex, wikilinkResolve | Convert an existing markdown vault to Dome shape. Plan first; apply on `--apply`. |
+| `migrate` | shipped default | `manual:migrate` | readDocument, writeDocument, moveDocument, deleteDocument, appendLog, searchIndex, wikilinkResolve | Convert an existing markdown vault to Dome shape. Plan first; apply on `--apply`. May delete superseded files. |
 | `export-context` | shipped default | `manual:export-context` | readDocument, searchIndex, wikilinkResolve | Produce a markdown context-packet for cross-AI handoff. No vault mutations. |
 | `research` | opt-in | `intake:inbox/research/*` (when activated), `intent:research` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve (HTTP fetch is done inside the workflow prompt) | Run external research; produce a source page under wiki/sources/; propose related page updates. |
 | `voice-ingest` | opt-in | `intake:inbox/voice/*` (when activated) | same as `ingest`; transcript cleanup is in-prompt | Process a voice-transcript raw source. |
@@ -82,7 +82,7 @@ You are ...
 
 The include is resolved at load time against the same source-priority order (SDK → plugins → vault-local). This lets a vault override a base prompt without rewriting the whole workflow.
 
-`system-base.md` is the SDK-shipped system prompt that describes the four-concept core, the invariants, and the wiki-maintainer ethos. Every workflow prompt should start with `{{include: system-base.md}}`.
+`system-base.md` is the SDK-shipped system prompt that describes the four-concept core, the invariants, and the wiki-maintainer ethos. Every workflow prompt starts with `{{include: system-base.md}}`. The SDK warns at workflow-load time if the include is absent.
 
 ## Override layering
 

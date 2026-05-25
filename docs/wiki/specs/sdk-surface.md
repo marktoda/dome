@@ -78,12 +78,12 @@ Naming convention: Tools that operate on any Document use `<verb>Document`; Tool
 | Tool | Purpose | Invariants enforced (axioms in **bold**) |
 |---|---|---|
 | `readDocument` | Read a Document by path. | — |
-| `writeDocument` | Create or update a Document anywhere in the vault. | **`RAW_IS_IMMUTABLE`**, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `EVERY_WRITE_IS_LOGGED` (auto), opt-in: `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE` |
+| `writeDocument` | Create or update a Document anywhere in the vault. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `EVERY_WRITE_IS_LOGGED` (auto), opt-in: `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE` |
 | `appendLog` | Append an entry to `log.md`. The only mutation primitive for `log.md`. | **`LOG_IS_APPEND_ONLY`** |
 | `searchIndex` | Search the index + page bodies for matches. | — |
 | `wikilinkResolve` | Resolve a wikilink to a Document or `null`. | `WIKILINKS_ARE_FULLPATH` |
-| `moveDocument` | Move a Document; rewrites incoming wikilinks atomically. Refuses if either path is under `raw/`. | **`RAW_IS_IMMUTABLE`**, `EVERY_WRITE_IS_LOGGED` (auto), `PAGE_TYPE_BY_DIRECTORY` |
-| `deleteDocument` | Delete a Document. Refuses under `raw/`. Fires `document.deleted.<category>.<type>` so cleanup hooks can react. | **`RAW_IS_IMMUTABLE`**, `EVERY_WRITE_IS_LOGGED` (auto) |
+| `moveDocument` | Move a Document; rewrites incoming wikilinks atomically. Refuses if either path is under `raw/`. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `EVERY_WRITE_IS_LOGGED` (auto), `PAGE_TYPE_BY_DIRECTORY` |
+| `deleteDocument` | Delete a Document. Refuses under `raw/`. Fires `document.deleted.<category>.<type>` so cleanup hooks can react. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `EVERY_WRITE_IS_LOGGED` (auto) |
 
 `writeDocument` is the universal mutation entrypoint for creates and updates. `moveDocument` atomically relocates + rewrites backlinks. `deleteDocument` removes pages cleanly (lint proposes deleting orphan pages; users retire obsolete syntheses; migrate may delete superseded files). Sensitive content writes to `inbox/review/<file>.md`; ingest writes to `wiki/<type>/<name>.md`; quick-capture writes to `inbox/raw/<ts>.md`. The path determines the category and the invariant-enforcement profile.
 
@@ -179,10 +179,12 @@ Events are derived from Effects automatically; there is no `fireEvent` API. See 
 
 **Two shipped default hooks** ride in the SDK as enabled-by-default:
 
-- `auto-update-index` — on `document.written.wiki.*` and `document.deleted.wiki.*`, writes the affected index entries via the dispatcher's privileged path. `index.md` is dispatcher-owned, not Tool-callable: `writeDocument('index.md', ...)` and `writeDocument('log.md', ...)` are rejected unconditionally regardless of vault config. These two paths are the only non-Tool-callable special targets in the vault.
+- `auto-update-index` — on `document.written.wiki.*` and `document.deleted.wiki.*`, writes the affected index entries via `dispatcher.writeIndex(entry)` (the privileged internal API documented in [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]).
 - `auto-cross-reference` — on `document.written.wiki.entity`, searches the wiki for mentions of the new entity and writes backlinks via `writeDocument`.
 
-Both can be disabled in `.dome/config.yaml`. When `auto-update-index` is disabled, `index.md` is unmaintained — `dome doctor --rebuild-index` regenerates it from `wiki/` on demand (see [[wiki/specs/cli]] §"dome doctor"). When `auto-cross-reference` is disabled, new entity pages land without inbound backlinks; existing pages remain untouched until the user runs `dome lint` or re-enables the hook. The Dome project's docs vault leaves both enabled.
+`index.md` and `log.md` are dispatcher-owned per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. Public Tools reject these paths; the dispatcher provides a privileged internal API (`dispatcher.writeIndex`, `dispatcher.appendLogEntry`) that shipped-default hooks and the `appendLog` Tool call. The privileged API is not part of the registration mechanism — plugins cannot register their own dispatcher-owned paths, and plugin / vault-local hook handlers receive a `HookContext` without the `dispatcher` field.
+
+Both shipped defaults can be disabled in `.dome/config.yaml`. When `auto-update-index` is disabled, `index.md` is unmaintained — `dome doctor --rebuild-index` regenerates it from `wiki/` on demand (see [[wiki/specs/cli]] §"dome doctor"). When `auto-cross-reference` is disabled, new entity pages land without inbound backlinks; existing pages remain untouched until the user runs `dome lint` or re-enables the hook. The Dome project's docs vault leaves both enabled.
 
 ## Registration
 
@@ -210,7 +212,7 @@ The SDK ships features across three tiers. The tier determines whether a feature
 
 | Tier | Description | Examples |
 |---|---|---|
-| **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | `RAW_IS_IMMUTABLE`, `MARKDOWN_IS_SOURCE_OF_TRUTH`, `LOG_IS_APPEND_ONLY`, `HOOKS_CANNOT_BYPASS_TOOLS`, `VAULT_IS_GIT_REPO`. The 7 Tools. `index.md` + `log.md`. MCP server. CLI commands. |
+| **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | `RAW_IS_IMMUTABLE`, `MARKDOWN_IS_SOURCE_OF_TRUTH`, `LOG_IS_APPEND_ONLY`, `HOOKS_CANNOT_BYPASS_TOOLS`, `VAULT_IS_GIT_REPO`, `INDEX_AND_LOG_ARE_DISPATCHER_OWNED`. The 7 Tools. `index.md` + `log.md`. MCP server. CLI commands. |
 | **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | `EVERY_WRITE_IS_LOGGED`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `INBOX_IS_EPHEMERAL`. 4 default page types. `auto-update-index` + `auto-cross-reference` hooks. `intake-raw` shipped-default hook. `ingest`, `query`, `lint`, `migrate`, `export-context` workflows. |
 | **Opt-in** | Shipped, not active by default. Activated by adding the corresponding hook YAML / workflow / invariant entry to `<vault>/.dome/`. | `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE`. `sensitivity-classify`, `voice-ingest`, `research`, `clip-integrate` workflows. `inbox/<bucket>/` directories beyond `inbox/raw/`. |
 

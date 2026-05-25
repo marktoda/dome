@@ -111,8 +111,8 @@ extensions:
 | `wiki/` | Dome (via Tools) | Mutable through `writeDocument`, `moveDocument`. |
 | `notes/` | User | Dome reads, never writes. |
 | `inbox/` | User writes; Dome's intake hooks consume | Writes by user are normal; Dome consumes (moves or deletes) during processing. |
-| `index.md` | Dome (via `writeDocument` invoked by the `auto-update-index` hook) | Mutated only through the auto-update-index shipped-default hook. |
-| `log.md` | Dome (via `appendLog`) | Append-only. `LOG_IS_APPEND_ONLY`. |
+| `index.md` | Dome dispatcher | Mutated only by `dispatcher.writeIndex`, invoked by the `auto-update-index` shipped-default hook. `writeDocument('index.md', ...)` rejects unconditionally per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. |
+| `log.md` | Dome dispatcher | Mutated only by `dispatcher.appendLogEntry`, called internally by the `appendLog` Tool. Append-only per [[wiki/invariants/LOG_IS_APPEND_ONLY]]; dispatcher-owned per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. `writeDocument('log.md', ...)` rejects unconditionally. |
 | `.dome/` | User (mostly) and shipped configs | User-authored; tools never mutate. |
 | `VISION.md`, `README.md` | User | Dome reads, never writes. |
 
