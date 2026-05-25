@@ -4,6 +4,14 @@ import { join, dirname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { ok, err, type Result, type ToolError } from "./types";
 import { isGitRepo } from "./git";
+import { makeDispatcher, type Dispatcher } from "./dispatcher";
+import { readDocument, type ReadDocumentInput } from "./tools/read-document";
+import { writeDocument, type WriteDocumentInput } from "./tools/write-document";
+import { appendLog, type AppendLogInput } from "./tools/append-log";
+import { searchIndex, type SearchIndexInput } from "./tools/search-index";
+import { wikilinkResolve, type WikilinkResolveInput } from "./tools/wikilink-resolve";
+import { moveDocument, type MoveDocumentInput } from "./tools/move-document";
+import { deleteDocument, type DeleteDocumentInput } from "./tools/delete-document";
 
 export interface VaultConfig {
   invariants: Record<string, "enabled" | "disabled">;
@@ -21,10 +29,22 @@ export interface PageTypesConfig {
   extensions: ReadonlyArray<string | { name: string; frontmatter_extras?: Record<string, unknown> }>;
 }
 
+export interface BoundToolSurface {
+  readDocument: (input: ReadDocumentInput) => ReturnType<typeof readDocument>;
+  writeDocument: (input: WriteDocumentInput) => ReturnType<typeof writeDocument>;
+  appendLog: (input: AppendLogInput) => ReturnType<typeof appendLog>;
+  searchIndex: (input: SearchIndexInput) => ReturnType<typeof searchIndex>;
+  wikilinkResolve: (input: WikilinkResolveInput) => ReturnType<typeof wikilinkResolve>;
+  moveDocument: (input: MoveDocumentInput) => ReturnType<typeof moveDocument>;
+  deleteDocument: (input: DeleteDocumentInput) => ReturnType<typeof deleteDocument>;
+}
+
 export interface Vault {
   readonly path: string;
   readonly config: VaultConfig;
   readonly pageTypes: PageTypesConfig;
+  readonly dispatcher: Dispatcher;
+  readonly tools: BoundToolSurface;
 }
 
 async function findVaultRoot(start: string): Promise<string | null> {
@@ -89,5 +109,16 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   } catch {
     // page-types is optional
   }
-  return ok({ path: root, config, pageTypes });
+  const dispatcher = makeDispatcher(root);
+  const partial = { path: root, config, pageTypes, dispatcher } as Vault;
+  const tools: BoundToolSurface = {
+    readDocument: (input) => readDocument(partial, input),
+    writeDocument: (input) => writeDocument(partial, dispatcher, input),
+    appendLog: (input) => appendLog(partial, dispatcher, input),
+    searchIndex: (input) => searchIndex(partial, input),
+    wikilinkResolve: (input) => wikilinkResolve(partial, input),
+    moveDocument: (input) => moveDocument(partial, dispatcher, input),
+    deleteDocument: (input) => deleteDocument(partial, dispatcher, input),
+  };
+  return ok({ path: root, config, pageTypes, dispatcher, tools });
 }
