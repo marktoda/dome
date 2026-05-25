@@ -23,7 +23,7 @@ Creates:
 
 - The directory tree: `raw/`, `notes/`, `wiki/{entities,concepts,sources,syntheses}/`, `inbox/raw/` (the shipped-default capture bucket), `.dome/{prompts,hooks,in-flight,state}/`.
 - `.dome/page-types.yaml` with the four default types.
-- `.dome/config.yaml` with tier-2 defaults enabled and tier-3 features disabled.
+- `.dome/config.yaml` with shipped defaults enabled and opt-in features disabled.
 - `.dome/hooks/intake-raw.yaml` — the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow.
 - `.gitignore` — excludes `.dome/state/` (per-machine operational state).
 - `index.md` and `log.md` (with one bootstrap entry).
@@ -32,7 +32,7 @@ Creates:
 
 Refuses if `<path>` already contains `.dome/` (use `dome migrate` for existing Dome vaults) OR `.git/` with prior history that wasn't created by `dome init` (the user should `dome migrate` instead to inherit their existing history cleanly).
 
-Activating tier-3 features beyond `intake-raw` (sensitivity routing, voice intake, research intake, clip intake) is manual after init: copy hook templates from the SDK's `hooks/templates/` into `.dome/hooks/` and create any additional `inbox/<bucket>/` directories. A future "packs" mechanism may layer convenience over this; v0.5 keeps activation explicit.
+Activating opt-in features beyond `intake-raw` (sensitivity routing, voice intake, research intake, clip intake) is manual after init: copy hook templates from the SDK's `hooks/templates/` into `.dome/hooks/` and create any additional `inbox/<bucket>/` directories. A future "packs" mechanism may layer convenience over this; v0.5 keeps activation explicit.
 
 ## `dome migrate <path>`
 
@@ -82,7 +82,7 @@ Catch up the vault's hook execution state to match the current filesystem state.
 cd ~/vaults/work && dome reconcile
 ```
 
-Runs four phases in order (see [[wiki/specs/hooks]] §"Durability and reconciliation" for full detail):
+Runs three phases in order (see [[wiki/specs/hooks]] §"Durability and reconciliation" for full detail):
 
 1. **Inbox processing** — fire `document.written.inbox.<bucket>` for each file in `inbox/<bucket>/`. Intake hooks move the files out on completion (per [[wiki/invariants/INBOX_IS_EPHEMERAL]]).
 2. **Git diff** — fire `document.written.<category>.<type>` for each file changed since `.dome/state/last-reconciled-sha.txt`, using `git status --porcelain` + `git diff --name-only`.
@@ -106,7 +106,7 @@ Invokes the `lint` workflow prompt via the headless agent loop:
 
 - Reads the wiki and index.
 - Detects: orphan pages, stale claims, missing cross-references, contradictions, schema-violating frontmatter, out-of-band direct edits.
-- Writes proposed fixes to `wiki/inbox/lint-pass-YYYY-MM-DD.md` (or `inbox/review/`).
+- Writes proposed fixes to a returned report (default), or to `inbox/review/<lint-pass-YYYY-MM-DD>.md` if the vault has `inbox/review/` configured.
 - Exits 0 on success; nonzero if drift was found above a configurable threshold.
 
 Designed to be cron'd weekly. The vault is git-backed, so applying proposed fixes is safe (`git revert` is available).

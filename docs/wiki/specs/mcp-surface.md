@@ -40,7 +40,7 @@ Input schemas are Zod-derived JSON Schema; MCP clients (Claude Code, etc.) consu
 
 ## Prompts exposed
 
-The MCP server also exposes Dome's prompts as MCP *prompts* (a separate MCP concept from tools — MCP prompts are reusable templates a harness can offer to its user). Tier-2 shipped-default workflows always appear; tier-3 opt-in workflows appear only when the vault activates them.
+The MCP server also exposes Dome's prompts as MCP *prompts* (a separate MCP concept from tools — MCP prompts are reusable templates a harness can offer to its user). Shipped-default workflows always appear; opt-in workflows appear only when the vault activates them.
 
 | MCP prompt name | Underlying workflow prompt | Tier |
 |---|---|---|

@@ -138,5 +138,30 @@ Net effect:
 - Commit semantics: per-workflow atomic auto-commit (was: no auto-commit)
 - Invariant count unchanged: 10 (5 axiom + 3 default + 2 opt-in)
 
+## [2026-05-25] lint | Cohesion review pass — terminology + counts cleanup
+
+After the user requested one final pass, ran a structured cohesion review identifying ~26 distinct rot/inconsistency issues. Applied all cleanups; no semantic design changes — pure cleanup of rot accumulated across 4 prior refinement passes.
+
+**Stale Tool name references (`readPage` / `writePage`).** Bulk-renamed across 9 files: sdk-surface, hooks, prompts-and-workflows, all 5 invariant docs that referenced Tools by name, and index.md.
+
+**Retired Tools removed from prompts-and-workflows example frontmatter.** The workflow-frontmatter example still listed `routeSensitiveToInbox` and `updateIndex` in the tools array. Trimmed to the 5 actually-used Tools.
+
+**Vestigial `updateIndex` references.** vault-layout.md ownership table corrected; async-read-after-write-staleness.md updated; intent-prompt-tools.md `doResearch` reference clarified.
+
+**`VAULT_IS_GIT_REPO` was missing from the axiom list in sdk-surface.md** Tiered feature model table. Fixed: now lists all 5 axioms and "The 7 Tools" (was "6 Tools"). Also added `INBOX_IS_EPHEMERAL` + `intake-raw` shipped-default hook to the shipped-defaults cell.
+
+**Reconciliation phase count mismatch.** cli.md said "Runs four phases" — corrected to three (we dropped in-flight recovery in pass 4).
+
+**Tool count inconsistencies.** index.md "6 Tools" → "7 Tools". v0.5-build-plan.md old snake_case 10-Tool catalog → canonical 7-Tool list. intent-prompt-tools.md "10 Tools available" → 7. v0.5-build-plan.md invariant count clarified: 10 total, 9 Tool-boundary + VAULT_IS_GIT_REPO at vault-open boundary.
+
+**Tier nomenclature drift.** Standardized on `shipped default` / `opt-in` / `axiom`. Replaced tier-1/2/3 patterns across 4 spec files.
+
+**Section heading inconsistency.** hooks.md `## Why this design (the principle)` normalized to `## Why this design`.
+
+**`wiki/inbox/` vestige.** cli.md lint output destination corrected to a returned report (default) or `inbox/review/` (when configured).
+
+Files touched: 13. All rot eliminated. Substrate is now internally consistent across all 4 passes of refinement.
+
+
 
 

@@ -23,7 +23,7 @@ Reserved sync uses:
 
 - **Sensitivity classification on ingested content.** The classifier must run before the writer decides which destination (wiki vs inbox/review). Declared sync.
 - **Schema validation on extension-typed pages.** Future use.
-- **Index update on page write.** Declared sync — `updateIndex` is itself a Tool the writer calls, but its hook handler (if any) for "rebuild full-text search index" might want to be sync if the user is about to query.
+- **Index update on page write.** The `auto-update-index` shipped-default hook is async by default; for a user about to query immediately after writing, declaring it sync ensures the index is current before the query loads. Trade-off: small added write latency.
 
 **Specific scenarios:**
 

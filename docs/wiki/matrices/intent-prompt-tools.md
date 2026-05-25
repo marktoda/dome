@@ -13,7 +13,7 @@ A workflow is invoked in three contexts (see [[wiki/specs/prompts-and-workflows]
 
 ## Matrix
 
-The SDK has 6 Tools; workflows declare which subset they bind. Tier-3 (opt-in) workflows appear only in vaults that activate them.
+The SDK has 7 Tools; workflows declare which subset they bind. Opt-in workflows appear only in vaults that activate them.
 
 | User intent (conversational mode) | Workflow prompt | Tier | Tools bound | Common Effects |
 |---|---|---|---|---|
@@ -23,7 +23,7 @@ The SDK has 6 Tools; workflows declare which subset they bind. Tier-3 (opt-in) w
 | "Check the wiki for issues" / "Lint my vault" / "What's stale?" | `lint` | default | `readDocument`, `searchIndex`, `wikilinkResolve`, `writeDocument` (proposing fixes to `inbox/review/` if sensitivity is enabled, or returning a structured report otherwise), `appendLog` | Proposed fixes; nothing applied without user confirmation |
 | "Convert this Obsidian vault to Dome" | `migrate` | default | `readDocument`, `writeDocument`, `moveDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` | Detects existing structure; proposes migration plan to `.dome/migration-plan.md`; applies on `--apply` |
 | "Give me a context packet for X" / "Export for ChatGPT" | `export-context` | default | `readDocument`, `searchIndex`, `wikilinkResolve` | Markdown blob to stdout or file; no vault mutations |
-| "Research X and update my notes" | `research` | opt-in | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` (the research workflow makes external HTTP calls itself; no `doResearch` Tool) | New `wiki/sources/` page; proposed updates to related concept / entity pages |
+| "Research X and update my notes" | `research` | opt-in | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` (the research workflow makes external HTTP calls inside the prompt; no dedicated research Tool) | New `wiki/sources/` page; proposed updates to related concept / entity pages |
 | (Voice-source file write to `inbox/voice/`) | `voice-ingest` (intake-triggered) | opt-in | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` (transcript cleanup runs inside the workflow prompt) | Same as ingest, plus cleanup of transcription artifacts |
 | (Sensitive-flagged content during ingest) | `sensitivity-classify` (sub-workflow or pre-write hook) | opt-in | `readDocument`, `writeDocument` (target is `inbox/review/<file>.md`), `appendLog` | Item in `inbox/review/` with classification rationale |
 | (Clip-source file write to `inbox/clip/`) | `clip-integrate` (intake-triggered) | opt-in | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` | Web-clip summarized; new source page; cross-references to related concepts |
@@ -42,7 +42,7 @@ This pattern keeps Tools mechanical and intent-routing semantic.
 
 ## Why a fixed workflow set and not full freeform tool access
 
-A workflow's tool subset is what makes behavior bounded. Without workflows, a harness with all 10 Tools available could do anything in response to anything — a query intent might silently update pages, a capture intent might do research. Workflows narrow the action space to match the user's stated intent, and the bound Tool subset is the structural enforcement of that narrowing.
+A workflow's tool subset is what makes behavior bounded. Without workflows, a harness with all 7 Tools available could do anything in response to anything — a query intent might silently update pages, a capture intent might do research. Workflows narrow the action space to match the user's stated intent, and the bound Tool subset is the structural enforcement of that narrowing.
 
 This is the same pattern Anthropic's Claude Code uses internally (different tool subsets for different modes) and the same pattern any well-designed agentic system uses.
 

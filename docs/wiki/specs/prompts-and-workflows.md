@@ -28,13 +28,11 @@ A prompt is a *workflow* iff it carries workflow frontmatter:
 type: workflow-prompt
 name: ingest
 tools:
-  - readPage
-  - writePage
+  - readDocument
+  - writeDocument
   - appendLog
   - searchIndex
   - wikilinkResolve
-  - routeSensitiveToInbox
-  - updateIndex
 triggers:
   - "intake:inbox/raw/*"
   - "intent:capture-thought"
@@ -52,21 +50,21 @@ Field semantics:
 
 Prompts without workflow frontmatter are loaded by name and used as system prompts, prompt fragments, or composition partials.
 
-## Shipped workflows (tier classification)
+## Shipped workflows by tier
 
-The SDK ships these workflow prompts. Tier-2 (shipped default) workflows are loaded into every vault's prompt library; tier-3 (opt-in) workflows are available but inert unless the vault activates them via a hook in `.dome/hooks/`.
+The SDK ships these workflow prompts. Shipped-default workflows are loaded into every vault's prompt library; opt-in workflows are available but inert unless the vault activates them via a hook in `.dome/hooks/`.
 
 | Workflow | Tier | Trigger | Tools available | Purpose |
 |---|---|---|---|---|
-| `ingest` | shipped default | `intake:inbox/raw/*` (when activated), `intent:capture-thought` | readPage, writePage, appendLog, searchIndex, wikilinkResolve | Process a raw source into wiki updates. |
-| `query` | shipped default | `intent:ask` | readPage, searchIndex, wikilinkResolve, writePage (synthesis-page proposal only) | Answer a question from the vault with citations. May propose synthesis page creation. |
-| `lint` | shipped default | `manual:lint`, `clock:weekly` (when scheduled) | readPage, searchIndex, wikilinkResolve, writePage (proposals to inbox/review or returned report), appendLog | Detect drift: orphans, missing cross-refs, contradictions, schema violations. Propose fixes. |
-| `migrate` | shipped default | `manual:migrate` | readPage, writePage, moveDocument, appendLog, searchIndex, wikilinkResolve | Convert an existing markdown vault to Dome shape. Plan first; apply on `--apply`. |
-| `export-context` | shipped default | `manual:export-context` | readPage, searchIndex, wikilinkResolve | Produce a markdown context-packet for cross-AI handoff. No vault mutations. |
-| `research` | opt-in | `intake:inbox/research/*` (when activated), `intent:research` | readPage, writePage, appendLog, searchIndex, wikilinkResolve (HTTP fetch is done inside the workflow prompt) | Run external research; produce a source page under wiki/sources/; propose related page updates. |
+| `ingest` | shipped default | `intake:inbox/raw/*` (when activated), `intent:capture-thought` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Process a raw source into wiki updates. |
+| `query` | shipped default | `intent:ask` | readDocument, searchIndex, wikilinkResolve, writeDocument (synthesis-page proposal only) | Answer a question from the vault with citations. May propose synthesis page creation. |
+| `lint` | shipped default | `manual:lint`, `clock:weekly` (when scheduled) | readDocument, searchIndex, wikilinkResolve, writeDocument (proposals to inbox/review or returned report), appendLog | Detect drift: orphans, missing cross-refs, contradictions, schema violations. Propose fixes. |
+| `migrate` | shipped default | `manual:migrate` | readDocument, writeDocument, moveDocument, appendLog, searchIndex, wikilinkResolve | Convert an existing markdown vault to Dome shape. Plan first; apply on `--apply`. |
+| `export-context` | shipped default | `manual:export-context` | readDocument, searchIndex, wikilinkResolve | Produce a markdown context-packet for cross-AI handoff. No vault mutations. |
+| `research` | opt-in | `intake:inbox/research/*` (when activated), `intent:research` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve (HTTP fetch is done inside the workflow prompt) | Run external research; produce a source page under wiki/sources/; propose related page updates. |
 | `voice-ingest` | opt-in | `intake:inbox/voice/*` (when activated) | same as `ingest`; transcript cleanup is in-prompt | Process a voice-transcript raw source. |
-| `sensitivity-classify` | opt-in | sub-workflow inside `ingest` when `SENSITIVE_GOES_TO_INBOX` is enabled, or pre-write hook | readPage, writePage (target `inbox/review/`), appendLog | Classify content sensitivity; route to `inbox/review/` for items needing human review. |
-| `clip-integrate` | opt-in | `intake:inbox/clip/*` (when activated) | readPage, writePage, appendLog, searchIndex, wikilinkResolve | Integrate a web clip: summarize, create a source page, propose cross-references. |
+| `sensitivity-classify` | opt-in | sub-workflow inside `ingest` when `SENSITIVE_GOES_TO_INBOX` is enabled, or pre-write hook | readDocument, writeDocument (target `inbox/review/`), appendLog | Classify content sensitivity; route to `inbox/review/` for items needing human review. |
+| `clip-integrate` | opt-in | `intake:inbox/clip/*` (when activated) | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Integrate a web clip: summarize, create a source page, propose cross-references. |
 
 The workflow set is open: plugins and vault-local files register additional workflows. The nine above are what the SDK ships; vaults customize by overriding (e.g., `<vault>/.dome/prompts/ingest.md` replaces the default `ingest.md`).
 

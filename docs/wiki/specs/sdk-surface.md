@@ -100,7 +100,7 @@ Events are derived from Effects automatically; there is no `fireEvent` API. See 
 
 **Two shipped default hooks** ride in the SDK as enabled-by-default:
 
-- `auto-update-index` — on `document.written.wiki.*` and `document.deleted.wiki.*`, writes the affected index entries via `writePage(index.md, ...)`.
+- `auto-update-index` — on `document.written.wiki.*` and `document.deleted.wiki.*`, writes the affected index entries via `writeDocument(index.md, ...)`.
 - `auto-cross-reference` — on `document.written.wiki.entity`, searches the wiki for mentions of the new entity and proposes backlinks via `writeDocument`.
 
 Both can be disabled in `.dome/config.yaml` for vaults that don't want them. The Dome project's docs vault leaves both enabled.
@@ -131,11 +131,11 @@ The SDK ships features across three tiers. The tier determines whether a feature
 
 | Tier | Description | Examples |
 |---|---|---|
-| **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | `RAW_IS_IMMUTABLE`, `MARKDOWN_IS_SOURCE_OF_TRUTH`, `HOOKS_CANNOT_BYPASS_TOOLS`, `LOG_IS_APPEND_ONLY`. The 6 Tools. `index.md` + `log.md`. MCP server. CLI commands. |
-| **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | `WIKILINKS_ARE_FULLPATH`, `PAGE_TYPE_BY_DIRECTORY`, `EVERY_WRITE_IS_LOGGED`. 4 default page types. `auto-update-index` + `auto-cross-reference` hooks. `ingest`, `query`, `lint`, `migrate`, `export-context` workflows. |
-| **Opt-in** | Shipped, not active by default. Activated by adding the corresponding hook YAML / workflow / invariant entry to `<vault>/.dome/`. | `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE`. `sensitivity-classify`, `voice-ingest`, `research`, `clip-integrate` workflows. `inbox/<bucket>/` directories. |
+| **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | `RAW_IS_IMMUTABLE`, `MARKDOWN_IS_SOURCE_OF_TRUTH`, `LOG_IS_APPEND_ONLY`, `HOOKS_CANNOT_BYPASS_TOOLS`, `VAULT_IS_GIT_REPO`. The 7 Tools. `index.md` + `log.md`. MCP server. CLI commands. |
+| **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | `EVERY_WRITE_IS_LOGGED`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `INBOX_IS_EPHEMERAL`. 4 default page types. `auto-update-index` + `auto-cross-reference` hooks. `intake-raw` shipped-default hook. `ingest`, `query`, `lint`, `migrate`, `export-context` workflows. |
+| **Opt-in** | Shipped, not active by default. Activated by adding the corresponding hook YAML / workflow / invariant entry to `<vault>/.dome/`. | `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE`. `sensitivity-classify`, `voice-ingest`, `research`, `clip-integrate` workflows. `inbox/<bucket>/` directories beyond `inbox/raw/`. |
 
-`dome init <path>` produces a minimal general-purpose vault — just the tier-1 axioms and tier-2 defaults. Activation of tier-3 features is manual: copy the relevant hook YAML template from the SDK into `<vault>/.dome/hooks/` and create the `inbox/<bucket>/` directory the hook listens on. A future "packs" or "presets" mechanism may layer convenience over this; v0.5 keeps it manual.
+`dome init <path>` produces a minimal general-purpose vault — just the axioms and shipped defaults. Activation of opt-in features is manual: copy the relevant hook YAML template from the SDK into `<vault>/.dome/hooks/` and create the `inbox/<bucket>/` directory the hook listens on. A future "packs" or "presets" mechanism may layer convenience over this; v0.5 keeps it manual.
 
 ## Outputs the SDK does not have
 

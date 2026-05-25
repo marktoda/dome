@@ -32,7 +32,7 @@ import { registerHook } from "@dome/sdk";
 
 registerHook("document.written.wiki.entity", async ({ path, diff }, ctx) => {
   // Read other entity pages, search for mentions of the new entity name,
-  // and propose backlinks via ctx.tools.writePage(...).
+  // and propose backlinks via ctx.tools.writeDocument(...).
 });
 ```
 
@@ -51,7 +51,7 @@ The declarative form is sugar for the common case: "when X happens, run workflow
 
 The **drop-zone intake pattern** uses the declarative form exclusively. The principle: a user (or another process) writes a file to a known directory, the hook fires, the workflow processes the file. This generalizes "quick capture" without any dedicated CLI machinery — `dome capture` becomes a shell idiom (`echo "$THOUGHT" > $VAULT/inbox/raw/$(date -u +%Y%m%d-%H%M%S).md`) and the hook does the rest. New capture kinds = new buckets + new hook YAMLs.
 
-## Shipped default hooks (tier 2 — enabled by default)
+## Shipped default hooks (shipped default — enabled by default)
 
 The SDK ships two hooks as shipped defaults — enabled in every vault unless explicitly disabled in `.dome/config.yaml`:
 
@@ -64,7 +64,7 @@ async: true
 handler: builtin:auto-update-index
 ```
 
-Subscribes to all wiki write effects (and `document.deleted.wiki.*`). The handler reads the modified Document, computes the index entry, and writes the updated `index.md` via `writePage(index.md, ...)`. The handler is idempotent and cycle-safe (the index write itself doesn't match `document.written.wiki.*` because index.md is not under `wiki/`).
+Subscribes to all wiki write effects (and `document.deleted.wiki.*`). The handler reads the modified Document, computes the index entry, and writes the updated `index.md` via `writeDocument(index.md, ...)`. The handler is idempotent and cycle-safe (the index write itself doesn't match `document.written.wiki.*` because index.md is not under `wiki/`).
 
 ### `auto-cross-reference`
 
@@ -89,7 +89,7 @@ hooks:
     auto-cross-reference: disabled    # for vaults that don't want auto-backlinking
 ```
 
-## Opt-in intake patterns (tier 3 — not active by default)
+## Opt-in intake patterns (opt-in — not active by default)
 
 The SDK ships hook *templates* for common intake patterns. These are NOT active in a fresh vault; the user enables them by writing the corresponding YAML to `.dome/hooks/` (typically via `dome init --kind <profile>` shortcuts; see [[wiki/specs/cli]]).
 
@@ -269,7 +269,7 @@ Tools are the only mutation surface. Hooks are the only reaction surface. Every 
 
 If a feature can't be expressed as Tool registration + Hook registration, the four-concept core is missing something. The intent is to keep the core stable; new behavior surfaces should not appear.
 
-## Why this design (the principle)
+## Why this design
 
 The hook system is what makes Dome stable as a substrate while flexible as a product. The four-concept core (Vault, Document, Tool, Hook) doesn't change as features are added; new features register as Tools or Hooks, never as core changes. Years of features can land without modifying the primitives. Plugin authors learn the registration mechanism once and gain access to every extension point. The cost of a new feature stays constant over time — exactly what a long-term substrate requires.
 

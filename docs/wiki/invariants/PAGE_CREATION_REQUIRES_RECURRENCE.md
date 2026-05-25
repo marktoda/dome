@@ -22,7 +22,7 @@ Most useful for personal-note vaults where the user wants explicit friction agai
 
 **Why:** Page explosion is the most expensive form of wiki rot. A 10-minute voice ramble can produce 30 one-off "concept" pages if the agent isn't constrained — and most will never recur, polluting the index forever. Forcing a creation reason makes the agent justify each new page, structurally.
 
-**Structural enforcement:** When enabled, `writePage(path, body, frontmatter, { create: true, reason: ... })` requires `reason` when creating a page that doesn't yet exist. Missing `reason` → `Result.err({ kind: 'page-creation-requires-reason' })`. The reason is logged with the page-creation log entry. When disabled, `reason` is optional and unenforced.
+**Structural enforcement:** When enabled, `writeDocument(path, body, frontmatter, { create: true, reason: ... })` requires `reason` when creating a page that doesn't yet exist. Missing `reason` → `Result.err({ kind: 'page-creation-requires-reason' })`. The reason is logged with the page-creation log entry. When disabled, `reason` is optional and unenforced.
 
 **Counter-example (when enabled):** During ingest of a 5-minute strategy meeting voice note, the agent identifies 12 candidate "concepts" — phrases like "two-sided buyer marketplace dynamics." Without the invariant, the agent might create 12 concept pages, most one-off. With it, the agent must pass `reason: 'recurring'` only for concepts already in the index; the rest land as bullets on existing pages.
 

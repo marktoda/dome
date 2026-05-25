@@ -14,7 +14,7 @@ tier: shipped-default
 
 **Why:** The directory structure is the type system. This is contrarian in the PKM space — most tools use frontmatter or tags as the primary type signal — but the directory has two properties tags can't match: (1) it's visible in any markdown editor; (2) it's a grep-friendly stable target. The frontmatter `type:` field is a redundant self-documenting check; the directory is canonical.
 
-**Structural enforcement:** `writePage(path, ...)` parses `path`, extracts the directory immediately under `wiki/`, and checks against the allowed-types list from `page-types.yaml`. Writes to unknown subdirectories (e.g., `wiki/decisions/`) are rejected. Writes to allowed subdirectories must carry a matching `type:` frontmatter value or the Tool rejects with `kind: 'frontmatter-mismatch'`.
+**Structural enforcement:** `writeDocument(path, ...)` parses `path`, extracts the directory immediately under `wiki/`, and checks against the allowed-types list from `page-types.yaml`. Writes to unknown subdirectories (e.g., `wiki/decisions/`) are rejected. Writes to allowed subdirectories must carry a matching `type:` frontmatter value or the Tool rejects with `kind: 'frontmatter-mismatch'`.
 
 **Counter-example:** A new contributor decides "decision" deserves its own page type and starts writing `wiki/decisions/atlas-platform-split.md`. Without an entry in `page-types.yaml`, `writeDocument` refuses. The right path: add `decisions` to the `extensions:` block in `.dome/page-types.yaml`; declare any per-type frontmatter schema; then writes succeed. The decision to expand the type system is explicit and vault-scoped, not accidental.
 

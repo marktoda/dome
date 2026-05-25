@@ -42,7 +42,7 @@ A Dome vault is a directory containing:
   .gitignore            # excludes .dome/state/ (per-machine operational state)
 ```
 
-`dome init` creates the tier-1 axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `.git/` via `git init`. Additional `inbox/<bucket>/` directories (`voice/`, `research/`, `clip/`, `review/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Opt-in intake patterns."
+`dome init` creates the axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `.git/` via `git init`. Additional `inbox/<bucket>/` directories (`voice/`, `research/`, `clip/`, `review/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Opt-in intake patterns."
 
 ### Git repository structure
 
@@ -111,7 +111,7 @@ extensions:
 | `wiki/` | Dome (via Tools) | Mutable through `writeDocument`, `moveDocument`. |
 | `notes/` | User | Dome reads, never writes. |
 | `inbox/` | User writes; Dome's intake hooks consume | Writes by user are normal; Dome consumes (moves or deletes) during processing. |
-| `index.md` | Dome (via `updateIndex`) | Mutable through one Tool only. |
+| `index.md` | Dome (via `writeDocument` invoked by the `auto-update-index` hook) | Mutated only through the auto-update-index shipped-default hook. |
 | `log.md` | Dome (via `appendLog`) | Append-only. `LOG_IS_APPEND_ONLY`. |
 | `.dome/` | User (mostly) and shipped configs | User-authored; tools never mutate. |
 | `VISION.md`, `README.md` | User | Dome reads, never writes. |
