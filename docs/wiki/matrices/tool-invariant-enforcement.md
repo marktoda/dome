@@ -19,14 +19,14 @@ A blank cell means no relationship: the Tool doesn't touch that invariant's surf
 ## Tier legend
 
 - **Axiom** — non-disable-able. Disabling changes what Dome is.
-- **Default** — shipped enabled; opt-out per vault.
+- **Shipped default** — enabled by default; opt-out per vault.
 - **Opt-in** — shipped disabled; opt-in per vault.
 
 ## Matrix
 
 | Tool ↓ \ Invariant → | RAW_IS_IMMUTABLE *(axiom)* | MARKDOWN_IS_SOURCE_OF_TRUTH *(axiom)* | LOG_IS_APPEND_ONLY *(axiom)* | HOOKS_CANNOT_BYPASS_TOOLS *(axiom)* | EVERY_WRITE_IS_LOGGED *(default)* | PAGE_TYPE_BY_DIRECTORY *(default)* | WIKILINKS_ARE_FULLPATH *(default)* | SENSITIVE_GOES_TO_INBOX *(opt-in)* | PAGE_CREATION_REQUIRES_RECURRENCE *(opt-in)* |
 |---|---|---|---|---|---|---|---|---|---|
-| `readDocument` | *(read-only)* | *(read-only)* |  |  |  |  | *(parses links to detect)* |  |  |
+| `readDocument` | *(read-only)* | *(read-only)* |  |  |  |  | *(returns parsed wikilinks via `linksOut`; does not validate or reject)* |  |  |
 | `writeDocument` | **rejects raw/** | *(writes markdown only)* |  |  | **emits appendLog effect when default enabled** | **validates path → type; rejects unknown subdir or frontmatter/dir mismatch when default enabled** | **rejects body with short-form links when default enabled** | **when opt-in enabled: rejects writes to wiki/ when sensitivity_classified='sensitive'** | **when opt-in enabled: requires reason on create** |
 | `appendLog` |  | *(writes markdown only)* | **only mutator of log.md** |  | *(the enforcement target)* |  |  |  |  |
 | `searchIndex` | *(read-only)* | *(read-only)* |  |  |  |  |  |  |  |
@@ -67,6 +67,6 @@ Plugins that add Tools declare which invariants they enforce. The matrix is rege
 ## Related
 
 - [[wiki/specs/sdk-surface]]
-- [[wiki/invariants/RAW_IS_IMMUTABLE]] (and all 8 other invariants)
+- [[wiki/invariants/RAW_IS_IMMUTABLE]] (and the rest of the named-invariants catalog under `wiki/invariants/`)
 - [[wiki/matrices/event-types-and-payloads]]
 - [[wiki/matrices/intent-prompt-tools]]

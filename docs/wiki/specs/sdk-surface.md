@@ -73,6 +73,8 @@ The SDK ships exactly **seven Tools**. Anything beyond mutation primitives is a 
 
 Naming convention: Tools that operate on any Document use `<verb>Document`; Tools that operate on a specific Dome surface (`log.md`, the index, wikilinks) use their surface-specific name.
 
+`(auto)` in the Invariants column means the Tool's effect array always includes the corresponding Effect — the caller does not separately invoke that Effect's producer Tool. For `EVERY_WRITE_IS_LOGGED (auto)`, the Tool emits its `appendLog` Effect alongside the primary mutation Effect; the caller does not call `appendLog` explicitly. The matrix at [[wiki/matrices/tool-invariant-enforcement]] spells the same semantic per-cell ("emits appendLog effect when default enabled").
+
 | Tool | Purpose | Invariants enforced (axioms in **bold**) |
 |---|---|---|
 | `readDocument` | Read a Document by path. | — |
@@ -86,6 +88,68 @@ Naming convention: Tools that operate on any Document use `<verb>Document`; Tool
 `writeDocument` is the universal mutation entrypoint for creates and updates. `moveDocument` atomically relocates + rewrites backlinks. `deleteDocument` removes pages cleanly (lint proposes deleting orphan pages; users retire obsolete syntheses; migrate may delete superseded files). Sensitive content writes to `inbox/review/<file>.md`; ingest writes to `wiki/<type>/<name>.md`; quick-capture writes to `inbox/raw/<ts>.md`. The path determines the category and the invariant-enforcement profile.
 
 The catalog is open: plugins register additional Tools through the registration mechanism. The seven above are the entirety of what the SDK ships.
+
+#### Tool signatures
+
+Canonical input/output shapes for the seven Tools. Other specs and invariant docs cite these shapes rather than restate them inline.
+
+```ts
+// Read
+readDocument(input: { path: string }): ToolReturn<Document>
+
+// Universal mutation entrypoint
+writeDocument(input: {
+  path: string;
+  body: string;
+  frontmatter: Record<string, unknown>;
+  opts?: {
+    create?: boolean;
+    // ↑ true on new-page create; gates PAGE_CREATION_REQUIRES_RECURRENCE.
+    //   When that invariant is enabled and create=true, `reason` is required.
+    reason?: 'recurring' | 'named_explicitly' | 'structural';
+    // ↑ required when create=true AND PAGE_CREATION_REQUIRES_RECURRENCE enabled;
+    //   otherwise optional. Logged with the page-creation log entry.
+    sensitivity_classified?: 'normal' | 'sensitive';
+    // ↑ gates SENSITIVE_GOES_TO_INBOX routing. When that invariant is enabled
+    //   and the value is 'sensitive', writeDocument refuses writes to wiki/*
+    //   and instructs the caller to target inbox/review/*.
+  }
+}): ToolReturn<Document>
+
+// Append-only log mutation
+appendLog(input: {
+  verb: 'ingest' | 'query' | 'lint' | 'update' | 'bootstrap' | string;
+  subject: string;
+  body?: string;
+  refs?: ReadonlyArray<string>;
+}): ToolReturn<LogEntry>
+
+// Read-only search
+searchIndex(input: {
+  query: string;
+  filters?: { category?: string; type?: string; tags?: string[] };
+}): ToolReturn<ReadonlyArray<SearchMatch>>
+
+// Read-only resolution
+wikilinkResolve(input: { link: string }): ToolReturn<Document | null>
+
+// Atomic move + backlink rewrite
+moveDocument(input: {
+  from: string;
+  to: string;
+  reason: string;
+}): ToolReturn<Document>
+
+// Delete with hook-firing event
+deleteDocument(input: {
+  path: string;
+  reason: string;
+}): ToolReturn<void>
+```
+
+`ToolReturn<T>` is the `{ result: Result<T, ToolError>; effects: Effect[] }` shape defined in §"Tool" above. The Zod schema authoritative implementation lives in the SDK package; this spec carries the canonical TypeScript shape.
+
+Plugin-registered Tools follow the same `input: object → ToolReturn<T>` convention.
 
 #### Concurrency
 
@@ -115,10 +179,10 @@ Events are derived from Effects automatically; there is no `fireEvent` API. See 
 
 **Two shipped default hooks** ride in the SDK as enabled-by-default:
 
-- `auto-update-index` — on `document.written.wiki.*` and `document.deleted.wiki.*`, writes the affected index entries via `writeDocument(index.md, ...)`.
-- `auto-cross-reference` — on `document.written.wiki.entity`, searches the wiki for mentions of the new entity and proposes backlinks via `writeDocument`.
+- `auto-update-index` — on `document.written.wiki.*` and `document.deleted.wiki.*`, writes the affected index entries via the dispatcher's privileged path. `index.md` is dispatcher-owned, not Tool-callable: `writeDocument('index.md', ...)` and `writeDocument('log.md', ...)` are rejected unconditionally regardless of vault config. These two paths are the only non-Tool-callable special targets in the vault.
+- `auto-cross-reference` — on `document.written.wiki.entity`, searches the wiki for mentions of the new entity and writes backlinks via `writeDocument`.
 
-Both can be disabled in `.dome/config.yaml` for vaults that don't want them. The Dome project's docs vault leaves both enabled.
+Both can be disabled in `.dome/config.yaml`. When `auto-update-index` is disabled, `index.md` is unmaintained — `dome doctor --rebuild-index` regenerates it from `wiki/` on demand (see [[wiki/specs/cli]] §"dome doctor"). When `auto-cross-reference` is disabled, new entity pages land without inbound backlinks; existing pages remain untouched until the user runs `dome lint` or re-enables the hook. The Dome project's docs vault leaves both enabled.
 
 ## Registration
 

@@ -14,15 +14,19 @@ tier: axiom
 
 **Why:** Without this invariant, hooks become a second mutation path that bypasses the Tool layer's invariant enforcement. A hook that writes directly to `wiki/entities/danny.md` skips `PAGE_TYPE_BY_DIRECTORY` validation, skips `EVERY_WRITE_IS_LOGGED`, skips sensitivity routing — all the structural mitigations collapse. Forcing hooks through Tools preserves the single-mutation-path property.
 
-**Structural enforcement:** The `HookContext` passed to a handler exposes only the Vault's registered Tools, not the underlying filesystem. TypeScript types enforce this at compile time:
+**Structural enforcement:** The handler signature passes the event as the first parameter and the `HookContext` as the second; the context exposes only the Vault's registered Tools, not the underlying filesystem. TypeScript types enforce this at compile time:
 
 ```ts
+type HookHandler<E extends HookEvent = HookEvent> =
+  (event: E, ctx: HookContext) => Promise<void>;
+
 type HookContext = {
   tools: ReadonlyToolSurface;
   vault: { path: string };  // read-only metadata
-  event: HookEvent;
 };
 ```
+
+The event payload (carrying `path`, `diff`, etc. depending on the event kind — see [[wiki/matrices/event-types-and-payloads]]) is the first argument; the context is purely the dispatcher-bound resources the handler may invoke. This keeps the seam clean: an `event` field on `HookContext` would imply the context is event-specific, which it is not.
 
 No `fs` field, no `vault.write`, no raw write capability. Plugin authors who try to import `node:fs` directly cannot be statically prevented (they're untrusted code) but at runtime such writes are detected by the watcher: out-of-band writes against a Dome-managed vault trigger a `vault.out-of-band-edit` event, logged. `dome doctor` reports affected pages.
 

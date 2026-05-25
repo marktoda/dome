@@ -30,13 +30,18 @@ Hooks register via two equivalent forms.
 ```ts
 import { registerHook } from "@dome/sdk";
 
-registerHook("document.written.wiki.entity", async ({ path, diff }, ctx) => {
+// Handler signature: (event, ctx) — event carries the payload (path, diff, …
+// depending on event kind); ctx carries dispatcher-bound resources (tools,
+// vault metadata). See [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] for the
+// canonical type definitions.
+registerHook("document.written.wiki.entity", async (event, ctx) => {
+  const { path, diff } = event;
   // Read other entity pages, search for mentions of the new entity name,
-  // and propose backlinks via ctx.tools.writeDocument(...).
+  // and add backlinks via ctx.tools.writeDocument(...).
 });
 ```
 
-The programmatic form supports arbitrary logic. The handler receives the event payload and a `ctx` object exposing the Vault's Tools (NOT the filesystem; see [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]]).
+The programmatic form supports arbitrary logic. The handler receives the event payload as the first argument and a `ctx: HookContext` object exposing the Vault's Tools as the second (NOT the filesystem; see [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]]).
 
 ### Declarative — `.dome/hooks/*.yaml`
 
@@ -99,7 +104,8 @@ The SDK ships hook *templates* for common intake patterns. These are NOT active 
 | `intake-voice` | `inbox/voice/*` | `voice-ingest` |
 | `intake-research` | `inbox/research/*` | `research` |
 | `intake-clip` | `inbox/clip/*` | `clip-integrate` |
-| `sensitivity-classify-on-ingest` | matches `document.written.inbox.raw` (after-ingest classification and routing) | `sensitivity-classify` |
+
+The `sensitivity-classify` workflow is NOT in this table. It is not a hook — it is a sub-workflow invoked *inside* the `ingest` workflow when the `SENSITIVE_GOES_TO_INBOX` invariant is enabled. See [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] §"Activation checklist" for the override mechanism. The classification must run *before* `writeDocument` is called (so the invariant can gate the write destination); a post-write hook would not have that property.
 
 Activation is manual in v0.5: copy the template YAML from the SDK's `hooks/templates/` directory into `<vault>/.dome/hooks/`, then create the `inbox/<bucket>/` directory the template listens on. A vault never has an `inbox/<bucket>/` it didn't explicitly create.
 
@@ -107,7 +113,7 @@ Activation is manual in v0.5: copy the template YAML from the SDK's `hooks/templ
 
 ### `inbox/review/` — opt-in sensitivity destination
 
-`inbox/review/` is the destination for content the `sensitivity-classify` workflow flags as sensitive. It is NOT an intake (no workflow runs on writes to it). It is the user's manual-review queue. When the `SENSITIVE_GOES_TO_INBOX` invariant is enabled (see [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]]) and a vault activates the `sensitivity-classify-on-ingest` hook template, content that's classified sensitive lands in `inbox/review/<filename>.md` via `writeDocument`. The user opens it in Obsidian or via `dome doctor --show review-queue` and resolves each item.
+`inbox/review/` is the destination for content the `sensitivity-classify` sub-workflow flags as sensitive. It is NOT an intake (no workflow runs on writes to it). It is the user's manual-review queue. When the `SENSITIVE_GOES_TO_INBOX` invariant is enabled (see [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]]) and a vault overrides the `ingest` prompt to run the `sensitivity-classify` sub-workflow, content that's classified sensitive lands in `inbox/review/<filename>.md` via `writeDocument`. The user opens it in Obsidian or via `dome doctor --show review-queue` and resolves each item.
 
 Vaults that don't enable sensitivity classification never have an `inbox/review/` directory.
 
@@ -117,7 +123,7 @@ Vaults that don't enable sensitivity classification never have an `inbox/review/
 - **Sync opt-in.** A hook may declare `async: false` (declarative) or pass `{ sync: true }` to `registerHook` (programmatic). Sync hooks run inline before the Tool returns. Reserved for hooks that must complete before downstream code observes the result — e.g., a sensitivity-classifier that gates the write destination.
 - **Queue backend.** v0.5 ships with an in-process queue (`p-queue` instance per Vault). The backend is swappable via configuration; Redis-backed BullMQ is a reasonable v1 swap.
 - **Failure model.** A hook handler that throws is logged as a `hook-failure` entry in `log.md`. The originating Tool call is not affected. Three consecutive failures of the same handler trigger `hook-disabled`; the handler is quarantined until `dome doctor` is run.
-- **Cycle prevention.** A causation chain depth limit (configurable, default 5) prevents infinite loops. See [[wiki/gotchas/hook-cycle]].
+- **Cycle prevention.** Two-layer mechanism: (1) **per-(handler, target-path) repetition check** — the primary mechanism. The dispatcher tracks a causation chain per event; when a handler would fire against an event whose `(handler_id, primary_target_path)` pair already appears earlier in the chain, the dispatcher refuses the fire and emits `hook.cycle-detected`. Legitimate fan-out (e.g., `auto-cross-reference` writing backlinks across N pages) is allowed because each target path is distinct. (2) **Depth safety net** — `hooks.max_causation_depth` in `.dome/config.yaml` (default 50) catches runaway chains that don't repeat (handler, target) but grow unboundedly. Either trigger emits `hook.cycle-detected` and refuses the fire. See [[wiki/gotchas/hook-cycle]].
 
 ## Durability and reconciliation
 
@@ -284,5 +290,5 @@ The hook system is what makes Dome stable as a substrate while flexible as a pro
 - [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — hooks observe and propose; Tools mutate.
 - [[wiki/matrices/event-types-and-payloads]] — canonical event taxonomy.
 - [[wiki/gotchas/async-read-after-write-staleness]] — reads after writes may not see hook follow-on.
-- [[wiki/gotchas/hook-cycle]] — depth limit prevents infinite loops.
+- [[wiki/gotchas/hook-cycle]] — per-(handler, target) repetition check + depth safety net.
 - [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] — opt-in invariant the `sensitivity-classify` workflow + a hook implement.

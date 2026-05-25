@@ -63,7 +63,7 @@ The SDK ships these workflow prompts. Shipped-default workflows are loaded into 
 | `export-context` | shipped default | `manual:export-context` | readDocument, searchIndex, wikilinkResolve | Produce a markdown context-packet for cross-AI handoff. No vault mutations. |
 | `research` | opt-in | `intake:inbox/research/*` (when activated), `intent:research` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve (HTTP fetch is done inside the workflow prompt) | Run external research; produce a source page under wiki/sources/; propose related page updates. |
 | `voice-ingest` | opt-in | `intake:inbox/voice/*` (when activated) | same as `ingest`; transcript cleanup is in-prompt | Process a voice-transcript raw source. |
-| `sensitivity-classify` | opt-in | sub-workflow inside `ingest` when `SENSITIVE_GOES_TO_INBOX` is enabled, or pre-write hook | readDocument, writeDocument (target `inbox/review/`), appendLog | Classify content sensitivity; route to `inbox/review/` for items needing human review. |
+| `sensitivity-classify` | opt-in | sub-workflow inside `ingest` when `SENSITIVE_GOES_TO_INBOX` is enabled | readDocument, writeDocument (target `inbox/review/`), appendLog | Classify content sensitivity; route to `inbox/review/` for items needing human review. Runs *before* any `writeDocument` to `wiki/` so the invariant can gate the destination. |
 | `clip-integrate` | opt-in | `intake:inbox/clip/*` (when activated) | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Integrate a web clip: summarize, create a source page, propose cross-references. |
 
 The workflow set is open: plugins and vault-local files register additional workflows. The table above enumerates what the SDK ships; vaults customize by overriding (e.g., `<vault>/.dome/prompts/ingest.md` replaces the default `ingest.md`).
@@ -106,7 +106,7 @@ A workflow is invoked in three contexts:
 
 In all three contexts, the workflow prompt's `tools:` field is the bound set. The harness cannot invoke tools outside that set during the workflow. This is the structural mechanism that prevents an `ingest` workflow from accidentally invoking `do-research`, or a `query` workflow from writing to a page when the user expected read-only behavior.
 
-## Eval suite (proposed v0.5 surface)
+## Eval suite
 
 Because the agent owns the page-write flow, prompt regressions are the biggest semantic risk. The SDK ships an eval suite as a `bun test --eval` target (not a `dome` CLI command — eval runs at test time, not as a runtime user action) that:
 

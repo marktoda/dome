@@ -29,7 +29,7 @@ The MCP server exposes one MCP tool per SDK Tool, name-preserving (snake_case in
 | MCP tool name | SDK Tool | Input schema | Output |
 |---|---|---|---|
 | `dome.read_document` | `readDocument` | `{ path: string }` | Document (frontmatter, body, links_out) |
-| `dome.write_document` | `writeDocument` | `{ path, body, frontmatter, reason?, sensitivity_classified? }` | `{ ok, effects }` or `{ ok: false, error }` |
+| `dome.write_document` | `writeDocument` | `{ path, body, frontmatter, opts?: { create?, reason?, sensitivity_classified? } }` — see [[wiki/specs/sdk-surface]] §"Tool signatures" for the canonical shape | `{ ok, effects }` or `{ ok: false, error }` |
 | `dome.append_log` | `appendLog` | `{ verb, subject, body, refs }` | `{ ok }` |
 | `dome.search_index` | `searchIndex` | `{ query, filters? }` | array of matches with paths and excerpts |
 | `dome.wikilink_resolve` | `wikilinkResolve` | `{ link: string }` | Document or null |

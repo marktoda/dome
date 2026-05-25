@@ -25,7 +25,7 @@ Each workflow declares which subset of the SDK's Tool catalog it binds. Opt-in w
 | "Give me a context packet for X" / "Export for ChatGPT" | `export-context` | default | `readDocument`, `searchIndex`, `wikilinkResolve` | Markdown blob to stdout or file; no vault mutations |
 | "Research X and update my notes" | `research` | opt-in | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` (the research workflow makes external HTTP calls inside the prompt; no dedicated research Tool) | New `wiki/sources/` page; proposed updates to related concept / entity pages |
 | (Voice-source file write to `inbox/voice/`) | `voice-ingest` (intake-triggered) | opt-in | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` (transcript cleanup runs inside the workflow prompt) | Same as ingest, plus cleanup of transcription artifacts |
-| (Sensitive-flagged content during ingest) | `sensitivity-classify` (sub-workflow or pre-write hook) | opt-in | `readDocument`, `writeDocument` (target is `inbox/review/<file>.md`), `appendLog` | Item in `inbox/review/` with classification rationale |
+| (Sensitive-flagged content during ingest) | `sensitivity-classify` (sub-workflow inside `ingest` when `SENSITIVE_GOES_TO_INBOX` is enabled) | opt-in | `readDocument`, `writeDocument` (target is `inbox/review/<file>.md`), `appendLog` | Item in `inbox/review/` with classification rationale |
 | (Clip-source file write to `inbox/clip/`) | `clip-integrate` (intake-triggered) | opt-in | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` | Web-clip summarized; new source page; cross-references to related concepts |
 
 ## How intent → workflow happens

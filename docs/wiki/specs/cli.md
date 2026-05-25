@@ -132,6 +132,12 @@ Unlike `dome lint` (semantic / agent-driven), `dome doctor` is deterministic: it
 
 Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply them. Run after `dome migrate` to verify; run before opening to a new harness to verify upstream changes didn't drift.
 
+**Flags:**
+
+- `--rebuild-index` — regenerate `index.md` from the current `wiki/` contents. Used when `auto-update-index` is disabled (so the index has gone stale) or when the user explicitly wants a from-scratch rebuild. The rebuild bypasses the normal Tool-rejection of `writeDocument('index.md', ...)` because dispatcher-owned files are writable only through the dispatcher's privileged path; `dome doctor --rebuild-index` invokes that path.
+- `--show review-queue` — list pending items in `inbox/review/` (only meaningful when `SENSITIVE_GOES_TO_INBOX` is enabled).
+- `--show raw-citations` — list which wiki pages cite each raw source (derived from page frontmatter; not a stored index).
+
 ## `dome export-context <topic>`
 
 Produce a markdown context-packet for cross-AI handoff.
