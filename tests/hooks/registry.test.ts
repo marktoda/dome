@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { HookRegistry, type RegisteredHook } from "../../src/hook-registry";
+import { HookRegistry } from "../../src/hook-registry";
 import type { HookHandler } from "../../src/hook-context";
 
 const noop: HookHandler = async () => {};
