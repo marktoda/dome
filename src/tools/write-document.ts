@@ -55,7 +55,42 @@ export async function writeDocument(
     };
   }
 
-  // (Invariant checks will be wired in subsequent tasks.)
+  // PAGE_TYPE_BY_DIRECTORY — when enabled, wiki/ writes must have directory match frontmatter type.
+  if (vault.config.invariants.PAGE_TYPE_BY_DIRECTORY === "enabled" && doc0.category === "wiki") {
+    const dirType = doc0.type;
+    if (dirType === null) {
+      return {
+        result: err({
+          kind: "invariant-violated",
+          invariant: "PAGE_TYPE_BY_DIRECTORY",
+          detail: `wiki/ writes require <type>/<filename>; path: ${input.path}`,
+        }),
+        effects: [],
+      };
+    }
+    const singular = singularize(dirType);
+    const allowed = [...vault.pageTypes.defaults, ...vault.pageTypes.extensions.map(e => typeof e === "string" ? e : e.name)];
+    if (!allowed.includes(singular)) {
+      return {
+        result: err({
+          kind: "invariant-violated",
+          invariant: "PAGE_TYPE_BY_DIRECTORY",
+          detail: `Unknown wiki page type: ${singular}. Declared types: ${allowed.join(", ")}`,
+        }),
+        effects: [],
+      };
+    }
+    if (input.frontmatter.type !== singular) {
+      return {
+        result: err({
+          kind: "invariant-violated",
+          invariant: "PAGE_TYPE_BY_DIRECTORY",
+          detail: `Frontmatter type ${input.frontmatter.type} does not match directory ${dirType}`,
+        }),
+        effects: [],
+      };
+    }
+  }
 
   await mkdir(dirname(abs), { recursive: true });
   const before = exists ? await readFile(abs, "utf8") : "";
@@ -94,4 +129,14 @@ function makeDiff(before: string, after: string, path: string): string {
   if (!before) return `--- /dev/null\n+++ ${path}\n[new file]`;
   if (before === after) return `--- ${path}\n+++ ${path}\n[no change]`;
   return `--- a/${path}\n+++ b/${path}\n[content updated]`;
+}
+
+function singularize(plural: string): string {
+  const explicit: Record<string, string> = {
+    entities: "entity",
+    concepts: "concept",
+    sources: "source",
+    syntheses: "synthesis",
+  };
+  return explicit[plural] ?? (plural.endsWith("ies") ? plural.slice(0, -3) + "y" : plural.endsWith("es") ? plural.slice(0, -2) : plural.endsWith("s") ? plural.slice(0, -1) : plural);
 }
