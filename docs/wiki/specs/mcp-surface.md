@@ -52,10 +52,11 @@ The MCP server also exposes Dome's prompts as MCP *prompts* (a separate MCP conc
 | `dome.workflow.export_context` | `export-context` workflow | shipped default |
 | `dome.workflow.research` | `research` workflow | opt-in (visible only when activated) |
 | `dome.workflow.voice_ingest` | `voice-ingest` workflow | opt-in |
-| `dome.workflow.sensitivity_classify` | `sensitivity-classify` workflow | opt-in |
 | `dome.workflow.clip_integrate` | `clip-integrate` workflow | opt-in |
 
 Plugin and vault-local workflows automatically appear as MCP prompts following the same naming convention (`dome.workflow.<name>`).
+
+**Sub-workflows are not exposed.** The `sensitivity-classify` workflow is a sub-workflow invoked *inside* the `ingest` workflow when [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] is enabled (see [[wiki/specs/prompts-and-workflows]] §"Shipped workflows by tier" and [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in"). It has no standalone-invocation contract — its behavior (classify-then-gate-writeDocument-destination) is meaningful only as part of `ingest`. The MCP surface deliberately omits it; a harness that wants to influence sensitivity routing does so by enabling the invariant and letting `ingest` invoke the sub-workflow.
 
 ## Resources exposed
 

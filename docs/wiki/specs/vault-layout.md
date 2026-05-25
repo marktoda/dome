@@ -29,7 +29,8 @@ A Dome vault is a directory containing:
     <extension-types>/  # per-vault extension types declared in .dome/page-types.yaml
   inbox/                # drop-zone directories whose writes trigger hooks
     raw/                # shipped-default capture bucket (created by dome init)
-    <other-buckets>/    # opt-in: voice/, research/, clip/, review/ — created when the user activates the corresponding intake
+    <intake-buckets>/   # opt-in intake buckets — voice/, research/, clip/ — activated via hook template + directory create
+    review/             # opt-in destination (NOT an intake) — created when SENSITIVE_GOES_TO_INBOX is enabled; sensitivity-classify routes content here for manual review
   .dome/                # vault-internal configuration and extensions
     page-types.yaml     # allowed page types: defaults + extensions
     config.yaml         # vault configuration (invariant overrides, hook settings, etc.)
