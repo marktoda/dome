@@ -13,7 +13,7 @@ A workflow is invoked in three contexts (see [[wiki/specs/prompts-and-workflows]
 
 ## Matrix
 
-The SDK has 7 Tools; workflows declare which subset they bind. Opt-in workflows appear only in vaults that activate them.
+Each workflow declares which subset of the SDK's Tool catalog it binds. Opt-in workflows appear only in vaults that activate them.
 
 | User intent (conversational mode) | Workflow prompt | Tier | Tools bound | Common Effects |
 |---|---|---|---|---|
@@ -42,7 +42,7 @@ This pattern keeps Tools mechanical and intent-routing semantic.
 
 ## Why a fixed workflow set and not full freeform tool access
 
-A workflow's tool subset is what makes behavior bounded. Without workflows, a harness with all 7 Tools available could do anything in response to anything — a query intent might silently update pages, a capture intent might do research. Workflows narrow the action space to match the user's stated intent, and the bound Tool subset is the structural enforcement of that narrowing.
+A workflow's tool subset is what makes behavior bounded. Without workflows, a harness with the full Tool catalog available could do anything in response to anything — a query intent might silently update pages, a capture intent might do research. Workflows narrow the action space to match the user's stated intent, and the bound Tool subset is the structural enforcement of that narrowing.
 
 This is the same pattern Anthropic's Claude Code uses internally (different tool subsets for different modes) and the same pattern any well-designed agentic system uses.
 

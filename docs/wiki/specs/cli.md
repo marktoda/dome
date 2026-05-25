@@ -21,7 +21,7 @@ dome init ~/vaults/research
 
 Creates:
 
-- The directory tree: `raw/`, `notes/`, `wiki/{entities,concepts,sources,syntheses}/`, `inbox/raw/` (the shipped-default capture bucket), `.dome/{prompts,hooks,in-flight,state}/`.
+- The directory tree: `raw/`, `notes/`, `wiki/{entities,concepts,sources,syntheses}/`, `inbox/raw/` (the shipped-default capture bucket), `.dome/{prompts,hooks,state}/`.
 - `.dome/page-types.yaml` with the four default types.
 - `.dome/config.yaml` with shipped defaults enabled and opt-in features disabled.
 - `.dome/hooks/intake-raw.yaml` — the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow.
@@ -64,7 +64,7 @@ dome serve --vault ~/vaults/work --port 7777   # HTTP/SSE (v0.5.1+)
 The serve command, in order:
 
 1. Opens the vault, loads the registry.
-2. **Runs `dome reconcile` automatically** to catch up on any events missed while serve wasn't running (in-flight hooks from a crash, pending inbox files, out-of-band edits, missed scheduled events). See `dome reconcile` below.
+2. **Runs `dome reconcile` automatically** to catch up on any events missed while serve wasn't running (pending inbox files, out-of-band edits, missed scheduled events, uncommitted-state recovery via `git status`). See `dome reconcile` below.
 3. Starts the MCP server on stdio (or HTTP if `--port` is given).
 4. Starts the file watcher on `inbox/*/` directories and `wiki/*/` (for out-of-band-edit detection); declarative-hook intakes fire on file writes.
 5. Starts the clock source for scheduled hooks.

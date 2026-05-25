@@ -12,10 +12,12 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 - [[wiki/specs/mcp-surface]] — MCP server: one MCP tool per SDK tool.
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
 - [[wiki/specs/prompts-and-workflows]] — Prompt library; workflows as prompts with frontmatter; tier-classified workflows.
-- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Document, Tool, Hook), 7 Tools, tiered feature model, why-this-design principles, dependency list.
+- [[wiki/specs/sdk-surface]] — The four-concept core (Vault, Document, Tool, Hook), Tool catalog, tiered feature model, why-this-design principles, dependency list.
 - [[wiki/specs/vault-layout]] — Directory structure, category from path, ownership rules, git repository structure, derived operational state.
 
-## Invariants (10 total: 5 axiom + 3 shipped-default + 2 opt-in)
+## Invariants
+
+Five axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline.
 
 - [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces an appendLog call.
 - [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Hooks observe and call Tools; never mutate directly.
@@ -33,7 +35,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 - [[wiki/matrices/event-types-and-payloads]] — Event name × emitting tool × payload × example hooks.
 - [[wiki/matrices/intent-prompt-tools]] — User intent × workflow prompt × bound tools × effects.
-- [[wiki/matrices/tool-invariant-enforcement]] — 7 Tools × 9 Tool-boundary invariants enforcement matrix.
+- [[wiki/matrices/tool-invariant-enforcement]] — Tool × invariant enforcement matrix.
 
 ## Gotchas
 

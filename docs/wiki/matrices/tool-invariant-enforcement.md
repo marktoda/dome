@@ -7,9 +7,12 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 # Tool × Invariant enforcement matrix
 
-Which Tool enforces which Invariant, by what mechanism, and what test guarantees the enforcement. Exhaustive over the 7 SDK Tools × 9 Tool-boundary-enforced invariants. Invariant tier is shown in the header row.
+Which Tool enforces which Invariant, by what mechanism, and what test guarantees the enforcement. Exhaustive over the SDK Tool catalog (see [[wiki/specs/sdk-surface]] §"Tool catalog") × all Tool-boundary-enforced invariants. Invariant tier is shown in the header row.
 
-`VAULT_IS_GIT_REPO` (the 10th invariant) is enforced at vault-open boundary, not at Tool call-site — `openVault(path)` refuses non-git directories. It does not appear in this matrix because no Tool ever interacts with it; it's a precondition for the entire Vault instance.
+Two invariants are NOT in the matrix because they aren't enforced at Tool call-site:
+
+- **`VAULT_IS_GIT_REPO`** — enforced at vault-open boundary; `openVault(path)` refuses non-git directories. A precondition for the entire Vault instance.
+- **`INBOX_IS_EPHEMERAL`** — enforced at workflow-prompt level (intake workflows include explicit `moveDocument` exit-steps as part of their prompt instructions). The matrix's `(Workflow handlers)` row notes this; `dome doctor` reports stale inbox files as the structural check. This is *weaker than Tool-boundary enforcement* and is flagged in [[wiki/gotchas/agent-prompt-regression]] as a prompt-only-enforcement surface.
 
 A blank cell means no relationship: the Tool doesn't touch that invariant's surface. Bolded cells mean active enforcement (the Tool refuses operations that would violate the invariant). Cells in *italics* are read-only relationships.
 
@@ -31,6 +34,10 @@ A blank cell means no relationship: the Tool doesn't touch that invariant's surf
 | `moveDocument` | **rejects raw/ source or target** | *(writes markdown only)* |  |  | **emits appendLog effect when default enabled** | **validates new path → type** |  |  |  |
 | `deleteDocument` | **rejects raw/ target** | *(writes markdown only)* |  |  | **emits appendLog effect when default enabled** |  |  |  |  |
 | *(Hook handlers)* |  |  |  | **structurally cannot mutate; can only call Tools** |  |  |  |  |  |
+
+### `INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)
+
+Not a column above because no Tool refuses an invariant-violating call for it. Enforcement lives in the **intake workflow prompts**: `ingest`, `voice-ingest`, `research`, `clip-integrate` each include an explicit `moveDocument(inbox_path, raw_path)` (or `deleteDocument`) exit-step in their prompt instructions. The structural check is `dome doctor` reporting inbox files older than a configurable threshold (default 24h). See [[wiki/invariants/INBOX_IS_EPHEMERAL]] and the prompt-only-enforcement caveat in [[wiki/gotchas/agent-prompt-regression]].
 
 ## Reading the matrix
 

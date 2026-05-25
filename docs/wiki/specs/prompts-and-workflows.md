@@ -66,7 +66,7 @@ The SDK ships these workflow prompts. Shipped-default workflows are loaded into 
 | `sensitivity-classify` | opt-in | sub-workflow inside `ingest` when `SENSITIVE_GOES_TO_INBOX` is enabled, or pre-write hook | readDocument, writeDocument (target `inbox/review/`), appendLog | Classify content sensitivity; route to `inbox/review/` for items needing human review. |
 | `clip-integrate` | opt-in | `intake:inbox/clip/*` (when activated) | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Integrate a web clip: summarize, create a source page, propose cross-references. |
 
-The workflow set is open: plugins and vault-local files register additional workflows. The nine above are what the SDK ships; vaults customize by overriding (e.g., `<vault>/.dome/prompts/ingest.md` replaces the default `ingest.md`).
+The workflow set is open: plugins and vault-local files register additional workflows. The table above enumerates what the SDK ships; vaults customize by overriding (e.g., `<vault>/.dome/prompts/ingest.md` replaces the default `ingest.md`).
 
 ## Composition (prompt partials)
 
@@ -108,7 +108,7 @@ In all three contexts, the workflow prompt's `tools:` field is the bound set. Th
 
 ## Eval suite (proposed v0.5 surface)
 
-Because the agent owns the page-write flow, prompt regressions are the biggest semantic risk. The SDK ships an `eval` command that:
+Because the agent owns the page-write flow, prompt regressions are the biggest semantic risk. The SDK ships an eval suite as a `bun test --eval` target (not a `dome` CLI command — eval runs at test time, not as a runtime user action) that:
 
 - Loads a fixture vault (separate from any real vault).
 - Replays recorded conversations against named workflows.
@@ -121,7 +121,7 @@ The eval suite is the structural mitigation for [[wiki/gotchas/agent-prompt-regr
 
 This spec implements the **prompts-as-contract** principle — see [[wiki/specs/sdk-surface]] §"Why this design" for the canonical statement of the principle. Briefly: Dome's behavior lives in markdown prompts rather than TypeScript code, which makes behavior user-readable, user-editable, and able to evolve at the speed of language. The cost is prompt regression, mitigated by the eval suite (see [[wiki/gotchas/agent-prompt-regression]]).
 
-What this spec adds beyond the principle: the *concrete shape* of how prompts double as workflows via frontmatter, the seven shipped workflows and their tool subsets, and the override layering between SDK / plugin / vault-local prompts.
+What this spec adds beyond the principle: the *concrete shape* of how prompts double as workflows via frontmatter, the shipped workflows and their tool subsets (see §"Shipped workflows by tier"), and the override layering between SDK / plugin / vault-local prompts.
 
 ## Related
 

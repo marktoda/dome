@@ -87,6 +87,21 @@ Naming convention: Tools that operate on any Document use `<verb>Document`; Tool
 
 The catalog is open: plugins register additional Tools through the registration mechanism. The seven above are the entirety of what the SDK ships.
 
+#### Concurrency
+
+Mutating Tools (`writeDocument`, `moveDocument`, `deleteDocument`) use **timestamp-based optimistic locking** to detect concurrent writes from a second harness session on the same vault. Each Tool snapshots the target's `mtime` (or git-blob SHA when the working tree is clean) at read time; at write time it re-checks. On mismatch the Tool returns:
+
+```
+Result.err({
+  kind: 'concurrent-write-conflict',
+  path: string,
+  expected_mtime: ISODate,
+  actual_mtime: ISODate
+})
+```
+
+The agent receiving this error re-reads the page, integrates the other harness's intervening update, and re-proposes. See [[wiki/gotchas/concurrent-harness-write]] for the full mechanism and the failure scenarios it covers.
+
 ### Hook
 
 A Hook is a handler registered against an event pattern. Hooks observe events derived from Tool Effects and may propose follow-on Tool calls. Hooks cannot mutate the vault directly — see [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]].

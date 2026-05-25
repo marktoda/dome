@@ -91,7 +91,7 @@ hooks:
 
 ## Opt-in intake patterns (opt-in — not active by default)
 
-The SDK ships hook *templates* for common intake patterns. These are NOT active in a fresh vault; the user enables them by writing the corresponding YAML to `.dome/hooks/` (typically via `dome init --kind <profile>` shortcuts; see [[wiki/specs/cli]]).
+The SDK ships hook *templates* for common intake patterns. These are NOT active in a fresh vault; the user enables them by copying the template YAML from the SDK's `hooks/templates/` into `<vault>/.dome/hooks/` and creating the `inbox/<bucket>/` directory the template listens on. A future "packs" mechanism may layer convenience over this; v0.5 keeps activation explicit.
 
 | Template name | Path pattern | Workflow invoked |
 |---|---|---|

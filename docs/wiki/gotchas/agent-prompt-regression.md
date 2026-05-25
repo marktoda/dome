@@ -24,7 +24,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 1. Maintain a fixture vault separate from any real vault: `tests/fixtures/eval-vault/`.
 2. Maintain a set of recorded representative conversations: `tests/fixtures/eval-conversations/<name>.json`. Each conversation has (input, expected effects: which pages should be created or updated, which fields should change).
-3. The `dome eval` command (also reachable as `bun test --eval`) replays each conversation against the current SDK / prompts / model version. It asserts the observed effects match the expected ones.
+3. `bun test --eval` replays each conversation against the current SDK / prompts / model version. It asserts the observed effects match the expected ones. (The eval suite is a test-time target, not a `dome` CLI command.)
 4. Run after every model upgrade, every prompt edit, before every release.
 5. A regression manifests as a failing assertion; the diff between observed and expected effects is the report.
 

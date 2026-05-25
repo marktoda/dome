@@ -28,7 +28,7 @@ tier: axiom
 
 **Operational notes:**
 
-- The user is encouraged to commit periodically; Dome does not auto-commit. Reconciliation handles both committed and uncommitted state.
+- Workflows auto-commit by default per `git.auto_commit_workflows: true` (see [[wiki/specs/hooks]] §"Commit policy"). Each workflow's effects + log entry land as one atomic commit whose subject equals the log.md entry header. User out-of-band edits remain uncommitted unless the user explicitly commits. Reconciliation handles both committed (via `git diff`) and uncommitted (via `git status --porcelain`) state.
 - `.git/` is treated as `category: external` by Dome's tools — never modified by Dome, never enumerated.
 - The `.gitignore` shipped by `dome init` excludes `.dome/state/` from version control. Everything else under the vault — including `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/` — is tracked.
 
