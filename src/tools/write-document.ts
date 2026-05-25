@@ -34,6 +34,19 @@ export async function writeDocument(
     return { result: err({ kind: "not-found", path: input.path }), effects: [] };
   }
 
+  // RAW_IS_IMMUTABLE — axiom; refuse raw/ targets unconditionally.
+  const doc0 = makeDocument({ path: input.path });
+  if (doc0.category === "raw") {
+    return {
+      result: err({
+        kind: "invariant-violated",
+        invariant: "RAW_IS_IMMUTABLE",
+        detail: `writeDocument refuses raw/ targets; attempted: ${input.path}`,
+      }),
+      effects: [],
+    };
+  }
+
   // (Invariant checks will be wired in subsequent tasks.)
 
   await mkdir(dirname(abs), { recursive: true });
