@@ -162,6 +162,22 @@ After the user requested one final pass, ran a structured cohesion review identi
 
 Files touched: 13. All rot eliminated. Substrate is now internally consistent across all 4 passes of refinement.
 
+## [2026-05-25] update | Strengthen the `log.md` vs `git log` rationale
+
+User pressure-tested whether `log.md` is needed at all given per-workflow auto-commit makes it 1:1 with git log. Decided to keep both surfaces but make the case explicit in the substrate (it had been left implicit, justified mostly by inheritance from Karpathy's LLM Wiki pattern).
+
+The case: `log.md` and `git log` are *complementary*, not duplicates. Three jobs `log.md` does that `git log` cannot:
+
+1. **Self-describing markdown.** Vault must be usable from markdown alone (per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]]). Obsidian / `rg` / GitHub web UI / `tar` archives without `.git/` all see `log.md`; none see `git log`.
+2. **Catches non-commit events.** Hook failures, hook quarantine, operations under `auto_commit_workflows: false` produce no git commit. They appear in `log.md` only.
+3. **Catastrophic recovery.** If `.git/` corrupts or is removed, operation history survives in markdown.
+
+`log.md` is the *narrative* layer; `git log` is the *content-diff* layer. Per-workflow auto-commit keeps them aligned at the same byte-identical subject line.
+
+- `~` [[wiki/invariants/LOG_IS_APPEND_ONLY]] — added §"Why not just `git log`?" with the three-job case
+- `~` [[wiki/specs/hooks]] §"Commit policy" — removed misleading "give the same operation history" phrasing; replaced with the complementary-not-redundant framing and explicit note that hook-lifecycle events flow only to `log.md`
+
+
 
 
 

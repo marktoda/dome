@@ -232,7 +232,11 @@ User out-of-band edits remain uncommitted unless the user explicitly commits. Re
 
 **Configuration override**: `.dome/config.yaml` `git.auto_commit_workflows: false` disables per-workflow auto-commit. Reconciliation still works (uses `git status` for everything). Useful for users who want full manual commit control.
 
-**Why this is the right default**: each workflow becomes an atomic, undoable unit; `git revert <commit>` is universal undo; `git log` and `cat log.md` give the same operation history; reconciliation simplifies because committed state IS the latest known-reconciled state.
+**Why this is the right default**: each workflow becomes an atomic, undoable unit; `git revert <commit>` is universal undo; reconciliation simplifies because committed state IS the latest known-reconciled state.
+
+**`log.md` and `git log` are complementary, not redundant.** Per-workflow auto-commit keeps the two append-only operation histories aligned at the same byte-identical subject line, but they answer different questions: `log.md` is the *narrative* layer — readable in any markdown editor, greppable with `rg`, survives `tar` export without `.git/`, and catches events that don't produce commits (hook failures, hook quarantine, operations under `auto_commit_workflows: false`). `git log` is the *content-diff* layer — full diffs, time-travel via `git show`, attribution, blame. Both are load-bearing; see [[wiki/invariants/LOG_IS_APPEND_ONLY]] §"Why not just `git log`?" for the full case.
+
+Specifically, hook-lifecycle events that don't map to a workflow commit (`hook-failed`, `hook-disabled`) flow to `log.md` only via `appendLog`. They have no representation in `git log`.
 
 ### Why this design beats a log-based event source
 

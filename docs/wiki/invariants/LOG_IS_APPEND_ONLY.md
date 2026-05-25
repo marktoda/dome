@@ -20,6 +20,20 @@ tier: axiom
 
 **Test guarantee:** `tests/invariants/log-is-append-only.test.ts` — runs a representative ingest workflow, captures post-op log.md byte length, runs more operations, asserts post-op-N log.md starts with pre-op-N content unchanged. Asserts no Tool other than `appendLog` produces an `appended-log` effect.
 
+## Why not just `git log`?
+
+A fair question: per-workflow auto-commit (see [[wiki/specs/hooks]] §"Commit policy") makes each Dome workflow produce one git commit, whose subject equals the corresponding `log.md` entry's `## [date] verb | subject` header. `git log` and `log.md` overlap substantially. Why keep both?
+
+Three jobs `log.md` does that `git log` cannot:
+
+- **Self-describing markdown.** The vault must be usable from the markdown alone. A user reading the vault in Obsidian, grepping with `rg`, browsing on GitHub's web UI, or unpacking a `tar` archive that excluded `.git/` still sees the operation history via `log.md`. `git log` requires the git tooling chain and a `.git/` directory; outside that environment it doesn't exist. This honors [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — the vault is canonical without auxiliary indexes.
+
+- **Catches events that don't produce commits.** Hook failures (`hook-failed`), hook quarantine (`hook-disabled`), and any operation the user disabled `git.auto_commit_workflows: false` for, all flow to `log.md` via `appendLog`. They do not appear in `git log` (no commit fired). Without `log.md`, those events would have nowhere to land that survives the session.
+
+- **Catastrophic recovery surface.** If `.git/` corrupts, becomes stale relative to remotes, or the user accidentally `rm -rf .git/`, the operation history survives in `log.md`. The user can replay or audit Dome's recent activity from the markdown alone, then `git init` fresh against the vault content.
+
+The cost is intentional duplication: two append-only operation logs (one for humans, one for git's content-history tooling). Per-workflow auto-commit keeps them aligned automatically; the user never maintains the alignment by hand. `log.md` is the *narrative* layer; `git log` is the *content-diff* layer. Both are useful; neither is sufficient alone.
+
 **Related:**
 - [[wiki/specs/sdk-surface]] §"Tool catalog"
 - [[wiki/invariants/EVERY_WRITE_IS_LOGGED]]
