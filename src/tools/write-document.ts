@@ -5,6 +5,7 @@ import { stringifyFrontmatter } from "../frontmatter";
 import { ok, err, type Effect, type ToolReturn, type Sensitivity, type CreationReason } from "../types";
 import type { Vault } from "../vault";
 import type { Dispatcher } from "../dispatcher";
+import { parseWikilinks, suggestFullPath } from "../wikilinks";
 
 export interface WriteDocumentOpts {
   create?: boolean;
@@ -86,6 +87,22 @@ export async function writeDocument(
           kind: "invariant-violated",
           invariant: "PAGE_TYPE_BY_DIRECTORY",
           detail: `Frontmatter type ${input.frontmatter.type} does not match directory ${dirType}`,
+        }),
+        effects: [],
+      };
+    }
+  }
+
+  // WIKILINKS_ARE_FULLPATH — when enabled, body must use full-path wikilinks.
+  if (vault.config.invariants.WIKILINKS_ARE_FULLPATH === "enabled") {
+    const links = parseWikilinks(input.body);
+    const short = links.find(l => !l.isFullPath);
+    if (short) {
+      return {
+        result: err({
+          kind: "wikilink-not-fullpath",
+          link: short.raw,
+          suggestion: `[[${suggestFullPath(short.target)}]]`,
         }),
         effects: [],
       };
