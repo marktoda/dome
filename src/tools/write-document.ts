@@ -121,6 +121,18 @@ export async function writeDocument(
     };
   }
 
+  // PAGE_CREATION_REQUIRES_RECURRENCE — opt-in; create requires a reason.
+  if (
+    vault.config.invariants.PAGE_CREATION_REQUIRES_RECURRENCE === "enabled" &&
+    input.opts?.create === true &&
+    !input.opts.reason
+  ) {
+    return {
+      result: err({ kind: "page-creation-requires-reason", path: input.path }),
+      effects: [],
+    };
+  }
+
   await mkdir(dirname(abs), { recursive: true });
   const before = exists ? await readFile(abs, "utf8") : "";
   const text = stringifyFrontmatter(input.frontmatter, input.body);
