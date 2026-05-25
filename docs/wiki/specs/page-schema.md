@@ -97,11 +97,10 @@ id: raw_YYYY-MM-DD_HHMM_<slug>
 source_type: voice | meeting | clip | upload | research | design-seed | manual
 status: pending | processed | preserved
 sensitivity: normal | sensitive | private
-linked_pages: ["[[wiki/...]]"]       # set during ingest; lists pages updated
 ---
 ```
 
-Raw files are immutable AFTER creation (`RAW_IS_IMMUTABLE`), but `linked_pages` may be appended to during ingest. This is the single exception to raw-immutability — the linked-pages list grows as the raw source is referenced. The body content is never modified.
+Raw files are immutable after creation per [[wiki/invariants/RAW_IS_IMMUTABLE]] — there are no exceptions. Reverse references from raws to wiki pages are not stored; they are computed on demand via `dome doctor --show raw-citations` by scanning wiki page frontmatter `sources:` fields.
 
 ### Extension types
 

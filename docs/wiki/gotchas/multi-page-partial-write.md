@@ -31,7 +31,7 @@ This is not transactional in the database sense. It is *recoverable* in the git 
 
 - The "accumulate then apply" pattern means workflows can be aborted at any point before the apply step without consequence. This is the agent's "save point."
 - Once the apply step starts, it runs to completion or hits a hard error. There is no half-applied state from the SDK's side (modulo OS-level filesystem oddities, which git handles).
-- For workflows that need streaming (e.g., a long research session updating many pages over time), the SDK provides a `commit_batch()` Tool the workflow can call to apply accumulated effects and start a new batch. This is rarely needed in v0.5.
+- Long-running research workflows that accumulate many writes are decomposed into smaller sub-workflows that each commit at their own completion per the per-workflow atomic commit policy in [[wiki/specs/hooks]] §"Commit policy". There is no `commit_batch` Tool — the seven-Tool catalog is sealed.
 
 **Related:**
 - [[wiki/specs/sdk-surface]] §"Tool" (Effect arrays)

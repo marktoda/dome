@@ -34,7 +34,7 @@ A Document is any markdown file in a Vault. It is a value, not a service. Fields
 
 Computed accessors (not fields — derived from `path` on access):
 
-- `document.category` → `'raw' | 'wiki' | 'log' | 'index' | 'notes' | 'inbox' | 'config'`
+- `document.category` → `'raw' | 'wiki' | 'log' | 'index' | 'notes' | 'inbox' | 'config' | 'external'` — `'external'` covers `.git/` and other top-level subdirs unknown to Dome (e.g., this vault's `cohesive/` session residue); tolerated read-only, no Tool writes to external paths. See [[wiki/specs/vault-layout]] §"Category derivation".
 - `document.type` → `string | null` — for wiki/, derived from immediate subdirectory; otherwise `null`.
 - `document.isImmutable` → `boolean` — true when `category === 'raw'`.
 

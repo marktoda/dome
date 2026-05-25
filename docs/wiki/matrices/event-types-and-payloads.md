@@ -21,6 +21,10 @@ The canonical taxonomy of events Dome emits. Every event is derived from a Tool 
 | `moved-document{from, to}` | `document.moved` | `from: string`, `to: string`, `category: 'wiki' \| 'inbox' \| 'notes' \| ...`, `type: string?` | Backlink-rewriting via the `auto-cross-reference` hook |
 | `deleted-document{path}` | `document.deleted.<category>.<type?>` | `path: string`, `category: string`, `type: string?` | `auto-update-index` (default), orphan-detection, sync, backup-before-delete |
 
+### `notes/` and `external/` edits — OOB-only
+
+Out-of-band edits to `notes/` (user-authored content; Dome reads only) and `external` paths (`.git/`, unknown top-level subdirs) do NOT emit `document.written.notes.*` or `document.written.external.*` events. They emit `vault.out-of-band-edit` only — see the lifecycle events table below. Dome reconciliation does not fire content-derived events against these categories because Dome never writes there; drift only happens on user action and is captured by the OOB watcher exclusively. This keeps the asymmetric ownership clean: `notes/` is user-owned, so Dome treats every edit as OOB.
+
 ## Internal lifecycle events (not derived from Effects)
 
 | Event | Emitter | Payload | Typical hook handlers |

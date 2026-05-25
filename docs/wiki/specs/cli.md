@@ -134,9 +134,15 @@ Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply 
 
 **Flags:**
 
-- `--rebuild-index` — regenerate `index.md` from the current `wiki/` contents. Used when `auto-update-index` is disabled (so the index has gone stale) or when the user explicitly wants a from-scratch rebuild. The rebuild bypasses the normal Tool-rejection of `writeDocument('index.md', ...)` because dispatcher-owned files are writable only through the dispatcher's privileged path; `dome doctor --rebuild-index` invokes that path.
+- `--rebuild-index` — regenerate `index.md` from the current `wiki/` contents. Used when `auto-update-index` is disabled (so the index has gone stale) or when the user explicitly wants a from-scratch rebuild. The rebuild bypasses the normal Tool-rejection of `writeDocument('index.md', ...)` because dispatcher-owned files are writable only through the dispatcher's privileged path.
 - `--show review-queue` — list pending items in `inbox/review/` (only meaningful when `SENSITIVE_GOES_TO_INBOX` is enabled).
-- `--show raw-citations` — list which wiki pages cite each raw source (derived from page frontmatter; not a stored index).
+- `--show raw-citations` — list which wiki pages cite each raw source (derived from `sources:` frontmatter on wiki pages; not a stored index).
+- `--show workflows` — list the resolved workflow set (shipped defaults + plugin + vault-local overrides), with their bound tool subsets and triggers.
+- `--show events` — list the resolved event taxonomy (Effect-derived + lifecycle), including plugin-registered events.
+- `--show recent-hook-cycles` — list recent `hook.cycle-detected` events with their full causation chains. Useful for diagnosing hook design errors.
+- `--recent-activity [N]` — list the last `N` writes by tool and target (default 50). Useful for spotting prompt-regression drift after a model upgrade or prompt edit.
+- `--drain-hooks` — block until the async hook queue drains, then exit. Useful when the user wants to read post-hook state immediately (e.g., right after a write, before a query).
+- `--reset-quarantined-hooks` — clear the hook-quarantine list. Handlers are quarantined after three consecutive failures per [[wiki/specs/hooks]] §"Execution model"; use this flag after fixing a misbehaving hook to bring it back into rotation.
 
 ## `dome export-context <topic>`
 
