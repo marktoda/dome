@@ -27,9 +27,9 @@ A Dome vault is a directory containing:
     sources/
     syntheses/
     <extension-types>/  # per-vault extension types declared in .dome/page-types.yaml
-  inbox/                # (opt-in) drop-zone directories whose writes trigger hooks
-    <bucket>/           # only directories the vault has activated (intake-raw, intake-voice, etc.)
-                        # not pre-created by dome init
+  inbox/                # drop-zone directories whose writes trigger hooks
+    raw/                # shipped-default capture bucket (created by dome init)
+    <other-buckets>/    # opt-in: voice/, research/, clip/, review/ — created when the user activates the corresponding intake
   .dome/                # vault-internal configuration and extensions
     page-types.yaml     # allowed page types: defaults + extensions
     config.yaml         # vault configuration (invariant overrides, hook settings, etc.)
@@ -37,26 +37,57 @@ A Dome vault is a directory containing:
     hooks/              # vault-local hooks: *.ts (programmatic) and *.yaml (declarative)
     tools/              # vault-local tool additions (rarely used)
     cli/                # vault-local CLI command additions (rarely used)
+    in-flight/          # derived: lockfiles for in-flight hooks (gitignored)
+    state/              # derived: scheduled.json, last-reconciled-sha.txt (gitignored)
+    cache/              # derived: reserved for plugin per-handler caches (gitignored)
+  .git/                 # git repository (axiom: every Dome vault is a git repo)
+  .gitignore            # excludes .dome/in-flight/, .dome/state/, .dome/cache/
 ```
 
-`dome init` creates the tier-1 axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/). `inbox/<bucket>/` directories exist only when the vault has activated the corresponding intake hook template — see [[wiki/specs/hooks]] §"Opt-in intake patterns."
+`dome init` creates the tier-1 axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `.git/` via `git init`. Additional `inbox/<bucket>/` directories (`voice/`, `research/`, `clip/`, `review/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Opt-in intake patterns."
+
+### Git repository structure
+
+Every Dome vault is a git repository per [[wiki/invariants/VAULT_IS_GIT_REPO]]. The `.git/` directory at vault root is treated as `category: external` by Dome's tools (Dome never touches it; it's not enumerated; it's not part of any wiki).
+
+What gets committed to git:
+
+- `VISION.md`, `README.md`, `index.md`, `log.md` — committed.
+- `raw/`, `notes/`, `wiki/`, `inbox/` — all committed. Reconciliation works against committed AND uncommitted state.
+- `.dome/page-types.yaml`, `.dome/config.yaml`, `.dome/prompts/`, `.dome/hooks/`, `.dome/tools/`, `.dome/cli/` — committed (these are the vault's identity).
+- `.dome/in-flight/`, `.dome/state/`, `.dome/cache/` — **gitignored** (per-machine operational state).
+
+### Derived operational state under `.dome/`
+
+| Path | Role | If deleted |
+|---|---|---|
+| `.dome/in-flight/<handler>-<event-id>.json` | Lockfile written when a hook starts; deleted on completion | In-flight hooks lose recovery info; next reconcile re-fires what can be detected from git/inbox state |
+| `.dome/state/last-reconciled-sha.txt` | The SHA at which the last `dome reconcile` completed | Next reconcile treats every file as changed; idempotent so safe |
+| `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next reconcile fires every scheduled hook once |
+| `.dome/cache/` | Reserved for plugin-defined per-handler caches | Plugins rebuild on next event |
+
+All four are derived state: deleting them doesn't lose canonical knowledge; deleting them just causes the next reconciliation to do more work. The vault's markdown content (under `wiki/`, `raw/`, etc.) is the only canonical surface.
 
 ## Category derivation
 
 A Document's category is derived from the top-level directory in its `path`:
 
-| Path prefix | Category |
-|---|---|
-| `raw/...` | `raw` |
-| `wiki/...` | `wiki` |
-| `notes/...` | `notes` |
-| `inbox/...` | `inbox` |
-| `log.md` | `log` |
-| `index.md` | `index` |
-| `.dome/...` | `config` |
-| (other vault-root files) | `notes` (default) |
+| Path prefix | Category | Notes |
+|---|---|---|
+| `raw/...` | `raw` | Immutable per [[wiki/invariants/RAW_IS_IMMUTABLE]] |
+| `wiki/...` | `wiki` | Typed pages (entity / concept / source / synthesis / extension types) |
+| `notes/...` | `notes` | User-authored; Dome reads, never writes |
+| `inbox/...` | `inbox` | Ephemeral; intake hooks move/delete per [[wiki/invariants/INBOX_IS_EPHEMERAL]] |
+| `log.md` | `log` | Append-only |
+| `index.md` | `index` | Maintained by `auto-update-index` hook |
+| `.dome/...` | `config` | Vault configuration + derived state |
+| `.git/...` | `external` | Tolerated, never modified, never enumerated |
+| (other top-level subdirs) | `external` | Unknown directories are tolerated as `external`; Dome ignores them. Use this for arbitrary user-organized content alongside Dome (e.g., this vault's `cohesive/` Cohesive session residue). |
+| (other vault-root files) | `notes` (default) | |
 
 The category determines mutability and which Tool may write to it. See [[wiki/matrices/tool-invariant-enforcement]] and [[wiki/invariants/RAW_IS_IMMUTABLE]].
+
+External categories are tolerated by design — Dome plays well with vaults that have non-Dome content. `dome doctor` does not flag unknown subdirectories; they're invisible to Dome's tools.
 
 ## Type derivation (wiki/ only)
 

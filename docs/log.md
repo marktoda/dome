@@ -63,3 +63,37 @@ Mid-rewrite simplification pass driven by user pressure-testing the just-written
 - `~` [[index]] — restructured to reflect tier model and simplified surface
 - `~` [[VISION]] — added "Extensibility lives at the hook boundary" as principle #5 (set in prior write)
 
+## [2026-05-25] update | Durability model + git as a hard requirement
+
+Third architectural pass after substrate landed. User pushed back on log-md-as-event-source and asked for a state-based durability model; then locked git as a hard requirement (not just recommended). Six concrete changes landed:
+
+**1. State-based reconciliation, not event-log replay.** The vault's filesystem state + git history are canonical; reconciliation diffs current state vs. a checkpoint. No log.md parsing for execution state. log.md remains audit-only.
+
+**2. `VAULT_IS_GIT_REPO` becomes an axiom.** Every Dome vault is a git repository. `dome init` runs `git init` + initial commit. `openVault` refuses non-git directories. Joins RAW / MARKDOWN / LOG / HOOKS as the fifth axiom (5 axioms total).
+
+**3. `INBOX_IS_EPHEMERAL` becomes a default-tier invariant.** Intake hooks MUST move/delete inbox files on completion. The filesystem signal is what makes reconciliation trivial (file present = pending; file absent = processed). Shipped intake workflows promote inbox files to `raw/<source-type>/`.
+
+**4. `dome reconcile` replaces the earlier `dome process-inbox` proposal.** Broader scope: in-flight recovery (lockfiles in `.dome/in-flight/`), inbox processing, git-diff catchup, scheduled-event catchup. Runs in 4 phases. `dome serve` auto-runs it at startup. CLI: 6 → 7 commands.
+
+**5. `isomorphic-git` is the only git engine.** Pure-JS implementation; zero binary dependency; works in Bun directly. Replaces our earlier consideration of a custom hash-cache (no fallback path needed because git is required).
+
+**6. Inbox/raw becomes default-on.** `dome init` creates `inbox/raw/` AND ships `intake-raw.yaml` as a shipped-default hook. Quick-capture works out of the box. Other intake buckets (voice, research, clip, review) remain opt-in.
+
+**Per-file changes:**
+
+- `+` [[wiki/invariants/VAULT_IS_GIT_REPO]] — new axiom-tier invariant
+- `+` [[wiki/invariants/INBOX_IS_EPHEMERAL]] — new shipped-default invariant
+- `+` [[wiki/gotchas/hook-non-idempotent]] — what happens when a hook isn't idempotent and reconciliation re-fires
+- `+` [[wiki/gotchas/dirty-git-state-at-reconcile]] — reconcile refuses to run during mid-merge / mid-rebase
+- `+` [[wiki/entities/git]] — what Dome uses git for
+- `+` [[wiki/entities/isomorphic-git]] — the pure-JS git library Dome depends on
+- `+` [[wiki/sources/isomorphic-git-library]] — the library's project page
+- `~` [[wiki/specs/hooks]] — added §"Durability and reconciliation" + clarified auto-cross-reference exact-match semantics
+- `~` [[wiki/specs/cli]] — added `dome reconcile`; `dome init` runs `git init` and creates `inbox/raw/`; 5 → 7 commands
+- `~` [[wiki/specs/vault-layout]] — git repo structure, `.dome/{in-flight,state,cache}/` documented, `inbox/raw/` default-on, `external` category for unknown subdirs
+- `~` [[wiki/specs/sdk-surface]] — added `isomorphic-git` to dependency list, documented derived operational state under `.dome/`
+- `~` [[wiki/specs/prompts-and-workflows]] — deduplicated "Why this design" section (points to sdk-surface as canonical)
+- `~` [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]] — explicit "derived zone" note about `.dome/{in-flight,state,cache}/`
+- `~` [[index]] — added 4 new docs (2 invariants, 2 gotchas, 2 entities, 1 source); restructured invariants section with tier markers
+
+

@@ -121,17 +121,9 @@ The eval suite is the structural mitigation for [[wiki/gotchas/agent-prompt-regr
 
 ## Why this design
 
-The prompts-as-contract principle is the architectural commitment that Dome's behavior lives in markdown files, not in TypeScript code. Tools are mechanical (small, content-agnostic operations); the LLM, instructed by prompts, decides what to do with content. Behavior changes happen by editing prompts in `prompts/` (SDK default) or `<vault>/.dome/prompts/` (vault override), not by writing or modifying Tools.
+This spec implements the **prompts-as-contract** principle — see [[wiki/specs/sdk-surface]] §"Why this design" for the canonical statement of the principle. Briefly: Dome's behavior lives in markdown prompts rather than TypeScript code, which makes behavior user-readable, user-editable, and able to evolve at the speed of language. The cost is prompt regression, mitigated by the eval suite (see [[wiki/gotchas/agent-prompt-regression]]).
 
-This has three structural payoffs:
-
-- **Prompts are user-readable.** A non-technical user can read `ingest.md` and understand how the system thinks about ingestion. Code would be opaque.
-- **Prompts are user-editable.** A user can override `ingest.md` in their vault's `.dome/prompts/` to tune behavior. Code edits would require a fork.
-- **Behavior evolves at the speed of language.** Adding a new sensitivity category, changing a heuristic, refining cross-reference rules — all prompt edits, not code changes.
-
-The cost: prompt regression. The eval suite is the structural mitigation — see [[wiki/gotchas/agent-prompt-regression]].
-
-Origin: this principle comes from the LLM Wiki gist (line 50 of `raw/original-architecture.md`: "the core product is the workflow encoded in prompts") and is the load-bearing commitment that makes the SDK's small Tool surface viable.
+What this spec adds beyond the principle: the *concrete shape* of how prompts double as workflows via frontmatter, the seven shipped workflows and their tool subsets, and the override layering between SDK / plugin / vault-local prompts.
 
 ## Related
 

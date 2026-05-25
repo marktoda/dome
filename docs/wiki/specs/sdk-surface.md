@@ -153,6 +153,32 @@ This is the **anti-concept list**: things future contributors might be tempted t
 - **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package.
 - **MCP server**: `bun run dome serve` invokes the MCP server using `@modelcontextprotocol/sdk`; see [[wiki/specs/mcp-surface]].
 
+### Dependencies (v0.5 baseline)
+
+| Library | Purpose | Why this one |
+|---|---|---|
+| `@anthropic-ai/sdk` | LLM client for the headless agent loop | Anthropic's official TS SDK |
+| `@modelcontextprotocol/sdk` | MCP server implementation | First-class TS MCP support |
+| `isomorphic-git` | Git operations (reconciliation, init, status, diff) | Pure JS — no native git binary required; per [[wiki/invariants/VAULT_IS_GIT_REPO]] every vault is a git repo, and isomorphic-git lets us read/write `.git/` from Bun directly. See [[wiki/entities/isomorphic-git]]. |
+| `chokidar` | Cross-platform filesystem watcher | Mature, Bun-compatible |
+| `zod` | Runtime input validation | Derives JSON Schema for MCP tool inputs |
+| `gray-matter` | YAML frontmatter parser | Standard for markdown frontmatter |
+| `remark` / `unified` | Markdown AST | Standard for markdown manipulation |
+| `p-queue` | Async hook dispatch queue | In-process; durable state is the lockfile pattern, not the queue |
+
+Bun built-ins used directly (no extra dependency): `Bun.write` (atomic file writes), `Bun.file` (file reads + existence checks), `Bun.hash` (xxhash, used for non-canonical caching where git history isn't appropriate), the built-in test runner, `Bun.spawn` (for tool subprocess work).
+
+### Derived operational state on disk
+
+Three directories under `<vault>/.dome/` hold operational state that is NOT canonical (gitignored, rebuildable):
+
+- `.dome/in-flight/<handler>-<event-id>.json` — lockfiles for hooks currently executing. Written at hook start, deleted at completion. Reconciliation walks this directory to re-fire crashed hooks.
+- `.dome/state/last-reconciled-sha.txt` — the git SHA of the last successful `dome reconcile`. Reconciliation diffs against this.
+- `.dome/state/scheduled.json` — last-fire timestamps for scheduled hooks. Reconciliation uses these to catch up missed intervals.
+- `.dome/cache/` — reserved for plugin-defined caches; empty in the v0.5 SDK base.
+
+All four are derived state. Deleting them does not lose canonical knowledge — it just causes the next reconciliation pass to do more work (fire more events, re-fire scheduled hooks once). The vault's markdown content (`wiki/`, `raw/`, etc.) is the only canonical surface, per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
+
 ## Why this design
 
 Three principles guide every design decision in this spec:
