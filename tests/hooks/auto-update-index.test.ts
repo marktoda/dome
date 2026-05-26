@@ -16,7 +16,7 @@ describe("auto-update-index hook", () => {
       const ctx = {
         tools: vault.tools,
         vault: { path: vault.path },
-        dispatcher: makePrivilegedWriter(vault.path),
+        privilegedWriter: makePrivilegedWriter(vault.path),
       };
       await autoUpdateIndex({
         kind: "document.written.wiki.entity",
@@ -40,7 +40,7 @@ describe("auto-update-index hook", () => {
       const ctx = {
         tools: vault.tools,
         vault: { path: vault.path },
-        dispatcher: makePrivilegedWriter(vault.path),
+        privilegedWriter: makePrivilegedWriter(vault.path),
       };
       const event = {
         kind: "document.written.wiki.entity",
