@@ -6,7 +6,7 @@
 // in one place eliminates a documented drift hazard.
 
 import { z } from "zod";
-import type { CreationReason, LogVerb, Sensitivity } from "../types";
+import type { CreationReason, LogVerb } from "../types";
 import type { WriteDocumentInput, WriteDocumentOpts } from "./write-document";
 import type { AppendLogInput } from "./append-log";
 import type { SearchIndexInput } from "./search-index";
@@ -23,7 +23,6 @@ export const writeDocumentInput = z.object({
     .object({
       create: z.boolean().optional(),
       reason: z.enum(["recurring", "named_explicitly", "structural"]).optional(),
-      sensitivity_classified: z.enum(["normal", "sensitive"]).optional(),
     })
     .optional(),
   // Optional ISO-8601 mtime snapshot from a prior readDocument; when set, the
@@ -80,9 +79,6 @@ export function compactWriteDocumentInput(parsed: z.infer<typeof writeDocumentIn
     const opts: WriteDocumentOpts = {};
     if (parsed.opts.create !== undefined) opts.create = parsed.opts.create;
     if (parsed.opts.reason !== undefined) opts.reason = parsed.opts.reason as CreationReason;
-    if (parsed.opts.sensitivity_classified !== undefined) {
-      opts.sensitivity_classified = parsed.opts.sensitivity_classified as Sensitivity;
-    }
     out.opts = opts;
   }
   if (parsed.expected_mtime !== undefined) out.expected_mtime = parsed.expected_mtime;

@@ -2,7 +2,7 @@ import { writeFile, readFile, mkdir, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { makeDocument, type Document } from "../document";
 import { stringifyFrontmatter } from "../frontmatter";
-import { ok, err, type Effect, type ToolReturn, type Sensitivity, type CreationReason } from "../types";
+import { ok, err, type Effect, type ToolReturn, type CreationReason } from "../types";
 import type { Vault } from "../vault";
 import { type PrivilegedWriter, refuseIfDispatcherOwned } from "../privileged-writer";
 import { parseWikilinks, suggestFullPath } from "../wikilinks";
@@ -12,7 +12,6 @@ import { refuseIfRawImmutable, checkOptimisticLock, logMutation } from "./guards
 export interface WriteDocumentOpts {
   create?: boolean;
   reason?: CreationReason;
-  sensitivity_classified?: Sensitivity;
 }
 
 export interface WriteDocumentInput {
@@ -105,18 +104,6 @@ export async function writeDocument(
         effects: [],
       };
     }
-  }
-
-  // SENSITIVE_GOES_TO_INBOX — opt-in; when enabled, sensitive content can't land in wiki/.
-  if (
-    vault.config.invariants.SENSITIVE_GOES_TO_INBOX === "enabled" &&
-    input.opts?.sensitivity_classified === "sensitive" &&
-    doc0.category === "wiki"
-  ) {
-    return {
-      result: err({ kind: "sensitive-must-route-to-inbox", path: input.path }),
-      effects: [],
-    };
   }
 
   // PAGE_CREATION_REQUIRES_RECURRENCE — opt-in; create requires a reason.
