@@ -176,11 +176,21 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .action(async (opts: { vault?: string }) => {
       const path = opts.vault ?? process.cwd();
-      const r = await domeServe(path);
+      // connectStdio: true wires the MCP server's request handlers to the
+      // process's stdin/stdout — Claude Code (and any stdio-MCP harness)
+      // spawns this command as a child process and speaks JSON-RPC over that
+      // channel. server.connect(transport) inside serveStdio runs the
+      // transport's read loop on a Node event-loop handle, which keeps the
+      // process alive until stdin closes.
+      const r = await domeServe(path, { connectStdio: true });
       if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
-      console.log("MCP server started; press Ctrl-C to stop");
-      // v0.5: keep the process alive. Full daemonization (signal handling,
-      // graceful stop, log rotation) is deferred to v1.
+      // serveStdio has connected the transport. Log to stderr so the JSON-RPC
+      // channel on stdout stays clean; log to stdout would corrupt the
+      // protocol on the first message.
+      console.error("[dome serve] MCP server connected on stdio; press Ctrl-C to stop");
+      // Park the action until the transport closes. v0.5 keeps it simple —
+      // full daemonization (signal handling, graceful stop, log rotation) is
+      // deferred to v1.
       await new Promise<void>(() => {});
     });
 
