@@ -18,6 +18,5 @@ export const WORKFLOW_TIERS: Readonly<Record<WorkflowName, WorkflowTier>> = {
   [WorkflowName.ExportContext]: WorkflowTier.ShippedDefault,
   [WorkflowName.Research]: WorkflowTier.OptIn,
   [WorkflowName.VoiceIngest]: WorkflowTier.OptIn,
-  [WorkflowName.SensitivityClassify]: WorkflowTier.OptIn,
   [WorkflowName.ClipIntegrate]: WorkflowTier.OptIn,
 };

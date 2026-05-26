@@ -16,7 +16,6 @@ import type { BoundToolSurface } from "./hook-context";
 import { PromptLoader } from "./prompts/prompt-loader";
 import { WorkflowRegistry } from "./prompts/registry";
 import { WorkflowTier, WORKFLOW_TIERS } from "./workflows/workflow-tier";
-import { WorkflowName } from "./workflows/workflow-name";
 
 /**
  * Protocol-agnostic prompt descriptor. Carries a bare name (no protocol
@@ -145,9 +144,6 @@ async function buildPromptDescriptors(
     const isShippedDefault = tier === WorkflowTier.ShippedDefault;
     const isOptInActivated = tier === WorkflowTier.OptIn && def.source === "vault-local";
     if (!isShippedDefault && !isOptInActivated) continue;
-    // sensitivity-classify is a sub-workflow invoked inside ingest; not
-    // surfaced as a standalone prompt per mcp-surface.md I1 substrate.
-    if (def.name === WorkflowName.SensitivityClassify) continue;
     descriptors.push({
       name: def.name,
       description: def.frontmatter.description ?? `The ${def.name} workflow.`,

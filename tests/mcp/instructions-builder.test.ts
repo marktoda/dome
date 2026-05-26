@@ -34,10 +34,8 @@ describe("AbstractSurface.instructions (cold-start MCP instructions)", () => {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
       const surface = await buildAbstractSurface(res.value);
-      // Default config: EVERY_WRITE_IS_LOGGED=enabled, SENSITIVE_GOES_TO_INBOX=disabled.
       expect(surface.instructions).toContain("### Enabled invariants");
       expect(surface.instructions).toContain("- EVERY_WRITE_IS_LOGGED");
-      expect(surface.instructions).not.toContain("- SENSITIVE_GOES_TO_INBOX");
     } finally {
       await v.cleanup();
     }

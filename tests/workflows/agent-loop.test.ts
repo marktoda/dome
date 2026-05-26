@@ -87,7 +87,6 @@ describe("runWorkflow", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      // sensitivity-classify only exposes 3 tools.
       const tools = buildAiSdkTools(res.value, [
         "readDocument",
         "writeDocument",

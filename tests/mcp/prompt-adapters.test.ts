@@ -27,19 +27,6 @@ describe("MCP prompt adapters (via renderMcp)", () => {
     }
   });
 
-  test("excludes sensitivity-classify (sub-workflow, not standalone)", async () => {
-    const v = await makeTestVault();
-    try {
-      const res = await openVault(v.path);
-      if (!res.ok) return;
-      const surface = await buildAbstractSurface(res.value);
-      const mcp = renderMcp(surface);
-      expect(mcp.prompts.find(a => a.name === "dome.workflow.sensitivity_classify")).toBeUndefined();
-    } finally {
-      await v.cleanup();
-    }
-  });
-
   // dome.system_prompt is the interactive-session orientation prompt the
   // harness loads at session start. dome.workflow.* are the non-interactive
   // workflow prompts. The rendering-surface preamble belongs only on the
