@@ -20,8 +20,7 @@ const PRUNED_SYMBOLS: ReadonlyArray<string> = [
   "WorkflowTier", "WORKFLOW_TIERS",
   "filterAiTools",
   // mcp entrypoint
-  "DomeMcpServer", "buildToolAdapters", "buildPromptAdapters",
-  "ResourceAdapter", "ResourceUri", "McpToolName",
+  "DomeMcpServer", "renderMcp", "ResourceAdapter", "ResourceUri",
 ];
 
 const REQUIRED_CORE_SYMBOLS: ReadonlyArray<string> = [
@@ -30,6 +29,7 @@ const REQUIRED_CORE_SYMBOLS: ReadonlyArray<string> = [
   "wikilinkResolve", "moveDocument", "deleteDocument",
   "HookRegistry", "HookDispatcher", "TOOL_NAMES", "MCP_TOOL_NAMES",
   "MUTATING_TOOL_NAMES", "VaultWatcher", "reconcile",
+  "buildAbstractSurface",
 ];
 
 describe("public surface shape — pruned symbols", () => {

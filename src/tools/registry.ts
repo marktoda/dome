@@ -200,8 +200,9 @@ type Parser = (input: unknown) => Promise<ToolReturn<unknown>>;
  * Mutating Tools are wrapped intrinsically: after each invoke, the
  * emitted `Effect[]` is projected to `HookEvent[]` and dispatched via
  * `vault.dispatchEvents`. The wrap is a property of the Vault, not a
- * parameter — every caller of `bindTools` (openVault, projectMcp,
- * projectAiSdk) gets hook-dispatch for free. Read-only Tools (read,
+ * parameter — every projection of vault.tools (renderMcp consuming
+ * surface.tools; projectAiSdk consuming wrapMutatingInvoke; future
+ * renderHttp / renderVoice) gets hook-dispatch for free. Read-only Tools (read,
  * search, resolve) are exposed unwrapped (they emit no effects).
  *
  * Closure timing: the wrap reads `vault.dispatchEvents` lazily at invoke

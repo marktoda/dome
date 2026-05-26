@@ -5,8 +5,8 @@
 //
 //   @dome/sdk/workflows — runWorkflow, WorkflowRegistry, PromptLoader,
 //                         projectAiSdk, eval helpers, workflow types
-//   @dome/sdk/mcp       — DomeMcpServer, ConsumerSurface,
-//                         buildConsumerSurface, projectMcp, adapters
+//   @dome/sdk/mcp       — DomeMcpServer, McpSurface, renderMcp,
+//                         ToolAdapter, McpPromptAdapter, ResourceAdapter
 //   @dome/sdk/cli       — runCli, the seven dome* command functions
 //
 // The bundle-deps test at tests/integration/bundle-deps.test.ts pins
