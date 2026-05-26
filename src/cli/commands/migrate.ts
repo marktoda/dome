@@ -1,13 +1,13 @@
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { initRepo } from "../../git";
-import { openVault } from "../../vault";
 import { scaffoldVaultLayout } from "../../vault-scaffold";
-import { runWorkflow, type RunWorkflowOpts } from "../../workflows/agent-loop";
 import { WorkflowName } from "../../workflows/workflow-name";
+import type { RunWorkflowOpts } from "../../workflows/agent-loop";
+import { runWorkflowAtPath } from "../run-workflow-at-path";
 import { checkAnthropicApiKey } from "../api-key-guard";
 import type { CliError } from "../cli-error";
-import { ok, err, type Result } from "../../types";
+import { err, type Result } from "../../types";
 
 /**
  * Bootstrap an existing markdown directory into Dome shape and run the
@@ -21,7 +21,9 @@ export async function domeMigrate(
   apply: boolean,
   opts: RunWorkflowOpts = {},
 ): Promise<Result<{ steps: number; text: string }, CliError>> {
-  // Pre-flight ANTHROPIC_API_KEY check (unless caller passed a mock model).
+  // ANTHROPIC_API_KEY pre-flight runs FIRST (unless a mock model was passed).
+  // Migrate's own pre-flights (scaffold, git init) are pointless if we can't
+  // run the workflow that consumes them — bail before touching disk.
   if (typeof opts.model !== "object") {
     const keyErr = checkAnthropicApiKey();
     if (keyErr) return err(keyErr);
@@ -59,12 +61,5 @@ export async function domeMigrate(
   } catch (e: unknown) {
     return err({ kind: "validation", message: (e as Error).message });
   }
-  const res = await openVault(vaultPath);
-  if (!res.ok) return res;
-  try {
-    const r = await runWorkflow(res.value, WorkflowName.Migrate, apply ? "--apply" : "", opts);
-    return ok({ steps: r.steps, text: r.text });
-  } catch (e: unknown) {
-    return err({ kind: "validation", message: (e as Error).message });
-  }
+  return runWorkflowAtPath(vaultPath, WorkflowName.Migrate, apply ? "--apply" : "", opts);
 }
