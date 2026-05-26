@@ -23,6 +23,18 @@ A Vault is a directory + config + registry. One `Vault` instance per process per
 
 A Vault is opened, used, and closed in one process lifetime. There is no Vault server in v0.5; the process IS the vault runtime.
 
+#### Vault surface
+
+`openVault` returns a `Vault` with this surface (the canonical names other parts of this spec and consumers depend on):
+
+- `path: string`, `config: VaultConfig`, `pageTypes: PageTypesConfig` — readonly resolved-from-disk values.
+- `tools: BoundToolSurface` — the seven Tools curried with this Vault and the privileged writer. The canonical Tool entry point for in-process consumers; see §"Tool catalog" below.
+- `aiTools: ai.ToolSet` — the same seven Tools shaped for Vercel-AI-SDK `generateText` consumption. Workflow runners filter this set by name; see [[wiki/specs/prompts-and-workflows]] §"Runner".
+- `toolParsers` — per-Tool parse-and-invoke functions for transports that deliver raw input (the MCP adapter, future HTTP / SSE). Each parses through the Tool's Zod schema and invokes the same Vault-bound function `tools` exposes.
+- `drainHooks(): Promise<void>` — wait for all async hooks dispatched so far to settle. Tests and `dome reconcile` call this to reach a deterministic state.
+- `dispatchEvents(events: ReadonlyArray<HookEvent>): Promise<void>` — push the given events through the Vault's hook dispatcher. Used by `dome reconcile` (inbox scan, git-diff replay, scheduled catchup) and `VaultWatcher` (out-of-band edits) to drive hook handlers without each subsystem having to assemble its own `ctxFactory`.
+- `rebuildIndex(): Promise<void>` — regenerate `index.md` from scratch by walking every wiki page. Public SDK seam consulted by `dome doctor --rebuild-index` and any consumer that needs a from-scratch rebuild; consults the privileged writer internally rather than exposing it.
+
 ### Document
 
 A Document is any markdown file in a Vault. It is a value, not a service. Fields:
