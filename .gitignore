@@ -5,3 +5,4 @@ node_modules/
 
 # Test artifacts
 tests/tmp/
+.env
