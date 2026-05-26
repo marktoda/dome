@@ -31,6 +31,12 @@ export interface DoctorOpts {
   recentActivityN?: number | null;
   drainHooks?: boolean;
   resetQuarantinedHooks?: boolean;
+  /**
+   * Report how long it's been since the daemon last reconciled (read from
+   * .dome/state/last-reconciled-sha.txt mtime). See
+   * docs/wiki/gotchas/daemon-off-while-vault-mutating.md.
+   */
+  timeSinceReconcile?: boolean;
 }
 
 // Known event-kind prefixes per docs/wiki/specs/hooks.md §"Event grammar".
@@ -378,5 +384,23 @@ export async function domeDoctor(
     }
   }
 
+  if (opts.timeSinceReconcile) {
+    const reconcilePath = join(vault.path, ".dome", "state", "last-reconciled-sha.txt");
+    if (!existsSync(reconcilePath)) {
+      info.push("time-since-reconcile: never (dome reconcile has never run)");
+    } else {
+      const st = await stat(reconcilePath);
+      const ageMs = Date.now() - st.mtimeMs;
+      info.push(`time-since-reconcile: ${formatAge(ageMs)} (since ${new Date(st.mtimeMs).toISOString()})`);
+    }
+  }
+
   return ok({ exitCode: violations.length === 0 ? 0 : 1, violations, info });
+}
+
+function formatAge(ms: number): string {
+  if (ms < 60_000) return `${Math.floor(ms / 1000)} seconds`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} minutes`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} hours`;
+  return `${Math.floor(ms / 86_400_000)} days`;
 }

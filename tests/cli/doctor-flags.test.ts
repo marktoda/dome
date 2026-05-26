@@ -1,4 +1,7 @@
 import { describe, test, expect } from "bun:test";
+import { writeFile, utimes } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { domeDoctor } from "../../src/cli/commands/doctor";
 import { makeTestVault } from "../helpers/make-test-vault";
 
@@ -165,6 +168,40 @@ describe("dome doctor flags (formerly no-op)", () => {
       expect(queueLines.length).toBe(2);
       expect(queueLines.some(l => l.includes("item-a.md"))).toBe(true);
       expect(queueLines.some(l => l.includes("item-b.md"))).toBe(true);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("--time-since-reconcile reports drift age based on last-reconciled-sha.txt mtime", async () => {
+    const v = await makeTestVault();
+    try {
+      const reconcilePath = join(v.path, ".dome", "state", "last-reconciled-sha.txt");
+      await mkdir(join(v.path, ".dome", "state"), { recursive: true });
+      await writeFile(reconcilePath, "abc123");
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(reconcilePath, twoHoursAgo, twoHoursAgo);
+
+      const r = await domeDoctor(v.path, { timeSinceReconcile: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const summary = r.value.info.find(s => s.startsWith("time-since-reconcile:"));
+      expect(summary).toBeDefined();
+      expect(summary!).toMatch(/2 hours?/);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("--time-since-reconcile reports 'never' when last-reconciled-sha.txt is absent", async () => {
+    const v = await makeTestVault();
+    try {
+      const r = await domeDoctor(v.path, { timeSinceReconcile: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const summary = r.value.info.find(s => s.startsWith("time-since-reconcile:"));
+      expect(summary).toBeDefined();
+      expect(summary!.toLowerCase()).toContain("never");
     } finally {
       await v.cleanup();
     }

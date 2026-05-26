@@ -44,6 +44,7 @@ interface DoctorCliOpts {
   recentActivity?: boolean | string;
   drainHooks?: boolean;
   resetQuarantinedHooks?: boolean;
+  timeSinceReconcile?: boolean;
   show?: DoctorShowSubject;
 }
 
@@ -61,6 +62,7 @@ function toDoctorOpts(cli: DoctorCliOpts): DoctorOpts {
   }
   if (cli.drainHooks) opts.drainHooks = true;
   if (cli.resetQuarantinedHooks) opts.resetQuarantinedHooks = true;
+  if (cli.timeSinceReconcile) opts.timeSinceReconcile = true;
   switch (cli.show) {
     case "review-queue": opts.showReviewQueue = true; break;
     case "raw-citations": opts.showRawCitations = true; break;
@@ -340,6 +342,7 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .option("--drain-hooks", "Wait for async hook queue to drain (v0.5 no-op)")
     .option("--reset-quarantined-hooks", "Clear hook quarantine list (v0.5 no-op)")
+    .option("--time-since-reconcile", "Report drift age since `dome reconcile` last ran")
     .addOption(
       new Option("--show <subject>", "Show a specific diagnostic surface").choices([...DOCTOR_SHOW_SUBJECTS]),
     )
