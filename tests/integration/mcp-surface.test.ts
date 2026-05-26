@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { domeInit } from "../../src/cli/commands/init";
 import { openVault } from "../../src/vault";
 import { DomeMcpServer } from "../../src/mcp/server";
+import { buildConsumerSurface } from "../../src/mcp/consumer-surface";
 import { MCP_TOOL_NAMES } from "../../src/mcp/tool-names";
 
 describe("MCP surface (AC5)", () => {
@@ -29,7 +30,8 @@ describe("MCP surface (AC5)", () => {
       expect(openRes.ok).toBe(true);
       if (!openRes.ok) return;
 
-      const server = new DomeMcpServer({ vault: openRes.value });
+      const surface = await buildConsumerSurface(openRes.value);
+      const server = new DomeMcpServer({ surface, vault: openRes.value });
 
       // 7 canonical tools.
       expect(server.tools.length).toBe(7);
@@ -38,7 +40,7 @@ describe("MCP surface (AC5)", () => {
 
       // >=6 prompts: 5 shipped-default workflows + dome.system_prompt. A
       // vault that activates opt-in workflows would observe more.
-      const prompts = await server.prompts();
+      const prompts = surface.prompts;
       expect(prompts.length).toBeGreaterThanOrEqual(6);
       // dome.system_prompt is exposed as a first-class MCP prompt; every
       // other prompt carries the canonical dome.workflow.* prefix.
@@ -49,7 +51,7 @@ describe("MCP surface (AC5)", () => {
       }
 
       // 3 resources: index, log, vault info.
-      const resources = await server.resources.list();
+      const resources = await surface.resources.list();
       expect(resources.length).toBe(3);
       const uris = resources.map((r) => r.uri).sort();
       expect(uris).toEqual(["dome://index", "dome://log", "dome://vault/info"]);

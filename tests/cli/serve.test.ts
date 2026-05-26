@@ -16,9 +16,11 @@ describe("domeServe", () => {
       // 7 MCP tools, ≥5 prompts (5 shipped-default + dome.system_prompt),
       // 3 resources — the substrate's promised surface.
       expect(r.value.server.tools.length).toBe(7);
-      const prompts = await r.value.server.prompts();
+      // Prompts and resources are on the ConsumerSurface, not the server
+      // (post-Phase-B). The serve handle exposes both.
+      const prompts = r.value.surface.prompts;
       expect(prompts.length).toBeGreaterThanOrEqual(6);
-      const resources = await r.value.server.resources.list();
+      const resources = await r.value.surface.resources.list();
       expect(resources.length).toBe(3);
       await r.value.stop();
     } finally {

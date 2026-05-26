@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { DomeMcpServer } from "../../src/mcp/server";
+import { buildConsumerSurface } from "../../src/mcp/consumer-surface";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 import type { ServerLike } from "../../src/mcp/handlers";
@@ -25,31 +26,36 @@ function makeStubServer(): { server: ServerLike; handlers: Map<unknown, (r: unkn
 }
 
 describe("DomeMcpServer", () => {
-  test("wires 7 tools + resource adapter + prompts", async () => {
+  test("wires 7 tools + resource adapter + prompts via ConsumerSurface", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const server = new DomeMcpServer({ vault: res.value });
+      const surface = await buildConsumerSurface(res.value);
+      const server = new DomeMcpServer({ surface, vault: res.value });
       expect(server.tools.length).toBe(7);
-      const prompts = await server.prompts();
-      expect(prompts.length).toBeGreaterThanOrEqual(5);
-      const resources = await server.resources.list();
+      expect(surface.prompts.length).toBeGreaterThanOrEqual(5);
+      const resources = await surface.resources.list();
       expect(resources.length).toBe(3);
     } finally {
       await v.cleanup();
     }
   });
 
-  test("caches prompts on repeat calls", async () => {
+  test("ConsumerSurface is referentially stable when reused", async () => {
+    // The pre-Phase-B server had a `prompts()` async method with internal
+    // caching. Post-Phase-B the cache lives in the ConsumerSurface itself —
+    // build it once, pass the same object to the server; the kinds are
+    // referentially stable for free.
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const server = new DomeMcpServer({ vault: res.value });
-      const first = await server.prompts();
-      const second = await server.prompts();
-      expect(second).toBe(first);
+      const surface = await buildConsumerSurface(res.value);
+      const server = new DomeMcpServer({ surface, vault: res.value });
+      expect(server).toBeDefined();
+      // The surface IS the cache — re-reading prompts returns the same array.
+      expect(surface.prompts).toBe(surface.prompts);
     } finally {
       await v.cleanup();
     }
@@ -60,9 +66,10 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const server = new DomeMcpServer({ vault: res.value });
+      const surface = await buildConsumerSurface(res.value);
+      const server = new DomeMcpServer({ surface, vault: res.value });
       const { server: stub, handlers } = makeStubServer();
-      await server.registerOn(stub);
+      server.registerOn(stub);
       expect(handlers.size).toBe(6);
       expect(handlers.has(ListToolsRequestSchema)).toBe(true);
       expect(handlers.has(CallToolRequestSchema)).toBe(true);
@@ -80,13 +87,13 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const server = new DomeMcpServer({ vault: res.value });
+      const surface = await buildConsumerSurface(res.value);
+      const server = new DomeMcpServer({ surface, vault: res.value });
       const { server: stub, handlers } = makeStubServer();
-      await server.registerOn(stub);
+      server.registerOn(stub);
       const handler = handlers.get(ListToolsRequestSchema)!;
       const out = (await handler({})) as { tools: Array<{ name: string; inputSchema: Record<string, unknown> }> };
       expect(out.tools.length).toBe(7);
-      // every tool should have a JSON-Schema input shape (not a Zod schema)
       for (const t of out.tools) {
         expect(typeof t.inputSchema).toBe("object");
         expect(t.inputSchema).toHaveProperty("type");
@@ -101,9 +108,10 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const server = new DomeMcpServer({ vault: res.value });
+      const surface = await buildConsumerSurface(res.value);
+      const server = new DomeMcpServer({ surface, vault: res.value });
       const { server: stub, handlers } = makeStubServer();
-      await server.registerOn(stub);
+      server.registerOn(stub);
       const handler = handlers.get(ListPromptsRequestSchema)!;
       const out = (await handler({})) as { prompts: Array<{ name: string }> };
       expect(out.prompts.find(p => p.name === "dome.system_prompt")).toBeDefined();
@@ -117,9 +125,10 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const server = new DomeMcpServer({ vault: res.value });
+      const surface = await buildConsumerSurface(res.value);
+      const server = new DomeMcpServer({ surface, vault: res.value });
       const { server: stub, handlers } = makeStubServer();
-      await server.registerOn(stub);
+      server.registerOn(stub);
       const handler = handlers.get(ListResourcesRequestSchema)!;
       const out = (await handler({})) as { resources: Array<{ uri: string }> };
       expect(out.resources.length).toBe(3);
@@ -128,34 +137,19 @@ describe("DomeMcpServer", () => {
     }
   });
 
-  test("instructions() returns rich orientation: system-base + invariants + page types + AGENTS.md fallback", async () => {
+  test("ConsumerSurface.instructions includes orientation content", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const server = new DomeMcpServer({ vault: res.value });
-      const out = await server.instructions();
-      expect(out).toContain("# Dome — Wiki Maintainer");
-      expect(out).toContain("### Enabled invariants");
-      expect(out).toContain("- EVERY_WRITE_IS_LOGGED");
-      expect(out).toContain("### Page types");
-      expect(out).toContain("- entity");
-      expect(out).toContain("### Vault notes (from AGENTS.md)");
-      expect(out).toContain("_No AGENTS.md present._");
-    } finally {
-      await v.cleanup();
-    }
-  });
-
-  test("instructions() caches across calls", async () => {
-    const v = await makeTestVault();
-    try {
-      const res = await openVault(v.path);
-      if (!res.ok) return;
-      const server = new DomeMcpServer({ vault: res.value });
-      const first = await server.instructions();
-      const second = await server.instructions();
-      expect(second).toBe(first);
+      const surface = await buildConsumerSurface(res.value);
+      expect(surface.instructions).toContain("# Dome — Wiki Maintainer");
+      expect(surface.instructions).toContain("### Enabled invariants");
+      expect(surface.instructions).toContain("- EVERY_WRITE_IS_LOGGED");
+      expect(surface.instructions).toContain("### Page types");
+      expect(surface.instructions).toContain("- entity");
+      expect(surface.instructions).toContain("### Vault notes (from AGENTS.md)");
+      expect(surface.instructions).toContain("_No AGENTS.md present._");
     } finally {
       await v.cleanup();
     }

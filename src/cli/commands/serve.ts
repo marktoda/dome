@@ -2,11 +2,18 @@ import { openVault } from "../../vault";
 import { reconcile } from "../../reconcile";
 import { VaultWatcher } from "../../watcher";
 import { DomeMcpServer } from "../../mcp/server";
+import { buildConsumerSurface } from "../../mcp/consumer-surface";
 import { ok, type Result, type ToolError } from "../../types";
 
 export interface ServeHandle {
   vaultPath: string;
   server: DomeMcpServer;
+  /**
+   * The ConsumerSurface the server was constructed from. Exposed so callers
+   * (and tests) can introspect prompts/resources/instructions without
+   * reaching through the server's protocol-specific shape.
+   */
+  surface: Awaited<ReturnType<typeof buildConsumerSurface>>;
   /**
    * Stop the watcher. The MCP server, once connected to its stdio transport
    * via `connectStdio: true`, runs until the parent process closes stdin (the
@@ -50,16 +57,20 @@ export async function domeServe(
     void vault.dispatchEvents([event]);
   });
   await watcher.start();
-  // Build and connect the MCP server. Without serveStdio() the constructed
-  // server registers no handlers on any transport and the harness sees an
-  // empty surface — see the substrate-alignment review's Blocker 1.
-  const server = new DomeMcpServer({ vault });
+  // Build the ConsumerSurface (the four-kind aggregation per
+  // docs/wiki/specs/sdk-surface.md §"Consumer surfaces") and construct
+  // the MCP server as a thin protocol adapter over it. Without
+  // serveStdio() the constructed server registers no handlers on any
+  // transport and the harness sees an empty surface.
+  const surface = await buildConsumerSurface(vault);
+  const server = new DomeMcpServer({ surface, vault });
   if (opts.connectStdio !== false) {
     await server.serveStdio();
   }
   return ok({
     vaultPath: vault.path,
     server,
+    surface,
     stop: async () => { await watcher.stop(); },
   });
 }
