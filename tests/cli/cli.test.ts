@@ -66,6 +66,42 @@ describe("runCli", () => {
     }
   });
 
+  test("lint --apply <id> parses without unknownOption (commander wiring)", async () => {
+    // The cwd is a fresh non-vault dir, so the inner dispatch will fail at
+    // vault-open (Failure). What we're pinning here is that commander
+    // accepts --apply <id> as a known option; a Usage exit would mean
+    // commander rejected the flag, which would surface the regression.
+    const base = await mkdtemp(join(tmpdir(), "dome-cli-apply-"));
+    const origCwd = process.cwd();
+    try {
+      process.chdir(base);
+      const code = await runCli(["lint", "--apply", "H1"]);
+      expect(code).toBe(ExitCode.Failure);
+    } finally {
+      process.chdir(origCwd);
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("lint --apply <id> --apply <id2> collects multiple ids (repeatable wiring)", async () => {
+    // Repeated --apply must accumulate into an array via the collector;
+    // if commander dropped repeats, the option would behave like a single
+    // string and the test would still parse but the contract pinned in
+    // tests/cli/lint.test.ts (TC3) would catch the misbehavior. This test
+    // covers the runCli surface specifically — multi-id is accepted by
+    // commander, not by domeLint.
+    const base = await mkdtemp(join(tmpdir(), "dome-cli-multi-"));
+    const origCwd = process.cwd();
+    try {
+      process.chdir(base);
+      const code = await runCli(["lint", "--apply", "H1", "--apply", "H2"]);
+      expect(code).toBe(ExitCode.Failure);
+    } finally {
+      process.chdir(origCwd);
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
   test("export-context <topic> dispatches; missing topic returns Usage", async () => {
     const code = await runCli(["export-context"]);
     expect(code).toBe(ExitCode.Usage);
