@@ -32,6 +32,11 @@ describe("dome init", () => {
       // HTML-comment-bounded user section so dome doctor can re-template
       // scaffolding without touching user prose.
       expect(agentsBody).toContain("<!--");
+      // Offline-rule-surface pointer (per cli.md §dome init): an agent
+      // without MCP should still find docs/wiki/invariants/ as the
+      // canonical rule surface when the vault ships substrate.
+      expect(agentsBody).toContain("docs/wiki/invariants/");
+      expect(agentsBody.toLowerCase()).toContain("offline");
       const claudeBody = await readFile(claudePath, "utf8");
       expect(claudeBody.trim()).toBe("See AGENTS.md.");
       // openVault succeeds

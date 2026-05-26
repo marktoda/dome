@@ -34,6 +34,17 @@ If MCP isn't mounted yet, the bare minimum you need:
 - Never write to \`raw/\`. Never mutate \`log.md\` or \`index.md\` directly.
 - Mount the MCP server before doing anything else; the full rule set lives there.
 
+### Offline rule surface
+
+If MCP is unavailable and this vault carries Dome's design substrate, the
+canonical rules live at:
+- \`docs/wiki/invariants/\` — named invariants the system depends on
+- \`docs/wiki/specs/\` — spec docs (cli, hooks, mcp-surface, etc.)
+- \`docs/wiki/gotchas/\` — known scars and their mitigations
+
+A vault without those directories carries only the bullets above as its
+rule surface.
+
 ## Vault notes
 
 <!-- Tend this section over time. Examples of what belongs here:
