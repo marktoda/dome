@@ -262,7 +262,23 @@ export async function domeDoctor(
   }
   if (opts.resetQuarantinedHooks) info.push("--reset-quarantined-hooks: no-op in v0.5 (no persistent quarantine state across CLI runs)");
   if (opts.showRecentHookCycles) info.push("--show recent-hook-cycles: no-op in v0.5 (no persistent cycle log across CLI runs)");
-  if (opts.showReviewQueue) info.push("--show review-queue: no-op in v0.5 (review-queue lives in wiki/inbox/review-queue.md if present)");
+  if (opts.showReviewQueue) {
+    const reviewDir = join(vault.path, "inbox", "review");
+    if (existsSync(reviewDir)) {
+      const items = await readdir(reviewDir, { withFileTypes: true });
+      const files = items.filter(e => e.isFile()).map(e => e.name).sort();
+      if (files.length === 0) {
+        info.push("review-queue: (empty)");
+      } else {
+        for (const name of files) {
+          const st = await stat(join(reviewDir, name));
+          info.push(`review-queue: inbox/review/${name} (mtime ${new Date(st.mtimeMs).toISOString()})`);
+        }
+      }
+    } else {
+      info.push("review-queue: (inbox/review/ not present; SENSITIVE_GOES_TO_INBOX likely disabled)");
+    }
+  }
   if (opts.showRawCitations) info.push("--show raw-citations: no-op in v0.5 (raw citations not yet indexed)");
   if (opts.recentActivityN !== undefined) {
     const limit = opts.recentActivityN ?? 50;

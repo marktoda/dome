@@ -46,4 +46,22 @@ describe("dome doctor flags (formerly no-op)", () => {
       await v.cleanup();
     }
   });
+
+  test("--show review-queue lists files in inbox/review/", async () => {
+    const v = await makeTestVault();
+    try {
+      await Bun.write(`${v.path}/inbox/review/item-a.md`, "# A\n");
+      await Bun.write(`${v.path}/inbox/review/item-b.md`, "# B\n");
+
+      const r = await domeDoctor(v.path, { showReviewQueue: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const queueLines = r.value.info.filter(l => l.startsWith("review-queue:"));
+      expect(queueLines.length).toBe(2);
+      expect(queueLines.some(l => l.includes("item-a.md"))).toBe(true);
+      expect(queueLines.some(l => l.includes("item-b.md"))).toBe(true);
+    } finally {
+      await v.cleanup();
+    }
+  });
 });
