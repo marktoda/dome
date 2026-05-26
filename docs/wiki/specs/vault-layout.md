@@ -62,8 +62,9 @@ What gets committed to git:
 |---|---|---|
 | `.dome/state/last-reconciled-sha.txt` | The SHA at which the last `dome reconcile` completed | Next reconcile treats every file as changed; idempotent so safe |
 | `.dome/state/scheduled.json` | Last-fire timestamps for scheduled hooks | Next reconcile fires every scheduled hook once |
+| `.dome/state/quarantined.json` | Hook handler quarantine list (handler IDs with three consecutive failures, per [[wiki/specs/hooks]] §"Execution model") | Quarantined handlers re-enter rotation at next process start; idempotent so safe |
 
-Both files are derived state: deleting them doesn't lose canonical knowledge; deleting them just causes the next reconciliation to do more work. The vault's markdown content (under `wiki/`, `raw/`, etc.) is the only canonical surface.
+All three files are derived state: deleting them doesn't lose canonical knowledge; deleting them just causes the next reconciliation or hook-dispatch cycle to do more work. The vault's markdown content (under `wiki/`, `raw/`, etc.) is the only canonical surface.
 
 (Plugins that need their own caches create their own subdirectories under `.dome/<plugin-name>/cache/` and gitignore them in the vault's `.gitignore`. The SDK base ships no `.dome/cache/` directory.)
 

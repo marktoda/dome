@@ -16,11 +16,15 @@ tier: shipped-default
 
 Without this contract, reconciliation would need a separate "processed marker" mechanism (a `.processed` file alongside, a frontmatter flag, an external database, parsing `log.md`). All of those introduce extra state. With this contract, the filesystem IS the state.
 
-**Structural enforcement:** The contract is enforced by the intake-workflow prompts themselves. The `ingest`, `voice-ingest`, `research`, and `clip-integrate` workflow prompts each include explicit instructions to `deleteDocument(inbox_path)` as the final step of the workflow.
+**Structural enforcement:** Two layers, complementary.
+
+1. **Workflow-prompt instruction (primary).** The intake-workflow prompts themselves carry the contract: the `ingest`, `voice-ingest`, `research`, and `clip-integrate` workflow prompts each include explicit instructions to `deleteDocument(inbox_path)` as the final step of the workflow.
+
+2. **`dome doctor` structural fallback (secondary).** Because the primary layer is prompt-enforced (not Tool-boundary-enforced — see [[wiki/matrices/tool-invariant-enforcement]] §"`INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)"), it is vulnerable to prompt regression. `dome doctor` walks `inbox/<bucket>/` for every bucket except `review/` (because `review/` is a destination for the `SENSITIVE_GOES_TO_INBOX` opt-in invariant, not an intake — see [[wiki/specs/hooks]] §"`inbox/review/` — opt-in sensitivity destination") and emits a violation for every file whose `mtime` is older than `hooks.inbox_stale_age_hours` in `.dome/config.yaml` (default 24h). A vault that intentionally wants long-lived inbox files (the per-bucket disable below) sets `hooks.inbox_stale_age_hours` arbitrarily high, or sets the per-bucket `ephemeral: false` knob which causes `dome doctor` to skip that bucket entirely.
 
 **v0.5 escape mechanism:** Intake workflows `deleteDocument` the inbox file at end of workflow. The "move to `raw/captures/`" mechanism described in earlier drafts conflicts with [[wiki/invariants/RAW_IS_IMMUTABLE]] (`writeDocument` and `moveDocument` both refuse `raw/` targets); deletion is the structurally clean exit. Raw content survives in the wiki pages the workflow created and in any `wiki/sources/<name>.md` source page; a future `appendRawCapture` privileged dispatcher API may preserve raw content directly (v1+).
 
-The `dome doctor` command reports any vault where inbox/<bucket>/ contains files older than 24 hours — typically a sign that an intake hook failed to complete or was never registered.
+The doctor check above is what catches a stranded inbox file — typically a sign that an intake hook failed to complete or was never registered.
 
 **Counter-example:** A user writes a plugin that processes `inbox/clip/` files but doesn't move them out. After processing, the files remain in `inbox/clip/`. On the next `dome reconcile` run, the system fires the intake events again, the plugin re-processes — and depending on its idempotency story, may produce duplicate wiki updates. The fix: the plugin must move or delete the inbox file as part of its workflow contract.
 
@@ -36,7 +40,10 @@ inbox:
 
 When ephemeral is false, the intake hook is responsible for tracking processed state another way (typically a frontmatter flag).
 
-**Test guarantee:** `tests/invariants/inbox-is-ephemeral.test.ts` — runs each shipped intake workflow against fixture inbox files; asserts the inbox file is gone (moved or deleted) after the workflow completes. Asserts `dome doctor` flags inbox files older than the configured age threshold.
+**Test guarantee:** `tests/invariants/inbox-is-ephemeral.test.ts` — two layers of tests:
+
+1. **Workflow-prompt layer:** asserts each shipped intake workflow (`ingest`, `voice-ingest`, `research`, `clip-integrate`) binds `deleteDocument` in its `tools:` frontmatter list AND its prompt body instructs deletion of the inbox file.
+2. **Doctor-fallback layer:** writes a fixture inbox file with a backdated `mtime` past the configured threshold; asserts `dome doctor` emits a violation. Also asserts `inbox/review/` files are excluded from the check regardless of age, since `review/` is the `SENSITIVE_GOES_TO_INBOX` destination, not an intake bucket.
 
 **Related:**
 - [[wiki/specs/hooks]] §"Opt-in intake patterns" and §"Durability and reconciliation"

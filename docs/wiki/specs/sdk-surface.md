@@ -286,12 +286,7 @@ Bun built-ins used directly (no extra dependency): `Bun.write` (atomic file writ
 
 ### Derived operational state on disk
 
-Two files under `<vault>/.dome/` hold operational state that is NOT canonical (gitignored, rebuildable):
-
-- `.dome/state/last-reconciled-sha.txt` — the git SHA of the last successful `dome reconcile`. Reconciliation diffs against this.
-- `.dome/state/scheduled.json` — last-fire timestamps for scheduled hooks. Reconciliation uses these to catch up missed intervals.
-
-Both are derived state. Deleting them does not lose canonical knowledge — it just causes the next reconciliation pass to do more work (fire `document.written.*` for every file once via git-diff-from-root; re-fire every scheduled hook once). The vault's markdown content (`wiki/`, `raw/`, etc.) is the only canonical surface, per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
+The canonical inventory of derived operational state under `<vault>/.dome/state/` (gitignored, rebuildable, non-canonical) lives in [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`". As of v0.5: `last-reconciled-sha.txt`, `scheduled.json`, `quarantined.json`. Deleting any of them does not lose canonical knowledge — it just causes the next reconciliation pass or hook-dispatch cycle to do more work. The vault's markdown content (`wiki/`, `raw/`, etc.) is the only canonical surface, per [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
 
 **Why no lockfile / in-flight tracking?** Earlier designs included `.dome/in-flight/<handler>-<event-id>.json` lockfiles for crash recovery. They're not needed: with per-workflow atomic commits (see §"Commit policy" below), idempotency contract on hooks (see [[wiki/specs/hooks]]), and `scheduled.json` for scheduled-event catchup, every hook-crash recovery case is covered by `git status` + `git diff` + `scheduled.json`. Adding lockfiles is overhead without solving a real problem.
 

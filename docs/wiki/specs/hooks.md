@@ -142,8 +142,18 @@ Vaults that don't enable sensitivity classification never have an `inbox/review/
 - **Async by default.** When a Tool returns its Effects, the Hook dispatcher enqueues matching events to a background queue and the Tool returns to its caller immediately.
 - **Sync opt-in.** A hook may declare `async: false` (declarative) or pass `{ sync: true }` to `registerHook` (programmatic). Sync hooks run inline before the Tool returns. Reserved for hooks that must complete before downstream code observes the result — e.g., a sensitivity-classifier that gates the write destination.
 - **Queue backend.** v0.5 ships with an in-process queue (`p-queue` instance per Vault). The backend is swappable via configuration; Redis-backed BullMQ is a reasonable v1 swap.
-- **Failure model.** A hook handler that throws is logged as a `hook-failure` entry in `log.md`. The originating Tool call is not affected. Three consecutive failures of the same handler trigger `hook-disabled`; the handler is quarantined until `dome doctor` is run.
+- **Failure model.** A hook handler that throws is logged as a `hook-failure` entry in `log.md`. The originating Tool call is not affected. Three consecutive failures of the same handler trigger `hook-disabled`; the handler is added to `.dome/state/quarantined.json` (the persistent quarantine record — see [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`") and is skipped on every subsequent event match across processes until `dome doctor --reset-quarantined-hooks` removes it. The persistence is necessary because `dome doctor` and `dome serve` don't share a process; an in-memory quarantine would not survive the CLI handoff.
 - **Cycle prevention.** Two-layer mechanism: (1) **per-(handler, target-path) repetition check** — the primary mechanism. The dispatcher tracks a causation chain per event; when a handler would fire against an event whose `(handler_id, primary_target_path)` pair already appears earlier in the chain, the dispatcher refuses the fire and emits `hook.cycle-detected`. Legitimate fan-out (e.g., `auto-cross-reference` writing backlinks across N pages) is allowed because each target path is distinct. (2) **Depth safety net** — `hooks.max_causation_depth` in `.dome/config.yaml` (default 50) catches runaway chains that don't repeat (handler, target) but grow unboundedly. Either trigger emits `hook.cycle-detected` and refuses the fire. See [[wiki/gotchas/hook-cycle]].
+
+### `.dome/config.yaml` hook-related fields
+
+The `hooks:` section of the vault config carries the following fields (all shipped-default values live in `src/shipped-defaults.ts` — see [[wiki/specs/sdk-surface]] §"Tiered feature model"):
+
+| Field | Default | Purpose |
+|---|---|---|
+| `hooks.builtin.<id>` | `enabled` | Per-shipped-default-hook on/off switch (`auto-update-index`, `auto-cross-reference`). |
+| `hooks.max_causation_depth` | `50` | Cycle-prevention depth safety net (see §"Cycle prevention" above). |
+| `hooks.inbox_stale_age_hours` | `24` | `dome doctor` `INBOX_IS_EPHEMERAL` check threshold (see [[wiki/invariants/INBOX_IS_EPHEMERAL]]). Files in `inbox/<bucket>/` (excluding `inbox/review/`) older than this age emit a violation. |
 
 ## Durability and reconciliation
 

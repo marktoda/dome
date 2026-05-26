@@ -27,7 +27,8 @@ Creates:
 - `.dome/hooks/intake-raw.yaml` — the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow.
 - `.gitignore` — excludes `.dome/state/` (per-machine operational state).
 - `index.md` and `log.md` (with one bootstrap entry).
-- A `CLAUDE.md` template at vault root the user can copy to their Claude Code config.
+- `AGENTS.md` at vault root — the vault-owned, cross-harness convention file. Carries cold-start orientation: how to mount Dome's MCP server, the minimum rules to honor when MCP isn't mounted, a pointer to `docs/wiki/invariants/` (and adjacent canonical-rule directories) as the offline rule surface, and a user-editable `## Vault notes` section delimited by HTML comments so a future `dome doctor --repair` can re-template the scaffolding without touching user prose. System rules deliberately live OFF this file — the MCP server delivers them as `instructions` at mount time (see [[wiki/specs/mcp-surface]] §"Session model"). Vault-owned means the SDK never clobbers it after init.
+- `CLAUDE.md` at vault root — a thin one-line shim pointing at `AGENTS.md`. Exists only because Claude Code's auto-load convention currently prefers `CLAUDE.md`; removable once `AGENTS.md` auto-load is universal across harnesses.
 - **Initializes a git repository** and makes the initial commit (per [[wiki/invariants/VAULT_IS_GIT_REPO]]). The commit message: `chore: initialize Dome vault`. The user starts with a clean working tree and a vault that's immediately ready for use.
 
 Refuses if `<path>` already contains `.dome/` (use `dome migrate` for existing Dome vaults) OR `.git/` with prior history that wasn't created by `dome init` (the user should `dome migrate` instead to inherit their existing history cleanly).
@@ -129,6 +130,7 @@ Unlike `dome lint` (semantic / agent-driven), `dome doctor` is deterministic: it
 - Raw files modified after creation (suggests something bypassed `RAW_IS_IMMUTABLE`).
 - `log.md` non-monotonic timestamps.
 - `.dome/page-types.yaml` declares extensions not used; or pages use types not declared.
+- Inbox files older than `hooks.inbox_stale_age_hours` (see [[wiki/invariants/INBOX_IS_EPHEMERAL]]) — `inbox/review/` is excluded because `review/` is a destination, not an intake.
 
 Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply them. Run after `dome migrate` to verify; run before opening to a new harness to verify upstream changes didn't drift.
 
@@ -142,7 +144,7 @@ Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply 
 - `--show recent-hook-cycles` — list recent `hook.cycle-detected` events with their full causation chains. Useful for diagnosing hook design errors.
 - `--recent-activity [N]` — list the last `N` writes by tool and target (default 50). Useful for spotting prompt-regression drift after a model upgrade or prompt edit.
 - `--drain-hooks` — block until the async hook queue drains, then exit. Useful when the user wants to read post-hook state immediately (e.g., right after a write, before a query).
-- `--reset-quarantined-hooks` — clear the hook-quarantine list. Handlers are quarantined after three consecutive failures per [[wiki/specs/hooks]] §"Execution model"; use this flag after fixing a misbehaving hook to bring it back into rotation.
+- `--reset-quarantined-hooks` — clear the hook-quarantine list. Handlers are quarantined after three consecutive failures per [[wiki/specs/hooks]] §"Execution model"; use this flag after fixing a misbehaving hook to bring it back into rotation. Operates on `.dome/state/quarantined.json` (see [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`") — that file is the authoritative quarantine record across CLI invocations, since `dome doctor` and `dome serve` don't share a process.
 
 ## `dome export-context <topic>`
 
