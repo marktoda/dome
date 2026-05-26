@@ -127,4 +127,37 @@ describe("DomeMcpServer", () => {
       await v.cleanup();
     }
   });
+
+  test("instructions() returns rich orientation: system-base + invariants + page types + AGENTS.md fallback", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) return;
+      const server = new DomeMcpServer({ vault: res.value });
+      const out = await server.instructions();
+      expect(out).toContain("# Dome — Wiki Maintainer");
+      expect(out).toContain("### Enabled invariants");
+      expect(out).toContain("- EVERY_WRITE_IS_LOGGED");
+      expect(out).toContain("### Page types");
+      expect(out).toContain("- entity");
+      expect(out).toContain("### Vault notes (from AGENTS.md)");
+      expect(out).toContain("_No AGENTS.md present._");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("instructions() caches across calls", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) return;
+      const server = new DomeMcpServer({ vault: res.value });
+      const first = await server.instructions();
+      const second = await server.instructions();
+      expect(second).toBe(first);
+    } finally {
+      await v.cleanup();
+    }
+  });
 });
