@@ -7,7 +7,7 @@ import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { domeInit } from "../../src/cli/commands/init";
 import { openVault } from "../../src/vault";
-import { collectStats, renderJson, renderDashboard, domeStats } from "../../src/cli/commands/stats";
+import { collectStats, renderJson, renderDashboard, domeStats, type VaultStats } from "../../src/cli/commands/stats";
 
 async function makeStatsVault(): Promise<{ path: string; cleanup: () => Promise<void> }> {
   const base = await mkdtemp(join(tmpdir(), "dome-stats-"));
@@ -151,5 +151,88 @@ describe("dome stats", () => {
     } finally {
       await v.cleanup();
     }
+  });
+
+  function stripAnsi(s: string): string {
+    // Match CSI escape sequences.
+    return s.replace(/\x1b\[[0-9;]*m/g, "");
+  }
+
+  test("renderDashboard contains the vault path, DOME header, and headline numbers", async () => {
+    const v = await makeStatsVault();
+    try {
+      await writeFile(
+        join(v.path, "wiki", "entities", "alice.md"),
+        "---\ntype: entity\n---\n# Alice\n",
+      );
+      const vaultRes = await openVault(v.path);
+      if (!vaultRes.ok) throw new Error("openVault failed");
+      const stats = await collectStats(vaultRes.value);
+      const out = stripAnsi(renderDashboard(stats));
+
+      expect(out).toContain("DOME");
+      expect(out).toContain(v.path);
+      expect(out).toContain("pages");
+      expect(out).toContain("Wikilinks");
+      expect(out).toContain("Raw files");
+      expect(out).toContain("Log");
+      expect(out).toContain("Vault age");
+      expect(out).toMatch(/\b1\b/); // 1 entity page exists
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("renderDashboard formats last-write age relative to lastWriteAt", async () => {
+    // Hand-craft a VaultStats — no need for a real vault.
+    const recent = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2h ago
+    const stats: VaultStats = {
+      vaultPath: "/tmp/v",
+      pageCounts: {},
+      totalPages: 0,
+      wikilinks: { total: 0, orphans: 0 },
+      raw: { count: 0, bytes: 0 },
+      notes: { count: 0 },
+      log: { entries: 1, lastWriteAt: recent },
+      topHubs: [],
+      git: { ageDays: 0, commits: 1, contributors: 1 },
+    };
+    const out = stripAnsi(renderDashboard(stats));
+    expect(out).toMatch(/last: 2h ago/);
+  });
+
+  test("renderDashboard renders bytes with KB/MB suffix", async () => {
+    const stats: VaultStats = {
+      vaultPath: "/tmp/v",
+      pageCounts: {},
+      totalPages: 0,
+      wikilinks: { total: 0, orphans: 0 },
+      raw: { count: 3, bytes: 2_500_000 }, // ~2.4 MB
+      notes: { count: 0 },
+      log: { entries: 0, lastWriteAt: null },
+      topHubs: [],
+      git: { ageDays: 0, commits: 0, contributors: 0 },
+    };
+    const out = stripAnsi(renderDashboard(stats));
+    expect(out).toMatch(/2\.4 MB/);
+  });
+
+  test("renderDashboard emits no ANSI when picocolors detects no color support", async () => {
+    // picocolors honors NO_COLOR / FORCE_COLOR / !isTTY. Bun tests run with
+    // stdout piped (not a TTY), so picocolors.isColorSupported should be false
+    // by default and no escape codes should appear.
+    const stats: VaultStats = {
+      vaultPath: "/tmp/v",
+      pageCounts: { entity: 1 },
+      totalPages: 1,
+      wikilinks: { total: 0, orphans: 0 },
+      raw: { count: 0, bytes: 0 },
+      notes: { count: 0 },
+      log: { entries: 0, lastWriteAt: null },
+      topHubs: [],
+      git: { ageDays: 0, commits: 0, contributors: 0 },
+    };
+    const out = renderDashboard(stats);
+    expect(out).not.toMatch(/\x1b\[/);
   });
 });

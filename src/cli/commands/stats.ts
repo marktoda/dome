@@ -7,6 +7,7 @@ import { walkMd } from "../../vault-fs";
 import { parseWikilinks } from "../../wikilinks";
 import { singularOf } from "../../page-type";
 import { log as gitLog } from "../../git";
+import pc from "picocolors";
 
 export interface VaultStats {
   vaultPath: string;
@@ -134,8 +135,116 @@ export async function collectStats(vault: Vault): Promise<VaultStats> {
   return stats;
 }
 
-export function renderDashboard(_stats: VaultStats): string {
-  throw new Error("not implemented");
+// Cells in each bar.
+const BAR_WIDTH = 12;
+
+function bar(filledFrac: number, fillColor: (s: string) => string): string {
+  const filled = Math.max(0, Math.min(BAR_WIDTH, Math.round(filledFrac * BAR_WIDTH)));
+  const empty = BAR_WIDTH - filled;
+  return fillColor("▓".repeat(filled)) + pc.dim("░".repeat(empty));
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function formatAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 48) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  return `${days}d ago`;
+}
+
+// Map a page-type singular to its plural label for display.
+function pluralLabel(typeName: string, n: number): string {
+  // Special-case the four shipped types + common substrate extensions whose
+  // English plurals aren't a simple "+s".
+  const overrides: Record<string, string> = {
+    entity: "entities",
+    matrix: "matrices",
+    synthesis: "syntheses",
+    gotcha: "gotchas",
+  };
+  const label = overrides[typeName] ?? `${typeName}s`;
+  return n === 1 ? typeName : label;
+}
+
+export function renderDashboard(stats: VaultStats): string {
+  const headline = pc.bold(pc.cyan("DOME")) + " · " + pc.dim(stats.vaultPath);
+  const divider = pc.dim("─".repeat(45));
+
+  const countParts: string[] = [pc.bold(pc.yellow(String(stats.totalPages))) + " pages"];
+  // Sort types by count desc; show non-zero ones inline.
+  const sortedTypes = Object.entries(stats.pageCounts)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5); // top 5 types
+  for (const [type, n] of sortedTypes) {
+    countParts.push(pc.bold(pc.yellow(String(n))) + " " + pluralLabel(type, n));
+  }
+  const countLine = "  " + countParts.join("  ·  ");
+
+  // Bar denominators are heuristics — bars are texture, not precise.
+  const wikiDenom = Math.max(1, stats.totalPages * 10);
+  const wikiFrac = stats.wikilinks.total / wikiDenom;
+  const rawDenom = Math.max(1, stats.raw.count + stats.totalPages);
+  const rawFrac = stats.raw.count / rawDenom;
+  const logFrac = stats.log.entries === 0 ? 0 : Math.min(1, stats.log.entries / 50);
+
+  const wikiLine =
+    "  Wikilinks  " + bar(wikiFrac, pc.green) + "  " +
+    `${stats.wikilinks.total} links` +
+    (stats.wikilinks.orphans > 0 ? ` · ${pc.red(String(stats.wikilinks.orphans))} orphans` : "");
+
+  const rawLine =
+    "  Raw files  " + bar(rawFrac, pc.yellow) + "  " +
+    `${stats.raw.count} sources · ${formatBytes(stats.raw.bytes)}`;
+
+  const logLastBit = stats.log.lastWriteAt !== null ? ` · last: ${formatAgo(stats.log.lastWriteAt)}` : "";
+  const logLine =
+    "  Log        " + bar(logFrac, pc.cyan) + "  " +
+    `${stats.log.entries} entries${logLastBit}`;
+
+  const topHubsBit = stats.topHubs.slice(0, 3)
+    .map(h => {
+      // Strip the wiki/<type>/ prefix and .md suffix for display.
+      const trimmed = h.target.replace(/^wiki\/[^/]+\//, "").replace(/\.md$/, "");
+      return `${trimmed} (${h.incoming})`;
+    })
+    .join(" · ");
+  const topHubsLine = stats.topHubs.length > 0 ? `  Top hubs:  ${topHubsBit}` : null;
+
+  const ageBit = stats.git.ageDays !== null ? `${stats.git.ageDays} days` : "?";
+  const vaultAgeLine =
+    `  Vault age: ${ageBit} · ${stats.git.commits} commits · ${stats.git.contributors} contributors`;
+
+  const notesLine = stats.notes.count > 0
+    ? `  Notes:     ${stats.notes.count} files`
+    : null;
+
+  return [
+    "",
+    headline,
+    "  " + divider,
+    countLine,
+    "",
+    wikiLine,
+    rawLine,
+    logLine,
+    notesLine,
+    "",
+    topHubsLine,
+    vaultAgeLine,
+    "",
+  ].filter(l => l !== null).join("\n");
 }
 
 export function renderJson(stats: VaultStats): string {
