@@ -11,7 +11,7 @@ This rewrite closes a spec/implementation gap. The migrate workflow already comm
 This rewrite is **Mixed**. Design-layer changes: `cli.md` lint section, `prompts-and-workflows.md` lint row, `intent-prompt-tools.md` lint row. Implementation changes: `src/prompts/builtin/lint.md` (the workflow's executable behavior; SDK code remains untouched in this pass per the Build-gate scope).
 
 - **Files:** 4 rewritten, 1 added (this ledger), 0 removed/deprecated
-- **Conceptual changes:** Two-mode `lint` workflow (propose / apply); stable finding-id contract (`<severity-letter><index>`); apply-time annotation contract (`Applied:` / `Apply-failed:`); report filename standardized to `lint-report-YYYY-MM-DD.md` (matches ship reality; replaces the spec's aspirational `lint-pass-YYYY-MM-DD.md`)
+- **Conceptual changes:** Two-mode `lint` workflow (propose / apply); stable finding-id contract (`<severity-letter><index>`); apply-time annotation contract (`Applied:` / `Apply-failed:`); report filename standardized to `lint-report-YYYY-MM-DD.md` (matches ship reality; replaces the spec's aspirational `lint-pass-YYYY-MM-DD.md`); expanded lint tool surface to include `moveDocument` and `deleteDocument` (matches what apply-mode requires; matches `sdk-surface.md:131`'s commitment to "lint proposes deleting orphan pages")
 - **Named invariants:** none added, none changed (existing `EVERY_WRITE_IS_LOGGED` already covers apply-mode mutations; existing `MARKDOWN_IS_SOURCE_OF_TRUTH` already covers report-as-truth)
 - **Behavior matrices:** `intent-prompt-tools.md` (lint row's Tools and Effects cells updated)
 - **Gotchas:** none added (apply-mode mid-merge guard reuses the `dirty-git-state-at-reconcile` gotcha by reference)
@@ -96,6 +96,7 @@ none
   - Apply mode against a fixture report whose `H1` is `(advisory)` refuses with the advisory reason.
   - Apply mode with a non-existent id (`H99`) refuses with a clear error naming the report path.
   - Apply mode with no report file present refuses with a clear error naming the expected path pattern.
+  - Apply mode against a fixture report where `H1` was `Applied:` in Pass 1 and re-promoted (without an `Applied:` annotation) in Pass 2 refuses, citing Pass 1's timestamp — exercises the cross-pass idempotency walk per the I2 repair from pass-1 validation review.
 
 ## What this rewrite *did not* do
 
@@ -111,6 +112,16 @@ none
 - **Per-finding apply order across passes:** When the same finding id appears in multiple `Pass N` sections of the same date's report (because Pass 2 promoted a Pass 1 finding), the prompt says "most recent `Pass N` section's entry wins." This is the right default but worth pressure-testing: a Pass 1 entry that recorded `Applied: ...` and a Pass 2 entry without that annotation produces ambiguous truth. The idempotency check on `Applied:` should walk all `Pass N` sections, not just the most recent one. The prompt's current language ("most recent Pass N section's entry") is slightly weaker than this — `spec-cohesion-reviewer` should pressure-test it.
 - **Apply mode against an `Applied:` finding:** Decision in this rewrite is "refuse with prior timestamp" (idempotency). An alternative — "refuse only if the target's current state already matches the recommendation; otherwise apply (a possibly-modified) version" — is more powerful but introduces re-derivation that contradicts the "report is source of truth" principle. Locked to the simpler refusal; flagging as a design choice the reviewer may push back on.
 - **Stable id continuity across dates:** Ids are stable within a date (Pass N preserves Pass 1's ids). The prompt is silent on whether a `H1` from Tuesday's report is "the same finding" as a `H1` from Wednesday's report. They are not — ids are per-report, not per-vault. Apply mode targets the most recent report, so this is unambiguous in practice, but a reader might assume cross-report id continuity. Worth tightening if `spec-cohesion-reviewer` flags it.
+
+## Repair pass 1 (closed inline)
+
+After pass-1 fresh-eyes review (Approved verdict; see `docs/cohesive/reviews/2026-05-26-lint-apply-mode-rewrite-validation.md`), the disposition "Close in same worktree → merge" applied. Four small repairs landed in-worktree:
+
+- **Closes I1** — `docs/wiki/specs/cli.md` propose-mode finding shape now names the optional `(advisory)` tag; apply-mode failure list adds clause (d) for advisory refusal.
+- **Closes I2** — `src/prompts/builtin/lint.md` apply-mode applicability check now walks every `## Pass N` section for the id (not just the most recent), so a finding promoted across passes whose Pass 1 entry was `Applied:` correctly refuses re-application from a Pass 2 entry that lacks the annotation.
+- **Closes I3** — `docs/wiki/specs/cli.md` apply-mode section now specifies multi-id semantics: per-id failures don't abort the remaining ids; the CLI exits nonzero if any id failed; per-id summary lands on stderr.
+- **Closes I4** — this ledger's preamble Conceptual changes bullet now enumerates the tool-surface expansion (`moveDocument` + `deleteDocument`) that was previously only in the body table.
+- **Closes substrate gap** — Tests proposed list now includes the 7th fixture (cross-pass idempotency walk) matching the I2 repair.
 
 ## Ready for fresh-eyes review?
 

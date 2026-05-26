@@ -109,7 +109,7 @@ Invokes the `lint` workflow prompt via the headless agent loop:
 
 1. Reads the wiki and index.
 2. Detects: orphan pages, stale claims, missing cross-references, contradictions, schema-violating frontmatter, out-of-band direct edits.
-3. Writes a structured report. Each finding carries a **stable id** (`<severity-letter><index>`: `H1`, `H2`, `M1`, `L1`; severities `H`igh / `M`edium / `L`ow), a one-line title, an Evidence paragraph with `path:line` references, and a Recommendation paragraph concrete enough that a re-invocation of this workflow can execute it without re-deriving intent.
+3. Writes a structured report. Each finding carries a **stable id** (`<severity-letter><index>`: `H1`, `H2`, `M1`, `L1`; severities `H`igh / `M`edium / `L`ow), an optional `(advisory)` tag for findings that require human judgment the workflow cannot execute on its own (apply mode refuses these — see below), a one-line title, an Evidence paragraph with `path:line` references, and a Recommendation paragraph concrete enough that a re-invocation of this workflow can execute it without re-deriving intent.
 4. Writes the report to `inbox/review/lint-report-YYYY-MM-DD.md` if the vault has `inbox/review/` configured (the default for vaults with sensitivity routing enabled); otherwise returns the report to stdout. Repeat runs on the same date append a `Pass N` section to the existing file rather than overwriting — same-day re-runs produce a longitudinal log.
 5. Exits 0 if no findings above the configured severity threshold; nonzero otherwise.
 
@@ -128,7 +128,9 @@ Re-invokes the `lint` workflow with the named finding id(s) as its user message:
 2. Finds the finding whose id matches `<id>` (most-recent `Pass N` section wins if the same id appears in multiple passes).
 3. Executes the recommendation via Dome's Tools (`writeDocument`, `moveDocument`, or `deleteDocument` as the recommendation requires). Every mutation is logged per [[wiki/invariants/EVERY_WRITE_IS_LOGGED]].
 4. Appends an `Applied: YYYY-MM-DDTHH:MM:SSZ` annotation to the originating finding's entry in the report (idempotent: a re-apply against an already-applied finding refuses with exit nonzero rather than mutating twice).
-5. Exits 0 on success; nonzero if (a) the finding id is absent from the most recent report, (b) the recommendation cannot be safely executed (target moved out of band, conflicting newer state), or (c) the report itself is missing. Failed applies record an `Apply-failed: <reason>` annotation on the finding before exiting.
+5. Exits 0 on success; nonzero if (a) the finding id is absent from the most recent report, (b) the recommendation cannot be safely executed (target moved out of band, conflicting newer state), (c) the report itself is missing, or (d) the finding is marked `(advisory)` and requires human judgment outside the workflow's scope. Failed applies record an `Apply-failed: <reason>` annotation on the finding before exiting.
+
+When multiple ids are passed (`--apply H1 --apply H2`), apply proceeds through the list independently; a per-id failure does not abort the remaining ids. The CLI exits nonzero if any id failed, with a per-id summary on stderr naming each id's outcome (applied / failed / refused).
 
 Refuses to run if the vault is mid-merge / mid-rebase — same guard as `dome reconcile` per [[wiki/gotchas/dirty-git-state-at-reconcile]]. Applied findings produce ordinary git-tracked writes; `git revert` is the universal undo.
 
