@@ -8,7 +8,7 @@
 import git from "isomorphic-git";
 import fs from "node:fs";
 import { dirname, join, posix, relative, resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 
 /**
  * True iff `path` sits inside a git working tree. Walks up from `path` looking
@@ -18,15 +18,32 @@ import { existsSync } from "node:fs";
  *     the dogfood case where `docs/` lives inside the SDK repo
  * Returns the discovered git-root path, or null if none exists at or above
  * `path`. The boolean form is `(await findGitRoot(path)) !== null`.
+ *
+ * Validation: a `.git` *directory* is only accepted as a real git root when
+ * it contains `HEAD` (the minimal ref a freshly-init'd repo has). A partial
+ * `.git/` left behind by a crashed git operation — `objects/` and `index`
+ * but no HEAD — would otherwise short-circuit the walk-up and surface as
+ * an isomorphic-git null deref deep inside the helpers. A `.git` *file*
+ * (worktree/submodule gitlink) is accepted unconditionally; isomorphic-git
+ * follows the gitlink content to resolve the actual gitdir.
  */
 export async function findGitRoot(path: string): Promise<string | null> {
   let current = resolve(path);
   for (;;) {
-    if (existsSync(join(current, ".git"))) return current;
+    if (isValidGitEntry(join(current, ".git"))) return current;
     const parent = dirname(current);
     if (parent === current) return null;
     current = parent;
   }
+}
+
+function isValidGitEntry(gitPath: string): boolean {
+  if (!existsSync(gitPath)) return false;
+  // .git as a file = gitlink (worktrees, submodules) — accept; isomorphic-git
+  // follows the gitlink. .git as a directory must contain HEAD to be real.
+  const stat = statSync(gitPath);
+  if (stat.isFile()) return true;
+  return existsSync(join(gitPath, "HEAD"));
 }
 
 export async function isGitRepo(path: string): Promise<boolean> {
