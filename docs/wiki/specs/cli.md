@@ -55,7 +55,7 @@ This is the v0.5 sleeper feature: the on-ramp that lets users (the author first,
 
 ## `dome serve --vault <path>`
 
-Start the MCP server (and the intake-hook watcher daemon) for `<path>`.
+Start the compiler daemon (watcher + reconcile + scheduled-hook clock; optionally also the MCP server) for `<path>`. The daemon is the active layer of the compiler boundary per [[VISION]] §"Two surface patterns" — it catches native writes from consumer shells, fires hooks reactively, and processes scheduled-hook intervals.
 
 ```bash
 dome serve --vault ~/vaults/work          # stdio, default
@@ -66,14 +66,14 @@ The serve command, in order:
 
 1. Opens the vault, loads the registry.
 2. **Runs `dome reconcile` automatically** to catch up on any events missed while serve wasn't running (pending inbox files, out-of-band edits, missed scheduled events, uncommitted-state recovery via `git status`). See `dome reconcile` below.
-3. Starts the MCP server on stdio (or HTTP if `--port` is given).
-4. Starts the file watcher on `inbox/*/` directories and `wiki/*/` (for out-of-band-edit detection); declarative-hook intakes fire on file writes.
-5. Starts the clock source for scheduled hooks.
+3. Starts the file watcher on `inbox/*/` directories and `wiki/*/` (for out-of-band-edit detection); declarative-hook intakes fire on file writes; reactive hooks (`auto-update-index`, `auto-cross-reference`, watcher-driven `appendLog`) fire on each change.
+4. Starts the clock source for scheduled hooks.
+5. Starts the MCP server (when MCP is configured for the vault — see [[wiki/specs/mcp-surface]] §"Status in v0.5"). MCP is the optional protocol-server overlay; the daemon's primary work (steps 3–4) does not depend on it.
 6. Runs until killed.
 
 If the auto-reconcile at step 2 fails (e.g., vault is mid-merge — see [[wiki/gotchas/dirty-git-state-at-reconcile]]), serve refuses to start with a clear error.
 
-For Claude Code integration, the harness spawns `dome serve --vault $VAULT` as a child process. For user-facing background operation (intake watching, scheduled lint), the user runs `dome serve` as a launchd / systemd service. v0.5 documents the setup pattern; v1+ may ship a service installer.
+**Deployment.** The canonical pattern is to run `dome serve` as a launchd / systemd service: continuous compilation, the watcher catching every native write in real time, scheduled hooks firing on their intervals. Claude Code (or any other agentic harness) interacts with the vault via the four surfaces of the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile) per [[wiki/specs/harnesses]] §"The compiler-boundary contract"; it does not spawn the daemon itself. For harnesses that mount the optional MCP server, the harness can configure `dome serve` to launch as a child process — see [[wiki/specs/harnesses]] §"Claude Code" for the MCP-mount configuration example. v0.5 documents the launchd / systemd setup pattern; v1+ may ship a service installer.
 
 ## `dome reconcile`
 
@@ -259,6 +259,6 @@ The 8 commands map cleanly to user actions:
 ## Related
 
 - [[wiki/specs/sdk-surface]] — the Tools the CLI dispatches against.
-- [[wiki/specs/mcp-surface]] — `dome serve` starts this.
+- [[wiki/specs/mcp-surface]] — the optional MCP protocol-server overlay `dome serve` launches when MCP is configured.
 - [[wiki/specs/prompts-and-workflows]] — workflows invoked by `migrate`, `lint`, `export-context`.
-- [[wiki/specs/harnesses]] — `dome serve` is what harnesses connect to.
+- [[wiki/specs/harnesses]] — the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile) agentic harnesses interact with.

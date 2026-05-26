@@ -418,11 +418,11 @@ Three principles guide every design decision in this spec:
 
 **Four concepts, not more.** Every concept in the core is a thing future contributors must understand to make a correct change. Fewer concepts → less context required → safer changes. The anti-concept list above is the structural defense against scope creep — workflows, agents, events, plugins, intakes all *feel* like primitives, but adding them as concepts would mean every contributor must learn five extra things to make a one-line change.
 
-**Invariants at the tool boundary, not in agent discipline.** A second brain that silently writes wrong claims corrupts the user's thinking. Naive defense ("the agent is well-behaved, the prompts are good") is brittle: model upgrades change behavior, prompts have bugs, plugin authors make mistakes. Every invariant in Dome is enforced *inside* the Tool that would otherwise violate it. The Tool refuses; the caller sees an error; the agent corrects. The vault stays in a valid state regardless of who or what is calling.
+**Invariants are enforced two ways, by scope.** A second brain that silently writes wrong claims corrupts the user's thinking. Per [[VISION]] §"Principles" #3, invariants are enforced two ways, by scope. *Internally* — within Dome's own dispatcher / hook / workflow chain — every mutation flows through a Tool, and the Tool enforces invariants at the moment of the call. Hooks observe events and call Tools; hooks cannot mutate directly (axiom: [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]]). *Externally* — across the consumer-shell boundary — invariants are reconciled rather than gated. Consumer shells (Claude Code's native `Write`, vim, Obsidian, future mobile/desktop apps) write to the vault filesystem directly; the watcher catches those writes, `dome reconcile` catches up any events the daemon missed, and hooks reconcile to the same end state (axiom: [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]]). The internal path is gateway-shaped; the external path is compiler-shaped. Both converge on a vault that's structurally consistent.
 
 **Prompts are the contract.** Dome's behavior is encoded in *prompts* (markdown files), not in TypeScript code. Tools are mechanical (small, content-agnostic operations); the LLM, instructed by prompts, decides what to do with content. Behavior changes happen by editing prompts in `prompts/` (SDK default) or `<vault>/.dome/prompts/` (vault override), not by writing or modifying Tools. This is what makes Dome both *understandable* (prompts are user-readable) and *tunable* (prompts evolve at the speed of language, not at the speed of releases). The original LLM Wiki gist (line 50 of `raw/original-architecture.md`) names this: "the core product is the workflow encoded in prompts."
 
-The three principles compose: small core (four concepts) + structural enforcement at the boundary (invariants in Tools) + behavior as readable prose (prompts as contract). Together they make Dome legible to a new contributor in an afternoon and stable as a substrate over years.
+The three principles compose: small core (four concepts) + two-ways-by-scope invariant enforcement (Tool-mediated internally; watcher + reconcile externally) + behavior as readable prose (prompts as contract). Together they make Dome legible to a new contributor in an afternoon and stable as a substrate over years.
 
 ## Related
 
@@ -430,7 +430,7 @@ The three principles compose: small core (four concepts) + structural enforcemen
 - [[wiki/specs/page-schema]] — frontmatter contract.
 - [[wiki/specs/hooks]] — hook registration forms, event projection, execution model, shipped defaults.
 - [[wiki/specs/prompts-and-workflows]] — how prompts double as workflows via frontmatter.
-- [[wiki/specs/harnesses]] — how Claude Code and others mount Dome via MCP.
+- [[wiki/specs/harnesses]] — the compiler-boundary contract harnesses consume (AGENTS.md + CLI + daemon + reconcile; optional MCP).
 - [[wiki/specs/mcp-surface]] — MCP tool catalog.
 - [[wiki/specs/cli]] — CLI command surface.
 - [[wiki/matrices/tool-invariant-enforcement]] — Tool × invariant matrix.

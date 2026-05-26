@@ -242,6 +242,42 @@ Repairs landed in this pass:
 - The "AGENTS.md content template undefined" ambiguity from §"Remaining ambiguity" item 1 is now substantively closed by B2's resolution — `cli.md:30` enumerates the templated content (conventions, invariant set, page types, workflow names) and the new invariant doc carries the same claim. A future implementation phase will still pick the exact format / sections; the *contract* of what's there is locked.
 - "`dome serve` MCP flag undefined" (§"Remaining ambiguity" item 3) remains. The `cli.md:252` row update names "optional MCP server" without committing to a flag form; this is intentional — the implementer can choose `--mcp`, `--no-mcp`, or always-on. Substrate-noted; not a blocker for the next validation pass.
 
+## Repair pass 2 (closed by validate-rewrite review)
+
+**Source review:** `docs/cohesive/reviews/2026-05-26-dome-compiler-reframe-rewrite-validation-pass-2.md` (pass-2 Issues Found, 4 Blocker + 3 Medium findings — all textual residue from pre-reframe framing that pass-1 didn't sweep; no design unsoundness signaled).
+
+Repairs landed in this pass:
+
+- **Closes B1 (cli.md §"`dome serve`" still led with MCP).**
+  - `cli.md:56` — opening sentence rewritten to lead with the compiler daemon (watcher + reconcile + scheduled-hook clock); MCP demoted to optional protocol-server overlay. Cites VISION §"Two surface patterns" + the active layer of the compiler boundary.
+  - `cli.md:65-72` — startup-order list reordered: watcher (step 3) now precedes MCP (step 5); MCP startup gated on "when MCP is configured for the vault." Steps 3-4 (watcher + clock) are named as the daemon's primary work; step 5 (MCP) is the optional overlay.
+  - `cli.md:76` — Deployment paragraph rewritten. Launchd / systemd service named as the canonical pattern. Claude Code interacts via the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile) per `harnesses.md` §"The compiler-boundary contract"; it does not spawn the daemon itself. The child-process pattern is preserved only as the optional MCP-mount shape.
+  - `cli.md:262-264` — Related list entries rewritten: mcp-surface link now describes "the optional MCP protocol-server overlay"; harnesses link now describes "the compiler-boundary contract."
+
+- **Closes B2 (index.md:10 described harnesses.md with the retired gateway claim).**
+  - `index.md:10` — rewritten to "How agentic harnesses (Claude Code, Cursor, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile); MCP available as a non-primary fifth surface."
+
+- **Closes B3 (sdk-surface.md §"Why this design" still carried the gateway claim).**
+  - `sdk-surface.md:421` — Principle #2 rewritten from "Invariants at the tool boundary, not in agent discipline" to "Invariants are enforced two ways, by scope." Body restates the internal (Tool-mediated; HOOKS_CANNOT_BYPASS_TOOLS) and external (watcher + reconcile; VAULT_RECONCILES_AFTER_NATIVE_WRITE) scope distinction from VISION §"Principles" #3. Cites both axioms.
+  - `sdk-surface.md:425` — Three-principles summary line updated: "structural enforcement at the boundary (invariants in Tools)" → "two-ways-by-scope invariant enforcement (Tool-mediated internally; watcher + reconcile externally)".
+  - `sdk-surface.md:433` — Related entry rewritten to match (compiler-boundary contract; optional MCP).
+
+- **Closes B4 (prompts-and-workflows.md:39 workflow frontmatter example referenced "route sensitive").**
+  - `prompts-and-workflows.md:39` — `description: "Process a new raw source: extract atoms, match to pages, propose updates, route sensitive, log."` → drops "route sensitive": `description: "Process a new raw source: extract atoms, match to pages, propose updates, log."`
+
+- **Closes I1 (hooks.md:162 sync-opt-in example cited a retired-feature pattern).**
+  - `hooks.md:162` — Sync-opt-in example replaced: "classifier that gates a write destination" → "frontmatter-shape validator that gates whether the write proceeds." Non-retired pattern; same illustrative purpose.
+
+- **Closes I2 (vault-layout.md inbox/review/ shipped-default vs opt-in inconsistency).**
+  - `vault-layout.md:46` — `dome init` paragraph extended to name `inbox/review/` as a shipped-default creation; opt-in list at end of the sentence narrowed to `voice/`, `research/`, `clip/` only.
+
+- **Closes I3 (delta ledger §"How to read" line 252 still said "13 files rewritten").**
+  - This ledger's `## How to read this ledger` line 252 — "13 files rewritten" → "18 files rewritten". Matches the preamble's pass-1-corrected count.
+
+**Remaining ambiguity update (post-pass-2 repair):**
+
+- All 7 pass-2 findings closed. The previously-substrate-noted "`dome serve` MCP flag undefined" remains substrate-noted; the cli.md §"`dome serve`" rewrite in this pass names "when MCP is configured" without committing to a specific flag form. Intentional; the implementer chooses `--mcp` / `--no-mcp` / always-on / config-driven during the implementation phase.
+
 ## Ready for fresh-eyes review?
 
 **Yes.** All affected docs are in end-state language; no "we will" / "should consider" in normative sections. Obsolete concepts (`SENSITIVE_GOES_TO_INBOX`, sensitivity-classify, gateway-as-universal-claim) are removed, not annotated. The delta ledger preamble accurately summarizes the body sections. Substrate inventories (index, matrices, related-lists) updated to reflect the additions and deletions.
@@ -249,7 +285,7 @@ Repairs landed in this pass:
 ## How to read this ledger
 
 1. Read "Approved direction" — Dome reframes around the compiler model; sensitivity retires; MCP preserved but flagged non-primary.
-2. Skim "Delta at a glance" — broad design rewrite (13 files rewritten, 4 added, 3 removed); the compiler model now load-bearing; `AGENTS.md` and `VAULT_RECONCILES_AFTER_NATIVE_WRITE` codify what the compiler boundary contract guarantees.
+2. Skim "Delta at a glance" — broad design rewrite (18 files rewritten, 4 added, 3 removed); the compiler model now load-bearing; `AGENTS.md` and `VAULT_RECONCILES_AFTER_NATIVE_WRITE` codify what the compiler boundary contract guarantees.
 3. Skim "Conceptual changes" — seven concept shifts, with the gateway-claim retirement and two-surface-pattern introduction as the most load-bearing.
 4. Use "Files rewritten" with before/after deltas to verify the rewrites individually.
 5. Use "Remaining ambiguity" as the focused review punch list — three small open questions the implementation phase will close.

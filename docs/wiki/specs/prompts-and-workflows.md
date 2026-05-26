@@ -36,7 +36,7 @@ tools:
 triggers:
   - "intake:inbox/raw/*"
   - "intent:capture-thought"
-description: "Process a new raw source: extract atoms, match to pages, propose updates, route sensitive, log."
+description: "Process a new raw source: extract atoms, match to pages, propose updates, log."
 ---
 ```
 
