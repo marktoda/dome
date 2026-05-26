@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { openVault } from "../../src/vault";
+import { commit, currentSha } from "../../src/git";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("VAULT_IS_GIT_REPO", () => {
@@ -59,6 +60,48 @@ describe("VAULT_IS_GIT_REPO", () => {
       const result = await openVault(innerPath);
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.path).toBe(innerPath);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("git operations (commit, currentSha) succeed when vault is a subdirectory of an outer git repo", async () => {
+    // The test gap that let the dogfood-case bug ship: openVault accepted
+    // the subdir but every subsequent git operation passed `dir: vault.path`
+    // (the inner subdir) to isomorphic-git, which looked for `<subdir>/.git/`
+    // and exploded with `null is not an object` on the missing HEAD file.
+    // The fix: src/git.ts helpers resolve gitRoot internally and translate
+    // vault-relative paths to outer-root-relative.
+    const v = await makeTestVault({ initGit: true, initDome: false });
+    try {
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const innerPath = join(v.path, "docs");
+      await mkdir(join(innerPath, ".dome", "state"), { recursive: true });
+      await writeFile(
+        join(innerPath, ".dome", "config.yaml"),
+        "invariants: {}\nhooks:\n  builtin: {}\n  max_causation_depth: 50\ngit:\n  auto_commit_workflows: true\n",
+      );
+      await writeFile(
+        join(innerPath, ".dome", "page-types.yaml"),
+        "defaults: [entity]\nextensions: []\n",
+      );
+
+      // Write a vault-relative file and commit it. `commit({ path: innerPath })`
+      // must walk up to find the outer .git/, prefix "log.md" with "docs/" so
+      // git.add resolves against the outer worktree, and return a fresh SHA.
+      await writeFile(join(innerPath, "log.md"), "# Log\n");
+      const sha = await commit({
+        path: innerPath,
+        message: "test: dogfood-mode commit",
+        files: ["log.md"],
+      });
+      expect(sha).toMatch(/^[0-9a-f]{40}$/);
+
+      // currentSha on the inner path returns the just-committed SHA (reads
+      // outer .git/HEAD via the same gitRoot resolution).
+      const head = await currentSha(innerPath);
+      expect(head).toBe(sha);
     } finally {
       await v.cleanup();
     }
