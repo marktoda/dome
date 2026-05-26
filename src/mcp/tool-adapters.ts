@@ -13,7 +13,8 @@
 import { z } from "zod";
 import type { Vault } from "../vault";
 import type { Result, ToolError } from "../types";
-import { TOOL_NAMES, MCP_TOOL_NAMES, TOOL_REGISTRY, type ToolName } from "../tools/registry";
+import { TOOL_NAMES, MCP_TOOL_NAMES, TOOL_REGISTRY, type ToolName, bindTools } from "../tools/registry";
+import { makePrivilegedWriter } from "../privileged-writer";
 
 export interface ToolAdapter {
   /** MCP-protocol name (snake_case, `dome.*` prefix). */
@@ -29,22 +30,30 @@ export interface ToolAdapter {
  *   - takes its `name` from `MCP_TOOL_NAMES` (the canonical protocol name)
  *   - takes its `description` and `inputSchema` from `TOOL_REGISTRY` (the
  *     same Zod schema the AI SDK consumer uses — one source of truth)
- *   - delegates the call to `vault.toolParsers[name]`, which parses the raw
- *     input through the schema and invokes the same Vault-bound function
- *     `vault.tools[name]` exposes (sharing the hook-dispatch wrap)
+ *   - delegates the call to the per-Tool parser from `bindTools(vault, writer)`,
+ *     which parses the raw input through the schema and invokes the same
+ *     Vault-bound function `vault.tools[name]` exposes (sharing the
+ *     hook-dispatch wrap)
  *
  * Adding an 8th Tool to the registry surfaces it here for free.
+ *
+ * Note: this function calls `bindTools` directly (which transitively imports
+ * `ai` for the AI-SDK Tool<> inputSchema). That's allowed inside @dome/sdk/mcp
+ * because the mcp entrypoint's dep scope already includes `ai` (transitively
+ * via the MCP SDK + the shared Zod schemas) — see docs/wiki/specs/sdk-surface.md
+ * §"Dependencies". The point of CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY is that
+ * @dome/sdk core doesn't pull these; @dome/sdk/mcp is the opt-in surface.
  */
 export function buildToolAdapters(vault: Vault): ToolAdapter[] {
+  const writer = makePrivilegedWriter(vault.path);
+  const { aiTools, parsers } = bindTools(vault, writer);
   return TOOL_NAMES.map((name: ToolName) => {
     const entry = TOOL_REGISTRY[name];
-    const aiTool = vault.aiTools[name];
-    // The AI SDK tool carries the live Zod schema; we mirror it on the MCP
-    // adapter so consumers (and zod-to-json-schema) see the same shape.
+    const aiTool = aiTools[name];
     if (aiTool === undefined || aiTool.inputSchema === undefined) {
       throw new Error(`registry is missing AI tool or inputSchema for "${name}"`);
     }
-    const parser = vault.toolParsers[name];
+    const parser = parsers[name];
     return {
       name: MCP_TOOL_NAMES[name],
       description: entry.description,
