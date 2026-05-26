@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { openVault } from "../../src/vault";
 import { writeDocument } from "../../src/tools/write-document";
+import { wikilinkResolve } from "../../src/tools/wikilink-resolve";
 import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
@@ -21,6 +22,19 @@ describe("WIKILINKS_ARE_FULLPATH", () => {
       if (!out.result.ok) {
         expect(out.result.error.kind).toBe("wikilink-not-fullpath");
       }
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("wikilinkResolve returns null on short-form link", async () => {
+    const v = await makeTestVault();
+    try {
+      const vault = await openVault(v.path);
+      if (!vault.ok) return;
+      const out = await wikilinkResolve(vault.value, { link: "Maya" });
+      expect(out.result.ok).toBe(true);
+      if (out.result.ok) expect(out.result.value).toBeNull();
     } finally {
       await v.cleanup();
     }
