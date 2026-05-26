@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { MockLanguageModelV3 } from "ai/test";
-import { runWorkflow, buildAiSdkTools } from "../../src/workflows/agent-loop";
+import { runWorkflow, buildAiSdkTools, buildSystemPreamble } from "../../src/workflows/agent-loop";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 import { WorkflowName } from "../../src/workflows/workflow-name";
@@ -101,12 +101,13 @@ describe("runWorkflow", () => {
   });
 
   // WORKFLOWS_KNOW_VAULT_CONTEXT: every workflow's system prompt is
-  // prepended with a prologue naming vault.path so the LLM knows which
-  // directory it's operating on. Without this, prompts that say "convert
-  // the directory" (migrate) or "walk the vault" (lint) have no anchor
-  // for which vault they mean, and self-driving workflows ask the user
-  // for context that was already passed via CLI args.
-  test("prepends a vault prologue naming vault.path to the system prompt", async () => {
+  // prepended with preambles that name vault.path AND describe the
+  // rendering surface. Without these, prompts that say "convert the
+  // directory" or "walk the vault" have no anchor for which vault they
+  // mean, and the LLM hallucinates a conversational shell — addressing
+  // the user with phrases like "say apply the plan" that don't apply in
+  // a non-interactive CLI invocation.
+  test("prepends a vault-identity preamble naming vault.path to the system prompt", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
@@ -118,10 +119,32 @@ describe("runWorkflow", () => {
       const systemMsg = call.prompt.find((m) => m.role === "system");
       expect(systemMsg).toBeDefined();
       const systemText = systemMsg!.role === "system" ? systemMsg!.content : "";
-      // Prologue carries vault.path so every workflow knows its target.
+      // Preamble carries vault.path so every workflow knows its target.
       expect(systemText).toContain(v.path);
-      // Workflow body still follows the prologue.
+      // Workflow body still follows the preambles.
       expect(systemText).toContain("Lint");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("prepends a rendering-surface preamble describing non-interactive single-turn semantics", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault failed to open");
+      const mock = makeNoopMockModel();
+      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+
+      const call = mock.doGenerateCalls[0]!;
+      const systemMsg = call.prompt.find((m) => m.role === "system");
+      const systemText = systemMsg!.role === "system" ? systemMsg!.content : "";
+      // The rendering-surface preamble tells the LLM its reply is the
+      // workflow's final output, that there's no conversational
+      // follow-up channel, and that next-step guidance should name the
+      // next CLI command rather than address a shell.
+      expect(systemText.toLowerCase()).toContain("non-interactive");
+      expect(systemText.toLowerCase()).toContain("cli");
     } finally {
       await v.cleanup();
     }
@@ -144,6 +167,28 @@ describe("runWorkflow", () => {
         : [];
       const joined = textParts.map((p) => p.text).join("");
       expect(joined.length).toBeGreaterThan(0);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("buildSystemPreamble composes every registered preamble with blank-line separators", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault failed to open");
+
+      const composed = buildSystemPreamble(res.value);
+
+      // Every registered preamble's content appears.
+      expect(composed).toContain(v.path);
+      expect(composed.toLowerCase()).toContain("non-interactive");
+
+      // Sections are separated by blank lines — `# `-led headers don't
+      // run together. This is the contract the composer owes the model
+      // so each section reads as its own block.
+      const sections = composed.split("\n\n# ");
+      expect(sections.length).toBeGreaterThanOrEqual(2);
     } finally {
       await v.cleanup();
     }

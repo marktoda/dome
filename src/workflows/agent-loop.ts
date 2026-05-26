@@ -78,13 +78,12 @@ export async function runWorkflow(
   const prompt = userMessage.length > 0 ? userMessage : "Begin.";
 
   // WORKFLOWS_KNOW_VAULT_CONTEXT: every workflow's LLM call receives a
-  // prologue naming vault.path. Tools are vault-bound at construction, but
-  // the LLM itself has no other channel to learn which directory it's
-  // operating on. Without this, self-driving workflows whose prompts
-  // reference "the directory" or "the vault" had to receive the path
-  // through the user message — and migrate didn't, which made it ask the
-  // user for a path that the CLI had already passed.
-  const system = `${buildVaultPrologue(vault)}\n\n${def.body}`;
+  // composed preamble (see SYSTEM_PREAMBLES) before the workflow body.
+  // Tools are vault-bound at construction, but the LLM itself has no
+  // other channel to learn what surface it's operating on. Add new
+  // preambles to SYSTEM_PREAMBLES; the composer handles ordering and
+  // blank-line separation.
+  const system = `${buildSystemPreamble(vault)}\n\n${def.body}`;
 
   const result = await generateText({
     model,
@@ -181,16 +180,74 @@ export function buildAiSdkTools(vault: Vault, allowedToolNames: ReadonlyArray<st
 }
 
 /**
- * Prologue prepended to every workflow's system prompt so the LLM knows
- * which vault it's operating on. The shape is intentionally minimal: one
- * fact (the path) the model can repeat back when its prompt body says
- * things like "convert the directory" or "walk the vault." Tests assert
- * the prologue's presence (see WORKFLOWS_KNOW_VAULT_CONTEXT).
+ * A `Preamble` produces one `#`-led section prepended to every workflow's
+ * system prompt by `buildSystemPreamble`. Each preamble is independent;
+ * adding a new one is a two-step change: write the function, register it
+ * in `SYSTEM_PREAMBLES`. A preamble may return `""` to opt out at
+ * runtime (e.g., conditional on vault config) — empty sections are
+ * dropped by the composer.
+ *
+ * Preambles carry context the LLM must know but cannot derive from the
+ * workflow body or its bound tools: which vault it's operating on, what
+ * rendering surface its reply will be displayed on, what date it is, and
+ * so on. The workflow body describes the *task*; preambles describe the
+ * *situation*.
  */
-export function buildVaultPrologue(vault: Vault): string {
-  return [
+export type Preamble = (vault: Vault) => string;
+
+/**
+ * Identity preamble: names `vault.path`. The minimal fact every workflow
+ * needs so prompt bodies that say "the vault" or "the directory" have an
+ * anchor.
+ */
+const vaultIdentityPreamble: Preamble = (vault) =>
+  [
     `# Current vault`,
     ``,
     `You are operating on the Dome vault at \`${vault.path}\`.`,
   ].join("\n");
+
+/**
+ * Rendering-surface preamble: tells the LLM that its text reply is the
+ * workflow's terminal output (or, in the hook-driven path, is discarded
+ * by the dispatcher), that there is no conversational follow-up channel,
+ * and that next-step guidance should name a CLI command rather than
+ * address a shell. Prevents chat-shaped output like "say apply the plan"
+ * showing up in CLI stdout where it can't be acted on.
+ */
+const renderingSurfacePreamble: Preamble = () =>
+  [
+    `# Rendering surface`,
+    ``,
+    `This is a non-interactive, single-turn workflow invocation. Your text reply is the workflow's final output — printed to a terminal when invoked from the CLI, or discarded by the hook dispatcher when fired from a declarative hook. Either way, there is no conversational follow-up channel: write artifacts (plans, reports, page edits) to disk via your bound Tools, then in your reply orient the reader to those artifacts and name the next CLI command (e.g. "rerun with \`--apply\`") rather than asking questions or addressing a chat shell that does not exist.`,
+  ].join("\n");
+
+/**
+ * Preambles prepended to every workflow's system prompt, in order.
+ * Adding new context the LLM should always know (e.g., today's date,
+ * active hook gates, recent activity hints) means writing a `Preamble`
+ * and appending it here. Order matters only when later preambles
+ * reference earlier ones; otherwise it's purely presentational.
+ *
+ * This list is the single source of truth for what runtime context the
+ * agent loop injects. Tests pin individual preambles (vault path,
+ * rendering surface) via the captured system prompt; the composer test
+ * (`buildSystemPreamble combines every registered preamble...`) pins
+ * the registry's shape.
+ */
+const SYSTEM_PREAMBLES: ReadonlyArray<Preamble> = [
+  vaultIdentityPreamble,
+  renderingSurfacePreamble,
+];
+
+/**
+ * Compose all registered preambles into the system-prompt prefix that
+ * sits above the workflow body. Empty preamble outputs are dropped;
+ * non-empty sections join with a blank line so the model sees clean
+ * markdown structure. See `WORKFLOWS_KNOW_VAULT_CONTEXT`.
+ */
+export function buildSystemPreamble(vault: Vault): string {
+  return SYSTEM_PREAMBLES.map((p) => p(vault))
+    .filter((s) => s.length > 0)
+    .join("\n\n");
 }
