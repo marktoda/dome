@@ -111,7 +111,7 @@ function buildProgram(outcome: RunOutcome): Command {
         "  dome init ~/vaults/work             # bootstrap a new vault",
         "  cd ~/vaults/work && dome doctor     # structural diagnostic",
         "  cd ~/vaults/work && dome reconcile  # catch up hook state",
-        "  dome serve --vault ~/vaults/work    # start MCP server + watcher",
+        "  dome serve --vault ~/vaults/work    # start compiler daemon (watcher + optional MCP)",
         "  cd ~/vaults/work && dome stats      # visual dashboard",
         "",
         "Environment:",
@@ -177,7 +177,7 @@ function buildProgram(outcome: RunOutcome): Command {
   // ------ serve ------
   program
     .command("serve")
-    .description("Start the MCP server + filesystem watcher.")
+    .description("Start the compiler daemon (watcher + reconcile; optional MCP server).")
     .option("--vault <path>", "Vault path (defaults to current directory)")
     .addHelpText(
       "after",
