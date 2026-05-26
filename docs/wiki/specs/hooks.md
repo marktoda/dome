@@ -74,6 +74,23 @@ async: true                      # optional; defaults to true
 
 The declarative form is sugar for the common case: "when X happens, run workflow Y." The dispatcher reads the YAML, builds a handler that loads the named workflow's prompt + tool subset (see [[wiki/specs/prompts-and-workflows]]) and runs it against the harness-bound LLM.
 
+#### Bare events expand to suffix wildcards
+
+A declarative `event:` field that contains no `*` is rewritten by the YAML loader to `<event>.*` before registration. The rewrite is in `src/hooks/yaml-loader.ts` and is load-bearing for the common case:
+
+```yaml
+# YAML source
+event: document.written
+path_pattern: "inbox/raw/*"
+workflow: ingest
+```
+
+Registers the handler against pattern `document.written.*` (not `document.written` literal) so it matches the projected `document.written.inbox.raw` event the `wrote-document` effect produces. The `path_pattern` field does the precise filtering against the event's `path` payload at handler time; the registry pattern is coarse-by-design so the matcher catches every category/type the event projector might emit.
+
+Events that already contain `*` are honored verbatim — `event: document.written.wiki.*` is not double-expanded; `event: *` is not changed. The expansion only fires when the YAML's event string has no `*` character at all.
+
+The rewrite is invisible to users of the declarative form (the YAML reads naturally; the right registration pattern is produced); it is visible to anyone writing a programmatic-form unit test or a custom YAML loader (they must register `document.written.*`, not `document.written`, to match projected events). [[wiki/matrices/event-types-and-payloads]] §"Expansion convention" mirrors the rule.
+
 The **drop-zone intake pattern** uses the declarative form exclusively. The principle: a user (or another process) writes a file to a known directory, the hook fires, the workflow processes the file. This generalizes "quick capture" without any dedicated CLI machinery — `dome capture` becomes a shell idiom (`echo "$THOUGHT" > $VAULT/inbox/raw/$(date -u +%Y%m%d-%H%M%S).md`) and the hook does the rest. New capture kinds = new buckets + new hook YAMLs.
 
 ## Shipped default hooks (shipped default — enabled by default)

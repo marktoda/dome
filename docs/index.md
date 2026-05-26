@@ -21,6 +21,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 - [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
 - [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces an appendLog call.
+- [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] — *(axiom)* Every projection of `vault.tools` (`projectAiSdk`, `renderMcp`, future renderers) routes mutating-Tool invocations through the single-source `wrapMutatingInvoke` helper.
 - [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Hooks observe and call Tools; never mutate directly.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake hooks must move/delete inbox files on completion; presence = pending.
 - [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]] — *(axiom)* index.md and log.md mutated only by dispatcher.writeIndex / dispatcher.appendLogEntry; public Tools reject these paths.
