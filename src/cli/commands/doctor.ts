@@ -251,7 +251,10 @@ export async function domeDoctor(
 
   // The remaining flags require runtime state we don't carry across CLI runs in
   // v0.5 (no persistent daemon). Log a no-op note and exit clean.
-  if (opts.drainHooks) info.push("--drain-hooks: no-op in v0.5 (no persistent dispatcher state across CLI runs)");
+  if (opts.drainHooks) {
+    await vault.drainHooks();
+    info.push(`--drain-hooks: drained (async hook queue is now idle)`);
+  }
   if (opts.resetQuarantinedHooks) info.push("--reset-quarantined-hooks: no-op in v0.5 (no persistent quarantine state across CLI runs)");
   if (opts.showRecentHookCycles) info.push("--show recent-hook-cycles: no-op in v0.5 (no persistent cycle log across CLI runs)");
   if (opts.showReviewQueue) info.push("--show review-queue: no-op in v0.5 (review-queue lives in wiki/inbox/review-queue.md if present)");
