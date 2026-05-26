@@ -93,6 +93,21 @@ export async function collectStats(vault: Vault): Promise<VaultStats> {
     }
   }
 
+  // log.md: count `## [<ts>]` headings and capture the most recent timestamp.
+  // Same regex doctor uses for check 7 (log monotonicity).
+  const logPath = join(vault.path, "log.md");
+  if (existsSync(logPath)) {
+    const logText = await Bun.file(logPath).text();
+    const tsRe = /^## \[([^\]]+)\]/gm;
+    let last: string | null = null;
+    for (const m of logText.matchAll(tsRe)) {
+      stats.log.entries++;
+      const ts = m[1]!;
+      if (last === null || ts > last) last = ts;
+    }
+    stats.log.lastWriteAt = last;
+  }
+
   return stats;
 }
 

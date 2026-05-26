@@ -97,4 +97,28 @@ describe("dome stats", () => {
       await v.cleanup();
     }
   });
+
+  test("log: entries count and lastWriteAt", async () => {
+    const v = await makeStatsVault();
+    try {
+      // dome init wrote one bootstrap entry. Append two more with timestamps in the future.
+      const logPath = join(v.path, "log.md");
+      const existing = await Bun.file(logPath).text();
+      const ts1 = "2027-01-01T10:00:00Z"; // Far in future to ensure it's after bootstrap
+      const ts2 = "2027-01-01T11:00:00Z";
+      const appended = existing +
+        `\n## [${ts1}] update | thing one\n\nBody.\n` +
+        `\n## [${ts2}] update | thing two\n\nBody.\n`;
+      await writeFile(logPath, appended);
+
+      const vaultRes = await openVault(v.path);
+      if (!vaultRes.ok) throw new Error("openVault failed");
+      const stats = await collectStats(vaultRes.value);
+
+      expect(stats.log.entries).toBeGreaterThanOrEqual(3); // bootstrap + 2 appended
+      expect(stats.log.lastWriteAt).toBe(ts2); // The most recent timestamp (lexicographically largest)
+    } finally {
+      await v.cleanup();
+    }
+  });
 });
