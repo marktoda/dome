@@ -36,13 +36,15 @@ describe("MCP surface (AC5)", () => {
       const toolNames = server.tools.map((t) => t.name).sort();
       expect(toolNames).toEqual([...MCP_TOOL_NAMES].sort());
 
-      // >=5 prompts. A fresh `dome init` vault activates only the 5 shipped
-      // defaults; if the vault later overrides an opt-in workflow we'd
-      // observe more.
+      // >=6 prompts: 5 shipped-default workflows + dome.system_prompt. A
+      // vault that activates opt-in workflows would observe more.
       const prompts = await server.prompts();
-      expect(prompts.length).toBeGreaterThanOrEqual(5);
-      // Every prompt has the canonical dome.workflow.* namespace prefix.
+      expect(prompts.length).toBeGreaterThanOrEqual(6);
+      // dome.system_prompt is exposed as a first-class MCP prompt; every
+      // other prompt carries the canonical dome.workflow.* prefix.
+      expect(prompts.find((p) => p.name === "dome.system_prompt")).toBeDefined();
       for (const p of prompts) {
+        if (p.name === "dome.system_prompt") continue;
         expect(p.name.startsWith("dome.workflow.")).toBe(true);
       }
 

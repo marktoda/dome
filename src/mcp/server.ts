@@ -2,6 +2,7 @@ import type { Vault } from "../vault";
 import { buildToolAdapters, type ToolAdapter } from "./tool-adapters";
 import { buildPromptAdapters, type PromptAdapter } from "./prompt-adapters";
 import { ResourceAdapter } from "./resource-adapters";
+import { registerHandlers, type ServerLike } from "./handlers";
 
 export interface DomeMcpServerOpts {
   vault: Vault;
@@ -23,16 +24,22 @@ export class DomeMcpServer {
     return this._prompts;
   }
 
+  // Register all 6 request handlers on the given Server-like object. Exposed
+  // separately so tests can drive it against a stub Server without spinning
+  // up the stdio transport. Called by `serveStdio`.
+  async registerOn(server: ServerLike): Promise<void> {
+    const prompts = await this.prompts();
+    registerHandlers(server, { tools: this.tools, prompts, resources: this.resources });
+  }
+
   async serveStdio(): Promise<void> {
-    // Wire @modelcontextprotocol/sdk Server in stdio transport. v0.5 minimal wiring.
-    // The full wire integration (Zod -> JSON schema derivation, tool/prompt/resource
-    // dispatch handlers) lands when the first harness consumes this entry point.
     const { Server } = await import("@modelcontextprotocol/sdk/server/index.js");
     const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
     const server = new Server(
       { name: "@dome/sdk", version: "0.0.1" },
       { capabilities: { tools: {}, prompts: {}, resources: {} } }
     );
+    await this.registerOn(server as unknown as ServerLike);
     const transport = new StdioServerTransport();
     await server.connect(transport);
   }
