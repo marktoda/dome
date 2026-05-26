@@ -264,7 +264,7 @@ The SDK ships features across three tiers. The tier determines whether a feature
 
 | Tier | Description | Examples |
 |---|---|---|
-| **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | `RAW_IS_IMMUTABLE`, `MARKDOWN_IS_SOURCE_OF_TRUTH`, `LOG_IS_APPEND_ONLY`, `HOOKS_CANNOT_BYPASS_TOOLS`, `VAULT_IS_GIT_REPO`, `INDEX_AND_LOG_ARE_DISPATCHER_OWNED`. The 7 Tools. `index.md` + `log.md`. MCP server. CLI commands. |
+| **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | The axiom-tier invariants (canonical list: [[wiki/invariants/]] filtered by `tier: axiom`; `src/types.ts` `INVARIANTS` for the typed const). The 7 Tools. `index.md` + `log.md`. MCP server. CLI commands. |
 | **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | `EVERY_WRITE_IS_LOGGED`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `INBOX_IS_EPHEMERAL`. 4 default page types. `auto-update-index` + `auto-cross-reference` hooks. `intake-raw` shipped-default hook. `ingest`, `query`, `lint`, `migrate`, `export-context` workflows. |
 | **Opt-in** | Shipped, not active by default. Activated by adding the corresponding hook YAML / workflow / invariant entry to `<vault>/.dome/`. | `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE`. `sensitivity-classify`, `voice-ingest`, `research`, `clip-integrate` workflows. `inbox/<bucket>/` directories beyond `inbox/raw/`. |
 
