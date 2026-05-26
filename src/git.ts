@@ -1,12 +1,13 @@
 // The single isomorphic-git boundary in the codebase. Every caller that
 // needs git functionality imports from here, NOT from "isomorphic-git"
-// directly. Each wrapper is a one-line passthrough; this module exists to
-// (a) localize the dependency so a future swap is one file, (b) make the
-// real surface explicit (only what we actually use).
+// directly. Each wrapper is a thin passthrough that internally resolves
+// the working-tree root, so callers can pass a vault path that may sit
+// inside an outer git repo (the dogfood case where dome/docs/ is itself
+// a vault) without each call site reimplementing the walk-up.
 
 import git from "isomorphic-git";
 import fs from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, posix, relative, resolve } from "node:path";
 import { existsSync } from "node:fs";
 
 /**
@@ -32,24 +33,69 @@ export async function isGitRepo(path: string): Promise<boolean> {
   return (await findGitRoot(path)) !== null;
 }
 
+/**
+ * Resolve the git-root path that contains `path` and the prefix (relative
+ * path from gitRoot to `path`, using POSIX separators) that translates
+ * vault-relative filepaths to outer-worktree-relative filepaths for
+ * isomorphic-git.
+ *
+ * - Standalone vault (`.git/` at vault root): root === path, prefix === "".
+ * - Dogfood vault (vault is a subdir of an outer git): root walks up to the
+ *   outer worktree; prefix is the POSIX-normalized relative subdir.
+ *
+ * Throws if no git root exists at or above `path`. VAULT_IS_GIT_REPO is
+ * supposed to have already gated this at openVault, but the throw exists
+ * so a regression there surfaces here with a clear message instead of an
+ * isomorphic-git internal null deref.
+ */
+async function resolveGitContext(path: string): Promise<{ root: string; prefix: string }> {
+  const root = await findGitRoot(path);
+  if (root === null) {
+    throw new Error(`git operation invoked against non-git path: ${path}`);
+  }
+  const absPath = resolve(path);
+  const rel = relative(root, absPath).split(/[\\/]/).filter((s) => s.length > 0).join("/");
+  return { root, prefix: rel };
+}
+
 export async function initRepo(path: string, branch = "main"): Promise<void> {
   await git.init({ fs, dir: path, defaultBranch: branch });
 }
 
+/**
+ * Working-tree status. In dogfood mode, isomorphic-git returns paths under
+ * the outer worktree; this helper filters to the vault subtree and strips
+ * the subdir prefix so callers see paths relative to `path` (the vault root)
+ * regardless of where `.git/` lives.
+ */
 export async function statusMatrix(path: string): Promise<Awaited<ReturnType<typeof git.statusMatrix>>> {
-  return git.statusMatrix({ fs, dir: path });
+  const { root, prefix } = await resolveGitContext(path);
+  const matrix = await git.statusMatrix({ fs, dir: root });
+  if (prefix === "") return matrix;
+  const prefixSlash = `${prefix}/`;
+  const result: Awaited<ReturnType<typeof git.statusMatrix>> = [];
+  for (const row of matrix) {
+    const [filepath, ...rest] = row;
+    if (filepath.startsWith(prefixSlash)) {
+      result.push([filepath.slice(prefixSlash.length), ...rest] as typeof row);
+    }
+  }
+  return result;
 }
 
 export async function currentSha(path: string): Promise<string | null> {
   try {
-    return await git.resolveRef({ fs, dir: path, ref: "HEAD" });
+    const { root } = await resolveGitContext(path);
+    return await git.resolveRef({ fs, dir: root, ref: "HEAD" });
   } catch {
     return null;
   }
 }
 
 export async function add(path: string, filepath: string): Promise<void> {
-  await git.add({ fs, dir: path, filepath });
+  const { root, prefix } = await resolveGitContext(path);
+  const fullpath = prefix === "" ? filepath : posix.join(prefix, filepath);
+  await git.add({ fs, dir: root, filepath: fullpath });
 }
 
 export async function commit(opts: {
@@ -59,26 +105,30 @@ export async function commit(opts: {
   files?: ReadonlyArray<string>;
 }): Promise<string> {
   const { path, message, files } = opts;
+  const { root, prefix } = await resolveGitContext(path);
   const author = opts.author ?? { name: "Dome", email: "dome@local" };
   if (files !== undefined) {
     for (const f of files) {
+      const fullpath = prefix === "" ? f : posix.join(prefix, f);
       try {
-        await git.add({ fs, dir: path, filepath: f });
+        await git.add({ fs, dir: root, filepath: fullpath });
       } catch {
         // Ignore add-failure for paths that may have been deleted; the
         // commit will still capture deletions present in the index.
       }
     }
   }
-  return git.commit({ fs, dir: path, message, author });
+  return git.commit({ fs, dir: root, message, author });
 }
 
 export async function readTree(opts: { path: string; oid: string }): Promise<Awaited<ReturnType<typeof git.readTree>>> {
-  return git.readTree({ fs, dir: opts.path, oid: opts.oid });
+  const { root } = await resolveGitContext(opts.path);
+  return git.readTree({ fs, dir: root, oid: opts.oid });
 }
 
 export async function resolveRef(opts: { path: string; ref?: string }): Promise<string> {
-  return git.resolveRef({ fs, dir: opts.path, ref: opts.ref ?? "HEAD" });
+  const { root } = await resolveGitContext(opts.path);
+  return git.resolveRef({ fs, dir: root, ref: opts.ref ?? "HEAD" });
 }
 
 export async function log(opts: {
@@ -86,9 +136,10 @@ export async function log(opts: {
   depth?: number;
   ref?: string;
 }): Promise<Awaited<ReturnType<typeof git.log>>> {
+  const { root } = await resolveGitContext(opts.path);
   return git.log({
     fs,
-    dir: opts.path,
+    dir: root,
     ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
     ...(opts.ref !== undefined ? { ref: opts.ref } : {}),
   });
