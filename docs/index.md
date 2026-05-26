@@ -56,6 +56,12 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/substrate-count-drift]] — Synthesis docs inline counts that diverge from canonical const arrays.
 - [[wiki/gotchas/transitive-llm-dependency]] — Consumer bundles unexpectedly carry Anthropic + MCP because core re-exported LLM/MCP machinery.
 
+## Linters
+
+Named-but-deferred semantic linter specs. Each names the rule, what it checks, and the target version. v0.5 ships none of these structurally — they are the v0.5.1+ candidates the substrate carries against.
+
+- [[wiki/linters/wrap-mutating-invoke-consumption]] — *(v0.5.1+)* Every projection of `TOOL_REGISTRY` consumes `wrapMutatingInvoke` rather than inlining the post-invoke dispatch loop; enforces [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] against hand-inlined byte-equivalent duplicates the integration tests cannot catch.
+
 ## Entities
 
 - [[wiki/entities/andrej-karpathy]] — Source of the LLM-wiki pattern.
