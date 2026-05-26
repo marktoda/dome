@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { makeDocument, type Document } from "../document";
 import { ok, err, type Effect, type ToolReturn } from "../types";
 import type { Vault } from "../vault";
-import type { Dispatcher } from "../dispatcher";
+import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
 
 export interface MoveDocumentInput {
   from: string;
@@ -16,13 +16,10 @@ export async function moveDocument(
   dispatcher: Dispatcher,
   input: MoveDocumentInput
 ): Promise<ToolReturn<Document>> {
-  if (input.from === "index.md" || input.from === "log.md" || input.to === "index.md" || input.to === "log.md") {
-    const offending = (input.from === "index.md" || input.from === "log.md") ? input.from : input.to;
-    return {
-      result: err({ kind: "dispatcher-owned-path", path: offending, requested_tool: "moveDocument" }),
-      effects: [],
-    };
-  }
+  const fromOwned = refuseIfDispatcherOwned(input.from, "moveDocument");
+  if (fromOwned) return { result: err(fromOwned), effects: [] };
+  const toOwned = refuseIfDispatcherOwned(input.to, "moveDocument");
+  if (toOwned) return { result: err(toOwned), effects: [] };
 
   const fromDoc = makeDocument({ path: input.from });
   const toDoc = makeDocument({ path: input.to });

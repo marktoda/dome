@@ -1,6 +1,30 @@
 import { writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Effect, LogEntry } from "./types";
+import type { Effect, LogEntry, ToolError } from "./types";
+
+// ----- Dispatcher-owned paths ----------------------------------------------
+// Single source of truth for INDEX_AND_LOG_ARE_DISPATCHER_OWNED. The mutating
+// Tools (writeDocument/moveDocument/deleteDocument) all consult this predicate
+// rather than each duplicating the literal-string check.
+
+export const DISPATCHER_OWNED_PATHS = ["index.md", "log.md"] as const;
+export type DispatcherOwnedPath = typeof DISPATCHER_OWNED_PATHS[number];
+
+export function isDispatcherOwned(path: string): path is DispatcherOwnedPath {
+  return (DISPATCHER_OWNED_PATHS as readonly string[]).includes(path);
+}
+
+/**
+ * Returns a `dispatcher-owned-path` ToolError when `path` is dispatcher-owned,
+ * or `null` otherwise. Callers spread the returned object into their `err()`.
+ */
+export function refuseIfDispatcherOwned(
+  path: string,
+  toolName: string
+): Extract<ToolError, { kind: "dispatcher-owned-path" }> | null {
+  if (!isDispatcherOwned(path)) return null;
+  return { kind: "dispatcher-owned-path", path, requested_tool: toolName };
+}
 
 export interface IndexEntry {
   path: string;

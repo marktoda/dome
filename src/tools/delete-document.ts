@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { makeDocument } from "../document";
 import { ok, err, type Effect, type ToolReturn } from "../types";
 import type { Vault } from "../vault";
-import type { Dispatcher } from "../dispatcher";
+import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
 
 export interface DeleteDocumentInput {
   path: string;
@@ -15,12 +15,8 @@ export async function deleteDocument(
   dispatcher: Dispatcher,
   input: DeleteDocumentInput
 ): Promise<ToolReturn<void>> {
-  if (input.path === "index.md" || input.path === "log.md") {
-    return {
-      result: err({ kind: "dispatcher-owned-path", path: input.path, requested_tool: "deleteDocument" }),
-      effects: [],
-    };
-  }
+  const ownedErr = refuseIfDispatcherOwned(input.path, "deleteDocument");
+  if (ownedErr) return { result: err(ownedErr), effects: [] };
   const doc = makeDocument({ path: input.path });
   if (doc.category === "raw") {
     return {

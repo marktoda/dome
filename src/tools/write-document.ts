@@ -4,8 +4,9 @@ import { makeDocument, type Document } from "../document";
 import { stringifyFrontmatter } from "../frontmatter";
 import { ok, err, type Effect, type ToolReturn, type Sensitivity, type CreationReason } from "../types";
 import type { Vault } from "../vault";
-import type { Dispatcher } from "../dispatcher";
+import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
 import { parseWikilinks, suggestFullPath } from "../wikilinks";
+import { singularOf } from "../page-type";
 
 export interface WriteDocumentOpts {
   create?: boolean;
@@ -26,12 +27,8 @@ export async function writeDocument(
   input: WriteDocumentInput
 ): Promise<ToolReturn<Document>> {
   // INDEX_AND_LOG_ARE_DISPATCHER_OWNED — axiom; refuse unconditionally.
-  if (input.path === "index.md" || input.path === "log.md") {
-    return {
-      result: err({ kind: "dispatcher-owned-path", path: input.path, requested_tool: "writeDocument" }),
-      effects: [],
-    };
-  }
+  const ownedErr = refuseIfDispatcherOwned(input.path, "writeDocument");
+  if (ownedErr) return { result: err(ownedErr), effects: [] };
 
   const abs = join(vault.path, input.path);
   const exists = await pathExists(abs);
@@ -69,7 +66,7 @@ export async function writeDocument(
         effects: [],
       };
     }
-    const singular = singularize(dirType);
+    const singular = singularOf(dirType);
     const allowed = [...vault.pageTypes.defaults, ...vault.pageTypes.extensions.map(e => typeof e === "string" ? e : e.name)];
     if (!allowed.includes(singular)) {
       return {
@@ -172,12 +169,3 @@ function makeDiff(before: string, after: string, path: string): string {
   return `--- a/${path}\n+++ b/${path}\n[content updated]`;
 }
 
-function singularize(plural: string): string {
-  const explicit: Record<string, string> = {
-    entities: "entity",
-    concepts: "concept",
-    sources: "source",
-    syntheses: "synthesis",
-  };
-  return explicit[plural] ?? (plural.endsWith("ies") ? plural.slice(0, -3) + "y" : plural.endsWith("es") ? plural.slice(0, -2) : plural.endsWith("s") ? plural.slice(0, -1) : plural);
-}

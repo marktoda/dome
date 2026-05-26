@@ -1,5 +1,6 @@
 import type { Effect } from "./types";
 import type { HookEvent } from "./hook-context";
+import { singularOf } from "./page-type";
 
 export function projectEffectToEvents(effect: Effect): HookEvent[] {
   switch (effect.kind) {
@@ -13,11 +14,7 @@ export function projectEffectToEvents(effect: Effect): HookEvent[] {
       const top = segments[0];
       if (top === "wiki" && segments.length >= 3) {
         const pluralType = segments[1]!;
-        const singular = pluralType === "entities" ? "entity"
-          : pluralType === "concepts" ? "concept"
-          : pluralType === "sources" ? "source"
-          : pluralType === "syntheses" ? "synthesis"
-          : pluralType.replace(/s$/, "");
+        const singular = singularOf(pluralType);
         return [{ kind: `document.written.wiki.${singular}`, path, category: "wiki", type: singular, diff }];
       }
       if (top === "inbox" && segments.length >= 3) {
