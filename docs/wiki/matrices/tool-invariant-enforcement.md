@@ -9,10 +9,11 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 Which Tool enforces which Invariant, by what mechanism, and what test guarantees the enforcement. Exhaustive over the SDK Tool catalog (see [[wiki/specs/sdk-surface]] §"Tool catalog") × all invariants whose enforcement seam is the Tool call site or the hook-type-system boundary. Invariant tier is shown in the header row.
 
-Two invariants are NOT in the matrix because they aren't enforced at Tool call-site or hook boundary:
+Three invariants are NOT in the matrix because they aren't enforced at Tool call-site or hook boundary:
 
 - **`VAULT_IS_GIT_REPO`** — enforced at vault-open boundary; `openVault(path)` refuses non-git directories. A precondition for the entire Vault instance.
 - **`INBOX_IS_EPHEMERAL`** — enforced at workflow-prompt level (intake workflows include explicit `deleteDocument(inbox_path)` exit-steps as part of their prompt instructions; see [[wiki/invariants/INBOX_IS_EPHEMERAL]] §"v0.5 escape mechanism" for why deletion is the v0.5 mechanism rather than `moveDocument` to `raw/`). See §"`INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)" below; `dome doctor` reports stale inbox files as the structural fallback. This is *weaker than Tool-boundary enforcement* and is flagged in [[wiki/gotchas/agent-prompt-regression]] as a prompt-only-enforcement surface.
+- **`CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY`** — enforced at the **bundle boundary**; the `@dome/sdk` core entrypoint (`src/index.ts`) may not transitively depend on `@anthropic-ai/sdk`, `ai`, or `@modelcontextprotocol/sdk`. Structurally enforced by `tests/integration/bundle-deps.test.ts`. No Tool refuses an invariant-violating call for this one; the enforcement happens at packaging time, not call time. See §"`CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY` — bundle-enforced (off-matrix)" below.
 
 A blank cell means no relationship: the Tool doesn't touch that invariant's surface. Bolded cells mean active enforcement (the Tool refuses operations that would violate the invariant). Cells in *italics* are read-only relationships.
 
@@ -38,6 +39,10 @@ A blank cell means no relationship: the Tool doesn't touch that invariant's surf
 ### `INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)
 
 Not a column above because no Tool refuses an invariant-violating call for it. Enforcement lives in the **intake workflow prompts**: `ingest`, `voice-ingest`, `research`, `clip-integrate` each include an explicit `deleteDocument(inbox_path)` exit-step in their prompt instructions (per [[wiki/invariants/INBOX_IS_EPHEMERAL]] §"v0.5 escape mechanism" — deletion rather than `moveDocument`-to-`raw/` because `RAW_IS_IMMUTABLE` blocks the latter). The structural fallback is `dome doctor` reporting inbox files older than `hooks.inbox_stale_age_hours` in `.dome/config.yaml` (default 24h, excluding `inbox/review/` because `review/` is a destination not an intake). See [[wiki/invariants/INBOX_IS_EPHEMERAL]] and the prompt-only-enforcement caveat in [[wiki/gotchas/agent-prompt-regression]].
+
+### `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY` — bundle-enforced (off-matrix)
+
+Not a column above because no Tool refuses an invariant-violating call for it; the boundary is the package-bundling layer, not the call site. Enforcement lives in `tests/integration/bundle-deps.test.ts`, which introspects the transitive dependency set of the `@dome/sdk` core entrypoint (`src/index.ts`) and asserts that `@anthropic-ai/sdk`, `ai`, and `@modelcontextprotocol/sdk` are NOT among them. A regression — e.g., re-exporting `runWorkflow` from `src/index.ts` — produces a failing test in CI before the regression merges. See [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] for the rationale and [[wiki/matrices/consumer-surface]] for which entrypoint each consumer shell uses.
 
 ## Reading the matrix
 

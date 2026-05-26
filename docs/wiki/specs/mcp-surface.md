@@ -7,7 +7,26 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 # MCP surface
 
-This spec is normative for Dome's MCP server — the protocol surface that exposes the SDK to any MCP-capable harness (Claude Code, Cursor, OpenCode, Codex CLI, and future agents). The MCP server is a *thin adapter*: each MCP tool is a 1:1 wrapper over an SDK Tool.
+This spec is normative for Dome's MCP server — the protocol surface that exposes the SDK to any MCP-capable harness (Claude Code, Cursor, OpenCode, Codex CLI, and future agents). The MCP server is a **thin protocol adapter over [[wiki/specs/sdk-surface]] §"Consumer surfaces" `ConsumerSurface`**: it bundles `tools`, `prompts`, `resources`, and `instructions` into an MCP-shaped wire format.
+
+The MCP server lives in `@dome/sdk/mcp` (not `@dome/sdk` core). A consumer that wants only Vault + Tools without speaking MCP imports from `@dome/sdk` and pays no MCP dependency cost — see [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]].
+
+## Construction
+
+`DomeMcpServer` consumes a `ConsumerSurface`:
+
+```ts
+import { openVault } from "@dome/sdk";
+import { buildConsumerSurface, DomeMcpServer } from "@dome/sdk/mcp";
+
+const vaultR = await openVault(path);
+if (!vaultR.ok) throw vaultR.error;
+const surface = await buildConsumerSurface(vaultR.value);
+const server = new DomeMcpServer({ surface });
+await server.serveStdio();
+```
+
+The `buildConsumerSurface(vault)` factory builds the four kinds (tools, prompts, resources, instructions) per [[wiki/specs/sdk-surface]] §"Consumer surfaces". `DomeMcpServer({ surface })` adapts that surface to the MCP wire protocol. Pre-Phase-B the server was constructed with `new DomeMcpServer({ vault })` and aggregated the four kinds internally; post-Phase-B the aggregation is its own concept (`ConsumerSurface`) that future protocol adapters (HTTP, etc.) can reuse without duplicating the wiring.
 
 ## Invocation
 

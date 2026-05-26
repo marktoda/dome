@@ -59,16 +59,18 @@ This loop uses `@anthropic-ai/sdk` directly. It loads the named workflow prompt,
 
 Any harness that mounts the Dome MCP server gains Dome-awareness automatically. The Dome MCP server (see [[wiki/specs/mcp-surface]]) is the universal contract. Per-harness instructions are documented in `docs/wiki/sources/<harness>-setup.md` (not in this spec) as the ecosystem stabilizes.
 
-## Future-harness pressure (v1+, non-normative)
+## Future-harness pressure (v1+, non-normative integration points)
 
 These are aspirational integration points the v0.5 SDK design accommodates without committing to:
 
-- **Native mobile app** — embeds the SDK directly (Bun bundles to a single executable; the mobile shell can call it) OR runs the MCP server locally and the app speaks MCP. v1+ decision.
-- **Native desktop app** — same shape as mobile; likely an Electron / Tauri / Wails shell.
-- **Voice client** — captures speech via OS-native dictation, writes to `inbox/voice/*`, lets the intake hook run async ingest. No Dome-side voice code in v0.5; transcription is upstream.
-- **Web app** — Bun's server capabilities let the SDK serve as an HTTP backend the web client speaks to. v1+ decision; may add an HTTP surface alongside MCP.
+- **Native mobile app** — imports from `@dome/sdk` core (no LLM, no MCP) for typed markdown read/write. Voice or research-style intake routes through `@dome/sdk/workflows` only when the user invokes an LLM-driven workflow.
+- **Native desktop app** — same shape as mobile; likely an Electron / Tauri / Wails shell. Holds a long-running Vault via `openVault` → use → `vault.close()` per [[wiki/specs/sdk-surface]] §"Vault lifecycle".
+- **Voice client** — captures speech via OS-native dictation, writes to `inbox/voice/*`, lets the intake hook run async ingest. The capture shell needs only `@dome/sdk` core (`writeDocument`); the ingest workflow runs server-side in `@dome/sdk/workflows`.
+- **Web app** — Bun's server capabilities let the SDK serve as an HTTP backend the web client speaks to. v1+ decision; an `@dome/sdk/http` companion entrypoint may add HTTP-specific protocol adapters when the use case justifies a split (mirroring `@dome/sdk/mcp`).
 
-None of these change the SDK contract; they change the harness shape above it.
+**Future harness shells construct against `ConsumerSurface`.** Per [[wiki/specs/sdk-surface]] §"Consumer surfaces", every protocol adapter (current MCP server; future HTTP/voice/mobile-IPC server) bundles `tools`, `prompts`, `resources`, and `instructions` into a `ConsumerSurface`-shaped object. The MCP server's `buildConsumerSurface(vault)` factory is the canonical example; a future HTTP server's `buildConsumerSurface(vault)` (which may live in a companion entrypoint) returns the same four kinds via HTTP-shaped adapters.
+
+None of these change the SDK contract; they change the harness shape above it. The [[wiki/matrices/consumer-surface]] matrix names which entrypoint each future shell reaches its symbols through; the [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] axiom + [[wiki/gotchas/transitive-llm-dependency]] gotcha together guarantee a v1+ mobile/voice/web shell pays for only the deps it actually uses.
 
 ## What's NOT a harness
 

@@ -17,8 +17,9 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 ## Invariants
 
-Six axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline.
+Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline. Canonical const: `src/types.ts` `INVARIANTS`.
 
+- [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@anthropic-ai/sdk`, `ai`, or `@modelcontextprotocol/sdk`.
 - [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces an appendLog call.
 - [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Hooks observe and call Tools; never mutate directly.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake hooks must move/delete inbox files on completion; presence = pending.
@@ -34,6 +35,7 @@ Six axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants
 
 ## Matrices
 
+- [[wiki/matrices/consumer-surface]] — Consumer shell × exported symbol family × entrypoint (`core` / `workflows` / `mcp` / `cli`).
 - [[wiki/matrices/event-types-and-payloads]] — Event name × emitting tool × payload × example hooks.
 - [[wiki/matrices/intent-prompt-tools]] — User intent × workflow prompt × bound tools × effects.
 - [[wiki/matrices/tool-invariant-enforcement]] — Tool × invariant enforcement matrix.
@@ -41,6 +43,7 @@ Six axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants
 ## Gotchas
 
 - [[wiki/gotchas/agent-prompt-regression]] — Model upgrades or prompt edits can change behavior silently.
+- [[wiki/gotchas/ai-sdk-tool-variance]] — Registry's `Tool<>` cast bridges AI SDK v6 inference mismatch; revisit on next AI SDK major bump.
 - [[wiki/gotchas/async-read-after-write-staleness]] — Reads immediately after writes may not see hook follow-on.
 - [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes.
 - [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome reconcile` refuses to run during mid-merge / mid-rebase.
@@ -48,6 +51,8 @@ Six axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants
 - [[wiki/gotchas/hook-non-idempotent]] — Non-idempotent hooks double-fire effects during reconciliation.
 - [[wiki/gotchas/multi-page-partial-write]] — Multi-page updates that fail partway through.
 - [[wiki/gotchas/out-of-band-vault-edits]] — Obsidian or vim writes that bypass Dome's tools.
+- [[wiki/gotchas/substrate-count-drift]] — Synthesis docs inline counts that diverge from canonical const arrays.
+- [[wiki/gotchas/transitive-llm-dependency]] — Consumer bundles unexpectedly carry Anthropic + MCP because core re-exported LLM/MCP machinery.
 
 ## Entities
 

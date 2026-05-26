@@ -29,11 +29,37 @@ A Vault is opened, used, and closed in one process lifetime. There is no Vault s
 
 - `path: string`, `config: VaultConfig`, `pageTypes: PageTypesConfig` — readonly resolved-from-disk values.
 - `tools: BoundToolSurface` — the seven Tools curried with this Vault and the privileged writer. The canonical Tool entry point for in-process consumers; see §"Tool catalog" below.
-- `aiTools: ai.ToolSet` — the same seven Tools shaped for Vercel-AI-SDK `generateText` consumption. Workflow runners filter this set by name; see [[wiki/specs/prompts-and-workflows]] §"Runner".
-- `toolParsers` — per-Tool parse-and-invoke functions for transports that deliver raw input (the MCP adapter, future HTTP / SSE). Each parses through the Tool's Zod schema and invokes the same Vault-bound function `tools` exposes.
-- `drainHooks(): Promise<void>` — wait for all async hooks dispatched so far to settle. Tests and `dome reconcile` call this to reach a deterministic state.
+- `drainHooks(): Promise<void>` — wait for all async hooks dispatched so far AND any in-flight quarantine persistence writes to settle. Tests, `dome reconcile`, and `vault.close()` call this to reach a deterministic state. Idempotent — re-callable without side effects.
 - `dispatchEvents(events: ReadonlyArray<HookEvent>): Promise<void>` — push the given events through the Vault's hook dispatcher. Used by `dome reconcile` (inbox scan, git-diff replay, scheduled catchup) and `VaultWatcher` (out-of-band edits) to drive hook handlers without each subsystem having to assemble its own `ctxFactory`.
 - `rebuildIndex(): Promise<void>` — regenerate `index.md` from scratch by walking every wiki page. Public SDK seam consulted by `dome doctor --rebuild-index` and any consumer that needs a from-scratch rebuild; consults the privileged writer internally rather than exposing it.
+- `close(): Promise<void>` — release the Vault. See §"Vault lifecycle" below for the full semantics.
+
+**Tool projections live off Vault.** The AI-SDK `ToolSet` shape (consumed by `runWorkflow` / `generateText`) and the per-Tool parse-and-invoke functions (consumed by MCP and future HTTP transports) are NOT fields on `Vault`. They are entrypoint-scoped functions consumers reach explicitly:
+
+- `projectAiSdk(vault): ai.ToolSet` lives in `@dome/sdk/workflows`. Builds the seven Tools shaped for `generateText` consumption.
+- `projectMcp(vault): { parsers, ... }` lives in `@dome/sdk/mcp`. Builds the per-Tool parse-and-invoke functions transports deliver raw input through.
+
+Pre-Phase-B these projections were on `Vault.aiTools` and `Vault.toolParsers`, which forced every consumer of `openVault` to transitively bundle `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk` whether they used those projections or not. The split honors [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: a consumer that only reads/writes via `vault.tools` pays for nothing else.
+
+#### Vault lifecycle
+
+A Vault is opened, used, drained, and closed in one process lifetime. There is no Vault server in v0.5; the process IS the vault runtime.
+
+```
+openVault(path) → Vault
+   │
+   │   in-process use: vault.tools.*, vault.dispatchEvents(...), workflows, watchers
+   │
+   ├─→ drainHooks()  (idempotent; settles async hook queue + quarantine writes)
+   │
+   └─→ close()        (one-shot; drains hooks then releases resources)
+```
+
+**`drainHooks()`** is idempotent — re-callable any number of times. It awaits both `HookDispatcher.drain()` (the p-queue) AND `HookRegistry.flushPersist()` (the quarantine-write chain). Callers that need a deterministic post-hook state (tests, `dome reconcile`, the CLI's `--drain-hooks` flag) invoke it without coordinating with other callers.
+
+**`close()`** is one-shot. Semantics: (a) call `drainHooks()` to settle outstanding work; (b) release any held file handles (e.g., chokidar watchers started by `VaultWatcher`); (c) optionally invalidate the Vault instance for further calls. In v0.5, calling `vault.tools.X` after `vault.close()` is undefined behavior — v0.5 doesn't enforce a post-close guard because the close case is rare (process tears down naturally). Long-running v1+ shells (mobile/desktop processes that open and re-open Vaults) drive this case; the spec reserves the right to add a "Vault closed" guard in a future minor without breaking the v0.5 contract.
+
+The watcher lifecycle is **outside** the Vault: `VaultWatcher` is constructed by a caller (e.g., `domeServe`) and started/stopped by that caller. `vault.close()` does NOT stop watchers it didn't create; callers that started a watcher hold that responsibility. This is the same caller-owns-resource pattern Bun's file handles follow.
 
 ### Document
 
@@ -246,6 +272,46 @@ The SDK ships features across three tiers. The tier determines whether a feature
 
 The shipped-defaults catalog has a single source of truth in the SDK: `src/shipped-defaults.ts` exports `SHIPPED_VAULT_CONFIG: VaultConfig` and `SHIPPED_PAGE_TYPES: PageTypesConfig` as typed objects, plus YAML serializers (`shippedConfigYaml`, `shippedPageTypesYaml`) for the on-disk projections. The runtime fallback in `openVault`, the `dome init` / `dome migrate` scaffolder, and the eval / test vault factories all derive from the same constants — adding or flipping a shipped default touches one file.
 
+## Consumer surfaces
+
+Every consumer shell that builds against Dome (the v0.5-shipped CLI and MCP server today; v1+ mobile/desktop/voice/web later) aggregates four kinds of things from the SDK:
+
+- **Tools** — the seven mutation primitives via the `BoundToolSurface` exposed at `vault.tools`.
+- **Prompts** — Dome's shipped workflow prompts (and any plugin/vault-local additions), surfaced as harness-consumable templates.
+- **Resources** — read-only views of vault content (index, log, individual pages, vault info).
+- **Instructions** — cold-start orientation: invariants enabled in this vault, page types declared, the `AGENTS.md` user-tendable preamble.
+
+The runtime construct **`ConsumerSurface`** names this aggregation:
+
+```ts
+interface ConsumerSurface {
+  readonly tools: BoundToolSurface;
+  readonly prompts: ReadonlyArray<PromptAdapter>;
+  readonly resources: ResourceAdapter;
+  readonly instructions: string;
+}
+
+function buildConsumerSurface(vault: Vault): Promise<ConsumerSurface>;
+```
+
+`buildConsumerSurface(vault)` lives in `@dome/sdk/mcp` (the canonical home for the aggregation, since MCP is the first protocol consumer in v0.5). The function composes the four kinds: `tools` comes from `vault.tools`; `prompts` comes from `buildPromptAdapters(vault)`; `resources` comes from `new ResourceAdapter(vault)`; `instructions` comes from `buildInstructions(vault)`.
+
+`DomeMcpServer` is a thin **protocol adapter** over `ConsumerSurface`:
+
+```ts
+const surface = await buildConsumerSurface(vault);
+const server = new DomeMcpServer({ surface });
+await server.serveStdio();
+```
+
+The shape lets v1+ shells (HTTP, mobile, voice) consume the same four kinds via their own protocol adapter: a future `DomeHttpServer({ surface })` would expose `tools` over POST, `prompts` over GET, `resources` over GET, and `instructions` in the initialize response. The aggregation logic doesn't change; only the wire format does.
+
+**`ConsumerSurface` is normative for any v1+ shell.** A new consumer shell that bypasses the aggregation — e.g., directly composing `vault.tools` + custom prompt loading + custom resource serving — fights the substrate the matrix at [[wiki/matrices/consumer-surface]] establishes. The substrate constraint isn't "you must use `buildConsumerSurface`"; it's "if you bundle the four kinds for one consumer, name it `ConsumerSurface`-shaped so it composes with the rest of the ecosystem."
+
+The four kinds are listed in fixed order — `tools` first, `prompts` second, `resources` third, `instructions` fourth. The order matches the MCP protocol's mental model (tools/call, prompts/get, resources/read, then the initialize response that bundles instructions). Future protocol adapters honor the same order.
+
+See [[wiki/matrices/consumer-surface]] for which entrypoint each consumer reaches `ConsumerSurface` (and its constituent parts) through.
+
 ## Outputs the SDK does not have
 
 These exist as patterns built on the four concepts; they are NOT separate SDK primitives:
@@ -262,27 +328,37 @@ This is the **anti-concept list**: things future contributors might be tempted t
 
 - **Language**: TypeScript 5.x
 - **Runtime**: Bun 1.x. The SDK uses Bun's native APIs where they're cleaner (file watcher, test runner, bundler). It does not depend on Node-only modules.
-- **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package with two entrypoints:
-  - `@dome/sdk` — the core SDK (Vault, Document, Tool, Hook, types, registrations, MCP). What a programmatic consumer or non-CLI shell embeds.
-  - `@dome/sdk/cli` — the CLI shell (`runCli`, the seven `dome*` command functions, `CliError`, `renderCliError`). The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here.
+- **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package with **four entrypoints**:
+  - `@dome/sdk` — **core**. Vault, Document, the seven Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const. No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
+  - `@dome/sdk/workflows` — **LLM-driven surface**. `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, the eval suite primitives. Bundled deps: `@anthropic-ai/sdk`, `ai`. A consumer importing nothing from this entrypoint pays for none of those deps.
+  - `@dome/sdk/mcp` — **MCP server surface**. `DomeMcpServer`, `buildConsumerSurface(vault)`, `ConsumerSurface` type, `projectMcp(vault)`, the tool/prompt/resource adapters, `buildInstructions`. Bundled deps: `@modelcontextprotocol/sdk`.
+  - `@dome/sdk/cli` — **CLI shell**. `runCli`, the seven `dome*` command functions, `CliError`, `renderCliError`, `DoctorFlag`. The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here. Bundled deps: `commander`. The CLI internally imports from `@dome/sdk/workflows` for the LLM-driven commands (`lint`, `migrate`, `export-context`).
 
-  The split is wired via `package.json` `exports`. A future mobile / web / voice shell consumes only `@dome/sdk` and never pulls Commander or the seven `dome <cmd>` implementations into its bundle.
-- **MCP server**: `bun run dome serve` invokes the MCP server using `@modelcontextprotocol/sdk`; see [[wiki/specs/mcp-surface]].
+  The split is wired via `package.json` `exports`. The boundary is structurally enforced by [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] + the regression test at `tests/integration/bundle-deps.test.ts`. See [[wiki/matrices/consumer-surface]] for which entrypoint each consumer shell uses.
+
+- **MCP server**: invoked via `dome serve` (CLI) or by importing `DomeMcpServer` from `@dome/sdk/mcp` directly. See [[wiki/specs/mcp-surface]].
 
 ### Dependencies (v0.5 baseline)
 
-| Library | Purpose | Why this one |
-|---|---|---|
-| `@anthropic-ai/sdk` | LLM client for the headless agent loop | Anthropic's official TS SDK |
-| `@modelcontextprotocol/sdk` | MCP server implementation | First-class TS MCP support |
-| `isomorphic-git` | Git operations (reconciliation, init, status, diff) | Pure JS — no native git binary required; per [[wiki/invariants/VAULT_IS_GIT_REPO]] every vault is a git repo, and isomorphic-git lets us read/write `.git/` from Bun directly. See [[wiki/entities/isomorphic-git]]. |
-| `chokidar` | Cross-platform filesystem watcher | Mature, Bun-compatible |
-| `zod` | Runtime input validation | Derives JSON Schema for MCP tool inputs |
-| `gray-matter` | YAML frontmatter parser | Standard for markdown frontmatter |
-| `remark` / `unified` | Markdown AST | Standard for markdown manipulation |
-| `p-queue` | Async hook dispatch queue | In-process; durable state is the lockfile pattern, not the queue |
+Dependencies are scoped to the entrypoint that imports them. A consumer that imports only from `@dome/sdk` core bundles only the **core** row's deps; importing from `@dome/sdk/workflows` adds the **workflows** row's deps; etc. [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] is the structural enforcement that the core column does not transitively pull the workflows or mcp deps.
+
+| Library | Purpose | Why this one | Entrypoint scope |
+|---|---|---|---|
+| `isomorphic-git` | Git operations (reconciliation, init, status, diff) | Pure JS — no native git binary required; per [[wiki/invariants/VAULT_IS_GIT_REPO]] every vault is a git repo, and isomorphic-git lets us read/write `.git/` from Bun directly. See [[wiki/entities/isomorphic-git]]. | core |
+| `chokidar` | Cross-platform filesystem watcher | Mature, Bun-compatible | core |
+| `zod` | Runtime input validation | Single source for both AI-SDK `Tool<>` schemas and MCP-adapter input validation | core |
+| `gray-matter` | YAML frontmatter parser | Standard for markdown frontmatter | core |
+| `p-queue` | Async hook dispatch queue | In-process; durable state is the lockfile pattern, not the queue | core |
+| `yaml` | YAML emit/parse for config and hook declarations | Standard; Bun-compatible | core |
+| `zod-to-json-schema` | Renders Zod schemas to JSON Schema for the MCP tools/list response | Stable, single-purpose | core |
+| `@anthropic-ai/sdk` | LLM client | Anthropic's official TS SDK | workflows |
+| `ai` (Vercel AI SDK) | Generic agentic step loop (`generateText`, `Tool<>`) | First-class typed Tool support; agent loop owns the step counter | workflows |
+| `@modelcontextprotocol/sdk` | MCP server protocol | First-class TS MCP support | mcp |
+| `commander` | CLI argument parser | Mature, Bun-compatible, typed options | cli |
 
 Bun built-ins used directly (no extra dependency): `Bun.write` (atomic file writes), `Bun.file` (file reads + existence checks), `Bun.hash` (xxhash, used for non-canonical caching where git history isn't appropriate), the built-in test runner, `Bun.spawn` (for tool subprocess work).
+
+**Note on `remark` / `unified`:** previously listed; not actually imported anywhere. Wikilink parsing in `src/wikilinks.ts` uses regex; frontmatter parsing uses `gray-matter`. The dependency is dropped from `package.json` as part of Phase B.
 
 ### Derived operational state on disk
 
