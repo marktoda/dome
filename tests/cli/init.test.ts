@@ -17,6 +17,7 @@ describe("dome init", () => {
       expect(existsSync(join(target, ".dome", "config.yaml"))).toBe(true);
       expect(existsSync(join(target, ".dome", "hooks", "intake-raw.yaml"))).toBe(true);
       expect(existsSync(join(target, "inbox", "raw"))).toBe(true);
+      expect(existsSync(join(target, "inbox", "review"))).toBe(true);
       expect(existsSync(join(target, "index.md"))).toBe(true);
       expect(existsSync(join(target, "log.md"))).toBe(true);
       expect(existsSync(join(target, ".git"))).toBe(true);

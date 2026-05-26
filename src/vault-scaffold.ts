@@ -81,6 +81,7 @@ export async function scaffoldVaultLayout(
     "raw",
     "notes",
     "inbox/raw",
+    "inbox/review",
   ]) {
     await mkdir(join(vaultPath, rel), { recursive: true });
   }
