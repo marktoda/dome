@@ -12,9 +12,19 @@ export async function domeMigrate(
   apply: boolean,
   opts: RunWorkflowOpts = {},
 ): Promise<Result<{ steps: number }, ToolError>> {
+  // The target must already exist on disk; migrate operates on existing
+  // markdown directories, not on bare paths. Bail with a Result error so the
+  // CLI surfaces Failure rather than throwing.
+  if (!existsSync(vaultPath)) {
+    return err({ kind: "validation", message: `migrate: path does not exist: ${vaultPath}` });
+  }
   // Ensure .git exists (per VAULT_IS_GIT_REPO axiom).
   if (!existsSync(join(vaultPath, ".git"))) {
-    await git.init({ fs, dir: vaultPath, defaultBranch: "main" });
+    try {
+      await git.init({ fs, dir: vaultPath, defaultBranch: "main" });
+    } catch (e: unknown) {
+      return err({ kind: "validation", message: (e as Error).message });
+    }
   }
   // Real migration plan-generation runs in the workflow via the LLM. The CLI
   // shim only ensures the vault is openable; bootstrapping .dome/ for an
