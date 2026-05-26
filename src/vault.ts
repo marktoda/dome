@@ -14,6 +14,7 @@ import { loadDeclarativeHooks } from "./hooks/yaml-loader";
 import { projectEffectsToEvents } from "./event-projection";
 import type { BoundToolSurface, HookEvent } from "./hook-context";
 import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "./shipped-defaults";
+import { makeQuarantineStore } from "./quarantine-store";
 
 export interface VaultConfig {
   invariants: Record<string, "enabled" | "disabled">;
@@ -143,8 +144,13 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   const partial = { path: root, config, pageTypes } as Vault;
 
 
-  // Hook wiring — shipped-default registrations gated by config.
-  const registry = new HookRegistry();
+  // Hook wiring — shipped-default registrations gated by config. The registry
+  // gets a persistent quarantine record at .dome/state/quarantined.json so
+  // handlers quarantined during one CLI invocation are still skipped on the
+  // next (dome doctor and dome serve don't share a process).
+  const quarantinePath = join(root, ".dome", "state", "quarantined.json");
+  const initialQuarantined = await makeQuarantineStore(quarantinePath).load();
+  const registry = new HookRegistry({ persistPath: quarantinePath, initialQuarantined });
   if (config.hooks.builtin["auto-update-index"] === "enabled") {
     registry.register({
       id: "auto-update-index-write",
