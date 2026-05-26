@@ -56,9 +56,8 @@ export type ToolError =
   | { kind: "vault-not-git-repo"; path: string }
   | { kind: "config-invalid"; message: string };
 
-// ----- Sensitivity & creation reason ----------------------------------------
+// ----- Creation reason ----------------------------------------------------
 
-export type Sensitivity = "normal" | "sensitive";
 export type CreationReason = "recurring" | "named_explicitly" | "structural";
 
 // ----- Invariant names ------------------------------------------------------
