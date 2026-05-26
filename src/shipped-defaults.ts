@@ -21,6 +21,8 @@ export const SHIPPED_VAULT_CONFIG: VaultConfig = {
     WIKILINKS_ARE_FULLPATH: "enabled",
     INBOX_IS_EPHEMERAL: "enabled",
     PAGE_CREATION_REQUIRES_RECURRENCE: "disabled",
+    AGENTS_MD_IS_ORIENTATION_SURFACE: "enabled",
+    VAULT_RECONCILES_AFTER_NATIVE_WRITE: "enabled",
   },
   hooks: {
     builtin: {

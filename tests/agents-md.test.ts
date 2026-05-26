@@ -39,14 +39,20 @@ describe("buildAgentsMdTemplated", () => {
   });
 
   test("lists the enabled invariant set from config (the same projection MCP `instructions` uses)", () => {
-    // SHIPPED_VAULT_CONFIG.invariants has 5 entries flagged "enabled":
+    // SHIPPED_VAULT_CONFIG.invariants flags as "enabled":
     // EVERY_WRITE_IS_LOGGED, PAGE_TYPE_BY_DIRECTORY, WIKILINKS_ARE_FULLPATH,
-    // INBOX_IS_EPHEMERAL, plus PAGE_CREATION_REQUIRES_RECURRENCE (disabled).
+    // INBOX_IS_EPHEMERAL, AGENTS_MD_IS_ORIENTATION_SURFACE,
+    // VAULT_RECONCILES_AFTER_NATIVE_WRITE. PAGE_CREATION_REQUIRES_RECURRENCE
+    // is disabled and must not appear.
     const out = buildAgentsMdTemplated(SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES, ["ingest"]);
     expect(out).toContain("EVERY_WRITE_IS_LOGGED");
     expect(out).toContain("PAGE_TYPE_BY_DIRECTORY");
     expect(out).toContain("WIKILINKS_ARE_FULLPATH");
     expect(out).toContain("INBOX_IS_EPHEMERAL");
+    // Compiler-reframe invariants must appear (they're shipped-default enabled
+    // so the orientation surface advertises the invariants that own it).
+    expect(out).toContain("AGENTS_MD_IS_ORIENTATION_SURFACE");
+    expect(out).toContain("VAULT_RECONCILES_AFTER_NATIVE_WRITE");
     // PAGE_CREATION_REQUIRES_RECURRENCE is disabled in shipped config; should NOT appear.
     expect(out).not.toContain("PAGE_CREATION_REQUIRES_RECURRENCE");
   });
