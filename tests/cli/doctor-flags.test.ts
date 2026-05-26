@@ -47,6 +47,35 @@ describe("dome doctor flags (formerly no-op)", () => {
     }
   });
 
+  test("flags inbox files older than hooks.inbox_stale_age_hours; excludes inbox/review/", async () => {
+    const v = await makeTestVault();
+    try {
+      const { writeFile, utimes, mkdir } = await import("node:fs/promises");
+      await mkdir(`${v.path}/inbox/raw`, { recursive: true });
+      await mkdir(`${v.path}/inbox/review`, { recursive: true });
+
+      // Stale file in inbox/raw/ — should be flagged.
+      const stalePath = `${v.path}/inbox/raw/stale.md`;
+      await writeFile(stalePath, "old");
+      const longAgo = new Date(Date.now() - 48 * 60 * 60 * 1000); // 48h ago
+      await utimes(stalePath, longAgo, longAgo);
+
+      // Stale file in inbox/review/ — should NOT be flagged (review is a destination).
+      const reviewPath = `${v.path}/inbox/review/old-review-item.md`;
+      await writeFile(reviewPath, "old review");
+      await utimes(reviewPath, longAgo, longAgo);
+
+      const r = await domeDoctor(v.path);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const inboxViolations = r.value.violations.filter(v => v.includes("inbox/"));
+      expect(inboxViolations.some(v => v.includes("inbox/raw/stale.md"))).toBe(true);
+      expect(inboxViolations.some(v => v.includes("inbox/review/"))).toBe(false);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("--reset-quarantined-hooks empties .dome/state/quarantined.json", async () => {
     const v = await makeTestVault();
     try {
