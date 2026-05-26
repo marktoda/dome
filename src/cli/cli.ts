@@ -233,27 +233,63 @@ function buildProgram(outcome: RunOutcome): Command {
     });
 
   // ------ lint ------
+  // Commander invokes the collector for each --apply occurrence; we
+  // accumulate into an array so multi-id (--apply H1 --apply H2) becomes
+  // ["H1", "H2"] preserving order.
+  const collectApply = (value: string, prev: string[]): string[] => [...prev, value];
+
   program
     .command("lint")
     .description("Run the lint workflow against the vault (semantic; LLM-driven).")
+    .option(
+      "--apply <id>",
+      "Apply a finding from the most recent lint report by id (repeatable: --apply H1 --apply H2)",
+      collectApply,
+      [] as string[],
+    )
     .addHelpText(
       "after",
       [
         "",
-        "Walks the wiki and surfaces orphans, stale claims, missing",
-        "cross-references, contradictions, and schema-violating frontmatter.",
-        "Proposes fixes; does not apply them without user confirmation.",
+        "Two modes:",
+        "  Propose (default)  — walks the wiki and writes a structured report",
+        "                        with findings tagged by stable id (H1, M2, ...)",
+        "                        to inbox/review/lint-report-YYYY-MM-DD.md.",
+        "  Apply (--apply ID) — executes a single named recommendation from",
+        "                        the most recent report. Repeatable for multi-id.",
+        "",
+        "Apply mode refuses to run during a mid-merge / mid-rebase /",
+        "mid-cherry-pick (same guard as `dome reconcile`).",
         "",
         "For deterministic structural checks (no LLM), use `dome doctor`.",
         "",
         "Requires ANTHROPIC_API_KEY.",
       ].join("\n"),
     )
-    .action(async () => {
-      const r = await domeLint(process.cwd(), {});
-      if (!r.ok) { console.error(renderCliError(r.error)); outcome.code = ExitCode.Failure; return; }
+    .action(async (opts: { apply: string[] }) => {
+      const applyIds = opts.apply.length > 0 ? opts.apply : undefined;
+      const r = await domeLint(process.cwd(), {}, applyIds);
+      if (!r.ok) {
+        console.error(renderCliError(r.error));
+        // Validation errors (empty id, mid-merge guard) are usage-shaped;
+        // openVault / model failures are runtime-shaped. The error kind
+        // already encodes the distinction.
+        outcome.code = r.error.kind === "validation" ? ExitCode.Usage : ExitCode.Failure;
+        return;
+      }
       if (r.value.text.length > 0) console.log(r.value.text);
       console.error(`lint complete: ${r.value.steps} step(s)`);
+
+      // Multi-id exit-code semantics per wiki/specs/cli.md §"Apply mode":
+      // exit nonzero if any id reported failed/refused. The workflow's
+      // summary text is free-form; substring match against the canonical
+      // annotation markers from src/prompts/builtin/lint.md §"Apply mode".
+      if (applyIds !== undefined) {
+        const lower = r.value.text.toLowerCase();
+        if (lower.includes("apply-failed") || lower.includes("refused")) {
+          outcome.code = ExitCode.Failure;
+        }
+      }
     });
 
   // ------ export-context ------
