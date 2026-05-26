@@ -23,7 +23,12 @@ export interface DoctorOpts {
   showWorkflows?: boolean;
   showEvents?: boolean;
   showRecentHookCycles?: boolean;
-  recentActivity?: boolean;
+  /**
+   * When set, print the last N entries from `log.md` as info lines prefixed
+   * with `recent:`. `null` means use the default (50). `undefined` means
+   * the flag wasn't passed and no walk runs.
+   */
+  recentActivityN?: number | null;
   drainHooks?: boolean;
   resetQuarantinedHooks?: boolean;
 }
@@ -259,7 +264,22 @@ export async function domeDoctor(
   if (opts.showRecentHookCycles) info.push("--show recent-hook-cycles: no-op in v0.5 (no persistent cycle log across CLI runs)");
   if (opts.showReviewQueue) info.push("--show review-queue: no-op in v0.5 (review-queue lives in wiki/inbox/review-queue.md if present)");
   if (opts.showRawCitations) info.push("--show raw-citations: no-op in v0.5 (raw citations not yet indexed)");
-  if (opts.recentActivity) info.push("--recent-activity: no-op in v0.5 (use `git log` against the vault)");
+  if (opts.recentActivityN !== undefined) {
+    const limit = opts.recentActivityN ?? 50;
+    const logPath2 = join(vault.path, "log.md");
+    if (existsSync(logPath2)) {
+      const logText = await Bun.file(logPath2).text();
+      const re = /^## \[([^\]]+)\] (\S+) \| (.+)$/gm;
+      const entries: { ts: string; verb: string; subject: string }[] = [];
+      for (const m of logText.matchAll(re)) {
+        entries.push({ ts: m[1]!, verb: m[2]!, subject: m[3]! });
+      }
+      const tail = entries.slice(-limit);
+      for (const e of tail) {
+        info.push(`recent: [${e.ts}] ${e.verb} | ${e.subject}`);
+      }
+    }
+  }
 
   return ok({ exitCode: violations.length === 0 ? 0 : 1, violations, info });
 }

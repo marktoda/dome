@@ -3,6 +3,33 @@ import { domeDoctor } from "../../src/cli/commands/doctor";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("dome doctor flags (formerly no-op)", () => {
+  test("--recent-activity walks log.md and prints the last N entries", async () => {
+    const v = await makeTestVault();
+    try {
+      const log = [
+        "# Log",
+        "",
+        "## [2026-05-25T10:00:00Z] bootstrap | initialize vault",
+        "",
+        "## [2026-05-25T11:00:00Z] ingest | wiki/entities/alice.md",
+        "",
+        "## [2026-05-25T12:00:00Z] update | wiki/entities/bob.md",
+        "",
+      ].join("\n");
+      await Bun.write(`${v.path}/log.md`, log);
+
+      const r = await domeDoctor(v.path, { recentActivityN: 2 });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const activityLines = r.value.info.filter(l => l.startsWith("recent:"));
+      expect(activityLines.length).toBe(2);
+      expect(activityLines[1]).toContain("update | wiki/entities/bob.md");
+      expect(activityLines[0]).toContain("ingest | wiki/entities/alice.md");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("--drain-hooks calls vault.drainHooks() and exits clean", async () => {
     const v = await makeTestVault();
     try {

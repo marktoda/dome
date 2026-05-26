@@ -38,7 +38,9 @@ type DoctorShowSubject = typeof DOCTOR_SHOW_SUBJECTS[number];
 
 interface DoctorCliOpts {
   rebuildIndex?: boolean;
-  recentActivity?: boolean;
+  // Commander gives boolean true (no arg) or string (arg present) for an
+  // option declared with `[N]` (optional value).
+  recentActivity?: boolean | string;
   drainHooks?: boolean;
   resetQuarantinedHooks?: boolean;
   show?: DoctorShowSubject;
@@ -47,7 +49,15 @@ interface DoctorCliOpts {
 function toDoctorOpts(cli: DoctorCliOpts): DoctorOpts {
   const opts: DoctorOpts = {};
   if (cli.rebuildIndex) opts.rebuildIndex = true;
-  if (cli.recentActivity) opts.recentActivity = true;
+  if (cli.recentActivity !== undefined && cli.recentActivity !== false) {
+    // boolean true (no arg) → null sentinel ("use default"); string → parse.
+    if (cli.recentActivity === true) {
+      opts.recentActivityN = null;
+    } else {
+      const n = Number.parseInt(cli.recentActivity, 10);
+      opts.recentActivityN = Number.isFinite(n) && n > 0 ? n : null;
+    }
+  }
   if (cli.drainHooks) opts.drainHooks = true;
   if (cli.resetQuarantinedHooks) opts.resetQuarantinedHooks = true;
   switch (cli.show) {
@@ -275,7 +285,10 @@ function buildProgram(outcome: RunOutcome): Command {
     .command("doctor")
     .description("Run deterministic structural checks on the vault.")
     .option("--rebuild-index", "Regenerate index.md from scratch by walking wiki/")
-    .option("--recent-activity", "Show recent activity (v0.5 no-op; use `git log`)")
+    .option(
+      "--recent-activity [N]",
+      "List the last N writes from log.md (default 50)",
+    )
     .option("--drain-hooks", "Wait for async hook queue to drain (v0.5 no-op)")
     .option("--reset-quarantined-hooks", "Clear hook quarantine list (v0.5 no-op)")
     .addOption(
