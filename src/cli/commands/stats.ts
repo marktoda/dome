@@ -75,6 +75,24 @@ export async function collectStats(vault: Vault): Promise<VaultStats> {
     .sort((a, b) => b.incoming - a.incoming)
     .slice(0, 5);
 
+  // Raw files: count + total bytes.
+  const rawRoot = join(vault.path, "raw");
+  if (existsSync(rawRoot)) {
+    for await (const p of walkMd(rawRoot)) {
+      const s = await stat(p);
+      stats.raw.count++;
+      stats.raw.bytes += s.size;
+    }
+  }
+
+  // Notes files: count only.
+  const notesRoot = join(vault.path, "notes");
+  if (existsSync(notesRoot)) {
+    for await (const _p of walkMd(notesRoot)) {
+      stats.notes.count++;
+    }
+  }
+
   return stats;
 }
 

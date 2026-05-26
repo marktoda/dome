@@ -76,4 +76,25 @@ describe("dome stats", () => {
       await v.cleanup();
     }
   });
+
+  test("raw + notes: count and bytes", async () => {
+    const v = await makeStatsVault();
+    try {
+      // dome init does NOT create notes/; create it explicitly.
+      await mkdir(join(v.path, "notes"), { recursive: true });
+      await writeFile(join(v.path, "raw", "first.md"), "raw one body");      // 12 bytes
+      await writeFile(join(v.path, "raw", "second.md"), "raw two body here"); // 17 bytes
+      await writeFile(join(v.path, "notes", "scratch.md"), "scratch");
+
+      const vaultRes = await openVault(v.path);
+      if (!vaultRes.ok) throw new Error("openVault failed");
+      const stats = await collectStats(vaultRes.value);
+
+      expect(stats.raw.count).toBe(2);
+      expect(stats.raw.bytes).toBe(29); // 12 + 17
+      expect(stats.notes.count).toBe(1);
+    } finally {
+      await v.cleanup();
+    }
+  });
 });
