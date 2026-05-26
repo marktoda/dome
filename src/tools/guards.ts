@@ -18,7 +18,7 @@ import { stat } from "node:fs/promises";
 import { makeDocument } from "../document";
 import type { Effect, LogEntry, LogVerb, ToolError } from "../types";
 import type { Vault } from "../vault";
-import type { Dispatcher } from "../dispatcher";
+import type { PrivilegedWriter } from "../privileged-writer";
 
 /**
  * Refuse if `path` lives under `raw/` per RAW_IS_IMMUTABLE (axiom).
@@ -76,7 +76,7 @@ export async function checkOptimisticLock(
  */
 export async function logMutation(
   vault: Vault,
-  dispatcher: Dispatcher,
+  dispatcher: PrivilegedWriter,
   entry: { verb: LogVerb; subject: string; body?: string; refs?: ReadonlyArray<string> },
 ): Promise<Effect | null> {
   if (vault.config.invariants.EVERY_WRITE_IS_LOGGED !== "enabled") return null;

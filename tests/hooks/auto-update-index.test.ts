@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { autoUpdateIndex } from "../../src/hooks/auto-update-index";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 
@@ -16,7 +16,7 @@ describe("auto-update-index hook", () => {
       const ctx = {
         tools: vault.tools,
         vault: { path: vault.path },
-        dispatcher: makeDispatcher(vault.path),
+        dispatcher: makePrivilegedWriter(vault.path),
       };
       await autoUpdateIndex({
         kind: "document.written.wiki.entity",
@@ -40,7 +40,7 @@ describe("auto-update-index hook", () => {
       const ctx = {
         tools: vault.tools,
         vault: { path: vault.path },
-        dispatcher: makeDispatcher(vault.path),
+        dispatcher: makePrivilegedWriter(vault.path),
       };
       const event = {
         kind: "document.written.wiki.entity",

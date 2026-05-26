@@ -1,4 +1,4 @@
-import type { Dispatcher } from "./dispatcher";
+import type { PrivilegedWriter } from "./privileged-writer";
 import { type readDocument, type ReadDocumentInput } from "./tools/read-document";
 import { type writeDocument, type WriteDocumentInput } from "./tools/write-document";
 import { type appendLog, type AppendLogInput } from "./tools/append-log";
@@ -28,10 +28,24 @@ export interface BoundToolSurface {
   deleteDocument: (input: DeleteDocumentInput) => ReturnType<typeof deleteDocument>;
 }
 
+/**
+ * The context every hook handler receives. INTERNAL boundary:
+ *
+ * - `tools` is the same Tool surface as `Vault.tools`; handlers mutate the
+ *   vault by calling these (and only these, per HOOKS_CANNOT_BYPASS_TOOLS).
+ * - `vault` carries read-only metadata.
+ * - `privilegedWriter` is the privileged writer of index.md / log.md. It's
+ *   present ONLY when `hook.source === "sdk"` — built-in handlers like
+ *   `auto-update-index` need it; plugin and vault-local hooks see undefined
+ *   (the structural enforcement of INDEX_AND_LOG_ARE_DISPATCHER_OWNED).
+ *
+ * Previously named `dispatcher` — but that collided with the unrelated
+ * `HookDispatcher` (the event router). Renamed to match its actual role.
+ */
 export interface HookContext {
   readonly tools: BoundToolSurface;
   readonly vault: { readonly path: string };
-  readonly dispatcher?: Dispatcher;
+  readonly privilegedWriter?: PrivilegedWriter;
 }
 
 export interface HookEvent {

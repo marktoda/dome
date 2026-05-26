@@ -17,6 +17,7 @@ import { openVault } from "../../src/vault";
 import { loadDeclarativeHooks, type RunWorkflowFn } from "../../src/hooks/yaml-loader";
 import { HookRegistry } from "../../src/hook-registry";
 import { HookDispatcher } from "../../src/hook-dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 
 const runCalls: { workflowName: string; userMessage: string }[] = [];
 const stubRunWorkflow: RunWorkflowFn = async (_vault, workflowName, userMessage) => {
@@ -58,7 +59,7 @@ describe("YAML hook routing: dropped inbox file -> registered handler -> runWork
         [{ kind: "document.written.inbox.raw", path: "inbox/raw/test-thought.md", diff: "[new]" }],
         {
           baseCtx: { tools: vault.tools, vault: { path: vault.path } },
-          dispatcher: vault.dispatcher,
+          privilegedWriter: makePrivilegedWriter(vault.path),
         },
       );
       await dispatcher.drain();
@@ -89,7 +90,7 @@ describe("YAML hook routing: dropped inbox file -> registered handler -> runWork
         [{ kind: "document.written.wiki.entity", path: "wiki/entities/danny.md", diff: "[new]" }],
         {
           baseCtx: { tools: vault.tools, vault: { path: vault.path } },
-          dispatcher: vault.dispatcher,
+          privilegedWriter: makePrivilegedWriter(vault.path),
         },
       );
       await dispatcher.drain();

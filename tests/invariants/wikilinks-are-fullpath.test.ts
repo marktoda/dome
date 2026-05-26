@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { openVault } from "../../src/vault";
 import { writeDocument } from "../../src/tools/write-document";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("WIKILINKS_ARE_FULLPATH", () => {
@@ -10,7 +10,7 @@ describe("WIKILINKS_ARE_FULLPATH", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         body: "# Danny\n\nSee also [[Maya]] — short form is illegal.",
@@ -31,7 +31,7 @@ describe("WIKILINKS_ARE_FULLPATH", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         body: "# Danny\n\nSee also [[wiki/entities/maya]].",

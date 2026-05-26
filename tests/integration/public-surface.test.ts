@@ -8,9 +8,13 @@ import {
   wikilinkResolve,
   moveDocument,
   deleteDocument,
-  makeDispatcher,
   INVARIANTS,
 } from "../../src/index";
+// makePrivilegedWriter is INTERNAL — NOT exported from src/index. The structural
+// enforcement of INDEX_AND_LOG_ARE_DISPATCHER_OWNED depends on plugin/consumer
+// code being unable to construct one. Tests live inside the SDK boundary and
+// reach into the private path explicitly to set up the end-to-end vault.
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("public surface — Stage 1 contract", () => {
@@ -37,7 +41,7 @@ describe("public surface — Stage 1 contract", () => {
       const vault = await openVault(v.path);
       expect(vault.ok).toBe(true);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const w = await writeDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         body: "# Danny\n\n[[wiki/entities/maya]]",

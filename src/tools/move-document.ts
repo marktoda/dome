@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { makeDocument, type Document } from "../document";
 import { ok, err, type Effect, type ToolReturn } from "../types";
 import type { Vault } from "../vault";
-import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
+import { type PrivilegedWriter, refuseIfDispatcherOwned } from "../privileged-writer";
 import { walkMd } from "../vault-fs";
 import { refuseIfRawImmutable, checkOptimisticLock, logMutation } from "./guards";
 
@@ -23,7 +23,7 @@ export interface MoveDocumentInput {
 
 export async function moveDocument(
   vault: Vault,
-  dispatcher: Dispatcher,
+  dispatcher: PrivilegedWriter,
   input: MoveDocumentInput
 ): Promise<ToolReturn<Document>> {
   const fromOwned = refuseIfDispatcherOwned(input.from, "moveDocument");

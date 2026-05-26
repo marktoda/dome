@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openVault } from "../../src/vault";
 import { appendLog } from "../../src/tools/append-log";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("LOG_IS_APPEND_ONLY", () => {
@@ -13,7 +13,7 @@ describe("LOG_IS_APPEND_ONLY", () => {
       const vault = await openVault(v.path);
       expect(vault.ok).toBe(true);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await appendLog(vault.value, dispatcher, {
         verb: "bootstrap",
         subject: "initial vault setup",
@@ -31,7 +31,7 @@ describe("LOG_IS_APPEND_ONLY", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       await appendLog(vault.value, dispatcher, { verb: "first", subject: "A" });
       const after1 = await readFile(join(v.path, "log.md"), "utf8");
       await appendLog(vault.value, dispatcher, { verb: "second", subject: "B" });

@@ -2,7 +2,7 @@ import PQueue from "p-queue";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { HookContext, HookEvent } from "./hook-context";
 import type { HookRegistry, RegisteredHook } from "./hook-registry";
-import type { Dispatcher } from "./dispatcher";
+import type { PrivilegedWriter } from "./privileged-writer";
 
 export interface CausationLink {
   handlerId: string;
@@ -22,13 +22,14 @@ export interface HookDispatcherOpts {
 
 /**
  * Per-event context factory. Built-in (`source: 'sdk'`) hooks receive
- * `dispatcher` in their HookContext (privileged write access to index.md /
- * log.md); plugin and vault-local hooks see `dispatcher: undefined`.
- * The split is the structural enforcement of HOOKS_CANNOT_BYPASS_TOOLS.
+ * `privilegedWriter` in their HookContext (privileged write access to
+ * index.md / log.md); plugin and vault-local hooks see
+ * `privilegedWriter: undefined`. The split is the structural enforcement
+ * of HOOKS_CANNOT_BYPASS_TOOLS + INDEX_AND_LOG_ARE_DISPATCHER_OWNED.
  */
 export interface DispatcherCtxFactory {
-  baseCtx: Omit<HookContext, "dispatcher">;
-  dispatcher: Dispatcher;
+  baseCtx: Omit<HookContext, "privilegedWriter">;
+  privilegedWriter: PrivilegedWriter;
 }
 
 /**
@@ -127,9 +128,9 @@ export class HookDispatcher {
     causation: ReadonlyArray<CausationLink>,
   ): Promise<void> {
     // HOOKS_CANNOT_BYPASS_TOOLS — built-in (sdk) hooks alone get the
-    // privileged dispatcher; plugin and vault-local hooks see undefined.
+    // privileged writer; plugin and vault-local hooks see undefined.
     const ctx: HookContext = hook.source === "sdk"
-      ? { ...ctxFactory.baseCtx, dispatcher: ctxFactory.dispatcher }
+      ? { ...ctxFactory.baseCtx, privilegedWriter: ctxFactory.privilegedWriter }
       : { ...ctxFactory.baseCtx };
     // Extend the causation chain with this handler's (id, target) link and
     // park it in AsyncLocalStorage so any Tool the handler invokes -> any

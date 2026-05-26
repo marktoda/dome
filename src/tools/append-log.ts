@@ -1,5 +1,5 @@
 import type { Vault } from "../vault";
-import type { Dispatcher } from "../dispatcher";
+import type { PrivilegedWriter } from "../privileged-writer";
 import { ok, type LogEntry, type LogVerb, type ToolReturn } from "../types";
 
 export interface AppendLogInput {
@@ -11,7 +11,7 @@ export interface AppendLogInput {
 
 export async function appendLog(
   _vault: Vault,
-  dispatcher: Dispatcher,
+  dispatcher: PrivilegedWriter,
   input: AppendLogInput
 ): Promise<ToolReturn<LogEntry>> {
   const entry: LogEntry = {

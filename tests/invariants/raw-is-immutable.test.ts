@@ -3,7 +3,7 @@ import { openVault } from "../../src/vault";
 import { writeDocument } from "../../src/tools/write-document";
 import { moveDocument } from "../../src/tools/move-document";
 import { deleteDocument } from "../../src/tools/delete-document";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -18,7 +18,7 @@ describe("RAW_IS_IMMUTABLE", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "raw/2026-05-25-voice-note.md",
         body: "transcript",
@@ -43,7 +43,7 @@ describe("RAW_IS_IMMUTABLE", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       // Set up a source page outside raw/ to attempt moving INTO raw/.
       await mkdir(join(v.path, "wiki", "entities"), { recursive: true });
       await writeFile(join(v.path, "wiki", "entities", "alice.md"), "---\ntype: entity\n---\n# Alice");
@@ -70,7 +70,7 @@ describe("RAW_IS_IMMUTABLE", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       // Plant a raw file directly (out-of-band) so we can attempt deletion.
       await mkdir(join(v.path, "raw", "captures"), { recursive: true });
       await writeFile(join(v.path, "raw", "captures", "drop.md"), "# drop");

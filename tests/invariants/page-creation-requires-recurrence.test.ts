@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { openVault } from "../../src/vault";
 import { writeDocument } from "../../src/tools/write-document";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 const ENABLED_CONFIG = `invariants:
@@ -18,7 +18,7 @@ describe("PAGE_CREATION_REQUIRES_RECURRENCE", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         body: "# Danny",
@@ -39,7 +39,7 @@ describe("PAGE_CREATION_REQUIRES_RECURRENCE", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         body: "# Danny",
@@ -57,7 +57,7 @@ describe("PAGE_CREATION_REQUIRES_RECURRENCE", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         body: "# Danny",

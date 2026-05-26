@@ -1,3 +1,16 @@
+// The PrivilegedWriter is the only legitimate writer of `index.md` and
+// `log.md` — the two dispatcher-owned paths per the
+// INDEX_AND_LOG_ARE_DISPATCHER_OWNED axiom. It is INTERNAL to the SDK:
+// shipped-default hooks reach it through `HookContext.privilegedWriter`;
+// plugin and vault-local hooks see undefined. The factory is not exported
+// from the public SDK surface (`src/index.ts`) — that's the structural
+// enforcement layer the axiom relies on. See:
+//
+//   docs/wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED.md
+//
+// Previously named `Dispatcher` — but that name collided with `HookDispatcher`
+// (the event router). `PrivilegedWriter` names the role accurately.
+
 import { writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Effect, LogEntry, ToolError } from "./types";
@@ -32,14 +45,14 @@ export interface IndexEntry {
   blurb?: string;
 }
 
-export interface Dispatcher {
+export interface PrivilegedWriter {
   writeIndex(entry: IndexEntry): Promise<Effect>;
   /** Strip the index entry for `path` (one line) if present. Idempotent. */
   removeIndexEntry(path: string): Promise<Effect>;
   appendLogEntry(entry: LogEntry): Promise<Effect>;
 }
 
-export function makeDispatcher(vaultPath: string): Dispatcher {
+export function makePrivilegedWriter(vaultPath: string): PrivilegedWriter {
   return {
     async writeIndex(entry: IndexEntry): Promise<Effect> {
       const indexPath = join(vaultPath, "index.md");

@@ -2,7 +2,7 @@ import { unlink, access } from "node:fs/promises";
 import { join } from "node:path";
 import { ok, err, type Effect, type ToolReturn } from "../types";
 import type { Vault } from "../vault";
-import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
+import { type PrivilegedWriter, refuseIfDispatcherOwned } from "../privileged-writer";
 import { refuseIfRawImmutable, checkOptimisticLock, logMutation } from "./guards";
 
 export interface DeleteDocumentInput {
@@ -20,7 +20,7 @@ export interface DeleteDocumentInput {
 
 export async function deleteDocument(
   vault: Vault,
-  dispatcher: Dispatcher,
+  dispatcher: PrivilegedWriter,
   input: DeleteDocumentInput
 ): Promise<ToolReturn<void>> {
   const ownedErr = refuseIfDispatcherOwned(input.path, "deleteDocument");

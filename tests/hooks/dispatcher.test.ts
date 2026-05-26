@@ -2,9 +2,9 @@ import { describe, test, expect } from "bun:test";
 import { HookDispatcher, type DispatcherCtxFactory } from "../../src/hook-dispatcher";
 import { HookRegistry } from "../../src/hook-registry";
 import type { HookContext, HookEvent } from "../../src/hook-context";
-import type { Dispatcher } from "../../src/dispatcher";
+import type { PrivilegedWriter } from "../../src/privileged-writer";
 
-const fakeDispatcher: Dispatcher = {
+const fakeWriter: PrivilegedWriter = {
   writeIndex: async () => ({ kind: "wrote-document", path: "index.md", diff: "" }),
   appendLogEntry: async (entry) => ({ kind: "appended-log", entry }),
   removeIndexEntry: async () => ({ kind: "wrote-document", path: "index.md", diff: "" }),
@@ -15,7 +15,7 @@ const fakeCtxFactory: DispatcherCtxFactory = {
     tools: {} as HookContext["tools"],
     vault: { path: "/tmp/fake" },
   },
-  dispatcher: fakeDispatcher,
+  privilegedWriter: fakeWriter,
 };
 
 describe("HookDispatcher", () => {

@@ -16,6 +16,7 @@ import { describe, test, expect } from "bun:test";
 import { HookDispatcher, type CycleInfo, type DispatcherCtxFactory } from "../../src/hook-dispatcher";
 import { HookRegistry } from "../../src/hook-registry";
 import { openVault } from "../../src/vault";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("multi-hop hook cycle detection", () => {
@@ -67,7 +68,7 @@ describe("multi-hop hook cycle detection", () => {
 
       const ctxFactory: DispatcherCtxFactory = {
         baseCtx: { tools: vault.tools, vault: { path: vault.path } },
-        dispatcher: vault.dispatcher,
+        privilegedWriter: makePrivilegedWriter(vault.path),
       };
 
       await dispatcher.dispatchEvents([{ kind: "test.ping", path: "seed" }], ctxFactory);
@@ -119,7 +120,7 @@ describe("multi-hop hook cycle detection", () => {
 
       const ctxFactory: DispatcherCtxFactory = {
         baseCtx: { tools: vault.tools, vault: { path: vault.path } },
-        dispatcher: vault.dispatcher,
+        privilegedWriter: makePrivilegedWriter(vault.path),
       };
 
       await dispatcher.dispatchEvents([{ kind: "test.self", path: "same-path" }], ctxFactory);

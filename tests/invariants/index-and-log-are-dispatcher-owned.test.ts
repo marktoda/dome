@@ -3,7 +3,7 @@ import { openVault } from "../../src/vault";
 import { writeDocument } from "../../src/tools/write-document";
 import { moveDocument } from "../../src/tools/move-document";
 import { deleteDocument } from "../../src/tools/delete-document";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { HookRegistry } from "../../src/hook-registry";
 import { HookDispatcher } from "../../src/hook-dispatcher";
 import { makeTestVault } from "../helpers/make-test-vault";
@@ -15,7 +15,7 @@ describe("INDEX_AND_LOG_ARE_DISPATCHER_OWNED", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "index.md",
         body: "# Bogus",
@@ -36,7 +36,7 @@ describe("INDEX_AND_LOG_ARE_DISPATCHER_OWNED", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "log.md",
         body: "Bogus log",
@@ -57,7 +57,7 @@ describe("INDEX_AND_LOG_ARE_DISPATCHER_OWNED", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out1 = await moveDocument(vault.value, dispatcher, {
         from: "index.md",
         to: "wiki/syntheses/index.md",
@@ -83,7 +83,7 @@ describe("INDEX_AND_LOG_ARE_DISPATCHER_OWNED", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out1 = await deleteDocument(vault.value, dispatcher, {
         path: "index.md",
         reason: "bogus",
@@ -123,17 +123,16 @@ describe("INDEX_AND_LOG_ARE_DISPATCHER_OWNED", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const privilegedWriter = makePrivilegedWriter(v.path);
       const hookDispatcher = new HookDispatcher(reg);
       await hookDispatcher.dispatchEvents([{ kind: "test.event" }], {
         baseCtx: { tools: vault.value.tools, vault: { path: vault.value.path } },
-        dispatcher,
+        privilegedWriter,
       });
-      // sdk-source hook gets the privileged dispatcher.
-      expect(captured["sdk"]?.dispatcher).toBeDefined();
-      // plugin and vault-local hooks see undefined.
-      expect(captured["plugin"]?.dispatcher).toBeUndefined();
-      expect(captured["vault-local"]?.dispatcher).toBeUndefined();
+      // sdk-source hook receives the privileged writer; plugin & vault-local don't.
+      expect(captured["sdk"]?.privilegedWriter).toBeDefined();
+      expect(captured["plugin"]?.privilegedWriter).toBeUndefined();
+      expect(captured["vault-local"]?.privilegedWriter).toBeUndefined();
     } finally {
       await v.cleanup();
     }

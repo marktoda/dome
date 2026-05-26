@@ -4,7 +4,7 @@ import { makeDocument, type Document } from "../document";
 import { stringifyFrontmatter } from "../frontmatter";
 import { ok, err, type Effect, type ToolReturn, type Sensitivity, type CreationReason } from "../types";
 import type { Vault } from "../vault";
-import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
+import { type PrivilegedWriter, refuseIfDispatcherOwned } from "../privileged-writer";
 import { parseWikilinks, suggestFullPath } from "../wikilinks";
 import { singularOf } from "../page-type";
 import { refuseIfRawImmutable, checkOptimisticLock, logMutation } from "./guards";
@@ -32,7 +32,7 @@ export interface WriteDocumentInput {
 
 export async function writeDocument(
   vault: Vault,
-  dispatcher: Dispatcher,
+  dispatcher: PrivilegedWriter,
   input: WriteDocumentInput
 ): Promise<ToolReturn<Document>> {
   // INDEX_AND_LOG_ARE_DISPATCHER_OWNED — axiom; refuse unconditionally.

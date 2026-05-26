@@ -26,7 +26,15 @@ export { wikilinkResolve } from "./tools/wikilink-resolve";
 export { moveDocument } from "./tools/move-document";
 export { deleteDocument } from "./tools/delete-document";
 
-export { makeDispatcher, type Dispatcher, type IndexEntry } from "./dispatcher";
+// The privileged-writer type (writeIndex / appendLogEntry / removeIndexEntry)
+// is INTENTIONALLY NOT exported. Plugin and vault-local code reach it only via
+// `HookContext.privilegedWriter`, which the hook-dispatcher partitions to
+// sdk-source hooks — this is the structural enforcement layer for
+// INDEX_AND_LOG_ARE_DISPATCHER_OWNED. See:
+//   docs/wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED.md
+// IndexEntry is exposed indirectly via the writer's method signatures on
+// HookContext; consumers that need the shape import it from there.
+export type { IndexEntry } from "./privileged-writer";
 
 export { parseFrontmatter, stringifyFrontmatter } from "./frontmatter";
 export { parseWikilinks, isFullPathLink, suggestFullPath } from "./wikilinks";

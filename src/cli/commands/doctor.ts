@@ -1,5 +1,4 @@
 import { openVault, type Vault } from "../../vault";
-import { makeDispatcher } from "../../dispatcher";
 import { WorkflowRegistry } from "../../prompts/registry";
 import { WORKFLOW_NAMES } from "../../workflows/workflow-name";
 import { parseWikilinks } from "../../wikilinks";
@@ -229,13 +228,10 @@ export async function domeDoctor(
     }
   }
 
-  // --rebuild-index
+  // --rebuild-index: delegate to the SDK primitive. Privileged-writer is
+  // internal; the CLI consumes the public `vault.rebuildIndex` seam.
   if (opts.rebuildIndex) {
-    const dispatcher = makeDispatcher(vault.path);
-    for await (const { filename, rel } of walkWikiPages(vault)) {
-      const title = filename.replace(/\.md$/, "");
-      await dispatcher.writeIndex({ path: rel, title });
-    }
+    await vault.rebuildIndex();
   }
 
   // --show workflows: list known workflow names with whether each is present.

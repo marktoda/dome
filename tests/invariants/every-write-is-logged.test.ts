@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { openVault } from "../../src/vault";
 import { writeDocument } from "../../src/tools/write-document";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("EVERY_WRITE_IS_LOGGED", () => {
@@ -10,7 +10,7 @@ describe("EVERY_WRITE_IS_LOGGED", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         body: "# Danny",
@@ -35,7 +35,7 @@ describe("EVERY_WRITE_IS_LOGGED", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await writeDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         body: "# Danny",

@@ -4,21 +4,23 @@ import { basename } from "node:path";
 /**
  * Shipped-default hook. Reacts to both `document.written.wiki.*` and
  * `document.deleted.wiki.*` events — adds an index entry on write, removes
- * it on delete. The privileged dispatcher API is the only allowed writer
- * for index.md (INDEX_AND_LOG_ARE_DISPATCHER_OWNED).
+ * it on delete. The PrivilegedWriter API is the only allowed writer for
+ * index.md (INDEX_AND_LOG_ARE_DISPATCHER_OWNED).
  */
 export const autoUpdateIndex: HookHandler = async (event, ctx) => {
-  if (!ctx.dispatcher) return; // privileged API only available to built-in handlers
+  // Privileged writer is only present on shipped-default hook contexts.
+  // Plugin / vault-local handlers see undefined and quietly exit.
+  if (!ctx.privilegedWriter) return;
   const path = event.path;
   if (typeof path !== "string") return;
 
   if (event.kind.startsWith("document.deleted.")) {
-    await ctx.dispatcher.removeIndexEntry(path);
+    await ctx.privilegedWriter.removeIndexEntry(path);
     return;
   }
 
   const title = titleFromPath(path);
-  await ctx.dispatcher.writeIndex({ path, title });
+  await ctx.privilegedWriter.writeIndex({ path, title });
 };
 
 function titleFromPath(path: string): string {

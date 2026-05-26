@@ -3,7 +3,7 @@ import { writeFile, readFile, access } from "node:fs/promises";
 import { join } from "node:path";
 import { openVault } from "../../src/vault";
 import { moveDocument } from "../../src/tools/move-document";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("moveDocument", () => {
@@ -31,7 +31,7 @@ References [[wiki/entities/danny]].`);
 
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await moveDocument(vault.value, dispatcher, {
         from: "wiki/entities/danny.md",
         to: "wiki/entities/daniel.md",
@@ -53,7 +53,7 @@ References [[wiki/entities/danny]].`);
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await moveDocument(vault.value, dispatcher, {
         from: "raw/abc.md",
         to: "raw/def.md",
@@ -76,7 +76,7 @@ References [[wiki/entities/danny]].`);
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await moveDocument(vault.value, dispatcher, {
         from: "index.md",
         to: "wiki/syntheses/index.md",

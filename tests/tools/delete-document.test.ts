@@ -3,7 +3,7 @@ import { writeFile, access } from "node:fs/promises";
 import { join } from "node:path";
 import { openVault } from "../../src/vault";
 import { deleteDocument } from "../../src/tools/delete-document";
-import { makeDispatcher } from "../../src/dispatcher";
+import { makePrivilegedWriter } from "../../src/privileged-writer";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("deleteDocument", () => {
@@ -14,7 +14,7 @@ describe("deleteDocument", () => {
       await writeFile(filePath, "---\ntype: entity\n---\n# Danny");
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await deleteDocument(vault.value, dispatcher, {
         path: "wiki/entities/danny.md",
         reason: "obsolete",
@@ -31,7 +31,7 @@ describe("deleteDocument", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await deleteDocument(vault.value, dispatcher, {
         path: "raw/abc.md",
         reason: "x",
@@ -50,7 +50,7 @@ describe("deleteDocument", () => {
     try {
       const vault = await openVault(v.path);
       if (!vault.ok) return;
-      const dispatcher = makeDispatcher(v.path);
+      const dispatcher = makePrivilegedWriter(v.path);
       const out = await deleteDocument(vault.value, dispatcher, {
         path: "index.md",
         reason: "x",

@@ -4,7 +4,7 @@ import { join, dirname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { ok, err, type Result, type ToolError, type ToolReturn } from "./types";
 import { isGitRepo } from "./git";
-import { makeDispatcher, type Dispatcher } from "./dispatcher";
+import { makePrivilegedWriter } from "./privileged-writer";
 import { readDocument } from "./tools/read-document";
 import { writeDocument, type WriteDocumentInput } from "./tools/write-document";
 import { appendLog, type AppendLogInput } from "./tools/append-log";
@@ -45,7 +45,6 @@ export interface Vault {
   readonly path: string;
   readonly config: VaultConfig;
   readonly pageTypes: PageTypesConfig;
-  readonly dispatcher: Dispatcher;
   readonly tools: BoundToolSurface;
   /**
    * Wait for all async hooks dispatched so far to settle.
@@ -61,6 +60,17 @@ export interface Vault {
    * caller of those subsystems has to assemble the ctxFactory themselves.
    */
   dispatchEvents: (events: ReadonlyArray<HookEvent>) => Promise<void>;
+  /**
+   * Regenerate `index.md` by walking every wiki page and writing one
+   * privileged-writer entry per file. Used by `dome doctor --rebuild-index`
+   * and by any consumer that needs a from-scratch rebuild (e.g., after the
+   * auto-update-index hook was disabled and the index drifted).
+   *
+   * Privileged write — internally consults the PrivilegedWriter the Vault
+   * holds. Consumers that need this behavior call this method rather than
+   * reaching into the writer, which is intentionally not exported.
+   */
+  rebuildIndex: () => Promise<void>;
 }
 
 async function findVaultRoot(start: string): Promise<string | null> {
@@ -125,8 +135,12 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   } catch {
     // page-types is optional
   }
-  const dispatcher = makeDispatcher(root);
-  const partial = { path: root, config, pageTypes, dispatcher } as Vault;
+  // PrivilegedWriter is INTERNAL — not exposed on Vault and not exported
+  // from src/index.ts (the structural enforcement layer for
+  // INDEX_AND_LOG_ARE_DISPATCHER_OWNED). It reaches built-in hooks via
+  // HookContext.privilegedWriter; plugins never see it.
+  const privilegedWriter = makePrivilegedWriter(root);
+  const partial = { path: root, config, pageTypes } as Vault;
 
   // Hook wiring — shipped-default registrations gated by config.
   const registry = new HookRegistry();
@@ -170,15 +184,15 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     if (events.length === 0) return;
     const ctxFactory = {
       baseCtx: { tools, vault: { path: root } },
-      dispatcher,
+      privilegedWriter,
     };
     await hookDispatcher.dispatchEvents(events, ctxFactory);
   };
 
   // wrap: after a Tool returns, project its Effects into events and dispatch.
-  // Built-in handlers receive `dispatcher` in their HookContext (per
-  // HOOKS_CANNOT_BYPASS_TOOLS — only built-in handlers may use the privileged
-  // dispatcher API for index/log writes).
+  // Built-in handlers receive `privilegedWriter` in their HookContext (per
+  // HOOKS_CANNOT_BYPASS_TOOLS — only built-in handlers may use it for
+  // index/log writes).
   const wrap = <I, R extends ToolReturn<unknown>>(
     fn: (input: I) => Promise<R>
   ): ((input: I) => Promise<R>) => {
@@ -191,22 +205,36 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
 
   const tools: BoundToolSurface = {
     readDocument: (input) => readDocument(partial, input),
-    writeDocument: wrap((input: WriteDocumentInput) => writeDocument(partial, dispatcher, input)),
-    appendLog: wrap((input: AppendLogInput) => appendLog(partial, dispatcher, input)),
+    writeDocument: wrap((input: WriteDocumentInput) => writeDocument(partial, privilegedWriter, input)),
+    appendLog: wrap((input: AppendLogInput) => appendLog(partial, privilegedWriter, input)),
     searchIndex: (input) => searchIndex(partial, input),
     wikilinkResolve: (input) => wikilinkResolve(partial, input),
-    moveDocument: wrap((input: MoveDocumentInput) => moveDocument(partial, dispatcher, input)),
-    deleteDocument: wrap((input: DeleteDocumentInput) => deleteDocument(partial, dispatcher, input)),
+    moveDocument: wrap((input: MoveDocumentInput) => moveDocument(partial, privilegedWriter, input)),
+    deleteDocument: wrap((input: DeleteDocumentInput) => deleteDocument(partial, privilegedWriter, input)),
+  };
+
+  // Walk wiki/ and rewrite index.md from scratch via the privileged writer.
+  // Exposed as `vault.rebuildIndex()` so the CLI's `dome doctor --rebuild-index`
+  // and other consumers (mobile rebuild button, voice "regenerate my index")
+  // don't reach into privileged-writer.ts.
+  const rebuildIndex = async (): Promise<void> => {
+    const { walkMd } = await import("./vault-fs");
+    const { join, relative, basename } = await import("node:path");
+    for await (const filePath of walkMd(join(root, "wiki"))) {
+      const rel = relative(root, filePath);
+      const title = basename(filePath).replace(/\.md$/, "");
+      await privilegedWriter.writeIndex({ path: rel, title });
+    }
   };
 
   const vault: Vault = {
     path: root,
     config,
     pageTypes,
-    dispatcher,
     tools,
     drainHooks: () => hookDispatcher.drain(),
     dispatchEvents,
+    rebuildIndex,
   };
 
   // Load declarative hook YAMLs LAST — after the vault is fully constructed —
@@ -215,7 +243,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   // rest of the load.
   await loadDeclarativeHooks(vault, registry, {
     onLoadError: (file, message) => {
-      void dispatcher.appendLogEntry({
+      void privilegedWriter.appendLogEntry({
         ts: new Date().toISOString(),
         verb: "hook-load-failed",
         subject: `declarative hook ${file} failed to load`,
