@@ -15,5 +15,8 @@ describe("HOOK_DISPATCH_IS_VAULT_BOUND (off-matrix lockstep)", () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  test.todo("AI-SDK path integration test exists at tests/integration/ai-sdk-hook-dispatch.test.ts (lands in Task 6)");
+  test("AI-SDK path integration test exists at tests/integration/ai-sdk-hook-dispatch.test.ts", () => {
+    const path = join(import.meta.dir, "..", "integration", "ai-sdk-hook-dispatch.test.ts");
+    expect(existsSync(path)).toBe(true);
+  });
 });
