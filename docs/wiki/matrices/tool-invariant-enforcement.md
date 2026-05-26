@@ -12,7 +12,7 @@ Which Tool enforces which Invariant, by what mechanism, and what test guarantees
 Two invariants are NOT in the matrix because they aren't enforced at Tool call-site or hook boundary:
 
 - **`VAULT_IS_GIT_REPO`** — enforced at vault-open boundary; `openVault(path)` refuses non-git directories. A precondition for the entire Vault instance.
-- **`INBOX_IS_EPHEMERAL`** — enforced at workflow-prompt level (intake workflows include explicit `moveDocument` exit-steps as part of their prompt instructions). See §"`INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)" below; `dome doctor` reports stale inbox files as the structural check. This is *weaker than Tool-boundary enforcement* and is flagged in [[wiki/gotchas/agent-prompt-regression]] as a prompt-only-enforcement surface.
+- **`INBOX_IS_EPHEMERAL`** — enforced at workflow-prompt level (intake workflows include explicit `deleteDocument(inbox_path)` exit-steps as part of their prompt instructions; see [[wiki/invariants/INBOX_IS_EPHEMERAL]] §"v0.5 escape mechanism" for why deletion is the v0.5 mechanism rather than `moveDocument` to `raw/`). See §"`INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)" below; `dome doctor` reports stale inbox files as the structural fallback. This is *weaker than Tool-boundary enforcement* and is flagged in [[wiki/gotchas/agent-prompt-regression]] as a prompt-only-enforcement surface.
 
 A blank cell means no relationship: the Tool doesn't touch that invariant's surface. Bolded cells mean active enforcement (the Tool refuses operations that would violate the invariant). Cells in *italics* are read-only relationships.
 
@@ -37,7 +37,7 @@ A blank cell means no relationship: the Tool doesn't touch that invariant's surf
 
 ### `INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)
 
-Not a column above because no Tool refuses an invariant-violating call for it. Enforcement lives in the **intake workflow prompts**: `ingest`, `voice-ingest`, `research`, `clip-integrate` each include an explicit `moveDocument(inbox_path, raw_path)` (or `deleteDocument`) exit-step in their prompt instructions. The structural check is `dome doctor` reporting inbox files older than a configurable threshold (default 24h). See [[wiki/invariants/INBOX_IS_EPHEMERAL]] and the prompt-only-enforcement caveat in [[wiki/gotchas/agent-prompt-regression]].
+Not a column above because no Tool refuses an invariant-violating call for it. Enforcement lives in the **intake workflow prompts**: `ingest`, `voice-ingest`, `research`, `clip-integrate` each include an explicit `deleteDocument(inbox_path)` exit-step in their prompt instructions (per [[wiki/invariants/INBOX_IS_EPHEMERAL]] §"v0.5 escape mechanism" — deletion rather than `moveDocument`-to-`raw/` because `RAW_IS_IMMUTABLE` blocks the latter). The structural fallback is `dome doctor` reporting inbox files older than `hooks.inbox_stale_age_hours` in `.dome/config.yaml` (default 24h, excluding `inbox/review/` because `review/` is a destination not an intake). See [[wiki/invariants/INBOX_IS_EPHEMERAL]] and the prompt-only-enforcement caveat in [[wiki/gotchas/agent-prompt-regression]].
 
 ## Reading the matrix
 
