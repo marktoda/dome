@@ -260,7 +260,13 @@ export async function domeDoctor(
     await vault.drainHooks();
     info.push(`--drain-hooks: drained (async hook queue is now idle)`);
   }
-  if (opts.resetQuarantinedHooks) info.push("--reset-quarantined-hooks: no-op in v0.5 (no persistent quarantine state across CLI runs)");
+  if (opts.resetQuarantinedHooks) {
+    const { makeQuarantineStore } = await import("../../quarantine-store");
+    const store = makeQuarantineStore(join(vault.path, ".dome", "state", "quarantined.json"));
+    const before = await store.load();
+    await store.clear();
+    info.push(`--reset-quarantined-hooks: cleared (${before.length} handler(s) were quarantined)`);
+  }
   if (opts.showRecentHookCycles) {
     const logPath3 = join(vault.path, "log.md");
     if (existsSync(logPath3)) {

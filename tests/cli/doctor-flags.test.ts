@@ -47,6 +47,27 @@ describe("dome doctor flags (formerly no-op)", () => {
     }
   });
 
+  test("--reset-quarantined-hooks empties .dome/state/quarantined.json", async () => {
+    const v = await makeTestVault();
+    try {
+      const { writeFile, readFile, mkdir } = await import("node:fs/promises");
+      const stateDir = `${v.path}/.dome/state`;
+      await mkdir(stateDir, { recursive: true });
+      await writeFile(`${stateDir}/quarantined.json`, JSON.stringify(["bad-handler-1", "bad-handler-2"]));
+
+      const r = await domeDoctor(v.path, { resetQuarantinedHooks: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const data = JSON.parse(await readFile(`${stateDir}/quarantined.json`, "utf8")) as string[];
+      expect(data).toEqual([]);
+      const resetInfo = r.value.info.find(l => l.startsWith("--reset-quarantined-hooks:"));
+      expect(resetInfo).toContain("cleared");
+      expect(resetInfo).not.toContain("no-op");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("--show recent-hook-cycles parses hook.cycle-detected entries from log.md", async () => {
     const v = await makeTestVault();
     try {
