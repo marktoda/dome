@@ -34,20 +34,24 @@ export interface ToolAdapter {
  *
  *   - takes its `name` from `MCP_TOOL_NAMES` (the canonical protocol name)
  *   - takes its `description` and `inputSchema` from `TOOL_REGISTRY` (the
- *     same Zod schema the AI SDK consumer uses — one source of truth)
+ *     same Zod schema every consumer of the seven Tools uses — one source
+ *     of truth)
  *   - delegates the call to the per-Tool parser from `bindTools(vault, writer)`,
  *     which parses the raw input through the schema and invokes the same
- *     Vault-bound function `vault.tools[name]` exposes (sharing the
- *     hook-dispatch wrap)
+ *     Vault-bound function `vault.tools[name]` exposes. The hook-dispatch
+ *     wrap is intrinsic to `bindTools` (see registry.ts and sdk-surface.md
+ *     §"Hook dispatch is intrinsic"), so MCP-routed mutations fire the
+ *     same hooks as SDK-direct calls.
  *
  * Adding an 8th Tool to the registry surfaces it here for free.
  *
- * Note: this function calls `bindTools` directly (which transitively imports
- * `ai` for the AI-SDK Tool<> inputSchema). That's allowed inside @dome/sdk/mcp
- * because the mcp entrypoint's dep scope already includes `ai` (transitively
- * via the MCP SDK + the shared Zod schemas) — see docs/wiki/specs/sdk-surface.md
- * §"Dependencies". The point of CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY is that
- * @dome/sdk core doesn't pull these; @dome/sdk/mcp is the opt-in surface.
+ * Why this lives in `@dome/sdk/mcp` and not core: the `ToolAdapter` shape
+ * is MCP-protocol-shaped (`dome.*` snake_case names, the `handler: (input)
+ * => Result` signature MCP servers consume). It has nothing AI-SDK-shaped
+ * about it, and `bindTools` itself stays in core and AI-SDK-free
+ * (CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY is structurally true regardless of
+ * who imports the registry). The adapter only belongs alongside the
+ * protocol it serves.
  */
 export function buildToolAdapters(vault: Vault): ToolAdapter[] {
   const writer = makePrivilegedWriter(vault.path);
