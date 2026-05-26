@@ -6,8 +6,8 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 ## Specs
 
-- [[wiki/specs/cli]] — The 7-command Dome CLI: init, migrate, serve, reconcile, lint, doctor, export-context.
-- [[wiki/specs/harnesses]] — How Claude Code, Cursor, and future native clients mount Dome via MCP.
+- [[wiki/specs/cli]] — The 8-command Dome CLI: init, migrate, serve, reconcile, lint, stats, doctor, export-context.
+- [[wiki/specs/harnesses]] — How agentic harnesses (Claude Code, Cursor, future agents) interact with Dome via the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile); MCP available as a non-primary fifth surface.
 - [[wiki/specs/hooks]] — Hook registration, shipped defaults, opt-in intakes, durability and reconciliation.
 - [[wiki/specs/mcp-surface]] — MCP server: one MCP tool per SDK tool.
 - [[wiki/specs/page-schema]] — Frontmatter contract per page type; four defaults + extension protocol.
@@ -19,10 +19,11 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Tier shown inline. Canonical const: `src/types.ts` `INVARIANTS`.
 
+- [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]] — *(shipped default)* Vault root carries AGENTS.md as the canonical agent-orientation surface; templated sections refreshed by `dome doctor --repair`.
 - [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
-- [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces an appendLog call.
+- [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces a log.md entry (Tool-mediated synchronously; native writes via the watcher).
 - [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] — *(axiom)* Every projection of `vault.tools` (`projectAiSdk`, `renderMcp`, future renderers) routes mutating-Tool invocations through the single-source `wrapMutatingInvoke` helper.
-- [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Hooks observe and call Tools; never mutate directly.
+- [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Internal scope: hooks observe events and call Tools; never mutate directly.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake hooks must move/delete inbox files on completion; presence = pending.
 - [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]] — *(axiom)* index.md and log.md mutated only by dispatcher.writeIndex / dispatcher.appendLogEntry; public Tools reject these paths.
 - [[wiki/invariants/LOG_IS_APPEND_ONLY]] — *(axiom)* log.md mutated only by appendLog.
@@ -30,8 +31,8 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/PAGE_CREATION_REQUIRES_RECURRENCE]] — *(opt-in)* New pages require an explicit creation reason.
 - [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]] — *(shipped default)* Page type from immediate wiki/ subdirectory.
 - [[wiki/invariants/RAW_IS_IMMUTABLE]] — *(axiom)* writeDocument refuses raw/.
-- [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] — *(opt-in)* Sensitive content routes via writeDocument to inbox/review/.
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — *(axiom)* Every Dome vault is a git repository.
+- [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]] — *(axiom)* External scope: native writes are caught by the watcher and/or `dome reconcile`; the vault converges on consistency.
 - [[wiki/invariants/WIKILINKS_ARE_FULLPATH]] — *(shipped default)* [[wiki/entities/x]] not [[x]].
 - [[wiki/invariants/WORKFLOWS_KNOW_VAULT_CONTEXT]] — *(axiom)* Every workflow's system prompt is prepended with a vault prologue naming vault.path.
 
@@ -48,11 +49,12 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/ai-sdk-tool-variance]] — Registry's `Tool<>` cast bridges AI SDK v6 inference mismatch; revisit on next AI SDK major bump.
 - [[wiki/gotchas/async-read-after-write-staleness]] — Reads immediately after writes may not see hook follow-on.
 - [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes.
+- [[wiki/gotchas/daemon-off-while-vault-mutating]] — `dome serve` off; catch-up cost grows linearly with time-since-reconcile.
 - [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome reconcile` refuses to run during mid-merge / mid-rebase.
 - [[wiki/gotchas/hook-cycle]] — Hook A triggers Tool that fires event that triggers hook A.
 - [[wiki/gotchas/hook-non-idempotent]] — Non-idempotent hooks double-fire effects during reconciliation.
 - [[wiki/gotchas/multi-page-partial-write]] — Multi-page updates that fail partway through.
-- [[wiki/gotchas/out-of-band-vault-edits]] — Obsidian or vim writes that bypass Dome's tools.
+- [[wiki/gotchas/out-of-band-vault-edits]] — Native writes from consumer shells (canonical path); the watcher catches them.
 - [[wiki/gotchas/substrate-count-drift]] — Synthesis docs inline counts that diverge from canonical const arrays.
 - [[wiki/gotchas/transitive-llm-dependency]] — Consumer bundles unexpectedly carry Anthropic + MCP because core re-exported LLM/MCP machinery.
 

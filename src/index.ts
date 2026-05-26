@@ -30,7 +30,6 @@ export type {
   ToolError,
   LogEntry,
   LogVerb,
-  Sensitivity,
   CreationReason,
   InvariantName,
   WikiLink,

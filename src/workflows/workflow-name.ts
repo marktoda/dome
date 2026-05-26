@@ -8,7 +8,6 @@ export const WorkflowName = {
   ExportContext: "export-context",
   Research: "research",
   VoiceIngest: "voice-ingest",
-  SensitivityClassify: "sensitivity-classify",
   ClipIntegrate: "clip-integrate",
 } as const;
 

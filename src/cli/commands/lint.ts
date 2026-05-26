@@ -12,8 +12,7 @@ import type { CliError } from "../cli-error";
  *
  * - Propose mode (default): `applyIds` is undefined or empty. The workflow
  *   walks the vault and writes a structured report under
- *   inbox/review/lint-report-YYYY-MM-DD.md (when sensitivity routing is
- *   enabled) or returns the report inline.
+ *   inbox/review/lint-report-YYYY-MM-DD.md or returns the report inline.
  * - Apply mode (`applyIds` is a non-empty array): re-invokes the workflow
  *   with the user message `apply <id1> <id2> ...`. The workflow (per
  *   src/prompts/builtin/lint.md §"Apply mode") locates the most recent

@@ -36,7 +36,7 @@ tools:
 triggers:
   - "intake:inbox/raw/*"
   - "intent:capture-thought"
-description: "Process a new raw source: extract atoms, match to pages, propose updates, route sensitive, log."
+description: "Process a new raw source: extract atoms, match to pages, propose updates, log."
 ---
 ```
 
@@ -56,14 +56,13 @@ The SDK ships these workflow prompts. Shipped-default workflows are loaded into 
 
 | Workflow | Tier | Trigger | Tools available | Purpose |
 |---|---|---|---|---|
-| `ingest` | shipped default | `intake:inbox/raw/*` (when activated), `intent:capture-thought` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Process a raw source into wiki updates. |
+| `ingest` | shipped default | `intake:inbox/raw/*`, `intent:capture-thought` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Process a raw source into wiki updates. |
 | `query` | shipped default | `intent:ask` | readDocument, searchIndex, wikilinkResolve, writeDocument (synthesis-page proposal only) | Answer a question from the vault with citations. May propose synthesis page creation. |
 | `lint` | shipped default | `manual:lint`, `clock:weekly` (when scheduled) | readDocument, searchIndex, wikilinkResolve, writeDocument, moveDocument, deleteDocument, appendLog | Detect drift: orphans, missing cross-refs, contradictions, schema violations. Propose first; apply on `--apply <id>` from the most recent report. |
 | `migrate` | shipped default | `manual:migrate` | readDocument, writeDocument, moveDocument, deleteDocument, appendLog, searchIndex, wikilinkResolve | Convert an existing markdown vault to Dome shape. Plan first; apply on `--apply`. May delete superseded files. |
 | `export-context` | shipped default | `manual:export-context` | readDocument, searchIndex, wikilinkResolve | Produce a markdown context-packet for cross-AI handoff. No vault mutations. |
 | `research` | opt-in | `intake:inbox/research/*` (when activated), `intent:research` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve (HTTP fetch is done inside the workflow prompt) | Run external research; produce a source page under wiki/sources/; propose related page updates. |
 | `voice-ingest` | opt-in | `intake:inbox/voice/*` (when activated) | same as `ingest`; transcript cleanup is in-prompt | Process a voice-transcript raw source. |
-| `sensitivity-classify` | opt-in | sub-workflow inside `ingest` when `SENSITIVE_GOES_TO_INBOX` is enabled | readDocument, writeDocument (target `inbox/review/`), appendLog | Classify content sensitivity; route to `inbox/review/` for items needing human review. Runs *before* any `writeDocument` to `wiki/` so the invariant can gate the destination. |
 | `clip-integrate` | opt-in | `intake:inbox/clip/*` (when activated) | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Integrate a web clip: summarize, create a source page, propose cross-references. |
 
 The workflow set is open: plugins and vault-local files register additional workflows. The table above enumerates what the SDK ships; vaults customize by overriding (e.g., `<vault>/.dome/prompts/ingest.md` replaces the default `ingest.md`).
@@ -161,13 +160,13 @@ For most additive customization (vault-wide vocabulary, workflow-specific extens
 
 ## Workflow invocation
 
-A workflow is invoked in three contexts:
+A workflow is invoked in three contexts. **The CLI is the primary invocation surface in v0.5** — workflows are explicit operations the user (or an agent acting on the user's behalf) runs when wanted, not background concerns the agent must route through:
 
-1. **By an intake hook** — a declarative hook's `workflow:` field names the workflow. The dispatcher loads the workflow prompt, binds the listed tools to the harness, hands the harness the document that triggered the intake, and runs.
-2. **By a user intent (in conversational mode)** — when a harness has a conversational session open, the system prompt instructs the harness to route the user's intent to a matching workflow's prompt. Switching workflows mid-session re-binds the tool set.
-3. **By an explicit name** — `dome lint` invokes the `lint` workflow; `dome export-context <topic>` invokes the `export-context` workflow. CLI commands map 1:1 to workflows for the cases where workflow invocation is the entire user action.
+1. **By the CLI (primary)** — `dome lint` invokes the `lint` workflow; `dome export-context <topic>` invokes the `export-context` workflow; `dome migrate <path>` invokes `migrate`. *Workflow-driven* CLI commands map 1:1 to workflows; the other five (`init`, `serve`, `reconcile`, `doctor`, `stats`) are deterministic Tool sequences with no workflow (see [[wiki/specs/cli]] §"Implementation note" for the split). Agentic harnesses invoke workflow-driven CLI commands via shell-execution (e.g., Claude Code's `Bash`); native Dome surfaces invoke them via their own UX affordances.
+2. **By an intake hook (passive)** — a declarative hook's `workflow:` field names the workflow. The dispatcher loads the workflow prompt, binds the listed tools to the harness, hands the harness the document that triggered the intake, and runs. This is what makes `inbox/raw/`, `inbox/voice/`, `inbox/clip/` capture-and-compile work.
+3. **By a user intent (optional, MCP-mounted harnesses)** — when a harness mounts the Dome MCP server, its `instructions` payload describes how to switch into a workflow prompt based on user intent. This is the MCP-prompt-switching mechanism; it's available for harnesses that benefit from it (see [[wiki/specs/mcp-surface]]) but not load-bearing for Claude Code in v0.5 — Claude Code uses its native conversation flow and shells out to the CLI when explicit workflow invocation is wanted.
 
-In all three contexts, the workflow prompt's `tools:` field is the bound set. The harness cannot invoke tools outside that set during the workflow. This is the structural mechanism that prevents an `ingest` workflow from accidentally invoking `do-research`, or a `query` workflow from writing to a page when the user expected read-only behavior.
+In all three contexts, the workflow prompt's `tools:` field is the bound set. The harness cannot invoke tools outside that set during the workflow. This is the structural mechanism that prevents an `ingest` workflow from accidentally invoking `deleteDocument`, or a `query` workflow from writing to a page when the user expected read-only behavior.
 
 ## Eval suite
 

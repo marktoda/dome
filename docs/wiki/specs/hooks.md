@@ -95,7 +95,7 @@ The **drop-zone intake pattern** uses the declarative form exclusively. The prin
 
 ## Shipped default hooks (shipped default — enabled by default)
 
-The SDK ships two hooks as shipped defaults — enabled in every vault unless explicitly disabled in `.dome/config.yaml`:
+The SDK ships three hooks as shipped defaults — enabled in every vault unless explicitly disabled in `.dome/config.yaml`: `auto-update-index` and `auto-cross-reference` (both event-reactive, described in full below); plus `intake-raw`, the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow (described as part of the intake patterns in §"Intake patterns — shipped-default and opt-in" below — it's listed there rather than here because its shape is the canonical example of the drop-zone intake pattern, even though its enablement status is shipped-default).
 
 ### `auto-update-index`
 
@@ -122,7 +122,7 @@ The handler is conservative: only exact matches trigger writes. Ambiguous matche
 
 The exact-match conservatism is what keeps `auto-cross-reference` shipped-default-safe. A vault with rich entity backlinking benefits; a vault with name collisions across types gets nothing wrong (only matches that are unambiguous).
 
-Both shipped defaults can be disabled in `.dome/config.yaml`:
+The shipped-default reactive hooks can be disabled in `.dome/config.yaml`:
 
 ```yaml
 hooks:
@@ -130,6 +130,8 @@ hooks:
     auto-update-index: enabled
     auto-cross-reference: disabled    # for vaults that don't want auto-backlinking
 ```
+
+(The third shipped-default — `intake-raw` — is disabled by removing its YAML from `.dome/hooks/` or by removing the `inbox/raw/` directory; see §"Intake patterns" below for the activation-by-presence convention.)
 
 ## Intake patterns — shipped-default and opt-in
 
@@ -144,20 +146,20 @@ The SDK ships five hook *templates* for intake patterns. One is shipped-default;
 
 `dome init` creates `inbox/raw/` AND ships `.dome/hooks/intake-raw.yaml` — quick-capture works out of the box. The other four templates are inert until the user activates them by copying the template YAML from the SDK's `hooks/templates/` directory into `<vault>/.dome/hooks/` and creating the corresponding `inbox/<bucket>/` directory. A vault never has an `inbox/<bucket>/` it didn't explicitly enable (other than the default `inbox/raw/`).
 
-The `sensitivity-classify` workflow is NOT in this table. It is not a hook — it is a sub-workflow invoked *inside* the `ingest` workflow when the `SENSITIVE_GOES_TO_INBOX` invariant is enabled. See [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] §"Activation checklist" for the override mechanism. The classification must run *before* `writeDocument` is called (so the invariant can gate the write destination); a post-write hook would not have that property.
-
 A future "packs" or "presets" mechanism may layer one-command activation over the manual opt-in flow; v0.5 keeps the activation explicit.
 
-### `inbox/review/` — opt-in sensitivity destination
+### `inbox/review/` — lint-report destination
 
-`inbox/review/` is the destination for content the `sensitivity-classify` sub-workflow flags as sensitive. It is NOT an intake (no workflow runs on writes to it). It is the user's manual-review queue. When the `SENSITIVE_GOES_TO_INBOX` invariant is enabled (see [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]]) and a vault overrides the `ingest` prompt to run the `sensitivity-classify` sub-workflow, content that's classified sensitive lands in `inbox/review/<filename>.md` via `writeDocument`. The user opens it in Obsidian or via `dome doctor --show review-queue` and resolves each item.
+`inbox/review/` is the destination for `dome lint` reports. It is NOT an intake (no workflow runs on writes to it). It is a review queue: when `dome lint` runs, it writes a structured report under `inbox/review/lint-report-YYYY-MM-DD.md` with stable finding ids. The user reviews the report in Obsidian (or any markdown editor) and applies findings via `dome lint --apply <id>`. Each applied finding gets an annotation in the report (`Applied:` / `Apply-failed:`); the report itself stays in `inbox/review/` as audit history.
 
-Vaults that don't enable sensitivity classification never have an `inbox/review/` directory.
+See [[wiki/specs/cli]] §"`dome lint`" for the full propose/apply contract.
+
+(Note: prior to 2026-05-26, `inbox/review/` doubled as a destination for the now-retired sensitivity-classification feature. The directory is single-purpose under the compiler reframe — lint reports only.)
 
 ## Execution model
 
 - **Async by default.** When a Tool returns its Effects, the Hook dispatcher enqueues matching events to a background queue and the Tool returns to its caller immediately.
-- **Sync opt-in.** A hook may declare `async: false` (declarative) or pass `{ sync: true }` to `registerHook` (programmatic). Sync hooks run inline before the Tool returns. Reserved for hooks that must complete before downstream code observes the result — e.g., a sensitivity-classifier that gates the write destination.
+- **Sync opt-in.** A hook may declare `async: false` (declarative) or pass `{ sync: true }` to `registerHook` (programmatic). Sync hooks run inline before the Tool returns. Reserved for hooks that must complete before downstream code observes the result — e.g., a frontmatter-shape validator that gates whether the write proceeds, or any future hook with a hard pre-write contract.
 - **Queue backend.** v0.5 ships with an in-process queue (`p-queue` instance per Vault). The backend is swappable via configuration; Redis-backed BullMQ is a reasonable v1 swap.
 - **Failure model.** A hook handler that throws is logged as a `hook-failure` entry in `log.md`. The originating Tool call is not affected. Three consecutive failures of the same handler trigger `hook-disabled`; the handler is added to `.dome/state/quarantined.json` (the persistent quarantine record — see [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`") and is skipped on every subsequent event match across processes until `dome doctor --reset-quarantined-hooks` removes it. The persistence is necessary because `dome doctor` and `dome serve` don't share a process; an in-memory quarantine would not survive the CLI handoff.
 - **Cycle prevention.** Two-layer mechanism: (1) **per-(handler, target-path) repetition check** — the primary mechanism. The dispatcher tracks a causation chain per event; when a handler would fire against an event whose `(handler_id, primary_target_path)` pair already appears earlier in the chain, the dispatcher refuses the fire and emits `hook.cycle-detected`. Legitimate fan-out (e.g., `auto-cross-reference` writing backlinks across N pages) is allowed because each target path is distinct. (2) **Depth safety net** — `hooks.max_causation_depth` in `.dome/config.yaml` (default 50) catches runaway chains that don't repeat (handler, target) but grow unboundedly. Either trigger emits `hook.cycle-detected` and refuses the fire. See [[wiki/gotchas/hook-cycle]].
@@ -338,4 +340,3 @@ The hook system is what makes Dome stable as a substrate while flexible as a pro
 - [[wiki/matrices/event-types-and-payloads]] — canonical event taxonomy.
 - [[wiki/gotchas/async-read-after-write-staleness]] — reads after writes may not see hook follow-on.
 - [[wiki/gotchas/hook-cycle]] — per-(handler, target) repetition check + depth safety net.
-- [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] — opt-in invariant the `sensitivity-classify` workflow + a hook implement.

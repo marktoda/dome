@@ -49,7 +49,6 @@ export type ToolError =
   | { kind: "wikilink-not-fullpath"; link: string; suggestion?: string }
   | { kind: "frontmatter-mismatch"; field: string; expected: string; actual: string }
   | { kind: "page-creation-requires-reason"; path: string }
-  | { kind: "sensitive-must-route-to-inbox"; path: string }
   | { kind: "concurrent-write-conflict"; path: string; expected_mtime: string; actual_mtime: string }
   | { kind: "not-found"; path: string }
   | { kind: "already-exists"; path: string }
@@ -57,9 +56,8 @@ export type ToolError =
   | { kind: "vault-not-git-repo"; path: string }
   | { kind: "config-invalid"; message: string };
 
-// ----- Sensitivity & creation reason ----------------------------------------
+// ----- Creation reason ----------------------------------------------------
 
-export type Sensitivity = "normal" | "sensitive";
 export type CreationReason = "recurring" | "named_explicitly" | "structural";
 
 // ----- Invariant names ------------------------------------------------------
@@ -76,11 +74,12 @@ export const INVARIANTS = {
   PAGE_TYPE_BY_DIRECTORY: "PAGE_TYPE_BY_DIRECTORY",
   WIKILINKS_ARE_FULLPATH: "WIKILINKS_ARE_FULLPATH",
   INBOX_IS_EPHEMERAL: "INBOX_IS_EPHEMERAL",
-  SENSITIVE_GOES_TO_INBOX: "SENSITIVE_GOES_TO_INBOX",
   PAGE_CREATION_REQUIRES_RECURRENCE: "PAGE_CREATION_REQUIRES_RECURRENCE",
   CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY: "CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY",
   WORKFLOWS_KNOW_VAULT_CONTEXT: "WORKFLOWS_KNOW_VAULT_CONTEXT",
   HOOK_DISPATCH_IS_VAULT_BOUND: "HOOK_DISPATCH_IS_VAULT_BOUND",
+  AGENTS_MD_IS_ORIENTATION_SURFACE: "AGENTS_MD_IS_ORIENTATION_SURFACE",
+  VAULT_RECONCILES_AFTER_NATIVE_WRITE: "VAULT_RECONCILES_AFTER_NATIVE_WRITE",
 } as const;
 
 export type InvariantName = typeof INVARIANTS[keyof typeof INVARIANTS];

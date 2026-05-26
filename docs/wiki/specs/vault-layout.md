@@ -30,7 +30,7 @@ A Dome vault is a directory containing:
   inbox/                # drop-zone directories whose writes trigger hooks
     raw/                # shipped-default capture bucket (created by dome init)
     <intake-buckets>/   # opt-in intake buckets — voice/, research/, clip/ — activated via hook template + directory create
-    review/             # opt-in destination (NOT an intake) — created when SENSITIVE_GOES_TO_INBOX is enabled; sensitivity-classify routes content here for manual review
+    review/             # shipped-default destination (NOT an intake) — created by `dome init`; holds `dome lint` reports awaiting user review; see wiki/specs/cli §"dome lint"
   .dome/                # vault-internal configuration and extensions
     page-types.yaml     # allowed page types: defaults + extensions
     config.yaml         # vault configuration (invariant overrides, hook settings, etc.)
@@ -43,7 +43,7 @@ A Dome vault is a directory containing:
   .gitignore            # excludes .dome/state/ (per-machine operational state)
 ```
 
-`dome init` creates the axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `.git/` via `git init`. Additional `inbox/<bucket>/` directories (`voice/`, `research/`, `clip/`, `review/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Opt-in intake patterns."
+`dome init` creates the axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `inbox/review/` (the shipped-default lint-report destination) AND `.git/` via `git init`. Additional opt-in intake buckets (`inbox/voice/`, `inbox/research/`, `inbox/clip/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in."
 
 ### Git repository structure
 

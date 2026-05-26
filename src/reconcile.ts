@@ -93,6 +93,7 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
         await opts.onEvent(e);
         changedFiles++;
       }
+      await logReconciled(vault, filepath);
     }
   }
   // Files changed in committed diff since lastSha.
@@ -105,6 +106,7 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
           await opts.onEvent(e);
           changedFiles++;
         }
+        await logReconciled(vault, path);
       }
     } catch {
       // If diffing fails (e.g., shallow clone), skip committed-diff phase.
@@ -135,6 +137,24 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
   await writeFile(scheduledPath, JSON.stringify(scheduled, null, 2));
 
   return ok({ inboxProcessed, changedFiles, scheduledFired });
+}
+
+/**
+ * Append a log.md entry for one reconcile-detected path — the reconcile leg
+ * of EVERY_WRITE_IS_LOGGED's external-path enforcement per
+ * docs/wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE.md.
+ *
+ * Called directly (not via a hook) so the entry is scoped to this reconcile
+ * invocation and never fires on Tool-mediated writes (which already log via
+ * their own appendLog effect). Skips dispatcher-owned and .dome/* paths.
+ */
+async function logReconciled(vault: Vault, path: string): Promise<void> {
+  if (path === "log.md" || path === "index.md") return;
+  if (path.startsWith(".dome/") || path.startsWith(".git/") || path === ".gitignore") return;
+  await vault.tools.appendLog({
+    verb: "update",
+    subject: `${path} (out-of-band, reconcile)`,
+  });
 }
 
 export function isDirtyGitState(vaultPath: string): boolean {

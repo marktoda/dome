@@ -50,7 +50,7 @@ Inverse counter-example: the migrate prompt's old form, `Convert the directory a
 **Why an axiom (not configurable):**
 - Situational context is structural, not stylistic. There is no user-meaningful "disable the preambles" mode — disabling them just breaks workflows.
 - The preambles are short and uniform across vaults. The cost of always including them is negligible against the cost of any caller forgetting them.
-- Unlike `SENSITIVE_GOES_TO_INBOX` (a routing policy a project vault may not need) or `PAGE_CREATION_REQUIRES_RECURRENCE` (a discipline some users want and others don't), `WORKFLOWS_KNOW_VAULT_CONTEXT` is a contract between the runner and every prompt body. There is no defensible "off" position.
+- Unlike `PAGE_CREATION_REQUIRES_RECURRENCE` (a discipline some users want and others don't — an opt-in policy a project vault may not need), `WORKFLOWS_KNOW_VAULT_CONTEXT` is a contract between the runner and every prompt body. There is no defensible "off" position.
 
 **Extension model:** Future situational context the LLM should always know (today's date for time-sensitive workflows, currently-enabled invariant set for vault-config-aware behavior, recent activity hints to bias toward continuity, etc.) lands as a new SDK partial in `src/prompts/builtin/preamble-<name>.md` plus a corresponding `{{include: preamble-<name>.md}}` line in `system-base.md`. If the partial needs to interpolate runtime state, the variable joins the closed set in `PromptLoader.substituteVariables` (currently just `{{vault.path}}`); adding a new variable is a deliberate substrate change, not an ad-hoc extension.
 

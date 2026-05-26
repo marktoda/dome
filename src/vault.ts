@@ -10,6 +10,7 @@ import { HookRegistry } from "./hook-registry";
 import { HookDispatcher, type CycleInfo } from "./hook-dispatcher";
 import { autoUpdateIndex } from "./hooks/auto-update-index";
 import { autoCrossReference } from "./hooks/auto-cross-reference";
+import { logOutOfBandWrite } from "./hooks/log-out-of-band-write";
 import { loadDeclarativeHooks } from "./hooks/yaml-loader";
 import type { BoundToolSurface, HookEvent } from "./hook-context";
 import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "./shipped-defaults";
@@ -184,12 +185,42 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
       async: true,
       idempotent: true,
     });
+    // Watcher path: native wiki edits caught by chokidar must also update
+    // index.md per VAULT_RECONCILES_AFTER_NATIVE_WRITE.md §"Structural
+    // enforcement" path 1. The handler filters to wiki/ paths and
+    // discriminates fsKind ("deleted" → removeIndexEntry; else writeIndex).
+    registry.register({
+      id: "auto-update-index-oob",
+      pattern: "vault.out-of-band-edit",
+      handler: autoUpdateIndex,
+      source: "sdk",
+      async: true,
+      idempotent: true,
+    });
   }
   if (config.hooks.builtin["auto-cross-reference"] === "enabled") {
     registry.register({
       id: "auto-cross-reference",
       pattern: "document.written.wiki.entity",
       handler: autoCrossReference,
+      source: "sdk",
+      async: true,
+      idempotent: true,
+    });
+  }
+  if (config.hooks.builtin["log-out-of-band-write"] === "enabled") {
+    // Watcher path only: live OOB edits caught by chokidar fire
+    // vault.out-of-band-edit (a unique kind no other code path emits).
+    // The reconcile path enforces EVERY_WRITE_IS_LOGGED separately — see
+    // src/reconcile.ts phase-2, which calls vault.tools.appendLog directly
+    // per replayed file. Subscribing this hook to document.written.wiki.*
+    // would also catch Tool-mediated writes (they project to the same
+    // event kind), producing duplicate spurious "out-of-band" log entries.
+    // See docs/wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE.md.
+    registry.register({
+      id: "log-out-of-band-write",
+      pattern: "vault.out-of-band-edit",
+      handler: logOutOfBandWrite,
       source: "sdk",
       async: true,
       idempotent: true,

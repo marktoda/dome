@@ -27,16 +27,16 @@ A blank cell means no relationship: the Tool doesn't touch that invariant's surf
 
 ## Matrix
 
-| Tool ↓ \ Invariant → | RAW_IS_IMMUTABLE *(axiom)* | MARKDOWN_IS_SOURCE_OF_TRUTH *(axiom)* | LOG_IS_APPEND_ONLY *(axiom)* | HOOKS_CANNOT_BYPASS_TOOLS *(axiom)* | INDEX_AND_LOG_ARE_DISPATCHER_OWNED *(axiom)* | EVERY_WRITE_IS_LOGGED *(default)* | PAGE_TYPE_BY_DIRECTORY *(default)* | WIKILINKS_ARE_FULLPATH *(default)* | SENSITIVE_GOES_TO_INBOX *(opt-in)* | PAGE_CREATION_REQUIRES_RECURRENCE *(opt-in)* |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `readDocument` | *(read-only)* | *(read-only)* |  |  |  |  |  | *(returns parsed wikilinks via `linksOut`; does not validate or reject)* |  |  |
-| `writeDocument` | **rejects raw/** | *(writes markdown only)* |  |  | **rejects index.md and log.md unconditionally** | **emits appendLog effect when default enabled** | **validates path → type; rejects unknown subdir or frontmatter/dir mismatch when default enabled** | **rejects body with short-form links when default enabled** | **when opt-in enabled: rejects writes to wiki/ when sensitivity_classified='sensitive'** | **when opt-in enabled: requires reason on create** |
-| `appendLog` |  | *(writes markdown only)* | **only public mutator of log.md** |  | *(public API; calls dispatcher.appendLogEntry internally)* | *(the primitive; other mutating Tools call this to satisfy the invariant)* |  |  |  |  |
-| `searchIndex` | *(read-only)* | *(read-only)* |  |  |  |  |  |  |  |  |
-| `wikilinkResolve` | *(read-only)* |  |  |  |  |  |  | **only accepts full-path; returns null on short-form when default enabled** |  |  |
-| `moveDocument` | **rejects raw/ source or target** | *(writes markdown only)* |  |  | **rejects index.md and log.md unconditionally** | **emits appendLog effect when default enabled** | **validates new path → type** |  |  |  |
-| `deleteDocument` | **rejects raw/ target** | *(writes markdown only)* |  |  | **rejects index.md and log.md unconditionally** | **emits appendLog effect when default enabled** |  |  |  |  |
-| *(Hook handlers)* |  |  |  | **structurally cannot mutate; can only call Tools** |  |  |  |  |  |  |
+| Tool ↓ \ Invariant → | RAW_IS_IMMUTABLE *(axiom)* | MARKDOWN_IS_SOURCE_OF_TRUTH *(axiom)* | LOG_IS_APPEND_ONLY *(axiom)* | HOOKS_CANNOT_BYPASS_TOOLS *(axiom)* | INDEX_AND_LOG_ARE_DISPATCHER_OWNED *(axiom)* | EVERY_WRITE_IS_LOGGED *(default)* | PAGE_TYPE_BY_DIRECTORY *(default)* | WIKILINKS_ARE_FULLPATH *(default)* | PAGE_CREATION_REQUIRES_RECURRENCE *(opt-in)* |
+|---|---|---|---|---|---|---|---|---|---|
+| `readDocument` | *(read-only)* | *(read-only)* |  |  |  |  |  | *(returns parsed wikilinks via `linksOut`; does not validate or reject)* |  |
+| `writeDocument` | **rejects raw/** | *(writes markdown only)* |  |  | **rejects index.md and log.md unconditionally** | **emits appendLog effect when default enabled** | **validates path → type; rejects unknown subdir or frontmatter/dir mismatch when default enabled** | **rejects body with short-form links when default enabled** | **when opt-in enabled: requires reason on create** |
+| `appendLog` |  | *(writes markdown only)* | **only public mutator of log.md** |  | *(public API; calls dispatcher.appendLogEntry internally)* | *(the primitive; other mutating Tools call this to satisfy the invariant)* |  |  |  |
+| `searchIndex` | *(read-only)* | *(read-only)* |  |  |  |  |  |  |  |
+| `wikilinkResolve` | *(read-only)* |  |  |  |  |  |  | **only accepts full-path; returns null on short-form when default enabled** |  |
+| `moveDocument` | **rejects raw/ source or target** | *(writes markdown only)* |  |  | **rejects index.md and log.md unconditionally** | **emits appendLog effect when default enabled** | **validates new path → type** |  |  |
+| `deleteDocument` | **rejects raw/ target** | *(writes markdown only)* |  |  | **rejects index.md and log.md unconditionally** | **emits appendLog effect when default enabled** |  |  |  |
+| *(Hook handlers)* |  |  |  | **structurally cannot mutate; can only call Tools** |  |  |  |  |  |
 
 ### `INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)
 
@@ -70,7 +70,6 @@ Each bolded enforcement cell maps to a test in `tests/invariants/<INVARIANT>.tes
 - `EVERY_WRITE_IS_LOGGED` — when enabled, mutating Tools' effects include at least one `kind: 'appended-log'`. When disabled, log entries are optional.
 - `PAGE_TYPE_BY_DIRECTORY` — when enabled, `writeDocument` and `moveDocument` enforce directory/type matching.
 - `WIKILINKS_ARE_FULLPATH` — when enabled, `writeDocument` rejects short-form links in bodies; `wikilinkResolve` rejects short-form input.
-- `SENSITIVE_GOES_TO_INBOX` — when enabled, `writeDocument` refuses sensitive writes to `wiki/` paths.
 - `PAGE_CREATION_REQUIRES_RECURRENCE` — when enabled, `writeDocument` with `create: true` and no `reason` returns an error.
 - `HOOKS_CANNOT_BYPASS_TOOLS` — type-level test on `HookContext` + runtime watcher test for out-of-band writes from hook contexts.
 

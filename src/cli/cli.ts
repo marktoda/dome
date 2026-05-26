@@ -44,6 +44,8 @@ interface DoctorCliOpts {
   recentActivity?: boolean | string;
   drainHooks?: boolean;
   resetQuarantinedHooks?: boolean;
+  timeSinceReconcile?: boolean;
+  repair?: boolean;
   show?: DoctorShowSubject;
 }
 
@@ -61,6 +63,8 @@ function toDoctorOpts(cli: DoctorCliOpts): DoctorOpts {
   }
   if (cli.drainHooks) opts.drainHooks = true;
   if (cli.resetQuarantinedHooks) opts.resetQuarantinedHooks = true;
+  if (cli.timeSinceReconcile) opts.timeSinceReconcile = true;
+  if (cli.repair) opts.repair = true;
   switch (cli.show) {
     case "review-queue": opts.showReviewQueue = true; break;
     case "raw-citations": opts.showRawCitations = true; break;
@@ -107,7 +111,7 @@ function buildProgram(outcome: RunOutcome): Command {
         "  dome init ~/vaults/work             # bootstrap a new vault",
         "  cd ~/vaults/work && dome doctor     # structural diagnostic",
         "  cd ~/vaults/work && dome reconcile  # catch up hook state",
-        "  dome serve --vault ~/vaults/work    # start MCP server + watcher",
+        "  dome serve --vault ~/vaults/work    # start compiler daemon (watcher + optional MCP)",
         "  cd ~/vaults/work && dome stats      # visual dashboard",
         "",
         "Environment:",
@@ -173,7 +177,7 @@ function buildProgram(outcome: RunOutcome): Command {
   // ------ serve ------
   program
     .command("serve")
-    .description("Start the MCP server + filesystem watcher.")
+    .description("Start the compiler daemon (watcher + reconcile; optional MCP server).")
     .option("--vault <path>", "Vault path (defaults to current directory)")
     .addHelpText(
       "after",
@@ -340,6 +344,8 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .option("--drain-hooks", "Wait for async hook queue to drain (v0.5 no-op)")
     .option("--reset-quarantined-hooks", "Clear hook quarantine list (v0.5 no-op)")
+    .option("--time-since-reconcile", "Report drift age since `dome reconcile` last ran")
+    .option("--repair", "Regenerate AGENTS.md templated sections (preserves user-prose)")
     .addOption(
       new Option("--show <subject>", "Show a specific diagnostic surface").choices([...DOCTOR_SHOW_SUBJECTS]),
     )

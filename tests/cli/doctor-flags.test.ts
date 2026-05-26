@@ -1,6 +1,13 @@
 import { describe, test, expect } from "bun:test";
+import { writeFile, utimes, readFile, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { domeDoctor } from "../../src/cli/commands/doctor";
+import { domeInit } from "../../src/cli/commands/init";
 import { makeTestVault } from "../helpers/make-test-vault";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 describe("dome doctor flags (formerly no-op)", () => {
   test("--recent-activity walks log.md and prints the last N entries", async () => {
@@ -167,6 +174,88 @@ describe("dome doctor flags (formerly no-op)", () => {
       expect(queueLines.some(l => l.includes("item-b.md"))).toBe(true);
     } finally {
       await v.cleanup();
+    }
+  });
+
+  test("--time-since-reconcile reports drift age based on last-reconciled-sha.txt mtime", async () => {
+    const v = await makeTestVault();
+    try {
+      const reconcilePath = join(v.path, ".dome", "state", "last-reconciled-sha.txt");
+      await mkdir(join(v.path, ".dome", "state"), { recursive: true });
+      await writeFile(reconcilePath, "abc123");
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(reconcilePath, twoHoursAgo, twoHoursAgo);
+
+      const r = await domeDoctor(v.path, { timeSinceReconcile: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const summary = r.value.info.find(s => s.startsWith("time-since-reconcile:"));
+      expect(summary).toBeDefined();
+      expect(summary!).toMatch(/2 hours?/);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("--time-since-reconcile reports 'never' when last-reconciled-sha.txt is absent", async () => {
+    const v = await makeTestVault();
+    try {
+      const r = await domeDoctor(v.path, { timeSinceReconcile: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const summary = r.value.info.find(s => s.startsWith("time-since-reconcile:"));
+      expect(summary).toBeDefined();
+      expect(summary!.toLowerCase()).toContain("never");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("--repair regenerates AGENTS.md templated section while preserving user-prose", async () => {
+    const base = await mkdtemp(join(tmpdir(), "dome-repair-"));
+    const target = join(base, "v");
+    try {
+      await domeInit(target);
+      const agentsPath = join(target, "AGENTS.md");
+
+      const original = await readFile(agentsPath, "utf8");
+      const customProse = "\n## My naming conventions\n\nProjects use `proj-` prefix.\n\n";
+      const withProse = original.replace(
+        /<!-- BEGIN user-prose -->\n\n<!-- END user-prose -->/,
+        `<!-- BEGIN user-prose -->${customProse}<!-- END user-prose -->`,
+      );
+      await writeFile(agentsPath, withProse);
+
+      const res = await domeDoctor(target, { repair: true });
+      expect(res.ok).toBe(true);
+
+      const after = await readFile(agentsPath, "utf8");
+      expect(after).toContain(customProse);
+      expect(after).toContain("EVERY_WRITE_IS_LOGGED");
+      expect(after).toContain("<!-- BEGIN user-prose -->");
+      expect(after).toContain("<!-- END user-prose -->");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("--repair recreates AGENTS.md when missing entirely", async () => {
+    const base = await mkdtemp(join(tmpdir(), "dome-repair-missing-"));
+    const target = join(base, "v");
+    try {
+      await domeInit(target);
+      const agentsPath = join(target, "AGENTS.md");
+      await rm(agentsPath);
+
+      const res = await domeDoctor(target, { repair: true });
+      expect(res.ok).toBe(true);
+      expect(existsSync(agentsPath)).toBe(true);
+
+      const after = await readFile(agentsPath, "utf8");
+      expect(after).toContain("<!-- BEGIN user-prose -->");
+      expect(after).toContain("<!-- END user-prose -->");
+    } finally {
+      await rm(base, { recursive: true, force: true });
     }
   });
 });

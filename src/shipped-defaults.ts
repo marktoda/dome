@@ -20,11 +20,16 @@ export const SHIPPED_VAULT_CONFIG: VaultConfig = {
     PAGE_TYPE_BY_DIRECTORY: "enabled",
     WIKILINKS_ARE_FULLPATH: "enabled",
     INBOX_IS_EPHEMERAL: "enabled",
-    SENSITIVE_GOES_TO_INBOX: "disabled",
     PAGE_CREATION_REQUIRES_RECURRENCE: "disabled",
+    AGENTS_MD_IS_ORIENTATION_SURFACE: "enabled",
+    VAULT_RECONCILES_AFTER_NATIVE_WRITE: "enabled",
   },
   hooks: {
-    builtin: { "auto-update-index": "enabled", "auto-cross-reference": "enabled" },
+    builtin: {
+      "auto-update-index": "enabled",
+      "auto-cross-reference": "enabled",
+      "log-out-of-band-write": "enabled",
+    },
     max_causation_depth: 50,
     inbox_stale_age_hours: 24,
   },

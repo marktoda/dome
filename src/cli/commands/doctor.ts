@@ -31,6 +31,18 @@ export interface DoctorOpts {
   recentActivityN?: number | null;
   drainHooks?: boolean;
   resetQuarantinedHooks?: boolean;
+  /**
+   * Report how long it's been since the daemon last reconciled (read from
+   * .dome/state/last-reconciled-sha.txt mtime). See
+   * docs/wiki/gotchas/daemon-off-while-vault-mutating.md.
+   */
+  timeSinceReconcile?: boolean;
+  /**
+   * When set, regenerate AGENTS.md templated sections from current config
+   * while preserving the user-prose section. Per
+   * docs/wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md.
+   */
+  repair?: boolean;
 }
 
 // Known event-kind prefixes per docs/wiki/specs/hooks.md §"Event grammar".
@@ -244,8 +256,8 @@ export async function domeDoctor(
     const buckets = await readdir(inboxRoot, { withFileTypes: true });
     for (const bucket of buckets) {
       if (!bucket.isDirectory()) continue;
-      // inbox/review/ is a destination for SENSITIVE_GOES_TO_INBOX, not an
-      // intake — exclude unconditionally per INBOX_IS_EPHEMERAL.md.
+      // inbox/review/ is a lint-report destination, not an intake — exclude
+      // unconditionally per INBOX_IS_EPHEMERAL.md.
       if (bucket.name === "review") continue;
       const bucketDir = join(inboxRoot, bucket.name);
       const files = await readdir(bucketDir, { withFileTypes: true });
@@ -260,6 +272,53 @@ export async function domeDoctor(
           );
         }
       }
+    }
+  }
+
+  // CHECK 10 (new): AGENTS.md + CLAUDE.md shim per AGENTS_MD_IS_ORIENTATION_SURFACE.
+  //   - AGENTS.md must exist, carry user-prose delimiters, AND its templated
+  //     section must match what we'd generate from the current config.
+  //   - CLAUDE.md must exist AND its content must be "See AGENTS.md." (trimmed).
+  // The drift checks close the "templated sections out of sync with current
+  // config → violation" claim in the invariant doc.
+  const agentsAbs = join(vault.path, "AGENTS.md");
+  const claudeAbs = join(vault.path, "CLAUDE.md");
+  if (!existsSync(agentsAbs)) {
+    violations.push(
+      "AGENTS.md: missing at vault root (AGENTS_MD_IS_ORIENTATION_SURFACE — run `dome doctor --repair`)",
+    );
+  } else {
+    const agentsBody = await Bun.file(agentsAbs).text();
+    const { buildAgentsMdTemplated, USER_PROSE_BEGIN, USER_PROSE_END } = await import("../../agents-md");
+    if (!agentsBody.includes(USER_PROSE_BEGIN) || !agentsBody.includes(USER_PROSE_END)) {
+      violations.push(
+        "AGENTS.md: user-prose delimiters missing (`dome doctor --repair` regenerates them)",
+      );
+    } else {
+      const beginIdx = agentsBody.indexOf(USER_PROSE_BEGIN);
+      const existingTemplated = agentsBody.slice(0, beginIdx).replace(/\n+$/, "");
+      const expectedTemplated = buildAgentsMdTemplated(
+        vault.config,
+        vault.pageTypes,
+        [...WORKFLOW_NAMES],
+      ).replace(/\n+$/, "");
+      if (existingTemplated !== expectedTemplated) {
+        violations.push(
+          "AGENTS.md: templated section out of sync with current config (`dome doctor --repair` regenerates it)",
+        );
+      }
+    }
+  }
+  if (!existsSync(claudeAbs)) {
+    violations.push(
+      `CLAUDE.md: shim missing at vault root (Claude Code auto-loads this; should contain "See AGENTS.md.")`,
+    );
+  } else {
+    const claudeBody = await Bun.file(claudeAbs).text();
+    if (claudeBody.trim() !== "See AGENTS.md.") {
+      violations.push(
+        `CLAUDE.md: content drift (expected "See AGENTS.md.", found different content; \`dome doctor --repair\` restores the canonical shim)`,
+      );
     }
   }
 
@@ -331,7 +390,7 @@ export async function domeDoctor(
         }
       }
     } else {
-      info.push("review-queue: (inbox/review/ not present; SENSITIVE_GOES_TO_INBOX likely disabled)");
+      info.push("review-queue: (inbox/review/ not present — run `dome init` or `dome doctor --repair`)");
     }
   }
   if (opts.showRawCitations) {
@@ -378,5 +437,46 @@ export async function domeDoctor(
     }
   }
 
+  if (opts.repair) {
+    const { buildAgentsMdTemplated, mergeAgentsMd, buildInitialAgentsMd } = await import("../../agents-md");
+    const agentsPath = join(vault.path, "AGENTS.md");
+    const newTemplated = buildAgentsMdTemplated(vault.config, vault.pageTypes, [...WORKFLOW_NAMES]);
+    if (existsSync(agentsPath)) {
+      const existing = await Bun.file(agentsPath).text();
+      const merged = mergeAgentsMd(existing, newTemplated);
+      await Bun.write(agentsPath, merged);
+      info.push("--repair: AGENTS.md templated sections regenerated (user-prose preserved)");
+    } else {
+      const fresh = buildInitialAgentsMd(vault.config, vault.pageTypes, [...WORKFLOW_NAMES]);
+      await Bun.write(agentsPath, fresh);
+      info.push("--repair: AGENTS.md created (was missing)");
+    }
+    // Also restore CLAUDE.md to the canonical shim if it's drifted or absent.
+    const claudeAbsRepair = join(vault.path, "CLAUDE.md");
+    const claudeCanonical = "See AGENTS.md.\n";
+    if (!existsSync(claudeAbsRepair) || (await Bun.file(claudeAbsRepair).text()) !== claudeCanonical) {
+      await Bun.write(claudeAbsRepair, claudeCanonical);
+      info.push("--repair: CLAUDE.md shim restored to canonical content");
+    }
+  }
+
+  if (opts.timeSinceReconcile) {
+    const reconcilePath = join(vault.path, ".dome", "state", "last-reconciled-sha.txt");
+    if (!existsSync(reconcilePath)) {
+      info.push("time-since-reconcile: never (dome reconcile has never run)");
+    } else {
+      const st = await stat(reconcilePath);
+      const ageMs = Date.now() - st.mtimeMs;
+      info.push(`time-since-reconcile: ${formatAge(ageMs)} (since ${new Date(st.mtimeMs).toISOString()})`);
+    }
+  }
+
   return ok({ exitCode: violations.length === 0 ? 0 : 1, violations, info });
+}
+
+function formatAge(ms: number): string {
+  if (ms < 60_000) return `${Math.floor(ms / 1000)} seconds`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} minutes`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} hours`;
+  return `${Math.floor(ms / 86_400_000)} days`;
 }
