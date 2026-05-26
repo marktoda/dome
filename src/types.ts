@@ -17,7 +17,8 @@ export type UnifiedDiff = string; // patch text; v0.5 keeps it as a string
 export type Effect =
   | { kind: "wrote-document"; path: string; diff: UnifiedDiff }
   | { kind: "appended-log"; entry: LogEntry }
-  | { kind: "moved-document"; from: string; to: string };
+  | { kind: "moved-document"; from: string; to: string }
+  | { kind: "deleted-document"; path: string };
 
 // ----- Log entries ----------------------------------------------------------
 

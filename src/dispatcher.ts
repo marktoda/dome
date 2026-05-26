@@ -34,6 +34,8 @@ export interface IndexEntry {
 
 export interface Dispatcher {
   writeIndex(entry: IndexEntry): Promise<Effect>;
+  /** Strip the index entry for `path` (one line) if present. Idempotent. */
+  removeIndexEntry(path: string): Promise<Effect>;
   appendLogEntry(entry: LogEntry): Promise<Effect>;
 }
 
@@ -46,6 +48,16 @@ export function makeDispatcher(vaultPath: string): Dispatcher {
       await writeFile(indexPath, updated);
       const diff = simpleDiff(current, updated, indexPath);
       return { kind: "wrote-document", path: "index.md", diff };
+    },
+    async removeIndexEntry(path: string): Promise<Effect> {
+      const indexPath = join(vaultPath, "index.md");
+      const current = await safeRead(indexPath);
+      const updated = stripIndexEntry(current, path);
+      if (updated === current) {
+        return { kind: "wrote-document", path: "index.md", diff: `--- ${indexPath}\n+++ ${indexPath}\n[no change]` };
+      }
+      await writeFile(indexPath, updated);
+      return { kind: "wrote-document", path: "index.md", diff: simpleDiff(current, updated, indexPath) };
     },
     async appendLogEntry(entry: LogEntry): Promise<Effect> {
       const logPath = join(vaultPath, "log.md");
@@ -70,6 +82,15 @@ function formatLogEntry(entry: LogEntry): string {
   const refs = entry.refs && entry.refs.length > 0 ? `\nrefs: ${entry.refs.join(", ")}` : "";
   const body = entry.body ? `\n\n${entry.body}` : "";
   return `## [${entry.ts}] ${entry.verb} | ${entry.subject}${refs}${body}\n`;
+}
+
+function stripIndexEntry(current: string, path: string): string {
+  const wikilinkBare = `[[${path.replace(/\.md$/, "")}]]`;
+  if (!current.includes(wikilinkBare)) return current;
+  // Remove the entire line containing the wikilink.
+  const lines = current.split("\n");
+  const kept = lines.filter(l => !l.includes(wikilinkBare));
+  return kept.join("\n");
 }
 
 function mergeIndexEntry(current: string, entry: IndexEntry): string {

@@ -127,8 +127,16 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   const registry = new HookRegistry();
   if (config.hooks.builtin["auto-update-index"] === "enabled") {
     registry.register({
-      id: "auto-update-index",
+      id: "auto-update-index-write",
       pattern: "document.written.wiki.*",
+      handler: autoUpdateIndex,
+      source: "sdk",
+      async: true,
+      idempotent: true,
+    });
+    registry.register({
+      id: "auto-update-index-delete",
+      pattern: "document.deleted.wiki.*",
       handler: autoUpdateIndex,
       source: "sdk",
       async: true,

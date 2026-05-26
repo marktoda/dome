@@ -31,6 +31,26 @@ export function projectEffectToEvents(effect: Effect): HookEvent[] {
       return [{ kind: "log.appended", entry: effect.entry, ts: effect.entry.ts }];
     case "moved-document":
       return [{ kind: "document.moved", from: effect.from, to: effect.to }];
+    case "deleted-document": {
+      const { path } = effect;
+      if (path === "index.md") return [{ kind: "document.deleted.index", path }];
+      if (path === "log.md") return [{ kind: "document.deleted.log", path }];
+      const segments = path.split("/");
+      const top = segments[0];
+      if (top === "wiki" && segments.length >= 3) {
+        const pluralType = segments[1]!;
+        const singular = singularOf(pluralType);
+        return [{ kind: `document.deleted.wiki.${singular}`, path, category: "wiki", type: singular }];
+      }
+      if (top === "inbox" && segments.length >= 3) {
+        const bucket = segments[1]!;
+        return [{ kind: `document.deleted.inbox.${bucket}`, path, category: "inbox", bucket }];
+      }
+      if (top === "raw") {
+        return [{ kind: "document.deleted.raw", path, category: "raw" }];
+      }
+      return [];
+    }
   }
 }
 

@@ -40,4 +40,18 @@ describe("projectEffectToEvents", () => {
     const events = projectEffectToEvents(eff);
     expect(events[0]!.kind).toBe("document.moved");
   });
+
+  test("deleted-document under wiki/<type>/ -> document.deleted.wiki.<type>", () => {
+    const eff: Effect = { kind: "deleted-document", path: "wiki/entities/danny.md" };
+    const events = projectEffectToEvents(eff);
+    expect(events.length).toBe(1);
+    expect(events[0]!.kind).toBe("document.deleted.wiki.entity");
+    expect(events[0]!.path).toBe("wiki/entities/danny.md");
+  });
+
+  test("deleted-document under inbox/<bucket>/ -> document.deleted.inbox.<bucket>", () => {
+    const eff: Effect = { kind: "deleted-document", path: "inbox/raw/abc.md" };
+    const events = projectEffectToEvents(eff);
+    expect(events[0]!.kind).toBe("document.deleted.inbox.raw");
+  });
 });

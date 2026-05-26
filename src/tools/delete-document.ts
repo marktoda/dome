@@ -56,7 +56,7 @@ export async function deleteDocument(
   }
 
   await unlink(abs);
-  const effects: Effect[] = [];
+  const effects: Effect[] = [{ kind: "deleted-document", path: input.path }];
   if (vault.config.invariants.EVERY_WRITE_IS_LOGGED === "enabled") {
     const e = await dispatcher.appendLogEntry({
       ts: new Date().toISOString(),
