@@ -1,4 +1,4 @@
-import { readFile, writeFile, rename, mkdir, readdir, access } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir, readdir, access, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { makeDocument, type Document } from "../document";
 import { ok, err, type Effect, type ToolReturn } from "../types";
@@ -9,6 +9,11 @@ export interface MoveDocumentInput {
   from: string;
   to: string;
   reason: string;
+  /**
+   * Test-only: pre-seed the mtime snapshot for optimistic locking; production
+   * callers leave this unset. @internal
+   */
+  __forceExpectedMtime?: string;
 }
 
 export async function moveDocument(
@@ -62,7 +67,24 @@ export async function moveDocument(
     // expected
   }
 
+  // Optimistic locking — snapshot source mtime, verify just before rename.
+  const expectedMtime = input.__forceExpectedMtime ?? (await stat(fromAbs)).mtime.toISOString();
+
   await mkdir(dirname(toAbs), { recursive: true });
+
+  const currentStat = await stat(fromAbs).catch(() => null);
+  if (currentStat && currentStat.mtime.toISOString() !== expectedMtime) {
+    return {
+      result: err({
+        kind: "concurrent-write-conflict",
+        path: input.from,
+        expected_mtime: expectedMtime,
+        actual_mtime: currentStat.mtime.toISOString(),
+      }),
+      effects: [],
+    };
+  }
+
   await rename(fromAbs, toAbs);
 
   const oldTarget = input.from.replace(/\.md$/, "");

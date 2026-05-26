@@ -1,4 +1,4 @@
-import { writeFile, readFile, mkdir, access } from "node:fs/promises";
+import { writeFile, readFile, mkdir, access, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { makeDocument, type Document } from "../document";
 import { stringifyFrontmatter } from "../frontmatter";
@@ -19,6 +19,14 @@ export interface WriteDocumentInput {
   body: string;
   frontmatter: Record<string, unknown>;
   opts?: WriteDocumentOpts;
+  /**
+   * Test-only: pre-seed the snapshot mtime that optimistic-locking compares
+   * against the on-disk mtime at write time. Production callers never set
+   * this; the Tool reads its own snapshot via stat() before checking
+   * invariants. Used to drive deterministic concurrent-write-conflict tests.
+   * @internal
+   */
+  __forceExpectedMtime?: string;
 }
 
 export async function writeDocument(
@@ -39,6 +47,13 @@ export async function writeDocument(
   if (!input.opts?.create && !exists) {
     return { result: err({ kind: "not-found", path: input.path }), effects: [] };
   }
+
+  // Optimistic locking — snapshot mtime at read time, verify on write.
+  // When `__forceExpectedMtime` is set (tests only), use that as the snapshot
+  // so the conflict path can be exercised deterministically.
+  const expectedMtime = exists
+    ? (input.__forceExpectedMtime ?? (await stat(abs)).mtime.toISOString())
+    : null;
 
   // RAW_IS_IMMUTABLE — axiom; refuse raw/ targets unconditionally.
   const doc0 = makeDocument({ path: input.path });
@@ -131,6 +146,24 @@ export async function writeDocument(
   }
 
   await mkdir(dirname(abs), { recursive: true });
+
+  // Optimistic-locking check — if a different writer touched the file
+  // between our snapshot and this write, refuse to clobber.
+  if (expectedMtime !== null) {
+    const currentStat = await stat(abs).catch(() => null);
+    if (currentStat && currentStat.mtime.toISOString() !== expectedMtime) {
+      return {
+        result: err({
+          kind: "concurrent-write-conflict",
+          path: input.path,
+          expected_mtime: expectedMtime,
+          actual_mtime: currentStat.mtime.toISOString(),
+        }),
+        effects: [],
+      };
+    }
+  }
+
   const before = exists ? await readFile(abs, "utf8") : "";
   const text = stringifyFrontmatter(input.frontmatter, input.body);
   await writeFile(abs, text);
