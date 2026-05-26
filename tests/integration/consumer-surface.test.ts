@@ -1,15 +1,17 @@
-// Pins the ConsumerSurface contract from docs/wiki/specs/sdk-surface.md
-// §"Consumer surfaces": buildConsumerSurface(vault) returns the four-kind
-// aggregation; DomeMcpServer({ surface }) consumes it without needing Vault.
+// Pins the AbstractSurface + renderMcp chain per docs/wiki/specs/sdk-surface.md
+// §"Consumer surfaces". The test name preserves the "consumer-surface"
+// shape for git history continuity even though ConsumerSurface as a type
+// no longer exists — the file pins the four-kind aggregation contract.
 
 import { describe, test, expect } from "bun:test";
 import { openVault } from "../../src/vault";
-import { buildConsumerSurface, DomeMcpServer } from "../../src/mcp";
+import { buildAbstractSurface } from "../../src/index";
+import { renderMcp, DomeMcpServer } from "../../src/mcp";
 import { ResourceAdapter } from "../../src/mcp/resource-adapters";
 import { makeTestVault } from "../helpers/make-test-vault";
 
-describe("ConsumerSurface", () => {
-  test("buildConsumerSurface returns { tools, prompts, resources, instructions }", async () => {
+describe("AbstractSurface + renderMcp (consumer-surface contract)", () => {
+  test("buildAbstractSurface returns { tools, prompts, resources, instructions }", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
@@ -17,15 +19,17 @@ describe("ConsumerSurface", () => {
       if (!res.ok) return;
       const vault = res.value;
 
-      const surface = await buildConsumerSurface(vault);
+      const surface = await buildAbstractSurface(vault);
 
-      // Shape: four kinds — tools is the protocol-rendered MCP adapter array;
-      // BoundToolSurface itself stays reachable via vault.tools.
-      expect(Array.isArray(surface.tools)).toBe(true);
-      expect(surface.tools.length).toBe(7);
+      // tools IS vault.tools (the protocol-agnostic BoundToolSurface).
+      expect(surface.tools).toBe(vault.tools);
+      // prompts is a descriptor list (no dome.* prefix).
       expect(Array.isArray(surface.prompts)).toBe(true);
       expect(surface.prompts.length).toBeGreaterThan(0);
-      expect(surface.resources).toBeInstanceOf(ResourceAdapter);
+      // resources is a descriptor list (no dome:// prefix).
+      expect(Array.isArray(surface.resources)).toBe(true);
+      expect(surface.resources.length).toBeGreaterThan(0);
+      // instructions is a string.
       expect(typeof surface.instructions).toBe("string");
       expect(surface.instructions.length).toBeGreaterThan(0);
     } finally {
@@ -33,7 +37,7 @@ describe("ConsumerSurface", () => {
     }
   });
 
-  test("DomeMcpServer({ surface }) wires the seven tool adapters", async () => {
+  test("renderMcp(surface) + DomeMcpServer wires the seven tool adapters", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
@@ -41,11 +45,13 @@ describe("ConsumerSurface", () => {
       if (!res.ok) return;
       const vault = res.value;
 
-      const surface = await buildConsumerSurface(vault);
-      const server = new DomeMcpServer({ surface });
+      const surface = await buildAbstractSurface(vault);
+      const mcp = renderMcp(surface);
+      const server = new DomeMcpServer({ surface: mcp });
 
       expect(server.tools.length).toBe(7);
-      expect(surface.prompts.length).toBeGreaterThan(0);
+      expect(mcp.prompts.length).toBeGreaterThan(0);
+      expect(mcp.resources).toBeInstanceOf(ResourceAdapter);
     } finally {
       await v.cleanup();
     }

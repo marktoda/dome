@@ -7,13 +7,12 @@
 // The constructor does no Vault-touching work — that's the substrate
 // commitment in docs/wiki/specs/mcp-surface.md §"Construction".
 
-import type { ConsumerSurface } from "./consumer-surface";
-import type { ToolAdapter } from "./tool-adapters";
+import type { McpSurface, ToolAdapter } from "./render-mcp";
 import { registerHandlers, type ServerLike } from "./handlers";
 
 export interface DomeMcpServerOpts {
-  /** The four-kind aggregation per docs/wiki/specs/sdk-surface.md §"Consumer surfaces". */
-  surface: ConsumerSurface;
+  /** The MCP-rendered four-kind surface per docs/wiki/specs/sdk-surface.md §"Consumer surfaces". */
+  surface: McpSurface;
 }
 
 export class DomeMcpServer {

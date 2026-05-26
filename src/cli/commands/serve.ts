@@ -2,18 +2,19 @@ import { openVault } from "../../vault";
 import { reconcile } from "../../reconcile";
 import { VaultWatcher } from "../../watcher";
 import { DomeMcpServer } from "../../mcp/server";
-import { buildConsumerSurface } from "../../mcp/consumer-surface";
+import { renderMcp, type McpSurface } from "../../mcp/render-mcp";
+import { buildAbstractSurface } from "../../abstract-surface";
 import { ok, type Result, type ToolError } from "../../types";
 
 export interface ServeHandle {
   vaultPath: string;
   server: DomeMcpServer;
   /**
-   * The ConsumerSurface the server was constructed from. Exposed so callers
+   * The McpSurface the server was constructed from. Exposed so callers
    * (and tests) can introspect prompts/resources/instructions without
    * reaching through the server's protocol-specific shape.
    */
-  surface: Awaited<ReturnType<typeof buildConsumerSurface>>;
+  surface: McpSurface;
   /**
    * Stop the watcher. The MCP server, once connected to its stdio transport
    * via `connectStdio: true`, runs until the parent process closes stdin (the
@@ -57,12 +58,14 @@ export async function domeServe(
     void vault.dispatchEvents([event]);
   });
   await watcher.start();
-  // Build the ConsumerSurface (the four-kind aggregation per
-  // docs/wiki/specs/sdk-surface.md §"Consumer surfaces") and construct
-  // the MCP server as a thin protocol adapter over it. Without
+  // Build the AbstractSurface (protocol-agnostic four-kind aggregation
+  // per docs/wiki/specs/sdk-surface.md §"Consumer surfaces") then render
+  // it to McpSurface (MCP wire shape) and construct the MCP server as
+  // a thin protocol adapter over the rendered surface. Without
   // serveStdio() the constructed server registers no handlers on any
   // transport and the harness sees an empty surface.
-  const surface = await buildConsumerSurface(vault);
+  const abstractSurface = await buildAbstractSurface(vault);
+  const surface = renderMcp(abstractSurface);
   const server = new DomeMcpServer({ surface });
   if (opts.connectStdio !== false) {
     await server.serveStdio();

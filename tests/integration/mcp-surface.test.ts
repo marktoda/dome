@@ -14,8 +14,9 @@ import { join } from "node:path";
 import { domeInit } from "../../src/cli/commands/init";
 import { openVault } from "../../src/vault";
 import { DomeMcpServer } from "../../src/mcp/server";
-import { buildConsumerSurface } from "../../src/mcp/consumer-surface";
-import { MCP_TOOL_NAMES } from "../../src/mcp/tool-names";
+import { buildAbstractSurface } from "../../src/abstract-surface";
+import { renderMcp } from "../../src/mcp/render-mcp";
+import { MCP_TOOL_NAMES } from "../../src/tools/registry";
 
 describe("MCP surface (AC5)", () => {
   test("init -> open -> DomeMcpServer exposes 7 tools, >=5 prompts, 3 resources", async () => {
@@ -30,13 +31,13 @@ describe("MCP surface (AC5)", () => {
       expect(openRes.ok).toBe(true);
       if (!openRes.ok) return;
 
-      const surface = await buildConsumerSurface(openRes.value);
+      const surface = renderMcp(await buildAbstractSurface(openRes.value));
       const server = new DomeMcpServer({ surface });
 
       // 7 canonical tools.
       expect(server.tools.length).toBe(7);
       const toolNames = server.tools.map((t) => t.name).sort();
-      expect(toolNames).toEqual([...MCP_TOOL_NAMES].sort());
+      expect(toolNames).toEqual(Object.values(MCP_TOOL_NAMES).sort());
 
       // >=6 prompts: 5 shipped-default workflows + dome.system_prompt. A
       // vault that activates opt-in workflows would observe more.

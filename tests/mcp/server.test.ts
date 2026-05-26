@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { DomeMcpServer } from "../../src/mcp/server";
-import { buildConsumerSurface } from "../../src/mcp/consumer-surface";
+import { buildAbstractSurface } from "../../src/abstract-surface";
+import { renderMcp } from "../../src/mcp/render-mcp";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 import type { ServerLike } from "../../src/mcp/handlers";
@@ -31,7 +32,7 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const surface = await buildConsumerSurface(res.value);
+      const surface = renderMcp(await buildAbstractSurface(res.value));
       const server = new DomeMcpServer({ surface });
       expect(server.tools.length).toBe(7);
       expect(surface.prompts.length).toBeGreaterThanOrEqual(5);
@@ -51,7 +52,7 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const surface = await buildConsumerSurface(res.value);
+      const surface = renderMcp(await buildAbstractSurface(res.value));
       const server = new DomeMcpServer({ surface });
       expect(server).toBeDefined();
       // The surface IS the cache — re-reading prompts returns the same array.
@@ -66,7 +67,7 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const surface = await buildConsumerSurface(res.value);
+      const surface = renderMcp(await buildAbstractSurface(res.value));
       const server = new DomeMcpServer({ surface });
       const { server: stub, handlers } = makeStubServer();
       server.registerOn(stub);
@@ -87,7 +88,7 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const surface = await buildConsumerSurface(res.value);
+      const surface = renderMcp(await buildAbstractSurface(res.value));
       const server = new DomeMcpServer({ surface });
       const { server: stub, handlers } = makeStubServer();
       server.registerOn(stub);
@@ -108,7 +109,7 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const surface = await buildConsumerSurface(res.value);
+      const surface = renderMcp(await buildAbstractSurface(res.value));
       const server = new DomeMcpServer({ surface });
       const { server: stub, handlers } = makeStubServer();
       server.registerOn(stub);
@@ -125,7 +126,7 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const surface = await buildConsumerSurface(res.value);
+      const surface = renderMcp(await buildAbstractSurface(res.value));
       const server = new DomeMcpServer({ surface });
       const { server: stub, handlers } = makeStubServer();
       server.registerOn(stub);
@@ -142,7 +143,7 @@ describe("DomeMcpServer", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const surface = await buildConsumerSurface(res.value);
+      const surface = renderMcp(await buildAbstractSurface(res.value));
       expect(surface.instructions).toContain("# Dome — Wiki Maintainer");
       expect(surface.instructions).toContain("### Enabled invariants");
       expect(surface.instructions).toContain("- EVERY_WRITE_IS_LOGGED");
