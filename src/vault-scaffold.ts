@@ -7,10 +7,10 @@
 //   - eval/fixture-vault creates ephemeral test vaults.
 //
 // Each consumer decorates the skeleton with its own extras (init adds
-// CLAUDE.md + intake-raw.yaml + initial commit; fixture writes test files;
-// migrate leaves existing content untouched). Centralizing prevents drift —
-// the three callers previously copy-pasted the directory tree + config
-// strings and had already begun diverging.
+// AGENTS.md + CLAUDE.md shim + intake-raw.yaml + initial commit; fixture
+// writes test files; migrate leaves existing content untouched). Centralizing
+// prevents drift — the three callers previously copy-pasted the directory
+// tree + config strings and had already begun diverging.
 
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
