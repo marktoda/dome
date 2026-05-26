@@ -23,7 +23,11 @@ export const SHIPPED_VAULT_CONFIG: VaultConfig = {
     PAGE_CREATION_REQUIRES_RECURRENCE: "disabled",
   },
   hooks: {
-    builtin: { "auto-update-index": "enabled", "auto-cross-reference": "enabled" },
+    builtin: {
+      "auto-update-index": "enabled",
+      "auto-cross-reference": "enabled",
+      "log-out-of-band-write": "enabled",
+    },
     max_causation_depth: 50,
     inbox_stale_age_hours: 24,
   },

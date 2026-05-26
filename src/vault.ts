@@ -10,6 +10,7 @@ import { HookRegistry } from "./hook-registry";
 import { HookDispatcher, type CycleInfo } from "./hook-dispatcher";
 import { autoUpdateIndex } from "./hooks/auto-update-index";
 import { autoCrossReference } from "./hooks/auto-cross-reference";
+import { logOutOfBandWrite } from "./hooks/log-out-of-band-write";
 import { loadDeclarativeHooks } from "./hooks/yaml-loader";
 import type { BoundToolSurface, HookEvent } from "./hook-context";
 import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "./shipped-defaults";
@@ -190,6 +191,18 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
       id: "auto-cross-reference",
       pattern: "document.written.wiki.entity",
       handler: autoCrossReference,
+      source: "sdk",
+      async: true,
+      idempotent: true,
+    });
+  }
+  if (config.hooks.builtin["log-out-of-band-write"] === "enabled") {
+    // Watcher-driven external-path enforcement of EVERY_WRITE_IS_LOGGED.
+    // See docs/wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE.md.
+    registry.register({
+      id: "log-out-of-band-write",
+      pattern: "vault.out-of-band-edit",
+      handler: logOutOfBandWrite,
       source: "sdk",
       async: true,
       idempotent: true,
