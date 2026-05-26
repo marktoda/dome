@@ -5,9 +5,21 @@ import { tmpdir } from "node:os";
 import { runCli, ExitCode } from "../../src/cli/cli";
 
 describe("runCli", () => {
-  test("--help prints usage", async () => {
+  test("--help exits 0 (POSIX convention: explicit help is success)", async () => {
     const code = await runCli(["--help"]);
-    expect(code).toBe(ExitCode.Usage);
+    expect(code).toBe(ExitCode.Success);
+  });
+
+  test("per-command --help works (dome init --help)", async () => {
+    const code = await runCli(["init", "--help"]);
+    expect(code).toBe(ExitCode.Success);
+  });
+
+  test("no args prints help (Commander surfaces it as helpDisplayed -> Success)", async () => {
+    // Commander signals empty-args via the same helpDisplayed channel as --help.
+    // Both exit 0 per POSIX convention.
+    const code = await runCli([]);
+    expect(code).toBe(ExitCode.Success);
   });
 
   test("init <path> initializes vault", async () => {
