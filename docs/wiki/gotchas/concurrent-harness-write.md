@@ -13,11 +13,14 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 **Root cause:** v0.5's SDK is single-process per Vault instance, but nothing prevents multiple instances from running concurrently against the same vault directory. Each MCP server (one per harness session) opens its own Vault instance; neither knows about the other.
 
-**Structural mitigation:** **Timestamp-based optimistic locking on `writeDocument`.**
+**Structural mitigation:** **Caller-supplied optimistic locking via `expected_mtime`.**
 
-- Every `writeDocument` call records the target page's `mtime` (or git revision SHA if the vault is dirty-free) when the page is read.
-- At write time, `writeDocument` checks: is the on-disk `mtime` still what we read? If yes, write. If no, fail with `Result.err({ kind: 'concurrent-write-conflict', expected_mtime, actual_mtime })`.
-- The agent receiving the conflict error re-reads the page, integrates the other harness's update, and re-proposes. The user sees a brief "the page was updated by another session; merging..." in chat.
+- `readDocument` returns the document's filesystem `mtime` as an ISO-8601 string in the returned `Document`. Callers (agent, hook, harness) treat the mtime as a snapshot token alongside the page contents.
+- Mutating Tools (`writeDocument`, `moveDocument`, `deleteDocument`) accept an optional `expected_mtime?: string` field. When passed, the Tool re-reads the target's current `mtime` immediately before mutating; on mismatch it returns `Result.err({ kind: 'concurrent-write-conflict', path, expected_mtime, actual_mtime })` and does not write.
+- Omitting `expected_mtime` is the v0.5 default and means "last write wins" — no conflict detection. Workflows that ingest from a single-user, single-session vault (the most common v0.5 case) can ignore the field; harnesses that read-then-write through a multi-session vault should pass it.
+- The agent receiving the conflict re-reads the page (gaining a fresh `mtime`), integrates the other harness's update, and re-proposes with the new snapshot. The user sees a brief "the page was updated by another session; merging..." in chat.
+
+This shape makes the protection explicit at the call site rather than implicit in the Tool body. The previous "Tool snapshots mtime internally" design was structurally inert — the snapshot and verify happened inside one synchronous Tool call with no real race window. v0.5 ships the call-site-explicit form; the workflow prompts (shipped-default `ingest`, `query`, `lint`) opt out by not threading `expected_mtime`, while harnesses that hold a Document across user turns thread it.
 
 **Specific scenarios:**
 

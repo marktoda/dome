@@ -31,6 +31,7 @@ A Document is any markdown file in a Vault. It is a value, not a service. Fields
 - `frontmatter: Record<string, unknown>` — parsed YAML.
 - `body: string` — markdown body, frontmatter excluded.
 - `linksOut: ReadonlyArray<WikiLink>` — parsed `[[wikilinks]]`.
+- `mtime: string | null` — ISO-8601 filesystem mtime as observed at read time, or `null` for synthesized Documents (e.g., from `makeDocument({ path })` without a real file behind it). Threaded into mutating Tools as `expected_mtime` to enable optimistic locking; see §"Concurrency".
 
 Computed accessors (not fields — derived from `path` on access):
 
@@ -102,6 +103,11 @@ writeDocument(input: {
   path: string;
   body: string;
   frontmatter: Record<string, unknown>;
+  expected_mtime?: string;
+  // ↑ optional optimistic-locking snapshot from a prior readDocument; when
+  //   passed, the Tool re-reads the file's current mtime immediately before
+  //   writing and returns concurrent-write-conflict on mismatch. Omit to
+  //   accept "last write wins". See §"Concurrency".
   opts?: {
     create?: boolean;
     // ↑ true on new-page create; gates PAGE_CREATION_REQUIRES_RECURRENCE.
@@ -138,12 +144,14 @@ moveDocument(input: {
   from: string;
   to: string;
   reason: string;
+  expected_mtime?: string;  // optimistic locking on `from`; see §"Concurrency"
 }): ToolReturn<Document>
 
 // Delete with hook-firing event
 deleteDocument(input: {
   path: string;
   reason: string;
+  expected_mtime?: string;  // optimistic locking; see §"Concurrency"
 }): ToolReturn<void>
 ```
 
@@ -153,7 +161,7 @@ Plugin-registered Tools follow the same `input: object → ToolReturn<T>` conven
 
 #### Concurrency
 
-Mutating Tools (`writeDocument`, `moveDocument`, `deleteDocument`) use **timestamp-based optimistic locking** to detect concurrent writes from a second harness session on the same vault. Each Tool snapshots the target's `mtime` (or git-blob SHA when the working tree is clean) at read time; at write time it re-checks. On mismatch the Tool returns:
+Mutating Tools (`writeDocument`, `moveDocument`, `deleteDocument`) support **caller-supplied optimistic locking**. `readDocument` returns the document's filesystem `mtime` (ISO-8601 string) in the returned `Document`. Callers thread that mtime into the mutating call as `expected_mtime?: string`. The Tool re-reads the target's current `mtime` immediately before writing; on mismatch it returns:
 
 ```
 Result.err({
@@ -164,7 +172,7 @@ Result.err({
 })
 ```
 
-The agent receiving this error re-reads the page, integrates the other harness's intervening update, and re-proposes. See [[wiki/gotchas/concurrent-harness-write]] for the full mechanism and the failure scenarios it covers.
+Omitting `expected_mtime` is the v0.5 default and means "last write wins" — no conflict detection. Workflows ingesting in a single-user, single-session vault (the common v0.5 case) can ignore it; multi-session harnesses that hold a Document across user turns thread it. See [[wiki/gotchas/concurrent-harness-write]] for full scenarios.
 
 ### Hook
 
