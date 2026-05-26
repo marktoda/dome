@@ -138,4 +138,18 @@ describe("dome stats", () => {
       await v.cleanup();
     }
   });
+
+  test("renderJson round-trips through JSON.parse", async () => {
+    const v = await makeStatsVault();
+    try {
+      const vaultRes = await openVault(v.path);
+      if (!vaultRes.ok) throw new Error("openVault failed");
+      const stats = await collectStats(vaultRes.value);
+      const json = renderJson(stats);
+      const parsed = JSON.parse(json);
+      expect(parsed).toEqual(stats);
+    } finally {
+      await v.cleanup();
+    }
+  });
 });

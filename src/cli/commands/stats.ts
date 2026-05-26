@@ -138,8 +138,8 @@ export function renderDashboard(_stats: VaultStats): string {
   throw new Error("not implemented");
 }
 
-export function renderJson(_stats: VaultStats): string {
-  throw new Error("not implemented");
+export function renderJson(stats: VaultStats): string {
+  return JSON.stringify(stats, null, 2);
 }
 
 export async function domeStats(
