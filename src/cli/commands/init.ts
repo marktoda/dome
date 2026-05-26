@@ -1,38 +1,9 @@
 import { existsSync } from "node:fs";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { initRepo, commit } from "../../git";
+import { scaffoldVaultLayout } from "../../vault-scaffold";
 import { ok, err, type Result, type ToolError } from "../../types";
-
-const SHIPPED_CONFIG_YAML = `# Dome vault config
-invariants:
-  EVERY_WRITE_IS_LOGGED: enabled
-  PAGE_TYPE_BY_DIRECTORY: enabled
-  WIKILINKS_ARE_FULLPATH: enabled
-  INBOX_IS_EPHEMERAL: enabled
-  SENSITIVE_GOES_TO_INBOX: disabled
-  PAGE_CREATION_REQUIRES_RECURRENCE: disabled
-hooks:
-  builtin:
-    auto-update-index: enabled
-    auto-cross-reference: enabled
-  max_causation_depth: 50
-git:
-  auto_commit_workflows: true
-`;
-
-const SHIPPED_PAGE_TYPES_YAML = `defaults:
-  - entity
-  - concept
-  - source
-  - synthesis
-extensions: []
-`;
-
-const SHIPPED_GITIGNORE = `.dome/state/
-node_modules/
-.DS_Store
-`;
 
 const INTAKE_RAW_HOOK_YAML = `# Shipped-default intake hook
 event: document.written
@@ -68,34 +39,23 @@ export async function domeInit(vaultPath: string): Promise<Result<{ path: string
     return err({ kind: "validation", message: `Existing .git at ${vaultPath}; use dome migrate instead` });
   }
 
-  await mkdir(vaultPath, { recursive: true });
-  await mkdir(join(vaultPath, ".dome", "state"), { recursive: true });
-  await mkdir(join(vaultPath, ".dome", "prompts"), { recursive: true });
-  await mkdir(join(vaultPath, ".dome", "hooks"), { recursive: true });
-  await mkdir(join(vaultPath, "wiki", "entities"), { recursive: true });
-  await mkdir(join(vaultPath, "wiki", "concepts"), { recursive: true });
-  await mkdir(join(vaultPath, "wiki", "sources"), { recursive: true });
-  await mkdir(join(vaultPath, "wiki", "syntheses"), { recursive: true });
-  await mkdir(join(vaultPath, "raw"), { recursive: true });
-  await mkdir(join(vaultPath, "notes"), { recursive: true });
-  await mkdir(join(vaultPath, "inbox", "raw"), { recursive: true });
+  // Scaffold the canonical vault layout (dir tree + shipped config). Returns
+  // the list of files actually written so we know what to commit.
+  const scaffolded = await scaffoldVaultLayout(vaultPath);
 
-  await writeFile(join(vaultPath, ".dome", "config.yaml"), SHIPPED_CONFIG_YAML);
-  await writeFile(join(vaultPath, ".dome", "page-types.yaml"), SHIPPED_PAGE_TYPES_YAML);
-  await writeFile(join(vaultPath, ".dome", "hooks", "intake-raw.yaml"), INTAKE_RAW_HOOK_YAML);
-  await writeFile(join(vaultPath, ".gitignore"), SHIPPED_GITIGNORE);
-  await writeFile(join(vaultPath, "index.md"), "# Index\n\nThe catalog of wiki pages in this vault.\n");
-  await writeFile(join(vaultPath, "log.md"), `# Log\n\n## [${new Date().toISOString()}] bootstrap | initialize Dome vault\n`);
-  await writeFile(join(vaultPath, "CLAUDE.md"), SHIPPED_CLAUDE_MD);
+  // Init-specific extras: the shipped-default intake hook, the Claude Code
+  // setup hint. Migrate does NOT write these — the migrate workflow may add
+  // them later, and an existing vault might have its own equivalents.
+  const intakeRel = ".dome/hooks/intake-raw.yaml";
+  const claudeRel = "CLAUDE.md";
+  await writeFile(join(vaultPath, intakeRel), INTAKE_RAW_HOOK_YAML);
+  await writeFile(join(vaultPath, claudeRel), SHIPPED_CLAUDE_MD);
 
   await initRepo(vaultPath);
   const sha = await commit({
     path: vaultPath,
     message: "chore: initialize Dome vault",
-    files: [
-      ".gitignore", "index.md", "log.md", "CLAUDE.md",
-      ".dome/config.yaml", ".dome/page-types.yaml", ".dome/hooks/intake-raw.yaml",
-    ],
+    files: [...scaffolded, intakeRel, claudeRel],
   });
   return ok({ path: vaultPath, sha });
 }
