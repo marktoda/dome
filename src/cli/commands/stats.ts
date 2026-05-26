@@ -6,6 +6,7 @@ import { ok, type Result, type ToolError } from "../../types";
 import { walkMd } from "../../vault-fs";
 import { parseWikilinks } from "../../wikilinks";
 import { singularOf } from "../../page-type";
+import { log as gitLog } from "../../git";
 
 export interface VaultStats {
   vaultPath: string;
@@ -106,6 +107,28 @@ export async function collectStats(vault: Vault): Promise<VaultStats> {
       if (last === null || ts > last) last = ts;
     }
     stats.log.lastWriteAt = last;
+  }
+
+  // Git: walk log() from HEAD. In the dogfood case (vault is a subdirectory
+  // of an outer git repo), isomorphic-git walks the outer repo's history —
+  // commit/contributor counts reflect the outer repo. Acceptable for v1.
+  try {
+    const commits = await gitLog({ path: vault.path });
+    stats.git.commits = commits.length;
+    if (commits.length > 0) {
+      const oldest = commits[commits.length - 1]!;
+      const firstCommitTsSec = oldest.commit.committer.timestamp;
+      const firstCommitMs = firstCommitTsSec * 1000;
+      stats.git.ageDays = Math.floor((Date.now() - firstCommitMs) / (24 * 60 * 60 * 1000));
+      const authors = new Set<string>();
+      for (const c of commits) {
+        const a = c.commit.author;
+        authors.add(a.email !== "" ? a.email : a.name);
+      }
+      stats.git.contributors = authors.size;
+    }
+  } catch {
+    // No git repo or read error — leave defaults (ageDays=null, commits=0, contributors=0).
   }
 
   return stats;

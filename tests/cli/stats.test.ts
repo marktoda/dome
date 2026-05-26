@@ -121,4 +121,21 @@ describe("dome stats", () => {
       await v.cleanup();
     }
   });
+
+  test("git: ageDays, commits, contributors on a fresh init", async () => {
+    const v = await makeStatsVault();
+    try {
+      const vaultRes = await openVault(v.path);
+      if (!vaultRes.ok) throw new Error("openVault failed");
+      const stats = await collectStats(vaultRes.value);
+
+      // dome init creates exactly one commit, authored by the Dome author.
+      expect(stats.git.commits).toBeGreaterThanOrEqual(1);
+      expect(stats.git.contributors).toBeGreaterThanOrEqual(1);
+      expect(stats.git.ageDays).not.toBeNull();
+      expect(stats.git.ageDays).toBeGreaterThanOrEqual(0);
+    } finally {
+      await v.cleanup();
+    }
+  });
 });
