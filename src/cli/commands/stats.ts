@@ -183,12 +183,16 @@ export function renderDashboard(stats: VaultStats): string {
 
   const countParts: string[] = [pc.bold(pc.yellow(String(stats.totalPages))) + " pages"];
   // Sort types by count desc; show non-zero ones inline.
-  const sortedTypes = Object.entries(stats.pageCounts)
+  const allNonzeroTypes = Object.entries(stats.pageCounts)
     .filter(([, n]) => n > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5); // top 5 types
+    .sort((a, b) => b[1] - a[1]);
+  const sortedTypes = allNonzeroTypes.slice(0, 5); // top 5 types on the headline
+  const moreCount = allNonzeroTypes.length - sortedTypes.length;
   for (const [type, n] of sortedTypes) {
     countParts.push(pc.bold(pc.yellow(String(n))) + " " + pluralLabel(type, n));
+  }
+  if (moreCount > 0) {
+    countParts.push(pc.dim(`… +${moreCount} more types`));
   }
   const countLine = "  " + countParts.join("  ·  ");
 

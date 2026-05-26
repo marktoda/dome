@@ -305,4 +305,40 @@ describe("dome stats", () => {
       await rm(base, { recursive: true, force: true });
     }
   });
+
+  test("renderDashboard shows `+N more types` footer when more than 5 page types are present", () => {
+    // Hand-craft VaultStats with 7 non-zero page types.
+    const stats: VaultStats = {
+      vaultPath: "/tmp/v",
+      pageCounts: {
+        entity: 10, concept: 8, spec: 6, invariant: 5, matrix: 4, gotcha: 3, source: 2,
+      },
+      totalPages: 38,
+      wikilinks: { total: 0, orphans: 0 },
+      raw: { count: 0, bytes: 0 },
+      notes: { count: 0 },
+      log: { entries: 0, lastWriteAt: null },
+      topHubs: [],
+      git: { ageDays: 0, commits: 0, contributors: 0 },
+    };
+    const out = stripAnsi(renderDashboard(stats));
+    // 7 nonzero types - top 5 shown = +2 more.
+    expect(out).toMatch(/\+2 more types/);
+  });
+
+  test("renderDashboard omits `+N more types` when 5 or fewer page types present", () => {
+    const stats: VaultStats = {
+      vaultPath: "/tmp/v",
+      pageCounts: { entity: 3, concept: 2 },
+      totalPages: 5,
+      wikilinks: { total: 0, orphans: 0 },
+      raw: { count: 0, bytes: 0 },
+      notes: { count: 0 },
+      log: { entries: 0, lastWriteAt: null },
+      topHubs: [],
+      git: { ageDays: 0, commits: 0, contributors: 0 },
+    };
+    const out = stripAnsi(renderDashboard(stats));
+    expect(out).not.toMatch(/more types/);
+  });
 });

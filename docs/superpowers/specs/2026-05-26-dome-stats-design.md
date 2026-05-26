@@ -77,7 +77,7 @@ The top three lines of "page counts" show the four default types + a second row 
 ```
 src/cli/commands/stats.ts            # new — collect + render + orchestrate
 src/cli/cli.ts                       # +1 .command("stats")
-package.json                         # + "picocolors": "^1.0.1"
+package.json                         # + "picocolors": "^1.1.1"
 docs/wiki/specs/cli.md               # add §"dome stats", bump "Seven" → "Eight"
 tests/cli/stats.test.ts              # new
 ```
