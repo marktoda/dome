@@ -35,7 +35,7 @@ A Document is any markdown file in a Vault. It is a value, not a service. Fields
 Computed accessors (not fields — derived from `path` on access):
 
 - `document.category` → `'raw' | 'wiki' | 'log' | 'index' | 'notes' | 'inbox' | 'config' | 'external'` — `'external'` covers `.git/` and other top-level subdirs unknown to Dome (e.g., this vault's `cohesive/` session residue); tolerated read-only, no Tool writes to external paths. See [[wiki/specs/vault-layout]] §"Category derivation".
-- `document.type` → `string | null` — for wiki/, derived from immediate subdirectory; otherwise `null`.
+- `document.type` → `string | null` — for wiki/, the plural directory name (e.g., `"entities"` for `wiki/entities/danny.md`). Frontmatter `type:` is the singular form (e.g., `"entity"`); the two are reconciled via the `pluralOf` / `singularOf` helpers in `src/page-type.ts`. See [[wiki/specs/page-schema]] §"Universal frontmatter".
 - `document.isImmutable` → `boolean` — true when `category === 'raw'`.
 
 Documents are immutable values. Mutating a document means calling a Tool that produces a new on-disk state.

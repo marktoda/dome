@@ -14,11 +14,16 @@ describe("Document computed accessors", () => {
     expect(makeDocument({ path: "cohesive/some-file.md" }).category).toBe("external");
   });
 
-  test("type derives from wiki/ subdirectory only", () => {
+  test("type returns the PLURAL directory name (not the singular frontmatter form)", () => {
+    // Per docs/wiki/specs/sdk-surface.md §"Document", document.type returns
+    // the plural directory name. Frontmatter `type:` is the singular form;
+    // the two are reconciled via page-type.ts (pluralOf / singularOf).
     expect(makeDocument({ path: "wiki/entities/danny.md" }).type).toBe("entities");
     expect(makeDocument({ path: "wiki/concepts/foo.md" }).type).toBe("concepts");
     expect(makeDocument({ path: "wiki/sources/x.md" }).type).toBe("sources");
     expect(makeDocument({ path: "wiki/syntheses/y.md" }).type).toBe("syntheses");
+    // Explicit anti-assertion: NOT the singular form.
+    expect(makeDocument({ path: "wiki/entities/danny.md" }).type).not.toBe("entity");
     expect(makeDocument({ path: "raw/abc.md" }).type).toBeNull();
     expect(makeDocument({ path: "notes/x.md" }).type).toBeNull();
   });

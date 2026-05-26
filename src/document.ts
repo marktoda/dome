@@ -54,6 +54,10 @@ function deriveCategory(path: string): DocumentCategory {
 
 function deriveType(path: string, category: DocumentCategory): string | null {
   if (category !== "wiki") return null;
+  // Returns the plural directory name (e.g., "entities", "concepts") — the
+  // canonical truth per docs/wiki/specs/sdk-surface.md §"Document". Frontmatter
+  // `type:` is the singular form ("entity", "concept"); the two are reconciled
+  // via page-type.ts helpers (pluralOf / singularOf).
   const parts = path.split("/");
   if (parts.length < 3) return null;
   return parts[1] ?? null;
