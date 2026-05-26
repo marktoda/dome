@@ -10,6 +10,14 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./workflows": {
+      "types": "./src/workflows/index.ts",
+      "default": "./src/workflows/index.ts"
+    },
+    "./mcp": {
+      "types": "./src/mcp/index.ts",
+      "default": "./src/mcp/index.ts"
+    },
     "./cli": {
       "types": "./src/cli/index.ts",
       "default": "./src/cli/index.ts"

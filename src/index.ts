@@ -1,6 +1,26 @@
-// Public API surface — what plugin and harness authors consume.
+// Public API surface — @dome/sdk core.
+//
+// Per CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY, this entrypoint does NOT
+// re-export workflow-runner or MCP-server symbols. Those live at:
+//
+//   @dome/sdk/workflows — runWorkflow, WorkflowRegistry, PromptLoader,
+//                         projectAiSdk, eval helpers, workflow types
+//   @dome/sdk/mcp       — DomeMcpServer, ConsumerSurface,
+//                         buildConsumerSurface, projectMcp, adapters
+//   @dome/sdk/cli       — runCli, the seven dome* command functions
+//
+// The bundle-deps test at tests/integration/bundle-deps.test.ts pins
+// the axiom; the public-surface-shape test catches symbol re-exports
+// even when transitive deps stay clean.
 
-export { openVault, type Vault, type VaultConfig, type PageTypesConfig, type BoundToolSurface } from "./vault";
+export {
+  openVault,
+  appendCycleLogEntry,
+  type Vault,
+  type VaultConfig,
+  type PageTypesConfig,
+  type BoundToolSurface,
+} from "./vault";
 export { makeDocument, type Document, type DocumentCategory, type DocumentInput } from "./document";
 export type { HookContext, HookHandler, HookEvent } from "./hook-context";
 export type {
@@ -29,11 +49,8 @@ export { deleteDocument } from "./tools/delete-document";
 // The privileged-writer type (writeIndex / appendLogEntry / removeIndexEntry)
 // is INTENTIONALLY NOT exported. Plugin and vault-local code reach it only via
 // `HookContext.privilegedWriter`, which the hook-dispatcher partitions to
-// sdk-source hooks — this is the structural enforcement layer for
-// INDEX_AND_LOG_ARE_DISPATCHER_OWNED. See:
-//   docs/wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED.md
-// IndexEntry is exposed indirectly via the writer's method signatures on
-// HookContext; consumers that need the shape import it from there.
+// sdk-source hooks — the structural enforcement of
+// INDEX_AND_LOG_ARE_DISPATCHER_OWNED.
 export type { IndexEntry } from "./privileged-writer";
 
 export { parseFrontmatter, stringifyFrontmatter } from "./frontmatter";
@@ -48,33 +65,9 @@ export { reconcile, type ReconcileOpts, type ReconcileResult } from "./reconcile
 export { commitWorkflow, type WorkflowCommitInput } from "./workflow-commit";
 export { projectEffectToEvents, projectEffectsToEvents } from "./event-projection";
 
-// Stage 3: prompts + workflows + eval
-export { WorkflowName, WORKFLOW_NAMES, isWorkflowName } from "./workflows/workflow-name";
-export { WorkflowTier, WORKFLOW_TIERS } from "./workflows/workflow-tier";
-export {
-  runWorkflow,
-  buildAiSdkTools,
-  DEFAULT_MODEL,
-  DEFAULT_MAX_STEPS,
-  type RunWorkflowOpts,
-  type RunWorkflowResult,
-} from "./workflows/agent-loop";
-export { PromptLoader, PromptSource, type LoadedPrompt } from "./prompts/prompt-loader";
-export { WorkflowRegistry, type WorkflowDefinition } from "./prompts/registry";
-export {
-  parseWorkflowFrontmatter,
-  isWorkflowPrompt,
-  WorkflowFrontmatterSchema,
-  type WorkflowFrontmatter,
-} from "./prompts/workflow-frontmatter";
-export { makeFixtureVault, type Fixture, type EvalFixtureVault } from "./eval/fixture-vault";
-// replay is @internal — eval harness used by tests; not part of the v0.5 public
-// SDK. Consumers needing programmatic workflow execution should depend on
-// `runWorkflow` directly. See src/eval/replay.ts.
-
 // Canonical Tool registry — single source of truth for the seven Tools.
 // Plugin and harness authors that want to enumerate or extend the Tool
-// surface (v1+) consume these.
+// surface consume these.
 export {
   TOOL_NAMES,
   MCP_TOOL_NAMES,
@@ -82,18 +75,3 @@ export {
   filterAiTools,
   type ToolName,
 } from "./tools/registry";
-
-// Stage 4: MCP server.
-// `McpToolName` (PascalCase keyed object) is a backwards-compat alias over
-// `MCP_TOOL_NAMES` above; both re-export the same canonical strings.
-export { McpToolName } from "./mcp/tool-names";
-export { buildToolAdapters, type ToolAdapter } from "./mcp/tool-adapters";
-export { buildPromptAdapters, type PromptAdapter } from "./mcp/prompt-adapters";
-export { ResourceAdapter, ResourceUri, type ResourceContent } from "./mcp/resource-adapters";
-export { DomeMcpServer, type DomeMcpServerOpts } from "./mcp/server";
-
-// The CLI shell surface — `runCli`, the seven `dome*` command functions,
-// `CliError` / `renderCliError`, and the doctor-flag helpers — lives at a
-// separate entrypoint: import from `@dome/sdk/cli` (mapped via package.json
-// `exports` to `src/cli/index.ts`). Consumers that only need the core SDK
-// (Vault, Tools, Hooks, MCP) don't pull the CLI bundle.
