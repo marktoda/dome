@@ -1,4 +1,4 @@
-import { writeFile, readFile, mkdir, access, stat } from "node:fs/promises";
+import { writeFile, readFile, mkdir, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { makeDocument, type Document } from "../document";
 import { stringifyFrontmatter } from "../frontmatter";
@@ -7,6 +7,7 @@ import type { Vault } from "../vault";
 import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
 import { parseWikilinks, suggestFullPath } from "../wikilinks";
 import { singularOf } from "../page-type";
+import { refuseIfRawImmutable, checkOptimisticLock, logMutation } from "./guards";
 
 export interface WriteDocumentOpts {
   create?: boolean;
@@ -50,16 +51,8 @@ export async function writeDocument(
 
   // RAW_IS_IMMUTABLE — axiom; refuse raw/ targets unconditionally.
   const doc0 = makeDocument({ path: input.path });
-  if (doc0.category === "raw") {
-    return {
-      result: err({
-        kind: "invariant-violated",
-        invariant: "RAW_IS_IMMUTABLE",
-        detail: `writeDocument refuses raw/ targets; attempted: ${input.path}`,
-      }),
-      effects: [],
-    };
-  }
+  const rawErr = refuseIfRawImmutable(input.path, "writeDocument", `attempted: ${input.path}`);
+  if (rawErr) return { result: err(rawErr), effects: [] };
 
   // PAGE_TYPE_BY_DIRECTORY — when enabled, wiki/ writes must have directory match frontmatter type.
   if (vault.config.invariants.PAGE_TYPE_BY_DIRECTORY === "enabled" && doc0.category === "wiki") {
@@ -140,23 +133,11 @@ export async function writeDocument(
 
   await mkdir(dirname(abs), { recursive: true });
 
-  // Optimistic-locking check — caller-supplied snapshot only. If the caller
-  // passed expected_mtime (typically threaded from a prior readDocument's
-  // Document.mtime) and the on-disk mtime has changed since, refuse to write.
-  // Callers that don't thread expected_mtime accept "last write wins".
-  if (input.expected_mtime !== undefined && exists) {
-    const currentStat = await stat(abs).catch(() => null);
-    if (currentStat && currentStat.mtime.toISOString() !== input.expected_mtime) {
-      return {
-        result: err({
-          kind: "concurrent-write-conflict",
-          path: input.path,
-          expected_mtime: input.expected_mtime,
-          actual_mtime: currentStat.mtime.toISOString(),
-        }),
-        effects: [],
-      };
-    }
+  // Optimistic-locking re-check (only fires when the caller threaded
+  // expected_mtime from a prior readDocument).
+  if (exists) {
+    const lockErr = await checkOptimisticLock(abs, input.path, input.expected_mtime);
+    if (lockErr) return { result: err(lockErr), effects: [] };
   }
 
   const before = exists ? await readFile(abs, "utf8") : "";
@@ -167,16 +148,11 @@ export async function writeDocument(
     { kind: "wrote-document", path: input.path, diff: makeDiff(before, text, input.path) },
   ];
 
-  if (vault.config.invariants.EVERY_WRITE_IS_LOGGED === "enabled") {
-    const verb = exists ? "update" : "ingest";
-    const subject = input.path;
-    const effect = await dispatcher.appendLogEntry({
-      ts: new Date().toISOString(),
-      verb,
-      subject,
-    });
-    effects.push(effect);
-  }
+  const logEffect = await logMutation(vault, dispatcher, {
+    verb: exists ? "update" : "ingest",
+    subject: input.path,
+  });
+  if (logEffect) effects.push(logEffect);
 
   const doc = makeDocument({ path: input.path, body: input.body, frontmatter: input.frontmatter });
   return { result: ok(doc), effects };

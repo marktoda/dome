@@ -1,9 +1,9 @@
-import { unlink, access, stat } from "node:fs/promises";
+import { unlink, access } from "node:fs/promises";
 import { join } from "node:path";
-import { makeDocument } from "../document";
 import { ok, err, type Effect, type ToolReturn } from "../types";
 import type { Vault } from "../vault";
 import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
+import { refuseIfRawImmutable, checkOptimisticLock, logMutation } from "./guards";
 
 export interface DeleteDocumentInput {
   path: string;
@@ -25,17 +25,10 @@ export async function deleteDocument(
 ): Promise<ToolReturn<void>> {
   const ownedErr = refuseIfDispatcherOwned(input.path, "deleteDocument");
   if (ownedErr) return { result: err(ownedErr), effects: [] };
-  const doc = makeDocument({ path: input.path });
-  if (doc.category === "raw") {
-    return {
-      result: err({
-        kind: "invariant-violated",
-        invariant: "RAW_IS_IMMUTABLE",
-        detail: `deleteDocument refuses raw/ target: ${input.path}`,
-      }),
-      effects: [],
-    };
-  }
+
+  const rawErr = refuseIfRawImmutable(input.path, "deleteDocument");
+  if (rawErr) return { result: err(rawErr), effects: [] };
+
   const abs = join(vault.path, input.path);
   try {
     await access(abs);
@@ -43,34 +36,19 @@ export async function deleteDocument(
     return { result: err({ kind: "not-found", path: input.path }), effects: [] };
   }
 
-  // Optimistic locking — caller-supplied snapshot only. If expected_mtime is
-  // passed and the on-disk mtime has changed, refuse the delete (the file
-  // has been modified since the caller's read).
-  if (input.expected_mtime !== undefined) {
-    const currentStat = await stat(abs).catch(() => null);
-    if (currentStat && currentStat.mtime.toISOString() !== input.expected_mtime) {
-      return {
-        result: err({
-          kind: "concurrent-write-conflict",
-          path: input.path,
-          expected_mtime: input.expected_mtime,
-          actual_mtime: currentStat.mtime.toISOString(),
-        }),
-        effects: [],
-      };
-    }
-  }
+  // Optimistic-locking re-check (only fires when the caller threaded
+  // expected_mtime from a prior readDocument).
+  const lockErr = await checkOptimisticLock(abs, input.path, input.expected_mtime);
+  if (lockErr) return { result: err(lockErr), effects: [] };
 
   await unlink(abs);
+
   const effects: Effect[] = [{ kind: "deleted-document", path: input.path }];
-  if (vault.config.invariants.EVERY_WRITE_IS_LOGGED === "enabled") {
-    const e = await dispatcher.appendLogEntry({
-      ts: new Date().toISOString(),
-      verb: "update",
-      subject: `delete ${input.path}`,
-      body: input.reason,
-    });
-    effects.push(e);
-  }
+  const logEffect = await logMutation(vault, dispatcher, {
+    verb: "update",
+    subject: `delete ${input.path}`,
+    body: input.reason,
+  });
+  if (logEffect) effects.push(logEffect);
   return { result: ok(undefined), effects };
 }

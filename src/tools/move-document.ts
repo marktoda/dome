@@ -1,10 +1,11 @@
-import { readFile, writeFile, rename, mkdir, access, stat } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir, access } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { makeDocument, type Document } from "../document";
 import { ok, err, type Effect, type ToolReturn } from "../types";
 import type { Vault } from "../vault";
 import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
 import { walkMd } from "../vault-fs";
+import { refuseIfRawImmutable, checkOptimisticLock, logMutation } from "./guards";
 
 export interface MoveDocumentInput {
   from: string;
@@ -30,19 +31,13 @@ export async function moveDocument(
   const toOwned = refuseIfDispatcherOwned(input.to, "moveDocument");
   if (toOwned) return { result: err(toOwned), effects: [] };
 
-  const fromDoc = makeDocument({ path: input.from });
   const toDoc = makeDocument({ path: input.to });
 
-  if (fromDoc.category === "raw" || toDoc.category === "raw") {
-    return {
-      result: err({
-        kind: "invariant-violated",
-        invariant: "RAW_IS_IMMUTABLE",
-        detail: `moveDocument refuses raw/ source or target; from=${input.from} to=${input.to}`,
-      }),
-      effects: [],
-    };
-  }
+  // RAW_IS_IMMUTABLE — refuse if EITHER endpoint is under raw/.
+  const fromRawErr = refuseIfRawImmutable(input.from, "moveDocument", `from=${input.from} to=${input.to}`);
+  if (fromRawErr) return { result: err(fromRawErr), effects: [] };
+  const toRawErr = refuseIfRawImmutable(input.to, "moveDocument", `from=${input.from} to=${input.to}`);
+  if (toRawErr) return { result: err(toRawErr), effects: [] };
 
   if (vault.config.invariants.PAGE_TYPE_BY_DIRECTORY === "enabled" && toDoc.category === "wiki") {
     if (toDoc.type === null) {
@@ -73,23 +68,9 @@ export async function moveDocument(
 
   await mkdir(dirname(toAbs), { recursive: true });
 
-  // Optimistic locking — caller-supplied snapshot for `from` only. If the
-  // mtime has changed since the caller's readDocument, refuse to move stale
-  // state. Callers that don't thread expected_mtime accept "last write wins".
-  if (input.expected_mtime !== undefined) {
-    const currentStat = await stat(fromAbs).catch(() => null);
-    if (currentStat && currentStat.mtime.toISOString() !== input.expected_mtime) {
-      return {
-        result: err({
-          kind: "concurrent-write-conflict",
-          path: input.from,
-          expected_mtime: input.expected_mtime,
-          actual_mtime: currentStat.mtime.toISOString(),
-        }),
-        effects: [],
-      };
-    }
-  }
+  // Optimistic-locking re-check on the `from` document.
+  const lockErr = await checkOptimisticLock(fromAbs, input.from, input.expected_mtime);
+  if (lockErr) return { result: err(lockErr), effects: [] };
 
   await rename(fromAbs, toAbs);
 
@@ -102,15 +83,12 @@ export async function moveDocument(
     { kind: "wrote-document", path: input.to, diff: `--- ${input.from}\n+++ ${input.to}\n[moved]` },
   ];
 
-  if (vault.config.invariants.EVERY_WRITE_IS_LOGGED === "enabled") {
-    const e = await dispatcher.appendLogEntry({
-      ts: new Date().toISOString(),
-      verb: "update",
-      subject: `move ${input.from} -> ${input.to}`,
-      body: input.reason,
-    });
-    effects.push(e);
-  }
+  const logEffect = await logMutation(vault, dispatcher, {
+    verb: "update",
+    subject: `move ${input.from} -> ${input.to}`,
+    body: input.reason,
+  });
+  if (logEffect) effects.push(logEffect);
 
   const result = makeDocument({ path: input.to });
   return { result: ok(result), effects };
