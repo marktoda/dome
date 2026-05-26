@@ -144,6 +144,7 @@ In scope for this brainstorm: the value-prop framing, the use-pattern model (bat
 | 4 | Eventual consistency for sensitivity routing | Confirm | **Ratified** | User explicitly said "I am fully open with the idea of eventual consistency." Relaxes `SENSITIVE_GOES_TO_INBOX` from gateway-shaped to post-hoc reconciliation. |
 | 5 | AGENTS.md as orientation surface | Default | Applied | The vault-root AGENTS.md / CLAUDE.md mechanism already exists per `cli.md:30`; this brainstorm makes it the *primary* orientation path (vs MCP `instructions`). |
 | 6 | `dome serve` as daemon (vs ad-hoc invocation) | Default | Applied | The current spec already accommodates this (`cli.md:76`); this brainstorm makes the daemon mode the canonical operational shape for desktop. |
+| 7 | Retire the sensitivity-classification feature entirely | Pick | **Retire (not relax)** | User: "im considering killing that feature soon anyways since it seems to add lot of complexity and im not ever going to use it." Removing the feature eliminates the sensitivity-timing window concern that was previously the main risk, simplifies the rewrite, and removes substantial complexity. The `inbox/review/` directory simplifies to single-purpose (lint report destination only). |
 
 ### Cross-branch graft check (Phase 4 opening, conv-mode)
 
@@ -154,15 +155,16 @@ In scope for this brainstorm: the value-prop framing, the use-pattern model (bat
 
 **Direction:** **Compiler with preserved-but-flagged MCP.** Dome turns a markdown vault into a self-maintaining substrate via a background daemon (`dome serve` — watcher + reconcile + hooks) + a CLI for explicit operations + per-vault `AGENTS.md` orientation. The SDK is portable across future native shells (mobile, desktop, voice, web) via direct import. The MCP surface stays in the codebase as a non-primary / future-investment surface, explicitly flagged in `mcp-surface.md` as not load-bearing for v0.5 value delivery — preserved against future-harness pressure (non-CLI-capable agents) where it may re-earn its keep.
 
-**Main risk:** **Sensitivity classification timing window.** Relaxing `SENSITIVE_GOES_TO_INBOX` from "writeDocument refuses sensitive content to wiki/" (gateway-shaped, zero window by construction) to "post-hoc move by classifier hook" (compiler-shaped, eventual consistency) creates a non-zero window where sensitive content exists in `wiki/` before the hook fires. Every other risk considered (daemon-off, AGENTS.md staleness, catch-up cost growing with time) has existing structural mitigation; the sensitivity-timing window is the *new* failure shape this direction's invariant relaxation introduces.
+**Main risk:** **Rewrite drift across the 10+ documents the reframe touches.** This direction is mostly a rhetoric-aligning exercise — the system already runs in compiler shape (watcher fires on native writes, hooks reconcile, `dome reconcile` catches up missed events, sensitivity is being retired entirely so there's no eventual-consistency window to worry about). What can go wrong is *the rewrite itself*: a section in `harnesses.md` still implies MCP-mounted-everywhere; a row in `consumer-surface.md` keeps the old MCP-primary weighting; a vestigial reference in `sdk-surface.md` to "the seven MCP tools" survives the demotion. Drift between the rewritten docs would re-create the original problem (rhetoric not matching reality) in a new shape.
 
-**Structural mitigation:** The sensitivity classifier fires synchronously in the dispatcher's hook chain right after `writeDocument` per the `auto-update-index`-shaped pattern (`hooks.md`); the window is bounded by hook-queue latency (sub-second under normal load). A new gotcha `wiki/gotchas/sensitivity-classification-timing.md` documents the window with measurable bounds. A test pins the timing — write sensitive content to `wiki/`, assert the classifier hook fires within bound, assert the file lands in `inbox/review/` not `wiki/` — making the window inspectable and regression-safe. For vaults where the window is unacceptable (regulated data, etc.), the invariant stays opt-out: the gateway version is preserved as a config flag; sensitive-but-strict users keep enforce-at-write-time.
+**Structural mitigation:** The Cohesive flow we're already in IS the mitigation. `cohesive:validate-rewrite` runs the `spec-cohesion-reviewer` agent in fresh-eyes context against all rewritten docs after the rewrite lands, catching cross-doc inconsistency and vestigial-reference drift. `cohesive:review-codebase` after implementation lock catches second-order drift (code claiming what docs no longer claim). The internal `HOOKS_CANNOT_BYPASS_TOOLS` axiom stays prominent in `sdk-surface.md` so the SDK's *internal* gateway-shaped discipline (hook → tool → invariant chain) is preserved as the structural-trust story for new contributors — even as the *consumer-shell* gateway promise retires.
 
-**Secondary risks (with their existing mitigations, for completeness):**
-
-- *Daemon-off cost grows with time* — `dome reconcile` catches up missed events from inbox / git-diff / scheduled hooks (`cli.md:78-96`); idempotent by design. Catch-up cost is performance, not correctness. `dome doctor --time-since-reconcile` (proposed) surfaces the metric.
+**Why this isn't a meaty new failure mode:** the candidate risks I considered all turn out to have existing mitigation:
+- *Daemon-off cost grows with time* — `dome reconcile` catches up missed events from inbox / git-diff / scheduled hooks (`cli.md:78-96`); idempotent by design. Cost is performance, not correctness.
 - *AGENTS.md staleness* — `dome doctor --repair` regenerates the templated sections (`cli.md:30` already names this); user-prose sections preserved via the delimiter convention.
-- *Documentation overclaiming again* — `cohesive:validate-rewrite` is the structural backstop on the rewrite itself; `cohesive:review-codebase` after lock-and-implement catches drift.
+- *Sensitivity-timing window* — the feature is retiring entirely; no window to mitigate.
+
+The honest signal: this direction has no significant new structural failure mode because the machinery was already designed this way. The rewrite makes the docs match the machinery. That's the value of doing it now — before the gap between rhetoric and reality breeds the wrong second-order assumptions.
 
 **Required substrate before implementation:**
 
@@ -178,23 +180,38 @@ In scope for this brainstorm: the value-prop framing, the use-pattern model (bat
   - `wiki/matrices/consumer-surface.md` — MCP column reweights to optional/future; AGENTS.md column added
   - `wiki/matrices/intent-prompt-tools.md` — workflow invocations primarily CLI-shaped
 - **Named invariants:**
-  - `SENSITIVE_GOES_TO_INBOX` — relax to post-hoc move; rewrite enforcement story
+  - `SENSITIVE_GOES_TO_INBOX` — **delete entirely** (feature retired)
   - `EVERY_WRITE_IS_LOGGED` — clarify the watcher's role for native writes
   - New: `VAULT_RECONCILES_AFTER_NATIVE_WRITE` (proposed)
   - New: `AGENTS_MD_IS_ORIENTATION_SURFACE` (proposed)
+- **Workflows / prompts retired:**
+  - `src/prompts/builtin/sensitivity-classify.md` — delete (feature retired)
+  - The `sensitivity-classify` row in `wiki/specs/prompts-and-workflows.md` — delete
+  - The sensitivity-related row in `wiki/matrices/intent-prompt-tools.md` — delete
+  - Config plumbing for the opt-in sensitivity feature (`docs/.dome/config.yaml`-shape entry, related test fixtures) — delete
+  - `inbox/review/` directory's documentation — simplify to single-purpose lint-report destination (no longer doubles as sensitivity-flagged content)
 - **Tests / checks proposed (not yet implemented):**
   - `dome init` writes AGENTS.md with the templated orientation content + user-prose section delimiters
   - `dome doctor --repair` regenerates the templated sections; user-prose sections preserved
   - Out-of-band-write end-to-end: native `fs.writeFile` → watcher → hooks fire → invariants enforced eventually
-  - Post-hoc sensitivity routing: write to `wiki/` with sensitive content → classifier hook → `moveDocument` to `inbox/review/`
   - `dome reconcile` catching multiple missed-event types after the daemon was off
   - `dome doctor --time-since-reconcile` reports drift age
+- **Tests retired:**
+  - `tests/invariants/sensitive-goes-to-inbox.test.ts` — delete (invariant retired)
+  - Sensitivity routing tests in workflow/integration suites — delete
 - **Gotchas:**
   - Upgrade `wiki/gotchas/out-of-band-vault-edits.md` from workaround to canonical-path documentation
-  - Add `wiki/gotchas/daemon-off-while-vault-mutating.md` (drift accumulation; reconcile-as-mitigation)
-  - Add `wiki/gotchas/sensitivity-classification-timing.md` (non-zero window for post-hoc routing)
+  - Add `wiki/gotchas/daemon-off-while-vault-mutating.md` (catch-up cost growth; reconcile-as-mitigation)
 - **Semantic linters (proposed):** none new in this brainstorm.
 
 ### Next
 
-Rewrite the docs to make this direction true. *(`cohesive:rewrite-specs`.)* **Files to edit:** `docs/VISION.md`, `wiki/specs/harnesses.md`, `wiki/specs/mcp-surface.md`, `wiki/specs/sdk-surface.md`, `wiki/specs/cli.md`, `wiki/specs/prompts-and-workflows.md`, `wiki/concepts/brain-companion.md`, `wiki/matrices/consumer-surface.md`, `wiki/matrices/intent-prompt-tools.md`, `wiki/invariants/SENSITIVE_GOES_TO_INBOX.md`, `wiki/invariants/EVERY_WRITE_IS_LOGGED.md`, plus new files: `wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE.md`, `wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md`, `wiki/gotchas/daemon-off-while-vault-mutating.md`, `wiki/gotchas/sensitivity-classification-timing.md`, and an upgrade to `wiki/gotchas/out-of-band-vault-edits.md`. Slug: `dome-compiler-reframe`. Classification: **Design** (touches normative substrate broadly; no direct implementation work yet).
+Rewrite the docs to make this direction true. *(`cohesive:rewrite-specs`.)*
+
+**Files to edit:** `docs/VISION.md`, `wiki/specs/harnesses.md`, `wiki/specs/mcp-surface.md`, `wiki/specs/sdk-surface.md`, `wiki/specs/cli.md`, `wiki/specs/prompts-and-workflows.md`, `wiki/concepts/brain-companion.md`, `wiki/matrices/consumer-surface.md`, `wiki/matrices/intent-prompt-tools.md`, `wiki/invariants/EVERY_WRITE_IS_LOGGED.md`.
+
+**Files to delete:** `wiki/invariants/SENSITIVE_GOES_TO_INBOX.md`, `src/prompts/builtin/sensitivity-classify.md`, `tests/invariants/sensitive-goes-to-inbox.test.ts`, plus any sensitivity-specific config-test fixtures.
+
+**Files to add:** `wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE.md`, `wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md`, `wiki/gotchas/daemon-off-while-vault-mutating.md`. Upgrade `wiki/gotchas/out-of-band-vault-edits.md` from workaround-doc to canonical-path doc.
+
+**Slug:** `dome-compiler-reframe`. **Classification:** **Design** (touches normative substrate broadly + retires one feature; no direct implementation work yet — implementation lands after `validate-rewrite` Approved).
