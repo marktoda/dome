@@ -1,5 +1,5 @@
 import type { Vault } from "../vault";
-import type { AgentLoop } from "../workflows/agent-loop";
+import { runWorkflow, type RunWorkflowOpts } from "../workflows/agent-loop";
 import type { WorkflowName } from "../workflows/workflow-name";
 
 export interface ExpectedEffects {
@@ -21,17 +21,17 @@ export interface ReplayResult {
 }
 
 /**
- * v0.5 replay scaffold: drives the AgentLoop against a fixture vault.
+ * v0.5 replay scaffold: drives the workflow runner against a fixture vault.
  *
  * Full conversational replay (live LLM + recorded fixtures + effect diffing)
- * lands when the Anthropic adapter exposes Tool metadata. For now, callers
+ * lands when the eval harness records SDK tool-call streams. For now, callers
  * use this as a smoke driver and assert effect shape via direct Tool calls.
  */
 export async function replay(
-  loop: AgentLoop,
-  _vault: Vault,
-  kase: ReplayCase
+  vault: Vault,
+  kase: ReplayCase,
+  opts: RunWorkflowOpts = {},
 ): Promise<ReplayResult> {
-  await loop.runWorkflow(kase.workflow, kase.userMessage);
+  await runWorkflow(vault, kase.workflow, kase.userMessage, opts);
   return { passed: true, missing: [], extra: [] };
 }
