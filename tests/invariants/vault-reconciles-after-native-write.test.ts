@@ -29,6 +29,36 @@ describe("VAULT_RECONCILES_AFTER_NATIVE_WRITE", () => {
     expect(calls[0]!.subject.toLowerCase()).toContain("out-of-band");
   });
 
+  test("native fs.writeFile + dome reconcile → log.md gains an out-of-band entry via the shipped-default hook", async () => {
+    const v = await makeTestVault();
+    try {
+      const r = await openVault(v.path);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const vault = r.value;
+
+      // Write a wiki file directly via node:fs (bypasses Tools, no watcher).
+      await mkdir(join(vault.path, "wiki", "entities"), { recursive: true });
+      await writeFile(
+        join(vault.path, "wiki", "entities", "reconcile-target.md"),
+        "---\ntype: entity\ncreated: 2026-05-26\nupdated: 2026-05-26\nsources: []\n---\n# Reconcile target\n",
+      );
+
+      // Run reconcile — phase 2 detects the working-tree change and fires
+      // document.written.wiki.entity, which the shipped-default
+      // log-out-of-band-write hook subscribes to.
+      const { reconcile } = await import("../../src/reconcile");
+      await reconcile(vault, { onEvent: (e) => vault.dispatchEvents([e]) });
+      await vault.drainHooks();
+
+      const logBody = await readFile(join(vault.path, "log.md"), "utf8");
+      expect(logBody).toContain("wiki/entities/reconcile-target.md");
+      expect(logBody.toLowerCase()).toContain("out-of-band");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("native fs.writeFile + VaultWatcher → log.md gains an out-of-band entry via the shipped-default hook", async () => {
     const v = await makeTestVault();
     try {

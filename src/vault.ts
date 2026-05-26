@@ -197,11 +197,21 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     });
   }
   if (config.hooks.builtin["log-out-of-band-write"] === "enabled") {
-    // Watcher-driven external-path enforcement of EVERY_WRITE_IS_LOGGED.
+    // External-path enforcement of EVERY_WRITE_IS_LOGGED across both paths:
+    //   - watcher: live OOB edits caught by chokidar (vault.out-of-band-edit)
+    //   - reconcile: writes the watcher missed (document.written.wiki.*)
     // See docs/wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE.md.
     registry.register({
-      id: "log-out-of-band-write",
+      id: "log-out-of-band-write-live",
       pattern: "vault.out-of-band-edit",
+      handler: logOutOfBandWrite,
+      source: "sdk",
+      async: true,
+      idempotent: true,
+    });
+    registry.register({
+      id: "log-out-of-band-write-reconcile",
+      pattern: "document.written.wiki.*",
       handler: logOutOfBandWrite,
       source: "sdk",
       async: true,

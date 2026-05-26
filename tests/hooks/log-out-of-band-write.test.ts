@@ -44,7 +44,7 @@ describe("logOutOfBandWrite", () => {
     expect(calls.length).toBe(0);
   });
 
-  test("ignores events of other kinds", async () => {
+  test("fires on document.written.* events (reconcile path)", async () => {
     const calls: Array<{ verb: string; subject: string }> = [];
     const ctx = {
       tools: {
@@ -58,6 +58,23 @@ describe("logOutOfBandWrite", () => {
       { kind: "document.written.wiki.entity", path: "wiki/entities/x.md" } as never,
       ctx,
     );
+    expect(calls.length).toBe(1);
+    expect(calls[0]!.subject).toContain("wiki/entities/x.md");
+    expect(calls[0]!.subject.toLowerCase()).toContain("reconcile");
+  });
+
+  test("ignores unrelated event kinds (log.appended, document.moved)", async () => {
+    const calls: Array<{ verb: string; subject: string }> = [];
+    const ctx = {
+      tools: {
+        appendLog: async (input: { verb: string; subject: string }) => {
+          calls.push(input);
+          return { result: { ok: true, value: {} as never }, effects: [] };
+        },
+      },
+    } as unknown as HookContext;
+    await logOutOfBandWrite({ kind: "log.appended" } as never, ctx);
+    await logOutOfBandWrite({ kind: "document.moved", from: "a", to: "b" } as never, ctx);
     expect(calls.length).toBe(0);
   });
 });
