@@ -305,6 +305,35 @@ Repairs landed in this pass:
 
 - All 4 pass-3 findings closed. The previously-substrate-noted "`dome serve` MCP flag undefined" remains substrate-noted. The pass-3 repair to sdk-surface.md's tier table also addressed the broader question of *where* MCP lives in the substrate's framing model — it's now explicitly outside the enablement-tier model (entrypoint choice, not invariant/feature toggle), which makes the flag form choice cleaner for the implementer to settle.
 
+## Repair pass 4 (closed inline post-Approved-verdict)
+
+**Source review:** `docs/cohesive/reviews/2026-05-26-dome-compiler-reframe-rewrite-validation-pass-4.md` (pass-4 **Approved** verdict — 0 Blocker, 0 High, 2 Medium, 2 Low — with disposition "Close in same worktree → merge"). Per the rubric, Approved + Medium repairs close inline in the same worktree before merge; this section records the closure.
+
+Repairs landed in this pass:
+
+- **Closes I1 (sdk-surface.md still claimed "Two shipped default hooks" — `intake-raw` is the third).**
+  - `sdk-surface.md:235` — "Two shipped default hooks" → "Three shipped default hooks". Added a third bullet for `intake-raw` with forward-pointer to `hooks.md` §"Intake patterns — shipped-default and opt-in". Updated the disable-instructions paragraph to cover all three hooks (auto-update-index, auto-cross-reference, intake-raw), including the operational consequence of disabling intake-raw (quick-capture files accumulate in `inbox/raw/` until reconcile re-fires).
+
+- **Closes I2 (prompts-and-workflows.md `ingest` row hedged "(when activated)" — but intake-raw is shipped-default).**
+  - `prompts-and-workflows.md:59` — `ingest` row's trigger cell: dropped "(when activated)". The trigger now reads `intake:inbox/raw/*, intent:capture-thought` (no hedge), matching `intake-raw`'s shipped-default status. The opt-in workflows (voice-ingest, research, clip-integrate) keep their "(when activated)" hedges since those genuinely require user-side opt-in.
+
+- **Closes I3 (prompts-and-workflows.md "CLI commands map 1:1 to workflows" overstated the mapping).**
+  - `prompts-and-workflows.md:165` — Workflow invocation path 1: replaced "CLI commands map 1:1 to workflows." with "Workflow-driven CLI commands map 1:1 to workflows — dome lint invokes lint, dome migrate invokes migrate, dome export-context invokes export-context. Other CLI commands (init, serve, reconcile, doctor, stats) are deterministic Tool sequences with no workflow (see [[wiki/specs/cli]] §"Implementation note" for the split)." Aligns with the cli.md:231 deterministic-vs-workflow split.
+
+- **Closes I4 (intent-prompt-tools.md `ingest` row missing "intake-triggered" annotation).**
+  - `intent-prompt-tools.md:20` — `ingest` row's workflow column: added "(also intake-triggered via shipped-default `inbox/raw/`)" annotation. The matrix now signals the dual-invocation shape (conversational intent + shipped-default intake) symmetric with the voice-ingest and clip-integrate annotations on their respective rows.
+
+**Verdict trajectory across the four-pass repair loop:**
+
+| Pass | Verdict | Findings | Closed in |
+|---|---|---|---|
+| 1 | Issues Found | 4 Blocker + 3 Important | repair pass 1 (commit 62d3a40) |
+| 2 | Issues Found | 4 Blocker + 3 Medium | repair pass 2 (commit e8f2f5c) |
+| 3 | Issues Found | 1 Blocker + 3 Important | repair pass 3 (commit 5d259f8) |
+| 4 | **Approved** | 0 Blocker, 0 High, 2 Medium + 2 Low | repair pass 4 (this section; inline close per "Close in same worktree → merge") |
+
+The rewrite is now Approved + all post-verdict repairs landed; the design delta ledger is ready for `cohesive:implement-cohesively` to drive implementation.
+
 ## Ready for fresh-eyes review?
 
 **Yes.** All affected docs are in end-state language; no "we will" / "should consider" in normative sections. Obsolete concepts (`SENSITIVE_GOES_TO_INBOX`, sensitivity-classify, gateway-as-universal-claim) are removed, not annotated. The delta ledger preamble accurately summarizes the body sections. Substrate inventories (index, matrices, related-lists) updated to reflect the additions and deletions.

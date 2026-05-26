@@ -56,7 +56,7 @@ The SDK ships these workflow prompts. Shipped-default workflows are loaded into 
 
 | Workflow | Tier | Trigger | Tools available | Purpose |
 |---|---|---|---|---|
-| `ingest` | shipped default | `intake:inbox/raw/*` (when activated), `intent:capture-thought` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Process a raw source into wiki updates. |
+| `ingest` | shipped default | `intake:inbox/raw/*`, `intent:capture-thought` | readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve | Process a raw source into wiki updates. |
 | `query` | shipped default | `intent:ask` | readDocument, searchIndex, wikilinkResolve, writeDocument (synthesis-page proposal only) | Answer a question from the vault with citations. May propose synthesis page creation. |
 | `lint` | shipped default | `manual:lint`, `clock:weekly` (when scheduled) | readDocument, searchIndex, wikilinkResolve, writeDocument, moveDocument, deleteDocument, appendLog | Detect drift: orphans, missing cross-refs, contradictions, schema violations. Propose first; apply on `--apply <id>` from the most recent report. |
 | `migrate` | shipped default | `manual:migrate` | readDocument, writeDocument, moveDocument, deleteDocument, appendLog, searchIndex, wikilinkResolve | Convert an existing markdown vault to Dome shape. Plan first; apply on `--apply`. May delete superseded files. |
@@ -162,7 +162,7 @@ For most additive customization (vault-wide vocabulary, workflow-specific extens
 
 A workflow is invoked in three contexts. **The CLI is the primary invocation surface in v0.5** — workflows are explicit operations the user (or an agent acting on the user's behalf) runs when wanted, not background concerns the agent must route through:
 
-1. **By the CLI (primary)** — `dome lint` invokes the `lint` workflow; `dome export-context <topic>` invokes the `export-context` workflow; `dome migrate <path>` invokes `migrate`. CLI commands map 1:1 to workflows. Agentic harnesses invoke these via shell-execution (e.g., Claude Code's `Bash`); native Dome surfaces invoke them via their own UX affordances.
+1. **By the CLI (primary)** — `dome lint` invokes the `lint` workflow; `dome export-context <topic>` invokes the `export-context` workflow; `dome migrate <path>` invokes `migrate`. *Workflow-driven* CLI commands map 1:1 to workflows; the other five (`init`, `serve`, `reconcile`, `doctor`, `stats`) are deterministic Tool sequences with no workflow (see [[wiki/specs/cli]] §"Implementation note" for the split). Agentic harnesses invoke workflow-driven CLI commands via shell-execution (e.g., Claude Code's `Bash`); native Dome surfaces invoke them via their own UX affordances.
 2. **By an intake hook (passive)** — a declarative hook's `workflow:` field names the workflow. The dispatcher loads the workflow prompt, binds the listed tools to the harness, hands the harness the document that triggered the intake, and runs. This is what makes `inbox/raw/`, `inbox/voice/`, `inbox/clip/` capture-and-compile work.
 3. **By a user intent (optional, MCP-mounted harnesses)** — when a harness mounts the Dome MCP server, its `instructions` payload describes how to switch into a workflow prompt based on user intent. This is the MCP-prompt-switching mechanism; it's available for harnesses that benefit from it (see [[wiki/specs/mcp-surface]]) but not load-bearing for Claude Code in v0.5 — Claude Code uses its native conversation flow and shells out to the CLI when explicit workflow invocation is wanted.
 

@@ -17,7 +17,7 @@ Each workflow declares which subset of the SDK's Tool catalog it binds. Opt-in w
 
 | User intent (conversational mode) | Workflow prompt | Tier | Tools bound | Common Effects |
 |---|---|---|---|---|
-| "Capture this thought" / "Note that..." / "Remember that..." | `ingest` | default | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` | 5-15 page touches per call; new entities/concepts when justified by recurrence; `auto-update-index` hook fires for each wiki write |
+| "Capture this thought" / "Note that..." / "Remember that..." | `ingest` (also intake-triggered via shipped-default `inbox/raw/`) | default | `readDocument`, `writeDocument`, `appendLog`, `searchIndex`, `wikilinkResolve` | 5-15 page touches per call; new entities/concepts when justified by recurrence; `auto-update-index` hook fires for each wiki write |
 | "What do I think about X?" / "What do I know about Y?" / "Ask my memory: ..." | `query` | default | `readDocument`, `searchIndex`, `wikilinkResolve`, `writeDocument` (only if user accepts synthesis-page creation) | Citations to pages and sources; optional synthesis page proposal |
 | "Prep me for my meeting with Z" / "Brief me on T" | `query` (prep-mode framing) | default | `readDocument`, `searchIndex`, `wikilinkResolve` | Prep summary; no writes |
 | "Check the wiki for issues" / "Lint my vault" / "What's stale?" | `lint` | default | `readDocument`, `searchIndex`, `wikilinkResolve`, `writeDocument`, `moveDocument`, `deleteDocument`, `appendLog` | Proposed fixes by default (report under `inbox/review/lint-report-YYYY-MM-DD.md`); named findings applied on `--apply <id>` from the most recent report. Primary invocation: `dome lint` from any shell (Claude Code's `Bash`, terminal, etc.) |

@@ -232,14 +232,15 @@ Two registration forms (full details in [[wiki/specs/hooks]]):
 
 Events are derived from Effects automatically; there is no `fireEvent` API. See [[wiki/matrices/event-types-and-payloads]].
 
-**Two shipped default hooks** ride in the SDK as enabled-by-default:
+**Three shipped default hooks** ride in the SDK as enabled-by-default:
 
 - `auto-update-index` — on `document.written.wiki.*` and `document.deleted.wiki.*`, writes the affected index entries via `dispatcher.writeIndex(entry)` (the privileged internal API documented in [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]).
 - `auto-cross-reference` — on `document.written.wiki.entity`, searches the wiki for mentions of the new entity and writes backlinks via `writeDocument`.
+- `intake-raw` — the shipped-default intake hook on `document.written.inbox.raw.*`, invoking the `ingest` workflow to compile raw captures into wiki updates. The hook's declarative YAML ships at `.dome/hooks/intake-raw.yaml` via `dome init`; see [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in" for the full intake-pattern shape and how `intake-raw` differs from the four opt-in intake templates.
 
 `index.md` and `log.md` are dispatcher-owned per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]. Public Tools reject these paths; the dispatcher provides a privileged internal API (`dispatcher.writeIndex`, `dispatcher.appendLogEntry`) that shipped-default hooks and the `appendLog` Tool call. The privileged API is not part of the registration mechanism — plugins cannot register their own dispatcher-owned paths, and plugin / vault-local hook handlers receive a `HookContext` without the `dispatcher` field.
 
-Both shipped defaults can be disabled in `.dome/config.yaml`. When `auto-update-index` is disabled, `index.md` is unmaintained — `dome doctor --rebuild-index` regenerates it from `wiki/` on demand (see [[wiki/specs/cli]] §"dome doctor"). When `auto-cross-reference` is disabled, new entity pages land without inbound backlinks; existing pages remain untouched until the user runs `dome lint` or re-enables the hook. The Dome project's docs vault leaves both enabled.
+All three shipped defaults can be disabled in `.dome/config.yaml`. When `auto-update-index` is disabled, `index.md` is unmaintained — `dome doctor --rebuild-index` regenerates it from `wiki/` on demand (see [[wiki/specs/cli]] §"dome doctor"). When `auto-cross-reference` is disabled, new entity pages land without inbound backlinks; existing pages remain untouched until the user runs `dome lint` or re-enables the hook. When `intake-raw` is disabled (by removing the YAML or the `inbox/raw/` directory), quick-capture stops compiling automatically — captured files remain in `inbox/raw/` until the user runs `dome reconcile` or re-enables the hook. The Dome project's docs vault leaves all three enabled.
 
 ## Registration
 
