@@ -6,6 +6,8 @@
 //   assert throw; just assert it doesn't crash the process)
 
 import { describe, test, expect } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 
@@ -52,7 +54,7 @@ describe("Vault lifecycle", () => {
     }
   });
 
-  test("dispatchEvents after close() is a no-op", async () => {
+  test("dispatchEvents after close() is observably a no-op (index.md not updated)", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
@@ -60,29 +62,31 @@ describe("Vault lifecycle", () => {
       if (!res.ok) return;
       const vault = res.value;
 
-      // Seed a wiki page so auto-update-index has something to update.
+      // Seed a baseline page so index.md exists with known content.
       await vault.tools.writeDocument({
         path: "wiki/entities/seed.md",
         body: "# seed\n",
         frontmatter: { type: "entity", created: "2026-05-26", updated: "2026-05-26", sources: [] },
         opts: { create: true },
       });
+      await vault.drainHooks();
+      const indexBefore = await readFile(join(v.path, "index.md"), "utf8");
+      expect(indexBefore).toContain("[[wiki/entities/seed]]");
+
       await vault.close();
 
-      // Post-close dispatchEvents accepts the call but no-ops — handler is
-      // not invoked. Verified indirectly: subsequent writes through the
-      // tools surface would normally fire auto-update-index, but since
-      // dispatchEvents is closed, the hook chain is silent. (We assert
-      // no-throw here; the structural pin is that the closed flag stops
-      // the dispatcher from queueing work into resources that may have
-      // been released in a future minor.)
+      // Post-close dispatchEvents must NOT update index.md. Send a fake event
+      // that would normally trigger auto-update-index; verify index.md is
+      // untouched after the dispatch + a drain settle. A regression that
+      // dropped the `if (closed) return` guard in vault.ts would leave this
+      // assertion failing because the hook would fire and rewrite index.md
+      // with the post-close write that follows.
       await vault.dispatchEvents([
-        { kind: "document.written.wiki.entity", path: "wiki/entities/seed.md", diff: "" } as never,
+        { kind: "document.written.wiki.entity", path: "wiki/entities/post-close.md", diff: "" } as never,
       ]);
-      // Idempotent: drainHooks still callable after close (no new work
-      // queued; just settles whatever is pending — which is nothing).
       await vault.drainHooks();
-      expect(true).toBe(true);
+      const indexAfter = await readFile(join(v.path, "index.md"), "utf8");
+      expect(indexAfter).toBe(indexBefore);
     } finally {
       await v.cleanup();
     }
