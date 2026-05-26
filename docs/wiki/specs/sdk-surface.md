@@ -90,6 +90,12 @@ Naming convention: Tools that operate on any Document use `<verb>Document`; Tool
 
 The catalog is open: plugins register additional Tools through the registration mechanism. The seven above are the entirety of what the SDK ships.
 
+#### Tool catalog is one declarative array
+
+The seven Tools above are declared once, in `src/tools/registry.ts`, as the canonical `TOOL_REGISTRY`. Every downstream catalog — the `BoundToolSurface` exposed on `Vault.tools`, the AI SDK `ToolSet` consumed by `runWorkflow`, the MCP adapters built by `buildToolAdapters`, the snake_case names in `MCP_TOOL_NAMES`, the Zod enum that validates workflow-prompt frontmatter `tools:` lists — derives from this one array. Adding an 8th Tool in v0.5.1 / v1+ is two file edits: a new `src/tools/<name>.ts` implementation, and one new entry in the registry. The MCP adapter, the AI SDK exposure, the frontmatter validator, and the bound surface all pick it up automatically.
+
+This is the structural enforcement of "seven Tools, sealed." Prior to the registry, the seven names lived in five+ parallel catalogs and the seal depended on reviewer attention.
+
 #### Tool signatures
 
 Canonical input/output shapes for the seven Tools. Other specs and invariant docs cite these shapes rather than restate them inline.

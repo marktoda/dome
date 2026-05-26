@@ -1,21 +1,12 @@
+// MCP tool adapters. Each adapter wraps one SDK Tool so the MCP server can
+// expose it over the protocol. Adapters derive their shape from the central
+// `src/tools/registry.ts` — adding a Tool to the registry surfaces it here
+// automatically.
+
 import { z } from "zod";
 import type { Vault } from "../vault";
-import { McpToolName } from "./tool-names";
 import type { Effect, ToolReturn } from "../types";
-import {
-  readDocumentInput,
-  writeDocumentInput,
-  appendLogInput,
-  searchIndexInput,
-  wikilinkResolveInput,
-  moveDocumentInput,
-  deleteDocumentInput,
-  compactWriteDocumentInput,
-  compactAppendLogInput,
-  compactSearchIndexInput,
-  compactMoveDocumentInput,
-  compactDeleteDocumentInput,
-} from "../tools/schemas";
+import { TOOL_NAMES, MCP_TOOL_NAMES, TOOL_REGISTRY, type ToolName } from "../tools/registry";
 
 export interface ToolAdapterResult {
   ok: boolean;
@@ -25,6 +16,7 @@ export interface ToolAdapterResult {
 }
 
 export interface ToolAdapter {
+  /** MCP-protocol name (snake_case, `dome.*` prefix). */
   name: string;
   description: string;
   inputSchema: z.ZodType;
@@ -33,58 +25,37 @@ export interface ToolAdapter {
 
 async function wrap<T>(invoker: () => Promise<ToolReturn<T>>): Promise<ToolAdapterResult> {
   const out = await invoker();
-  if (out.result.ok) {
-    return { ok: true, data: out.result.value, effects: out.effects };
-  }
+  if (out.result.ok) return { ok: true, data: out.result.value, effects: out.effects };
   return { ok: false, error: out.result.error, effects: out.effects };
 }
 
+/**
+ * Build the MCP tool adapters from the canonical registry. Each entry:
+ *
+ *   - takes its `name` from `MCP_TOOL_NAMES` (the canonical protocol name)
+ *   - takes its `description` and `inputSchema` from `TOOL_REGISTRY` (the
+ *     same Zod schema the AI SDK consumer uses — one source of truth)
+ *   - delegates the call to `vault.toolParsers[name]`, which parses the raw
+ *     input through the schema and invokes the same Vault-bound function
+ *     `vault.tools[name]` exposes (sharing the hook-dispatch wrap)
+ *
+ * Adding an 8th Tool to the registry surfaces it here for free.
+ */
 export function buildToolAdapters(vault: Vault): ToolAdapter[] {
-  return [
-    {
-      name: McpToolName.ReadDocument,
-      description: "Read a Document by path.",
-      inputSchema: readDocumentInput,
-      handler: async (input) => wrap(() => vault.tools.readDocument(readDocumentInput.parse(input))),
-    },
-    {
-      name: McpToolName.WriteDocument,
-      description: "Create or update a Document.",
-      inputSchema: writeDocumentInput,
-      handler: async (input) =>
-        wrap(() => vault.tools.writeDocument(compactWriteDocumentInput(writeDocumentInput.parse(input)))),
-    },
-    {
-      name: McpToolName.AppendLog,
-      description: "Append an entry to log.md.",
-      inputSchema: appendLogInput,
-      handler: async (input) =>
-        wrap(() => vault.tools.appendLog(compactAppendLogInput(appendLogInput.parse(input)))),
-    },
-    {
-      name: McpToolName.SearchIndex,
-      description: "Search the index + page bodies.",
-      inputSchema: searchIndexInput,
-      handler: async (input) =>
-        wrap(() => vault.tools.searchIndex(compactSearchIndexInput(searchIndexInput.parse(input)))),
-    },
-    {
-      name: McpToolName.WikilinkResolve,
-      description: "Resolve a wikilink to a Document or null.",
-      inputSchema: wikilinkResolveInput,
-      handler: async (input) => wrap(() => vault.tools.wikilinkResolve(wikilinkResolveInput.parse(input))),
-    },
-    {
-      name: McpToolName.MoveDocument,
-      description: "Move a Document; atomically rewrite incoming wikilinks.",
-      inputSchema: moveDocumentInput,
-      handler: async (input) => wrap(() => vault.tools.moveDocument(compactMoveDocumentInput(moveDocumentInput.parse(input)))),
-    },
-    {
-      name: McpToolName.DeleteDocument,
-      description: "Delete a Document.",
-      inputSchema: deleteDocumentInput,
-      handler: async (input) => wrap(() => vault.tools.deleteDocument(compactDeleteDocumentInput(deleteDocumentInput.parse(input)))),
-    },
-  ];
+  return TOOL_NAMES.map((name: ToolName) => {
+    const entry = TOOL_REGISTRY[name];
+    const aiTool = vault.aiTools[name];
+    // The AI SDK tool carries the live Zod schema; we mirror it on the MCP
+    // adapter so consumers (and zod-to-json-schema) see the same shape.
+    if (aiTool === undefined || aiTool.inputSchema === undefined) {
+      throw new Error(`registry is missing AI tool or inputSchema for "${name}"`);
+    }
+    const parser = vault.toolParsers[name];
+    return {
+      name: MCP_TOOL_NAMES[name],
+      description: entry.description,
+      inputSchema: aiTool.inputSchema as z.ZodType,
+      handler: (input: unknown) => wrap(() => parser(input)),
+    };
+  });
 }

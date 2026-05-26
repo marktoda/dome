@@ -1,16 +1,9 @@
 import { z } from "zod";
 import { ok, err, type Result } from "../types";
-
-// The 7 canonical tool names from sdk-surface.md §"Tool signatures".
-const TOOL_NAMES = [
-  "readDocument",
-  "writeDocument",
-  "appendLog",
-  "searchIndex",
-  "wikilinkResolve",
-  "moveDocument",
-  "deleteDocument",
-] as const;
+// The seven canonical Tool names — derived from the single source-of-truth
+// registry. Adding a Tool there automatically extends what's valid in
+// workflow-prompt frontmatter `tools:` lists.
+import { TOOL_NAMES } from "../tools/registry";
 
 const ToolNameSchema = z.enum(TOOL_NAMES);
 

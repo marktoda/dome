@@ -5,27 +5,14 @@
 // declared tool subset to the model, and surface the final result back to
 // callers. See docs/wiki/specs/prompts-and-workflows.md §"Runner".
 
-import { generateText, tool, stepCountIs, type LanguageModel, type ToolSet } from "ai";
+import { generateText, stepCountIs, type LanguageModel, type ToolSet } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 
 import type { Vault } from "../vault";
 import { WorkflowRegistry } from "../prompts/registry";
 import type { WorkflowName } from "./workflow-name";
 import { commitWorkflow } from "../workflow-commit";
-import {
-  readDocumentInput,
-  writeDocumentInput,
-  appendLogInput,
-  searchIndexInput,
-  wikilinkResolveInput,
-  moveDocumentInput,
-  deleteDocumentInput,
-  compactWriteDocumentInput,
-  compactAppendLogInput,
-  compactSearchIndexInput,
-  compactMoveDocumentInput,
-  compactDeleteDocumentInput,
-} from "../tools/schemas";
+import { MUTATING_TOOL_NAMES, filterAiTools } from "../tools/registry";
 
 export const DEFAULT_MODEL = "claude-opus-4-7";
 export const DEFAULT_MAX_STEPS = 50;
@@ -60,15 +47,6 @@ export interface RunWorkflowResult {
   commitSha: string;
 }
 
-// Mutating Tool names whose calls represent on-disk changes that need to be
-// part of the per-workflow commit. Read-only Tools (readDocument, searchIndex,
-// wikilinkResolve) and the privileged dispatcher path (appendLog writes log.md
-// indirectly) are NOT in this set — appendLog's mutation is captured by the
-// appendLog wrapping in Tool wraps already, which emits the appended-log
-// effect that flows through dispatch. For the commit's `git add` set we use
-// the path arguments of the mutating Tool calls.
-const MUTATING_TOOLS = new Set(["writeDocument", "moveDocument", "deleteDocument", "appendLog"]);
-
 /**
  * Run a workflow against the model. Resolves the workflow's prompt body and
  * declared tool subset, then hands control to `generateText` which drives
@@ -90,7 +68,7 @@ export async function runWorkflow(
   const def = await registry.get(workflowName);
   if (!def) throw new Error(`workflow not found: ${workflowName}`);
 
-  const tools = buildAiSdkTools(vault, def.frontmatter.tools);
+  const tools = filterAiTools(vault.aiTools, def.frontmatter.tools);
   const modelArg = opts.model ?? DEFAULT_MODEL;
   const model: LanguageModel = typeof modelArg === "string" ? anthropic(modelArg) : modelArg;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
@@ -153,7 +131,7 @@ function collectTouchedPaths(result: Awaited<ReturnType<typeof generateText>>): 
   const paths = new Set<string>();
   for (const step of result.steps) {
     for (const call of step.toolCalls) {
-      if (!MUTATING_TOOLS.has(call.toolName)) continue;
+      if (!(MUTATING_TOOL_NAMES as ReadonlySet<string>).has(call.toolName)) continue;
       const args = call.input as { path?: string; from?: string; to?: string };
       // writeDocument / deleteDocument / appendLog: `path` or no path (appendLog
       // writes log.md exclusively, covered by the log.md add below).
@@ -179,66 +157,13 @@ function subjectFromUserMessage(userMessage: string): string {
 }
 
 /**
- * Build the AI SDK tool set for a workflow, filtered to the tools the workflow
- * declares in its frontmatter `tools:` list. Exposed for testing.
+ * Build the AI SDK tool set for a workflow, filtered to the tools the
+ * workflow declares in its frontmatter `tools:` list. Exposed for tests.
  *
- * The full SDK tool catalog is constructed up-front; we then select the
- * entries the workflow allows. Unknown names are silently dropped.
+ * Now a one-liner over `vault.aiTools` (the registry-bound canonical set):
+ * adding an 8th Tool to `src/tools/registry.ts` makes it available here for
+ * free.
  */
-export function buildAiSdkTools(
-  vault: Vault,
-  allowedToolNames: ReadonlyArray<string>,
-): ToolSet {
-  const all: ToolSet = allToolDefinitions(vault);
-  const out: ToolSet = {};
-  for (const name of allowedToolNames) {
-    const t = all[name];
-    if (t !== undefined) out[name] = t;
-  }
-  return out;
-}
-
-// ----- Tool definitions ----------------------------------------------------
-// Zod schemas + compaction helpers live in src/tools/schemas.ts (single source
-// of truth shared with the MCP adapter layer). Here we wrap each schema as an
-// AI SDK `tool({...})` and bind it to the Vault.
-
-function allToolDefinitions(vault: Vault): ToolSet {
-  return {
-    readDocument: tool({
-      description: "Read a Document by path.",
-      inputSchema: readDocumentInput,
-      execute: async (input) => vault.tools.readDocument(input),
-    }),
-    writeDocument: tool({
-      description: "Create or update a Document. Refuses raw/ paths.",
-      inputSchema: writeDocumentInput,
-      execute: async (input) => vault.tools.writeDocument(compactWriteDocumentInput(input)),
-    }),
-    appendLog: tool({
-      description: "Append an entry to log.md.",
-      inputSchema: appendLogInput,
-      execute: async (input) => vault.tools.appendLog(compactAppendLogInput(input)),
-    }),
-    searchIndex: tool({
-      description: "Search the index + page bodies for matches.",
-      inputSchema: searchIndexInput,
-      execute: async (input) => vault.tools.searchIndex(compactSearchIndexInput(input)),
-    }),
-    wikilinkResolve: tool({
-      description: "Resolve a full-path wikilink to a Document or null.",
-      inputSchema: wikilinkResolveInput,
-      execute: async (input) => vault.tools.wikilinkResolve(input),
-    }),
-    moveDocument: tool({
-      description: "Move a Document; atomically rewrites incoming wikilinks.",
-      inputSchema: moveDocumentInput,
-      execute: async (input) => vault.tools.moveDocument(compactMoveDocumentInput(input)),
-    }),
-    deleteDocument: tool({
-      description: "Delete a Document.",
-      inputSchema: deleteDocumentInput,
-      execute: async (input) => vault.tools.deleteDocument(compactDeleteDocumentInput(input)),
-    }),
-  };
+export function buildAiSdkTools(vault: Vault, allowedToolNames: ReadonlyArray<string>): ToolSet {
+  return filterAiTools(vault.aiTools, allowedToolNames);
 }

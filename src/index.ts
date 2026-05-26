@@ -72,8 +72,21 @@ export { makeFixtureVault, type Fixture, type EvalFixtureVault } from "./eval/fi
 // SDK. Consumers needing programmatic workflow execution should depend on
 // `runWorkflow` directly. See src/eval/replay.ts.
 
+// Canonical Tool registry — single source of truth for the seven Tools.
+// Plugin and harness authors that want to enumerate or extend the Tool
+// surface (v1+) consume these.
+export {
+  TOOL_NAMES,
+  MCP_TOOL_NAMES,
+  MUTATING_TOOL_NAMES,
+  filterAiTools,
+  type ToolName,
+} from "./tools/registry";
+
 // Stage 4: MCP server + CLI
-export { McpToolName, MCP_TOOL_NAMES } from "./mcp/tool-names";
+// `McpToolName` (PascalCase keyed object) is a backwards-compat alias over
+// `MCP_TOOL_NAMES` above; both re-export the same canonical strings.
+export { McpToolName } from "./mcp/tool-names";
 export { buildToolAdapters, type ToolAdapter } from "./mcp/tool-adapters";
 export { buildPromptAdapters, type PromptAdapter } from "./mcp/prompt-adapters";
 export { ResourceAdapter, ResourceUri, type ResourceContent } from "./mcp/resource-adapters";

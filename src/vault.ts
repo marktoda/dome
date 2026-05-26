@@ -5,13 +5,7 @@ import { parse as parseYaml } from "yaml";
 import { ok, err, type Result, type ToolError, type ToolReturn } from "./types";
 import { isGitRepo } from "./git";
 import { makePrivilegedWriter } from "./privileged-writer";
-import { readDocument } from "./tools/read-document";
-import { writeDocument, type WriteDocumentInput } from "./tools/write-document";
-import { appendLog, type AppendLogInput } from "./tools/append-log";
-import { searchIndex } from "./tools/search-index";
-import { wikilinkResolve } from "./tools/wikilink-resolve";
-import { moveDocument, type MoveDocumentInput } from "./tools/move-document";
-import { deleteDocument, type DeleteDocumentInput } from "./tools/delete-document";
+import { bindTools } from "./tools/registry";
 import { HookRegistry } from "./hook-registry";
 import { HookDispatcher } from "./hook-dispatcher";
 import { autoUpdateIndex } from "./hooks/auto-update-index";
@@ -46,6 +40,24 @@ export interface Vault {
   readonly config: VaultConfig;
   readonly pageTypes: PageTypesConfig;
   readonly tools: BoundToolSurface;
+  /**
+   * The AI SDK `ToolSet` curried against this Vault — the same Tools as
+   * `tools`, just shaped for `generateText` consumption. `runWorkflow`
+   * filters this to the workflow's declared subset; no separate construction
+   * step. Adding an 8th Tool to the registry makes it available here for
+   * free.
+   */
+  readonly aiTools: import("ai").ToolSet;
+  /**
+   * Per-Tool parse-and-invoke functions for transports that deliver raw
+   * input (the MCP adapter, future HTTP/SSE surfaces). Each function parses
+   * the input through its Zod schema, compacts the result, and invokes the
+   * underlying Tool — sharing the same execution path the AI SDK consumer
+   * uses. Keyed by canonical Tool name.
+   */
+  readonly toolParsers: Readonly<
+    Record<import("./tools/registry").ToolName, (input: unknown) => Promise<import("./types").ToolReturn<unknown>>>
+  >;
   /**
    * Wait for all async hooks dispatched so far to settle.
    * Built-in shipped-default hooks are async by default; tests and reconcile
@@ -142,6 +154,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   const privilegedWriter = makePrivilegedWriter(root);
   const partial = { path: root, config, pageTypes } as Vault;
 
+
   // Hook wiring — shipped-default registrations gated by config.
   const registry = new HookRegistry();
   if (config.hooks.builtin["auto-update-index"] === "enabled") {
@@ -189,29 +202,19 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     await hookDispatcher.dispatchEvents(events, ctxFactory);
   };
 
-  // wrap: after a Tool returns, project its Effects into events and dispatch.
-  // Built-in handlers receive `privilegedWriter` in their HookContext (per
-  // HOOKS_CANNOT_BYPASS_TOOLS — only built-in handlers may use it for
-  // index/log writes).
-  const wrap = <I, R extends ToolReturn<unknown>>(
+  // Wrap mutating Tools so their effects flow through the hook dispatcher.
+  // The registry tells `bindTools` which Tools mutate; read-only Tools
+  // (`readDocument`, `searchIndex`, `wikilinkResolve`) are exposed unwrapped
+  // (they emit no effects worth projecting).
+  const wrapMutation = <I, R extends ToolReturn<unknown>>(
     fn: (input: I) => Promise<R>
-  ): ((input: I) => Promise<R>) => {
-    return async (input: I): Promise<R> => {
-      const out = await fn(input);
-      await dispatchEvents(projectEffectsToEvents(out.effects));
-      return out;
-    };
+  ) => async (input: I): Promise<R> => {
+    const out = await fn(input);
+    await dispatchEvents(projectEffectsToEvents(out.effects));
+    return out;
   };
 
-  const tools: BoundToolSurface = {
-    readDocument: (input) => readDocument(partial, input),
-    writeDocument: wrap((input: WriteDocumentInput) => writeDocument(partial, privilegedWriter, input)),
-    appendLog: wrap((input: AppendLogInput) => appendLog(partial, privilegedWriter, input)),
-    searchIndex: (input) => searchIndex(partial, input),
-    wikilinkResolve: (input) => wikilinkResolve(partial, input),
-    moveDocument: wrap((input: MoveDocumentInput) => moveDocument(partial, privilegedWriter, input)),
-    deleteDocument: wrap((input: DeleteDocumentInput) => deleteDocument(partial, privilegedWriter, input)),
-  };
+  const { tools, aiTools, parsers: toolParsers } = bindTools(partial, privilegedWriter, wrapMutation);
 
   // Walk wiki/ and rewrite index.md from scratch via the privileged writer.
   // Exposed as `vault.rebuildIndex()` so the CLI's `dome doctor --rebuild-index`
@@ -232,6 +235,8 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     config,
     pageTypes,
     tools,
+    aiTools,
+    toolParsers,
     drainHooks: () => hookDispatcher.drain(),
     dispatchEvents,
     rebuildIndex,
