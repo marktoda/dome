@@ -60,9 +60,17 @@ Not a column above because no Tool refuses an invariant-violating call for it; t
 - Shipped-default invariants are enforced when the vault's `.dome/config.yaml` doesn't disable them (the default state).
 - Opt-in invariants are inert unless the vault explicitly enables them in `.dome/config.yaml`.
 
+## Lockstep status
+
+This matrix is **lockstep-checked**: `tests/integration/matrix-coverage.test.ts` parses the matrix table above and asserts every bolded cell maps to an assertion in the named invariant's `tests/invariants/<slug>.test.ts` file. Adding a new bolded cell without the corresponding test assertion fails the lockstep test.
+
+The off-matrix invariants below carry the delegating-stub lockstep shape described in [[wiki/specs/sdk-surface]] §"Off-matrix lockstep convention": each `tests/invariants/<slug>.test.ts` file dynamically imports the canonical enforcement test (`tests/integration/bundle-deps.test.ts`, `tests/integration/mcp-hook-dispatch.test.ts`, etc.) rather than carrying an `expect(true).toBe(true)` no-op. The AC3 meta-check at `tests/integration/invariant-coverage.test.ts` rejects no-op stubs by requiring each lockstep file to either run a `describe()` referencing an enforcement test (off-matrix) or contain at least one `expect()` against vault state (on-matrix).
+
+Three sibling matrices remain **documentary** in v0.5 (not lockstep-checked): [[wiki/matrices/consumer-surface]], [[wiki/matrices/event-types-and-payloads]], [[wiki/matrices/intent-prompt-tools]]. Each carries a "Lockstep status" line near its top. The matrix-coverage test extends to [[wiki/matrices/consumer-surface]] in v0.5.1 (the highest-stakes v1 surface contract) once the cell-format parser lands; the other two are documentary by design because their cells are not machine-shape (free-form event names; bound-tool lists per workflow that are validated by `prompts/workflow-frontmatter.ts` already).
+
 ## Test guarantees
 
-Each bolded enforcement cell maps to a test in `tests/invariants/<INVARIANT>.test.ts`. Off-matrix invariants (`VAULT_IS_GIT_REPO`, `INBOX_IS_EPHEMERAL`, `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, `HOOK_DISPATCH_IS_VAULT_BOUND`) carry their structural-enforcement tests at the boundaries named in the off-matrix sections above — the AC3 invariant-coverage lockstep test accepts those named tests as the lockstep counterpart.
+Each bolded enforcement cell maps to a test in `tests/invariants/<INVARIANT>.test.ts`. Off-matrix invariants (`VAULT_IS_GIT_REPO`, `INBOX_IS_EPHEMERAL`, `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, `HOOK_DISPATCH_IS_VAULT_BOUND`) carry their structural-enforcement tests at the boundaries named in the off-matrix sections above; the AC3 invariant-coverage lockstep test accepts those named tests as the lockstep counterpart and rejects no-op stubs per the convention in [[wiki/specs/sdk-surface]] §"Off-matrix lockstep convention".
 
 - `RAW_IS_IMMUTABLE` — tests for `writeDocument`, `moveDocument`, and `deleteDocument` (refuses raw/ targets unconditionally).
 - `INDEX_AND_LOG_ARE_DISPATCHER_OWNED` — tests for `writeDocument`, `moveDocument`, `deleteDocument` (refuses `index.md` and `log.md` unconditionally with `kind: 'dispatcher-owned-path'`); asserts `HookContext.dispatcher` is `undefined` for plugin / vault-local handlers and defined for shipped-default handlers.

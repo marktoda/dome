@@ -46,8 +46,10 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 ## Gotchas
 
 - [[wiki/gotchas/agent-prompt-regression]] — Model upgrades or prompt edits can change behavior silently.
+- [[wiki/gotchas/agents-md-delimiter-shape]] — Editing the user-prose delimiter strings in the invariant doc without updating `src/agents-md.ts` destroys user prose on the next `--repair`.
 - [[wiki/gotchas/ai-sdk-tool-variance]] — Registry's `Tool<>` cast bridges AI SDK v6 inference mismatch; revisit on next AI SDK major bump.
 - [[wiki/gotchas/async-read-after-write-staleness]] — Reads immediately after writes may not see hook follow-on.
+- [[wiki/gotchas/boundary-validation-via-zod]] — YAML and JSON persistence boundaries hand-validate where Zod is the SDK's pattern; corruption is silent.
 - [[wiki/gotchas/concurrent-harness-write]] — Two harness sessions in the same vault race on writes.
 - [[wiki/gotchas/daemon-off-while-vault-mutating]] — `dome serve` off; catch-up cost grows linearly with time-since-reconcile.
 - [[wiki/gotchas/dirty-git-state-at-reconcile]] — `dome reconcile` refuses to run during mid-merge / mid-rebase.
@@ -62,6 +64,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 Named-but-deferred semantic linter specs. Each names the rule, what it checks, and the target version. v0.5 ships none of these structurally — they are the v0.5.1+ candidates the substrate carries against.
 
+- [[wiki/linters/no-retired-symbol-names]] — *(v0.5.1)* Every normative doc names no symbol in the retired-names allow-list (`ConsumerSurface`, `buildConsumerSurface`, `projectMcp`, `McpToolName`, `SENSITIVE_GOES_TO_INBOX`, …); the lockstep complements `tests/invariants/no-retired-invariant-names-in-prompts.test.ts` (which checks shipped prompts) on the doc surface.
 - [[wiki/linters/wrap-mutating-invoke-consumption]] — *(v0.5.1+)* Every projection of `TOOL_REGISTRY` consumes `wrapMutatingInvoke` rather than inlining the post-invoke dispatch loop; enforces [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] against hand-inlined byte-equivalent duplicates the integration tests cannot catch.
 
 ## Entities

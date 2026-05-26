@@ -5,6 +5,7 @@ updated: 2026-05-26
 sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"]
 severity: low
 coverage: off-matrix
+enforced_at: src/tools/registry.ts
 first_observed: 2026-05-26
 ---
 

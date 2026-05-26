@@ -4,6 +4,7 @@ created: 2026-05-26
 updated: 2026-05-26
 severity: medium
 coverage: off-matrix
+enforced_at: src/reconcile.ts
 first_observed: 2026-05-26
 sources: ["[[cohesive/brainstorms/2026-05-26-dome-compiler-reframe]]"]
 ---

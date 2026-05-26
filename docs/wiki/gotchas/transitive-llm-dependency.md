@@ -5,6 +5,7 @@ updated: 2026-05-26
 sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"]
 severity: high
 coverage: off-matrix
+enforced_at: tests/integration/bundle-deps.test.ts
 first_observed: 2026-05-26
 ---
 
@@ -21,12 +22,12 @@ first_observed: 2026-05-26
 1. **The [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] axiom** pins the contract: `@dome/sdk` core may not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`. Structurally enforced by `tests/integration/bundle-deps.test.ts`.
 
 2. **The entrypoint split.** Four entrypoints replace the prior two:
-   - `@dome/sdk` — core (Vault, Document, Tool, Hook, the seven Tools, hook dispatcher, reconcile, watcher, types, registrations)
+   - `@dome/sdk` — core (Vault, Document, Tool, Hook, the seven Tools, hook dispatcher, reconcile, watcher, types, registrations, **`AbstractSurface`** + `buildAbstractSurface(vault)`, `PromptDescriptor`, `ResourceDescriptor`)
    - `@dome/sdk/workflows` — LLM-driven surface (`runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, `@ai-sdk/anthropic` + `ai` deps)
-   - `@dome/sdk/mcp` — MCP server surface (`DomeMcpServer`, `buildConsumerSurface(vault)`, adapters, `@modelcontextprotocol/sdk` dep)
-   - `@dome/sdk/cli` — CLI shell (`runCli`, the seven `dome*` command functions; consumes `commander`)
+   - `@dome/sdk/mcp` — MCP server surface (`DomeMcpServer`, `renderMcp(surface)`, `McpSurface`, adapters, `@modelcontextprotocol/sdk` dep)
+   - `@dome/sdk/cli` — CLI shell (the eight `dome*` command functions; consumes `commander`)
 
-   `Vault` itself sheds `aiTools` and `toolParsers` — those projections live in entrypoint-scoped functions (`projectAiSdk(vault)`, `projectMcp(vault)`) consumers reach explicitly.
+   `Vault` itself sheds `aiTools` and `toolParsers` — those projections live in entrypoint-scoped functions (`projectAiSdk(vault)` in `@dome/sdk/workflows`; `renderMcp(surface)` in `@dome/sdk/mcp`) consumers reach explicitly.
 
 **Specific scenarios:**
 

@@ -66,6 +66,49 @@ openVault(path) → Vault
 
 The watcher lifecycle is **outside** the Vault. `VaultWatcher` is always caller-owned: constructed by the consumer (e.g., `domeServe`), started by the consumer, stopped by the consumer. `vault.close()` does NOT stop watchers — even ones that were dispatching into `vault.dispatchEvents(...)` — because the Vault doesn't know about them. The caller-owns-resource pattern mirrors Bun's file handles: whoever opened it, closes it.
 
+#### Composable construction
+
+`openVault(path)` is the canonical entry point and remains a one-call construction for the common case. Internally it composes three named helpers, each independently consumable by a future consumer surface that wants a custom subset of the built-in Vault behavior:
+
+```ts
+async function openVault(root: string): Promise<Result<Vault, ToolError>> {
+  const { config, pageTypes } = await loadVaultConfig(root);
+  const registry = buildBuiltinHookRegistry(root, config);
+  const vaultRef: { current: Vault | null } = { current: null };
+  const wired = wireDispatcher(registry, makePrivilegedWriter(root), { vaultRef });
+  const vault: Vault = { path: root, config, pageTypes, tools: bindTools(root, wired.dispatchEvents),
+                         drainHooks: wired.drainHooks, dispatchEvents: wired.dispatchEvents,
+                         rebuildIndex: /* ... */, close: wired.close };
+  vaultRef.current = vault;
+  await loadDeclarativeHooks(root, registry, vault);
+  return Result.ok(vault);
+}
+```
+
+The three helpers:
+
+- **`loadVaultConfig(root): Promise<{ config: VaultConfig; pageTypes: PageTypesConfig }>`** — reads `.dome/config.yaml` and `.dome/page-types.yaml`, applies the shipped-default fallback for missing files, returns the resolved configs. Pure I/O; no side effects beyond file reads.
+- **`buildBuiltinHookRegistry(root, config): HookRegistry`** — constructs a `HookRegistry` and registers the built-in shipped-default handlers (`auto-update-index`, `auto-cross-reference`, `log-out-of-band-write`, `intake-raw` per `.dome/config.yaml.hooks.enabled` flags). Returns the populated registry.
+- **`wireDispatcher(registry, writer, { vaultRef }): { dispatcher, dispatchEvents, drainHooks, close }`** — constructs the `HookDispatcher`, wires the cycle-detection listener, and returns the closures `openVault` exposes as Vault methods. The `vaultRef: { current: Vault | null }` setter is the structural fence against the temporal-dead-zone scar earlier shapes carried: closures hold a reference to the *holder* of the Vault, not the Vault itself, so the closure order does not depend on which line of `openVault` runs first. `wireDispatcher` returns before the Vault exists; `dispatchEvents` reads `vaultRef.current` at call-time.
+
+**The `vaultRef` setter is load-bearing.** It replaces three positional-ordering rules earlier shapes of `openVault` carried (the "TDZ closure" comment, the "loadDeclarativeHooks LAST" comment, the cycle-listener wiring window). With `vaultRef`, the construction order is free: `wireDispatcher` returns before `vault` is assigned; `loadDeclarativeHooks` runs at any point after `registry` is populated and `vault` is published to `vaultRef.current`; the cycle listener attaches to the dispatcher before the Vault exists. The bootstrap-order regression test at `tests/integration/vault-bootstrap-order.test.ts` scrambles the section order and asserts hook-cycle logging still works — the structural fence against a future contributor "tidying up" `openVault` into a TDZ-prone shape.
+
+A future v1 consumer surface (e.g., a desktop shell that wants a Vault-without-watcher, or an in-memory test Vault, or a Vault with a different built-in hook set) consumes the three helpers independently:
+
+```ts
+// A v1 desktop shell that wants a Vault with a custom hook registry
+const { config, pageTypes } = await loadVaultConfig(root);
+const registry = new HookRegistry();
+registry.register(autoUpdateIndex);
+registry.register(myDesktopShellHook);
+const vaultRef = { current: null as Vault | null };
+const wired = wireDispatcher(registry, makePrivilegedWriter(root), { vaultRef });
+const vault: Vault = { path: root, config, pageTypes, ...wired, tools: bindTools(root, wired.dispatchEvents) };
+vaultRef.current = vault;
+```
+
+`openVault(path)` remains the recommended path for the 99% case; the composable-construction shape is the v1+ extensibility seam.
+
 ### Document
 
 A Document is any markdown file in a Vault. It is a value, not a service. Fields:
@@ -272,11 +315,45 @@ The SDK ships features across three tiers. The tier determines whether a feature
 | **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | `EVERY_WRITE_IS_LOGGED`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `INBOX_IS_EPHEMERAL`, `AGENTS_MD_IS_ORIENTATION_SURFACE`. 4 default page types. `auto-update-index` + `auto-cross-reference` hooks. `intake-raw` shipped-default hook. `ingest`, `query`, `lint`, `migrate`, `export-context` workflows. `inbox/raw/` + `inbox/review/` directories. |
 | **Opt-in** | Shipped, not active by default. Activated by adding the corresponding hook YAML / workflow / invariant entry to `<vault>/.dome/`. | `PAGE_CREATION_REQUIRES_RECURRENCE`. `voice-ingest`, `research`, `clip-integrate` workflows. `inbox/<bucket>/` intake directories beyond `inbox/raw/`. |
 
-The MCP server is *not* a tier in the table above — it is a preserved code surface, non-primary in v0.5 per [[wiki/specs/mcp-surface]] §"Status in v0.5". The table's tiers describe invariant/feature *enablement*; the MCP server is a *consumer-shell entrypoint choice* (one of several ConsumerSurface adapters per §"Consumer surfaces" below) and lives outside the enablement-tier model.
+The MCP server is *not* a tier in the table above — it is a preserved code surface, non-primary in v0.5 per [[wiki/specs/mcp-surface]] §"Status in v0.5". The table's tiers describe invariant/feature *enablement*; the MCP server is a *consumer-shell entrypoint choice* (the first per-protocol renderer over `AbstractSurface`, per §"Consumer surfaces" below) and lives outside the enablement-tier model.
 
 `dome init <path>` produces a minimal general-purpose vault — the axioms and shipped defaults, including the `intake-raw` shipped-default intake hook + the `inbox/raw/` directory it listens on, and the `inbox/review/` lint-report destination. Activation of opt-in features beyond `intake-raw` is manual: copy the relevant hook YAML template from the SDK into `<vault>/.dome/hooks/` and create the `inbox/<bucket>/` directory the hook listens on. A future "packs" or "presets" mechanism may layer convenience over this; v0.5 keeps it manual.
 
 The shipped-defaults catalog has a single source of truth in the SDK: `src/shipped-defaults.ts` exports `SHIPPED_VAULT_CONFIG: VaultConfig` and `SHIPPED_PAGE_TYPES: PageTypesConfig` as typed objects, plus YAML serializers (`shippedConfigYaml`, `shippedPageTypesYaml`) for the on-disk projections. The runtime fallback in `openVault`, the `dome init` / `dome migrate` scaffolder, and the eval / test vault factories all derive from the same constants — adding or flipping a shipped default touches one file.
+
+### Adding a new invariant
+
+Three file edits, paralleling the "Adding an 8th Tool" recipe in §"Tool catalog is one declarative array":
+
+1. **Add a `NAME: "NAME"` entry** to `src/types.ts` `INVARIANTS`. The const is `as const` and produces `InvariantName = typeof INVARIANTS[keyof typeof INVARIANTS]` — adding the entry extends the union type everywhere `InvariantName` is referenced (the `ToolError` `invariant-violated` kind; the cohesion-scorecard surface; the `dome doctor` invariant-coverage check).
+2. **Create the doc** at `docs/wiki/invariants/<NAME>.md` from the invariant template (statement, tier, why, structural enforcement, counter-example, test guarantee, related). Tier is one of axiom / shipped-default / opt-in; the tier choice has structural consequences (axioms cannot be disabled in `.dome/config.yaml`; shipped-defaults can; opt-ins ship inactive).
+3. **Create the test** at `tests/invariants/<slug>.test.ts` (slug = NAME lowercased with underscores → hyphens). The AC3 lockstep test at `tests/integration/invariant-coverage.test.ts` iterates `Object.entries(INVARIANTS)` and asserts each named invariant has a corresponding test file — missing a test file fails AC3.
+
+For an **off-matrix invariant** (one not enforced at a Tool's call site — e.g., `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY` enforced at the bundling layer, `HOOK_DISPATCH_IS_VAULT_BOUND` enforced at the registry-helper layer), the `tests/invariants/<slug>.test.ts` file is **not** a `expect(true).toBe(true)` stub. It imports from the canonical enforcement test (e.g., `tests/integration/bundle-deps.test.ts` for the LLM/MCP boundary) and asserts the structural fence runs there. See §"Off-matrix lockstep convention" below for the canonical stub shape.
+
+The shipped-default tier additionally edits `src/shipped-defaults.ts` `SHIPPED_VAULT_CONFIG.invariants` to add the enable flag; the opt-in tier ships the invariant as inactive (the doc says `tier: opt-in`; activation happens by the user adding the corresponding entry to `<vault>/.dome/config.yaml`).
+
+#### Off-matrix lockstep convention
+
+The five off-matrix invariants — `VAULT_IS_GIT_REPO`, `INBOX_IS_EPHEMERAL`, `CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY`, `WORKFLOWS_KNOW_VAULT_CONTEXT`, `HOOK_DISPATCH_IS_VAULT_BOUND` — are enforced at boundaries other than a Tool's call site. Their `tests/invariants/<slug>.test.ts` lockstep file follows the **delegating-stub** shape:
+
+```ts
+// tests/invariants/hook-dispatch-is-vault-bound.test.ts
+import { describe, test } from "bun:test";
+
+describe("HOOK_DISPATCH_IS_VAULT_BOUND (off-matrix)", () => {
+  test("enforced by tests/integration/mcp-hook-dispatch.test.ts (MCP projection)", async () => {
+    await import("../integration/mcp-hook-dispatch.test");
+  });
+  test("enforced by tests/integration/ai-sdk-hook-dispatch.test.ts (AI-SDK projection)", async () => {
+    await import("../integration/ai-sdk-hook-dispatch.test");
+  });
+});
+```
+
+The dynamic `import("...")` runs the linked test file's `describe`/`test` blocks; a regression in either projection fails the lockstep stub's test for the off-matrix invariant. The `expect(true).toBe(true)` shape is **not** the convention — it produces a stub that AC3 accepts but that enforces nothing.
+
+The AC3 meta-check at `tests/integration/invariant-coverage.test.ts` requires the lockstep file to either run a `describe()` block referencing the enforcement test (for off-matrix invariants) or contain at least one `expect()` call against vault state (for on-matrix invariants). The check is a structural fence against the no-op stub shape the pass-3 architecture review surfaced.
 
 ## Consumer surfaces
 
@@ -297,6 +374,7 @@ interface AbstractSurface {
   readonly prompts: ReadonlyArray<PromptDescriptor>;
   readonly resources: ReadonlyArray<ResourceDescriptor>;
   readonly instructions: string;
+  readonly readDynamicResource: (uri: string) => Promise<string | null>;
 }
 
 function buildAbstractSurface(vault: Vault): Promise<AbstractSurface>;
@@ -304,13 +382,15 @@ function buildAbstractSurface(vault: Vault): Promise<AbstractSurface>;
 
 `tools` is exactly `vault.tools` — the same `BoundToolSurface` reachable directly on the Vault. No protocol shaping happens at the abstract layer.
 
-`prompts` is a list of `PromptDescriptor` records — each carries a bare name (`"ingest"`, `"lint"`, `"system-base"`; no protocol prefix), an optional description, an optional Zod schema for arguments, and a `getMessages(args)` callback that produces protocol-agnostic message descriptors. Protocol-specific naming (`dome.workflow.<name>` for MCP, future REST paths for HTTP) is applied by the per-protocol renderer.
+`prompts` is a list of `PromptDescriptor` records — each carries a bare name (`"ingest"`, `"lint"`, `"system-base"`; no protocol prefix), an optional description, a fully-resolved `body: string` (the system prompt text with includes resolved and template variables substituted), and an optional `tier` indicating the workflow's shipping status. Protocol-specific naming (`dome.workflow.<name>` for MCP, future REST paths for HTTP) and protocol-specific argument shape are applied by the per-protocol renderer. v0.5 PromptDescriptors are static-body shape; **parameterized prompts with Zod-validated `arguments` + a `getMessages(args)` callback are deferred to v0.5.1+** when a workflow first needs argument templating — the descriptor grows the optional fields; existing static-body consumers continue to read `body` directly.
 
-`resources` is a list of `ResourceDescriptor` records — each carries a logical URI (e.g., `"index"`, `"log"`, `"page/<path>"`, `"vault/info"`), an optional MIME type, and a `read()` callback returning the content. Protocol-specific URI prefixing (`dome://` for MCP, REST routes for HTTP) is applied by the renderer.
+`resources` is a list of `ResourceDescriptor` records — each carries a logical URI (e.g., `"index"`, `"log"`, `"vault/info"`), an optional MIME type, and a `read()` callback returning the content. Protocol-specific URI prefixing (`dome://` for MCP, REST routes for HTTP) is applied by the renderer.
+
+`readDynamicResource(uri)` is the fifth field on `AbstractSurface` because page content is not enumerable. The `resources` list above is the static catalog (index, log, vault info — fixed-set URIs the renderer can declare at startup); `readDynamicResource` is the callback for *templated* resource URIs the protocol exposes as a parameterized lookup. MCP renders this as the `page/<path>` URI template (`dome://page/wiki/entities/danny`); a future HTTP renderer renders it as `/resources/page/{path}`. The split exists because MCP's `resources/list` payload only carries fixed URIs and shouldn't enumerate the vault; `readDynamicResource` handles the `resources/read` side. Returns `null` for unknown URIs.
 
 `instructions` is the same opaque string every protocol surfaces — cold-start orientation text composed from `system-base.md`, the enabled invariants, the page types declared, and the vault-local `AGENTS.md`.
 
-`buildAbstractSurface(vault)` returns `Promise<AbstractSurface>` because the prompt and instructions reads are async: scanning `<vault>/.dome/prompts/` for vault-local overrides and reading `AGENTS.md` at vault root are filesystem reads. The factory constructs one `PromptLoader` per Vault and threads it through prompt-descriptor production and instructions-builder both — a v1 long-running shell calling `buildAbstractSurface(vault)` does one prompt-directory scan, not three.
+`buildAbstractSurface(vault)` returns `Promise<AbstractSurface>` because the prompt and instructions reads are async: scanning `<vault>/.dome/prompts/` for vault-local overrides and reading `AGENTS.md` at vault root are filesystem reads. The factory constructs one `PromptLoader` per Vault and threads it through prompt-descriptor production and instructions-builder both — see [[wiki/specs/prompts-and-workflows]] §"Prompt loading lifecycle" for the full one-PromptLoader-per-Vault contract that `WorkflowRegistry` and `runWorkflow` extend by accepting the loader as an optional parameter.
 
 ### `renderMcp` (in `@dome/sdk/mcp`)
 
@@ -325,7 +405,7 @@ interface McpSurface {
 function renderMcp(surface: AbstractSurface): McpSurface;
 ```
 
-`renderMcp` is a synchronous projection: it wraps each Tool in `surface.tools` as an MCP `ToolAdapter` (`dome.*` snake_case name, the MCP handler signature, schema rendered to JSON Schema via `zod-to-json-schema`); wraps each `PromptDescriptor` as an `McpPromptAdapter` with the `dome.workflow.<name>` (or `dome.system_prompt`) prefix and the MCP `arguments` array; wraps the `ResourceDescriptor` list into a single `ResourceAdapter` that registers `dome://` URIs against the MCP protocol; passes `instructions` through unchanged.
+`renderMcp` is a synchronous projection: it wraps each Tool in `surface.tools` as an MCP `ToolAdapter` (`dome.*` snake_case name, the MCP handler signature, schema rendered to JSON Schema via `zod-to-json-schema`); wraps each `PromptDescriptor` as an `McpPromptAdapter` with the `dome.workflow.<name>` (or `dome.system_prompt`) prefix and the descriptor's resolved `body` as the prompt content (v0.5 PromptDescriptors are static-body; v0.5.1+'s parameterized shape will fill MCP's `arguments` array from the descriptor's then-future Zod schema); wraps the `ResourceDescriptor` list into a single `ResourceAdapter` that registers `dome://` URIs for the static catalog and dispatches `dome://page/<path>` reads to `surface.readDynamicResource(uri)` for the dynamic-page lookups; passes `instructions` through unchanged.
 
 `DomeMcpServer` is a thin protocol adapter over `McpSurface`:
 
@@ -343,9 +423,9 @@ await server.serveStdio();
 
 ### Future renderers (`renderHttp`, `renderVoice`, …)
 
-A v1+ HTTP shell ships `renderHttp(surface: AbstractSurface): HttpSurface` in `@dome/sdk/http` — wrapping `surface.tools` as REST route handlers, `surface.prompts` as `/prompts/<name>` GET endpoints, `surface.resources` as `/resources/<uri>` GET endpoints, and `surface.instructions` in the `/initialize` response. The same aggregation logic that produces `surface` is reused; only the wire format changes.
+A v1+ HTTP shell ships `renderHttp(surface: AbstractSurface): HttpSurface` in `@dome/sdk/http` — wrapping `surface.tools` as REST route handlers, `surface.prompts` as `/prompts/<name>` GET endpoints, `surface.resources` as `/resources/<uri>` GET endpoints, `surface.readDynamicResource` as the `/resources/page/{path}` parameterized route, and `surface.instructions` in the `/initialize` response. The same aggregation logic that produces `surface` is reused; only the wire format changes.
 
-The four-kinds-in-fixed-order convention holds across every render: `tools` first, `prompts` second, `resources` third, `instructions` fourth. The order matches the MCP protocol's mental model and is preserved through future protocol renderers for consistency.
+The five-field shape (`tools`, `prompts`, `resources`, `instructions`, `readDynamicResource`) and the in-order convention hold across every render. The fixed four — `tools`, `prompts`, `resources`, `instructions` — match the MCP protocol's mental model and render in that order in catalog payloads; `readDynamicResource` is a parameterized lookup that renders alongside `resources` as a dispatcher for templated URIs.
 
 ### Normative pin
 
