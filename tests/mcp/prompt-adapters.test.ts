@@ -1,20 +1,27 @@
+// MCP prompt adapter tests — adapted to the renderMcp(buildAbstractSurface(vault))
+// chain after Phase D removed src/mcp/prompt-adapters.ts. The substrate-shape
+// pins from main's a9e6fc6 (rendering-surface preamble is workflow-only, NOT
+// in dome.system_prompt) survive against the new code path.
+
 import { describe, test, expect } from "bun:test";
-import { buildPromptAdapters } from "../../src/mcp/prompt-adapters";
+import { buildAbstractSurface } from "../../src/abstract-surface";
+import { renderMcp } from "../../src/mcp/render-mcp";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 
-describe("MCP prompt adapters", () => {
+describe("MCP prompt adapters (via renderMcp)", () => {
   test("exposes 5 shipped-default workflows + dome.system_prompt by default", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const adapters = await buildPromptAdapters(res.value);
+      const surface = await buildAbstractSurface(res.value);
+      const mcp = renderMcp(surface);
       // 5 shipped-default workflows + dome.system_prompt
-      expect(adapters.length).toBe(6);
-      expect(adapters.find(a => a.name === "dome.system_prompt")).toBeDefined();
-      expect(adapters.find(a => a.name === "dome.workflow.ingest")).toBeDefined();
-      expect(adapters.find(a => a.name === "dome.workflow.export_context")).toBeDefined();
+      expect(mcp.prompts.length).toBe(6);
+      expect(mcp.prompts.find(a => a.name === "dome.system_prompt")).toBeDefined();
+      expect(mcp.prompts.find(a => a.name === "dome.workflow.ingest")).toBeDefined();
+      expect(mcp.prompts.find(a => a.name === "dome.workflow.export_context")).toBeDefined();
     } finally {
       await v.cleanup();
     }
@@ -25,8 +32,9 @@ describe("MCP prompt adapters", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const adapters = await buildPromptAdapters(res.value);
-      expect(adapters.find(a => a.name === "dome.workflow.sensitivity_classify")).toBeUndefined();
+      const surface = await buildAbstractSurface(res.value);
+      const mcp = renderMcp(surface);
+      expect(mcp.prompts.find(a => a.name === "dome.workflow.sensitivity_classify")).toBeUndefined();
     } finally {
       await v.cleanup();
     }
@@ -42,10 +50,11 @@ describe("MCP prompt adapters", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
-      const adapters = await buildPromptAdapters(res.value);
-      const sysPrompt = adapters.find(a => a.name === "dome.system_prompt");
+      const surface = await buildAbstractSurface(res.value);
+      const mcp = renderMcp(surface);
+      const sysPrompt = mcp.prompts.find(a => a.name === "dome.system_prompt");
       expect(sysPrompt).toBeDefined();
-      expect(sysPrompt!.body).toContain(v.path); // vault-identity present
+      expect(sysPrompt!.body).toContain(v.path); // vault-identity present (substituted)
       expect(sysPrompt!.body.toLowerCase()).not.toContain("non-interactive"); // rendering-surface absent
       expect(sysPrompt!.body).not.toContain("# Rendering surface");
     } finally {
@@ -58,8 +67,9 @@ describe("MCP prompt adapters", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
-      const adapters = await buildPromptAdapters(res.value);
-      const ingest = adapters.find(a => a.name === "dome.workflow.ingest");
+      const surface = await buildAbstractSurface(res.value);
+      const mcp = renderMcp(surface);
+      const ingest = mcp.prompts.find(a => a.name === "dome.workflow.ingest");
       expect(ingest).toBeDefined();
       expect(ingest!.body.toLowerCase()).toContain("non-interactive");
       expect(ingest!.body).toContain("# Rendering surface");

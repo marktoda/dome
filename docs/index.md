@@ -21,6 +21,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 
 - [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] — *(axiom)* `@dome/sdk` core does not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`.
 - [[wiki/invariants/EVERY_WRITE_IS_LOGGED]] — *(shipped default)* Every mutation produces an appendLog call.
+- [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] — *(axiom)* Every projection of `vault.tools` (`projectAiSdk`, `renderMcp`, future renderers) routes mutating-Tool invocations through the single-source `wrapMutatingInvoke` helper.
 - [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] — *(axiom)* Hooks observe and call Tools; never mutate directly.
 - [[wiki/invariants/INBOX_IS_EPHEMERAL]] — *(shipped default)* Intake hooks must move/delete inbox files on completion; presence = pending.
 - [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]] — *(axiom)* index.md and log.md mutated only by dispatcher.writeIndex / dispatcher.appendLogEntry; public Tools reject these paths.
@@ -54,6 +55,12 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/gotchas/out-of-band-vault-edits]] — Obsidian or vim writes that bypass Dome's tools.
 - [[wiki/gotchas/substrate-count-drift]] — Synthesis docs inline counts that diverge from canonical const arrays.
 - [[wiki/gotchas/transitive-llm-dependency]] — Consumer bundles unexpectedly carry Anthropic + MCP because core re-exported LLM/MCP machinery.
+
+## Linters
+
+Named-but-deferred semantic linter specs. Each names the rule, what it checks, and the target version. v0.5 ships none of these structurally — they are the v0.5.1+ candidates the substrate carries against.
+
+- [[wiki/linters/wrap-mutating-invoke-consumption]] — *(v0.5.1+)* Every projection of `TOOL_REGISTRY` consumes `wrapMutatingInvoke` rather than inlining the post-invoke dispatch loop; enforces [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] against hand-inlined byte-equivalent duplicates the integration tests cannot catch.
 
 ## Entities
 

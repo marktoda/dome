@@ -54,6 +54,10 @@ Events are dotted paths. Hooks register against patterns; the dispatcher matches
 
 Multiple matching hooks fire in registration order; sync hooks first, async hooks after.
 
+## Expansion convention
+
+The declarative YAML loader at `src/hooks/yaml-loader.ts` rewrites a bare `event:` value (one with no `*` character) to `<event>.*` before registration. So `event: document.written` registers under pattern `document.written.*` and matches the projected `document.written.<category>.<type>` events the dispatcher emits. Events that already contain `*` are honored verbatim. This rewrite makes the common-case declarative form read naturally ("`event: document.written` plus `path_pattern: inbox/raw/*`") while producing the right registration pattern. Programmatic-form callers and custom YAML loaders must register `document.written.*` directly — there is no auto-expansion at the registry layer. See [[wiki/specs/hooks]] §"Bare events expand to suffix wildcards" for the canonical rule.
+
 ## Why events are derived, not fired
 
 A Tool doesn't call `fireEvent('document.written', ...)`. It returns Effects. The Hook dispatcher consumes the Effect array and projects events automatically. This means:

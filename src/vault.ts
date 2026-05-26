@@ -234,17 +234,19 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     await hookDispatcher.dispatchEvents(events, ctxFactory);
   };
 
-  // The hook-dispatch wrap is intrinsic to bindTools — it reads
-  // `vault.dispatchEvents` from the partial we hand in, and every consumer
-  // of bindTools (openVault, projectMcp, projectAiSdk) gets the same wrap
-  // for free. No more per-call-site wrapMutation closures.
+  // The hook-dispatch wrap is intrinsic to bindTools via wrapMutatingInvoke:
+  // it reads `vault.dispatchEvents` from the partial we hand in, and every
+  // projection of vault.tools (bindAiSdkTools, renderMcp, future renderHttp /
+  // renderVoice) consumes the same single-source helper. See
+  // HOOK_DISPATCH_IS_VAULT_BOUND.
   //
   // Only the strict-input BoundToolSurface is held on Vault. The AI-SDK
   // ToolSet and per-Tool parsers used to live on Vault.aiTools / .toolParsers;
-  // they now live in entrypoint-scoped projectAiSdk(vault) / projectMcp(vault)
-  // helpers (in @dome/sdk/workflows and @dome/sdk/mcp respectively). This
-  // is what makes CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY structurally true:
-  // openVault no longer needs to import `ai` to construct aiTools eagerly.
+  // they now live in entrypoint-scoped projectAiSdk(vault) (in
+  // @dome/sdk/workflows) and renderMcp(buildAbstractSurface(vault)) (in
+  // @dome/sdk/mcp) — this is what makes CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY
+  // structurally true: openVault no longer needs to import `ai` to
+  // construct aiTools eagerly.
   const partial = { path: root, config, pageTypes, dispatchEvents } as Vault;
   const { tools } = bindTools(partial, privilegedWriter);
 

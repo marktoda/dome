@@ -1,6 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { Vault } from "../vault";
+import type { AbstractSurface } from "../abstract-surface";
 
 export const ResourceUri = {
   Index: "dome://index",
@@ -8,8 +6,6 @@ export const ResourceUri = {
   VaultInfo: "dome://vault/info",
 } as const;
 export type ResourceUri = typeof ResourceUri[keyof typeof ResourceUri];
-
-const PAGE_URI_PREFIX = "dome://page/";
 
 export interface ResourceContent {
   uri: string;
@@ -23,41 +19,39 @@ export interface ResourceListing {
   description: string;
 }
 
+/**
+ * MCP-shaped resource adapter. Reads from AbstractSurface — applies the
+ * `dome://` URI prefix when listing static descriptors; falls back to
+ * surface.readDynamicResource for path-keyed URIs (`dome://page/<path>`).
+ *
+ * The only construction site is renderMcp(surface) in src/mcp/render-mcp.ts.
+ * Future protocol renderers (renderHttp, renderVoice) consume the same
+ * AbstractSurface shape and ship their own adapter.
+ */
 export class ResourceAdapter {
-  constructor(private vault: Vault) {}
+  constructor(private readonly surface: AbstractSurface) {}
 
   async list(): Promise<ResourceListing[]> {
-    return [
-      { uri: ResourceUri.Index, name: "Index", description: "The vault catalog (index.md)" },
-      { uri: ResourceUri.Log, name: "Log", description: "Append-only operation log (log.md)" },
-      { uri: ResourceUri.VaultInfo, name: "Vault info", description: "Vault config + invariants + tiers" },
-    ];
+    return this.surface.resources.map((r) => ({
+      uri: `dome://${r.uri}`,
+      name: r.name,
+      description: r.description,
+    }));
   }
 
   async read(uri: string): Promise<ResourceContent | null> {
-    if (uri === ResourceUri.Index) {
-      const text = await readFile(join(this.vault.path, "index.md"), "utf8");
+    if (!uri.startsWith("dome://")) return null;
+    const bareUri = uri.slice("dome://".length);
+    // Static descriptors first:
+    const desc = this.surface.resources.find((r) => r.uri === bareUri);
+    if (desc) {
+      const text = await desc.read();
+      return { uri, mimeType: desc.mimeType, text };
+    }
+    // Dynamic lookup (page/<path>):
+    const text = await this.surface.readDynamicResource(bareUri);
+    if (text !== null) {
       return { uri, mimeType: "text/markdown", text };
-    }
-    if (uri === ResourceUri.Log) {
-      const text = await readFile(join(this.vault.path, "log.md"), "utf8");
-      return { uri, mimeType: "text/markdown", text };
-    }
-    if (uri === ResourceUri.VaultInfo) {
-      const text = JSON.stringify({
-        path: this.vault.path,
-        invariants: this.vault.config.invariants,
-        pageTypes: this.vault.pageTypes,
-      }, null, 2);
-      return { uri, mimeType: "application/json", text };
-    }
-    // dome://page/<path>
-    if (uri.startsWith(PAGE_URI_PREFIX)) {
-      const path = uri.slice(PAGE_URI_PREFIX.length);
-      const out = await this.vault.tools.readDocument({ path });
-      if (out.result.ok) {
-        return { uri, mimeType: "text/markdown", text: out.result.value.body };
-      }
     }
     return null;
   }

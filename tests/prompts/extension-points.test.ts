@@ -255,7 +255,7 @@ describe("vault augmentation slots", () => {
       const idEpilogue = body.indexOf("QUERY-EPILOGUE-SENTINEL");
 
       // Every section is present.
-      for (const [name, idx] of Object.entries({
+      for (const idx of Object.values({
         idVaultIdentity, idSystemBase, idPrologue, idRendering,
         idWorkflowBody, idAugment, idEpilogue,
       })) {

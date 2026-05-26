@@ -12,8 +12,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import type { ToolAdapter } from "./tool-adapters";
-import type { PromptAdapter } from "./prompt-adapters";
+import type { ToolAdapter, McpPromptAdapter } from "./render-mcp";
 import type { ResourceAdapter } from "./resource-adapters";
 
 // Server-like surface: a tiny strict subset of @modelcontextprotocol/sdk's
@@ -27,7 +26,7 @@ export interface ServerLike {
 
 export interface HandlerSurface {
   tools: ReadonlyArray<ToolAdapter>;
-  prompts: ReadonlyArray<PromptAdapter>;
+  prompts: ReadonlyArray<McpPromptAdapter>;
   resources: ResourceAdapter;
 }
 

@@ -1,19 +1,19 @@
-// DomeMcpServer — thin protocol adapter over ConsumerSurface.
+// DomeMcpServer — thin protocol adapter over McpSurface.
 //
-// The server takes `{ surface }` only — the four kinds (tools, prompts,
-// resources, instructions) are everything the protocol handlers need.
-// `surface.tools` is the MCP-rendered ToolAdapter[] built by
-// buildConsumerSurface; `surface.prompts` and `surface.resources` likewise.
-// The constructor does no Vault-touching work — that's the substrate
-// commitment in docs/wiki/specs/mcp-surface.md §"Construction".
+// The server takes `{ surface: McpSurface }` only — the four kinds (tools,
+// prompts, resources, instructions) are everything the protocol handlers
+// need. `surface.tools` is the MCP-rendered ToolAdapter[] produced by
+// renderMcp(buildAbstractSurface(vault)); `surface.prompts` and
+// `surface.resources` likewise. The constructor does no Vault-touching
+// work — that's the substrate commitment in
+// docs/wiki/specs/mcp-surface.md §"Construction".
 
-import type { ConsumerSurface } from "./consumer-surface";
-import type { ToolAdapter } from "./tool-adapters";
+import type { McpSurface, ToolAdapter } from "./render-mcp";
 import { registerHandlers, type ServerLike } from "./handlers";
 
 export interface DomeMcpServerOpts {
-  /** The four-kind aggregation per docs/wiki/specs/sdk-surface.md §"Consumer surfaces". */
-  surface: ConsumerSurface;
+  /** The MCP-rendered four-kind surface per docs/wiki/specs/sdk-surface.md §"Consumer surfaces". */
+  surface: McpSurface;
 }
 
 export class DomeMcpServer {

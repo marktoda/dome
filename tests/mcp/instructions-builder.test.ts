@@ -1,21 +1,28 @@
+// MCP instructions tests — adapted to buildAbstractSurface(vault).instructions
+// after Phase D removed src/mcp/instructions-builder.ts. The instructions
+// composition moved to buildInstructionsString inside src/abstract-surface.ts,
+// reachable via AbstractSurface.instructions. The substrate-shape pins from
+// main's a9e6fc6 (rendering-surface is workflow-only; NOT in instructions)
+// survive against the new code path.
+
 import { describe, test, expect } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { buildInstructions } from "../../src/mcp/instructions-builder";
+import { buildAbstractSurface } from "../../src/abstract-surface";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 
-describe("buildInstructions", () => {
+describe("AbstractSurface.instructions (cold-start MCP instructions)", () => {
   test("includes system-base content", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
-      const out = await buildInstructions(res.value);
+      const surface = await buildAbstractSurface(res.value);
       // system-base.md opens with this heading; if it ever changes the test
       // will catch it and we update both intentionally.
-      expect(out).toContain("# Dome — Wiki Maintainer");
-      expect(out).toContain("RAW_IS_IMMUTABLE");
+      expect(surface.instructions).toContain("# Dome — Wiki Maintainer");
+      expect(surface.instructions).toContain("RAW_IS_IMMUTABLE");
     } finally {
       await v.cleanup();
     }
@@ -26,11 +33,11 @@ describe("buildInstructions", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
-      const out = await buildInstructions(res.value);
+      const surface = await buildAbstractSurface(res.value);
       // Default config: EVERY_WRITE_IS_LOGGED=enabled, SENSITIVE_GOES_TO_INBOX=disabled.
-      expect(out).toContain("### Enabled invariants");
-      expect(out).toContain("- EVERY_WRITE_IS_LOGGED");
-      expect(out).not.toContain("- SENSITIVE_GOES_TO_INBOX");
+      expect(surface.instructions).toContain("### Enabled invariants");
+      expect(surface.instructions).toContain("- EVERY_WRITE_IS_LOGGED");
+      expect(surface.instructions).not.toContain("- SENSITIVE_GOES_TO_INBOX");
     } finally {
       await v.cleanup();
     }
@@ -50,12 +57,12 @@ extensions:
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
-      const out = await buildInstructions(res.value);
-      expect(out).toContain("### Page types");
-      expect(out).toContain("- entity");
-      expect(out).toContain("- synthesis");
-      expect(out).toContain("- decision");
-      expect(out).toContain("- meeting");
+      const surface = await buildAbstractSurface(res.value);
+      expect(surface.instructions).toContain("### Page types");
+      expect(surface.instructions).toContain("- entity");
+      expect(surface.instructions).toContain("- synthesis");
+      expect(surface.instructions).toContain("- decision");
+      expect(surface.instructions).toContain("- meeting");
     } finally {
       await v.cleanup();
     }
@@ -70,9 +77,9 @@ extensions:
       );
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
-      const out = await buildInstructions(res.value);
-      expect(out).toContain("### Vault notes (from AGENTS.md)");
-      expect(out).toContain("Project Foo");
+      const surface = await buildAbstractSurface(res.value);
+      expect(surface.instructions).toContain("### Vault notes (from AGENTS.md)");
+      expect(surface.instructions).toContain("Project Foo");
     } finally {
       await v.cleanup();
     }
@@ -83,9 +90,9 @@ extensions:
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
-      const out = await buildInstructions(res.value);
-      expect(out).toContain("### Vault notes (from AGENTS.md)");
-      expect(out).toContain("_No AGENTS.md present._");
+      const surface = await buildAbstractSurface(res.value);
+      expect(surface.instructions).toContain("### Vault notes (from AGENTS.md)");
+      expect(surface.instructions).toContain("_No AGENTS.md present._");
     } finally {
       await v.cleanup();
     }
@@ -103,11 +110,11 @@ extensions:
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
-      const out = await buildInstructions(res.value);
-      expect(out.toLowerCase()).not.toContain("non-interactive");
-      expect(out).not.toContain("# Rendering surface");
+      const surface = await buildAbstractSurface(res.value);
+      expect(surface.instructions.toLowerCase()).not.toContain("non-interactive");
+      expect(surface.instructions).not.toContain("# Rendering surface");
       // Vault identity SHOULD be present — universal across surfaces.
-      expect(out).toContain(v.path);
+      expect(surface.instructions).toContain(v.path);
     } finally {
       await v.cleanup();
     }

@@ -1,20 +1,14 @@
-// Pins the hook-dispatch contract across consumer surfaces:
-// MCP-routed mutations fire the same hooks as SDK-direct mutations.
-//
-// Pre-Phase-B, the wrap was paid once at openVault and shared via
-// vault.toolParsers / vault.aiTools. Phase B removed those Vault fields
-// and replaced them with per-entrypoint projection functions
-// (projectMcp, projectAiSdk). The B1 repair pass made the wrap intrinsic
-// to bindTools so every consumer inherits it — this test pins that
-// contract structurally: invoking dome.write_document through the MCP
-// adapter must trigger auto-update-index just like vault.tools.writeDocument
-// would.
+// Pins the hook-dispatch contract across consumer surfaces: MCP-routed
+// mutations fire the same hooks as SDK-direct mutations. The wrap is
+// intrinsic to vault.tools (via wrapMutatingInvoke); renderMcp consumes
+// surface.tools so the wrap inherits by construction.
 
 import { describe, test, expect } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openVault } from "../../src/vault";
-import { buildToolAdapters } from "../../src/mcp/tool-adapters";
+import { buildAbstractSurface } from "../../src/abstract-surface";
+import { renderMcp } from "../../src/mcp/render-mcp";
 import { MCP_TOOL_NAMES } from "../../src/tools/registry";
 import { makeTestVault } from "../helpers/make-test-vault";
 
@@ -27,8 +21,9 @@ describe("MCP routes fire shipped-default hooks", () => {
       if (!res.ok) return;
       const vault = res.value;
 
-      const adapters = buildToolAdapters(vault);
-      const write = adapters.find(a => a.name === MCP_TOOL_NAMES.writeDocument);
+      const surface = await buildAbstractSurface(vault);
+      const mcp = renderMcp(surface);
+      const write = mcp.tools.find((a) => a.name === MCP_TOOL_NAMES.writeDocument);
       expect(write).toBeDefined();
 
       const handlerResult = await write!.handler({
@@ -44,8 +39,6 @@ describe("MCP routes fire shipped-default hooks", () => {
       });
       expect(handlerResult.ok).toBe(true);
 
-      // The async hook fires through vault.dispatchEvents → HookDispatcher.
-      // drainHooks settles the p-queue + any in-flight persistence writes.
       await vault.drainHooks();
 
       const indexBody = await readFile(join(v.path, "index.md"), "utf8");
@@ -63,9 +56,9 @@ describe("MCP routes fire shipped-default hooks", () => {
       if (!res.ok) return;
       const vault = res.value;
 
-      // Seed two entity pages so auto-cross-reference has something to wire.
-      const adapters = buildToolAdapters(vault);
-      const write = adapters.find(a => a.name === MCP_TOOL_NAMES.writeDocument);
+      const surface = await buildAbstractSurface(vault);
+      const mcp = renderMcp(surface);
+      const write = mcp.tools.find((a) => a.name === MCP_TOOL_NAMES.writeDocument);
       expect(write).toBeDefined();
 
       const seed = await write!.handler({
@@ -96,9 +89,6 @@ describe("MCP routes fire shipped-default hooks", () => {
 
       await vault.drainHooks();
 
-      // Sanity: index.md reflects both pages — the auto-update-index hook
-      // fired on both writes (proving the wrap is intrinsic, not just
-      // triggered by the seed).
       const indexBody = await readFile(join(v.path, "index.md"), "utf8");
       expect(indexBody).toContain("[[wiki/entities/maya]]");
       expect(indexBody).toContain("[[wiki/entities/danny]]");

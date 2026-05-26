@@ -34,16 +34,17 @@ A Vault is opened, used, and closed in one process lifetime. There is no Vault s
 - `rebuildIndex(): Promise<void>` — regenerate `index.md` from scratch by walking every wiki page. Public SDK seam consulted by `dome doctor --rebuild-index` and any consumer that needs a from-scratch rebuild; consults the privileged writer internally rather than exposing it.
 - `close(): Promise<void>` — release the Vault. See §"Vault lifecycle" below for the full semantics.
 
-**Tool projections live off Vault.** The AI-SDK `ToolSet` shape (consumed by `runWorkflow` / `generateText`) and the per-Tool parse-and-invoke functions (consumed by MCP and future HTTP transports) are NOT fields on `Vault`. They are entrypoint-scoped functions consumers reach explicitly:
+**Tool projections live off Vault.** The AI-SDK `ToolSet` shape (consumed by `runWorkflow` / `generateText`) is the only per-Vault Tool projection that lives outside the core entrypoint. Protocol-rendered projections (the MCP server's `ToolAdapter[]`; future HTTP/voice adapters) consume the **`AbstractSurface`** introduced in §"Consumer surfaces" below — they wrap `surface.tools` (which is the same `BoundToolSurface` that `vault.tools` exposes, one set of hook-dispatch-wrapped Tool entries per Vault) rather than re-binding the registry.
 
-- `projectAiSdk(vault): ai.ToolSet` lives in `@dome/sdk/workflows`. Builds the seven Tools shaped for `generateText` consumption.
-- `projectMcp(vault): { parsers: Readonly<Record<ToolName, (input: unknown) => Promise<ToolReturn<unknown>>>> }` lives in `@dome/sdk/mcp`. The `parsers` record carries one function per canonical Tool name (`readDocument` … `deleteDocument`); each parses the raw input through the Tool's Zod schema, compacts via `compactX`, and invokes the same Vault-bound function `vault.tools[name]` exposes — sharing the hook-dispatch wrap. The MCP adapter consumes this; future HTTP / SSE / gRPC adapters would consume the same shape.
+- `projectAiSdk(vault): ai.ToolSet` lives in `@dome/sdk/workflows`. Wraps each Tool in `vault.tools` as an AI-SDK `Tool<>` shaped for `generateText` consumption. The hook-dispatch wrap is the single-source helper named in §"Hook dispatch is intrinsic" below — `projectAiSdk` does not re-implement it.
 
-Pre-Phase-B these projections were on `Vault.aiTools` and `Vault.toolParsers`, which forced every consumer of `openVault` to transitively bundle `@ai-sdk/anthropic` (and its `ai` transitive) and `@modelcontextprotocol/sdk` whether they used those projections or not. The split honors [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: a consumer that only reads/writes via `vault.tools` pays for nothing else.
+The split honors [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: a consumer that only reads/writes via `vault.tools` pays no LLM or MCP dependency cost. The protocol-rendered projections live in their respective entrypoints (`renderMcp` in `@dome/sdk/mcp`; future `renderHttp` in `@dome/sdk/http`) and consume the protocol-agnostic `AbstractSurface` produced by core.
 
 ##### Hook dispatch is intrinsic
 
-Mutating Tools always fire the Vault's hook dispatcher after each invoke — `vault.tools.writeDocument`, the MCP adapter's `dome.write_document`, and the AI-SDK ToolSet's `writeDocument` all dispatch identically. The wrap is a property of the Vault, not a per-call-site decorator: `bindTools` and `bindAiSdkTools` read `vault.dispatchEvents` lazily inside each Tool's `invoke` closure and call `vault.dispatchEvents(projectEffectsToEvents(out.effects))` after the Tool returns. Read-only Tools (`readDocument`, `searchIndex`, `wikilinkResolve`) emit no effects and are exposed unwrapped. The intrinsic seam means future transports (HTTP, SSE, gRPC) get hook dispatch for free by calling `bindTools(vault, writer)` — no additional ceremony, no risk of skipping the wrap by accident. This pin is enforced by `tests/integration/mcp-hook-dispatch.test.ts`, which asserts a write through the MCP adapter triggers `auto-update-index`.
+Mutating Tools always fire the Vault's hook dispatcher after each invoke — `vault.tools.writeDocument`, the MCP adapter's `dome.write_document`, and the AI-SDK ToolSet's `writeDocument` all dispatch identically. The wrap is a **single-source helper**, `wrapMutatingInvoke(vault, entry, writer)` in `src/tools/registry.ts`, returning an `(input: unknown) => Promise<ToolReturn<unknown>>` that (a) invokes the Tool against its compact, schema-validated input, (b) reads `vault.dispatchEvents` lazily off the Vault closure, (c) calls `vault.dispatchEvents(projectEffectsToEvents(out.effects))` if `entry.mutating === true`. `bindTools` (the source for `vault.tools`) and `bindAiSdkTools` (the source for `projectAiSdk(vault)`) both consume the helper; protocol renderers (`renderMcp` reads `surface.tools` which is already wrapped via `bindTools`; future `renderHttp` / `renderVoice` do the same) inherit the wrap by construction because they project from `surface.tools` rather than re-binding the registry. Read-only Tools (`readDocument`, `searchIndex`, `wikilinkResolve`) emit no effects and are exposed unwrapped — the helper short-circuits when `entry.mutating === false`.
+
+This is the [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] axiom. Structural enforcement: the single-source helper plus `tests/integration/mcp-hook-dispatch.test.ts` (MCP path) and `tests/integration/ai-sdk-hook-dispatch.test.ts` (AI-SDK path). A future renderer (`renderHttp`, `renderVoice`) inherits the wrap by construction because it projects from `surface.tools` rather than re-binding the registry; a projection that re-implements the wrap inline regresses both tests.
 
 #### Vault lifecycle
 
@@ -134,7 +135,7 @@ The catalog is open: plugins register additional Tools through the registration 
 
 #### Tool catalog is one declarative array
 
-The seven Tools above are declared once, in `src/tools/registry.ts`, as the canonical `TOOL_REGISTRY`. Every downstream catalog — the `BoundToolSurface` exposed on `Vault.tools`, the AI SDK `ToolSet` consumed by `runWorkflow`, the MCP adapters built by `buildToolAdapters`, the snake_case names in `MCP_TOOL_NAMES`, the Zod enum that validates workflow-prompt frontmatter `tools:` lists — derives from this one array. Adding an 8th Tool in v0.5.1 / v1+ is two file edits: a new `src/tools/<name>.ts` implementation, and one new entry in the registry. The MCP adapter, the AI SDK exposure, the frontmatter validator, and the bound surface all pick it up automatically.
+The seven Tools above are declared once, in `src/tools/registry.ts`, as the canonical `TOOL_REGISTRY`. Every downstream catalog — the `BoundToolSurface` exposed on `Vault.tools`, the AI SDK `ToolSet` produced by `projectAiSdk(vault)`, the MCP `ToolAdapter[]` produced by `renderMcp(surface)`, the snake_case names in `MCP_TOOL_NAMES`, the Zod enum that validates workflow-prompt frontmatter `tools:` lists — derives from this one array. Adding an 8th Tool in v0.5.1 / v1+ is two file edits: a new `src/tools/<name>.ts` implementation, and one new entry in the registry. `renderMcp`, the AI SDK exposure, the frontmatter validator, and the bound surface all pick it up automatically.
 
 This is the structural enforcement of "seven Tools, sealed." Prior to the registry, the seven names lived in five+ parallel catalogs and the seal depended on reviewer attention.
 
@@ -280,45 +281,76 @@ The shipped-defaults catalog has a single source of truth in the SDK: `src/shipp
 
 Every consumer shell that builds against Dome (the v0.5-shipped CLI and MCP server today; v1+ mobile/desktop/voice/web later) aggregates four kinds of things from the SDK:
 
-- **Tools** — the seven mutation primitives via the `BoundToolSurface` exposed at `vault.tools`.
-- **Prompts** — Dome's shipped workflow prompts (and any plugin/vault-local additions), surfaced as harness-consumable templates.
-- **Resources** — read-only views of vault content (index, log, individual pages, vault info).
-- **Instructions** — cold-start orientation: invariants enabled in this vault, page types declared, the `AGENTS.md` user-tendable preamble.
+- **Tools** — the seven mutation primitives via the `BoundToolSurface` exposed at `vault.tools` (protocol-agnostic; one set per Vault).
+- **Prompts** — Dome's shipped workflow prompts (and any plugin/vault-local additions), described as protocol-agnostic descriptors.
+- **Resources** — read-only views of vault content (index, log, individual pages, vault info), described as protocol-agnostic descriptors.
+- **Instructions** — cold-start orientation: invariants enabled in this vault, page types declared, the `AGENTS.md` user-tendable preamble; a single string.
 
-The runtime construct **`ConsumerSurface`** names this aggregation:
+The aggregation is split across two layers — **`AbstractSurface`** (protocol-agnostic; lives in `@dome/sdk` core) and **per-protocol renderers** (one per consumer protocol; live in their respective entrypoints). This is the structural shape that makes v1+ multi-surface work cheap: a new protocol adapter ships as one render function, not as a parallel aggregation.
+
+### `AbstractSurface` (in `@dome/sdk` core)
 
 ```ts
-interface ConsumerSurface {
+interface AbstractSurface {
+  readonly tools: BoundToolSurface;
+  readonly prompts: ReadonlyArray<PromptDescriptor>;
+  readonly resources: ReadonlyArray<ResourceDescriptor>;
+  readonly instructions: string;
+}
+
+function buildAbstractSurface(vault: Vault): Promise<AbstractSurface>;
+```
+
+`tools` is exactly `vault.tools` — the same `BoundToolSurface` reachable directly on the Vault. No protocol shaping happens at the abstract layer.
+
+`prompts` is a list of `PromptDescriptor` records — each carries a bare name (`"ingest"`, `"lint"`, `"system-base"`; no protocol prefix), an optional description, an optional Zod schema for arguments, and a `getMessages(args)` callback that produces protocol-agnostic message descriptors. Protocol-specific naming (`dome.workflow.<name>` for MCP, future REST paths for HTTP) is applied by the per-protocol renderer.
+
+`resources` is a list of `ResourceDescriptor` records — each carries a logical URI (e.g., `"index"`, `"log"`, `"page/<path>"`, `"vault/info"`), an optional MIME type, and a `read()` callback returning the content. Protocol-specific URI prefixing (`dome://` for MCP, REST routes for HTTP) is applied by the renderer.
+
+`instructions` is the same opaque string every protocol surfaces — cold-start orientation text composed from `system-base.md`, the enabled invariants, the page types declared, and the vault-local `AGENTS.md`.
+
+`buildAbstractSurface(vault)` returns `Promise<AbstractSurface>` because the prompt and instructions reads are async: scanning `<vault>/.dome/prompts/` for vault-local overrides and reading `AGENTS.md` at vault root are filesystem reads. The factory constructs one `PromptLoader` per Vault and threads it through prompt-descriptor production and instructions-builder both — a v1 long-running shell calling `buildAbstractSurface(vault)` does one prompt-directory scan, not three.
+
+### `renderMcp` (in `@dome/sdk/mcp`)
+
+```ts
+interface McpSurface {
   readonly tools: ReadonlyArray<ToolAdapter>;
-  readonly prompts: ReadonlyArray<PromptAdapter>;
+  readonly prompts: ReadonlyArray<McpPromptAdapter>;
   readonly resources: ResourceAdapter;
   readonly instructions: string;
 }
 
-function buildConsumerSurface(vault: Vault): Promise<ConsumerSurface>;
+function renderMcp(surface: AbstractSurface): McpSurface;
 ```
 
-`buildConsumerSurface(vault)` lives in `@dome/sdk/mcp` (the canonical home for the aggregation, since MCP is the first protocol consumer in v0.5). The function composes the four kinds: `tools` comes from `buildToolAdapters(vault)` (the protocol-rendered ToolAdapter array; the underlying protocol-agnostic `BoundToolSurface` stays reachable via `vault.tools`); `prompts` comes from `buildPromptAdapters(vault)`; `resources` comes from `new ResourceAdapter(vault)`; `instructions` comes from `buildInstructions(vault)`.
+`renderMcp` is a synchronous projection: it wraps each Tool in `surface.tools` as an MCP `ToolAdapter` (`dome.*` snake_case name, the MCP handler signature, schema rendered to JSON Schema via `zod-to-json-schema`); wraps each `PromptDescriptor` as an `McpPromptAdapter` with the `dome.workflow.<name>` (or `dome.system_prompt`) prefix and the MCP `arguments` array; wraps the `ResourceDescriptor` list into a single `ResourceAdapter` that registers `dome://` URIs against the MCP protocol; passes `instructions` through unchanged.
 
-Naming convention: `ConsumerSurface.tools` carries the *protocol-rendered* shape (for v0.5: MCP-shaped, `dome.*` prefixed adapters with handler closures). A future v1+ HTTP shell's `buildHttpConsumerSurface(vault)` would render the same Tool catalog as HTTP route descriptors; the field name `tools` stays, the shape varies per protocol. Consumers that want the protocol-agnostic Tool surface (curried `(input) => ToolReturn<T>` functions) read `vault.tools` directly.
-
-The return type is `Promise<ConsumerSurface>` because `buildPromptAdapters(vault)` and `buildInstructions(vault)` are async: the former calls `WorkflowRegistry.list(vault)` which scans `<vault>/.dome/prompts/` for vault-local prompt overrides (filesystem read); the latter reads `AGENTS.md` at vault root (filesystem read). The other two kinds (`tools`, `resources`) resolve synchronously from the Vault instance. A future entrypoint with no plugin/vault-local prompt discovery could expose a sync variant, but v0.5's surface is async because Dome's prompt-override layering is.
-
-`DomeMcpServer` is a thin **protocol adapter** over `ConsumerSurface`:
+`DomeMcpServer` is a thin protocol adapter over `McpSurface`:
 
 ```ts
-const surface = await buildConsumerSurface(vault);
-const server = new DomeMcpServer({ surface });
+import { openVault, buildAbstractSurface } from "@dome/sdk";
+import { renderMcp, DomeMcpServer } from "@dome/sdk/mcp";
+
+const vaultR = await openVault(path);
+if (!vaultR.ok) throw vaultR.error;
+const surface = await buildAbstractSurface(vaultR.value);
+const mcp = renderMcp(surface);
+const server = new DomeMcpServer({ surface: mcp });
 await server.serveStdio();
 ```
 
-The shape lets v1+ shells (HTTP, mobile, voice) consume the same four kinds via their own protocol adapter: a future `DomeHttpServer({ surface })` would expose `tools` over POST, `prompts` over GET, `resources` over GET, and `instructions` in the initialize response. The aggregation logic doesn't change; only the wire format does.
+### Future renderers (`renderHttp`, `renderVoice`, …)
 
-**`ConsumerSurface` is normative for any v1+ shell.** A new consumer shell that bypasses the aggregation — e.g., directly composing `vault.tools` + custom prompt loading + custom resource serving — fights the substrate the matrix at [[wiki/matrices/consumer-surface]] establishes. The substrate constraint isn't "you must use `buildConsumerSurface`"; it's "if you bundle the four kinds for one consumer, name it `ConsumerSurface`-shaped so it composes with the rest of the ecosystem."
+A v1+ HTTP shell ships `renderHttp(surface: AbstractSurface): HttpSurface` in `@dome/sdk/http` — wrapping `surface.tools` as REST route handlers, `surface.prompts` as `/prompts/<name>` GET endpoints, `surface.resources` as `/resources/<uri>` GET endpoints, and `surface.instructions` in the `/initialize` response. The same aggregation logic that produces `surface` is reused; only the wire format changes.
 
-The four kinds are listed in fixed order — `tools` first, `prompts` second, `resources` third, `instructions` fourth. The order matches the MCP protocol's mental model (tools/call, prompts/get, resources/read, then the initialize response that bundles instructions). Future protocol adapters honor the same order.
+The four-kinds-in-fixed-order convention holds across every render: `tools` first, `prompts` second, `resources` third, `instructions` fourth. The order matches the MCP protocol's mental model and is preserved through future protocol renderers for consistency.
 
-See [[wiki/matrices/consumer-surface]] for which entrypoint each consumer reaches `ConsumerSurface` (and its constituent parts) through.
+### Normative pin
+
+A new consumer shell that wants to bundle the four kinds for one consumer **constructs against `AbstractSurface`**; the protocol-specific shape is produced by `renderXxx(surface)`. Bypassing the abstract layer — composing `vault.tools` + custom prompt loading + custom resource serving in each new shell — fights the substrate the matrix at [[wiki/matrices/consumer-surface]] establishes. The substrate constraint is: if a consumer aggregates the four kinds, it does so through `AbstractSurface` and a protocol renderer, not through a per-protocol bespoke aggregator.
+
+See [[wiki/matrices/consumer-surface]] for which entrypoint each consumer reaches `AbstractSurface` (and the relevant renderer) through.
 
 ## Outputs the SDK does not have
 
@@ -337,10 +369,10 @@ This is the **anti-concept list**: things future contributors might be tempted t
 - **Language**: TypeScript 5.x
 - **Runtime**: Bun 1.x. The SDK uses Bun's native APIs where they're cleaner (file watcher, test runner, bundler). It does not depend on Node-only modules.
 - **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package with **four entrypoints**:
-  - `@dome/sdk` — **core**. Vault, Document, the seven Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const. No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
+  - `@dome/sdk` — **core**. Vault, Document, the seven Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const, and the protocol-agnostic **`AbstractSurface`** + `buildAbstractSurface(vault)` + `PromptDescriptor` + `ResourceDescriptor`. No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
   - `@dome/sdk/workflows` — **LLM-driven surface**. `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, the eval suite primitives. Bundled deps: `@ai-sdk/anthropic`, `ai`. A consumer importing nothing from this entrypoint pays for none of those deps.
-  - `@dome/sdk/mcp` — **MCP server surface**. `DomeMcpServer`, `buildConsumerSurface(vault)`, `ConsumerSurface` type, `projectMcp(vault)`, the tool/prompt/resource adapters, `buildInstructions`. Bundled deps: `@modelcontextprotocol/sdk`.
-  - `@dome/sdk/cli` — **CLI shell**. `runCli`, the seven `dome*` command functions, `CliError`, `renderCliError`, `DoctorFlag`. The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here. Bundled deps: `commander`. The CLI internally imports from `@dome/sdk/workflows` for the LLM-driven commands (`lint`, `migrate`, `export-context`).
+  - `@dome/sdk/mcp` — **MCP server surface**. `DomeMcpServer`, `renderMcp(surface)`, `McpSurface` type, `ToolAdapter` / `McpPromptAdapter` / `ResourceAdapter` types, and the MCP-shaped request handlers. Bundled deps: `@modelcontextprotocol/sdk`. Consumes `AbstractSurface` from core.
+  - `@dome/sdk/cli` — **CLI shell**. `runCli`, the seven `dome*` command functions, `CliError`, `renderCliError`, `DoctorFlag`. The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here. Bundled deps: `commander`. The CLI internally imports from `@dome/sdk/workflows` for the LLM-driven commands (`lint`, `migrate`, `export-context`) and from `@dome/sdk/mcp` for `dome serve`.
 
   The split is wired via `package.json` `exports`. The boundary is structurally enforced by [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] + the regression test at `tests/integration/bundle-deps.test.ts`. See [[wiki/matrices/consumer-surface]] for which entrypoint each consumer shell uses.
 
