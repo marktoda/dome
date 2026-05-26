@@ -43,8 +43,14 @@ export { projectEffectToEvents, projectEffectsToEvents } from "./event-projectio
 // Stage 3: prompts + workflows + eval
 export { WorkflowName, WORKFLOW_NAMES, isWorkflowName } from "./workflows/workflow-name";
 export { WorkflowTier, WORKFLOW_TIERS } from "./workflows/workflow-tier";
-export { AgentLoop, AGENT_LOOP_MAX_TURNS, type LlmClient, type LlmTurn } from "./workflows/agent-loop";
-export { AnthropicLlmClient, type AnthropicLlmOpts } from "./workflows/anthropic-client";
+export {
+  runWorkflow,
+  buildAiSdkTools,
+  DEFAULT_MODEL,
+  DEFAULT_MAX_STEPS,
+  type RunWorkflowOpts,
+  type RunWorkflowResult,
+} from "./workflows/agent-loop";
 export { PromptLoader, PromptSource, type LoadedPrompt } from "./prompts/prompt-loader";
 export { WorkflowRegistry, type WorkflowDefinition } from "./prompts/registry";
 export {

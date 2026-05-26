@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.79",
-    "@anthropic-ai/sdk": "^0.30.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "ai": "^6.0.191",
     "chokidar": "^4.0.0",

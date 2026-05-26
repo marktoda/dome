@@ -3,15 +3,15 @@ import { join } from "node:path";
 import git from "isomorphic-git";
 import fs from "node:fs";
 import { openVault } from "../../vault";
-import { AgentLoop, type LlmClient } from "../../workflows/agent-loop";
+import { runWorkflow, type RunWorkflowOpts } from "../../workflows/agent-loop";
 import { WorkflowName } from "../../workflows/workflow-name";
 import { ok, err, type Result, type ToolError } from "../../types";
 
 export async function domeMigrate(
   vaultPath: string,
   apply: boolean,
-  client: LlmClient,
-): Promise<Result<{ turns: number }, ToolError>> {
+  opts: RunWorkflowOpts = {},
+): Promise<Result<{ steps: number }, ToolError>> {
   // Ensure .git exists (per VAULT_IS_GIT_REPO axiom).
   if (!existsSync(join(vaultPath, ".git"))) {
     await git.init({ fs, dir: vaultPath, defaultBranch: "main" });
@@ -21,10 +21,9 @@ export async function domeMigrate(
   // existing markdown directory is the workflow's job.
   const res = await openVault(vaultPath);
   if (!res.ok) return res;
-  const loop = new AgentLoop(res.value, client);
   try {
-    const r = await loop.runWorkflow(WorkflowName.Migrate, apply ? "--apply" : undefined);
-    return ok({ turns: r.turns });
+    const r = await runWorkflow(res.value, WorkflowName.Migrate, apply ? "--apply" : "", opts);
+    return ok({ steps: r.steps });
   } catch (e: unknown) {
     return err({ kind: "validation", message: (e as Error).message });
   }
