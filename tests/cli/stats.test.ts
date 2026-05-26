@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { domeInit } from "../../src/cli/commands/init";
 import { openVault } from "../../src/vault";
 import { collectStats, renderJson, renderDashboard, domeStats, type VaultStats } from "../../src/cli/commands/stats";
+import { runCli, ExitCode } from "../../src/cli/cli";
 
 async function makeStatsVault(): Promise<{ path: string; cleanup: () => Promise<void> }> {
   const base = await mkdtemp(join(tmpdir(), "dome-stats-"));
@@ -271,6 +272,35 @@ describe("dome stats", () => {
       if (r.ok) return;
       // Any vault-open error kind is acceptable; the orchestrator just forwards.
       expect(typeof r.error.kind).toBe("string");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("runCli stats --vault exits Success on a real vault", async () => {
+    const v = await makeStatsVault();
+    try {
+      // Exit code matters for plumbing; the dashboard output is already
+      // covered by the renderDashboard / renderJson unit tests above.
+      const code = await runCli(["stats", "--vault", v.path]);
+      expect(code).toBe(ExitCode.Success);
+      const codeJson = await runCli(["stats", "--vault", v.path, "--json"]);
+      expect(codeJson).toBe(ExitCode.Success);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("runCli stats --help exits Success", async () => {
+    const code = await runCli(["stats", "--help"]);
+    expect(code).toBe(ExitCode.Success);
+  });
+
+  test("runCli stats on a non-vault path exits Failure", async () => {
+    const base = await mkdtemp(join(tmpdir(), "dome-stats-cli-novault-"));
+    try {
+      const code = await runCli(["stats", "--vault", base]);
+      expect(code).toBe(ExitCode.Failure);
     } finally {
       await rm(base, { recursive: true, force: true });
     }
