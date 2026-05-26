@@ -25,6 +25,26 @@ Every event Dome emits is derived from a Tool Effect or from an internal lifecyc
 
 Hooks register via two equivalent forms.
 
+### v0.5 scope note
+
+The **declarative `.dome/hooks/*.yaml` loader** ships in v0.5: `openVault` reads
+every YAML in `<vault>/.dome/hooks/` and registers each as a hook whose handler
+invokes `runWorkflow(vault, frontmatter.workflow, ...)`. This is what makes the
+shipped-default `intake-raw.yaml` fire when a file lands in `inbox/raw/`.
+
+The **programmatic `.dome/hooks/*.ts` loader** and the broader **plugin
+registration** mechanism described in [[wiki/specs/sdk-surface]] §"Registration"
+ship in v0.5.1. v0.5 ships the source partition in code (`HookSource =
+"sdk" | "plugin" | "vault-local"` with `HookContext.dispatcher` only present
+on `sdk` source) and the YAML declarative form; programmatic TS hooks beyond
+the two shipped-defaults are deferred.
+
+This is intentional: the source partition is structural enforcement of
+[[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] and must be in place before any
+non-SDK hook can register. Shipping the partition without the programmatic
+loader keeps the contract honest — adding plugin hooks in v0.5.1 is a loader
+addition, not a contract change.
+
 ### Programmatic — `.dome/hooks/*.ts`
 
 ```ts
