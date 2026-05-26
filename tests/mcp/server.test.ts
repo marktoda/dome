@@ -150,7 +150,10 @@ describe("DomeMcpServer", () => {
       expect(surface.instructions).toContain("### Page types");
       expect(surface.instructions).toContain("- entity");
       expect(surface.instructions).toContain("### Vault notes (from AGENTS.md)");
-      expect(surface.instructions).toContain("_No AGENTS.md present._");
+      // makeTestVault now ships AGENTS.md by default per
+      // AGENTS_MD_IS_ORIENTATION_SURFACE; the orientation surface inlines its
+      // templated header rather than the absent-file fallback.
+      expect(surface.instructions).toContain("# This vault");
     } finally {
       await v.cleanup();
     }

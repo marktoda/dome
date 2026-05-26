@@ -86,6 +86,11 @@ extensions:
   test("falls back gracefully when AGENTS.md is absent", async () => {
     const v = await makeTestVault();
     try {
+      // makeTestVault now scaffolds AGENTS.md by default (mirrors dome init);
+      // remove it to exercise the absent-file fallback.
+      const { rm } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      await rm(join(v.path, "AGENTS.md"));
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault open failed");
       const surface = await buildAbstractSurface(res.value);
