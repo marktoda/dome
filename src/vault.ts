@@ -20,6 +20,14 @@ export interface VaultConfig {
   hooks: {
     builtin: Record<string, "enabled" | "disabled">;
     max_causation_depth: number;
+    /**
+     * Threshold for the dome doctor INBOX_IS_EPHEMERAL fallback check.
+     * Files in `inbox/<bucket>/` (excluding `inbox/review/`) older than this
+     * many hours emit a violation. Set arbitrarily high to disable the check
+     * effectively; per-bucket disable is deferred to v0.5.1+ per the invariant
+     * doc. See docs/wiki/invariants/INBOX_IS_EPHEMERAL.md.
+     */
+    inbox_stale_age_hours: number;
   };
   git: {
     auto_commit_workflows: boolean;

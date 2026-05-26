@@ -26,6 +26,7 @@ export const SHIPPED_VAULT_CONFIG: VaultConfig = {
   hooks: {
     builtin: { "auto-update-index": "enabled", "auto-cross-reference": "enabled" },
     max_causation_depth: 50,
+    inbox_stale_age_hours: 24,
   },
   git: { auto_commit_workflows: true },
 };
