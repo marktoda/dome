@@ -3,6 +3,7 @@ type: gotcha
 created: 2026-05-25
 updated: 2026-05-25
 severity: medium
+coverage: matrix
 first_observed: 2026-05-25
 sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 ---

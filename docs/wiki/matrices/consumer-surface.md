@@ -17,6 +17,7 @@ The matrix is the structural realization of [[wiki/invariants/CORE_HAS_NO_LLM_OR
 - `workflows` — `@dome/sdk/workflows`. Carries `@anthropic-ai/sdk` + `ai`.
 - `mcp` — `@dome/sdk/mcp`. Carries `@modelcontextprotocol/sdk`.
 - `cli` — `@dome/sdk/cli`. Carries `commander`.
+- `core + <entrypoint>` — **compound cell.** The consumer reaches the symbol through more than one entrypoint (e.g., `Vault` from core + the `projectMcp(vault)` projection from `mcp`). The bundling-axiom test treats each named entrypoint as a separate transitive-dep contributor: a compound `core + mcp` cell pulls the MCP deps; `core + workflows` pulls the LLM deps. A cell labeled just `core` must reach its symbol through `core` *only*.
 - `—` — symbol unused by this shell.
 
 ## Matrix
@@ -24,21 +25,22 @@ The matrix is the structural realization of [[wiki/invariants/CORE_HAS_NO_LLM_OR
 | Consumer shell ↓ \ Symbol family → | Vault (`openVault`, `Vault`) | Document (`makeDocument`) | Tools (`readDocument` … `deleteDocument`, `BoundToolSurface`) | Hook (`HookRegistry`, `HookDispatcher`, `HookContext`) | Reconcile + Watcher | Privileged writer (internal — `vault.rebuildIndex` seam only) | AI-SDK ToolSet (`projectAiSdk`) | Workflow runner (`runWorkflow`, `WorkflowRegistry`, `PromptLoader`) | MCP adapters (`projectMcp`, tool/prompt/resource adapters) | ConsumerSurface (`buildConsumerSurface`) | `DomeMcpServer` | CLI shell (`runCli`, `dome*` commands, `CliError`, `renderCliError`) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | **CLI** (v0.5 — `dome` binary) | `core` | `core` | `core` (via `vault.tools`) | `core` (event projection, hook quarantine) | `core` (reconcile + watcher) | `core` (`vault.rebuildIndex`) | `workflows` (for `dome lint` / `migrate` / `export-context`) | `workflows` | — | — | — | `cli` |
-| **MCP server** (v0.5 — invoked by `dome serve`) | `core` | `core` | `core` (via `vault.tools` + `projectMcp(vault)`) | `core` | `core` (reconcile at startup) | — | — | `workflows` (the MCP server exposes Dome's workflows as MCP prompts; their resolution needs the workflow registry) | `mcp` | `mcp` (the server consumes a `ConsumerSurface`) | `mcp` | — |
+| **MCP server** (v0.5 — invoked by `dome serve`) | `core` | `core` | `core + mcp` (`vault.tools` from core; `projectMcp(vault)` from mcp) | `core` | `core` (reconcile at startup) | — | — | `workflows` (the MCP server exposes Dome's workflows as MCP prompts; their resolution needs the workflow registry) | `mcp` | `mcp` (the server consumes a `ConsumerSurface`) | `mcp` | — |
 | **Headless agent loop** (v0.5 — invoked by intake hooks + `dome lint`) | `core` | `core` | `core` (via `vault.tools`) | — | — | — | `workflows` (`projectAiSdk` produces the AI-SDK tool set) | `workflows` (`runWorkflow` IS this loop) | — | — | — | — |
 | **Future mobile** (v1+ — read-only browse + structured write) | `core` | `core` | `core` | — | — | — | — (mobile UI doesn't drive workflows; voice/agent surfaces do) | — | — | — | — | — |
 | **Future desktop** (v1+ — Electron/Tauri shell over the SDK) | `core` | `core` | `core` | `core` (long-running Vault lifecycle; see `vault.close()`) | `core` | — | `workflows` (when the user invokes lint/research/etc.) | `workflows` | — | `mcp` (when a desktop-side MCP adapter is added) | `mcp` (optional) | — |
 | **Future voice** (v1+ — AirPods → `inbox/voice/` writes) | `core` | `core` | `core` (only `writeDocument` for the inbox capture) | — | — | — | — | — | — | — | — | — |
-| **Future HTTP** (v1+ — web-app backend) | `core` | `core` | `core` (via `projectAiSdk(vault)` or a future `projectHttp(vault)`) | — | — | — | — | `workflows` (if the web app surfaces workflows) | `mcp` (or a future `@dome/sdk/http` companion when HTTP-specific adapters justify a split) | `core`-extended (or a future `buildHttpSurface(vault)` returning the same four kinds via HTTP envelopes) | — | — |
+| **Future HTTP** (v1+ — web-app backend) | `core` | `core` | `core + workflows` (via `projectAiSdk(vault)`; a future `projectHttp(vault)` could collapse the cell to `core + future-http`) | — | — | — | — | `workflows` (if the web app surfaces workflows) | `mcp` (or a future `@dome/sdk/http` companion when HTTP-specific adapters justify a split) | `mcp` (`buildConsumerSurface` lives there today; a future `@dome/sdk/http` could expose its own `buildHttpSurface(vault)` returning the same four kinds via HTTP envelopes) | — | — |
 | **Plugin SDK** (v0.5+ — custom Tool authors) | `core` (types only) | `core` (types only) | `core` (types only) | `core` (registration types) | — | — | `workflows` (when the plugin wants an AI-SDK-shaped Tool) | — | — | — | — | — |
 | **Eval suite** (internal — `src/eval/`) | `core` | `core` | `core` | — | — | — | `workflows` (replay drives `runWorkflow`) | `workflows` | — | — | — | — |
 
 ## Reading the matrix
 
-- **A consumer that reads only the `core` column** transitively pulls only the dependencies in [[wiki/specs/sdk-surface]] §"Dependencies" minus `@anthropic-ai/sdk`, `ai`, `@modelcontextprotocol/sdk`, and `commander`. Concretely: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema` only.
-- **A row with a `workflows` cell** adds `@anthropic-ai/sdk` + `ai`. The mobile and voice rows deliberately omit this — they capture-and-store, they don't drive the LLM loop.
-- **A row with a `mcp` cell** adds `@modelcontextprotocol/sdk`. The CLI and eval rows omit it — the CLI invokes the headless agent loop directly; eval doesn't speak MCP.
-- **No row reads from a non-existent entrypoint.** Future-HTTP's "future `@dome/sdk/http`" cell is intentionally non-normative: the matrix says "when this entrypoint exists, this is where the symbol lives" without committing v0.5 to ship it.
+- **A consumer whose row has only `core` and `—` cells** transitively pulls only the dependencies in [[wiki/specs/sdk-surface]] §"Dependencies" entrypoint-scope `core`: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`. No LLM, no MCP, no Commander. The bundle-deps test pins this for the `@dome/sdk` entrypoint itself; a consumer that respects the cell labels gets the same guarantee transitively.
+- **A row with a `workflows` cell or a `core + workflows` compound cell** adds `@anthropic-ai/sdk` + `ai`. The mobile and voice rows deliberately omit this — they capture-and-store, they don't drive the LLM loop.
+- **A row with an `mcp` cell or a `core + mcp` compound cell** adds `@modelcontextprotocol/sdk`. The CLI and eval rows omit it — the CLI invokes the headless agent loop directly; eval doesn't speak MCP.
+- **Compound cells (`core + <entrypoint>`)** mean the consumer's import of that symbol family spans two entrypoints. Example: the MCP server's Tools cell reads `core + mcp` because the server holds a `BoundToolSurface` from core (`vault.tools`) AND reaches `projectMcp(vault)` from `mcp` for the raw-input parsers. Both deps stack.
+- **Speculative entrypoints in cell text** (`future-http`) are intentionally non-normative annotations: the matrix says "when this entrypoint exists, this is where the symbol would live" without committing v0.5 to ship it. They are not in the legend; they ride as inline annotations only.
 
 ## Why the matrix exists
 

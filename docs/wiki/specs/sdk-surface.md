@@ -37,7 +37,7 @@ A Vault is opened, used, and closed in one process lifetime. There is no Vault s
 **Tool projections live off Vault.** The AI-SDK `ToolSet` shape (consumed by `runWorkflow` / `generateText`) and the per-Tool parse-and-invoke functions (consumed by MCP and future HTTP transports) are NOT fields on `Vault`. They are entrypoint-scoped functions consumers reach explicitly:
 
 - `projectAiSdk(vault): ai.ToolSet` lives in `@dome/sdk/workflows`. Builds the seven Tools shaped for `generateText` consumption.
-- `projectMcp(vault): { parsers, ... }` lives in `@dome/sdk/mcp`. Builds the per-Tool parse-and-invoke functions transports deliver raw input through.
+- `projectMcp(vault): { parsers: Readonly<Record<ToolName, (input: unknown) => Promise<ToolReturn<unknown>>>> }` lives in `@dome/sdk/mcp`. The `parsers` record carries one function per canonical Tool name (`readDocument` … `deleteDocument`); each parses the raw input through the Tool's Zod schema, compacts via `compactX`, and invokes the same Vault-bound function `vault.tools[name]` exposes — sharing the hook-dispatch wrap. The MCP adapter consumes this; future HTTP / SSE / gRPC adapters would consume the same shape.
 
 Pre-Phase-B these projections were on `Vault.aiTools` and `Vault.toolParsers`, which forced every consumer of `openVault` to transitively bundle `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk` whether they used those projections or not. The split honors [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: a consumer that only reads/writes via `vault.tools` pays for nothing else.
 
@@ -57,9 +57,9 @@ openVault(path) → Vault
 
 **`drainHooks()`** is idempotent — re-callable any number of times. It awaits both `HookDispatcher.drain()` (the p-queue) AND `HookRegistry.flushPersist()` (the quarantine-write chain). Callers that need a deterministic post-hook state (tests, `dome reconcile`, the CLI's `--drain-hooks` flag) invoke it without coordinating with other callers.
 
-**`close()`** is one-shot. Semantics: (a) call `drainHooks()` to settle outstanding work; (b) release any held file handles (e.g., chokidar watchers started by `VaultWatcher`); (c) optionally invalidate the Vault instance for further calls. In v0.5, calling `vault.tools.X` after `vault.close()` is undefined behavior — v0.5 doesn't enforce a post-close guard because the close case is rare (process tears down naturally). Long-running v1+ shells (mobile/desktop processes that open and re-open Vaults) drive this case; the spec reserves the right to add a "Vault closed" guard in a future minor without breaking the v0.5 contract.
+**`close()`** is one-shot. Semantics: (a) call `drainHooks()` to settle outstanding work; (b) release Vault-owned resources — the `p-queue` instance held by `HookDispatcher` (no more events accepted) and any file handles held by the quarantine-store factory; (c) optionally invalidate the Vault instance for further calls. In v0.5, calling `vault.tools.X` after `vault.close()` is undefined behavior — v0.5 doesn't enforce a post-close guard because the close case is rare (process tears down naturally). Long-running v1+ shells (mobile/desktop processes that open and re-open Vaults) drive this case; the spec reserves the right to add a "Vault closed" guard in a future minor without breaking the v0.5 contract.
 
-The watcher lifecycle is **outside** the Vault: `VaultWatcher` is constructed by a caller (e.g., `domeServe`) and started/stopped by that caller. `vault.close()` does NOT stop watchers it didn't create; callers that started a watcher hold that responsibility. This is the same caller-owns-resource pattern Bun's file handles follow.
+The watcher lifecycle is **outside** the Vault. `VaultWatcher` is always caller-owned: constructed by the consumer (e.g., `domeServe`), started by the consumer, stopped by the consumer. `vault.close()` does NOT stop watchers — even ones that were dispatching into `vault.dispatchEvents(...)` — because the Vault doesn't know about them. The caller-owns-resource pattern mirrors Bun's file handles: whoever opened it, closes it.
 
 ### Document
 
@@ -295,6 +295,8 @@ function buildConsumerSurface(vault: Vault): Promise<ConsumerSurface>;
 ```
 
 `buildConsumerSurface(vault)` lives in `@dome/sdk/mcp` (the canonical home for the aggregation, since MCP is the first protocol consumer in v0.5). The function composes the four kinds: `tools` comes from `vault.tools`; `prompts` comes from `buildPromptAdapters(vault)`; `resources` comes from `new ResourceAdapter(vault)`; `instructions` comes from `buildInstructions(vault)`.
+
+The return type is `Promise<ConsumerSurface>` because `buildPromptAdapters(vault)` and `buildInstructions(vault)` are async: the former calls `WorkflowRegistry.list(vault)` which scans `<vault>/.dome/prompts/` for vault-local prompt overrides (filesystem read); the latter reads `AGENTS.md` at vault root (filesystem read). The other two kinds (`tools`, `resources`) resolve synchronously from the Vault instance. A future entrypoint with no plugin/vault-local prompt discovery could expose a sync variant, but v0.5's surface is async because Dome's prompt-override layering is.
 
 `DomeMcpServer` is a thin **protocol adapter** over `ConsumerSurface`:
 

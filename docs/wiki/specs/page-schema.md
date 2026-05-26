@@ -120,7 +120,16 @@ extensions:
     frontmatter_extras:
       first_observed: <date>
       severity: low | medium | high
+      coverage: matrix | off-matrix | deferred
 ```
+
+The `coverage:` field on gotcha pages drives the `tests/integration/gotcha-coverage.test.ts` lockstep test (parallel to AC3 for invariants). Three values, all lowercase:
+
+- **`matrix`** — there is a regression test at `tests/gotchas/<slug>.test.ts` whose filename slug-matches the gotcha doc. The lockstep test asserts the file exists.
+- **`off-matrix`** — the gotcha's structural mitigation is exercised by a test elsewhere (or is a documented scar with no behavioral regression test). Examples: `agent-prompt-regression` (mitigated by the eval suite at `src/eval/replay.ts`); `ai-sdk-tool-variance` (the scar IS the cast; no behavioral test); `transitive-llm-dependency` (mitigated by `tests/integration/bundle-deps.test.ts`).
+- **`deferred`** — a per-gotcha test should land at `tests/gotchas/<slug>.test.ts` but hasn't yet. The lockstep test surfaces these as warnings rather than failures; promote to `matrix` when the test ships.
+
+A gotcha doc without a `coverage:` field is a frontmatter-validation soft warning (per the rule below); the lockstep test treats it as missing data and the gotcha's lockstep status is undefined until the field lands.
 
 `writeDocument` validates the type-specific frontmatter for extension types against this declaration. Unknown fields trigger a soft warning (logged to `log.md`) but not a rejection — pages can carry vault-specific metadata that the SDK doesn't validate.
 

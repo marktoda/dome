@@ -4,6 +4,7 @@ created: 2026-05-26
 updated: 2026-05-26
 sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review]]"]
 severity: low
+coverage: off-matrix
 first_observed: 2026-05-26
 ---
 
