@@ -10,7 +10,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 # Agent prompt regression
 
-**Symptom:** After an Anthropic model upgrade or a prompt edit, Dome's agent starts behaving differently — extracting different atomic ideas, routing different content to inbox, creating pages with different criteria. Sometimes subtly wrong: the right kind of content lands on the wrong page; cross-references shift; sensitivity classification drifts.
+**Symptom:** After an Anthropic model upgrade or a prompt edit, Dome's agent starts behaving differently — extracting different atomic ideas, routing different content to inbox, creating pages with different criteria. Sometimes subtly wrong: the right kind of content lands on the wrong page; cross-references shift; content gets classified or summarized differently.
 
 **Root cause:** The agent owns the page-write flow (see [[wiki/specs/sdk-surface]] §"The four concepts"). Tools enforce *structural* invariants but cannot enforce *semantic* correctness. "This update went to the right page" is a semantic claim that no invariant catches.
 
@@ -18,7 +18,6 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 - `RAW_IS_IMMUTABLE` doesn't help — the wrong wiki page was modified, not a raw file.
 - `PAGE_TYPE_BY_DIRECTORY` doesn't help — the right *kind* of page was modified, just the wrong instance.
-- `SENSITIVE_GOES_TO_INBOX` doesn't help if the regression goes the other direction (less sensitive content gets routed, missing the items it should have routed).
 - `EVERY_WRITE_IS_LOGGED` catches the change in `log.md` but doesn't say it was wrong.
 
 **Structural mitigation:** The eval suite. Specifically:
@@ -35,7 +34,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 - Recent log entries are scannable: `dome doctor --recent-activity` surfaces "the last N writes by tool and target." A user noticing weird recent activity can spot regression.
 - The vault is git-backed: `git revert <bad-commit>` is the universal undo.
-- For high-stakes flows (sensitivity classification especially), workflows route through `inbox/review/<file>.md` first per [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] — the user resolves each item before the content enters the wiki proper. The review buffer IS `inbox/review/`; no in-Tool dry-run mode exists.
+- For workflows that produce review-worthy artifacts (`dome lint`), the output lands in `inbox/review/lint-report-YYYY-MM-DD.md` first — the user reviews and selectively applies via `dome lint --apply <id>` rather than the workflow mutating the vault directly. The review buffer IS `inbox/review/`; no in-Tool dry-run mode exists.
 
 **What NOT to do:**
 

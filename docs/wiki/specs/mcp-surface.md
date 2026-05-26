@@ -7,7 +7,11 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 # MCP surface
 
-This spec is normative for Dome's MCP server — the protocol surface that exposes the SDK to any MCP-capable harness (Claude Code, Cursor, OpenCode, Codex CLI, and future agents). The MCP server is a **thin protocol adapter over [[wiki/specs/sdk-surface]] §"Consumer surfaces" `McpSurface`**: it consumes the four-kind MCP-rendered shape `renderMcp` produces from the protocol-agnostic `AbstractSurface`.
+**Status in v0.5: non-primary surface.** The MCP server is preserved in the codebase as a future-investment surface but is not load-bearing for v0.5 value delivery. Dome's canonical interaction model on the Claude Code harness is: per-vault `AGENTS.md` for orientation, the CLI (`dome lint`, `dome lint --apply <id>`, `dome stats`, `dome doctor`, etc.) for explicit operations, and `dome serve` running as a background compiler daemon for passive reconciliation. Claude Code uses its native `Read` / `Grep` / `Write` / `Edit` for filesystem operations; the watcher catches those writes and the compiler reconciles. The MCP tools and prompts described below are functional and tested, but the agent is not expected to reach for them when native tools suffice. See [[VISION]] §"Two surface patterns" and [[wiki/specs/harnesses]] §"The compiler-boundary contract" for the architectural framing.
+
+**When MCP re-earns its keep:** future agent harnesses without shell access (so they can't invoke `dome` CLI commands directly) or harnesses that benefit from explicitly-typed structured operations would reach for these tools. Mobile (which imports the SDK core directly per [[wiki/specs/sdk-surface]] §"Consumer surfaces") and Web (which would speak HTTP via a future `@dome/sdk/http` companion) do not need the MCP surface — they use the protocol most natural to their shell. The MCP exists for the harness class that lives between "embedded SDK consumer" and "shell-capable harness."
+
+This spec is normative for the MCP server's *implementation* — when a consumer does mount it, the contract below holds. The MCP server is a **thin protocol adapter over [[wiki/specs/sdk-surface]] §"Consumer surfaces" `McpSurface`**: it consumes the four-kind MCP-rendered shape `renderMcp` produces from the protocol-agnostic `AbstractSurface`.
 
 The MCP server lives in `@dome/sdk/mcp` (not `@dome/sdk` core). A consumer that wants only Vault + Tools without speaking MCP imports from `@dome/sdk` and pays no MCP dependency cost — see [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]].
 
@@ -76,9 +80,7 @@ The MCP server also exposes Dome's prompts as MCP *prompts* (a separate MCP conc
 | `dome.workflow.voice_ingest` | `voice-ingest` workflow | opt-in |
 | `dome.workflow.clip_integrate` | `clip-integrate` workflow | opt-in |
 
-Plugin and vault-local workflows automatically appear as MCP prompts following the same naming convention (`dome.workflow.<name>`).
-
-**Sub-workflows are not exposed.** The `sensitivity-classify` workflow is a sub-workflow invoked *inside* the `ingest` workflow when [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] is enabled (see [[wiki/specs/prompts-and-workflows]] §"Shipped workflows by tier" and [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in"). It has no standalone-invocation contract — its behavior (classify-then-gate-writeDocument-destination) is meaningful only as part of `ingest`. The MCP surface deliberately omits it; a harness that wants to influence sensitivity routing does so by enabling the invariant and letting `ingest` invoke the sub-workflow.
+Plugin- and vault-local workflows automatically appear as MCP prompts following the `dome.workflow.<name>` convention.
 
 ## Resources exposed
 
@@ -91,7 +93,7 @@ The MCP server exposes vault content as MCP *resources*:
 | `dome://page/<path>` | A specific page's content |
 | `dome://vault/info` | Vault config + page-type-allowed list + invariants enabled |
 
-Resources are read-only via MCP; mutation always flows through the `dome.write_*` tools. This preserves [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] (and the harness-equivalent: harnesses cannot bypass Tools).
+Resources are read-only via MCP; mutation always flows through the `dome.write_*` tools when a consumer is interacting via the MCP surface. (Consumer shells with native filesystem access — Claude Code, vim, Obsidian — write directly to the vault and the watcher catches those writes per the compiler-boundary contract in [[VISION]] §"Two surface patterns". [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] governs Dome's *internal* dispatcher / hook / tool chain, not consumer-shell behavior.)
 
 ## Session model
 
@@ -105,16 +107,17 @@ v0.5: none. The MCP server runs as a child process of the user's harness or on t
 
 The MCP server reports its version via the standard MCP `serverInfo` field. Tool names are versioned via the `dome.` prefix; breaking changes (a Tool's input shape changes incompatibly) bump the package major version and rename the affected MCP tool (`dome.v2.write_document`) for the transition window. Plugin and vault-local Tools are not version-managed by Dome — plugin authors own their compatibility.
 
-## Why MCP is the only protocol surface in v0.5
+## Why MCP is the only protocol-server surface in v0.5
 
-Other surfaces considered and deferred:
+MCP is the only *protocol-server* surface implemented in v0.5 — alongside it, the canonical consumer-shell paths are: direct SDK import (used by `dome serve` itself, by future native mobile/desktop, by any embedded consumer) and the CLI (any shell, including Claude Code's `Bash`).
 
-- **HTTP REST** — useful for web clients but unnecessary while there's no web client. Adds v0.5 scope without v0.5 consumer.
+Other protocol-server surfaces considered and deferred:
+
+- **HTTP REST / SSE** — useful for web clients and remote-vault mobile shells. Deferred until either lands; an `@dome/sdk/http` companion entrypoint with `renderHttp(surface)` parallel to `renderMcp` is the planned home.
 - **GraphQL** — same.
-- **Direct SDK import** — the headless SDK loop already does this. Not "exposed"; just available to TS/JS code.
-- **gRPC / Protobuf** — multi-language but Dome's first-class non-TS consumer is the future native mobile, which is far away.
+- **gRPC / Protobuf** — multi-language; Dome's first-class non-TS consumer is future native mobile, which currently consumes the SDK directly.
 
-MCP is the protocol that's already adopted by every harness Dome's v0.5 targets. Adding parallel protocols is premature.
+MCP is preserved as the protocol-server surface for the harness class between "embedded SDK consumer" (mobile, desktop) and "shell-capable harness" (Claude Code via Bash). Currently that class is empty in real-world use; the surface is preserved against future-pressure rather than for current value delivery.
 
 ## Related
 

@@ -22,10 +22,10 @@ A companion is none of these — it's a long-running relationship with your own 
 
 ## What this implies for Dome's design
 
-- **Ambient.** Accessible from any agent (Claude Code today, mobile / web / voice later). Never another app to open. See [[wiki/specs/harnesses]].
+- **Ambient.** Accessible wherever the user is. On the desktop, an agentic harness (Claude Code today) arrives oriented to the vault via auto-loaded `AGENTS.md`, and any structured operation runs through the CLI (`dome lint`, `dome stats`, `dome lint --apply <id>`, `dome export-context`) — no new app to open. On the phone (v1+), a native Dome surface provides voice capture and recall flows. The compiler daemon (`dome serve`) runs continuously in the background; the vault stays coherent regardless of which surface is being used. See [[VISION]] §"Two surface patterns" and [[wiki/specs/harnesses]].
 - **Always accessible.** The vault is local-first markdown; no cloud lock-in; no auth wall on day-to-day use. See [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
 - **Streamlined to talk to.** Quick-capture is a file write to `inbox/raw/` (when activated). No app to launch; no form to fill. See [[wiki/specs/hooks]] §"Opt-in intake patterns."
-- **Allergic to ungrounded confidence.** Every claim cites its source; sensitive content waits for review (when sensitivity feature is opted in); contradictions are flagged. See [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]].
+- **Allergic to ungrounded confidence.** Every claim cites its source; contradictions are flagged; the user always wins (see [[VISION]] §"Principles" #5).
 - **Patient enough to be useful over years.** The vault is portable markdown that outlives any individual tool. See [[wiki/invariants/MARKDOWN_IS_SOURCE_OF_TRUTH]].
 
 ## See also

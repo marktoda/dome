@@ -2,12 +2,14 @@
 type: matrix
 created: 2026-05-26
 updated: 2026-05-26
-sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review-pass-2]]"]
+sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-cohesion-architecture-review-pass-2]]", "[[cohesive/brainstorms/2026-05-26-dome-compiler-reframe]]"]
 ---
 
 # Consumer surface matrix
 
 The canonical map of "what each consumer shell imports from the `@dome/sdk` package family." Rows are consumer shells (v0.5-shipped and v1+ anticipated); columns are exported symbol families. Each cell names the entrypoint the consumer reaches the symbol through, or marks the symbol unused for that shell.
+
+**Note on the MCP server row.** Per the compiler reframe ([[VISION]] §"Two surface patterns" and [[wiki/specs/mcp-surface]] §"Status in v0.5"), the MCP server is preserved in the codebase as a non-primary surface in v0.5 — agentic harnesses interact with Dome primarily through the compiler boundary (`AGENTS.md` + CLI + daemon + reconcile) rather than through MCP-routed tool calls. The MCP row remains in the matrix because the code still exists and its import topology is still accurate; the row's *non-primary status* lives in the prose specs, not in the cell labels.
 
 The matrix is the structural realization of [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: every cell that reads `core` carries no transitive Anthropic/MCP dependency; every cell that reads `workflows` or `mcp` opts into that dep explicitly.
 

@@ -86,7 +86,9 @@ Documents are immutable values. Mutating a document means calling a Tool that pr
 
 ### Tool
 
-A Tool is a typed function that operates on a Vault and one or more Documents. Every mutation in Dome flows through a Tool. Tools are the *only* legitimate path to mutation; see [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]].
+A Tool is a typed function that operates on a Vault and one or more Documents. Every mutation *within Dome's own dispatcher / hook / workflow chain* flows through a Tool — Tools are the only legitimate path for internal mutation; see [[wiki/invariants/HOOKS_CANNOT_BYPASS_TOOLS]] (axiom: hooks observe events and call Tools; they never write directly).
+
+Consumer shells (Claude Code's native `Write`, vim, Obsidian, the Dome mobile app once it ships) write to the vault filesystem directly. These external writes are *not* routed through Tools; the watcher catches them, fires `vault.out-of-band-edit`, hooks react, and `dome reconcile` catches up any events the daemon missed — see [[VISION]] §"Principles" #3 "Invariants are enforced two ways, by scope" and [[wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE]] for the integrity story for external writes.
 
 Each Tool:
 
@@ -122,7 +124,7 @@ Naming convention: Tools that operate on any Document use `<verb>Document`; Tool
 | Tool | Purpose | Invariants enforced (axioms in **bold**) |
 |---|---|---|
 | `readDocument` | Read a Document by path. | — |
-| `writeDocument` | Create or update a Document anywhere in the vault. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `EVERY_WRITE_IS_LOGGED` (auto), opt-in: `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE` |
+| `writeDocument` | Create or update a Document anywhere in the vault. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `EVERY_WRITE_IS_LOGGED` (auto), opt-in: `PAGE_CREATION_REQUIRES_RECURRENCE` |
 | `appendLog` | Append an entry to `log.md`. The only mutation primitive for `log.md`. | **`LOG_IS_APPEND_ONLY`** |
 | `searchIndex` | Search the index + page bodies for matches. | — |
 | `wikilinkResolve` | Resolve a wikilink to a Document or `null`. | `WIKILINKS_ARE_FULLPATH` |
@@ -164,10 +166,6 @@ writeDocument(input: {
     reason?: 'recurring' | 'named_explicitly' | 'structural';
     // ↑ required when create=true AND PAGE_CREATION_REQUIRES_RECURRENCE enabled;
     //   otherwise optional. Logged with the page-creation log entry.
-    sensitivity_classified?: 'normal' | 'sensitive';
-    // ↑ gates SENSITIVE_GOES_TO_INBOX routing. When that invariant is enabled
-    //   and the value is 'sensitive', writeDocument refuses writes to wiki/*
-    //   and instructs the caller to target inbox/review/*.
   }
 }): ToolReturn<Document>
 
@@ -271,7 +269,7 @@ The SDK ships features across three tiers. The tier determines whether a feature
 |---|---|---|
 | **Axioms** | Cannot be disabled. Disabling them changes what Dome is. | The axiom-tier invariants (canonical list: [[wiki/invariants/]] filtered by `tier: axiom`; `src/types.ts` `INVARIANTS` for the typed const). The 7 Tools. `index.md` + `log.md`. MCP server. CLI commands. |
 | **Shipped defaults** | Enabled by default; can opt out in `.dome/config.yaml`. | `EVERY_WRITE_IS_LOGGED`, `PAGE_TYPE_BY_DIRECTORY`, `WIKILINKS_ARE_FULLPATH`, `INBOX_IS_EPHEMERAL`. 4 default page types. `auto-update-index` + `auto-cross-reference` hooks. `intake-raw` shipped-default hook. `ingest`, `query`, `lint`, `migrate`, `export-context` workflows. |
-| **Opt-in** | Shipped, not active by default. Activated by adding the corresponding hook YAML / workflow / invariant entry to `<vault>/.dome/`. | `SENSITIVE_GOES_TO_INBOX`, `PAGE_CREATION_REQUIRES_RECURRENCE`. `sensitivity-classify`, `voice-ingest`, `research`, `clip-integrate` workflows. `inbox/<bucket>/` directories beyond `inbox/raw/`. |
+| **Opt-in** | Shipped, not active by default. Activated by adding the corresponding hook YAML / workflow / invariant entry to `<vault>/.dome/`. | `PAGE_CREATION_REQUIRES_RECURRENCE`. `voice-ingest`, `research`, `clip-integrate` workflows. `inbox/<bucket>/` directories beyond `inbox/raw/`. |
 
 `dome init <path>` produces a minimal general-purpose vault — the axioms and shipped defaults, including the `intake-raw` shipped-default intake hook + the `inbox/raw/` directory it listens on. Activation of opt-in features beyond `intake-raw` is manual: copy the relevant hook YAML template from the SDK into `<vault>/.dome/hooks/` and create the `inbox/<bucket>/` directory the hook listens on. A future "packs" or "presets" mechanism may layer convenience over this; v0.5 keeps it manual.
 

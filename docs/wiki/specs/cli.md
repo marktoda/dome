@@ -1,13 +1,13 @@
 ---
 type: spec
 created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+updated: 2026-05-26
+sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[cohesive/brainstorms/2026-05-26-dome-compiler-reframe]]"]
 ---
 
 # CLI
 
-This spec is normative for the `dome` command-line interface in v0.5. The CLI is the side-door surface — for things neither a chat-shaped harness nor a markdown-shaped browser does well: setup, migration, hook reconciliation, scheduled hygiene, diagnostics, cross-AI context export.
+This spec is normative for the `dome` command-line interface in v0.5. The CLI is **the primary explicit-operation surface across every consumer shell** — the way both the user (from any terminal) and an agentic harness (via shell-execution: Claude Code's `Bash`, Cursor's equivalent, etc.) invoke named structured operations against a vault. It is also the home for the things neither a chat-shaped harness nor a markdown-shaped browser does well: setup, migration, hook reconciliation, scheduled hygiene, diagnostics, cross-AI context export.
 
 The CLI is intentionally small. **Eight commands**. Each maps to a concrete user action; commands that would map to "chat-with-the-brain" or "browse-the-vault" do not exist (use a harness or Obsidian respectively). A glanceable summary (`dome stats`) is neither — it's a snapshot of structural state.
 
@@ -163,7 +163,8 @@ Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply 
 **Flags:**
 
 - `--rebuild-index` — calls `dispatcher.writeIndex` directly to regenerate the full `index.md` from the wiki/ contents. Used when `auto-update-index` is disabled (so the index has gone stale) or when the user wants a from-scratch rebuild. The dispatcher's privileged API is the only mutation path for `index.md` per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]; `writeDocument` refuses `index.md` unconditionally.
-- `--show review-queue` — list pending items in `inbox/review/` (only meaningful when `SENSITIVE_GOES_TO_INBOX` is enabled).
+- `--show review-queue` — list pending items in `inbox/review/` (lint reports awaiting human review per [[wiki/specs/cli]] §"`dome lint`").
+- `--time-since-reconcile` — report how long it's been since `dome reconcile` last ran successfully (read from `.dome/state/last-reconciled-sha.txt` mtime). Surfaces drift age so the user knows whether `dome serve` is keeping up. See [[wiki/gotchas/daemon-off-while-vault-mutating]].
 - `--show raw-citations` — list which wiki pages cite each raw source (derived from `sources:` frontmatter on wiki pages; not a stored index).
 - `--show workflows` — list the resolved workflow set (shipped defaults + plugin + vault-local overrides), with their bound tool subsets and triggers.
 - `--show events` — list the resolved event taxonomy (Effect-derived + lifecycle), including plugin-registered events.
