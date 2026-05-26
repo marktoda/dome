@@ -38,6 +38,13 @@ export type {
 } from "./types";
 export { INVARIANTS } from "./types";
 
+export {
+  buildAbstractSurface,
+  type AbstractSurface,
+  type PromptDescriptor,
+  type ResourceDescriptor,
+} from "./abstract-surface";
+
 export { readDocument } from "./tools/read-document";
 export { writeDocument } from "./tools/write-document";
 export { appendLog } from "./tools/append-log";
