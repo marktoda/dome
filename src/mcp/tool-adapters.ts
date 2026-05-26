@@ -13,6 +13,8 @@ import {
   compactWriteDocumentInput,
   compactAppendLogInput,
   compactSearchIndexInput,
+  compactMoveDocumentInput,
+  compactDeleteDocumentInput,
 } from "../tools/schemas";
 
 export interface ToolAdapterResult {
@@ -76,13 +78,13 @@ export function buildToolAdapters(vault: Vault): ToolAdapter[] {
       name: McpToolName.MoveDocument,
       description: "Move a Document; atomically rewrite incoming wikilinks.",
       inputSchema: moveDocumentInput,
-      handler: async (input) => wrap(() => vault.tools.moveDocument(moveDocumentInput.parse(input))),
+      handler: async (input) => wrap(() => vault.tools.moveDocument(compactMoveDocumentInput(moveDocumentInput.parse(input)))),
     },
     {
       name: McpToolName.DeleteDocument,
       description: "Delete a Document.",
       inputSchema: deleteDocumentInput,
-      handler: async (input) => wrap(() => vault.tools.deleteDocument(deleteDocumentInput.parse(input))),
+      handler: async (input) => wrap(() => vault.tools.deleteDocument(compactDeleteDocumentInput(deleteDocumentInput.parse(input)))),
     },
   ];
 }

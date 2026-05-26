@@ -11,10 +11,13 @@ export interface MoveDocumentInput {
   to: string;
   reason: string;
   /**
-   * Test-only: pre-seed the mtime snapshot for optimistic locking; production
-   * callers leave this unset. @internal
+   * Optimistic-locking snapshot for the `from` document (typically threaded
+   * from a prior readDocument's Document.mtime). When set, the Tool re-reads
+   * the source mtime immediately before renaming and returns
+   * concurrent-write-conflict if it has changed. Omit for "last write wins".
+   * See docs/wiki/specs/sdk-surface.md §Concurrency.
    */
-  __forceExpectedMtime?: string;
+  expected_mtime?: string;
 }
 
 export async function moveDocument(
@@ -68,22 +71,24 @@ export async function moveDocument(
     // expected
   }
 
-  // Optimistic locking — snapshot source mtime, verify just before rename.
-  const expectedMtime = input.__forceExpectedMtime ?? (await stat(fromAbs)).mtime.toISOString();
-
   await mkdir(dirname(toAbs), { recursive: true });
 
-  const currentStat = await stat(fromAbs).catch(() => null);
-  if (currentStat && currentStat.mtime.toISOString() !== expectedMtime) {
-    return {
-      result: err({
-        kind: "concurrent-write-conflict",
-        path: input.from,
-        expected_mtime: expectedMtime,
-        actual_mtime: currentStat.mtime.toISOString(),
-      }),
-      effects: [],
-    };
+  // Optimistic locking — caller-supplied snapshot for `from` only. If the
+  // mtime has changed since the caller's readDocument, refuse to move stale
+  // state. Callers that don't thread expected_mtime accept "last write wins".
+  if (input.expected_mtime !== undefined) {
+    const currentStat = await stat(fromAbs).catch(() => null);
+    if (currentStat && currentStat.mtime.toISOString() !== input.expected_mtime) {
+      return {
+        result: err({
+          kind: "concurrent-write-conflict",
+          path: input.from,
+          expected_mtime: input.expected_mtime,
+          actual_mtime: currentStat.mtime.toISOString(),
+        }),
+        effects: [],
+      };
+    }
   }
 
   await rename(fromAbs, toAbs);

@@ -23,6 +23,8 @@ import {
   compactWriteDocumentInput,
   compactAppendLogInput,
   compactSearchIndexInput,
+  compactMoveDocumentInput,
+  compactDeleteDocumentInput,
 } from "../tools/schemas";
 
 export const DEFAULT_MODEL = "claude-opus-4-7";
@@ -231,12 +233,12 @@ function allToolDefinitions(vault: Vault): ToolSet {
     moveDocument: tool({
       description: "Move a Document; atomically rewrites incoming wikilinks.",
       inputSchema: moveDocumentInput,
-      execute: async (input) => vault.tools.moveDocument(input),
+      execute: async (input) => vault.tools.moveDocument(compactMoveDocumentInput(input)),
     }),
     deleteDocument: tool({
       description: "Delete a Document.",
       inputSchema: deleteDocumentInput,
-      execute: async (input) => vault.tools.deleteDocument(input),
+      execute: async (input) => vault.tools.deleteDocument(compactDeleteDocumentInput(input)),
     }),
   };
 }

@@ -9,10 +9,13 @@ export interface DeleteDocumentInput {
   path: string;
   reason: string;
   /**
-   * Test-only: pre-seed the mtime snapshot for optimistic locking; production
-   * callers leave this unset. @internal
+   * Optimistic-locking snapshot (typically threaded from a prior
+   * readDocument's Document.mtime). When set, the Tool re-reads the file's
+   * mtime immediately before unlinking and returns concurrent-write-conflict
+   * if it has changed. Omit for "last write wins".
+   * See docs/wiki/specs/sdk-surface.md §Concurrency.
    */
-  __forceExpectedMtime?: string;
+  expected_mtime?: string;
 }
 
 export async function deleteDocument(
@@ -40,19 +43,22 @@ export async function deleteDocument(
     return { result: err({ kind: "not-found", path: input.path }), effects: [] };
   }
 
-  // Optimistic locking — snapshot mtime, verify before unlink.
-  const expectedMtime = input.__forceExpectedMtime ?? (await stat(abs)).mtime.toISOString();
-  const currentStat = await stat(abs).catch(() => null);
-  if (currentStat && currentStat.mtime.toISOString() !== expectedMtime) {
-    return {
-      result: err({
-        kind: "concurrent-write-conflict",
-        path: input.path,
-        expected_mtime: expectedMtime,
-        actual_mtime: currentStat.mtime.toISOString(),
-      }),
-      effects: [],
-    };
+  // Optimistic locking — caller-supplied snapshot only. If expected_mtime is
+  // passed and the on-disk mtime has changed, refuse the delete (the file
+  // has been modified since the caller's read).
+  if (input.expected_mtime !== undefined) {
+    const currentStat = await stat(abs).catch(() => null);
+    if (currentStat && currentStat.mtime.toISOString() !== input.expected_mtime) {
+      return {
+        result: err({
+          kind: "concurrent-write-conflict",
+          path: input.path,
+          expected_mtime: input.expected_mtime,
+          actual_mtime: currentStat.mtime.toISOString(),
+        }),
+        effects: [],
+      };
+    }
   }
 
   await unlink(abs);

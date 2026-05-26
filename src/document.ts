@@ -15,6 +15,13 @@ export interface DocumentInput {
   frontmatter?: Record<string, unknown>;
   body?: string;
   linksOut?: ReadonlyArray<WikiLink>;
+  /**
+   * Filesystem mtime captured by readDocument (ISO 8601). null for synthesized
+   * Documents from makeDocument({ path }) without a real file behind them.
+   * Callers thread this into mutating Tools as `expected_mtime` to enable
+   * optimistic locking (see docs/wiki/specs/sdk-surface.md §Concurrency).
+   */
+  mtime?: string | null;
 }
 
 export interface Document {
@@ -25,6 +32,12 @@ export interface Document {
   readonly category: DocumentCategory;
   readonly type: string | null;
   readonly isImmutable: boolean;
+  /**
+   * Filesystem mtime as ISO-8601 string from readDocument; null for
+   * synthesized Documents. Threaded into mutating Tools as `expected_mtime`
+   * for optimistic locking.
+   */
+  readonly mtime: string | null;
 }
 
 const KNOWN_TOP_LEVEL: Record<string, DocumentCategory> = {
@@ -75,5 +88,6 @@ export function makeDocument(input: DocumentInput): Document {
     category,
     type,
     isImmutable: category === "raw",
+    mtime: input.mtime ?? null,
   };
 }

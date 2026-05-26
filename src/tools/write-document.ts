@@ -20,13 +20,13 @@ export interface WriteDocumentInput {
   frontmatter: Record<string, unknown>;
   opts?: WriteDocumentOpts;
   /**
-   * Test-only: pre-seed the snapshot mtime that optimistic-locking compares
-   * against the on-disk mtime at write time. Production callers never set
-   * this; the Tool reads its own snapshot via stat() before checking
-   * invariants. Used to drive deterministic concurrent-write-conflict tests.
-   * @internal
+   * Optimistic-locking snapshot from a prior readDocument call. When set, the
+   * Tool re-reads the file's mtime immediately before writing and returns
+   * concurrent-write-conflict if it has changed. Omit for "last write wins"
+   * semantics — the v0.5 default for single-user, single-session workflows.
+   * See docs/wiki/specs/sdk-surface.md §Concurrency.
    */
-  __forceExpectedMtime?: string;
+  expected_mtime?: string;
 }
 
 export async function writeDocument(
@@ -47,13 +47,6 @@ export async function writeDocument(
   if (!input.opts?.create && !exists) {
     return { result: err({ kind: "not-found", path: input.path }), effects: [] };
   }
-
-  // Optimistic locking — snapshot mtime at read time, verify on write.
-  // When `__forceExpectedMtime` is set (tests only), use that as the snapshot
-  // so the conflict path can be exercised deterministically.
-  const expectedMtime = exists
-    ? (input.__forceExpectedMtime ?? (await stat(abs)).mtime.toISOString())
-    : null;
 
   // RAW_IS_IMMUTABLE — axiom; refuse raw/ targets unconditionally.
   const doc0 = makeDocument({ path: input.path });
@@ -147,16 +140,18 @@ export async function writeDocument(
 
   await mkdir(dirname(abs), { recursive: true });
 
-  // Optimistic-locking check — if a different writer touched the file
-  // between our snapshot and this write, refuse to clobber.
-  if (expectedMtime !== null) {
+  // Optimistic-locking check — caller-supplied snapshot only. If the caller
+  // passed expected_mtime (typically threaded from a prior readDocument's
+  // Document.mtime) and the on-disk mtime has changed since, refuse to write.
+  // Callers that don't thread expected_mtime accept "last write wins".
+  if (input.expected_mtime !== undefined && exists) {
     const currentStat = await stat(abs).catch(() => null);
-    if (currentStat && currentStat.mtime.toISOString() !== expectedMtime) {
+    if (currentStat && currentStat.mtime.toISOString() !== input.expected_mtime) {
       return {
         result: err({
           kind: "concurrent-write-conflict",
           path: input.path,
-          expected_mtime: expectedMtime,
+          expected_mtime: input.expected_mtime,
           actual_mtime: currentStat.mtime.toISOString(),
         }),
         effects: [],
