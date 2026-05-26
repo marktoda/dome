@@ -15,33 +15,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
-/** Default content of `.dome/config.yaml` — shipped invariants and hooks. */
-export const SHIPPED_CONFIG_YAML = `# Dome vault config
-invariants:
-  EVERY_WRITE_IS_LOGGED: enabled
-  PAGE_TYPE_BY_DIRECTORY: enabled
-  WIKILINKS_ARE_FULLPATH: enabled
-  INBOX_IS_EPHEMERAL: enabled
-  SENSITIVE_GOES_TO_INBOX: disabled
-  PAGE_CREATION_REQUIRES_RECURRENCE: disabled
-hooks:
-  builtin:
-    auto-update-index: enabled
-    auto-cross-reference: enabled
-  max_causation_depth: 50
-git:
-  auto_commit_workflows: true
-`;
-
-/** Default content of `.dome/page-types.yaml` — the four shipped defaults. */
-export const SHIPPED_PAGE_TYPES_YAML = `defaults:
-  - entity
-  - concept
-  - source
-  - synthesis
-extensions: []
-`;
+import { shippedConfigYaml, shippedPageTypesYaml } from "./shipped-defaults";
 
 /** `.gitignore` shipped by `dome init`. */
 export const SHIPPED_GITIGNORE = `.dome/state/
@@ -90,8 +64,8 @@ export async function scaffoldVaultLayout(
 ): Promise<string[]> {
   const writeIndexAndLog = opts.writeIndexAndLog ?? true;
   const writeGitignore = opts.writeGitignore ?? true;
-  const config = opts.configOverride ?? SHIPPED_CONFIG_YAML;
-  const pageTypes = opts.pageTypesOverride ?? SHIPPED_PAGE_TYPES_YAML;
+  const config = opts.configOverride ?? shippedConfigYaml();
+  const pageTypes = opts.pageTypesOverride ?? shippedPageTypesYaml();
   const written: string[] = [];
 
   // Directory tree (idempotent).

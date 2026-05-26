@@ -13,6 +13,7 @@ import { autoCrossReference } from "./hooks/auto-cross-reference";
 import { loadDeclarativeHooks } from "./hooks/yaml-loader";
 import { projectEffectsToEvents } from "./event-projection";
 import type { BoundToolSurface, HookEvent } from "./hook-context";
+import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "./shipped-defaults";
 
 export interface VaultConfig {
   invariants: Record<string, "enabled" | "disabled">;
@@ -97,27 +98,6 @@ async function findVaultRoot(start: string): Promise<string | null> {
   }
 }
 
-const DEFAULT_PAGE_TYPES: PageTypesConfig = {
-  defaults: ["entity", "concept", "source", "synthesis"],
-  extensions: [],
-};
-
-const DEFAULT_CONFIG: VaultConfig = {
-  invariants: {
-    EVERY_WRITE_IS_LOGGED: "enabled",
-    PAGE_TYPE_BY_DIRECTORY: "enabled",
-    WIKILINKS_ARE_FULLPATH: "enabled",
-    INBOX_IS_EPHEMERAL: "enabled",
-    SENSITIVE_GOES_TO_INBOX: "disabled",
-    PAGE_CREATION_REQUIRES_RECURRENCE: "disabled",
-  },
-  hooks: {
-    builtin: { "auto-update-index": "enabled", "auto-cross-reference": "enabled" },
-    max_causation_depth: 50,
-  },
-  git: { auto_commit_workflows: true },
-};
-
 export async function openVault(path: string): Promise<Result<Vault, ToolError>> {
   const root = await findVaultRoot(path);
   if (root === null) {
@@ -126,16 +106,16 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   if (!(await isGitRepo(root))) {
     return err({ kind: "vault-not-git-repo", path: root });
   }
-  let config: VaultConfig = DEFAULT_CONFIG;
-  let pageTypes: PageTypesConfig = DEFAULT_PAGE_TYPES;
+  let config: VaultConfig = SHIPPED_VAULT_CONFIG;
+  let pageTypes: PageTypesConfig = SHIPPED_PAGE_TYPES;
   try {
     const cfgText = await readFile(join(root, ".dome", "config.yaml"), "utf8");
     const parsed = parseYaml(cfgText) as Partial<VaultConfig>;
-    config = { ...DEFAULT_CONFIG, ...parsed,
-      invariants: { ...DEFAULT_CONFIG.invariants, ...(parsed.invariants ?? {}) },
-      hooks: { ...DEFAULT_CONFIG.hooks, ...(parsed.hooks ?? {}),
-        builtin: { ...DEFAULT_CONFIG.hooks.builtin, ...((parsed.hooks?.builtin) ?? {}) } },
-      git: { ...DEFAULT_CONFIG.git, ...(parsed.git ?? {}) },
+    config = { ...SHIPPED_VAULT_CONFIG, ...parsed,
+      invariants: { ...SHIPPED_VAULT_CONFIG.invariants, ...(parsed.invariants ?? {}) },
+      hooks: { ...SHIPPED_VAULT_CONFIG.hooks, ...(parsed.hooks ?? {}),
+        builtin: { ...SHIPPED_VAULT_CONFIG.hooks.builtin, ...((parsed.hooks?.builtin) ?? {}) } },
+      git: { ...SHIPPED_VAULT_CONFIG.git, ...(parsed.git ?? {}) },
     };
   } catch (e: unknown) {
     return err({ kind: "config-invalid", message: `Failed to parse .dome/config.yaml: ${(e as Error).message}` });
@@ -143,7 +123,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   try {
     const ptText = await readFile(join(root, ".dome", "page-types.yaml"), "utf8");
     const parsed = parseYaml(ptText) as Partial<PageTypesConfig>;
-    pageTypes = { ...DEFAULT_PAGE_TYPES, ...parsed };
+    pageTypes = { ...SHIPPED_PAGE_TYPES, ...parsed };
   } catch {
     // page-types is optional
   }

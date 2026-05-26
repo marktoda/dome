@@ -1,10 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { initRepo } from "../git";
+import { scaffoldVaultLayout } from "../vault-scaffold";
 import { makeTempDir } from "../../tests/helpers/temp-dir";
 
 export interface Fixture {
   files: Record<string, string>;
+  /** Override `.dome/config.yaml` contents — defaults to the shipped config. */
   config?: string;
 }
 
@@ -13,43 +15,25 @@ export interface EvalFixtureVault {
   cleanup: () => Promise<void>;
 }
 
-const DEFAULT_CONFIG = `invariants:
-  EVERY_WRITE_IS_LOGGED: enabled
-  PAGE_TYPE_BY_DIRECTORY: enabled
-  WIKILINKS_ARE_FULLPATH: enabled
-  INBOX_IS_EPHEMERAL: enabled
-  SENSITIVE_GOES_TO_INBOX: disabled
-  PAGE_CREATION_REQUIRES_RECURRENCE: disabled
-hooks:
-  builtin:
-    auto-update-index: enabled
-    auto-cross-reference: enabled
-  max_causation_depth: 50
-git:
-  auto_commit_workflows: true
-`;
-
-const DEFAULT_PAGE_TYPES = `defaults: [entity, concept, source, synthesis]
-extensions: []
-`;
-
+/**
+ * Build a git-backed temp vault for eval / integration tests. The directory
+ * tree and shipped defaults come from `scaffoldVaultLayout` (single source of
+ * truth — see `src/shipped-defaults.ts`); this factory only layers on the
+ * fixture's test files and the empty index/log placeholders eval tests
+ * historically expect (no bootstrap log entry).
+ */
 export async function makeFixtureVault(fx: Fixture): Promise<EvalFixtureVault> {
   const path = await makeTempDir("dome-eval-");
-  await mkdir(join(path, ".dome", "state"), { recursive: true });
-  await mkdir(join(path, "wiki", "entities"), { recursive: true });
-  await mkdir(join(path, "wiki", "concepts"), { recursive: true });
-  await mkdir(join(path, "wiki", "sources"), { recursive: true });
-  await mkdir(join(path, "wiki", "syntheses"), { recursive: true });
-  await mkdir(join(path, "raw"), { recursive: true });
-  await mkdir(join(path, "notes"), { recursive: true });
-  await mkdir(join(path, "inbox", "raw"), { recursive: true });
-  await writeFile(join(path, ".dome", "config.yaml"), fx.config ?? DEFAULT_CONFIG);
-  await writeFile(join(path, ".dome", "page-types.yaml"), DEFAULT_PAGE_TYPES);
+  await scaffoldVaultLayout(path, {
+    ...(fx.config !== undefined ? { configOverride: fx.config } : {}),
+    writeIndexAndLog: false,
+    writeGitignore: false,
+  });
   await writeFile(join(path, "index.md"), "# Index\n\n");
   await writeFile(join(path, "log.md"), "# Log\n\n");
   for (const [rel, body] of Object.entries(fx.files)) {
     const abs = join(path, rel);
-    await mkdir(join(abs, ".."), { recursive: true });
+    await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, body);
   }
   await initRepo(path);
