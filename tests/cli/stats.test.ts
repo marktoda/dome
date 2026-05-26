@@ -33,4 +33,47 @@ describe("dome stats", () => {
       await v.cleanup();
     }
   });
+
+  test("wiki walk: pageCounts, totalPages, wikilinks, topHubs", async () => {
+    const v = await makeStatsVault();
+    try {
+      await writeFile(
+        join(v.path, "wiki", "entities", "alice.md"),
+        "---\ntype: entity\n---\n# Alice\n\nKnows [[wiki/entities/bob]] and [[wiki/entities/bob]] and [[wiki/entities/carol]].",
+      );
+      await writeFile(
+        join(v.path, "wiki", "entities", "bob.md"),
+        "---\ntype: entity\n---\n# Bob\n\nKnows [[wiki/entities/carol]].",
+      );
+      await writeFile(
+        join(v.path, "wiki", "entities", "carol.md"),
+        "---\ntype: entity\n---\n# Carol\n\nMentions [[wiki/entities/ghost]].",
+      );
+      await writeFile(
+        join(v.path, "wiki", "concepts", "trust.md"),
+        "---\ntype: concept\n---\n# Trust\n\nSee [[wiki/entities/alice]].",
+      );
+      await writeFile(
+        join(v.path, "wiki", "concepts", "memory.md"),
+        "---\ntype: concept\n---\n# Memory\n",
+      );
+
+      const vaultRes = await openVault(v.path);
+      if (!vaultRes.ok) throw new Error("openVault failed");
+      const stats = await collectStats(vaultRes.value);
+
+      expect(stats.totalPages).toBe(5);
+      expect(stats.pageCounts.entity).toBe(3);
+      expect(stats.pageCounts.concept).toBe(2);
+      expect(stats.wikilinks.total).toBe(6);
+      expect(stats.wikilinks.orphans).toBe(1);
+      // bob and carol tie at incoming=2; alice is third at incoming=1.
+      const top2Targets = new Set(stats.topHubs.slice(0, 2).map(h => h.target));
+      expect(top2Targets).toEqual(new Set(["wiki/entities/bob.md", "wiki/entities/carol.md"]));
+      expect(stats.topHubs.slice(0, 2).every(h => h.incoming === 2)).toBe(true);
+      expect(stats.topHubs[2]).toEqual({ target: "wiki/entities/alice.md", incoming: 1 });
+    } finally {
+      await v.cleanup();
+    }
+  });
 });

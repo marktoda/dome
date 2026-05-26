@@ -1,5 +1,11 @@
+import { existsSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { openVault, type Vault } from "../../vault";
 import { ok, type Result, type ToolError } from "../../types";
+import { walkMd } from "../../vault-fs";
+import { parseWikilinks } from "../../wikilinks";
+import { singularOf } from "../../page-type";
 
 export interface VaultStats {
   vaultPath: string;
@@ -17,8 +23,59 @@ export interface DomeStatsOpts {
   json?: boolean;
 }
 
-export async function collectStats(_vault: Vault): Promise<VaultStats> {
-  throw new Error("not implemented");
+export async function collectStats(vault: Vault): Promise<VaultStats> {
+  const stats: VaultStats = {
+    vaultPath: vault.path,
+    pageCounts: {},
+    totalPages: 0,
+    wikilinks: { total: 0, orphans: 0 },
+    raw: { count: 0, bytes: 0 },
+    notes: { count: 0 },
+    log: { entries: 0, lastWriteAt: null },
+    topHubs: [],
+    git: { ageDays: null, commits: 0, contributors: 0 },
+  };
+
+  // Wiki walk: pages, wikilinks, top hubs.
+  const wikiRoot = join(vault.path, "wiki");
+  const hubCounts = new Map<string, number>();
+  if (existsSync(wikiRoot)) {
+    const subdirs = await readdir(wikiRoot, { withFileTypes: true });
+    for (const subdir of subdirs) {
+      if (!subdir.isDirectory()) continue;
+      const type = singularOf(subdir.name);
+      const files = await readdir(join(wikiRoot, subdir.name), { withFileTypes: true });
+      for (const f of files) {
+        if (!f.isFile() || !f.name.endsWith(".md")) continue;
+        stats.totalPages++;
+        stats.pageCounts[type] = (stats.pageCounts[type] ?? 0) + 1;
+
+        const rel = `wiki/${subdir.name}/${f.name}`;
+        const out = await vault.tools.readDocument({ path: rel });
+        if (!out.result.ok) continue;
+        const body = out.result.value.body;
+        for (const link of parseWikilinks(body)) {
+          stats.wikilinks.total++;
+          if (!link.isFullPath) continue;
+          const targetRel = link.target.endsWith(".md") ? link.target : `${link.target}.md`;
+          const absTarget = join(vault.path, targetRel);
+          if (!existsSync(absTarget)) {
+            stats.wikilinks.orphans++;
+            continue;
+          }
+          hubCounts.set(targetRel, (hubCounts.get(targetRel) ?? 0) + 1);
+        }
+      }
+    }
+  }
+
+  // Top 5 hubs by incoming count.
+  stats.topHubs = [...hubCounts.entries()]
+    .map(([target, incoming]) => ({ target, incoming }))
+    .sort((a, b) => b.incoming - a.incoming)
+    .slice(0, 5);
+
+  return stats;
 }
 
 export function renderDashboard(_stats: VaultStats): string {
