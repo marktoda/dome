@@ -30,9 +30,14 @@ describe("dome init", () => {
       const agentsBody = await readFile(agentsPath, "utf8");
       expect(agentsBody).toContain("# This vault");
       expect(agentsBody).toContain("Dome vault");
-      // HTML-comment-bounded user section so dome doctor can re-template
-      // scaffolding without touching user prose.
-      expect(agentsBody).toContain("<!--");
+      // Per AGENTS_MD_IS_ORIENTATION_SURFACE: the file has user-prose
+      // delimiters that survive future --repair runs.
+      expect(agentsBody).toContain("<!-- BEGIN user-prose -->");
+      expect(agentsBody).toContain("<!-- END user-prose -->");
+      // Templated content includes the enabled invariant set.
+      expect(agentsBody).toContain("EVERY_WRITE_IS_LOGGED");
+      // Templated content does NOT include the retired invariant.
+      expect(agentsBody).not.toContain("SENSITIVE_GOES_TO_INBOX");
       // Offline-rule-surface pointer (per cli.md §dome init): an agent
       // without MCP should still find docs/wiki/invariants/ as the
       // canonical rule surface when the vault ships substrate.
