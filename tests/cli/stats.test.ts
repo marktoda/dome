@@ -235,4 +235,44 @@ describe("dome stats", () => {
     const out = renderDashboard(stats);
     expect(out).not.toMatch(/\x1b\[/);
   });
+
+  test("domeStats returns dashboard output for an existing vault", async () => {
+    const v = await makeStatsVault();
+    try {
+      const r = await domeStats(v.path, {});
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value.output).toContain("DOME");
+      expect(r.value.output).toContain(v.path);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("domeStats with --json returns JSON output", async () => {
+    const v = await makeStatsVault();
+    try {
+      const r = await domeStats(v.path, { json: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const parsed = JSON.parse(r.value.output);
+      expect(parsed.vaultPath).toBe(v.path);
+      expect(typeof parsed.totalPages).toBe("number");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("domeStats returns err when vault path is not a vault", async () => {
+    const base = await mkdtemp(join(tmpdir(), "dome-stats-novault-"));
+    try {
+      const r = await domeStats(base, {});
+      expect(r.ok).toBe(false);
+      if (r.ok) return;
+      // Any vault-open error kind is acceptable; the orchestrator just forwards.
+      expect(typeof r.error.kind).toBe("string");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
 });
