@@ -1,58 +1,67 @@
-// AC3 lockstep slot for WORKFLOWS_KNOW_VAULT_CONTEXT (off-matrix; runner-enforced
-// per docs/wiki/matrices/tool-invariant-enforcement.md §"WORKFLOWS_KNOW_VAULT_CONTEXT
-// — runner-enforced (off-matrix)"). Pins the composer's contract:
+// AC3 lockstep slot for WORKFLOWS_KNOW_VAULT_CONTEXT (off-matrix; enforcement
+// at the PromptLoader boundary per docs/wiki/matrices/tool-invariant-enforcement.md
+// §"WORKFLOWS_KNOW_VAULT_CONTEXT — runner-enforced (off-matrix)").
 //
-//   (a) Vault-identity preamble appears in the composed output and contains vault.path.
-//   (b) Rendering-surface preamble appears and contains "non-interactive" + "cli".
-//   (c) Composer order: vault-identity section ("# Current vault") appears
-//       BEFORE the rendering-surface section ("# Rendering surface").
-//   (d) Empty-output drop: a preamble returning "" does not introduce a blank section.
+// Main's c69f856 retired the SYSTEM_PREAMBLES code-driven registry and replaced
+// it with two SDK partials (`preamble-vault-identity.md` + `preamble-rendering-surface.md`)
+// included at the top of `system-base.md`. PromptLoader resolves the includes
+// and substitutes `{{vault.path}}` with the actual vault path. The enforcement
+// seam moved from the agent-loop runner to the PromptLoader boundary; the
+// invariant intent is unchanged.
 //
-// (a) and (b) are also pinned by tests/workflows/agent-loop.test.ts via the
-// runWorkflow path; this file pins them directly against buildSystemPreamble
-// and adds (c) and (d) per the pass-2 architecture-review F1 closure.
+// This test pins the four properties WORKFLOWS_KNOW_VAULT_CONTEXT.md §"Test
+// guarantee" promises:
+//   (a) Vault-identity partial is included and contains vault.path (substituted).
+//   (b) Rendering-surface partial is included and contains "non-interactive" + "cli".
+//   (c) Composer order: vault-identity section appears BEFORE rendering-surface.
+//   (d) PromptLoader's substitution actually fires — no literal `{{vault.path}}`
+//       remains in the resolved body.
 
 import { describe, test, expect } from "bun:test";
 import { openVault } from "../../src/vault";
-import { buildSystemPreamble } from "../../src/workflows/agent-loop";
+import { PromptLoader } from "../../src/prompts/prompt-loader";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("WORKFLOWS_KNOW_VAULT_CONTEXT (off-matrix lockstep)", () => {
-  test("buildSystemPreamble includes a vault-identity section naming vault.path", async () => {
+  test("PromptLoader resolves system-base to a body containing the vault-identity preamble naming vault.path", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const composed = buildSystemPreamble(res.value);
-      expect(composed).toContain("# Current vault");
-      expect(composed).toContain(v.path);
+      const loader = new PromptLoader(res.value);
+      const prompt = await loader.load("system-base");
+      expect(prompt).not.toBeNull();
+      expect(prompt!.body).toContain("# Current vault");
+      expect(prompt!.body).toContain(v.path);
     } finally {
       await v.cleanup();
     }
   });
 
-  test("buildSystemPreamble includes a rendering-surface section", async () => {
+  test("system-base body contains the rendering-surface preamble", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const composed = buildSystemPreamble(res.value);
-      expect(composed).toContain("# Rendering surface");
-      expect(composed.toLowerCase()).toContain("non-interactive");
-      expect(composed.toLowerCase()).toContain("cli");
+      const loader = new PromptLoader(res.value);
+      const prompt = await loader.load("system-base");
+      expect(prompt!.body).toContain("# Rendering surface");
+      expect(prompt!.body.toLowerCase()).toContain("non-interactive");
+      expect(prompt!.body.toLowerCase()).toContain("cli");
     } finally {
       await v.cleanup();
     }
   });
 
-  test("buildSystemPreamble preamble order: vault-identity before rendering-surface", async () => {
+  test("preamble order: vault-identity section appears before rendering-surface", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const composed = buildSystemPreamble(res.value);
-      const vaultIdentityIdx = composed.indexOf("# Current vault");
-      const renderingSurfaceIdx = composed.indexOf("# Rendering surface");
+      const loader = new PromptLoader(res.value);
+      const prompt = await loader.load("system-base");
+      const vaultIdentityIdx = prompt!.body.indexOf("# Current vault");
+      const renderingSurfaceIdx = prompt!.body.indexOf("# Rendering surface");
       expect(vaultIdentityIdx).toBeGreaterThan(-1);
       expect(renderingSurfaceIdx).toBeGreaterThan(-1);
       expect(vaultIdentityIdx).toBeLessThan(renderingSurfaceIdx);
@@ -61,15 +70,17 @@ describe("WORKFLOWS_KNOW_VAULT_CONTEXT (off-matrix lockstep)", () => {
     }
   });
 
-  test("buildSystemPreamble drops preambles that return empty strings (no triple-blank-line gap)", async () => {
+  test("PromptLoader substitutes {{vault.path}} so no literal template marker remains", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-      const composed = buildSystemPreamble(res.value);
-      // Sections join with "\n\n" — exactly one blank line. Three or more
-      // consecutive newlines indicate an empty-output preamble snuck in.
-      expect(composed).not.toMatch(/\n\n\n/);
+      const loader = new PromptLoader(res.value);
+      const prompt = await loader.load("system-base");
+      // The substitution boundary is the PromptLoader. If a future regression
+      // disabled it, this assertion fails before the LLM sees an unsubstituted
+      // template marker.
+      expect(prompt!.body).not.toContain("{{vault.path}}");
     } finally {
       await v.cleanup();
     }
