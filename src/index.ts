@@ -55,3 +55,19 @@ export {
 } from "./prompts/workflow-frontmatter";
 export { makeFixtureVault, type Fixture, type EvalFixtureVault } from "./eval/fixture-vault";
 export { replay, type ReplayCase, type ReplayResult, type ExpectedEffects } from "./eval/replay";
+
+// Stage 4: MCP server + CLI
+export { McpToolName, MCP_TOOL_NAMES } from "./mcp/tool-names";
+export { buildToolAdapters, type ToolAdapter } from "./mcp/tool-adapters";
+export { buildPromptAdapters, type PromptAdapter } from "./mcp/prompt-adapters";
+export { ResourceAdapter, ResourceUri, type ResourceContent } from "./mcp/resource-adapters";
+export { DomeMcpServer, type DomeMcpServerOpts } from "./mcp/server";
+export { DoctorFlag, DOCTOR_FLAGS } from "./cli/doctor-flag";
+export { runCli, ExitCode } from "./cli/cli";
+export { domeInit } from "./cli/commands/init";
+export { domeReconcile } from "./cli/commands/reconcile";
+export { domeDoctor, type DoctorReport } from "./cli/commands/doctor";
+export { domeLint } from "./cli/commands/lint";
+export { domeMigrate } from "./cli/commands/migrate";
+export { domeExportContext } from "./cli/commands/export-context";
+export { domeServe, type ServeHandle } from "./cli/commands/serve";

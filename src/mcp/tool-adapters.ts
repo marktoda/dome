@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { Vault } from "../vault";
 import { McpToolName } from "./tool-names";
-import type { Effect, ToolReturn } from "../types";
+import type { Effect, ToolReturn, Sensitivity, CreationReason, LogVerb } from "../types";
+import type { WriteDocumentInput, WriteDocumentOpts } from "../tools/write-document";
+import type { AppendLogInput } from "../tools/append-log";
+import type { SearchIndexInput } from "../tools/search-index";
 
 export interface ToolAdapterResult {
   ok: boolean;
@@ -54,6 +57,44 @@ async function wrap<T>(invoker: () => Promise<ToolReturn<T>>): Promise<ToolAdapt
   return { ok: false, error: out.result.error, effects: out.effects };
 }
 
+// Strip undefined fields so the parsed object satisfies exactOptionalPropertyTypes downstream.
+function compactWriteDocumentInput(parsed: z.infer<typeof writeDocumentInput>): WriteDocumentInput {
+  const out: WriteDocumentInput = {
+    path: parsed.path,
+    body: parsed.body,
+    frontmatter: parsed.frontmatter,
+  };
+  if (parsed.opts) {
+    const opts: WriteDocumentOpts = {};
+    if (parsed.opts.create !== undefined) opts.create = parsed.opts.create;
+    if (parsed.opts.reason !== undefined) opts.reason = parsed.opts.reason as CreationReason;
+    if (parsed.opts.sensitivity_classified !== undefined) {
+      opts.sensitivity_classified = parsed.opts.sensitivity_classified as Sensitivity;
+    }
+    out.opts = opts;
+  }
+  return out;
+}
+
+function compactAppendLogInput(parsed: z.infer<typeof appendLogInput>): AppendLogInput {
+  const out: AppendLogInput = { verb: parsed.verb as LogVerb, subject: parsed.subject };
+  if (parsed.body !== undefined) out.body = parsed.body;
+  if (parsed.refs !== undefined) out.refs = parsed.refs;
+  return out;
+}
+
+function compactSearchIndexInput(parsed: z.infer<typeof searchIndexInput>): SearchIndexInput {
+  const out: SearchIndexInput = { query: parsed.query };
+  if (parsed.filters) {
+    const filters: { category?: string; type?: string; tags?: string[] } = {};
+    if (parsed.filters.category !== undefined) filters.category = parsed.filters.category;
+    if (parsed.filters.type !== undefined) filters.type = parsed.filters.type;
+    if (parsed.filters.tags !== undefined) filters.tags = parsed.filters.tags;
+    out.filters = filters;
+  }
+  return out;
+}
+
 export function buildToolAdapters(vault: Vault): ToolAdapter[] {
   return [
     {
@@ -66,19 +107,19 @@ export function buildToolAdapters(vault: Vault): ToolAdapter[] {
       name: McpToolName.WriteDocument,
       description: "Create or update a Document.",
       inputSchema: writeDocumentInput,
-      handler: async (input) => wrap(() => vault.tools.writeDocument(writeDocumentInput.parse(input))),
+      handler: async (input) => wrap(() => vault.tools.writeDocument(compactWriteDocumentInput(writeDocumentInput.parse(input)))),
     },
     {
       name: McpToolName.AppendLog,
       description: "Append an entry to log.md.",
       inputSchema: appendLogInput,
-      handler: async (input) => wrap(() => vault.tools.appendLog(appendLogInput.parse(input))),
+      handler: async (input) => wrap(() => vault.tools.appendLog(compactAppendLogInput(appendLogInput.parse(input)))),
     },
     {
       name: McpToolName.SearchIndex,
       description: "Search the index + page bodies.",
       inputSchema: searchIndexInput,
-      handler: async (input) => wrap(() => vault.tools.searchIndex(searchIndexInput.parse(input))),
+      handler: async (input) => wrap(() => vault.tools.searchIndex(compactSearchIndexInput(searchIndexInput.parse(input)))),
     },
     {
       name: McpToolName.WikilinkResolve,
