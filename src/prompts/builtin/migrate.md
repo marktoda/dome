@@ -19,3 +19,5 @@ Convert the current vault to Dome shape. The prologue above names the vault's pa
 5. If the user message says to apply, execute the plan via Dome's Tools. Every move and frontmatter-add is logged. Otherwise write the plan only; do not execute.
 
 {{include: migrate-augment.md}}
+
+{{include: migrate-epilogue.md}}

@@ -10,12 +10,12 @@ tier: axiom
 
 **Tier:** Axiom — non-disable-able.
 
-**Statement:** Every workflow's `system` parameter to `generateText` is prepended with a composed set of **preambles** registered in `SYSTEM_PREAMBLES` (`src/workflows/agent-loop.ts`). At minimum the registry carries:
+**Statement:** Every workflow's `system` parameter to `generateText` carries the situational context the LLM needs to operate on the right vault and render to the right surface. The context is carried by two SDK partials included at the top of `system-base.md` (which every workflow includes):
 
-- **`vaultIdentityPreamble`** — names `vault.path` so prompt bodies that say "the vault" or "the directory" have an anchor.
-- **`renderingSurfacePreamble`** — tells the LLM its reply is the workflow's final terminal output (or, for hook-driven runs, is discarded), that there is no conversational follow-up channel, and that next-step guidance should name the next CLI command rather than address a chat shell that does not exist.
+- **`preamble-vault-identity.md`** — names `vault.path` (via the `{{vault.path}}` template variable substituted by `PromptLoader`) so prompt bodies that say "the vault" or "the directory" have an anchor.
+- **`preamble-rendering-surface.md`** — tells the LLM its reply is the workflow's final terminal output (or, for hook-driven runs, is discarded), that there is no conversational follow-up channel, and that next-step guidance should name the next CLI command rather than address a chat shell that does not exist.
 
-New preambles are added by writing a `Preamble` function and appending to `SYSTEM_PREAMBLES`; the composer `buildSystemPreamble(vault)` is the single seam every workflow runs through.
+These partials are part of the **vault augmentation slot model** (see [[wiki/specs/prompts-and-workflows]] §"Vault augmentation slots"). Vault-local overrides at `.dome/prompts/preamble-vault-identity.md` or `.dome/prompts/preamble-rendering-surface.md` replace the SDK defaults if a vault has good reason to reshape the situational framing; absence means the SDK defaults apply. Additional situational context (today's date, recent activity hints, vault-config-aware behavior, etc.) is added by writing a new SDK partial and including it from `system-base.md`, or by a vault filling one of the augmentation slots (`vault-prologue.md`, `<workflow-name>-augment.md`, `<workflow-name>-epilogue.md`).
 
 **Why:** Workflow prompts are vault-shaped and surface-blind — they say things like "convert the directory," "walk the vault," "write the proposal to `.dome/migration-plan.md`." Tools are vault-bound at construction, but the LLM itself has no other channel to learn the vault's identity or the rendering surface its reply will appear on. Without preambles:
 
@@ -24,19 +24,20 @@ New preambles are added by writing a `Preamble` function and appending to `SYSTE
 
 Both failures share a single substrate gap: **the LLM driving a workflow needs to know what situation it's in**, and the runner is the only place that knows.
 
-**Structural enforcement:** `runWorkflow` constructs the `system` parameter as `${buildSystemPreamble(vault)}\n\n${def.body}`. There is no code path in `runWorkflow` that passes `def.body` to `generateText` without the composed preamble. `buildSystemPreamble` filters out empty-string preamble outputs and joins the remaining sections with blank lines, so each preamble can opt out at runtime (return `""`) without breaking the structure.
+**Structural enforcement:** `runWorkflow` constructs the `system` parameter as `def.body` — the workflow body resolved through `PromptLoader`, which (a) inlines `{{include: ...}}` partials including the two preambles at the top of `system-base.md`, and (b) substitutes `{{vault.path}}` with the actual vault path. There is no code path in `runWorkflow` that passes a system prompt to `generateText` without going through `def.body`, and there is no code path that loads a workflow prompt without going through `PromptLoader`. The structural seam is at the prompt-loader boundary, not the runner boundary.
 
 The separation is principled: **preambles describe the situation** (which vault, which surface, what date), **the workflow body describes the task**, **the user message carries the specific instruction** (and doubles as the commit subject via `subjectFromUserMessage`). CLI shims that drive workflows non-interactively are obligated to send a meaningful task description in the user message; they are NOT obligated to thread vault path or rendering hints through it.
 
 **Counter-example:** A new workflow `dome catalog` is added with a CLI shim that calls `runWorkflowAtPath(path, "catalog", "")`. The catalog prompt body says "Walk the vault root and enumerate top-level directories." Without the preambles, the LLM asks "which vault?" *and* assumes a conversational reply channel ("Want me to filter by category?"). With the preambles, the LLM proceeds against the named vault and produces a terminal-shaped summary that names the next CLI command rather than asking follow-ups.
 
-Inverse counter-example: the migrate prompt's old form, `Convert the directory at <path> to a Dome vault.`, attempted to encode the context in the prompt body via a literal placeholder. There is no template substitution in `PromptLoader` — only `{{include: name.md}}` — so `<path>` was prose, not a variable. The preamble registry replaces this pattern: prompt bodies refer to "the current vault" and situational context lives in registered preambles.
+Inverse counter-example: the migrate prompt's old form, `Convert the directory at <path> to a Dome vault.`, attempted to encode the context in the prompt body via a literal placeholder. `<path>` was prose, not a recognized template variable, so it was passed through unsubstituted. The current model recognizes only the explicit `{{vault.path}}` syntax (a closed set defined in `PromptLoader.substituteVariables`); `<path>` is structurally distinct and won't be mistaken for substitution. The substrate scar that motivated the original preamble registry is preserved by **bounding the substitution surface explicitly**, not by avoiding substitution entirely.
 
 **Test guarantee:**
 - `tests/workflows/agent-loop.test.ts` —
   - *"prepends a vault-identity preamble naming vault.path to the system prompt"* asserts `system` contains `vault.path` after `runWorkflow` runs against a `MockLanguageModelV3` spy.
   - *"prepends a rendering-surface preamble describing non-interactive single-turn semantics"* asserts the surface preamble's stable phrasing ("non-interactive", "CLI") appears in the captured system prompt.
-  - *"`buildSystemPreamble` composes every registered preamble with blank-line separators"* pins the composer's contract directly (no runner involvement) — every entry in `SYSTEM_PREAMBLES` contributes a section, and sections are separated by blank lines.
+  - *"system-base.md includes both situational preambles via {{include}} slots"* pins the structural seam: the resolved `system-base` body contains the vault path (via `{{vault.path}}` substitution) and the rendering-surface phrasing, with no leftover template syntax.
+- `tests/prompts/extension-points.test.ts` — *"{{vault.path}} template substitution"* pins the closed substitution surface: only `{{vault.path}}` is recognized; unknown variables like `{{vault.today}}` are left intact (for `dome doctor` or reviewers to catch).
 - `tests/cli/migrate-bootstrap.test.ts` — *"LLM receives vault.path in system prompt and a task description in the user message"* pins the end-to-end boundary for the specific command whose absence motivated this invariant; an analogous assertion should be added to every future workflow-driven CLI command.
 
 **Why an axiom (not configurable):**
@@ -44,7 +45,9 @@ Inverse counter-example: the migrate prompt's old form, `Convert the directory a
 - The preambles are short and uniform across vaults. The cost of always including them is negligible against the cost of any caller forgetting them.
 - Unlike `SENSITIVE_GOES_TO_INBOX` (a routing policy a project vault may not need) or `PAGE_CREATION_REQUIRES_RECURRENCE` (a discipline some users want and others don't), `WORKFLOWS_KNOW_VAULT_CONTEXT` is a contract between the runner and every prompt body. There is no defensible "off" position.
 
-**Extension model:** Future situational context the LLM should always know (today's date for time-sensitive workflows, currently-enabled invariant set for vault-config-aware behavior, recent activity hints to bias toward continuity, etc.) lands as a new `Preamble` registered in `SYSTEM_PREAMBLES`. Each preamble owns one `# Heading`-led section, so prompt bodies and other preambles can reference it by name. The composer's blank-line discipline keeps the system prompt readable even as the registry grows.
+**Extension model:** Future situational context the LLM should always know (today's date for time-sensitive workflows, currently-enabled invariant set for vault-config-aware behavior, recent activity hints to bias toward continuity, etc.) lands as a new SDK partial in `src/prompts/builtin/preamble-<name>.md` plus a corresponding `{{include: preamble-<name>.md}}` line in `system-base.md`. If the partial needs to interpolate runtime state, the variable joins the closed set in `PromptLoader.substituteVariables` (currently just `{{vault.path}}`); adding a new variable is a deliberate substrate change, not an ad-hoc extension.
+
+Each preamble owns one `# Heading`-led section, so prompt bodies and other preambles can reference it by name. The blank-line discipline in `system-base.md` keeps the system prompt readable even as the preamble set grows. Vault-local overrides (`<vault>/.dome/prompts/preamble-<name>.md`) replace SDK preambles for vaults that need different framing.
 
 **Related:**
 - [[wiki/specs/prompts-and-workflows]] — §"Runner"

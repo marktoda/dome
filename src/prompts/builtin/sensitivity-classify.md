@@ -21,3 +21,5 @@ Sensitive categories: personal medical, financial, confidential employment, name
 Output: the classification + reasoning. The calling `ingest` workflow gates the actual `writeDocument` destination on this result.
 
 {{include: sensitivity-classify-augment.md}}
+
+{{include: sensitivity-classify-epilogue.md}}

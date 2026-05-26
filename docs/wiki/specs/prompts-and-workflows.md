@@ -86,33 +86,62 @@ The include is resolved at load time against the same source-priority order (SDK
 
 ## Vault augmentation slots
 
-Every shipped workflow prompt declares two named include points that vaults may fill to add behavior *without* overriding the prompt wholesale. Both slots silently resolve to empty when the named partial doesn't exist in the vault — opt-in by file creation, not by config.
+A workflow's system prompt is composed by `PromptLoader` from a stack of named **partials** (`.md` files), each filled either by the SDK or by a vault-local override at `<vault>/.dome/prompts/<name>.md`. Every shipped workflow prompt declares slots at well-defined positions that vaults may fill to add behavior *without* overriding the prompt wholesale. Slots silently resolve to empty when the named partial doesn't exist — opt-in by file creation, not by config.
 
-Slot names and scope:
+### Slot catalog
 
-| Slot name | Included by | Scope | Use it for |
-|---|---|---|---|
-| `vault-prologue.md` | `system-base.md` (so every workflow inherits it) | Vault-wide | Vault-wide vocabulary, naming conventions, cross-references the agent should always know |
-| `<workflow-name>-augment.md` | The shipped `<workflow-name>.md` (e.g., `ingest.md`, `query.md`) | One workflow | Workflow-specific behavior — e.g., time-aware retrieval rules added to `query`, task-routing rules added to `ingest` |
+| Slot name | Position | Scope | Filled by SDK by default? | Use it for |
+|---|---|---|---|---|
+| `preamble-vault-identity.md` | Top of `system-base.md` | Every workflow | ✅ Yes — uses `{{vault.path}}` | Naming the vault the LLM is operating on (the situational anchor for "the directory"/"the vault" phrases in prompt bodies) |
+| `preamble-rendering-surface.md` | Top of `system-base.md` | Every workflow | ✅ Yes | Telling the LLM its reply is the workflow's terminal output, not a chat turn |
+| `vault-prologue.md` | Bottom of `system-base.md` | Every workflow | ❌ No — vault-fillable | Vault-wide vocabulary, naming conventions, cross-references the agent should always know |
+| `<workflow-name>-augment.md` | After the workflow body's main behavior | One workflow | ❌ No — vault-fillable | Workflow-specific extensions — e.g., time-aware retrieval rules added to `query`, task-routing rules added to `ingest` |
+| `<workflow-name>-epilogue.md` | End of the workflow prompt (final position) | One workflow | ❌ No — vault-fillable | Final-position reminders — gotchas, style notes, sensitivity rules the agent should re-encounter just before producing output |
 
-A vault that wants time-aware retrieval drops `<vault>/.dome/prompts/query-augment.md` carrying just the additional retrieval patterns. The SDK's `query.md` is untouched; the loader inlines the augment partial where the slot directive sits.
+All slots resolve via the same `{{include: <name>.md}}` directive. The SDK's "default-filled" preambles are partials in `src/prompts/builtin/`; vaults can override them by dropping a same-named file in `.dome/prompts/`.
 
-The mechanism is the existing `{{include: <name>}}` directive (see §"Composition" above) — augmentation slots are just include directives the SDK ships *unfilled*. Vaults that don't fill them get the default behavior with zero overhead.
+### Why preambles use the slot model too
+
+Before v0.5.1 the SDK injected vault identity and rendering-surface context via a code-driven `SYSTEM_PREAMBLES` registry in `agent-loop.ts`. That registry was retired and converted to the partial-based form so there is one unified composition model — the same mechanism vaults extend with is the one the SDK uses internally. The substrate scar that motivated the original code-driven approach (migrate.md's literal `<path>` masquerading as a variable) is preserved by **bounding the substitution surface explicitly**: only the closed set `{{vault.path}}` is recognized; other `<...>` or `{{...}}` patterns pass through as prose (see §"Template variables" below).
+
+### Template variables
+
+`PromptLoader` performs a single, well-bounded substitution pass after include resolution. The closed variable set:
+
+| Variable | Substituted with | Notes |
+|---|---|---|
+| `{{vault.path}}` | `Vault.path` (the absolute filesystem path) | Used by `preamble-vault-identity.md` to name the vault; also available in vault-local partials |
+
+Adding a new variable (e.g., `{{date.today}}`) is a deliberate substrate change — extend `PromptLoader.substituteVariables` and document the addition here. Unknown `{{...}}` patterns are left intact so reviewers (and a future `dome doctor` check) can flag typos like `{{vualt.path}}`.
 
 ### When to fill a slot vs. override the whole prompt
 
 | Goal | Use |
 |---|---|
-| Add behavior to an existing workflow | Slot partial (`<workflow>-augment.md`) |
+| Add behavior to an existing workflow | Slot partial (`<workflow>-augment.md` or `<workflow>-epilogue.md`) |
 | Add vault-wide context shared across every workflow | `vault-prologue.md` |
+| Reshape how the LLM is told about the vault or rendering surface | Override `preamble-vault-identity.md` or `preamble-rendering-surface.md` |
 | Replace the entire workflow's behavior | Override the workflow prompt itself (`<workflow>.md` — see §"Override layering" below) |
 
 The slot partials are the additive surface; the filename-override mechanism is the escape hatch for deep changes. Most vault customization belongs in slots.
 
-### Slot ordering
+### Slot ordering in the resolved prompt
 
-- `vault-prologue.md` is included via `system-base.md`, so its content appears immediately after the system base in every workflow's resolved prompt.
-- `<workflow-name>-augment.md` is included at the *end* of each shipped workflow prompt, so its content augments the workflow body's specific instructions last (the closest-to-action position).
+For any workflow `W`, the resolved system prompt looks like:
+
+```
+[preamble-vault-identity.md]      ← top of system-base.md
+[preamble-rendering-surface.md]
+[system-base.md body — invariants, ethos]
+[vault-prologue.md]               ← bottom of system-base.md
+
+[workflow W's body — task-specific behavior]
+
+[W-augment.md]                    ← after body
+[W-epilogue.md]                   ← final position
+```
+
+Sections separated by blank lines so the model sees clean markdown structure. Empty (unfilled) slots collapse without leaving artifacts.
 
 ## Override layering
 

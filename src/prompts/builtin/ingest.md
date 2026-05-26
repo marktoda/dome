@@ -24,3 +24,5 @@ This is the `ingest` workflow. Process the raw source the user (or an intake hoo
 You may write 5-15 page touches per call. Don't write nothing; don't write hundreds. The goal is to keep the wiki compiled, not exhaustive.
 
 {{include: ingest-augment.md}}
+
+{{include: ingest-epilogue.md}}

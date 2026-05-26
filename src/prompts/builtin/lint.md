@@ -75,3 +75,5 @@ The user message is `apply <id>` or `apply <id1> <id2> ...`. For each id, in ord
 Apply mode treats the report as the source of truth for the recommendation. The workflow does NOT re-derive intent from current vault state; the apply-time judgment was made at propose time and is recorded in the report. If apply-time vault state has drifted enough that the recommendation no longer makes sense, that is an `Apply-failed:` outcome — re-run propose to surface the new state.
 
 {{include: lint-augment.md}}
+
+{{include: lint-epilogue.md}}

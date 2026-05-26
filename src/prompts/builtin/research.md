@@ -19,3 +19,5 @@ The user asked you to research a topic. You don't have web access via a dedicate
 5. If you were triggered from an `inbox/research/*` drop, call `deleteDocument` on the original inbox file when done. The wiki source page you created is the durable record; the inbox file's job is complete (INBOX_IS_EPHEMERAL).
 
 {{include: research-augment.md}}
+
+{{include: research-epilogue.md}}

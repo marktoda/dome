@@ -22,3 +22,5 @@ Sections:
 Write to stdout (the caller will redirect). No vault mutations.
 
 {{include: export-context-augment.md}}
+
+{{include: export-context-epilogue.md}}

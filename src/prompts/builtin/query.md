@@ -21,3 +21,5 @@ Answer the user's question using the vault as your source of truth.
 Prep-mode framing: when the user says "prep me for X" or "brief me on Y", focus on synthesizing the relevant pages into a single answer without writing back.
 
 {{include: query-augment.md}}
+
+{{include: query-epilogue.md}}

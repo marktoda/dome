@@ -19,3 +19,5 @@ A web clip landed in `inbox/clip/`. Integrate it:
 5. When done processing, call `deleteDocument` on the original inbox file. The `wiki/sources/` page you created is the durable record; the inbox file's job is complete (INBOX_IS_EPHEMERAL).
 
 {{include: clip-integrate-augment.md}}
+
+{{include: clip-integrate-epilogue.md}}
