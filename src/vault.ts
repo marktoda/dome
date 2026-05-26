@@ -4,10 +4,10 @@ import { join, dirname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { ok, err, type Result, type ToolError, type ToolReturn } from "./types";
 import { isGitRepo } from "./git";
-import { makePrivilegedWriter } from "./privileged-writer";
+import { makePrivilegedWriter, type PrivilegedWriter } from "./privileged-writer";
 import { bindTools } from "./tools/registry";
 import { HookRegistry } from "./hook-registry";
-import { HookDispatcher } from "./hook-dispatcher";
+import { HookDispatcher, type CycleInfo } from "./hook-dispatcher";
 import { autoUpdateIndex } from "./hooks/auto-update-index";
 import { autoCrossReference } from "./hooks/auto-cross-reference";
 import { loadDeclarativeHooks } from "./hooks/yaml-loader";
@@ -93,6 +93,28 @@ export interface Vault {
    * reaching into the writer, which is intentionally not exported.
    */
   rebuildIndex: () => Promise<void>;
+}
+
+/**
+ * Format a CycleInfo into a `log.md` `hook.cycle-detected` entry and persist
+ * it via the privileged writer. Exported so its shape can be unit-tested
+ * without driving a real cycle through the dispatcher (which requires
+ * programmatic-hook registration, deferred to v0.5.1+). `openVault` wires
+ * this from `hookDispatcher.onCycleDetected` so production cycles produce
+ * the persistent record `dome doctor --show recent-hook-cycles` parses.
+ */
+export async function appendCycleLogEntry(
+  writer: PrivilegedWriter,
+  info: CycleInfo,
+): Promise<void> {
+  await writer.appendLogEntry({
+    ts: new Date().toISOString(),
+    verb: "hook.cycle-detected",
+    subject: `handler=${info.triggeringHandler} depth=${info.depth}`,
+    body: info.chain.length > 0
+      ? `chain:\n${info.chain.map((l, i) => `  ${i}. ${l.handlerId} -> ${l.targetPath}`).join("\n")}`
+      : "",
+  });
 }
 
 async function findVaultRoot(start: string): Promise<string | null> {
@@ -181,6 +203,15 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   }
   const hookDispatcher = new HookDispatcher(registry, {
     maxCausationDepth: config.hooks.max_causation_depth,
+  });
+  // Wire cycle detection to log.md so `dome doctor --show recent-hook-cycles`
+  // (which parses log.md for `hook.cycle-detected` entries) has a real producer.
+  // Without this, the dispatcher detects cycles in-process but the persistent
+  // record needed by a separate `dome doctor` process never lands. The
+  // `appendLogEntry` privileged-writer surface is the right seam because cycle
+  // events are dispatcher-owned per INDEX_AND_LOG_ARE_DISPATCHER_OWNED.
+  hookDispatcher.onCycleDetected((info) => {
+    void appendCycleLogEntry(privilegedWriter, info);
   });
 
   // dispatchEvents is the single entry point any subsystem (Tool wrap,
