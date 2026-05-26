@@ -11,6 +11,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import type { Vault } from "../vault";
 import { WorkflowRegistry } from "../prompts/registry";
 import type { WorkflowName } from "./workflow-name";
+import { commitWorkflow } from "../workflow-commit";
 import {
   readDocumentInput,
   writeDocumentInput,
@@ -32,6 +33,13 @@ export interface RunWorkflowOpts {
   model?: string | LanguageModel;
   /** Hard cap on agentic steps; defaults to {@link DEFAULT_MAX_STEPS}. */
   maxSteps?: number;
+  /**
+   * Disable the per-workflow atomic commit. Defaults to false (commit on
+   * success). Tests that just want to assert the LLM path without touching
+   * git can pass true. Production callers leave it unset — substrate's
+   * load-bearing per-workflow-atomic-commit policy assumes commits happen.
+   */
+  skipCommit?: boolean;
 }
 
 export interface RunWorkflowResult {
@@ -41,7 +49,23 @@ export interface RunWorkflowResult {
   finishReason: string;
   /** Total number of agentic steps the SDK ran. */
   steps: number;
+  /**
+   * SHA of the per-workflow atomic commit, or "" when nothing was touched
+   * or commits are disabled via vault config / opts.skipCommit. The substrate
+   * (hooks.md §"Commit policy") relies on commits aligning with log.md
+   * entries; the caller can use this SHA to cross-reference.
+   */
+  commitSha: string;
 }
+
+// Mutating Tool names whose calls represent on-disk changes that need to be
+// part of the per-workflow commit. Read-only Tools (readDocument, searchIndex,
+// wikilinkResolve) and the privileged dispatcher path (appendLog writes log.md
+// indirectly) are NOT in this set — appendLog's mutation is captured by the
+// appendLog wrapping in Tool wraps already, which emits the appended-log
+// effect that flows through dispatch. For the commit's `git add` set we use
+// the path arguments of the mutating Tool calls.
+const MUTATING_TOOLS = new Set(["writeDocument", "moveDocument", "deleteDocument", "appendLog"]);
 
 /**
  * Run a workflow against the model. Resolves the workflow's prompt body and
@@ -79,12 +103,77 @@ export async function runWorkflow(
     stopWhen: stepCountIs(maxSteps),
   });
 
+  // Per-workflow atomic commit per docs/wiki/specs/hooks.md §"Commit policy":
+  // every workflow's effects + log.md entry land as ONE git commit whose
+  // subject is "<verb>: <subject>". Without this, log.md and git log drift —
+  // log.md grows with every appendLog effect but git history doesn't, so
+  // crash recovery and the "git revert == universal undo" promise break.
+  //
+  // Skip the commit when no mutations happened — a query workflow that only
+  // reads should not produce empty commits.
+  let commitSha = "";
+  const touchedPaths = collectTouchedPaths(result);
+  if (!opts.skipCommit && touchedPaths.length > 0) {
+    // log.md + index.md are touched implicitly via the dispatcher whenever
+    // ANY mutation happens (appendLog by every mutating Tool;
+    // auto-update-index by every wiki write). workflow-commit's git add is
+    // tolerant of missing files, so adding them unconditionally is safe.
+    const commitPaths = [...touchedPaths, "log.md", "index.md"];
+    commitSha = await commitWorkflow(vault, {
+      verb: workflowName,
+      subject: subjectFromUserMessage(userMessage),
+      touchedPaths: commitPaths,
+    });
+  }
+
+  // AI SDK v6's `result.toolCalls` reflects only the FINAL step's tool calls
+  // (zero after a successful tool-call -> tool-result -> text-stop sequence).
+  // Per-step tool calls live on result.steps[i].toolCalls — sum them for the
+  // total count callers actually want.
+  const toolCallCount = result.steps.reduce((sum, step) => sum + step.toolCalls.length, 0);
+
   return {
     text: result.text,
-    toolCallCount: result.toolCalls.length,
+    toolCallCount,
     finishReason: result.finishReason,
     steps: result.steps.length,
+    commitSha,
   };
+}
+
+/**
+ * Walk the AI SDK result's per-step toolCalls and collect every path the
+ * model touched via a mutating Tool. The set drives the per-workflow git
+ * commit's `git add` list; non-mutating Tools (read, search, resolve) are
+ * skipped.
+ */
+function collectTouchedPaths(result: Awaited<ReturnType<typeof generateText>>): string[] {
+  const paths = new Set<string>();
+  for (const step of result.steps) {
+    for (const call of step.toolCalls) {
+      if (!MUTATING_TOOLS.has(call.toolName)) continue;
+      const args = call.input as { path?: string; from?: string; to?: string };
+      // writeDocument / deleteDocument / appendLog: `path` or no path (appendLog
+      // writes log.md exclusively, covered by the log.md add below).
+      if (args.path !== undefined) paths.add(args.path);
+      // moveDocument touches both endpoints; the `from` is removed and `to`
+      // is added, but both are part of the commit.
+      if (args.from !== undefined) paths.add(args.from);
+      if (args.to !== undefined) paths.add(args.to);
+    }
+  }
+  return [...paths];
+}
+
+/**
+ * Derive the commit subject from the user message. The first 60 chars of
+ * the first non-empty line is the canonical short form; longer descriptions
+ * land in the commit body if a future caller wants them.
+ */
+function subjectFromUserMessage(userMessage: string): string {
+  const firstLine = userMessage.split("\n").find(line => line.trim().length > 0) ?? "(no subject)";
+  const trimmed = firstLine.trim();
+  return trimmed.length > 60 ? trimmed.slice(0, 57) + "..." : trimmed;
 }
 
 /**
