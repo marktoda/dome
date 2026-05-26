@@ -120,7 +120,7 @@ describe("doctor structural checks", () => {
     }
   });
 
-  test("flags unknown frontmatter fields per page-type schema", async () => {
+  test("reports unknown frontmatter fields as soft warnings (info, not violations) per page-schema.md", async () => {
     const v = await makeFreshVault();
     try {
       await writeFile(
@@ -130,8 +130,43 @@ describe("doctor structural checks", () => {
       const r = await domeDoctor(v.path);
       expect(r.ok).toBe(true);
       if (r.ok) {
-        const hit = r.value.violations.find(x => x.includes("unknown frontmatter field") && x.includes("bogus_field"));
-        expect(hit).toBeDefined();
+        // Soft warning lands in info; exit code stays 0 (clean).
+        const infoHit = r.value.info.find(x => x.includes("unknown frontmatter field") && x.includes("bogus_field"));
+        expect(infoHit).toBeDefined();
+        const violationHit = r.value.violations.find(x => x.includes("bogus_field"));
+        expect(violationHit).toBeUndefined();
+      }
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("reads extension frontmatter_extras from page-types.yaml to accept declared fields", async () => {
+    const v = await makeFreshVault();
+    try {
+      // Declare a gotcha extension with frontmatter_extras matching page-schema.md.
+      await writeFile(
+        join(v.path, ".dome", "page-types.yaml"),
+        `defaults: [entity, concept, source, synthesis]
+extensions:
+  - name: gotcha
+    frontmatter_extras:
+      severity: low | medium | high
+      first_observed: <date>
+`,
+      );
+      await mkdir(join(v.path, "wiki", "gotchas"), { recursive: true });
+      await writeFile(
+        join(v.path, "wiki", "gotchas", "test-gotcha.md"),
+        "---\ntype: gotcha\nseverity: medium\nfirst_observed: 2026-05-25\n---\n# Test",
+      );
+      const r = await domeDoctor(v.path);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        const severityFlagged = r.value.info.find(x => x.includes("test-gotcha.md") && x.includes("severity"));
+        expect(severityFlagged).toBeUndefined();
+        const firstObservedFlagged = r.value.info.find(x => x.includes("test-gotcha.md") && x.includes("first_observed"));
+        expect(firstObservedFlagged).toBeUndefined();
       }
     } finally {
       await v.cleanup();

@@ -2,10 +2,13 @@
 #
 # Declares which page types are allowed under wiki/<type>/.
 # Tools enforce PAGE_TYPE_BY_DIRECTORY against this list:
-# write_page rejects writes to unknown types.
+# writeDocument rejects writes to unknown types.
 #
 # Defaults are the four shipped types Dome ships with.
-# Extensions are vault-specific types this project adds.
+# Extensions are vault-specific types this project adds. Each extension may
+# declare frontmatter_extras to teach `dome doctor` which optional fields are
+# allowed on top of the universal frontmatter (type/created/updated/sources).
+# Per docs/wiki/specs/page-schema.md §"Extension types".
 
 defaults:
   - entity      # people, organizations, projects, products, protocols
@@ -14,7 +17,16 @@ defaults:
   - synthesis   # cross-cutting analysis, comparisons, design memos
 
 extensions:
-  - spec        # this project's authoritative specs (Dome SDK architecture)
-  - invariant   # named invariants the Tool layer enforces
-  - matrix      # behavior matrices (tool × invariant, intent × prompt, event × payload)
-  - gotcha      # design gotchas / scars / failure modes
+  - name: spec  # this project's authoritative specs (Dome SDK architecture)
+    frontmatter_extras:
+      status: draft | review | normative
+  - name: invariant  # named invariants the Tool layer enforces
+    frontmatter_extras:
+      tier: axiom | shipped-default | opt-in
+      severity: required | recommended
+  - name: matrix  # behavior matrices (tool × invariant, intent × prompt, event × payload)
+    frontmatter_extras: {}
+  - name: gotcha  # design gotchas / scars / failure modes
+    frontmatter_extras:
+      first_observed: <date>
+      severity: low | medium | high

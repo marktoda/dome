@@ -3,7 +3,7 @@ import { makeDispatcher } from "../../dispatcher";
 import { WorkflowRegistry } from "../../prompts/registry";
 import { WORKFLOW_NAMES } from "../../workflows/workflow-name";
 import { parseWikilinks } from "../../wikilinks";
-import { pluralOf } from "../../page-type";
+import { pluralOf, singularOf } from "../../page-type";
 import { walkMd } from "../../vault-fs";
 import { ok, type Result, type ToolError } from "../../types";
 import { readdir, stat } from "node:fs/promises";
@@ -49,32 +49,26 @@ const KNOWN_EVENT_KIND_PREFIXES: ReadonlyArray<string> = [
 
 // Universal frontmatter keys allowed on EVERY wiki page (per page-schema.md
 // §"Universal frontmatter"). Per-type extensions are layered on top via
-// PER_TYPE_FRONTMATTER_FIELDS.
+// PER_TYPE_FRONTMATTER_FIELDS (defaults) + the vault's page-types.yaml
+// extensions[].frontmatter_extras (consumed in domeDoctor).
 const UNIVERSAL_FRONTMATTER_FIELDS: ReadonlyArray<string> = ["type", "created", "updated", "sources"];
 
-// Per-type optional frontmatter fields per page-schema.md §"Page-type-specific
-// extensions". Doctor uses this catalog to flag unknown frontmatter keys.
+// Per-type optional frontmatter fields for the four DEFAULT page types per
+// page-schema.md §"Page-type-specific extensions". Vault-declared extension
+// types (`spec`, `invariant`, `matrix`, `gotcha`, …) bring their own fields
+// via .dome/page-types.yaml `extensions[].frontmatter_extras`; doctor reads
+// those at runtime.
 const PER_TYPE_FRONTMATTER_FIELDS: Readonly<Record<string, ReadonlyArray<string>>> = {
   entity: ["aliases", "tags"],
   concept: ["aliases", "tags", "status"],
   source: ["url", "author", "external"],
   synthesis: ["status", "supersedes"],
-  // Invariants directory ships its own structure per docs/wiki/invariants/*; allow tier.
-  invariant: ["tier"],
 };
 
 // Pluralized wiki subdirectory -> singular page type (per PAGE_TYPE_BY_DIRECTORY).
-const WIKI_DIR_TO_PAGE_TYPE: Readonly<Record<string, string>> = {
-  entities: "entity",
-  concepts: "concept",
-  sources: "source",
-  syntheses: "synthesis",
-  invariants: "invariant",
-};
-
-function expectedPageTypeForDir(dirName: string): string {
-  return WIKI_DIR_TO_PAGE_TYPE[dirName] ?? dirName.replace(/s$/, "");
-}
+// Delegated to the canonical page-type module so doctor and writeDocument stay
+// in lockstep on plural/singular derivation.
+const expectedPageTypeForDir = (dirName: string): string => singularOf(dirName);
 
 // Iterates every .md file in wiki/, yielding (subdir, filename, relPath).
 async function* walkWikiPages(vault: Vault): AsyncGenerator<{ subdir: string; filename: string; rel: string }> {
@@ -121,6 +115,18 @@ export async function domeDoctor(
   const declaredExtensionTypes = new Set<string>(
     vault.pageTypes.extensions.map(e => typeof e === "string" ? e : e.name)
   );
+  // Build the per-type frontmatter field catalogue from defaults + vault's
+  // extensions[].frontmatter_extras. Extensions in short-form (just a name)
+  // contribute no extras — doctor flags only fields outside the union.
+  const perTypeFields: Record<string, ReadonlyArray<string>> = { ...PER_TYPE_FRONTMATTER_FIELDS };
+  for (const ext of vault.pageTypes.extensions) {
+    if (typeof ext === "string") {
+      perTypeFields[ext] = perTypeFields[ext] ?? [];
+      continue;
+    }
+    const extras = ext.frontmatter_extras;
+    perTypeFields[ext.name] = extras !== undefined ? Object.keys(extras) : [];
+  }
 
   // Walk every wiki page once and run all per-page checks together.
   for await (const { subdir, rel } of walkWikiPages(vault)) {
@@ -156,15 +162,18 @@ export async function domeDoctor(
     }
 
     // CHECK 4 (new): frontmatter fields outside the known per-type schema.
+    // Per page-schema.md §"Extension types" line 125: "Unknown fields trigger
+    // a soft warning (logged to log.md) but not a rejection". Doctor surfaces
+    // them as info, not as exit-code-affecting violations.
     const docType = doc.frontmatter.type;
     if (typeof docType === "string") {
       const allowed = new Set<string>([
         ...UNIVERSAL_FRONTMATTER_FIELDS,
-        ...(PER_TYPE_FRONTMATTER_FIELDS[docType] ?? []),
+        ...(perTypeFields[docType] ?? []),
       ]);
       for (const key of Object.keys(doc.frontmatter)) {
         if (!allowed.has(key)) {
-          violations.push(`${rel}: unknown frontmatter field "${key}" for type=${docType}`);
+          info.push(`${rel}: unknown frontmatter field "${key}" for type=${docType} (soft warning per page-schema.md)`);
         }
       }
     }

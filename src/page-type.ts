@@ -9,12 +9,21 @@ export const WikiPageType = {
 } as const;
 export type WikiPageType = typeof WikiPageType[keyof typeof WikiPageType];
 
-// Directory name (plural) -> singular page type. The directory name is the canonical truth.
+// Directory name (plural) -> singular page type. The directory name is the
+// canonical truth. The four shipped types are listed first; English-irregular
+// plurals for known extension types follow. Vault-defined extension types that
+// want non-standard plurals will be declarable via a `plural:` field in
+// page-types.yaml in v0.5.1; for v0.5 the regex fallback in pluralOf/singularOf
+// covers regular cases and the `irregularPlurals` block below catches the rest.
 export const WIKI_DIR_TO_TYPE = {
   entities: WikiPageType.Entity,
   concepts: WikiPageType.Concept,
   sources: WikiPageType.Source,
   syntheses: WikiPageType.Synthesis,
+  // Irregular English plurals for substrate extension types this repo dogfoods.
+  // Regular cases (e.g., gotchas -> gotcha, invariants -> invariant, specs -> spec)
+  // are handled by the regex fallback in singularOf below.
+  matrices: "matrix",
 } as const;
 
 export const WIKI_TYPE_TO_DIR = {
@@ -22,6 +31,7 @@ export const WIKI_TYPE_TO_DIR = {
   concept: "concepts",
   source: "sources",
   synthesis: "syntheses",
+  matrix: "matrices",
 } as const;
 
 export function pluralOf(singular: string): string {
