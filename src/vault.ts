@@ -214,7 +214,18 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   // tools surface; callers don't construct it. `tools` is `const`-declared
   // below; the closure reads it lazily at dispatch time, by which point
   // bindTools has assigned it.
+  //
+  // After vault.close() flips `closed`, dispatchEvents becomes a no-op:
+  // it accepts no new work. drainHooks remains callable (idempotent), and
+  // existing in-flight events still complete (drain awaits them before
+  // close returns). The flag is the load-bearing v1+ seam for long-running
+  // mobile/desktop shells that open and re-open Vaults — calls that
+  // accidentally outlive the Vault's intended lifetime fail silently here
+  // rather than queueing events into a dispatcher whose handlers may have
+  // since been freed.
+  let closed = false;
   const dispatchEvents = async (events: ReadonlyArray<HookEvent>): Promise<void> => {
+    if (closed) return;
     if (events.length === 0) return;
     const ctxFactory = {
       baseCtx: { tools, vault: { path: root } },
@@ -264,6 +275,16 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     await registry.flushPersist();
   };
 
+  // close() is one-shot per docs/wiki/specs/sdk-surface.md §"Vault lifecycle".
+  // Drains hooks (settles the p-queue + flushPersist), then flips the
+  // `closed` flag so dispatchEvents stops accepting new work. Watchers are
+  // caller-owned and not stopped here — even ones that were dispatching
+  // into vault.dispatchEvents(...) — but their dispatches now no-op.
+  const close = async (): Promise<void> => {
+    await drainHooks();
+    closed = true;
+  };
+
   const vault: Vault = {
     path: root,
     config,
@@ -272,11 +293,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     drainHooks,
     dispatchEvents,
     rebuildIndex,
-    // close() is one-shot per docs/wiki/specs/sdk-surface.md §"Vault lifecycle".
-    // Drains hooks (settles the p-queue + flushPersist) and releases
-    // Vault-owned resources. Watchers are caller-owned and not stopped here —
-    // even ones that were dispatching into vault.dispatchEvents(...).
-    close: drainHooks,
+    close,
   };
 
   // Load declarative hook YAMLs LAST — after the vault is fully constructed —
