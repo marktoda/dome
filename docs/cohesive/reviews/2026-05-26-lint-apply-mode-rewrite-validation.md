@@ -4,7 +4,7 @@
 **Date:** 2026-05-26
 **Subject:** Four rewritten files (`docs/wiki/specs/cli.md`, `docs/wiki/specs/prompts-and-workflows.md`, `docs/wiki/matrices/intent-prompt-tools.md`, `src/prompts/builtin/lint.md`) per `docs/cohesive/delta-ledgers/2026-05-26-lint-apply-mode.md`.
 
-**Status:** Approved
+**Verdict:** Approved
 
 ## Executive judgment
 
