@@ -65,6 +65,32 @@ describe("VAULT_IS_GIT_REPO", () => {
     }
   });
 
+  test("findGitRoot walks past partial .git/ (objects + index but no HEAD) to the real outer git", async () => {
+    // Regression: pre-fix `dome lint` runs that errored mid-commit left a
+    // partial `.git/` directory (objects/, index, but no HEAD) inside the
+    // dogfood-mode vault. The old findGitRoot stopped at any `.git`,
+    // including this corrupt one, and every subsequent git call exploded
+    // on the missing HEAD. The fix: require .git/HEAD on directory entries.
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { findGitRoot } = await import("../../src/git");
+
+    const v = await makeTestVault({ initGit: true, initDome: false });
+    try {
+      const innerPath = join(v.path, "docs");
+      await mkdir(join(innerPath, ".git", "objects"), { recursive: true });
+      await writeFile(join(innerPath, ".git", "index"), "stub-index-content");
+      // Note: no .git/HEAD written in innerPath/.git/
+
+      const discovered = await findGitRoot(innerPath);
+      // The partial inner .git/ must be ignored; the walk continues to the
+      // outer (real) .git/ which has HEAD.
+      expect(discovered).toBe(v.path);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("git operations (commit, currentSha) succeed when vault is a subdirectory of an outer git repo", async () => {
     // The test gap that let the dogfood-case bug ship: openVault accepted
     // the subdir but every subsequent git operation passed `dir: vault.path`
