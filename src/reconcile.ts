@@ -137,7 +137,7 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
   return ok({ inboxProcessed, changedFiles, scheduledFired });
 }
 
-function isDirtyGitState(vaultPath: string): boolean {
+export function isDirtyGitState(vaultPath: string): boolean {
   const gitDir = join(vaultPath, ".git");
   return (
     existsSync(join(gitDir, "MERGE_HEAD")) ||
