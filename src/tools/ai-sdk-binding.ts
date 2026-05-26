@@ -10,7 +10,7 @@ import type { Vault } from "../vault";
 import type { PrivilegedWriter } from "../privileged-writer";
 import type { ToolReturn } from "../types";
 import { projectEffectsToEvents } from "../event-projection";
-import { TOOL_NAMES, TOOL_REGISTRY, type ToolName } from "./registry";
+import { TOOL_NAMES, TOOL_REGISTRY } from "./registry";
 
 /**
  * Build the AI-SDK `ToolSet` from the canonical registry. Each Tool's

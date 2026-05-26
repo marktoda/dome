@@ -63,7 +63,7 @@ export async function domeServe(
   // serveStdio() the constructed server registers no handlers on any
   // transport and the harness sees an empty surface.
   const surface = await buildConsumerSurface(vault);
-  const server = new DomeMcpServer({ surface, vault });
+  const server = new DomeMcpServer({ surface });
   if (opts.connectStdio !== false) {
     await server.serveStdio();
   }

@@ -31,7 +31,7 @@ describe("MCP surface (AC5)", () => {
       if (!openRes.ok) return;
 
       const surface = await buildConsumerSurface(openRes.value);
-      const server = new DomeMcpServer({ surface, vault: openRes.value });
+      const server = new DomeMcpServer({ surface });
 
       // 7 canonical tools.
       expect(server.tools.length).toBe(7);

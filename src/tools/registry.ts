@@ -222,31 +222,49 @@ export interface BoundTools {
   parsers: Readonly<Record<ToolName, Parser>>;
 }
 
+function bindEntry<TParsed, TInput, TOutput>(
+  entry: ToolRegistryEntry<TParsed, TInput, TOutput>,
+  vault: Vault,
+  writer: PrivilegedWriter,
+): { tool: (input: TInput) => Promise<ToolReturn<TOutput>>; parser: Parser } {
+  if (entry.mutating) {
+    const invokeWithDispatch = async (input: TInput): Promise<ToolReturn<TOutput>> => {
+      const out = await entry.invoke(vault, writer, input);
+      await vault.dispatchEvents(projectEffectsToEvents(out.effects));
+      return out;
+    };
+    return {
+      tool: invokeWithDispatch,
+      parser: async (raw: unknown) => {
+        const parsed = entry.schema.parse(raw);
+        const compacted = entry.compact(parsed);
+        return invokeWithDispatch(compacted);
+      },
+    };
+  }
+  const bound = (input: TInput) => entry.invoke(vault, writer, input);
+  return {
+    tool: bound,
+    parser: async (raw: unknown) => {
+      const parsed = entry.schema.parse(raw);
+      const compacted = entry.compact(parsed);
+      return entry.invoke(vault, writer, compacted);
+    },
+  };
+}
+
 export function bindTools(vault: Vault, writer: PrivilegedWriter): BoundTools {
   const tools = {} as Record<string, (input: unknown) => Promise<ToolReturn<unknown>>>;
   const parsers = {} as Record<string, Parser>;
   for (const name of TOOL_NAMES) {
-    const entry = TOOL_REGISTRY[name];
-    if (entry.mutating) {
-      const invokeWithDispatch = async (input: unknown): Promise<ToolReturn<unknown>> => {
-        const out = await entry.invoke(vault, writer, input as never);
-        await vault.dispatchEvents(projectEffectsToEvents(out.effects));
-        return out;
-      };
-      tools[name] = invokeWithDispatch;
-      parsers[name] = async (input: unknown) => {
-        const parsed = entry.schema.parse(input);
-        const compacted = entry.compact(parsed);
-        return invokeWithDispatch(compacted);
-      };
-    } else {
-      tools[name] = (input: unknown) => entry.invoke(vault, writer, input as never);
-      parsers[name] = async (input: unknown) => {
-        const parsed = entry.schema.parse(input);
-        const compacted = entry.compact(parsed);
-        return entry.invoke(vault, writer, compacted);
-      };
-    }
+    // TOOL_REGISTRY[name] is a union of entry shapes; bindEntry's generics
+    // can't narrow across the union, so we cast to the wide entry type.
+    // The runtime check inside bindEntry (entry.mutating) keeps the wrap
+    // logic correct regardless of the static type.
+    const entry = TOOL_REGISTRY[name] as ToolRegistryEntry;
+    const { tool, parser } = bindEntry(entry, vault, writer);
+    tools[name] = tool as (input: unknown) => Promise<ToolReturn<unknown>>;
+    parsers[name] = parser;
   }
   return {
     tools: tools as unknown as BoundToolSurface,

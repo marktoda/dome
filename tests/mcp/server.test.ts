@@ -32,7 +32,7 @@ describe("DomeMcpServer", () => {
       const res = await openVault(v.path);
       if (!res.ok) return;
       const surface = await buildConsumerSurface(res.value);
-      const server = new DomeMcpServer({ surface, vault: res.value });
+      const server = new DomeMcpServer({ surface });
       expect(server.tools.length).toBe(7);
       expect(surface.prompts.length).toBeGreaterThanOrEqual(5);
       const resources = await surface.resources.list();
@@ -52,7 +52,7 @@ describe("DomeMcpServer", () => {
       const res = await openVault(v.path);
       if (!res.ok) return;
       const surface = await buildConsumerSurface(res.value);
-      const server = new DomeMcpServer({ surface, vault: res.value });
+      const server = new DomeMcpServer({ surface });
       expect(server).toBeDefined();
       // The surface IS the cache — re-reading prompts returns the same array.
       expect(surface.prompts).toBe(surface.prompts);
@@ -67,7 +67,7 @@ describe("DomeMcpServer", () => {
       const res = await openVault(v.path);
       if (!res.ok) return;
       const surface = await buildConsumerSurface(res.value);
-      const server = new DomeMcpServer({ surface, vault: res.value });
+      const server = new DomeMcpServer({ surface });
       const { server: stub, handlers } = makeStubServer();
       server.registerOn(stub);
       expect(handlers.size).toBe(6);
@@ -88,7 +88,7 @@ describe("DomeMcpServer", () => {
       const res = await openVault(v.path);
       if (!res.ok) return;
       const surface = await buildConsumerSurface(res.value);
-      const server = new DomeMcpServer({ surface, vault: res.value });
+      const server = new DomeMcpServer({ surface });
       const { server: stub, handlers } = makeStubServer();
       server.registerOn(stub);
       const handler = handlers.get(ListToolsRequestSchema)!;
@@ -109,7 +109,7 @@ describe("DomeMcpServer", () => {
       const res = await openVault(v.path);
       if (!res.ok) return;
       const surface = await buildConsumerSurface(res.value);
-      const server = new DomeMcpServer({ surface, vault: res.value });
+      const server = new DomeMcpServer({ surface });
       const { server: stub, handlers } = makeStubServer();
       server.registerOn(stub);
       const handler = handlers.get(ListPromptsRequestSchema)!;
@@ -126,7 +126,7 @@ describe("DomeMcpServer", () => {
       const res = await openVault(v.path);
       if (!res.ok) return;
       const surface = await buildConsumerSurface(res.value);
-      const server = new DomeMcpServer({ surface, vault: res.value });
+      const server = new DomeMcpServer({ surface });
       const { server: stub, handlers } = makeStubServer();
       server.registerOn(stub);
       const handler = handlers.get(ListResourcesRequestSchema)!;

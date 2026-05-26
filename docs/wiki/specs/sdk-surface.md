@@ -289,7 +289,7 @@ The runtime construct **`ConsumerSurface`** names this aggregation:
 
 ```ts
 interface ConsumerSurface {
-  readonly tools: BoundToolSurface;
+  readonly tools: ReadonlyArray<ToolAdapter>;
   readonly prompts: ReadonlyArray<PromptAdapter>;
   readonly resources: ResourceAdapter;
   readonly instructions: string;
@@ -298,7 +298,9 @@ interface ConsumerSurface {
 function buildConsumerSurface(vault: Vault): Promise<ConsumerSurface>;
 ```
 
-`buildConsumerSurface(vault)` lives in `@dome/sdk/mcp` (the canonical home for the aggregation, since MCP is the first protocol consumer in v0.5). The function composes the four kinds: `tools` comes from `vault.tools`; `prompts` comes from `buildPromptAdapters(vault)`; `resources` comes from `new ResourceAdapter(vault)`; `instructions` comes from `buildInstructions(vault)`.
+`buildConsumerSurface(vault)` lives in `@dome/sdk/mcp` (the canonical home for the aggregation, since MCP is the first protocol consumer in v0.5). The function composes the four kinds: `tools` comes from `buildToolAdapters(vault)` (the protocol-rendered ToolAdapter array; the underlying protocol-agnostic `BoundToolSurface` stays reachable via `vault.tools`); `prompts` comes from `buildPromptAdapters(vault)`; `resources` comes from `new ResourceAdapter(vault)`; `instructions` comes from `buildInstructions(vault)`.
+
+Naming convention: `ConsumerSurface.tools` carries the *protocol-rendered* shape (for v0.5: MCP-shaped, `dome.*` prefixed adapters with handler closures). A future v1+ HTTP shell's `buildHttpConsumerSurface(vault)` would render the same Tool catalog as HTTP route descriptors; the field name `tools` stays, the shape varies per protocol. Consumers that want the protocol-agnostic Tool surface (curried `(input) => ToolReturn<T>` functions) read `vault.tools` directly.
 
 The return type is `Promise<ConsumerSurface>` because `buildPromptAdapters(vault)` and `buildInstructions(vault)` are async: the former calls `WorkflowRegistry.list(vault)` which scans `<vault>/.dome/prompts/` for vault-local prompt overrides (filesystem read); the latter reads `AGENTS.md` at vault root (filesystem read). The other two kinds (`tools`, `resources`) resolve synchronously from the Vault instance. A future entrypoint with no plugin/vault-local prompt discovery could expose a sync variant, but v0.5's surface is async because Dome's prompt-override layering is.
 

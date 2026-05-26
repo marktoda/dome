@@ -1,6 +1,6 @@
 // Pins the ConsumerSurface contract from docs/wiki/specs/sdk-surface.md
 // §"Consumer surfaces": buildConsumerSurface(vault) returns the four-kind
-// aggregation; DomeMcpServer({ surface, vault }) consumes it.
+// aggregation; DomeMcpServer({ surface }) consumes it without needing Vault.
 
 import { describe, test, expect } from "bun:test";
 import { openVault } from "../../src/vault";
@@ -19,8 +19,10 @@ describe("ConsumerSurface", () => {
 
       const surface = await buildConsumerSurface(vault);
 
-      // Shape: four kinds
-      expect(surface.tools).toBe(vault.tools);
+      // Shape: four kinds — tools is the protocol-rendered MCP adapter array;
+      // BoundToolSurface itself stays reachable via vault.tools.
+      expect(Array.isArray(surface.tools)).toBe(true);
+      expect(surface.tools.length).toBe(7);
       expect(Array.isArray(surface.prompts)).toBe(true);
       expect(surface.prompts.length).toBeGreaterThan(0);
       expect(surface.resources).toBeInstanceOf(ResourceAdapter);
@@ -31,7 +33,7 @@ describe("ConsumerSurface", () => {
     }
   });
 
-  test("DomeMcpServer({ surface, vault }) wires the seven tool adapters", async () => {
+  test("DomeMcpServer({ surface }) wires the seven tool adapters", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
@@ -40,7 +42,7 @@ describe("ConsumerSurface", () => {
       const vault = res.value;
 
       const surface = await buildConsumerSurface(vault);
-      const server = new DomeMcpServer({ surface, vault });
+      const server = new DomeMcpServer({ surface });
 
       expect(server.tools.length).toBe(7);
       expect(surface.prompts.length).toBeGreaterThan(0);
