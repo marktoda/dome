@@ -84,6 +84,36 @@ The include is resolved at load time against the same source-priority order (SDK
 
 `system-base.md` is the SDK-shipped system prompt that describes the four-concept core, the invariants, and the wiki-maintainer ethos. Every workflow prompt starts with `{{include: system-base.md}}`. The SDK warns at workflow-load time if the include is absent.
 
+## Vault augmentation slots
+
+Every shipped workflow prompt declares two named include points that vaults may fill to add behavior *without* overriding the prompt wholesale. Both slots silently resolve to empty when the named partial doesn't exist in the vault — opt-in by file creation, not by config.
+
+Slot names and scope:
+
+| Slot name | Included by | Scope | Use it for |
+|---|---|---|---|
+| `vault-prologue.md` | `system-base.md` (so every workflow inherits it) | Vault-wide | Vault-wide vocabulary, naming conventions, cross-references the agent should always know |
+| `<workflow-name>-augment.md` | The shipped `<workflow-name>.md` (e.g., `ingest.md`, `query.md`) | One workflow | Workflow-specific behavior — e.g., time-aware retrieval rules added to `query`, task-routing rules added to `ingest` |
+
+A vault that wants time-aware retrieval drops `<vault>/.dome/prompts/query-augment.md` carrying just the additional retrieval patterns. The SDK's `query.md` is untouched; the loader inlines the augment partial where the slot directive sits.
+
+The mechanism is the existing `{{include: <name>}}` directive (see §"Composition" above) — augmentation slots are just include directives the SDK ships *unfilled*. Vaults that don't fill them get the default behavior with zero overhead.
+
+### When to fill a slot vs. override the whole prompt
+
+| Goal | Use |
+|---|---|
+| Add behavior to an existing workflow | Slot partial (`<workflow>-augment.md`) |
+| Add vault-wide context shared across every workflow | `vault-prologue.md` |
+| Replace the entire workflow's behavior | Override the workflow prompt itself (`<workflow>.md` — see §"Override layering" below) |
+
+The slot partials are the additive surface; the filename-override mechanism is the escape hatch for deep changes. Most vault customization belongs in slots.
+
+### Slot ordering
+
+- `vault-prologue.md` is included via `system-base.md`, so its content appears immediately after the system base in every workflow's resolved prompt.
+- `<workflow-name>-augment.md` is included at the *end* of each shipped workflow prompt, so its content augments the workflow body's specific instructions last (the closest-to-action position).
+
 ## Override layering
 
 When the same prompt filename exists in multiple sources, the vault-local version wins:
@@ -94,7 +124,9 @@ node_modules/dome-plugin-x/prompts/ingest.md   (plugin)
 <vault>/.dome/prompts/ingest.md     (vault-local — WINS)
 ```
 
-This is what lets a user tune ingest behavior to their vault. A manager's vault might override `ingest.md` to emphasize cross-pod entity awareness; a writer's vault might override it to emphasize character continuity tracking. The SDK ships sensible defaults; the user owns final behavior.
+Override is the escape hatch for deep changes that don't fit the augmentation-slot model. A manager's vault might override `ingest.md` to emphasize cross-pod entity awareness; a writer's vault might override it to emphasize character continuity tracking. The SDK ships sensible defaults; the user owns final behavior.
+
+For most additive customization (vault-wide vocabulary, workflow-specific extensions), prefer §"Vault augmentation slots" above — slots compose with the SDK defaults rather than replacing them.
 
 ## Workflow invocation
 
@@ -121,7 +153,13 @@ The eval suite is the structural mitigation for [[wiki/gotchas/agent-prompt-regr
 
 This spec implements the **prompts-as-contract** principle — see [[wiki/specs/sdk-surface]] §"Why this design" for the canonical statement of the principle. Briefly: Dome's behavior lives in markdown prompts rather than TypeScript code, which makes behavior user-readable, user-editable, and able to evolve at the speed of language. The cost is prompt regression, mitigated by the eval suite (see [[wiki/gotchas/agent-prompt-regression]]).
 
-What this spec adds beyond the principle: the *concrete shape* of how prompts double as workflows via frontmatter, the shipped workflows and their tool subsets (see §"Shipped workflows by tier"), and the override layering between SDK / plugin / vault-local prompts.
+What this spec adds beyond the principle: the *concrete shape* of how prompts double as workflows via frontmatter, the shipped workflows and their tool subsets (see §"Shipped workflows by tier"), the augmentation-slot model that lets vaults extend behavior additively (see §"Vault augmentation slots"), and the override layering for deep replacement.
+
+### Two extensibility surfaces, not one
+
+[[VISION]] §5 states that "Extensibility lives at the hook boundary." That remains true for *Tool-effect-driven* extensibility — behavior that reacts to a write, fires on a clock tick, or routes a dropped file. Prompts carry a *separate* extension surface: the augmentation slots in this spec. Hooks and slots are categorically different — hooks observe Effects and call Tools; slots compose the agent's instructions before the LLM runs. A vault that wants to "react when a wiki page is written" registers a hook; a vault that wants to "teach the agent about my daily-notes convention" fills an augmentation slot. Conflating them — e.g., a `workflow.loading.<name>` hook event with prompt-mutating handlers — would misuse the hook model, since prompt composition isn't an Effect.
+
+Both surfaces leave the four-concept core (Vault, Document, Tool, Hook) untouched. Slots are layered on Hook's sibling concept — the Tool's prompt — through the existing `{{include: ...}}` primitive; no new core concept is introduced.
 
 ## Related
 

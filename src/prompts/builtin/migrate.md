@@ -17,3 +17,5 @@ Convert the current vault to Dome shape. The prologue above names the vault's pa
 3. Propose a migration plan: which files move (via `moveDocument`), which frontmatter to add (via `writeDocument`), which invariants would be violated and how to fix.
 4. Write the proposal to `.dome/migration-plan.md` for user review.
 5. If the user message says to apply, execute the plan via Dome's Tools. Every move and frontmatter-add is logged. Otherwise write the plan only; do not execute.
+
+{{include: migrate-augment.md}}

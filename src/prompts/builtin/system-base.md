@@ -15,3 +15,5 @@ Invariants enforced at the Tool call site (the call will return an error if viol
 When the user states an intent, route to the matching workflow's prompt. Switching workflows re-binds the available Tool subset.
 
 Be precise. Cite sources. Surface contradictions rather than silently overwriting. Sensitive content routes through `inbox/review/` if `SENSITIVE_GOES_TO_INBOX` is enabled.
+
+{{include: vault-prologue.md}}

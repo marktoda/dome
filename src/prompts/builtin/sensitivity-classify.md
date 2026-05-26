@@ -19,3 +19,5 @@ Classify the candidate write:
 Sensitive categories: personal medical, financial, confidential employment, named third parties speaking off-the-record, anything the user marked private upstream.
 
 Output: the classification + reasoning. The calling `ingest` workflow gates the actual `writeDocument` destination on this result.
+
+{{include: sensitivity-classify-augment.md}}

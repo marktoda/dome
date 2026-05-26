@@ -20,3 +20,5 @@ Sections:
 - **Source trail** — links to raws or external sources
 
 Write to stdout (the caller will redirect). No vault mutations.
+
+{{include: export-context-augment.md}}

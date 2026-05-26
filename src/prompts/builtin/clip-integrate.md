@@ -17,3 +17,5 @@ A web clip landed in `inbox/clip/`. Integrate it:
 3. Summarize the clip in the body.
 4. Find existing pages that match the topic via `searchIndex` and propose cross-references.
 5. When done processing, call `deleteDocument` on the original inbox file. The `wiki/sources/` page you created is the durable record; the inbox file's job is complete (INBOX_IS_EPHEMERAL).
+
+{{include: clip-integrate-augment.md}}
