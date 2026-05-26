@@ -16,3 +16,7 @@ A voice transcript landed in `inbox/voice/`. Treat it as the same kind of raw so
 2. Resolve speaker disambiguation if multi-speaker.
 3. From the cleaned transcript, run the standard `ingest` flow.
 4. When done processing, call `deleteDocument` on the original inbox file. The wiki pages you created (and any `wiki/sources/` page) are the durable record; the inbox file's job is complete (INBOX_IS_EPHEMERAL).
+
+{{include: voice-ingest-augment.md}}
+
+{{include: voice-ingest-epilogue.md}}

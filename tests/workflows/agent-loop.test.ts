@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { MockLanguageModelV3 } from "ai/test";
-import { runWorkflow, buildAiSdkTools, buildSystemPreamble } from "../../src/workflows/agent-loop";
+import { runWorkflow, buildAiSdkTools } from "../../src/workflows/agent-loop";
+import { PromptLoader } from "../../src/prompts/prompt-loader";
 import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 import { WorkflowName } from "../../src/workflows/workflow-name";
@@ -172,23 +173,26 @@ describe("runWorkflow", () => {
     }
   });
 
-  test("buildSystemPreamble composes every registered preamble with blank-line separators", async () => {
+  // WORKFLOWS_KNOW_VAULT_CONTEXT structural seam: instead of a code-driven
+  // preamble registry (the v0.5.0 mechanism), the situational context lives
+  // in two SDK partials (`preamble-vault-identity.md`, `preamble-rendering-surface.md`)
+  // included at the top of `system-base.md`. The `{{vault.path}}` substitution
+  // in PromptLoader is what makes the identity partial vault-specific.
+  test("system-base.md includes both situational preambles via {{include}} slots", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
       if (!res.ok) throw new Error("vault failed to open");
-
-      const composed = buildSystemPreamble(res.value);
-
-      // Every registered preamble's content appears.
-      expect(composed).toContain(v.path);
-      expect(composed.toLowerCase()).toContain("non-interactive");
-
-      // Sections are separated by blank lines — `# `-led headers don't
-      // run together. This is the contract the composer owes the model
-      // so each section reads as its own block.
-      const sections = composed.split("\n\n# ");
-      expect(sections.length).toBeGreaterThanOrEqual(2);
+      const loader = new PromptLoader(res.value);
+      const base = await loader.load("system-base");
+      expect(base).not.toBeNull();
+      // Both situational preambles are inlined into the resolved body.
+      expect(base!.body).toContain(v.path); // vault-identity (via {{vault.path}})
+      expect(base!.body.toLowerCase()).toContain("non-interactive"); // rendering-surface
+      // The directives themselves should have resolved, not appear as raw text.
+      expect(base!.body).not.toContain("{{include: preamble-vault-identity.md}}");
+      expect(base!.body).not.toContain("{{include: preamble-rendering-surface.md}}");
+      expect(base!.body).not.toContain("{{vault.path}}");
     } finally {
       await v.cleanup();
     }
