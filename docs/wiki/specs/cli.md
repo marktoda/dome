@@ -176,6 +176,10 @@ This is the antidote to pinned-thread chaos: paste the output into ChatGPT / Cur
 
 CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `reconcile`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 600 LOC; most of the work lives in the workflows and Tools.
 
+### Errors at the consumer-shell boundary
+
+Core `ToolError` (in `src/types.ts`) enumerates failures the seven Tools and `openVault` can produce. Consumer shells layer their own pre-flights on top: the CLI has `MissingApiKeyError` (raised when `ANTHROPIC_API_KEY` is unset before an LLM-driven command runs), and exposes the union as `CliError = ToolError | MissingApiKeyError`. `renderCliError` is the default one-line stderr formatter; other consumer shells (Electron, web, voice — v1+) can reuse it or supply their own. Keeping shell pre-flights out of core `ToolError` preserves the SDK-vs-consumer boundary: a shell with no env vars (mobile, web) doesn't carry an error kind it can't produce.
+
 The 7 commands map cleanly to user actions:
 
 | Command | Kind | When the user reaches for it |

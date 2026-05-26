@@ -1,7 +1,7 @@
 // Medium 9: workflow-driven CLI commands fail clean when ANTHROPIC_API_KEY
-// is missing — they return a typed missing-api-key ToolError, not a raw
-// AI_LoadAPIKeyError stack. The CLI renders the typed error as an
-// actionable one-liner via renderToolError -> formatMissingApiKey.
+// is missing — they return a typed MissingApiKeyError (a CliError shape),
+// not a raw AI_LoadAPIKeyError stack. The CLI renders the typed error as
+// an actionable one-liner via renderCliError -> formatMissingApiKey.
 
 import { describe, test, expect, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";

@@ -100,3 +100,8 @@ export { domeLint } from "./cli/commands/lint";
 export { domeMigrate } from "./cli/commands/migrate";
 export { domeExportContext } from "./cli/commands/export-context";
 export { domeServe, type ServeHandle } from "./cli/commands/serve";
+// CLI-layer error surface. `CliError` extends core `ToolError` with the
+// pre-flight `missing-api-key` shape; `renderCliError` is the default
+// one-line stderr formatter consumer shells can reuse.
+export { type CliError, type MissingApiKeyError } from "./cli/cli-error";
+export { renderCliError } from "./cli/render-error";

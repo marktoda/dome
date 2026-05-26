@@ -55,8 +55,7 @@ export type ToolError =
   | { kind: "already-exists"; path: string }
   | { kind: "validation"; message: string }
   | { kind: "vault-not-git-repo"; path: string }
-  | { kind: "config-invalid"; message: string }
-  | { kind: "missing-api-key"; env: string };
+  | { kind: "config-invalid"; message: string };
 
 // ----- Sensitivity & creation reason ----------------------------------------
 

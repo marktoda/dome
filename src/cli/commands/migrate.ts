@@ -6,7 +6,8 @@ import { scaffoldVaultLayout } from "../../vault-scaffold";
 import { runWorkflow, type RunWorkflowOpts } from "../../workflows/agent-loop";
 import { WorkflowName } from "../../workflows/workflow-name";
 import { checkAnthropicApiKey } from "../api-key-guard";
-import { ok, err, type Result, type ToolError } from "../../types";
+import type { CliError } from "../cli-error";
+import { ok, err, type Result } from "../../types";
 
 /**
  * Bootstrap an existing markdown directory into Dome shape and run the
@@ -19,7 +20,7 @@ export async function domeMigrate(
   vaultPath: string,
   apply: boolean,
   opts: RunWorkflowOpts = {},
-): Promise<Result<{ steps: number; text: string }, ToolError>> {
+): Promise<Result<{ steps: number; text: string }, CliError>> {
   // Pre-flight ANTHROPIC_API_KEY check (unless caller passed a mock model).
   if (typeof opts.model !== "object") {
     const keyErr = checkAnthropicApiKey();

@@ -2,13 +2,14 @@ import { openVault } from "../../vault";
 import { runWorkflow, type RunWorkflowOpts } from "../../workflows/agent-loop";
 import { WorkflowName } from "../../workflows/workflow-name";
 import { checkAnthropicApiKey } from "../api-key-guard";
-import { ok, err, type Result, type ToolError } from "../../types";
+import type { CliError } from "../cli-error";
+import { ok, err, type Result } from "../../types";
 
 export async function domeExportContext(
   vaultPath: string,
   topic: string,
   opts: RunWorkflowOpts = {},
-): Promise<Result<{ steps: number; text: string }, ToolError>> {
+): Promise<Result<{ steps: number; text: string }, CliError>> {
   // Pre-flight ANTHROPIC_API_KEY check (unless caller passed a mock model).
   if (typeof opts.model !== "object") {
     const keyErr = checkAnthropicApiKey();
