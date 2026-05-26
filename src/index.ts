@@ -1,8 +1,8 @@
 // Public API surface — what plugin and harness authors consume.
 
-export { openVault, type Vault, type VaultConfig, type PageTypesConfig } from "./vault";
+export { openVault, type Vault, type VaultConfig, type PageTypesConfig, type BoundToolSurface } from "./vault";
 export { makeDocument, type Document, type DocumentCategory, type DocumentInput } from "./document";
-export type { HookContext, HookHandler, HookEvent, ReadonlyToolSurface } from "./hook-context";
+export type { HookContext, HookHandler, HookEvent } from "./hook-context";
 export type {
   Result,
   Effect,
@@ -60,7 +60,9 @@ export {
   type WorkflowFrontmatter,
 } from "./prompts/workflow-frontmatter";
 export { makeFixtureVault, type Fixture, type EvalFixtureVault } from "./eval/fixture-vault";
-export { replay, type ReplayCase, type ReplayResult, type ExpectedEffects } from "./eval/replay";
+// replay is @internal — eval harness used by tests; not part of the v0.5 public
+// SDK. Consumers needing programmatic workflow execution should depend on
+// `runWorkflow` directly. See src/eval/replay.ts.
 
 // Stage 4: MCP server + CLI
 export { McpToolName, MCP_TOOL_NAMES } from "./mcp/tool-names";

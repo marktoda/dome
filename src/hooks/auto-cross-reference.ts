@@ -1,6 +1,7 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import type { HookHandler } from "../hook-context";
+import { walkMd } from "../vault-fs";
 
 export const autoCrossReference: HookHandler = async (event, ctx) => {
   const path = event.path;
@@ -12,7 +13,7 @@ export const autoCrossReference: HookHandler = async (event, ctx) => {
   const wikiRoot = join(ctx.vault.path, "wiki");
   const wordRegex = new RegExp(`(?<![\\w\\[/-])${escapeRegex(entityName)}(?![\\w\\]-])`, "g");
 
-  for await (const filePath of walk(wikiRoot)) {
+  for await (const filePath of walkMd(wikiRoot)) {
     if (filePath === join(ctx.vault.path, path)) continue;
     const rel = relative(ctx.vault.path, filePath);
     const text = await readFile(filePath, "utf8");
@@ -50,18 +51,4 @@ function stripFrontmatter(text: string): string {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-async function* walk(dir: string): AsyncGenerator<string> {
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const e of entries) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) yield* walk(p);
-    else if (e.isFile() && p.endsWith(".md")) yield p;
-  }
 }

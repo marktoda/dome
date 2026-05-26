@@ -2,8 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { commitWorkflow } from "../src/workflow-commit";
 import { openVault } from "../src/vault";
 import { makeTestVault } from "./helpers/make-test-vault";
-import git from "isomorphic-git";
-import fs from "node:fs";
+import { log as gitLog } from "../src/git";
 
 describe("commitWorkflow", () => {
   test("creates a single commit with all paths touched + log entry subject", async () => {
@@ -26,7 +25,7 @@ describe("commitWorkflow", () => {
       });
       expect(sha).toMatch(/^[0-9a-f]{40}$/);
       // Verify subject in git log
-      const log = await git.log({ fs, dir: v.path, ref: "HEAD", depth: 1 });
+      const log = await gitLog({ path: v.path, ref: "HEAD", depth: 1 });
       expect(log[0]!.commit.message).toContain("create Danny entity page");
     } finally {
       await v.cleanup();

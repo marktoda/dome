@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import git from "isomorphic-git";
-import fs from "node:fs";
+import { initRepo } from "../../git";
 import { openVault } from "../../vault";
 import { runWorkflow, type RunWorkflowOpts } from "../../workflows/agent-loop";
 import { WorkflowName } from "../../workflows/workflow-name";
@@ -21,7 +20,7 @@ export async function domeMigrate(
   // Ensure .git exists (per VAULT_IS_GIT_REPO axiom).
   if (!existsSync(join(vaultPath, ".git"))) {
     try {
-      await git.init({ fs, dir: vaultPath, defaultBranch: "main" });
+      await initRepo(vaultPath);
     } catch (e: unknown) {
       return err({ kind: "validation", message: (e as Error).message });
     }

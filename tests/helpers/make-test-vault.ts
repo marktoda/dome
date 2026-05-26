@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import git from "isomorphic-git";
-import fs from "node:fs";
+import { initRepo } from "../../src/git";
 import { makeTempDir, removeTempDir } from "./temp-dir";
 
 export interface TestVault {
@@ -62,7 +61,7 @@ export async function makeTestVault(opts: MakeTestVaultOpts = {}): Promise<TestV
   }
 
   if (initGit) {
-    await git.init({ fs, dir: path, defaultBranch: "main" });
+    await initRepo(path);
   }
 
   return {

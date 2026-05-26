@@ -1,9 +1,10 @@
-import { readFile, writeFile, rename, mkdir, readdir, access, stat } from "node:fs/promises";
+import { readFile, writeFile, rename, mkdir, access, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { makeDocument, type Document } from "../document";
 import { ok, err, type Effect, type ToolReturn } from "../types";
 import type { Vault } from "../vault";
 import { type Dispatcher, refuseIfDispatcherOwned } from "../dispatcher";
+import { walkMd } from "../vault-fs";
 
 export interface MoveDocumentInput {
   from: string;
@@ -113,7 +114,7 @@ export async function moveDocument(
 async function rewriteBacklinks(vaultPath: string, oldTarget: string, newTarget: string): Promise<void> {
   const oldLink = `[[${oldTarget}]]`;
   const newLink = `[[${newTarget}]]`;
-  for await (const file of walkMd(vaultPath, ["wiki", "notes"])) {
+  for await (const file of walkMd(vaultPath, { tops: ["wiki", "notes"] })) {
     const text = await readFile(file, "utf8");
     if (text.includes(oldLink)) {
       await writeFile(file, text.split(oldLink).join(newLink));
@@ -121,22 +122,3 @@ async function rewriteBacklinks(vaultPath: string, oldTarget: string, newTarget:
   }
 }
 
-async function* walkMd(root: string, allowedTops: ReadonlyArray<string>): AsyncGenerator<string> {
-  for (const top of allowedTops) {
-    yield* walk(join(root, top));
-  }
-}
-
-async function* walk(dir: string): AsyncGenerator<string> {
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const e of entries) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) yield* walk(p);
-    else if (e.isFile() && p.endsWith(".md")) yield p;
-  }
-}

@@ -1,5 +1,4 @@
-import git from "isomorphic-git";
-import fs from "node:fs";
+import { commit } from "./git";
 import type { Vault } from "./vault";
 
 export interface WorkflowCommitInput {
@@ -22,17 +21,13 @@ export async function commitWorkflow(vault: Vault, input: WorkflowCommitInput): 
   if (!vault.config.git.auto_commit_workflows) {
     return ""; // commit skipped; caller may still log
   }
-  for (const p of input.touchedPaths) {
-    try {
-      await git.add({ fs, dir: vault.path, filepath: p });
-    } catch {
-      // Ignore add-failure for paths that may have been deleted; git.commit
-      // will still capture deletions present in the index.
-    }
-  }
   const message = input.body
     ? `${input.verb}: ${input.subject}\n\n${input.body}`
     : `${input.verb}: ${input.subject}`;
-  const author = input.author ?? { name: "Dome", email: "dome@local" };
-  return git.commit({ fs, dir: vault.path, message, author });
+  return commit({
+    path: vault.path,
+    message,
+    files: input.touchedPaths,
+    ...(input.author !== undefined ? { author: input.author } : {}),
+  });
 }

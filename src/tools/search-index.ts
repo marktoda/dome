@@ -1,7 +1,8 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { ok, type ToolReturn, type SearchMatch } from "../types";
 import type { Vault } from "../vault";
+import { walkMd } from "../vault-fs";
 
 export interface SearchIndexInput {
   query: string;
@@ -35,18 +36,4 @@ export async function searchIndex(
     matches.push({ path: rel, excerpt, score: 1 });
   }
   return { result: ok(matches), effects: [] };
-}
-
-async function* walkMd(root: string): AsyncGenerator<string> {
-  let entries;
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const e of entries) {
-    const p = join(root, e.name);
-    if (e.isDirectory()) yield* walkMd(p);
-    else if (e.isFile() && p.endsWith(".md")) yield p;
-  }
 }

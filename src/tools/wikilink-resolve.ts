@@ -17,11 +17,7 @@ export async function wikilinkResolve(
   }
   const path = input.link.endsWith(".md") ? input.link : `${input.link}.md`;
   const out = await readDocument(vault, { path });
-  if (!out.result.ok) {
-    if (out.result.error.kind === "not-found") {
-      return { result: ok(null), effects: [] };
-    }
-    return { result: ok(null), effects: [] };
-  }
-  return { result: ok(out.result.value), effects: [] };
+  // Any failure to read (not-found, parse error, etc) resolves to null —
+  // wikilinkResolve never propagates errors; it's strictly a yes/no surface.
+  return { result: ok(out.result.ok ? out.result.value : null), effects: [] };
 }

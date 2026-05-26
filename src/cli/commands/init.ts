@@ -1,8 +1,7 @@
 import { existsSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import git from "isomorphic-git";
-import fs from "node:fs";
+import { initRepo, commit } from "../../git";
 import { ok, err, type Result, type ToolError } from "../../types";
 
 const SHIPPED_CONFIG_YAML = `# Dome vault config
@@ -89,19 +88,14 @@ export async function domeInit(vaultPath: string): Promise<Result<{ path: string
   await writeFile(join(vaultPath, "log.md"), `# Log\n\n## [${new Date().toISOString()}] bootstrap | initialize Dome vault\n`);
   await writeFile(join(vaultPath, "CLAUDE.md"), SHIPPED_CLAUDE_MD);
 
-  await git.init({ fs, dir: vaultPath, defaultBranch: "main" });
-  // Add and commit
-  const filesToCommit = [
-    ".gitignore", "index.md", "log.md", "CLAUDE.md",
-    ".dome/config.yaml", ".dome/page-types.yaml", ".dome/hooks/intake-raw.yaml",
-  ];
-  for (const f of filesToCommit) {
-    await git.add({ fs, dir: vaultPath, filepath: f });
-  }
-  const sha = await git.commit({
-    fs, dir: vaultPath,
+  await initRepo(vaultPath);
+  const sha = await commit({
+    path: vaultPath,
     message: "chore: initialize Dome vault",
-    author: { name: "Dome", email: "dome@local" },
+    files: [
+      ".gitignore", "index.md", "log.md", "CLAUDE.md",
+      ".dome/config.yaml", ".dome/page-types.yaml", ".dome/hooks/intake-raw.yaml",
+    ],
   });
   return ok({ path: vaultPath, sha });
 }

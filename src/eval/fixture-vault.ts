@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import git from "isomorphic-git";
-import fs from "node:fs";
+import { initRepo } from "../git";
 import { makeTempDir } from "../../tests/helpers/temp-dir";
 
 export interface Fixture {
@@ -53,7 +52,7 @@ export async function makeFixtureVault(fx: Fixture): Promise<EvalFixtureVault> {
     await mkdir(join(abs, ".."), { recursive: true });
     await writeFile(abs, body);
   }
-  await git.init({ fs, dir: path, defaultBranch: "main" });
+  await initRepo(path);
   return {
     path,
     cleanup: async () => {

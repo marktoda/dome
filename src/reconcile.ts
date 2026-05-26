@@ -1,11 +1,10 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
 import { join, relative } from "node:path";
-import git from "isomorphic-git";
-import fs from "node:fs";
 import type { Vault } from "./vault";
 import type { HookEvent } from "./hook-context";
 import { projectEffectToEvents } from "./event-projection";
+import { currentSha, statusMatrix, readTree } from "./git";
 import { ok, err, type Result, type ToolError } from "./types";
 
 export interface ReconcileOpts {
@@ -20,14 +19,14 @@ export interface ReconcileResult {
 
 // Canonical scheduled-interval labels with their wall-clock duration in ms.
 // Used by phase-3 (scheduled catchup) to decide whether to fire
-// `clock.tick.<interval>` for a registered scheduled handler.
+// `clock.tick.<interval>` for a registered scheduled handler. Unknown labels
+// yield `undefined` and are skipped.
 const SCHEDULED_INTERVAL_MS = {
   minutely: 60_000,
   hourly: 3_600_000,
   daily: 86_400_000,
   weekly: 604_800_000,
 } as const;
-type ScheduledInterval = keyof typeof SCHEDULED_INTERVAL_MS;
 
 interface ScheduledEntry {
   interval: string;
@@ -82,15 +81,10 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
     // first run — no prior reconciliation
   }
 
-  let currentSha: string | null = null;
-  try {
-    currentSha = await git.resolveRef({ fs, dir: vault.path, ref: "HEAD" });
-  } catch {
-    // no commits yet
-  }
+  const sha: string | null = await currentSha(vault.path);
 
   // Files changed in working tree (uncommitted).
-  const matrix = await git.statusMatrix({ fs, dir: vault.path });
+  const matrix = await statusMatrix(vault.path);
   for (const row of matrix) {
     const [filepath, head, workdir, stage] = row;
     if (head !== workdir || workdir !== stage) {
@@ -102,9 +96,9 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
     }
   }
   // Files changed in committed diff since lastSha.
-  if (lastSha && currentSha && lastSha !== currentSha) {
+  if (lastSha && sha && lastSha !== sha) {
     try {
-      const changed = await diffTrees(vault.path, lastSha, currentSha);
+      const changed = await diffTrees(vault.path, lastSha, sha);
       for (const path of changed) {
         const events = projectEffectToEvents({ kind: "wrote-document", path, diff: "[committed]" });
         for (const e of events) {
@@ -116,7 +110,7 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
       // If diffing fails (e.g., shallow clone), skip committed-diff phase.
     }
   }
-  if (currentSha) await writeFile(lastShaPath, currentSha);
+  if (sha) await writeFile(lastShaPath, sha);
 
   // Phase 3: scheduled catchup.
   const scheduledPath = join(stateDir, "scheduled.json");
@@ -129,8 +123,8 @@ export async function reconcile(vault: Vault, opts: ReconcileOpts): Promise<Resu
   const now = new Date();
   for (const handler of Object.keys(scheduled)) {
     const entry = scheduled[handler]!;
-    const intervalMs = lookupIntervalMs(entry.interval);
-    if (intervalMs === null) continue;
+    const intervalMs = (SCHEDULED_INTERVAL_MS as Record<string, number>)[entry.interval];
+    if (intervalMs === undefined) continue;
     const last = entry.last_fire ? new Date(entry.last_fire).getTime() : 0;
     if (now.getTime() - last >= intervalMs) {
       await opts.onEvent({ kind: `clock.tick.${entry.interval}`, ts: now.toISOString() });
@@ -167,7 +161,7 @@ async function diffTrees(dir: string, oldSha: string, newSha: string): Promise<s
 }
 
 async function walkTree(dir: string, oid: string, prefix: string, out: Map<string, string>): Promise<void> {
-  const tree = await git.readTree({ fs, dir, oid });
+  const tree = await readTree({ path: dir, oid });
   for (const entry of tree.tree) {
     const path = prefix ? `${prefix}/${entry.path}` : entry.path;
     if (entry.type === "tree") {
@@ -178,10 +172,3 @@ async function walkTree(dir: string, oid: string, prefix: string, out: Map<strin
   }
 }
 
-function isKnownInterval(label: string): label is ScheduledInterval {
-  return label in SCHEDULED_INTERVAL_MS;
-}
-
-function lookupIntervalMs(label: string): number | null {
-  return isKnownInterval(label) ? SCHEDULED_INTERVAL_MS[label] : null;
-}

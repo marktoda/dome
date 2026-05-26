@@ -4,6 +4,7 @@ import { WorkflowRegistry } from "../../prompts/registry";
 import { WORKFLOW_NAMES } from "../../workflows/workflow-name";
 import { parseWikilinks } from "../../wikilinks";
 import { pluralOf } from "../../page-type";
+import { walkMd } from "../../vault-fs";
 import { ok, type Result, type ToolError } from "../../types";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -184,7 +185,7 @@ export async function domeDoctor(
   // RAW_IS_IMMUTABLE violations that bypassed the Tool boundary).
   const rawRoot = join(vault.path, "raw");
   if (existsSync(rawRoot)) {
-    for await (const filePath of walkAllMd(rawRoot)) {
+    for await (const filePath of walkMd(rawRoot)) {
       const st = await stat(filePath);
       // birthtime is unreliable on Linux ext4 (returns 0); guard with > 0.
       if (st.birthtimeMs > 0 && st.mtimeMs > st.birthtimeMs + 1000) {
@@ -253,20 +254,4 @@ export async function domeDoctor(
   if (opts.recentActivity) info.push("--recent-activity: no-op in v0.5 (use `git log` against the vault)");
 
   return ok({ exitCode: violations.length === 0 ? 0 : 1, violations, info });
-}
-
-// Recursively walks .md files under `root`. Used by the raw-immutability check;
-// commit 9 will replace this with the centralized vault-fs walker.
-async function* walkAllMd(root: string): AsyncGenerator<string> {
-  let entries;
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const e of entries) {
-    const p = join(root, e.name);
-    if (e.isDirectory()) yield* walkAllMd(p);
-    else if (e.isFile() && e.name.endsWith(".md")) yield p;
-  }
 }

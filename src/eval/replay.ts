@@ -1,3 +1,7 @@
+// @internal — eval-replay harness. Test-only surface; not part of the v0.5
+// public SDK API. May change at any time. Direct consumers should depend on
+// runWorkflow + WorkflowRegistry instead.
+
 import type { Vault } from "../vault";
 import { runWorkflow, type RunWorkflowOpts } from "../workflows/agent-loop";
 import type { WorkflowName } from "../workflows/workflow-name";

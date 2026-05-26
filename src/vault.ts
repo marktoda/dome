@@ -5,11 +5,11 @@ import { parse as parseYaml } from "yaml";
 import { ok, err, type Effect, type Result, type ToolError, type ToolReturn } from "./types";
 import { isGitRepo } from "./git";
 import { makeDispatcher, type Dispatcher } from "./dispatcher";
-import { readDocument, type ReadDocumentInput } from "./tools/read-document";
+import { readDocument } from "./tools/read-document";
 import { writeDocument, type WriteDocumentInput } from "./tools/write-document";
 import { appendLog, type AppendLogInput } from "./tools/append-log";
-import { searchIndex, type SearchIndexInput } from "./tools/search-index";
-import { wikilinkResolve, type WikilinkResolveInput } from "./tools/wikilink-resolve";
+import { searchIndex } from "./tools/search-index";
+import { wikilinkResolve } from "./tools/wikilink-resolve";
 import { moveDocument, type MoveDocumentInput } from "./tools/move-document";
 import { deleteDocument, type DeleteDocumentInput } from "./tools/delete-document";
 import { HookRegistry } from "./hook-registry";
@@ -17,6 +17,7 @@ import { HookDispatcher } from "./hook-dispatcher";
 import { autoUpdateIndex } from "./hooks/auto-update-index";
 import { autoCrossReference } from "./hooks/auto-cross-reference";
 import { projectEffectsToEvents } from "./event-projection";
+import type { BoundToolSurface } from "./hook-context";
 
 export interface VaultConfig {
   invariants: Record<string, "enabled" | "disabled">;
@@ -34,15 +35,10 @@ export interface PageTypesConfig {
   extensions: ReadonlyArray<string | { name: string; frontmatter_extras?: Record<string, unknown> }>;
 }
 
-export interface BoundToolSurface {
-  readDocument: (input: ReadDocumentInput) => ReturnType<typeof readDocument>;
-  writeDocument: (input: WriteDocumentInput) => ReturnType<typeof writeDocument>;
-  appendLog: (input: AppendLogInput) => ReturnType<typeof appendLog>;
-  searchIndex: (input: SearchIndexInput) => ReturnType<typeof searchIndex>;
-  wikilinkResolve: (input: WikilinkResolveInput) => ReturnType<typeof wikilinkResolve>;
-  moveDocument: (input: MoveDocumentInput) => ReturnType<typeof moveDocument>;
-  deleteDocument: (input: DeleteDocumentInput) => ReturnType<typeof deleteDocument>;
-}
+// BoundToolSurface is the single canonical shape of "the seven Tools curried
+// with their Vault" and lives in hook-context.ts. Re-exported here so existing
+// `import { BoundToolSurface } from "./vault"` callers continue to work.
+export type { BoundToolSurface } from "./hook-context";
 
 export interface Vault {
   readonly path: string;
