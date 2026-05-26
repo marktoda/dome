@@ -3,7 +3,7 @@
 
 import { describe, test, expect } from "bun:test";
 import { join } from "node:path";
-import { mkdtemp, rm, writeFile, utimes, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, utimes, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { domeInit } from "../../src/cli/commands/init";
 import { domeDoctor } from "../../src/cli/commands/doctor";
@@ -233,6 +233,73 @@ extensions:
         s.toLowerCase().includes("agents.md") || s.toLowerCase().includes("claude.md"),
       );
       expect(surfaces.length).toBe(0);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("reports violation when AGENTS.md templated section is out of sync with current config", async () => {
+    const v = await makeFreshVault();
+    try {
+      const agentsPath = join(v.path, "AGENTS.md");
+      const stale = `# This vault
+
+Operate against the markdown.
+
+## Enabled invariants
+
+- \`SENSITIVE_GOES_TO_INBOX\`
+- \`EVERY_WRITE_IS_LOGGED\`
+
+## Page types
+
+- \`entity\`
+
+## Workflows
+
+- \`ingest\`
+
+<!-- BEGIN user-prose -->
+
+<!-- END user-prose -->
+`;
+      await writeFile(agentsPath, stale);
+      const r = await domeDoctor(v.path);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const drift = r.value.violations.find(s => s.toLowerCase().includes("agents.md") && s.toLowerCase().includes("out of sync"));
+      expect(drift).toBeDefined();
+      expect(drift).toContain("`dome doctor --repair`");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("reports violation when CLAUDE.md shim content has drifted", async () => {
+    const v = await makeFreshVault();
+    try {
+      const claudePath = join(v.path, "CLAUDE.md");
+      await writeFile(claudePath, "# Some other content\n");
+      const r = await domeDoctor(v.path);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const drift = r.value.violations.find(s => s.toLowerCase().includes("claude.md") && (s.toLowerCase().includes("content") || s.toLowerCase().includes("drift")));
+      expect(drift).toBeDefined();
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("--repair restores CLAUDE.md content when it has drifted", async () => {
+    const v = await makeFreshVault();
+    try {
+      const claudePath = join(v.path, "CLAUDE.md");
+      await writeFile(claudePath, "# Drifted\n");
+      const r = await domeDoctor(v.path, { repair: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const restored = await readFile(claudePath, "utf8");
+      expect(restored.trim()).toBe("See AGENTS.md.");
     } finally {
       await v.cleanup();
     }

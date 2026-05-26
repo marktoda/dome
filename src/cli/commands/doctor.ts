@@ -276,6 +276,11 @@ export async function domeDoctor(
   }
 
   // CHECK 10 (new): AGENTS.md + CLAUDE.md shim per AGENTS_MD_IS_ORIENTATION_SURFACE.
+  //   - AGENTS.md must exist, carry user-prose delimiters, AND its templated
+  //     section must match what we'd generate from the current config.
+  //   - CLAUDE.md must exist AND its content must be "See AGENTS.md." (trimmed).
+  // The drift checks close the "templated sections out of sync with current
+  // config → violation" claim in the invariant doc.
   const agentsAbs = join(vault.path, "AGENTS.md");
   const claudeAbs = join(vault.path, "CLAUDE.md");
   if (!existsSync(agentsAbs)) {
@@ -284,16 +289,37 @@ export async function domeDoctor(
     );
   } else {
     const agentsBody = await Bun.file(agentsAbs).text();
-    if (!agentsBody.includes("<!-- BEGIN user-prose -->") || !agentsBody.includes("<!-- END user-prose -->")) {
+    const { buildAgentsMdTemplated, USER_PROSE_BEGIN, USER_PROSE_END } = await import("../../agents-md");
+    if (!agentsBody.includes(USER_PROSE_BEGIN) || !agentsBody.includes(USER_PROSE_END)) {
       violations.push(
         "AGENTS.md: user-prose delimiters missing (`dome doctor --repair` regenerates them)",
       );
+    } else {
+      const beginIdx = agentsBody.indexOf(USER_PROSE_BEGIN);
+      const existingTemplated = agentsBody.slice(0, beginIdx).replace(/\n+$/, "");
+      const expectedTemplated = buildAgentsMdTemplated(
+        vault.config,
+        vault.pageTypes,
+        [...WORKFLOW_NAMES],
+      ).replace(/\n+$/, "");
+      if (existingTemplated !== expectedTemplated) {
+        violations.push(
+          "AGENTS.md: templated section out of sync with current config (`dome doctor --repair` regenerates it)",
+        );
+      }
     }
   }
   if (!existsSync(claudeAbs)) {
     violations.push(
       `CLAUDE.md: shim missing at vault root (Claude Code auto-loads this; should contain "See AGENTS.md.")`,
     );
+  } else {
+    const claudeBody = await Bun.file(claudeAbs).text();
+    if (claudeBody.trim() !== "See AGENTS.md.") {
+      violations.push(
+        `CLAUDE.md: content drift (expected "See AGENTS.md.", found different content; \`dome doctor --repair\` restores the canonical shim)`,
+      );
+    }
   }
 
   // --rebuild-index: delegate to the SDK primitive. Privileged-writer is
@@ -424,6 +450,13 @@ export async function domeDoctor(
       const fresh = buildInitialAgentsMd(vault.config, vault.pageTypes, [...WORKFLOW_NAMES]);
       await Bun.write(agentsPath, fresh);
       info.push("--repair: AGENTS.md created (was missing)");
+    }
+    // Also restore CLAUDE.md to the canonical shim if it's drifted or absent.
+    const claudeAbsRepair = join(vault.path, "CLAUDE.md");
+    const claudeCanonical = "See AGENTS.md.\n";
+    if (!existsSync(claudeAbsRepair) || (await Bun.file(claudeAbsRepair).text()) !== claudeCanonical) {
+      await Bun.write(claudeAbsRepair, claudeCanonical);
+      info.push("--repair: CLAUDE.md shim restored to canonical content");
     }
   }
 
