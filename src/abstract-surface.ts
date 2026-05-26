@@ -9,7 +9,6 @@
 // surface.tools is exactly vault.tools (one set of hook-dispatch-wrapped
 // Tool entries per Vault, threaded through every renderer).
 
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Vault } from "./vault";
@@ -66,6 +65,16 @@ export interface AbstractSurface {
    * Dynamic resource lookup for path-keyed URIs (e.g., `page/<path>`).
    * Static URIs in `resources` are looked up first; this callback is the
    * fallback for URIs that aren't enumerated.
+   *
+   * **Static vs. dynamic — when to use which:** A URI belongs in
+   * `resources` (the static descriptor list) when it is (a) enumerable —
+   * `ResourceAdapter.list()` returns these — and (b) cheap to materialize
+   * at surface-build time. A URI belongs in `readDynamicResource` when its
+   * key-space is unbounded (every wiki page under `page/<path>`; future
+   * `note/<id>`, `entity/<name>`) — eager enumeration would force I/O over
+   * the whole vault at surface-build time, contradicting the synchronous
+   * `renderMcp(surface)` projection. A URI that can be listed belongs in
+   * `resources`; otherwise put it behind this callback.
    *
    * Returns null when the URI is unknown.
    */
@@ -204,9 +213,9 @@ async function buildInstructionsString(vault: Vault, loader: PromptLoader): Prom
     .join("\n");
 
   const agentsPath = join(vault.path, "AGENTS.md");
-  const vaultNotes = existsSync(agentsPath)
-    ? await readFile(agentsPath, "utf8")
-    : "_No AGENTS.md present._";
+  // Single async stat-then-read, not existsSync+readFile, so the function
+  // is uniformly async on the hot path.
+  const vaultNotes = await readFile(agentsPath, "utf8").catch(() => "_No AGENTS.md present._");
 
   return [
     systemBaseBody,

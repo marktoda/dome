@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { ResourceAdapter, ResourceUri } from "../../src/mcp/resource-adapters";
 import { openVault } from "../../src/vault";
+import { buildAbstractSurface } from "../../src/abstract-surface";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("ResourceAdapter", () => {
@@ -9,7 +10,8 @@ describe("ResourceAdapter", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const ra = new ResourceAdapter(res.value);
+      const surface = await buildAbstractSurface(res.value);
+      const ra = new ResourceAdapter(surface);
       const list = await ra.list();
       expect(list.length).toBe(3);
     } finally {
@@ -22,7 +24,8 @@ describe("ResourceAdapter", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const ra = new ResourceAdapter(res.value);
+      const surface = await buildAbstractSurface(res.value);
+      const ra = new ResourceAdapter(surface);
       const content = await ra.read(ResourceUri.Index);
       expect(content).not.toBeNull();
       expect(content!.mimeType).toBe("text/markdown");
@@ -36,7 +39,8 @@ describe("ResourceAdapter", () => {
     try {
       const res = await openVault(v.path);
       if (!res.ok) return;
-      const ra = new ResourceAdapter(res.value);
+      const surface = await buildAbstractSurface(res.value);
+      const ra = new ResourceAdapter(surface);
       const content = await ra.read(ResourceUri.VaultInfo);
       expect(content!.mimeType).toBe("application/json");
       const parsed = JSON.parse(content!.text);

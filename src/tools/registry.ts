@@ -236,6 +236,13 @@ export interface BoundTools {
  *
  * Pins HOOK_DISPATCH_IS_VAULT_BOUND (axiom). See
  * docs/wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND.md.
+ *
+ * **Adding a new projection?** Consume this helper from your projection
+ * (do not re-implement the dispatch loop) and ship a parallel integration
+ * test alongside the v0.5 pair at tests/integration/mcp-hook-dispatch.test.ts
+ * and tests/integration/ai-sdk-hook-dispatch.test.ts. The convention is
+ * enforced by reviewer attention until the v0.5.1+ semantic linter
+ * (docs/wiki/linters/wrap-mutating-invoke-consumption.md) ships.
  */
 export function wrapMutatingInvoke<TParsed, TInput, TOutput>(
   entry: ToolRegistryEntry<TParsed, TInput, TOutput>,
