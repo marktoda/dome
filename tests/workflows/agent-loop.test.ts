@@ -100,6 +100,28 @@ describe("runWorkflow", () => {
     }
   });
 
+  test("substitutes a synthetic kickoff for empty userMessage (API rejects empty content blocks)", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault failed to open");
+      const mock = makeNoopMockModel();
+      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+
+      const call = mock.doGenerateCalls[0]!;
+      const userMsg = call.prompt.find((m) => m.role === "user");
+      expect(userMsg).toBeDefined();
+      const content = userMsg!.role === "user" ? userMsg!.content : [];
+      const textParts = Array.isArray(content)
+        ? content.filter((p): p is { type: "text"; text: string } => p.type === "text")
+        : [];
+      const joined = textParts.map((p) => p.text).join("");
+      expect(joined.length).toBeGreaterThan(0);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("buildAiSdkTools silently drops unknown tool names", async () => {
     const v = await makeTestVault();
     try {

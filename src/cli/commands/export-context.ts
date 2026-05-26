@@ -7,12 +7,12 @@ export async function domeExportContext(
   vaultPath: string,
   topic: string,
   opts: RunWorkflowOpts = {},
-): Promise<Result<{ steps: number }, ToolError>> {
+): Promise<Result<{ steps: number; text: string }, ToolError>> {
   const res = await openVault(vaultPath);
   if (!res.ok) return res;
   try {
     const r = await runWorkflow(res.value, WorkflowName.ExportContext, topic, opts);
-    return ok({ steps: r.steps });
+    return ok({ steps: r.steps, text: r.text });
   } catch (e: unknown) {
     return err({ kind: "validation", message: (e as Error).message });
   }

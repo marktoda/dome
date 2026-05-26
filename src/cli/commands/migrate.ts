@@ -10,7 +10,7 @@ export async function domeMigrate(
   vaultPath: string,
   apply: boolean,
   opts: RunWorkflowOpts = {},
-): Promise<Result<{ steps: number }, ToolError>> {
+): Promise<Result<{ steps: number; text: string }, ToolError>> {
   // The target must already exist on disk; migrate operates on existing
   // markdown directories, not on bare paths. Bail with a Result error so the
   // CLI surfaces Failure rather than throwing.
@@ -32,7 +32,7 @@ export async function domeMigrate(
   if (!res.ok) return res;
   try {
     const r = await runWorkflow(res.value, WorkflowName.Migrate, apply ? "--apply" : "", opts);
-    return ok({ steps: r.steps });
+    return ok({ steps: r.steps, text: r.text });
   } catch (e: unknown) {
     return err({ kind: "validation", message: (e as Error).message });
   }

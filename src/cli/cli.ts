@@ -153,7 +153,8 @@ function buildProgram(outcome: RunOutcome): Command {
     .action(async (path: string, opts: { apply?: boolean }) => {
       const r = await domeMigrate(path, opts.apply === true, {});
       if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
-      console.log(`migrate complete: ${r.value.steps} step(s)`);
+      if (r.value.text.length > 0) console.log(r.value.text);
+      console.error(`migrate complete: ${r.value.steps} step(s)`);
     });
 
   // ------ serve ------
@@ -230,7 +231,8 @@ function buildProgram(outcome: RunOutcome): Command {
     .action(async () => {
       const r = await domeLint(process.cwd(), {});
       if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
-      console.log(`lint complete: ${r.value.steps} step(s)`);
+      if (r.value.text.length > 0) console.log(r.value.text);
+      console.error(`lint complete: ${r.value.steps} step(s)`);
     });
 
   // ------ export-context ------
@@ -253,7 +255,8 @@ function buildProgram(outcome: RunOutcome): Command {
     .action(async (topic: string) => {
       const r = await domeExportContext(process.cwd(), topic, {});
       if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
-      console.log(`export-context complete: ${r.value.steps} step(s)`);
+      if (r.value.text.length > 0) console.log(r.value.text);
+      console.error(`export-context complete: ${r.value.steps} step(s)`);
     });
 
   // ------ doctor ------

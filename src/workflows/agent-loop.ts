@@ -49,6 +49,10 @@ export interface RunWorkflowResult {
  * the tool-call loop up to {@link DEFAULT_MAX_STEPS} (override via `opts.maxSteps`).
  *
  * `userMessage` becomes the SDK `prompt`. The workflow body becomes `system`.
+ * An empty `userMessage` is substituted with a synthetic kickoff turn, because
+ * the Anthropic Messages API rejects empty text content blocks. Self-driving
+ * workflows (lint, migrate dry-run) carry all their instructions in `system`
+ * and only need the user turn as an anchor.
  */
 export async function runWorkflow(
   vault: Vault,
@@ -65,10 +69,12 @@ export async function runWorkflow(
   const model: LanguageModel = typeof modelArg === "string" ? anthropic(modelArg) : modelArg;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
 
+  const prompt = userMessage.length > 0 ? userMessage : "Begin.";
+
   const result = await generateText({
     model,
     system: def.body,
-    prompt: userMessage,
+    prompt,
     tools,
     stopWhen: stepCountIs(maxSteps),
   });
