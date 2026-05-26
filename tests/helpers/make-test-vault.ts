@@ -1,5 +1,10 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { initRepo } from "../../src/git";
 import { scaffoldVaultLayout } from "../../src/vault-scaffold";
+import { buildInitialAgentsMd } from "../../src/agents-md";
+import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "../../src/shipped-defaults";
+import { WORKFLOW_NAMES } from "../../src/workflows/workflow-name";
 import { makeTempDir, removeTempDir } from "./temp-dir";
 
 export interface TestVault {
@@ -32,6 +37,13 @@ export async function makeTestVault(opts: MakeTestVaultOpts = {}): Promise<TestV
       ...(pageTypes !== undefined ? { pageTypesOverride: pageTypes } : {}),
       writeGitignore: false,
     });
+    // AGENTS_MD_IS_ORIENTATION_SURFACE: doctor flags these as missing.
+    // Mirror dome init so test vaults pass the drift check by default.
+    await writeFile(
+      join(path, "AGENTS.md"),
+      buildInitialAgentsMd(SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES, [...WORKFLOW_NAMES]),
+    );
+    await writeFile(join(path, "CLAUDE.md"), "See AGENTS.md.\n");
   }
 
   if (initGit) {

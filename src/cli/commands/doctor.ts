@@ -256,8 +256,8 @@ export async function domeDoctor(
     const buckets = await readdir(inboxRoot, { withFileTypes: true });
     for (const bucket of buckets) {
       if (!bucket.isDirectory()) continue;
-      // inbox/review/ is a destination for SENSITIVE_GOES_TO_INBOX, not an
-      // intake — exclude unconditionally per INBOX_IS_EPHEMERAL.md.
+      // inbox/review/ is a lint-report destination, not an intake — exclude
+      // unconditionally per INBOX_IS_EPHEMERAL.md.
       if (bucket.name === "review") continue;
       const bucketDir = join(inboxRoot, bucket.name);
       const files = await readdir(bucketDir, { withFileTypes: true });
@@ -273,6 +273,27 @@ export async function domeDoctor(
         }
       }
     }
+  }
+
+  // CHECK 10 (new): AGENTS.md + CLAUDE.md shim per AGENTS_MD_IS_ORIENTATION_SURFACE.
+  const agentsAbs = join(vault.path, "AGENTS.md");
+  const claudeAbs = join(vault.path, "CLAUDE.md");
+  if (!existsSync(agentsAbs)) {
+    violations.push(
+      "AGENTS.md: missing at vault root (AGENTS_MD_IS_ORIENTATION_SURFACE — run `dome doctor --repair`)",
+    );
+  } else {
+    const agentsBody = await Bun.file(agentsAbs).text();
+    if (!agentsBody.includes("<!-- BEGIN user-prose -->") || !agentsBody.includes("<!-- END user-prose -->")) {
+      violations.push(
+        "AGENTS.md: user-prose delimiters missing (`dome doctor --repair` regenerates them)",
+      );
+    }
+  }
+  if (!existsSync(claudeAbs)) {
+    violations.push(
+      `CLAUDE.md: shim missing at vault root (Claude Code auto-loads this; should contain "See AGENTS.md.")`,
+    );
   }
 
   // --rebuild-index: delegate to the SDK primitive. Privileged-writer is
@@ -343,7 +364,7 @@ export async function domeDoctor(
         }
       }
     } else {
-      info.push("review-queue: (inbox/review/ not present; SENSITIVE_GOES_TO_INBOX likely disabled)");
+      info.push("review-queue: (inbox/review/ not present — run `dome init` or `dome doctor --repair`)");
     }
   }
   if (opts.showRawCitations) {

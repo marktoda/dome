@@ -195,4 +195,46 @@ extensions:
       await v.cleanup();
     }
   });
+
+  test("reports violation when AGENTS.md is missing", async () => {
+    const v = await makeFreshVault();
+    try {
+      await rm(join(v.path, "AGENTS.md"));
+      const r = await domeDoctor(v.path);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value.violations.some(s => s.toLowerCase().includes("agents.md"))).toBe(true);
+      expect(r.value.exitCode).toBe(1);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("reports violation when CLAUDE.md shim is missing", async () => {
+    const v = await makeFreshVault();
+    try {
+      await rm(join(v.path, "CLAUDE.md"));
+      const r = await domeDoctor(v.path);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value.violations.some(s => s.toLowerCase().includes("claude.md"))).toBe(true);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("passes when AGENTS.md and CLAUDE.md are both present and well-formed", async () => {
+    const v = await makeFreshVault();
+    try {
+      const r = await domeDoctor(v.path);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const surfaces = r.value.violations.filter(s =>
+        s.toLowerCase().includes("agents.md") || s.toLowerCase().includes("claude.md"),
+      );
+      expect(surfaces.length).toBe(0);
+    } finally {
+      await v.cleanup();
+    }
+  });
 });
