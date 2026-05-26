@@ -47,6 +47,33 @@ describe("dome doctor flags (formerly no-op)", () => {
     }
   });
 
+  test("--show recent-hook-cycles parses hook.cycle-detected entries from log.md", async () => {
+    const v = await makeTestVault();
+    try {
+      const log = [
+        "# Log",
+        "",
+        "## [2026-05-25T10:00:00Z] hook.cycle-detected | handler=auto-cross-reference depth=51",
+        "",
+        "## [2026-05-25T10:05:00Z] ingest | wiki/entities/alice.md",
+        "",
+        "## [2026-05-25T11:00:00Z] hook.cycle-detected | handler=user-hook depth=5",
+        "",
+      ].join("\n");
+      await Bun.write(`${v.path}/log.md`, log);
+
+      const r = await domeDoctor(v.path, { showRecentHookCycles: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const cycleLines = r.value.info.filter(l => l.startsWith("hook-cycle:"));
+      expect(cycleLines.length).toBe(2);
+      expect(cycleLines[0]).toContain("auto-cross-reference");
+      expect(cycleLines[1]).toContain("user-hook");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("--show raw-citations groups wiki pages by the raw source they cite", async () => {
     const v = await makeTestVault();
     try {

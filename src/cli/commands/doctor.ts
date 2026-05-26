@@ -261,7 +261,26 @@ export async function domeDoctor(
     info.push(`--drain-hooks: drained (async hook queue is now idle)`);
   }
   if (opts.resetQuarantinedHooks) info.push("--reset-quarantined-hooks: no-op in v0.5 (no persistent quarantine state across CLI runs)");
-  if (opts.showRecentHookCycles) info.push("--show recent-hook-cycles: no-op in v0.5 (no persistent cycle log across CLI runs)");
+  if (opts.showRecentHookCycles) {
+    const logPath3 = join(vault.path, "log.md");
+    if (existsSync(logPath3)) {
+      const logText = await Bun.file(logPath3).text();
+      const cycleRe = /^## \[([^\]]+)\] hook\.cycle-detected \| (.+)$/gm;
+      const cycles: { ts: string; detail: string }[] = [];
+      for (const m of logText.matchAll(cycleRe)) {
+        cycles.push({ ts: m[1]!, detail: m[2]! });
+      }
+      if (cycles.length === 0) {
+        info.push("hook-cycle: (none)");
+      } else {
+        for (const c of cycles) {
+          info.push(`hook-cycle: [${c.ts}] ${c.detail}`);
+        }
+      }
+    } else {
+      info.push("hook-cycle: (log.md not present)");
+    }
+  }
   if (opts.showReviewQueue) {
     const reviewDir = join(vault.path, "inbox", "review");
     if (existsSync(reviewDir)) {
