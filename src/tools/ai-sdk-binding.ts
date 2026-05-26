@@ -9,35 +9,31 @@ import { tool, type Tool, type ToolSet } from "ai";
 import type { Vault } from "../vault";
 import type { PrivilegedWriter } from "../privileged-writer";
 import type { ToolReturn } from "../types";
-import { projectEffectsToEvents } from "../event-projection";
-import { TOOL_NAMES, TOOL_REGISTRY } from "./registry";
+import { TOOL_NAMES, TOOL_REGISTRY, wrapMutatingInvoke } from "./registry";
 
 /**
  * Build the AI-SDK `ToolSet` from the canonical registry. Each Tool's
- * `execute()` runs the same schema-parse + compact + invoke pipeline
- * `vault.tools[name]` uses (sharing the registry's metadata), but the
- * resulting shape matches what `generateText` / `streamText` expect.
+ * `execute()` consumes the same single-source `wrapMutatingInvoke` helper
+ * `bindTools` (vault.tools) uses — mutating Tools fire effects through
+ * `vault.dispatchEvents` after each invoke identically across every
+ * projection. See HOOK_DISPATCH_IS_VAULT_BOUND.
  *
- * Mutating Tools dispatch their effects through `vault.dispatchEvents`
- * after each invoke — same intrinsic-wrap shape as `bindTools` in
- * registry.ts, so AI-SDK-routed mutations fire `auto-update-index`,
- * `auto-cross-reference`, and declarative-YAML intake hooks identically
- * to MCP-routed and SDK-direct mutations.
+ * The hand-rolled dispatch loop that pre-dated `wrapMutatingInvoke` is
+ * gone; this projection delegates rather than re-implementing. A future
+ * change to the wrap (causation metadata, backpressure gate, closed-flag
+ * pre-check) lands in one place and inherits across every projection.
  */
 export function bindAiSdkTools(vault: Vault, writer: PrivilegedWriter): ToolSet {
   const aiTools: ToolSet = {};
   for (const name of TOOL_NAMES) {
     const entry = TOOL_REGISTRY[name];
+    const invoke = wrapMutatingInvoke(entry, vault, writer);
     const aiTool = tool({
       description: entry.description,
       inputSchema: entry.schema,
       execute: async (parsed: unknown) => {
         const compacted = entry.compact(parsed as never);
-        const out = await entry.invoke(vault, writer, compacted);
-        if (entry.mutating) {
-          await vault.dispatchEvents(projectEffectsToEvents(out.effects));
-        }
-        return out;
+        return invoke(compacted);
       },
     }) as unknown as Tool<unknown, ToolReturn<unknown>>;
     aiTools[name] = aiTool;

@@ -222,33 +222,47 @@ export interface BoundTools {
   parsers: Readonly<Record<ToolName, Parser>>;
 }
 
+/**
+ * Single-source hook-dispatch wrap. Every projection of TOOL_REGISTRY
+ * (bindTools → vault.tools; bindAiSdkTools → projectAiSdk(vault); future
+ * renderHttp / renderVoice) consumes this helper rather than re-implementing
+ * the post-invoke dispatch loop. The wrap is intrinsic to the Vault-bound
+ * Tool registry, not a per-call-site decorator.
+ *
+ * Returns a function taking the entry's compact input shape (post-Zod-parse,
+ * post-compact). For projections that receive raw input, wrap this with the
+ * entry's schema.parse() and entry.compact() per the bindEntry pattern below.
+ *
+ * Pins HOOK_DISPATCH_IS_VAULT_BOUND (axiom). See
+ * docs/wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND.md.
+ */
+export function wrapMutatingInvoke<TParsed, TInput, TOutput>(
+  entry: ToolRegistryEntry<TParsed, TInput, TOutput>,
+  vault: Vault,
+  writer: PrivilegedWriter,
+): (input: TInput) => Promise<ToolReturn<TOutput>> {
+  if (!entry.mutating) {
+    return (input: TInput) => entry.invoke(vault, writer, input);
+  }
+  return async (input: TInput) => {
+    const out = await entry.invoke(vault, writer, input);
+    await vault.dispatchEvents(projectEffectsToEvents(out.effects));
+    return out;
+  };
+}
+
 function bindEntry<TParsed, TInput, TOutput>(
   entry: ToolRegistryEntry<TParsed, TInput, TOutput>,
   vault: Vault,
   writer: PrivilegedWriter,
 ): { tool: (input: TInput) => Promise<ToolReturn<TOutput>>; parser: Parser } {
-  if (entry.mutating) {
-    const invokeWithDispatch = async (input: TInput): Promise<ToolReturn<TOutput>> => {
-      const out = await entry.invoke(vault, writer, input);
-      await vault.dispatchEvents(projectEffectsToEvents(out.effects));
-      return out;
-    };
-    return {
-      tool: invokeWithDispatch,
-      parser: async (raw: unknown) => {
-        const parsed = entry.schema.parse(raw);
-        const compacted = entry.compact(parsed);
-        return invokeWithDispatch(compacted);
-      },
-    };
-  }
-  const bound = (input: TInput) => entry.invoke(vault, writer, input);
+  const tool = wrapMutatingInvoke(entry, vault, writer);
   return {
-    tool: bound,
+    tool,
     parser: async (raw: unknown) => {
       const parsed = entry.schema.parse(raw);
       const compacted = entry.compact(parsed);
-      return entry.invoke(vault, writer, compacted);
+      return tool(compacted);
     },
   };
 }
