@@ -197,21 +197,17 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     });
   }
   if (config.hooks.builtin["log-out-of-band-write"] === "enabled") {
-    // External-path enforcement of EVERY_WRITE_IS_LOGGED across both paths:
-    //   - watcher: live OOB edits caught by chokidar (vault.out-of-band-edit)
-    //   - reconcile: writes the watcher missed (document.written.wiki.*)
+    // Watcher path only: live OOB edits caught by chokidar fire
+    // vault.out-of-band-edit (a unique kind no other code path emits).
+    // The reconcile path enforces EVERY_WRITE_IS_LOGGED separately — see
+    // src/reconcile.ts phase-2, which calls vault.tools.appendLog directly
+    // per replayed file. Subscribing this hook to document.written.wiki.*
+    // would also catch Tool-mediated writes (they project to the same
+    // event kind), producing duplicate spurious "out-of-band" log entries.
     // See docs/wiki/invariants/VAULT_RECONCILES_AFTER_NATIVE_WRITE.md.
     registry.register({
-      id: "log-out-of-band-write-live",
+      id: "log-out-of-band-write",
       pattern: "vault.out-of-band-edit",
-      handler: logOutOfBandWrite,
-      source: "sdk",
-      async: true,
-      idempotent: true,
-    });
-    registry.register({
-      id: "log-out-of-band-write-reconcile",
-      pattern: "document.written.wiki.*",
       handler: logOutOfBandWrite,
       source: "sdk",
       async: true,

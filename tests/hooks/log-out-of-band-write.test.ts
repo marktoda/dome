@@ -44,7 +44,7 @@ describe("logOutOfBandWrite", () => {
     expect(calls.length).toBe(0);
   });
 
-  test("fires on document.written.* events (reconcile path)", async () => {
+  test("ignores document.written.* events (those are the reconcile leg's responsibility, handled in reconcile.ts directly)", async () => {
     const calls: Array<{ verb: string; subject: string }> = [];
     const ctx = {
       tools: {
@@ -54,13 +54,16 @@ describe("logOutOfBandWrite", () => {
         },
       },
     } as unknown as HookContext;
+    // Both Tool-mediated and reconcile-replayed wiki writes project to this
+    // event kind via src/event-projection.ts. Subscribing this hook here
+    // would double-log Tool writes. The reconcile leg of
+    // EVERY_WRITE_IS_LOGGED's external path is enforced in
+    // src/reconcile.ts (logReconciled) instead.
     await logOutOfBandWrite(
       { kind: "document.written.wiki.entity", path: "wiki/entities/x.md" } as never,
       ctx,
     );
-    expect(calls.length).toBe(1);
-    expect(calls[0]!.subject).toContain("wiki/entities/x.md");
-    expect(calls[0]!.subject.toLowerCase()).toContain("reconcile");
+    expect(calls.length).toBe(0);
   });
 
   test("ignores unrelated event kinds (log.appended, document.moved)", async () => {
