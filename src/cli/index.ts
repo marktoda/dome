@@ -6,7 +6,6 @@
 // the eight `dome <cmd>` implementations into its bundle.
 
 export { runCli, ExitCode } from "./cli";
-export { DoctorFlag, DOCTOR_FLAGS } from "./doctor-flag";
 export { domeInit } from "./commands/init";
 export { domeReconcile } from "./commands/reconcile";
 export { domeDoctor, type DoctorReport } from "./commands/doctor";
