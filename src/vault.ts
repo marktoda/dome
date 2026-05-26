@@ -169,8 +169,11 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
       const effects: ReadonlyArray<Effect> = out.effects;
       const events = projectEffectsToEvents(effects);
       if (events.length > 0) {
-        const ctx = { tools, vault: { path: root }, dispatcher };
-        await hookDispatcher.dispatchEvents(events, ctx);
+        const ctxFactory = {
+          baseCtx: { tools, vault: { path: root } },
+          dispatcher,
+        };
+        await hookDispatcher.dispatchEvents(events, ctxFactory);
       }
       return out;
     };

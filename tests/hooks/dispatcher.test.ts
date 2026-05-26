@@ -1,11 +1,21 @@
 import { describe, test, expect } from "bun:test";
-import { HookDispatcher } from "../../src/hook-dispatcher";
+import { HookDispatcher, type DispatcherCtxFactory } from "../../src/hook-dispatcher";
 import { HookRegistry } from "../../src/hook-registry";
 import type { HookContext, HookEvent } from "../../src/hook-context";
+import type { Dispatcher } from "../../src/dispatcher";
 
-const fakeCtx: HookContext = {
-  tools: {} as HookContext["tools"],
-  vault: { path: "/tmp/fake" },
+const fakeDispatcher: Dispatcher = {
+  writeIndex: async () => ({ kind: "wrote-document", path: "index.md", diff: "" }),
+  appendLogEntry: async (entry) => ({ kind: "appended-log", entry }),
+  removeIndexEntry: async () => ({ kind: "wrote-document", path: "index.md", diff: "" }),
+};
+
+const fakeCtxFactory: DispatcherCtxFactory = {
+  baseCtx: {
+    tools: {} as HookContext["tools"],
+    vault: { path: "/tmp/fake" },
+  },
+  dispatcher: fakeDispatcher,
 };
 
 describe("HookDispatcher", () => {
@@ -18,7 +28,7 @@ describe("HookDispatcher", () => {
     });
     const disp = new HookDispatcher(reg);
     const events: HookEvent[] = [{ kind: "document.written.wiki.entity", path: "wiki/entities/danny.md", diff: "x" }];
-    await disp.dispatchEvents(events, fakeCtx);
+    await disp.dispatchEvents(events, fakeCtxFactory);
     expect(calls).toEqual(["h1:wiki/entities/danny.md"]);
   });
 
@@ -34,7 +44,7 @@ describe("HookDispatcher", () => {
       handler: async () => { order.push("sync"); },
     });
     const disp = new HookDispatcher(reg);
-    await disp.dispatchEvents([{ kind: "x" }], fakeCtx);
+    await disp.dispatchEvents([{ kind: "x" }], fakeCtxFactory);
     await disp.drain();
     expect(order[0]).toBe("sync");
   });
@@ -52,10 +62,10 @@ describe("HookDispatcher", () => {
     });
     const disp = new HookDispatcher(reg);
     const ev: HookEvent = { kind: "document.written.wiki.entity", path: "wiki/entities/x.md", diff: "x" };
-    await disp.dispatchEvents([ev], fakeCtx);
+    await disp.dispatchEvents([ev], fakeCtxFactory);
     // Second dispatch with same (handler, target) chain should still fire (we're starting a new top-level dispatch).
     // The cycle check is *within* a causation chain, not across chains.
-    await disp.dispatchEvents([ev], fakeCtx);
+    await disp.dispatchEvents([ev], fakeCtxFactory);
     expect(dispatchedDeeper).toBe(true);
   });
 
@@ -73,7 +83,7 @@ describe("HookDispatcher", () => {
       cycleDetected = info.depth >= 3;
     });
     // Trigger recursive cycle via internal API.
-    await disp.dispatchEventsWithCausation([{ kind: "x" }], fakeCtx,
+    await disp.dispatchEventsWithCausation([{ kind: "x" }], fakeCtxFactory,
       Array.from({ length: 4 }, (_, i) => ({ handlerId: "h", targetPath: `t-${i}` })) // 4-deep
     );
     expect(cycleDetected).toBe(true);
