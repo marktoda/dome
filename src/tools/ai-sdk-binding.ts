@@ -9,6 +9,7 @@ import { tool, type Tool, type ToolSet } from "ai";
 import type { Vault } from "../vault";
 import type { PrivilegedWriter } from "../privileged-writer";
 import type { ToolReturn } from "../types";
+import { projectEffectsToEvents } from "../event-projection";
 import { TOOL_NAMES, TOOL_REGISTRY, type ToolName } from "./registry";
 
 /**
@@ -16,6 +17,12 @@ import { TOOL_NAMES, TOOL_REGISTRY, type ToolName } from "./registry";
  * `execute()` runs the same schema-parse + compact + invoke pipeline
  * `vault.tools[name]` uses (sharing the registry's metadata), but the
  * resulting shape matches what `generateText` / `streamText` expect.
+ *
+ * Mutating Tools dispatch their effects through `vault.dispatchEvents`
+ * after each invoke — same intrinsic-wrap shape as `bindTools` in
+ * registry.ts, so AI-SDK-routed mutations fire `auto-update-index`,
+ * `auto-cross-reference`, and declarative-YAML intake hooks identically
+ * to MCP-routed and SDK-direct mutations.
  */
 export function bindAiSdkTools(vault: Vault, writer: PrivilegedWriter): ToolSet {
   const aiTools: ToolSet = {};
@@ -26,7 +33,11 @@ export function bindAiSdkTools(vault: Vault, writer: PrivilegedWriter): ToolSet 
       inputSchema: entry.schema,
       execute: async (parsed: unknown) => {
         const compacted = entry.compact(parsed as never);
-        return entry.invoke(vault, writer, compacted);
+        const out = await entry.invoke(vault, writer, compacted);
+        if (entry.mutating) {
+          await vault.dispatchEvents(projectEffectsToEvents(out.effects));
+        }
+        return out;
       },
     }) as unknown as Tool<unknown, ToolReturn<unknown>>;
     aiTools[name] = aiTool;

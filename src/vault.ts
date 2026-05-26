@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ok, err, type Result, type ToolError, type ToolReturn } from "./types";
+import { ok, err, type Result, type ToolError } from "./types";
 import { isGitRepo } from "./git";
 import { makePrivilegedWriter, type PrivilegedWriter } from "./privileged-writer";
 import { bindTools } from "./tools/registry";
@@ -11,7 +11,6 @@ import { HookDispatcher, type CycleInfo } from "./hook-dispatcher";
 import { autoUpdateIndex } from "./hooks/auto-update-index";
 import { autoCrossReference } from "./hooks/auto-cross-reference";
 import { loadDeclarativeHooks } from "./hooks/yaml-loader";
-import { projectEffectsToEvents } from "./event-projection";
 import type { BoundToolSurface, HookEvent } from "./hook-context";
 import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "./shipped-defaults";
 import { makeQuarantineStore } from "./quarantine-store";
@@ -160,8 +159,6 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   // INDEX_AND_LOG_ARE_DISPATCHER_OWNED). It reaches built-in hooks via
   // HookContext.privilegedWriter; plugins never see it.
   const privilegedWriter = makePrivilegedWriter(root);
-  const partial = { path: root, config, pageTypes } as Vault;
-
 
   // Hook wiring — shipped-default registrations gated by config. The registry
   // gets a persistent quarantine record at .dome/state/quarantined.json so
@@ -214,7 +211,9 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   // dispatchEvents is the single entry point any subsystem (Tool wrap,
   // reconcile, watcher, declarative-hook handler) uses to push events
   // through the dispatcher. It assembles the ctxFactory once with the bound
-  // tools surface; callers don't construct it.
+  // tools surface; callers don't construct it. `tools` is `const`-declared
+  // below; the closure reads it lazily at dispatch time, by which point
+  // bindTools has assigned it.
   const dispatchEvents = async (events: ReadonlyArray<HookEvent>): Promise<void> => {
     if (events.length === 0) return;
     const ctxFactory = {
@@ -224,25 +223,19 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     await hookDispatcher.dispatchEvents(events, ctxFactory);
   };
 
-  // Wrap mutating Tools so their effects flow through the hook dispatcher.
-  // The registry tells `bindTools` which Tools mutate; read-only Tools
-  // (`readDocument`, `searchIndex`, `wikilinkResolve`) are exposed unwrapped
-  // (they emit no effects worth projecting).
-  const wrapMutation = <I, R extends ToolReturn<unknown>>(
-    fn: (input: I) => Promise<R>
-  ) => async (input: I): Promise<R> => {
-    const out = await fn(input);
-    await dispatchEvents(projectEffectsToEvents(out.effects));
-    return out;
-  };
-
+  // The hook-dispatch wrap is intrinsic to bindTools — it reads
+  // `vault.dispatchEvents` from the partial we hand in, and every consumer
+  // of bindTools (openVault, projectMcp, projectAiSdk) gets the same wrap
+  // for free. No more per-call-site wrapMutation closures.
+  //
   // Only the strict-input BoundToolSurface is held on Vault. The AI-SDK
   // ToolSet and per-Tool parsers used to live on Vault.aiTools / .toolParsers;
   // they now live in entrypoint-scoped projectAiSdk(vault) / projectMcp(vault)
   // helpers (in @dome/sdk/workflows and @dome/sdk/mcp respectively). This
   // is what makes CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY structurally true:
   // openVault no longer needs to import `ai` to construct aiTools eagerly.
-  const { tools } = bindTools(partial, privilegedWriter, wrapMutation);
+  const partial = { path: root, config, pageTypes, dispatchEvents } as Vault;
+  const { tools } = bindTools(partial, privilegedWriter);
 
   // Walk wiki/ and rewrite index.md from scratch via the privileged writer.
   // Exposed as `vault.rebuildIndex()` so the CLI's `dome doctor --rebuild-index`

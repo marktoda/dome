@@ -16,6 +16,7 @@ import type { Vault } from "../vault";
 import type { PrivilegedWriter } from "../privileged-writer";
 import type { BoundToolSurface } from "../hook-context";
 import type { ToolReturn } from "../types";
+import { projectEffectsToEvents } from "../event-projection";
 
 import { readDocument } from "./read-document";
 import { writeDocument } from "./write-document";
@@ -185,42 +186,28 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<ToolName> = new Set(
 );
 
 /**
- * Optional post-bind decorator that wraps every mutating Tool's invocation
- * before exposing it on `Vault.tools`. The Vault uses this to project a
- * Tool's emitted `Effect[]` into the hook dispatcher; read-only Tools are
- * untouched (they emit no effects worth projecting). Without a wrapper,
- * binding is the identity — the Tool function is exposed directly.
- */
-export type MutatingWrapper = <I, R extends ToolReturn<unknown>>(
-  fn: (input: I) => Promise<R>,
-) => (input: I) => Promise<R>;
-
-const identityWrap: MutatingWrapper = (fn) => fn;
-
-/**
  * Per-Tool parse-and-invoke function (transport-facing). Parses raw input
  * through the entry's Zod schema, compacts via the entry's compact(), and
  * invokes the entry's invoke() function with the vault + writer + input.
  */
 type Parser = (input: unknown) => Promise<ToolReturn<unknown>>;
 
-function makeParser(entry: ToolRegistryEntry, vault: Vault, writer: PrivilegedWriter): Parser {
-  return async (input: unknown): Promise<ToolReturn<unknown>> => {
-    const parsed = entry.schema.parse(input);
-    const compacted = entry.compact(parsed);
-    return entry.invoke(vault, writer, compacted);
-  };
-}
-
 /**
  * Bind every Tool in the registry against a Vault + writer, producing
  * the strict-input `BoundToolSurface` exposed at `vault.tools` and the
  * per-Tool parsers used by transports (MCP today; HTTP / SSE later).
- * Both halves share the same compaction + invoke path.
  *
- * `wrapMutating` (optional) decorates only the mutating Tools — read-only
- * Tools (read, search, resolve) are exposed unwrapped (they emit no
- * effects worth projecting through the hook dispatcher).
+ * Mutating Tools are wrapped intrinsically: after each invoke, the
+ * emitted `Effect[]` is projected to `HookEvent[]` and dispatched via
+ * `vault.dispatchEvents`. The wrap is a property of the Vault, not a
+ * parameter — every caller of `bindTools` (openVault, projectMcp,
+ * projectAiSdk) gets hook-dispatch for free. Read-only Tools (read,
+ * search, resolve) are exposed unwrapped (they emit no effects).
+ *
+ * Closure timing: the wrap reads `vault.dispatchEvents` lazily at invoke
+ * time. openVault calls `bindTools(partial, ...)` where `partial` carries
+ * `dispatchEvents` already; the captured reference is set before any Tool
+ * fires. See docs/wiki/specs/sdk-surface.md §"Hook dispatch is intrinsic".
  *
  * This function is part of @dome/sdk core (no `ai` dependency). The
  * AI-SDK `ToolSet` shape lives in `src/tools/ai-sdk-binding.ts`.
@@ -235,23 +222,31 @@ export interface BoundTools {
   parsers: Readonly<Record<ToolName, Parser>>;
 }
 
-export function bindTools(
-  vault: Vault,
-  writer: PrivilegedWriter,
-  wrapMutating: MutatingWrapper = identityWrap,
-): BoundTools {
+export function bindTools(vault: Vault, writer: PrivilegedWriter): BoundTools {
   const tools = {} as Record<string, (input: unknown) => Promise<ToolReturn<unknown>>>;
   const parsers = {} as Record<string, Parser>;
   for (const name of TOOL_NAMES) {
     const entry = TOOL_REGISTRY[name];
-    const bound = (input: unknown) => entry.invoke(vault, writer, input as never);
-    const parser = makeParser(entry, vault, writer);
-    tools[name] = entry.mutating
-      ? (wrapMutating as MutatingWrapper)(bound as (input: unknown) => Promise<ToolReturn<unknown>>)
-      : bound;
-    parsers[name] = entry.mutating
-      ? (wrapMutating as MutatingWrapper)(parser)
-      : parser;
+    if (entry.mutating) {
+      const invokeWithDispatch = async (input: unknown): Promise<ToolReturn<unknown>> => {
+        const out = await entry.invoke(vault, writer, input as never);
+        await vault.dispatchEvents(projectEffectsToEvents(out.effects));
+        return out;
+      };
+      tools[name] = invokeWithDispatch;
+      parsers[name] = async (input: unknown) => {
+        const parsed = entry.schema.parse(input);
+        const compacted = entry.compact(parsed);
+        return invokeWithDispatch(compacted);
+      };
+    } else {
+      tools[name] = (input: unknown) => entry.invoke(vault, writer, input as never);
+      parsers[name] = async (input: unknown) => {
+        const parsed = entry.schema.parse(input);
+        const compacted = entry.compact(parsed);
+        return entry.invoke(vault, writer, compacted);
+      };
+    }
   }
   return {
     tools: tools as unknown as BoundToolSurface,

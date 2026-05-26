@@ -39,7 +39,11 @@ A Vault is opened, used, and closed in one process lifetime. There is no Vault s
 - `projectAiSdk(vault): ai.ToolSet` lives in `@dome/sdk/workflows`. Builds the seven Tools shaped for `generateText` consumption.
 - `projectMcp(vault): { parsers: Readonly<Record<ToolName, (input: unknown) => Promise<ToolReturn<unknown>>>> }` lives in `@dome/sdk/mcp`. The `parsers` record carries one function per canonical Tool name (`readDocument` … `deleteDocument`); each parses the raw input through the Tool's Zod schema, compacts via `compactX`, and invokes the same Vault-bound function `vault.tools[name]` exposes — sharing the hook-dispatch wrap. The MCP adapter consumes this; future HTTP / SSE / gRPC adapters would consume the same shape.
 
-Pre-Phase-B these projections were on `Vault.aiTools` and `Vault.toolParsers`, which forced every consumer of `openVault` to transitively bundle `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk` whether they used those projections or not. The split honors [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: a consumer that only reads/writes via `vault.tools` pays for nothing else.
+Pre-Phase-B these projections were on `Vault.aiTools` and `Vault.toolParsers`, which forced every consumer of `openVault` to transitively bundle `@ai-sdk/anthropic` (and its `ai` transitive) and `@modelcontextprotocol/sdk` whether they used those projections or not. The split honors [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]]: a consumer that only reads/writes via `vault.tools` pays for nothing else.
+
+##### Hook dispatch is intrinsic
+
+Mutating Tools always fire the Vault's hook dispatcher after each invoke — `vault.tools.writeDocument`, the MCP adapter's `dome.write_document`, and the AI-SDK ToolSet's `writeDocument` all dispatch identically. The wrap is a property of the Vault, not a per-call-site decorator: `bindTools` and `bindAiSdkTools` read `vault.dispatchEvents` lazily inside each Tool's `invoke` closure and call `vault.dispatchEvents(projectEffectsToEvents(out.effects))` after the Tool returns. Read-only Tools (`readDocument`, `searchIndex`, `wikilinkResolve`) emit no effects and are exposed unwrapped. The intrinsic seam means future transports (HTTP, SSE, gRPC) get hook dispatch for free by calling `bindTools(vault, writer)` — no additional ceremony, no risk of skipping the wrap by accident. This pin is enforced by `tests/integration/mcp-hook-dispatch.test.ts`, which asserts a write through the MCP adapter triggers `auto-update-index`.
 
 #### Vault lifecycle
 
