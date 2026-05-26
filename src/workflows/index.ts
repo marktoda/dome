@@ -1,6 +1,6 @@
 // @dome/sdk/workflows — the LLM-driven surface.
 //
-// This entrypoint carries the @anthropic-ai/sdk + ai (Vercel AI SDK) deps.
+// This entrypoint carries the @ai-sdk/anthropic + ai (Vercel AI SDK) deps.
 // Consumers that don't drive LLM-based workflows import from @dome/sdk
 // (core) instead — see docs/wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY.md.
 

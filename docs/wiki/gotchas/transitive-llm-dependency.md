@@ -10,19 +10,19 @@ first_observed: 2026-05-26
 
 # transitive-llm-dependency
 
-**Symptom:** A consumer that imports only Vault + Tools from `@dome/sdk` (e.g., a v1 mobile shell that wants typed markdown storage with no LLM) finds `@anthropic-ai/sdk` and `@modelcontextprotocol/sdk` in their bundle. The bundle is ~MB larger than the consumer expected; bundle analyzers point at transitively-pulled imports from `@dome/sdk` core.
+**Symptom:** A consumer that imports only Vault + Tools from `@dome/sdk` (e.g., a v1 mobile shell that wants typed markdown storage with no LLM) finds `@ai-sdk/anthropic` and `@modelcontextprotocol/sdk` in their bundle. The bundle is ~MB larger than the consumer expected; bundle analyzers point at transitively-pulled imports from `@dome/sdk` core.
 
-**Severity:** High — silently bloats every v1+ consumer shell. Pre-Phase-B, the core entrypoint at `src/index.ts` re-exported `runWorkflow`, `WorkflowRegistry`, `DomeMcpServer`, and constructed `vault.aiTools` / `vault.toolParsers` eagerly inside `openVault`. A consumer importing `openVault` reached `tools/registry.ts`, which imports `ai`, which transitively imports `@ai-sdk/anthropic`, which imports `@anthropic-ai/sdk`. The chain ran for every consumer regardless of whether they used the LLM-driven surface.
+**Severity:** High — silently bloats every v1+ consumer shell. Pre-Phase-B, the core entrypoint at `src/index.ts` re-exported `runWorkflow`, `WorkflowRegistry`, `DomeMcpServer`, and constructed `vault.aiTools` / `vault.toolParsers` eagerly inside `openVault`. A consumer importing `openVault` reached `tools/registry.ts`, which imports `ai`, which transitively imports `@ai-sdk/anthropic`, which imports `@ai-sdk/anthropic`. The chain ran for every consumer regardless of whether they used the LLM-driven surface.
 
 **Root cause:** The four-concept core was conceptually sealed (Vault, Document, Tool, Hook are the only primitives — see [[wiki/specs/sdk-surface]] §"The four concepts"), but the **packaging boundary** was not. LLM-driven workflows and the MCP server are *built on top of* the four concepts, but they shared the same entrypoint, so the bundler couldn't distinguish them.
 
 **Structural mitigation:** Two layers:
 
-1. **The [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] axiom** pins the contract: `@dome/sdk` core may not transitively depend on `@anthropic-ai/sdk`, `ai`, or `@modelcontextprotocol/sdk`. Structurally enforced by `tests/integration/bundle-deps.test.ts`.
+1. **The [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]] axiom** pins the contract: `@dome/sdk` core may not transitively depend on `@ai-sdk/anthropic`, `ai`, or `@modelcontextprotocol/sdk`. Structurally enforced by `tests/integration/bundle-deps.test.ts`.
 
 2. **The entrypoint split.** Four entrypoints replace the prior two:
    - `@dome/sdk` — core (Vault, Document, Tool, Hook, the seven Tools, hook dispatcher, reconcile, watcher, types, registrations)
-   - `@dome/sdk/workflows` — LLM-driven surface (`runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, `@anthropic-ai/sdk` + `ai` deps)
+   - `@dome/sdk/workflows` — LLM-driven surface (`runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, `@ai-sdk/anthropic` + `ai` deps)
    - `@dome/sdk/mcp` — MCP server surface (`DomeMcpServer`, `buildConsumerSurface(vault)`, adapters, `@modelcontextprotocol/sdk` dep)
    - `@dome/sdk/cli` — CLI shell (`runCli`, the seven `dome*` command functions; consumes `commander`)
 

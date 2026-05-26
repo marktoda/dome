@@ -338,7 +338,7 @@ This is the **anti-concept list**: things future contributors might be tempted t
 - **Runtime**: Bun 1.x. The SDK uses Bun's native APIs where they're cleaner (file watcher, test runner, bundler). It does not depend on Node-only modules.
 - **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package with **four entrypoints**:
   - `@dome/sdk` — **core**. Vault, Document, the seven Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const. No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
-  - `@dome/sdk/workflows` — **LLM-driven surface**. `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, the eval suite primitives. Bundled deps: `@anthropic-ai/sdk`, `ai`. A consumer importing nothing from this entrypoint pays for none of those deps.
+  - `@dome/sdk/workflows` — **LLM-driven surface**. `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, the eval suite primitives. Bundled deps: `@ai-sdk/anthropic`, `ai`. A consumer importing nothing from this entrypoint pays for none of those deps.
   - `@dome/sdk/mcp` — **MCP server surface**. `DomeMcpServer`, `buildConsumerSurface(vault)`, `ConsumerSurface` type, `projectMcp(vault)`, the tool/prompt/resource adapters, `buildInstructions`. Bundled deps: `@modelcontextprotocol/sdk`.
   - `@dome/sdk/cli` — **CLI shell**. `runCli`, the seven `dome*` command functions, `CliError`, `renderCliError`, `DoctorFlag`. The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here. Bundled deps: `commander`. The CLI internally imports from `@dome/sdk/workflows` for the LLM-driven commands (`lint`, `migrate`, `export-context`).
 
@@ -359,7 +359,7 @@ Dependencies are scoped to the entrypoint that imports them. A consumer that imp
 | `p-queue` | Async hook dispatch queue | In-process; durable state is the lockfile pattern, not the queue | core |
 | `yaml` | YAML emit/parse for config and hook declarations | Standard; Bun-compatible | core |
 | `zod-to-json-schema` | Renders Zod schemas to JSON Schema for the MCP tools/list response | Stable, single-purpose | core |
-| `@anthropic-ai/sdk` | LLM client | Anthropic's official TS SDK | workflows |
+| `@ai-sdk/anthropic` | LLM client | Anthropic's official TS SDK | workflows |
 | `ai` (Vercel AI SDK) | Generic agentic step loop (`generateText`, `Tool<>`) | First-class typed Tool support; agent loop owns the step counter | workflows |
 | `@modelcontextprotocol/sdk` | MCP server protocol | First-class TS MCP support | mcp |
 | `commander` | CLI argument parser | Mature, Bun-compatible, typed options | cli |

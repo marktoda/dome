@@ -53,7 +53,7 @@ Dome ships a minimal headless agent loop in `@dome/sdk` for non-interactive cont
 - Intake hook handlers (when a declarative hook invokes a workflow against a dropped file).
 - CLI commands that map to workflows (`dome lint`, `dome export-context <topic>`).
 
-This loop uses `@anthropic-ai/sdk` directly. It loads the named workflow prompt, binds the listed Tools, runs the loop until the LLM produces a stop turn, then returns. It is intentionally minimal — not a chat surface; not interactive; one workflow per invocation.
+This loop uses `@ai-sdk/anthropic` directly. It loads the named workflow prompt, binds the listed Tools, runs the loop until the LLM produces a stop turn, then returns. It is intentionally minimal — not a chat surface; not interactive; one workflow per invocation.
 
 ### Other MCP-capable harnesses (Cursor, OpenCode, Codex CLI, future)
 

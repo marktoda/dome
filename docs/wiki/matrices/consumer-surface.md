@@ -14,7 +14,7 @@ The matrix is the structural realization of [[wiki/invariants/CORE_HAS_NO_LLM_OR
 ## Entrypoint legend
 
 - `core` — `@dome/sdk` (the package root: `src/index.ts`). No LLM, no MCP.
-- `workflows` — `@dome/sdk/workflows`. Carries `@anthropic-ai/sdk` + `ai`.
+- `workflows` — `@dome/sdk/workflows`. Carries `@ai-sdk/anthropic` + `ai`.
 - `mcp` — `@dome/sdk/mcp`. Carries `@modelcontextprotocol/sdk`.
 - `cli` — `@dome/sdk/cli`. Carries `commander`.
 - `core + <entrypoint>` — **compound cell.** The consumer reaches the symbol through more than one entrypoint (e.g., `Vault` from core + the `projectMcp(vault)` projection from `mcp`). The bundling-axiom test treats each named entrypoint as a separate transitive-dep contributor: a compound `core + mcp` cell pulls the MCP deps; `core + workflows` pulls the LLM deps. A cell labeled just `core` must reach its symbol through `core` *only*.
@@ -37,7 +37,7 @@ The matrix is the structural realization of [[wiki/invariants/CORE_HAS_NO_LLM_OR
 ## Reading the matrix
 
 - **A consumer whose row has only `core` and `—` cells** transitively pulls only the dependencies in [[wiki/specs/sdk-surface]] §"Dependencies" entrypoint-scope `core`: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`. No LLM, no MCP, no Commander. The bundle-deps test pins this for the `@dome/sdk` entrypoint itself; a consumer that respects the cell labels gets the same guarantee transitively.
-- **A row with a `workflows` cell or a `core + workflows` compound cell** adds `@anthropic-ai/sdk` + `ai`. The mobile and voice rows deliberately omit this — they capture-and-store, they don't drive the LLM loop.
+- **A row with a `workflows` cell or a `core + workflows` compound cell** adds `@ai-sdk/anthropic` + `ai`. The mobile and voice rows deliberately omit this — they capture-and-store, they don't drive the LLM loop.
 - **A row with an `mcp` cell or a `core + mcp` compound cell** adds `@modelcontextprotocol/sdk`. The CLI and eval rows omit it — the CLI invokes the headless agent loop directly; eval doesn't speak MCP.
 - **Compound cells (`core + <entrypoint>`)** mean the consumer's import of that symbol family spans two entrypoints. Example: the MCP server's Tools cell reads `core + mcp` because the server holds a `BoundToolSurface` from core (`vault.tools`) AND reaches `projectMcp(vault)` from `mcp` for the raw-input parsers. Both deps stack.
 - **Speculative entrypoints in cell text** (`future-http`) are intentionally non-normative annotations: the matrix says "when this entrypoint exists, this is where the symbol would live" without committing v0.5 to ship it. They are not in the legend; they ride as inline annotations only.
