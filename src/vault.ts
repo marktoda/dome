@@ -51,27 +51,10 @@ export interface Vault {
   readonly pageTypes: PageTypesConfig;
   readonly tools: BoundToolSurface;
   /**
-   * The AI SDK `ToolSet` curried against this Vault — the same Tools as
-   * `tools`, just shaped for `generateText` consumption. `runWorkflow`
-   * filters this to the workflow's declared subset; no separate construction
-   * step. Adding an 8th Tool to the registry makes it available here for
-   * free.
-   */
-  readonly aiTools: import("ai").ToolSet;
-  /**
-   * Per-Tool parse-and-invoke functions for transports that deliver raw
-   * input (the MCP adapter, future HTTP/SSE surfaces). Each function parses
-   * the input through its Zod schema, compacts the result, and invokes the
-   * underlying Tool — sharing the same execution path the AI SDK consumer
-   * uses. Keyed by canonical Tool name.
-   */
-  readonly toolParsers: Readonly<
-    Record<import("./tools/registry").ToolName, (input: unknown) => Promise<import("./types").ToolReturn<unknown>>>
-  >;
-  /**
-   * Wait for all async hooks dispatched so far to settle.
-   * Built-in shipped-default hooks are async by default; tests and reconcile
-   * call this to ensure deterministic state.
+   * Wait for all async hooks dispatched so far AND any in-flight quarantine
+   * persistence writes to settle. Idempotent — re-callable any number of times.
+   * Tests, `dome reconcile`, and `vault.close()` call this to reach a
+   * deterministic state.
    */
   drainHooks: () => Promise<void>;
   /**
@@ -93,6 +76,20 @@ export interface Vault {
    * reaching into the writer, which is intentionally not exported.
    */
   rebuildIndex: () => Promise<void>;
+  /**
+   * Release the Vault. One-shot. Drains hooks and any in-flight quarantine
+   * persistence; releases Vault-owned resources (the p-queue inside
+   * HookDispatcher; any file handles held by the quarantine-store factory).
+   *
+   * Watchers are caller-owned and NOT stopped by this call — even ones that
+   * were dispatching into vault.dispatchEvents(...). The caller-owns-resource
+   * pattern mirrors Bun's file handles: whoever opened it, closes it.
+   *
+   * Calling vault.tools.X after close() is undefined behavior in v0.5; future
+   * versions may add a guard. See docs/wiki/specs/sdk-surface.md
+   * §"Vault lifecycle".
+   */
+  close: () => Promise<void>;
 }
 
 /**
@@ -239,7 +236,13 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     return out;
   };
 
-  const { tools, aiTools, parsers: toolParsers } = bindTools(partial, privilegedWriter, wrapMutation);
+  // Only the strict-input BoundToolSurface is held on Vault. The AI-SDK
+  // ToolSet and per-Tool parsers used to live on Vault.aiTools / .toolParsers;
+  // they now live in entrypoint-scoped projectAiSdk(vault) / projectMcp(vault)
+  // helpers (in @dome/sdk/workflows and @dome/sdk/mcp respectively). This
+  // is what makes CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY structurally true:
+  // openVault no longer needs to import `ai` to construct aiTools eagerly.
+  const { tools } = bindTools(partial, privilegedWriter, wrapMutation);
 
   // Walk wiki/ and rewrite index.md from scratch via the privileged writer.
   // Exposed as `vault.rebuildIndex()` so the CLI's `dome doctor --rebuild-index`
@@ -255,27 +258,32 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     }
   };
 
+  // drainHooks waits for both the dispatcher's async queue AND any
+  // in-flight quarantine-persistence writes. The latter is load-bearing
+  // because dome serve quarantining a handler on its final event needs
+  // the .dome/state/quarantined.json write to land before the process
+  // exits — otherwise dome doctor on the next CLI invocation sees an
+  // empty quarantine and the failing handler re-fires. The contract
+  // ("quarantine survives across processes") in hooks.md §"Execution
+  // model" Failure model depends on both drains completing.
+  const drainHooks = async (): Promise<void> => {
+    await hookDispatcher.drain();
+    await registry.flushPersist();
+  };
+
   const vault: Vault = {
     path: root,
     config,
     pageTypes,
     tools,
-    aiTools,
-    toolParsers,
-    // drainHooks waits for both the dispatcher's async queue AND any
-    // in-flight quarantine-persistence writes. The latter is load-bearing
-    // because dome serve quarantining a handler on its final event needs
-    // the .dome/state/quarantined.json write to land before the process
-    // exits — otherwise dome doctor on the next CLI invocation sees an
-    // empty quarantine and the failing handler re-fires. The contract
-    // ("quarantine survives across processes") in hooks.md §"Execution
-    // model" Failure model depends on both drains completing.
-    drainHooks: async () => {
-      await hookDispatcher.drain();
-      await registry.flushPersist();
-    },
+    drainHooks,
     dispatchEvents,
     rebuildIndex,
+    // close() is one-shot per docs/wiki/specs/sdk-surface.md §"Vault lifecycle".
+    // Drains hooks (settles the p-queue + flushPersist) and releases
+    // Vault-owned resources. Watchers are caller-owned and not stopped here —
+    // even ones that were dispatching into vault.dispatchEvents(...).
+    close: drainHooks,
   };
 
   // Load declarative hook YAMLs LAST — after the vault is fully constructed —
