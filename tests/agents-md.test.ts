@@ -37,6 +37,22 @@ describe("buildAgentsMdTemplated", () => {
     expect(out).toContain("docs/wiki/invariants/");
     expect(out.toLowerCase()).toContain("offline");
   });
+
+  test("includes the full canonical invariant set, including axioms", () => {
+    const out = buildAgentsMdTemplated(SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES, ["ingest"]);
+    // Axioms (enforced structurally regardless of config) must appear.
+    expect(out).toContain("RAW_IS_IMMUTABLE");
+    expect(out).toContain("HOOKS_CANNOT_BYPASS_TOOLS");
+    expect(out).toContain("INDEX_AND_LOG_ARE_DISPATCHER_OWNED");
+    expect(out).toContain("MARKDOWN_IS_SOURCE_OF_TRUTH");
+    expect(out).toContain("VAULT_IS_GIT_REPO");
+    // Shipped-default invariants present in SHIPPED_VAULT_CONFIG must appear.
+    expect(out).toContain("EVERY_WRITE_IS_LOGGED");
+    expect(out).toContain("PAGE_TYPE_BY_DIRECTORY");
+    // Newly added compiler-reframe invariants must appear.
+    expect(out).toContain("AGENTS_MD_IS_ORIENTATION_SURFACE");
+    expect(out).toContain("VAULT_RECONCILES_AFTER_NATIVE_WRITE");
+  });
 });
 
 describe("buildInitialAgentsMd", () => {

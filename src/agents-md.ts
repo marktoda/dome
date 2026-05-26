@@ -5,6 +5,7 @@
 // preserved verbatim across every --repair call).
 
 import type { VaultConfig, PageTypesConfig } from "./vault";
+import { INVARIANTS } from "./types";
 
 export const USER_PROSE_BEGIN = "<!-- BEGIN user-prose -->";
 export const USER_PROSE_END = "<!-- END user-prose -->";
@@ -19,10 +20,13 @@ export function buildAgentsMdTemplated(
   pageTypes: PageTypesConfig,
   workflowNames: ReadonlyArray<string>,
 ): string {
-  const enabledInvariants = Object.entries(config.invariants)
-    .filter(([, status]) => status === "enabled")
-    .map(([name]) => name)
-    .sort();
+  // Enumerate the full canonical invariant set so AGENTS.md reflects the
+  // system's actual enforcement surface (axioms + shipped-default config +
+  // opt-in flags), not just the subset flipped on in this vault's config.
+  // Per AGENTS_MD_IS_ORIENTATION_SURFACE: the orientation surface must
+  // teach the agent the vault's invariant set, not the runtime config slice.
+  void config; // kept in the signature for backwards-compatible callers
+  const allInvariants = Object.values(INVARIANTS).sort();
 
   const allPageTypes = [
     ...pageTypes.defaults,
@@ -52,7 +56,7 @@ substrate lives at \`docs/wiki/invariants/\` and \`docs/wiki/specs/\`.
 
 ## Enabled invariants
 
-${enabledInvariants.map(n => `- \`${n}\``).join("\n")}
+${allInvariants.map(n => `- \`${n}\``).join("\n")}
 
 See \`docs/wiki/invariants/\` for the canonical definitions.
 
