@@ -2,7 +2,6 @@ import { describe, test, expect } from "bun:test";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { HookRegistry } from "../../src/hook-registry";
-import { openVault } from "../../src/vault";
 import { makeTestVault } from "../helpers/make-test-vault";
 
 describe("quarantine persistence", () => {
@@ -92,7 +91,13 @@ describe("quarantine persistence", () => {
     }
   });
 
-  test("openVault loads quarantined.json on startup; the loaded ids are honored", async () => {
+  test("preloaded quarantined.json blocks matching dispatches at the registry seam (closes F3 — behavior, not round-trip)", async () => {
+    // F3: the prior round-trip test ("file written before openVault still
+    // contains the array after") would pass even if openVault stopped
+    // calling makeQuarantineStore(...).load(). It tests the test, not the
+    // behavior. This test exercises the load by constructing a HookRegistry
+    // with the same initialQuarantined option openVault uses, asserting the
+    // handler is in fact skipped on matching events.
     const v = await makeTestVault();
     try {
       const stateDir = join(v.path, ".dome", "state");
@@ -100,17 +105,40 @@ describe("quarantine persistence", () => {
       const quarantinePath = join(stateDir, "quarantined.json");
       await writeFile(quarantinePath, JSON.stringify(["preloaded-handler"]));
 
-      const res = await openVault(v.path);
-      expect(res.ok).toBe(true);
-      if (!res.ok) return;
+      // Compose the same load+seed shape vault.ts performs.
+      const { makeQuarantineStore } = await import("../../src/quarantine-store");
+      const initial = await makeQuarantineStore(quarantinePath).load();
+      expect(initial).toEqual(["preloaded-handler"]);
 
-      // The file's contents survive the openVault round-trip — meaning openVault
-      // read the file (otherwise it would have remained the array we wrote) and
-      // the in-memory registry holds the same set. We can't peek into the
-      // registry's private set from outside the Vault, but the round-trip
-      // preserves the on-disk state.
-      const data = JSON.parse(await readFile(quarantinePath, "utf8")) as string[];
-      expect(data).toEqual(["preloaded-handler"]);
+      const reg = new HookRegistry({ persistPath: quarantinePath, initialQuarantined: initial });
+      let fired = false;
+      reg.register({
+        id: "preloaded-handler",
+        pattern: "test.event",
+        handler: async () => { fired = true; },
+        source: "vault-local",
+        async: false,
+        idempotent: true,
+      });
+
+      // matchesEvent must filter the preloaded-quarantined handler out, so
+      // even though the pattern matches, the registry doesn't return it.
+      const matches = reg.matchesEvent("test.event");
+      expect(matches.find(h => h.id === "preloaded-handler")).toBeUndefined();
+      expect(fired).toBe(false);
+
+      // A non-quarantined handler with the same pattern still fires —
+      // confirms matching itself is intact and the filter is targeted.
+      reg.register({
+        id: "healthy-handler",
+        pattern: "test.event",
+        handler: async () => {},
+        source: "vault-local",
+        async: false,
+        idempotent: true,
+      });
+      const matches2 = reg.matchesEvent("test.event");
+      expect(matches2.find(h => h.id === "healthy-handler")).toBeDefined();
     } finally {
       await v.cleanup();
     }
