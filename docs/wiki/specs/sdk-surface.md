@@ -262,7 +262,11 @@ This is the **anti-concept list**: things future contributors might be tempted t
 
 - **Language**: TypeScript 5.x
 - **Runtime**: Bun 1.x. The SDK uses Bun's native APIs where they're cleaner (file watcher, test runner, bundler). It does not depend on Node-only modules.
-- **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package.
+- **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package with two entrypoints:
+  - `@dome/sdk` — the core SDK (Vault, Document, Tool, Hook, types, registrations, MCP). What a programmatic consumer or non-CLI shell embeds.
+  - `@dome/sdk/cli` — the CLI shell (`runCli`, the seven `dome*` command functions, `CliError`, `renderCliError`). The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here.
+
+  The split is wired via `package.json` `exports`. A future mobile / web / voice shell consumes only `@dome/sdk` and never pulls Commander or the seven `dome <cmd>` implementations into its bundle.
 - **MCP server**: `bun run dome serve` invokes the MCP server using `@modelcontextprotocol/sdk`; see [[wiki/specs/mcp-surface]].
 
 ### Dependencies (v0.5 baseline)

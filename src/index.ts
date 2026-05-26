@@ -83,7 +83,7 @@ export {
   type ToolName,
 } from "./tools/registry";
 
-// Stage 4: MCP server + CLI
+// Stage 4: MCP server.
 // `McpToolName` (PascalCase keyed object) is a backwards-compat alias over
 // `MCP_TOOL_NAMES` above; both re-export the same canonical strings.
 export { McpToolName } from "./mcp/tool-names";
@@ -91,17 +91,9 @@ export { buildToolAdapters, type ToolAdapter } from "./mcp/tool-adapters";
 export { buildPromptAdapters, type PromptAdapter } from "./mcp/prompt-adapters";
 export { ResourceAdapter, ResourceUri, type ResourceContent } from "./mcp/resource-adapters";
 export { DomeMcpServer, type DomeMcpServerOpts } from "./mcp/server";
-export { DoctorFlag, DOCTOR_FLAGS } from "./cli/doctor-flag";
-export { runCli, ExitCode } from "./cli/cli";
-export { domeInit } from "./cli/commands/init";
-export { domeReconcile } from "./cli/commands/reconcile";
-export { domeDoctor, type DoctorReport } from "./cli/commands/doctor";
-export { domeLint } from "./cli/commands/lint";
-export { domeMigrate } from "./cli/commands/migrate";
-export { domeExportContext } from "./cli/commands/export-context";
-export { domeServe, type ServeHandle } from "./cli/commands/serve";
-// CLI-layer error surface. `CliError` extends core `ToolError` with the
-// pre-flight `missing-api-key` shape; `renderCliError` is the default
-// one-line stderr formatter consumer shells can reuse.
-export { type CliError, type MissingApiKeyError } from "./cli/cli-error";
-export { renderCliError } from "./cli/render-error";
+
+// The CLI shell surface — `runCli`, the seven `dome*` command functions,
+// `CliError` / `renderCliError`, and the doctor-flag helpers — lives at a
+// separate entrypoint: import from `@dome/sdk/cli` (mapped via package.json
+// `exports` to `src/cli/index.ts`). Consumers that only need the core SDK
+// (Vault, Tools, Hooks, MCP) don't pull the CLI bundle.

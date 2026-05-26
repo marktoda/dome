@@ -5,6 +5,16 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./cli": {
+      "types": "./src/cli/index.ts",
+      "default": "./src/cli/index.ts"
+    }
+  },
   "bin": {
     "dome": "bin/dome"
   },
