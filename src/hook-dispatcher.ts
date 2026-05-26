@@ -1,4 +1,5 @@
 import PQueue from "p-queue";
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { HookContext, HookEvent } from "./hook-context";
 import type { HookRegistry, RegisteredHook } from "./hook-registry";
 import type { Dispatcher } from "./dispatcher";
@@ -30,6 +31,17 @@ export interface DispatcherCtxFactory {
   dispatcher: Dispatcher;
 }
 
+/**
+ * Per-dispatch-chain causation storage. When a hook handler invokes a Tool
+ * (via ctx.tools.X), the Tool's effects produce events that flow back into
+ * dispatchEvents; without ambient causation tracking, that re-entry resets
+ * the chain to [] and the depth-net never sees the depth. AsyncLocalStorage
+ * carries the active chain across the await boundary into the wrap() closure
+ * and into vault.dispatchEvents, so hook -> Tool -> projected event -> hook
+ * re-entry sees the full causal lineage.
+ */
+const causationStore = new AsyncLocalStorage<CausationLink[]>();
+
 export class HookDispatcher {
   private queue: PQueue;
   private maxDepth: number;
@@ -45,7 +57,11 @@ export class HookDispatcher {
   }
 
   async dispatchEvents(events: ReadonlyArray<HookEvent>, ctxFactory: DispatcherCtxFactory): Promise<void> {
-    await this.dispatchEventsWithCausation(events, ctxFactory, []);
+    // Pick up any ambient causation chain — when a hook handler invokes a
+    // Tool whose Effects re-enter dispatchEvents, we want this re-entry to
+    // extend the existing chain, not reset to [].
+    const ambient = causationStore.getStore() ?? [];
+    await this.dispatchEventsWithCausation(events, ctxFactory, ambient);
   }
 
   async dispatchEventsWithCausation(
@@ -77,7 +93,7 @@ export class HookDispatcher {
           });
           continue;
         }
-        await this.invoke(h, event, ctxFactory);
+        await this.invoke(h, event, ctxFactory, causation);
       }
       // Async hooks enqueue.
       for (const h of asyn) {
@@ -89,7 +105,12 @@ export class HookDispatcher {
           });
           continue;
         }
-        this.queue.add(() => this.invoke(h, event, ctxFactory));
+        // p-queue's add returns a promise we don't await here (fire-and-forget
+        // until drainHooks). Capture the current causation snapshot so the
+        // async invocation extends it rather than picking up some other
+        // chain that happens to be ambient when the queued task runs.
+        const queuedCausation = [...causation];
+        this.queue.add(() => this.invoke(h, event, ctxFactory, queuedCausation));
       }
     }
   }
@@ -102,15 +123,24 @@ export class HookDispatcher {
   private async invoke(
     hook: RegisteredHook,
     event: HookEvent,
-    ctxFactory: DispatcherCtxFactory
+    ctxFactory: DispatcherCtxFactory,
+    causation: ReadonlyArray<CausationLink>,
   ): Promise<void> {
     // HOOKS_CANNOT_BYPASS_TOOLS — built-in (sdk) hooks alone get the
     // privileged dispatcher; plugin and vault-local hooks see undefined.
     const ctx: HookContext = hook.source === "sdk"
       ? { ...ctxFactory.baseCtx, dispatcher: ctxFactory.dispatcher }
       : { ...ctxFactory.baseCtx };
+    // Extend the causation chain with this handler's (id, target) link and
+    // park it in AsyncLocalStorage so any Tool the handler invokes -> any
+    // Effect those Tools emit -> any event projected from those Effects ->
+    // any re-entry into dispatchEvents picks up THIS chain rather than
+    // restarting from []. This is what makes the depth safety net and the
+    // multi-hop cycle check reachable.
+    const targetPath = (event.path as string | undefined) ?? "";
+    const extended: CausationLink[] = [...causation, { handlerId: hook.id, targetPath }];
     try {
-      await hook.handler(event, ctx);
+      await causationStore.run(extended, () => hook.handler(event, ctx));
       this.registry.recordSuccess(hook.id);
     } catch {
       this.registry.recordFailure(hook.id);
