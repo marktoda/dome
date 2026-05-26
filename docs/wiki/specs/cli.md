@@ -127,7 +127,7 @@ Re-invokes the `lint` workflow with the named finding id(s) as its user message:
 1. Locates the most recent lint report under `inbox/review/lint-report-*.md` (lexically newest filename — reports are dated).
 2. Finds the finding whose id matches `<id>` (most-recent `Pass N` section wins if the same id appears in multiple passes).
 3. Executes the recommendation via Dome's Tools (`writeDocument`, `moveDocument`, or `deleteDocument` as the recommendation requires). Every mutation is logged per [[wiki/invariants/EVERY_WRITE_IS_LOGGED]].
-4. Appends an `Applied: YYYY-MM-DDTHH:MM:SSZ` annotation to the originating finding's entry in the report (idempotent: a re-apply against an already-applied finding refuses with exit nonzero rather than mutating twice).
+4. Appends an `**Applied:** YYYY-MM-DDTHH:MM:SSZ` annotation (bold-marked, ISO-8601 UTC) to the originating finding's entry in the report (idempotent: a re-apply against an already-applied finding refuses with exit nonzero rather than mutating twice). On failure, the annotation is `**Apply-failed:** YYYY-MM-DDTHH:MM:SSZ — <reason>` (same bold/timestamp shape; reason follows after an em-dash).
 5. Exits 0 on success; nonzero if (a) the finding id is absent from the most recent report, (b) the recommendation cannot be safely executed (target moved out of band, conflicting newer state), (c) the report itself is missing, or (d) the finding is marked `(advisory)` and requires human judgment outside the workflow's scope. Failed applies record an `Apply-failed: <reason>` annotation on the finding before exiting.
 
 When multiple ids are passed (`--apply H1 --apply H2`), apply proceeds through the list independently; a per-id failure does not abort the remaining ids. The CLI exits nonzero if any id failed, with a per-id summary on stderr naming each id's outcome (applied / failed / refused).
@@ -203,6 +203,15 @@ This is the antidote to pinned-thread chaos: paste the output into ChatGPT / Cur
 ## Implementation note
 
 CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `reconcile`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 600 LOC; most of the work lives in the workflows and Tools.
+
+### The shared `--apply` idiom
+
+Workflow-driven commands that produce proposals (a migration plan, a lint report) share the `--apply` flag as the user's confirmation gesture — *"you previously proposed something; now execute it."* The type varies with the granularity of the proposal:
+
+- `dome migrate --apply` — boolean. The migration plan is a single artifact; `--apply` executes it whole.
+- `dome lint --apply <id>` — repeatable string. Lint reports carry per-finding ids (`H1`, `M2`, ...); `--apply <id>` targets one, repeatable for multi-id.
+
+The shared flag name signals shared semantics (propose-then-apply); the divergent type signals divergent granularity (whole-plan vs per-finding). A future per-step targeting on migrate (or `--apply --all` on lint) is the moment to revisit naming; for v0.5, the consistent vocabulary across workflow commands is worth more than perfectly-disjoint flag names.
 
 ### Errors at the consumer-shell boundary
 

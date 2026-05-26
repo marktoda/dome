@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { MockLanguageModelV3 } from "ai/test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { domeInit } from "../../src/cli/commands/init";
@@ -93,6 +93,39 @@ describe("dome lint two-mode invocation", () => {
       // Order-preserving join with single-space separator matches the
       // workflow prompt's apply-mode dispatch shape.
       expect(user).toContain("apply H1 H2");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("apply mode refuses on dirty git state (mid-merge guard, mirrors reconcile)", async () => {
+    // The spec at wiki/specs/cli.md §"Apply mode" promises:
+    //   "Refuses to run if the vault is mid-merge / mid-rebase — same guard
+    //    as `dome reconcile`."
+    // Pins that domeLint's apply-mode branch enforces this before dispatching
+    // the workflow. Without this test, a refactor that drops the guard from
+    // lint.ts would pass commander wiring + the isDirtyGitState predicate
+    // test but break the user-facing contract silently.
+    const base = await mkdtemp(join(tmpdir(), "dome-lint-midmerge-"));
+    const target = join(base, "v");
+    try {
+      const initRes = await domeInit(target);
+      expect(initRes.ok).toBe(true);
+      // Simulate a mid-merge state by writing the marker file isomorphic-git
+      // and isDirtyGitState() check for. Real merges write more state, but
+      // for the guard's purposes the marker presence is sufficient.
+      await writeFile(join(target, ".git", "MERGE_HEAD"), "abc123\n");
+
+      const mock = makeNoopMockModel();
+      const res = await domeLint(target, { model: mock, skipCommit: true }, ["H1"]);
+      expect(res.ok).toBe(false);
+      if (!res.ok && res.error.kind === "validation") {
+        expect(res.error.message.toLowerCase()).toContain("dirty git state");
+      } else if (!res.ok) {
+        throw new Error(`expected validation error, got: ${res.error.kind}`);
+      }
+      // No workflow dispatch — the guard fired before runWorkflowAtPath.
+      expect(mock.doGenerateCalls.length).toBe(0);
     } finally {
       await rm(base, { recursive: true, force: true });
     }

@@ -281,13 +281,24 @@ function buildProgram(outcome: RunOutcome): Command {
       console.error(`lint complete: ${r.value.steps} step(s)`);
 
       // Multi-id exit-code semantics per wiki/specs/cli.md §"Apply mode":
-      // exit nonzero if any id reported failed/refused. The workflow's
-      // summary text is free-form; substring match against the canonical
-      // annotation markers from src/prompts/builtin/lint.md §"Apply mode".
+      // exit nonzero if any id reported failed/refused. Parse the workflow's
+      // structured `summary:` line per src/prompts/builtin/lint.md §"Apply mode"
+      // step 6: `summary: <id1>=<outcome1> <id2>=<outcome2> ...` with
+      // <outcome> in {applied, apply-failed, refused}.
       if (applyIds !== undefined) {
-        const lower = r.value.text.toLowerCase();
-        if (lower.includes("apply-failed") || lower.includes("refused")) {
+        const summaryMatch = r.value.text.match(/^summary:\s*(.+)$/im);
+        const summary = summaryMatch?.[1];
+        if (summary === undefined) {
+          // Apply-mode invocation without a structured summary line is
+          // itself a contract violation — treat as Failure so silent
+          // prompt regressions don't slip past CI consumers.
           outcome.code = ExitCode.Failure;
+        } else {
+          const tokens = summary.trim().split(/\s+/);
+          const hadFailure = tokens.some(
+            (t) => t.endsWith("=apply-failed") || t.endsWith("=refused"),
+          );
+          if (hadFailure) outcome.code = ExitCode.Failure;
         }
       }
     });

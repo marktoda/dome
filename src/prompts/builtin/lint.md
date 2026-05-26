@@ -64,6 +64,12 @@ The user message is `apply <id>` or `apply <id1> <id2> ...`. For each id, in ord
 
    Then move on to the next id. A failed apply does not abort the remaining ids.
 
-6. **Summarize.** After all ids have been processed, return a brief summary naming each id and its outcome (applied / failed / refused).
+6. **Summarize.** After all ids have been processed, return a brief prose summary describing what happened, followed by a structured final line of the form:
+
+   ```
+   summary: <id1>=<outcome1> <id2>=<outcome2> ...
+   ```
+
+   where `<outcome>` is one of `applied`, `apply-failed`, or `refused` (matching the annotation case in step 5). One token per id, whitespace-separated, in invocation order. This line is the CLI's structural enforcement seam — `dome lint --apply` parses it to derive its exit code (any non-`applied` outcome → nonzero). The token vocabulary is load-bearing; drift breaks the contract silently.
 
 Apply mode treats the report as the source of truth for the recommendation. The workflow does NOT re-derive intent from current vault state; the apply-time judgment was made at propose time and is recorded in the report. If apply-time vault state has drifted enough that the recommendation no longer makes sense, that is an `Apply-failed:` outcome — re-run propose to surface the new state.
