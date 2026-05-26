@@ -185,6 +185,18 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
       async: true,
       idempotent: true,
     });
+    // Watcher path: native wiki edits caught by chokidar must also update
+    // index.md per VAULT_RECONCILES_AFTER_NATIVE_WRITE.md §"Structural
+    // enforcement" path 1. The handler filters to wiki/ paths and
+    // discriminates fsKind ("deleted" → removeIndexEntry; else writeIndex).
+    registry.register({
+      id: "auto-update-index-oob",
+      pattern: "vault.out-of-band-edit",
+      handler: autoUpdateIndex,
+      source: "sdk",
+      async: true,
+      idempotent: true,
+    });
   }
   if (config.hooks.builtin["auto-cross-reference"] === "enabled") {
     registry.register({

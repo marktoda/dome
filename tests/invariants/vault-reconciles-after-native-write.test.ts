@@ -104,6 +104,41 @@ describe("VAULT_RECONCILES_AFTER_NATIVE_WRITE", () => {
     }
   });
 
+  test("native fs.writeFile + VaultWatcher → index.md updated via auto-update-index on the watcher path", async () => {
+    const v = await makeTestVault();
+    try {
+      const r = await openVault(v.path);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const vault = r.value;
+
+      const { VaultWatcher } = await import("../../src/watcher");
+      const watcher = new VaultWatcher(vault.path, (event) => {
+        void vault.dispatchEvents([event]);
+      });
+      await watcher.start();
+      try {
+        await mkdir(join(vault.path, "wiki", "entities"), { recursive: true });
+        await writeFile(
+          join(vault.path, "wiki", "entities", "watcher-target.md"),
+          "---\ntype: entity\ncreated: 2026-05-26\nupdated: 2026-05-26\nsources: []\n---\n# Watcher target\n",
+        );
+        await new Promise(r => setTimeout(r, 1200));
+        await vault.drainHooks();
+
+        // Per VAULT_RECONCILES_AFTER_NATIVE_WRITE.md §"Structural enforcement"
+        // path 1: auto-update-index runs on the watcher event so index.md
+        // reflects the new file before the next dome reconcile.
+        const indexBody = await readFile(join(vault.path, "index.md"), "utf8");
+        expect(indexBody).toContain("wiki/entities/watcher-target");
+      } finally {
+        await watcher.stop();
+      }
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("native fs.writeFile + VaultWatcher → log.md gains an out-of-band entry via the shipped-default hook", async () => {
     const v = await makeTestVault();
     try {
