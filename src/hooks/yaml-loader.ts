@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { HookHandler, HookEvent, HookContext } from "../hook-context";
 import type { HookRegistry } from "../hook-registry";
+import type { Vault } from "../vault";
 import { isWorkflowName, type WorkflowName } from "../workflows/workflow-name";
 
 /** Declarative-hook YAML shape, validated by `parseDeclarativeHook`. */
@@ -40,21 +41,12 @@ interface ParsedDeclarativeHook {
 }
 
 /**
- * The vault-shaped object runWorkflow needs. Typed thinly here to avoid the
- * circular import from `../vault.ts` → this module via `../workflows/agent-loop`.
- * The loader takes it as a closure parameter so handler invocations have a
- * direct reference rather than fishing it out of the HookContext.
- */
-export type VaultForWorkflow = Parameters<
-  typeof import("../workflows/agent-loop").runWorkflow
->[0];
-
-/**
  * Optional override for the runWorkflow function the loader invokes from each
  * registered handler. Tests pass a stub here to capture invocations without
  * touching the LLM; production code (openVault) leaves it undefined, and the
- * loader lazy-imports the real runWorkflow (avoiding a circular dep with
- * `workflows/agent-loop.ts`).
+ * loader lazy-imports the real runWorkflow (avoiding a runtime cycle with
+ * `workflows/agent-loop.ts` — agent-loop imports Vault, vault.ts imports this
+ * module, so going the other direction at runtime would loop).
  *
  * This shape is the test seam: previously the test suite used Bun's
  * `mock.module` to stub agent-loop globally, which polluted later-loaded
@@ -62,7 +54,7 @@ export type VaultForWorkflow = Parameters<
  * doesn't bleed across files.
  */
 export type RunWorkflowFn = (
-  vault: VaultForWorkflow,
+  vault: Vault,
   workflowName: WorkflowName,
   userMessage: string,
 ) => Promise<unknown>;
@@ -78,7 +70,7 @@ export type RunWorkflowFn = (
  * loader does not throw; bad YAML simply doesn't register, the rest do.
  */
 export async function loadDeclarativeHooks(
-  vault: VaultForWorkflow,
+  vault: Vault,
   registry: HookRegistry,
   opts: {
     onLoadError?: (file: string, error: string) => void;
@@ -144,7 +136,7 @@ function parseDeclarativeHook(filename: string, text: string): ParsedDeclarative
 }
 
 function makeHandler(
-  vault: VaultForWorkflow,
+  vault: Vault,
   parsed: ParsedDeclarativeHook,
   injectedRunWorkflow: RunWorkflowFn | undefined,
 ): HookHandler {
