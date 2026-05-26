@@ -26,17 +26,17 @@ The server holds exactly one Vault open per invocation. To serve multiple vaults
 
 The MCP server exposes one MCP tool per SDK Tool, name-preserving (snake_case in MCP, camelCase in the SDK). The SDK has seven Tools; the MCP surface has seven matching MCP tools.
 
-| MCP tool name | SDK Tool | Input schema | Output |
+| MCP tool name | SDK Tool | Input schema | Output (the inner `Result<T,E>`) |
 |---|---|---|---|
 | `dome.read_document` | `readDocument` | `{ path: string }` | Document (frontmatter, body, links_out) |
-| `dome.write_document` | `writeDocument` | `{ path, body, frontmatter, opts?: { create?, reason?, sensitivity_classified? } }` — see [[wiki/specs/sdk-surface]] §"Tool signatures" for the canonical shape | `{ ok, effects }` or `{ ok: false, error }` |
-| `dome.append_log` | `appendLog` | `{ verb, subject, body, refs }` | `{ ok }` |
+| `dome.write_document` | `writeDocument` | `{ path, body, frontmatter, opts?: { create?, reason?, sensitivity_classified? } }` — see [[wiki/specs/sdk-surface]] §"Tool signatures" for the canonical shape | created/updated Document, or `ToolError` |
+| `dome.append_log` | `appendLog` | `{ verb, subject, body, refs }` | appended `LogEntry`, or `ToolError` |
 | `dome.search_index` | `searchIndex` | `{ query, filters? }` | array of matches with paths and excerpts |
 | `dome.wikilink_resolve` | `wikilinkResolve` | `{ link: string }` | Document or null |
-| `dome.move_document` | `moveDocument` | `{ from, to, reason }` | `{ ok, effects }` or `{ ok: false, error }` |
-| `dome.delete_document` | `deleteDocument` | `{ path, reason }` | `{ ok, effects }` or `{ ok: false, error }` |
+| `dome.move_document` | `moveDocument` | `{ from, to, reason }` | moved Document, or `ToolError` |
+| `dome.delete_document` | `deleteDocument` | `{ path, reason }` | void, or `ToolError` |
 
-Input schemas are Zod-derived JSON Schema; MCP clients (Claude Code, etc.) consume these to render the tool to the LLM. Output shapes preserve the SDK's `Result<T, E>` discrimination: errors come back as `{ ok: false, error: { kind, detail } }` so the harness can present them.
+Input schemas are Zod-derived JSON Schema; MCP clients (Claude Code, etc.) consume these to render the tool to the LLM. Output shapes preserve the SDK's `Result<T, E>` discrimination: success is JSON-encoded into MCP's `content` array; errors set MCP's `isError: true` with the structured `ToolError` JSON in `content[0].text` so the harness can present them. The Tool's `effects` from `ToolReturn<T>` are *not* serialized over the wire — the Tool already applied them side-effectfully (writes, hook dispatch) before the adapter returns.
 
 ## Prompts exposed
 

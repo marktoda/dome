@@ -2,31 +2,25 @@
 // expose it over the protocol. Adapters derive their shape from the central
 // `src/tools/registry.ts` — adding a Tool to the registry surfaces it here
 // automatically.
+//
+// The adapter's `handler` returns the inner `Result<T, ToolError>` from
+// `ToolReturn` directly. `effects` are dropped at this boundary because
+// they don't cross the MCP wire — the Tool already applied them
+// side-effectfully (writes, hook dispatch). Keeping the wrapper here means
+// the MCP handler in `handlers.ts` works against the same `Result` shape
+// the rest of the SDK uses (one less third shape to learn).
 
 import { z } from "zod";
 import type { Vault } from "../vault";
-import type { Effect, ToolReturn } from "../types";
+import type { Result, ToolError } from "../types";
 import { TOOL_NAMES, MCP_TOOL_NAMES, TOOL_REGISTRY, type ToolName } from "../tools/registry";
-
-export interface ToolAdapterResult {
-  ok: boolean;
-  data?: unknown;
-  error?: unknown;
-  effects: ReadonlyArray<Effect>;
-}
 
 export interface ToolAdapter {
   /** MCP-protocol name (snake_case, `dome.*` prefix). */
   name: string;
   description: string;
   inputSchema: z.ZodType;
-  handler: (input: unknown) => Promise<ToolAdapterResult>;
-}
-
-async function wrap<T>(invoker: () => Promise<ToolReturn<T>>): Promise<ToolAdapterResult> {
-  const out = await invoker();
-  if (out.result.ok) return { ok: true, data: out.result.value, effects: out.effects };
-  return { ok: false, error: out.result.error, effects: out.effects };
+  handler: (input: unknown) => Promise<Result<unknown, ToolError>>;
 }
 
 /**
@@ -55,7 +49,7 @@ export function buildToolAdapters(vault: Vault): ToolAdapter[] {
       name: MCP_TOOL_NAMES[name],
       description: entry.description,
       inputSchema: aiTool.inputSchema as z.ZodType,
-      handler: (input: unknown) => wrap(() => parser(input)),
+      handler: async (input: unknown) => (await parser(input)).result,
     };
   });
 }

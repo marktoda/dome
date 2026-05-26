@@ -54,7 +54,7 @@ export function registerHandlers(server: ServerLike, surface: HandlerSurface): v
     const out = await tool.handler(params.arguments ?? {});
     if (out.ok) {
       return {
-        content: [{ type: "text", text: JSON.stringify(out.data) }],
+        content: [{ type: "text", text: JSON.stringify(out.value) }],
       };
     }
     return {
