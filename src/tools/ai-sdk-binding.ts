@@ -9,7 +9,7 @@ import { tool, type Tool, type ToolSet } from "ai";
 import type { Vault } from "../vault";
 import type { PrivilegedWriter } from "../privileged-writer";
 import type { ToolReturn } from "../types";
-import { TOOL_NAMES, TOOL_REGISTRY, wrapMutatingInvoke } from "./registry";
+import { TOOL_NAMES, TOOL_REGISTRY, wrapMutatingInvoke, type ToolRegistryEntry } from "./registry";
 
 /**
  * Build the AI-SDK `ToolSet` from the canonical registry. Each Tool's
@@ -26,7 +26,13 @@ import { TOOL_NAMES, TOOL_REGISTRY, wrapMutatingInvoke } from "./registry";
 export function bindAiSdkTools(vault: Vault, writer: PrivilegedWriter): ToolSet {
   const aiTools: ToolSet = {};
   for (const name of TOOL_NAMES) {
-    const entry = TOOL_REGISTRY[name];
+    // TOOL_REGISTRY[name] is a union of entry shapes; widen to the wide entry
+    // type so wrapMutatingInvoke's generics don't narrow to the first member.
+    // The runtime check inside wrapMutatingInvoke (entry.mutating) keeps the
+    // wrap logic correct regardless of the static type. Mirrors the same
+    // pattern bindTools uses in registry.ts.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const entry = TOOL_REGISTRY[name] as ToolRegistryEntry<any, any, any>;
     const invoke = wrapMutatingInvoke(entry, vault, writer);
     const aiTool = tool({
       description: entry.description,

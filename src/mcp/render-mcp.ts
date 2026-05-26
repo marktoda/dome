@@ -6,7 +6,7 @@
 import { z } from "zod";
 import type { AbstractSurface, PromptDescriptor } from "../abstract-surface";
 import type { Result, ToolError, ToolReturn } from "../types";
-import { TOOL_NAMES, MCP_TOOL_NAMES, TOOL_REGISTRY, type ToolName } from "../tools/registry";
+import { TOOL_NAMES, MCP_TOOL_NAMES, TOOL_REGISTRY, type ToolName, type ToolRegistryEntry } from "../tools/registry";
 import { ResourceAdapter } from "./resource-adapters";
 
 /** MCP-protocol tool adapter shape. */
@@ -54,7 +54,9 @@ function projectPromptName(descriptor: PromptDescriptor): string {
  */
 export function renderMcp(surface: AbstractSurface): McpSurface {
   const tools: ToolAdapter[] = TOOL_NAMES.map((name: ToolName) => {
-    const entry = TOOL_REGISTRY[name];
+    // Widen the union (see ai-sdk-binding.ts / registry.ts for the same pattern).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const entry = TOOL_REGISTRY[name] as ToolRegistryEntry<any, any, any>;
     const bound = surface.tools[name];
     return {
       name: MCP_TOOL_NAMES[name],
