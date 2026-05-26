@@ -30,7 +30,7 @@ A Dome vault is a directory containing:
   inbox/                # drop-zone directories whose writes trigger hooks
     raw/                # shipped-default capture bucket (created by dome init)
     <intake-buckets>/   # opt-in intake buckets — voice/, research/, clip/ — activated via hook template + directory create
-    review/             # destination (NOT an intake) — holds `dome lint` reports awaiting user review; see wiki/specs/cli §"dome lint"
+    review/             # shipped-default destination (NOT an intake) — created by `dome init`; holds `dome lint` reports awaiting user review; see wiki/specs/cli §"dome lint"
   .dome/                # vault-internal configuration and extensions
     page-types.yaml     # allowed page types: defaults + extensions
     config.yaml         # vault configuration (invariant overrides, hook settings, etc.)

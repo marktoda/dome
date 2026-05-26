@@ -21,19 +21,19 @@ dome init ~/vaults/research
 
 Creates:
 
-- The directory tree: `raw/`, `notes/`, `wiki/{entities,concepts,sources,syntheses}/`, `inbox/raw/` (the shipped-default capture bucket), `.dome/{prompts,hooks,state}/`.
+- The directory tree: `raw/`, `notes/`, `wiki/{entities,concepts,sources,syntheses}/`, `inbox/raw/` (the shipped-default capture bucket), `inbox/review/` (the shipped-default lint-report destination per [[wiki/specs/vault-layout]]), `.dome/{prompts,hooks,state}/`.
 - `.dome/page-types.yaml` with the four default types.
 - `.dome/config.yaml` with shipped defaults enabled and opt-in features disabled.
 - `.dome/hooks/intake-raw.yaml` — the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow.
 - `.gitignore` — excludes `.dome/state/` (per-machine operational state).
 - `index.md` and `log.md` (with one bootstrap entry).
-- `AGENTS.md` at vault root — the vault-owned, cross-harness convention file. Carries cold-start orientation: how to mount Dome's MCP server, the minimum rules to honor when MCP isn't mounted, a pointer to `docs/wiki/invariants/` (and adjacent canonical-rule directories) as the offline rule surface, and a user-editable `## Vault notes` section delimited by HTML comments so a future `dome doctor --repair` can re-template the scaffolding without touching user prose. System rules deliberately live OFF this file — the MCP server delivers them as `instructions` at mount time (see [[wiki/specs/mcp-surface]] §"Session model"). Vault-owned means the SDK never clobbers it after init.
+- `AGENTS.md` at vault root — the vault-owned, cross-harness convention file. **Canonical orientation surface for agentic harnesses per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]].** Carries cold-start orientation as templated content: the vault's conventions (page-type-by-directory, wikilinks-fullpath, etc.), the enabled invariant set, the declared page types, the shipped + active workflow names, and a user-editable `## Vault notes` section delimited by HTML comments so `dome doctor --repair` can re-template the scaffolding without touching user prose. Vault-owned: `dome init` writes the initial file; `dome doctor --repair` regenerates the templated sections from current `.dome/config.yaml` + enabled-invariant set + declared page types; user-prose sections are preserved across all `--repair` runs. For harnesses that also mount the MCP server, the MCP `instructions` payload carries an equivalent system-rule render at mount time (see [[wiki/specs/mcp-surface]] §"Session model") as a secondary delivery channel — `AGENTS.md` is canonical, MCP `instructions` mirrors it.
 - `CLAUDE.md` at vault root — a thin one-line shim pointing at `AGENTS.md`. Exists only because Claude Code's auto-load convention currently prefers `CLAUDE.md`; removable once `AGENTS.md` auto-load is universal across harnesses.
 - **Initializes a git repository** and makes the initial commit (per [[wiki/invariants/VAULT_IS_GIT_REPO]]). The commit message: `chore: initialize Dome vault`. The user starts with a clean working tree and a vault that's immediately ready for use.
 
 Refuses if `<path>` already contains `.dome/` (use `dome migrate` for existing Dome vaults) OR `.git/` with prior history that wasn't created by `dome init` (the user should `dome migrate` instead to inherit their existing history cleanly).
 
-Activating opt-in features beyond `intake-raw` (sensitivity routing, voice intake, research intake, clip intake) is manual after init: copy hook templates from the SDK's `hooks/templates/` into `.dome/hooks/` and create any additional `inbox/<bucket>/` directories. A future "packs" mechanism may layer convenience over this; v0.5 keeps activation explicit.
+Activating opt-in intake features beyond `intake-raw` (voice intake, research intake, clip intake) is manual after init: copy hook templates from the SDK's `hooks/templates/` into `.dome/hooks/` and create any additional `inbox/<bucket>/` directories. A future "packs" mechanism may layer convenience over this; v0.5 keeps activation explicit.
 
 ## `dome migrate <path>`
 
@@ -110,7 +110,7 @@ Invokes the `lint` workflow prompt via the headless agent loop:
 1. Reads the wiki and index.
 2. Detects: orphan pages, stale claims, missing cross-references, contradictions, schema-violating frontmatter, out-of-band direct edits.
 3. Writes a structured report. Each finding carries a **stable id** (`<severity-letter><index>`: `H1`, `H2`, `M1`, `L1`; severities `H`igh / `M`edium / `L`ow), an optional `(advisory)` tag for findings that require human judgment the workflow cannot execute on its own (apply mode refuses these — see below), a one-line title, an Evidence paragraph with `path:line` references, and a Recommendation paragraph concrete enough that a re-invocation of this workflow can execute it without re-deriving intent.
-4. Writes the report to `inbox/review/lint-report-YYYY-MM-DD.md` if the vault has `inbox/review/` configured (the default for vaults with sensitivity routing enabled); otherwise returns the report to stdout. Repeat runs on the same date append a `Pass N` section to the existing file rather than overwriting — same-day re-runs produce a longitudinal log.
+4. Writes the report to `inbox/review/lint-report-YYYY-MM-DD.md` (the `inbox/review/` directory is shipped-default per [[wiki/specs/vault-layout]] — created by `dome init`). Repeat runs on the same date append a `Pass N` section to the existing file rather than overwriting — same-day re-runs produce a longitudinal log.
 5. Exits 0 if no findings above the configured severity threshold; nonzero otherwise.
 
 The user reviews the report in Obsidian (or any markdown editor) and decides which findings to apply.
@@ -243,15 +243,16 @@ The shared flag name signals shared semantics (propose-then-apply); the divergen
 
 Core `ToolError` (in `src/types.ts`) enumerates failures the seven Tools and `openVault` can produce. Consumer shells layer their own pre-flights on top: the CLI has `MissingApiKeyError` (raised when `ANTHROPIC_API_KEY` is unset before an LLM-driven command runs), and exposes the union as `CliError = ToolError | MissingApiKeyError`. `renderCliError` is the default one-line stderr formatter; other consumer shells (Electron, web, voice — v1+) can reuse it or supply their own. Keeping shell pre-flights out of core `ToolError` preserves the SDK-vs-consumer boundary: a shell with no env vars (mobile, web) doesn't carry an error kind it can't produce.
 
-The 7 commands map cleanly to user actions:
+The 8 commands map cleanly to user actions:
 
 | Command | Kind | When the user reaches for it |
 |---|---|---|
 | `dome init` | deterministic | First setup of a new vault |
 | `dome migrate` | workflow | Adopting Dome for an existing markdown vault |
-| `dome serve` | deterministic (with auto-reconcile at startup) | Running the MCP server + intake watcher (typically a launchd / systemd service) |
+| `dome serve` | deterministic (with auto-reconcile at startup) | Running the compiler daemon (watcher + reconcile + hooks; optional MCP server) — typically a launchd / systemd service |
 | `dome reconcile` | deterministic | Catching up after `dome serve` was off (intakes pending, out-of-band edits, missed schedules) |
-| `dome lint` | workflow | Periodic vault hygiene (weekly cron or manual) |
+| `dome lint` | workflow | Periodic vault hygiene (weekly cron or manual); apply via `dome lint --apply <id>` |
+| `dome stats` | deterministic | Glanceable snapshot of structural state (page count, hubs, log activity, contributors) |
 | `dome doctor` | deterministic | Diagnostic structural check (no LLM) |
 | `dome export-context` | workflow | Cross-AI handoff (paste context into ChatGPT / Cursor / etc.) |
 

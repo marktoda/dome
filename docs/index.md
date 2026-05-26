@@ -6,7 +6,7 @@ This vault is the Dome project's own design substrate — a Dome instance dogfoo
 
 ## Specs
 
-- [[wiki/specs/cli]] — The 7-command Dome CLI: init, migrate, serve, reconcile, lint, doctor, export-context.
+- [[wiki/specs/cli]] — The 8-command Dome CLI: init, migrate, serve, reconcile, lint, stats, doctor, export-context.
 - [[wiki/specs/harnesses]] — How Claude Code, Cursor, and future native clients mount Dome via MCP.
 - [[wiki/specs/hooks]] — Hook registration, shipped defaults, opt-in intakes, durability and reconciliation.
 - [[wiki/specs/mcp-surface]] — MCP server: one MCP tool per SDK tool.

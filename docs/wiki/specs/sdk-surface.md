@@ -131,7 +131,7 @@ Naming convention: Tools that operate on any Document use `<verb>Document`; Tool
 | `moveDocument` | Move a Document; rewrites incoming wikilinks atomically. Refuses if either path is under `raw/`. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `EVERY_WRITE_IS_LOGGED` (auto), `PAGE_TYPE_BY_DIRECTORY` |
 | `deleteDocument` | Delete a Document. Refuses under `raw/`. Fires `document.deleted.<category>.<type>` so cleanup hooks can react. | **`RAW_IS_IMMUTABLE`**, **`INDEX_AND_LOG_ARE_DISPATCHER_OWNED`**, `EVERY_WRITE_IS_LOGGED` (auto) |
 
-`writeDocument` is the universal mutation entrypoint for creates and updates. `moveDocument` atomically relocates + rewrites backlinks. `deleteDocument` removes pages cleanly (lint proposes deleting orphan pages; users retire obsolete syntheses; migrate may delete superseded files). Sensitive content writes to `inbox/review/<file>.md`; ingest writes to `wiki/<type>/<name>.md`; quick-capture writes to `inbox/raw/<ts>.md`. The path determines the category and the invariant-enforcement profile.
+`writeDocument` is the universal mutation entrypoint for creates and updates. `moveDocument` atomically relocates + rewrites backlinks. `deleteDocument` removes pages cleanly (lint proposes deleting orphan pages; users retire obsolete syntheses; migrate may delete superseded files). Ingest writes to `wiki/<type>/<name>.md`; quick-capture writes to `inbox/raw/<ts>.md`; lint reports write to `inbox/review/lint-report-YYYY-MM-DD.md`. The path determines the category and the invariant-enforcement profile.
 
 The catalog is open: plugins register additional Tools through the registration mechanism. The seven above are the entirety of what the SDK ships.
 

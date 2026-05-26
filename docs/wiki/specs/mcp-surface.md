@@ -55,7 +55,7 @@ The MCP server exposes one MCP tool per SDK Tool, name-preserving (snake_case in
 | MCP tool name | SDK Tool | Input schema | Output (the inner `Result<T,E>`) |
 |---|---|---|---|
 | `dome.read_document` | `readDocument` | `{ path: string }` | Document (frontmatter, body, links_out) |
-| `dome.write_document` | `writeDocument` | `{ path, body, frontmatter, expected_mtime?, opts?: { create?, reason?, sensitivity_classified? } }` — `expected_mtime?` threads the optimistic-locking snapshot from a prior `dome.read_document`; see [[wiki/specs/sdk-surface]] §"Tool signatures" and §"Concurrency" for the canonical shape | created/updated Document, or `ToolError` |
+| `dome.write_document` | `writeDocument` | `{ path, body, frontmatter, expected_mtime?, opts?: { create?, reason? } }` — `expected_mtime?` threads the optimistic-locking snapshot from a prior `dome.read_document`; see [[wiki/specs/sdk-surface]] §"Tool signatures" and §"Concurrency" for the canonical shape | created/updated Document, or `ToolError` |
 | `dome.append_log` | `appendLog` | `{ verb, subject, body, refs }` | appended `LogEntry`, or `ToolError` |
 | `dome.search_index` | `searchIndex` | `{ query, filters? }` | array of matches with paths and excerpts |
 | `dome.wikilink_resolve` | `wikilinkResolve` | `{ link: string }` | Document or null |

@@ -166,7 +166,7 @@ A workflow is invoked in three contexts. **The CLI is the primary invocation sur
 2. **By an intake hook (passive)** — a declarative hook's `workflow:` field names the workflow. The dispatcher loads the workflow prompt, binds the listed tools to the harness, hands the harness the document that triggered the intake, and runs. This is what makes `inbox/raw/`, `inbox/voice/`, `inbox/clip/` capture-and-compile work.
 3. **By a user intent (optional, MCP-mounted harnesses)** — when a harness mounts the Dome MCP server, its `instructions` payload describes how to switch into a workflow prompt based on user intent. This is the MCP-prompt-switching mechanism; it's available for harnesses that benefit from it (see [[wiki/specs/mcp-surface]]) but not load-bearing for Claude Code in v0.5 — Claude Code uses its native conversation flow and shells out to the CLI when explicit workflow invocation is wanted.
 
-In all three contexts, the workflow prompt's `tools:` field is the bound set. The harness cannot invoke tools outside that set during the workflow. This is the structural mechanism that prevents an `ingest` workflow from accidentally invoking `do-research`, or a `query` workflow from writing to a page when the user expected read-only behavior.
+In all three contexts, the workflow prompt's `tools:` field is the bound set. The harness cannot invoke tools outside that set during the workflow. This is the structural mechanism that prevents an `ingest` workflow from accidentally invoking `deleteDocument`, or a `query` workflow from writing to a page when the user expected read-only behavior.
 
 ## Eval suite
 

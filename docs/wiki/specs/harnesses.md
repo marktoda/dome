@@ -59,7 +59,7 @@ This loop uses `@ai-sdk/anthropic` directly. It loads the named workflow prompt,
 
 ### Other MCP-capable harnesses (Cursor, OpenCode, Codex CLI, future)
 
-Any harness that supports `AGENTS.md` (or an equivalent orientation file) and a shell-execution tool can interact with Dome via the compiler-boundary contract above — no MCP mount required. Per-harness setup is documented in `docs/wiki/sources/<harness>-setup.md` (not in this spec) as the ecosystem stabilizes.
+Any harness that supports `AGENTS.md` (or an equivalent orientation file) and a shell-execution tool can interact with Dome via the compiler-boundary contract above — no MCP mount required. Per-harness setup notes (where to put `AGENTS.md` if the harness's auto-load path differs from Claude Code's `CLAUDE.md` shim convention, how the harness exposes shell-execution to the agent, MCP-mounting examples for harnesses that benefit) land at `docs/wiki/sources/<harness>-setup.md` as each harness is added — see [[wiki/entities/claude-code]] for the reference example. The setup notes are vault-author-contributed sources, not normative SDK output; the SDK doesn't ship harness-specific configuration.
 
 A harness that *also* mounts the Dome MCP server gains the MCP tool / prompt / resource surface on top of the compiler-boundary contract. The MCP surface is additive, not exclusive.
 

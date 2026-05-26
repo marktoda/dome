@@ -95,7 +95,7 @@ The **drop-zone intake pattern** uses the declarative form exclusively. The prin
 
 ## Shipped default hooks (shipped default — enabled by default)
 
-The SDK ships two hooks as shipped defaults — enabled in every vault unless explicitly disabled in `.dome/config.yaml`:
+The SDK ships three hooks as shipped defaults — enabled in every vault unless explicitly disabled in `.dome/config.yaml`: `auto-update-index` and `auto-cross-reference` (both event-reactive, described in full below); plus `intake-raw`, the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow (described as part of the intake patterns in §"Intake patterns — shipped-default and opt-in" below — it's listed there rather than here because its shape is the canonical example of the drop-zone intake pattern, even though its enablement status is shipped-default).
 
 ### `auto-update-index`
 
@@ -122,7 +122,7 @@ The handler is conservative: only exact matches trigger writes. Ambiguous matche
 
 The exact-match conservatism is what keeps `auto-cross-reference` shipped-default-safe. A vault with rich entity backlinking benefits; a vault with name collisions across types gets nothing wrong (only matches that are unambiguous).
 
-Both shipped defaults can be disabled in `.dome/config.yaml`:
+The shipped-default reactive hooks can be disabled in `.dome/config.yaml`:
 
 ```yaml
 hooks:
@@ -130,6 +130,8 @@ hooks:
     auto-update-index: enabled
     auto-cross-reference: disabled    # for vaults that don't want auto-backlinking
 ```
+
+(The third shipped-default — `intake-raw` — is disabled by removing its YAML from `.dome/hooks/` or by removing the `inbox/raw/` directory; see §"Intake patterns" below for the activation-by-presence convention.)
 
 ## Intake patterns — shipped-default and opt-in
 

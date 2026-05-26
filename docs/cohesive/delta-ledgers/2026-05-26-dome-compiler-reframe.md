@@ -12,7 +12,7 @@ This rewrite aligns the substrate with what the system actually delivers in real
 
 This rewrite is **Design** (touches normative substrate broadly + retires one feature; no implementation work in this pass — implementation lands in a follow-on `cohesive:implement-cohesively` after `validate-rewrite` returns Approved).
 
-- **Files:** 13 rewritten, 4 added (2 invariants, 1 gotcha, 1 ledger), 3 removed (sensitivity feature substrate)
+- **Files:** 18 rewritten, 4 added (2 invariants, 1 gotcha, 1 ledger), 3 removed (sensitivity feature substrate)
 - **Conceptual changes:** Dome's value-prop reframed around the *compiler* model rather than the gateway model; two-surface-pattern framing (native Dome shells vs agentic harnesses) introduced as the architectural commitment; `AGENTS.md` named as the canonical agent-orientation surface across chat-shaped harnesses; the MCP surface preserved in code but explicitly flagged as non-primary in v0.5; the sensitivity-classification feature retired entirely (workflow, invariant, test, scattered references); `inbox/review/` simplified to single-purpose lint-report destination; the "invariants are enforced two ways, by scope" principle (internal-Tool-mediated vs external-watcher-reconciled) made explicit in VISION.md and propagated through sdk-surface, harnesses, EVERY_WRITE_IS_LOGGED, and the new VAULT_RECONCILES_AFTER_NATIVE_WRITE axiom.
 - **Named invariants:** `SENSITIVE_GOES_TO_INBOX` (deleted); `EVERY_WRITE_IS_LOGGED` (clarified: two enforcement paths — Tool-mediated + watcher-driven for native writes); `VAULT_RECONCILES_AFTER_NATIVE_WRITE` (added, axiom); `AGENTS_MD_IS_ORIENTATION_SURFACE` (added, shipped-default).
 - **Behavior matrices:** `consumer-surface.md` annotated with the post-reframe interpretation (MCP row preserved but contextually demoted in prose); `intent-prompt-tools.md` row for sensitivity-classify deleted, other rows annotated with CLI-primary invocation; `tool-invariant-enforcement.md` SENSITIVE_GOES_TO_INBOX column removed.
@@ -200,7 +200,47 @@ none new.
 
 ## Repair pass 0 (initial forward rewrite)
 
-This is the initial forward pass. No repair-pass commits yet.
+This is the initial forward pass. See repair-pass entries below.
+
+## Repair pass 1 (closed by validate-rewrite review)
+
+**Source review:** `docs/cohesive/reviews/2026-05-26-dome-compiler-reframe-rewrite-validation.md` (pass-1 Issues Found, 4 Blocker + 3 Important findings).
+
+Repairs landed in this pass:
+
+- **Closes B1 (sensitivity references survive the retirement sweep).**
+  - `cli.md:36` — removed "sensitivity routing" from the opt-in-features list.
+  - `cli.md:113` — `inbox/review/` is now described as shipped-default (created by `dome init`), eliminating the "if configured" branch that referenced sensitivity routing.
+  - `cli.md:24` — added `inbox/review/` to the `dome init` directory list (the structural counterpart to the cli.md:113 change).
+  - `vault-layout.md:33` — `review/` annotated as shipped-default, created by `dome init`.
+  - `sdk-surface.md:134` — replaced the sensitive-content sentence with the lint-report routing example (`inbox/review/lint-report-YYYY-MM-DD.md`).
+  - `mcp-surface.md:58` — dropped `sensitivity_classified` from the MCP `write_document` schema, matching `sdk-surface.md`'s already-updated signature.
+
+- **Closes B2 (AGENTS.md contract contradicted the non-primary MCP stance).**
+  - `cli.md:30` — rewrote the AGENTS.md description. Removed "System rules deliberately live OFF this file — the MCP server delivers them as `instructions` at mount time." AGENTS.md now carries the templated content (vault conventions, enabled invariant set, declared page types, shipped + active workflow names) as canonical. MCP `instructions` mirrors it as a secondary delivery channel for MCP-mounting harnesses. Cites `AGENTS_MD_IS_ORIENTATION_SURFACE` as the authoritative invariant. Per-vault generation by `dome init` + refresh by `dome doctor --repair` named explicitly.
+
+- **Closes B3 (CLI command count drifted three ways).**
+  - `cli.md:246` — table title changed from "The 7 commands map cleanly to user actions" to "The 8 commands map cleanly to user actions"; table extended with the `dome stats` row.
+  - `cli.md:252` (`dome serve` row) — description updated: was "Running the MCP server + intake watcher"; now "Running the compiler daemon (watcher + reconcile + hooks; optional MCP server)" — also aligns with the MCP-non-primary stance.
+  - `cli.md:254` (`dome lint` row) — description extended: "; apply via `dome lint --apply <id>`".
+  - `index.md:9` — "The 7-command Dome CLI: init, migrate, serve, reconcile, lint, doctor, export-context" → "The 8-command Dome CLI: init, migrate, serve, reconcile, lint, stats, doctor, export-context".
+
+- **Closes B4 (preamble file-rewrite count diverged from body).**
+  - This ledger's preamble — "13 rewritten" → "18 rewritten". The body's `## Files rewritten` section already enumerates the 18; the preamble now matches.
+
+- **Closes I1 (`hooks.md` shipped-defaults section named two; `intake-raw` is the third).**
+  - `hooks.md:96-101` — §"Shipped default hooks" preamble now names three shipped-defaults (the two reactive hooks + `intake-raw`), with a forward-pointer to §"Intake patterns" for `intake-raw`'s detailed shape. The disable instructions footnote that `intake-raw` is disabled by removing its YAML / directory.
+
+- **Closes I2 (`harnesses.md:62` "as the ecosystem stabilizes" hedge).**
+  - `harnesses.md:62` — replaced the hedge with concrete content: per-harness setup notes are vault-author-contributed sources at `docs/wiki/sources/<harness>-setup.md`; the setup notes name what each harness's auto-load convention is, how its shell-execution exposes the CLI, and any MCP-mounting examples. Links to `claude-code` entity page as the reference example. The "stabilizes" hedge is gone.
+
+- **Closes I3 (`prompts-and-workflows.md:169` referenced undocumented `do-research` tool).**
+  - `prompts-and-workflows.md:169` — `do-research` → `deleteDocument`. Same illustrative purpose (a Tool an `ingest` workflow wouldn't bind to); now a real catalog Tool.
+
+**Remaining ambiguity update (post-repair):**
+
+- The "AGENTS.md content template undefined" ambiguity from §"Remaining ambiguity" item 1 is now substantively closed by B2's resolution — `cli.md:30` enumerates the templated content (conventions, invariant set, page types, workflow names) and the new invariant doc carries the same claim. A future implementation phase will still pick the exact format / sections; the *contract* of what's there is locked.
+- "`dome serve` MCP flag undefined" (§"Remaining ambiguity" item 3) remains. The `cli.md:252` row update names "optional MCP server" without committing to a flag form; this is intentional — the implementer can choose `--mcp`, `--no-mcp`, or always-on. Substrate-noted; not a blocker for the next validation pass.
 
 ## Ready for fresh-eyes review?
 
