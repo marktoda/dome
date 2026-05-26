@@ -1,10 +1,10 @@
 // AC2: drop a file into inbox/raw/, run `dome reconcile`, observe that the
-// file is detected and `document.written.inbox.raw` is emitted.
-//
-// Note: a full inbox-empties-into-wiki run requires the ingest LLM workflow.
-// reconcile()'s job (phase 1) is to detect inbox files and fire events for
-// any registered intake hooks; the move itself is performed by the workflow
-// in a later pass. v0.5.1 wires the full ingest-into-move path.
+// file is detected, `document.written.inbox.raw` is emitted, AND the
+// declarative-hook YAML loader has registered the intake-raw hook so the
+// event is actually routed to the ingest workflow handler. The handler
+// invokes the LLM; without ANTHROPIC_API_KEY the workflow errors, but the
+// fact that the registry attempts it proves the wire is connected (no
+// silent fire-into-void).
 
 import { describe, test, expect } from "bun:test";
 import { existsSync } from "node:fs";

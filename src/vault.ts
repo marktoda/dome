@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ok, err, type Effect, type Result, type ToolError, type ToolReturn } from "./types";
+import { ok, err, type Result, type ToolError, type ToolReturn } from "./types";
 import { isGitRepo } from "./git";
 import { makeDispatcher, type Dispatcher } from "./dispatcher";
 import { readDocument } from "./tools/read-document";
@@ -16,8 +16,9 @@ import { HookRegistry } from "./hook-registry";
 import { HookDispatcher } from "./hook-dispatcher";
 import { autoUpdateIndex } from "./hooks/auto-update-index";
 import { autoCrossReference } from "./hooks/auto-cross-reference";
+import { loadDeclarativeHooks } from "./hooks/yaml-loader";
 import { projectEffectsToEvents } from "./event-projection";
-import type { BoundToolSurface } from "./hook-context";
+import type { BoundToolSurface, HookEvent } from "./hook-context";
 
 export interface VaultConfig {
   invariants: Record<string, "enabled" | "disabled">;
@@ -52,6 +53,14 @@ export interface Vault {
    * call this to ensure deterministic state.
    */
   drainHooks: () => Promise<void>;
+  /**
+   * Project the given events through the vault's hook dispatcher. Used by
+   * `reconcile` (phase 1 inbox scan, phase 2 git-diff replay, phase 3
+   * scheduled catchup) and `VaultWatcher` (out-of-band edits) to drive the
+   * declarative-hook YAML loader's registrations. Without this seam, every
+   * caller of those subsystems has to assemble the ctxFactory themselves.
+   */
+  dispatchEvents: (events: ReadonlyArray<HookEvent>) => Promise<void>;
 }
 
 async function findVaultRoot(start: string): Promise<string | null> {
@@ -153,6 +162,19 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     maxCausationDepth: config.hooks.max_causation_depth,
   });
 
+  // dispatchEvents is the single entry point any subsystem (Tool wrap,
+  // reconcile, watcher, declarative-hook handler) uses to push events
+  // through the dispatcher. It assembles the ctxFactory once with the bound
+  // tools surface; callers don't construct it.
+  const dispatchEvents = async (events: ReadonlyArray<HookEvent>): Promise<void> => {
+    if (events.length === 0) return;
+    const ctxFactory = {
+      baseCtx: { tools, vault: { path: root } },
+      dispatcher,
+    };
+    await hookDispatcher.dispatchEvents(events, ctxFactory);
+  };
+
   // wrap: after a Tool returns, project its Effects into events and dispatch.
   // Built-in handlers receive `dispatcher` in their HookContext (per
   // HOOKS_CANNOT_BYPASS_TOOLS — only built-in handlers may use the privileged
@@ -162,15 +184,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   ): ((input: I) => Promise<R>) => {
     return async (input: I): Promise<R> => {
       const out = await fn(input);
-      const effects: ReadonlyArray<Effect> = out.effects;
-      const events = projectEffectsToEvents(effects);
-      if (events.length > 0) {
-        const ctxFactory = {
-          baseCtx: { tools, vault: { path: root } },
-          dispatcher,
-        };
-        await hookDispatcher.dispatchEvents(events, ctxFactory);
-      }
+      await dispatchEvents(projectEffectsToEvents(out.effects));
       return out;
     };
   };
@@ -185,12 +199,30 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     deleteDocument: wrap((input: DeleteDocumentInput) => deleteDocument(partial, dispatcher, input)),
   };
 
-  return ok({
+  const vault: Vault = {
     path: root,
     config,
     pageTypes,
     dispatcher,
     tools,
     drainHooks: () => hookDispatcher.drain(),
+    dispatchEvents,
+  };
+
+  // Load declarative hook YAMLs LAST — after the vault is fully constructed —
+  // so the handlers can close over the live `vault` reference for runWorkflow.
+  // Errors are surfaced as appendLog entries; one bad YAML doesn't kill the
+  // rest of the load.
+  await loadDeclarativeHooks(vault, registry, {
+    onLoadError: (file, message) => {
+      void dispatcher.appendLogEntry({
+        ts: new Date().toISOString(),
+        verb: "hook-load-failed",
+        subject: `declarative hook ${file} failed to load`,
+        body: message,
+      });
+    },
   });
+
+  return ok(vault);
 }

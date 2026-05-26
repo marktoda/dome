@@ -35,12 +35,20 @@ export async function domeServe(
   const vault = res.value;
   // Auto-reconcile at startup; route events through the vault's hook
   // dispatcher so the YAML-declared intake hooks (e.g., intake-raw.yaml)
-  // actually fire on inbox files present at boot. Wired further in Blocker 2.
-  const rec = await reconcile(vault, { onEvent: () => {} });
+  // actually fire on inbox files present at boot.
+  const rec = await reconcile(vault, {
+    onEvent: (event) => vault.dispatchEvents([event]),
+  });
   if (!rec.ok) return rec;
-  // Start watcher for out-of-band edits. Wired into the hook dispatcher in
-  // Blocker 2; for now the events are observed but unrouted.
-  const watcher = new VaultWatcher(vault.path, () => {});
+  // Drain the startup-reconcile's async work before opening up to live
+  // events, so the harness sees a deterministic post-catchup state.
+  await vault.drainHooks();
+  // Start watcher for out-of-band edits; route each one through the vault's
+  // dispatcher so doctor's OOB-detection and any vault.out-of-band-edit
+  // subscribers actually receive them.
+  const watcher = new VaultWatcher(vault.path, (event) => {
+    void vault.dispatchEvents([event]);
+  });
   await watcher.start();
   // Build and connect the MCP server. Without serveStdio() the constructed
   // server registers no handlers on any transport and the harness sees an
