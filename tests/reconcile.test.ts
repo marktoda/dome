@@ -1,9 +1,33 @@
 import { describe, test, expect } from "bun:test";
-import { writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { reconcile } from "../src/reconcile";
+import { reconcile, isDirtyGitState } from "../src/reconcile";
 import { openVault } from "../src/vault";
 import { makeTestVault } from "./helpers/make-test-vault";
+
+describe("isDirtyGitState (exported)", () => {
+  test("returns false for a clean repo (no merge/rebase markers)", async () => {
+    const base = await mkdtemp(join(tmpdir(), "dome-dirty-state-"));
+    try {
+      await mkdir(join(base, ".git"), { recursive: true });
+      expect(isDirtyGitState(base)).toBe(false);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("returns true when .git/MERGE_HEAD exists", async () => {
+    const base = await mkdtemp(join(tmpdir(), "dome-dirty-state-"));
+    try {
+      await mkdir(join(base, ".git"), { recursive: true });
+      await writeFile(join(base, ".git", "MERGE_HEAD"), "abc123");
+      expect(isDirtyGitState(base)).toBe(true);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("dome reconcile", () => {
   test("phase 1: fires document.written.inbox.<bucket> for each inbox file", async () => {

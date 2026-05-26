@@ -63,8 +63,15 @@ This is intentional — running hooks against an unmerged tree could update wiki
 
 With the mitigation: reconcile refuses. User resolves conflict, commits, runs reconcile again. Clean.
 
+**Enforcement points** (where `isDirtyGitState` is consulted):
+
+- `src/reconcile.ts` — the original caller; `reconcile()` refuses to run when the predicate returns true.
+- `src/cli/commands/lint.ts` — `domeLint`'s apply-mode branch reuses the same predicate before dispatching any mutating workflow, mirroring reconcile's refusal. The predicate is exported from `reconcile.ts` rather than duplicated, so both surfaces agree on what "dirty" means.
+
+If a third consumer adopts this guard (e.g., a future `dome migrate --apply` that's been long-running), promote `isDirtyGitState` to its own module (`src/git-state.ts`) and update this enforcement list.
+
 **Related:**
 - [[wiki/invariants/VAULT_IS_GIT_REPO]]
-- [[wiki/specs/cli]] §"dome reconcile"
+- [[wiki/specs/cli]] §"dome reconcile" and §"dome lint" (apply mode)
 - [[wiki/specs/hooks]] §"Durability and reconciliation"
 - [[wiki/entities/git]]

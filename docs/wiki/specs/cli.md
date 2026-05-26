@@ -97,7 +97,9 @@ Exit codes: 0 on success; nonzero if reconciliation could not complete (dirty gi
 
 ## `dome lint`
 
-Run the `lint` workflow against the vault.
+Run the `lint` workflow against the vault. Two modes: **propose** (default) writes a report of detected drift; **apply** (`--apply <id>`) executes a single named recommendation from the most recent report. The shape parallels `dome migrate` — propose first, apply on confirmation — and uses the same Tool surface as migrate (`writeDocument`, `moveDocument`, `deleteDocument`) so a lint finding can rewrite a page, rename an entity, or retire an orphan as the recommendation dictates.
+
+### Propose mode (default)
 
 ```bash
 cd ~/vaults/work && dome lint
@@ -105,12 +107,36 @@ cd ~/vaults/work && dome lint
 
 Invokes the `lint` workflow prompt via the headless agent loop:
 
-- Reads the wiki and index.
-- Detects: orphan pages, stale claims, missing cross-references, contradictions, schema-violating frontmatter, out-of-band direct edits.
-- Writes proposed fixes to a returned report (default), or to `inbox/review/<lint-pass-YYYY-MM-DD>.md` if the vault has `inbox/review/` configured.
-- Exits 0 on success; nonzero if drift was found above a configurable threshold.
+1. Reads the wiki and index.
+2. Detects: orphan pages, stale claims, missing cross-references, contradictions, schema-violating frontmatter, out-of-band direct edits.
+3. Writes a structured report. Each finding carries a **stable id** (`<severity-letter><index>`: `H1`, `H2`, `M1`, `L1`; severities `H`igh / `M`edium / `L`ow), an optional `(advisory)` tag for findings that require human judgment the workflow cannot execute on its own (apply mode refuses these — see below), a one-line title, an Evidence paragraph with `path:line` references, and a Recommendation paragraph concrete enough that a re-invocation of this workflow can execute it without re-deriving intent.
+4. Writes the report to `inbox/review/lint-report-YYYY-MM-DD.md` if the vault has `inbox/review/` configured (the default for vaults with sensitivity routing enabled); otherwise returns the report to stdout. Repeat runs on the same date append a `Pass N` section to the existing file rather than overwriting — same-day re-runs produce a longitudinal log.
+5. Exits 0 if no findings above the configured severity threshold; nonzero otherwise.
 
-Designed to be cron'd weekly. The vault is git-backed, so applying proposed fixes is safe (`git revert` is available).
+The user reviews the report in Obsidian (or any markdown editor) and decides which findings to apply.
+
+### Apply mode (`--apply <id>`)
+
+```bash
+cd ~/vaults/work && dome lint --apply H1
+cd ~/vaults/work && dome lint --apply H1 --apply H2   # multiple ids, applied in order
+```
+
+Re-invokes the `lint` workflow with the named finding id(s) as its user message:
+
+1. Locates the most recent lint report under `inbox/review/lint-report-*.md` (lexically newest filename — reports are dated).
+2. Finds the finding whose id matches `<id>` (most-recent `Pass N` section wins if the same id appears in multiple passes).
+3. Executes the recommendation via Dome's Tools (`writeDocument`, `moveDocument`, or `deleteDocument` as the recommendation requires). Every mutation is logged per [[wiki/invariants/EVERY_WRITE_IS_LOGGED]].
+4. Appends an `**Applied:** YYYY-MM-DDTHH:MM:SSZ` annotation (bold-marked, ISO-8601 UTC) to the originating finding's entry in the report (idempotent: a re-apply against an already-applied finding refuses with exit nonzero rather than mutating twice). On failure, the annotation is `**Apply-failed:** YYYY-MM-DDTHH:MM:SSZ — <reason>` (same bold/timestamp shape; reason follows after an em-dash).
+5. Exits 0 on success; nonzero if (a) the finding id is absent from the most recent report, (b) the recommendation cannot be safely executed (target moved out of band, conflicting newer state), (c) the report itself is missing, or (d) the finding is marked `(advisory)` and requires human judgment outside the workflow's scope. Failed applies record an `Apply-failed: <reason>` annotation on the finding before exiting.
+
+When multiple ids are passed (`--apply H1 --apply H2`), apply proceeds through the list independently; a per-id failure does not abort the remaining ids. The CLI exits nonzero if any id failed, with a per-id summary on stderr naming each id's outcome (applied / failed / refused).
+
+Refuses to run if the vault is mid-merge / mid-rebase — same guard as `dome reconcile` per [[wiki/gotchas/dirty-git-state-at-reconcile]]. Applied findings produce ordinary git-tracked writes; `git revert` is the universal undo.
+
+### Periodic operation
+
+Propose mode is designed to be cron'd weekly (per the workflow's `clock:weekly` trigger in [[wiki/specs/prompts-and-workflows]]). Apply mode is interactive: a user reviews each report and selectively applies findings. Scheduled apply is intentionally not supported in v0.5 — fixes that mutate the vault should pass through a human.
 
 ## `dome doctor`
 
@@ -202,6 +228,15 @@ This is the antidote to pinned-thread chaos: paste the output into ChatGPT / Cur
 ## Implementation note
 
 CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `reconcile`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 600 LOC; most of the work lives in the workflows and Tools.
+
+### The shared `--apply` idiom
+
+Workflow-driven commands that produce proposals (a migration plan, a lint report) share the `--apply` flag as the user's confirmation gesture — *"you previously proposed something; now execute it."* The type varies with the granularity of the proposal:
+
+- `dome migrate --apply` — boolean. The migration plan is a single artifact; `--apply` executes it whole.
+- `dome lint --apply <id>` — repeatable string. Lint reports carry per-finding ids (`H1`, `M2`, ...); `--apply <id>` targets one, repeatable for multi-id.
+
+The shared flag name signals shared semantics (propose-then-apply); the divergent type signals divergent granularity (whole-plan vs per-finding). A future per-step targeting on migrate (or `--apply --all` on lint) is the moment to revisit naming; for v0.5, the consistent vocabulary across workflow commands is worth more than perfectly-disjoint flag names.
 
 ### Errors at the consumer-shell boundary
 
