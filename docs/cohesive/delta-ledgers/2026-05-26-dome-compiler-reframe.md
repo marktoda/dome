@@ -278,6 +278,33 @@ Repairs landed in this pass:
 
 - All 7 pass-2 findings closed. The previously-substrate-noted "`dome serve` MCP flag undefined" remains substrate-noted; the cli.md §"`dome serve`" rewrite in this pass names "when MCP is configured" without committing to a specific flag form. Intentional; the implementer chooses `--mcp` / `--no-mcp` / always-on / config-driven during the implementation phase.
 
+## Repair pass 3 (closed by validate-rewrite review)
+
+**Source review:** `docs/cohesive/reviews/2026-05-26-dome-compiler-reframe-rewrite-validation-pass-3.md` (pass-3 Issues Found, 1 Blocker + 3 Important — convergence trajectory; findings narrowing pass-over-pass).
+
+Repairs landed in this pass:
+
+- **Closes B1 (MCP listed as Axiom contradicts the non-primary demotion).**
+  - `sdk-surface.md:270` — Axioms-row Examples cell: dropped "MCP server" entry; the row now lists only the axiom-tier invariants + 7 Tools + `index.md` + `log.md` + CLI commands.
+  - Added a one-line clarification paragraph after the table: "The MCP server is *not* a tier in the table above — it is a preserved code surface, non-primary in v0.5 per [[wiki/specs/mcp-surface]] §'Status in v0.5'. The table's tiers describe invariant/feature *enablement*; the MCP server is a *consumer-shell entrypoint choice* (one of several ConsumerSurface adapters per §'Consumer surfaces' below) and lives outside the enablement-tier model."
+  - Shipped-defaults row Examples cell extended with `AGENTS_MD_IS_ORIENTATION_SURFACE` (newly-added shipped-default invariant) + `inbox/raw/` + `inbox/review/` directories (the latter being the lint-report destination per pass-1's I2 closure).
+  - Opt-in row narrowed: "intake directories beyond `inbox/raw/`" matches the post-reframe shape where `inbox/review/` is also shipped-default.
+
+- **Closes I1 (stale §"Opt-in intake patterns" links after the section rename).**
+  - `brain-companion.md:27` — citation updated to `§"Intake patterns — shipped-default and opt-in"`. Same edit also closes I2 (see below).
+  - `vault-layout.md:46` — same citation update.
+  - `INBOX_IS_EPHEMERAL.md:49` — Related list citation update.
+
+- **Closes I2 (brain-companion.md:27 contradicted shipped-default inbox/raw/).**
+  - `brain-companion.md:27` — "Quick-capture is a file write to `inbox/raw/` (when activated)" → "Quick-capture is a file write to `inbox/raw/`. No app to launch; no form to fill. The shipped-default `intake-raw` hook compiles the captured content on arrival." The "(when activated)" hedge is gone; the shipped-default `intake-raw` hook is named explicitly. The link-rot fix from I1 landed in the same edit.
+
+- **Closes I3 (mcp-surface.md:47 "once a use case demands it" hedge).**
+  - `mcp-surface.md:47` — "v0.5 ships stdio first; HTTP follows in v0.5.1 once a use case demands it" → "v0.5 ships stdio; HTTP/SSE is deferred — see §'Why MCP is the only protocol-server surface in v0.5' for the future-pressure framing." The hedge is replaced with a concrete cross-reference.
+
+**Remaining ambiguity update (post-pass-3 repair):**
+
+- All 4 pass-3 findings closed. The previously-substrate-noted "`dome serve` MCP flag undefined" remains substrate-noted. The pass-3 repair to sdk-surface.md's tier table also addressed the broader question of *where* MCP lives in the substrate's framing model — it's now explicitly outside the enablement-tier model (entrypoint choice, not invariant/feature toggle), which makes the flag form choice cleaner for the implementer to settle.
+
 ## Ready for fresh-eyes review?
 
 **Yes.** All affected docs are in end-state language; no "we will" / "should consider" in normative sections. Obsolete concepts (`SENSITIVE_GOES_TO_INBOX`, sensitivity-classify, gateway-as-universal-claim) are removed, not annotated. The delta ledger preamble accurately summarizes the body sections. Substrate inventories (index, matrices, related-lists) updated to reflect the additions and deletions.

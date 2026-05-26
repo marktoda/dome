@@ -43,7 +43,7 @@ A Dome vault is a directory containing:
   .gitignore            # excludes .dome/state/ (per-machine operational state)
 ```
 
-`dome init` creates the axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `inbox/review/` (the shipped-default lint-report destination) AND `.git/` via `git init`. Additional opt-in intake buckets (`inbox/voice/`, `inbox/research/`, `inbox/clip/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Opt-in intake patterns."
+`dome init` creates the axiom structure (vault root + raw/ + notes/ + wiki/ defaults + .dome/) AND `inbox/raw/` (the shipped-default capture bucket) AND `inbox/review/` (the shipped-default lint-report destination) AND `.git/` via `git init`. Additional opt-in intake buckets (`inbox/voice/`, `inbox/research/`, `inbox/clip/`) exist only when the vault activates the corresponding intake hook template — see [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in."
 
 ### Git repository structure
 

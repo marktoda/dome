@@ -44,7 +44,7 @@ bun x @dome/sdk serve --vault <path> [--port <n>] [--stdio]
 Two transports:
 
 - **stdio** (default for Claude Code and Cursor): the MCP server speaks JSON-RPC over stdin/stdout. The harness spawns it as a child process.
-- **HTTP / SSE** (for harnesses that need network access — future): bind a port and serve MCP over HTTP. v0.5 ships stdio first; HTTP follows in v0.5.1 once a use case demands it.
+- **HTTP / SSE** (for harnesses that need network access — future): bind a port and serve MCP over HTTP. v0.5 ships stdio; HTTP/SSE is deferred — see §"Why MCP is the only protocol-server surface in v0.5" for the future-pressure framing.
 
 The server holds exactly one Vault open per invocation. To serve multiple vaults, run multiple MCP server instances (one per vault).
 

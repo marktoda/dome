@@ -46,7 +46,7 @@ The v0.5 mechanism for the same use case is to raise `hooks.inbox_stale_age_hour
 2. **Doctor-fallback layer:** writes a fixture inbox file with a backdated `mtime` past the configured threshold; asserts `dome doctor` emits a violation. Also asserts `inbox/review/` files are excluded from the check regardless of age, since `review/` is the `dome lint` report destination, not an intake bucket.
 
 **Related:**
-- [[wiki/specs/hooks]] §"Opt-in intake patterns" and §"Durability and reconciliation"
+- [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in" and §"Durability and reconciliation"
 - [[wiki/specs/cli]] §"dome reconcile"
 - [[wiki/invariants/RAW_IS_IMMUTABLE]]
 - [[wiki/gotchas/hook-non-idempotent]]
