@@ -6,6 +6,7 @@ import { domeMigrate } from "./commands/migrate";
 import { domeLint } from "./commands/lint";
 import { domeExportContext } from "./commands/export-context";
 import { domeServe } from "./commands/serve";
+import { domeStats } from "./commands/stats";
 import { renderCliError } from "./render-error";
 
 // --------------------------------------------------------------------------
@@ -107,6 +108,7 @@ function buildProgram(outcome: RunOutcome): Command {
         "  cd ~/vaults/work && dome doctor     # structural diagnostic",
         "  cd ~/vaults/work && dome reconcile  # catch up hook state",
         "  dome serve --vault ~/vaults/work    # start MCP server + watcher",
+        "  cd ~/vaults/work && dome stats      # visual dashboard",
         "",
         "Environment:",
         "  ANTHROPIC_API_KEY  Required for workflow-driven commands",
@@ -329,6 +331,32 @@ function buildProgram(outcome: RunOutcome): Command {
       }
       for (const v of r.value.violations) console.log(`! ${v}`);
       outcome.code = ExitCode.Failure;
+    });
+
+  // ------ stats ------
+  program
+    .command("stats")
+    .description("Print a visual dashboard of vault structure and activity.")
+    .option("--vault <path>", "Vault path (defaults to current directory)")
+    .option("--json", "Emit JSON to stdout (no colors, no dashboard)")
+    .addHelpText(
+      "after",
+      [
+        "",
+        "Read-only summary of the vault: page counts by type, wikilink graph",
+        "health, raw file footprint, log activity, top hubs, and git history.",
+        "",
+        "  dome stats                          # colored dashboard",
+        "  dome stats --json | jq .totalPages  # machine-readable",
+        "",
+        "Like `dome doctor`, this command is deterministic and runs no LLM.",
+      ].join("\n"),
+    )
+    .action(async (opts: { vault?: string; json?: boolean }) => {
+      const path = opts.vault ?? process.cwd();
+      const r = await domeStats(path, { json: opts.json === true });
+      if (!r.ok) { console.error(renderCliError(r.error)); outcome.code = ExitCode.Failure; return; }
+      console.log(r.value.output);
     });
 
   // Suppress Commander's process.exit; runCli is the one place that decides

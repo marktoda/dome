@@ -9,7 +9,7 @@ sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
 
 This spec is normative for the `dome` command-line interface in v0.5. The CLI is the side-door surface — for things neither a chat-shaped harness nor a markdown-shaped browser does well: setup, migration, hook reconciliation, scheduled hygiene, diagnostics, cross-AI context export.
 
-The CLI is intentionally small. **Seven commands**. Each maps to a concrete user action; commands that would map to "chat-with-the-brain" or "browse-the-vault" do not exist (use a harness or Obsidian respectively).
+The CLI is intentionally small. **Eight commands**. Each maps to a concrete user action; commands that would map to "chat-with-the-brain" or "browse-the-vault" do not exist (use a harness or Obsidian respectively). A glanceable summary (`dome stats`) is neither — it's a snapshot of structural state.
 
 ## `dome init <path>`
 
@@ -145,6 +145,31 @@ Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply 
 - `--recent-activity [N]` — list the last `N` writes by tool and target (default 50). Useful for spotting prompt-regression drift after a model upgrade or prompt edit.
 - `--drain-hooks` — block until the async hook queue drains, then exit. Useful when the user wants to read post-hook state immediately (e.g., right after a write, before a query).
 - `--reset-quarantined-hooks` — clear the hook-quarantine list. Handlers are quarantined after three consecutive failures per [[wiki/specs/hooks]] §"Execution model"; use this flag after fixing a misbehaving hook to bring it back into rotation. Operates on `.dome/state/quarantined.json` (see [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`") — that file is the authoritative quarantine record across CLI invocations, since `dome doctor` and `dome serve` don't share a process.
+
+## `dome stats`
+
+Print a visually appealing, read-only dashboard summarizing the vault's structure and activity. No LLM; deterministic; safe to run anywhere `dome doctor` is safe.
+
+```bash
+dome stats                # colored dashboard to stdout (default)
+dome stats --json         # JSON to stdout, no colors
+dome stats --vault <path> # override CWD vault detection
+```
+
+The dashboard shows:
+
+- **Page counts** by type — entities, concepts, specs, invariants, matrices, syntheses, gotchas, and any custom page-type extensions declared in `.dome/page-types.yaml`.
+- **Wikilink graph health** — total link count and orphan count (full-path links whose target file doesn't exist).
+- **Raw files** — count and total bytes.
+- **Log activity** — total entries and age of the most recent entry (`Nm ago` / `Nh ago` / `Nd ago`).
+- **Top hubs** — the 3 most-linked-to pages.
+- **Git** — vault age in days, total commits, distinct contributor count.
+
+`--json` emits the same data as a structured object whose shape (`VaultStats`) is the stable serialization contract for cross-tool consumption.
+
+When the vault sits inside a larger git repo (the dogfood case), git stats reflect the outer repo's history. v1 documents this; a future `--commit-scope <vault|repo>` flag could specialize.
+
+Exit code is 0 on success, 1 if vault open fails, 2 on usage error. A future `dome stats graph` subcommand will add a knowledge-graph visualization; v1 ships only the dashboard.
 
 ## `dome export-context <topic>`
 
