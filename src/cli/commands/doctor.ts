@@ -1,9 +1,11 @@
-import { openVault } from "../../vault";
+import { openVault, type Vault } from "../../vault";
 import { makeDispatcher } from "../../dispatcher";
 import { WorkflowRegistry } from "../../prompts/registry";
 import { WORKFLOW_NAMES } from "../../workflows/workflow-name";
+import { parseWikilinks } from "../../wikilinks";
+import { pluralOf } from "../../page-type";
 import { ok, type Result, type ToolError } from "../../types";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 
@@ -44,16 +46,48 @@ const KNOWN_EVENT_KIND_PREFIXES: ReadonlyArray<string> = [
   "vault.out-of-band-edit",
 ];
 
+// Universal frontmatter keys allowed on EVERY wiki page (per page-schema.md
+// §"Universal frontmatter"). Per-type extensions are layered on top via
+// PER_TYPE_FRONTMATTER_FIELDS.
+const UNIVERSAL_FRONTMATTER_FIELDS: ReadonlyArray<string> = ["type", "created", "updated", "sources"];
+
+// Per-type optional frontmatter fields per page-schema.md §"Page-type-specific
+// extensions". Doctor uses this catalog to flag unknown frontmatter keys.
+const PER_TYPE_FRONTMATTER_FIELDS: Readonly<Record<string, ReadonlyArray<string>>> = {
+  entity: ["aliases", "tags"],
+  concept: ["aliases", "tags", "status"],
+  source: ["url", "author", "external"],
+  synthesis: ["status", "supersedes"],
+  // Invariants directory ships its own structure per docs/wiki/invariants/*; allow tier.
+  invariant: ["tier"],
+};
+
 // Pluralized wiki subdirectory -> singular page type (per PAGE_TYPE_BY_DIRECTORY).
 const WIKI_DIR_TO_PAGE_TYPE: Readonly<Record<string, string>> = {
   entities: "entity",
   concepts: "concept",
   sources: "source",
   syntheses: "synthesis",
+  invariants: "invariant",
 };
 
 function expectedPageTypeForDir(dirName: string): string {
   return WIKI_DIR_TO_PAGE_TYPE[dirName] ?? dirName.replace(/s$/, "");
+}
+
+// Iterates every .md file in wiki/, yielding (subdir, filename, relPath).
+async function* walkWikiPages(vault: Vault): AsyncGenerator<{ subdir: string; filename: string; rel: string }> {
+  const wikiRoot = join(vault.path, "wiki");
+  if (!existsSync(wikiRoot)) return;
+  const subdirs = await readdir(wikiRoot, { withFileTypes: true });
+  for (const subdir of subdirs) {
+    if (!subdir.isDirectory()) continue;
+    const files = await readdir(join(wikiRoot, subdir.name), { withFileTypes: true });
+    for (const f of files) {
+      if (!f.isFile() || !f.name.endsWith(".md")) continue;
+      yield { subdir: subdir.name, filename: f.name, rel: `wiki/${subdir.name}/${f.name}` };
+    }
+  }
 }
 
 export async function domeDoctor(
@@ -67,42 +101,130 @@ export async function domeDoctor(
   const violations: string[] = [];
   const info: string[] = [];
 
-  // Wiki page frontmatter checks: type matches directory
   const wikiRoot = join(vault.path, "wiki");
-  if (existsSync(wikiRoot)) {
-    const subdirs = await readdir(wikiRoot, { withFileTypes: true });
-    for (const subdir of subdirs) {
-      if (!subdir.isDirectory()) continue;
-      const files = await readdir(join(wikiRoot, subdir.name), { withFileTypes: true });
-      for (const f of files) {
-        if (!f.isFile() || !f.name.endsWith(".md")) continue;
-        const rel = `wiki/${subdir.name}/${f.name}`;
-        const out = await vault.tools.readDocument({ path: rel });
-        if (!out.result.ok) continue;
-        const doc = out.result.value;
-        const expectedType = expectedPageTypeForDir(subdir.name);
-        if (doc.frontmatter.type && doc.frontmatter.type !== expectedType) {
-          violations.push(`${rel}: frontmatter type=${doc.frontmatter.type} does not match directory ${subdir.name}`);
+
+  // Page-type catalogue: dirs that are legitimate per the vault's page-type
+  // config. Used for short-form wikilink resolution and unknown-dir checks.
+  const knownPluralDirs = new Set<string>([
+    ...vault.pageTypes.defaults.map(t => pluralOf(t)),
+    ...vault.pageTypes.extensions.map(e => pluralOf(typeof e === "string" ? e : e.name)),
+  ]);
+  // Always-allowed structural directories under wiki/ even if no pages of that
+  // type exist yet. invariants/, specs/, gotchas/ ship as documentation
+  // surfaces in the dogfooded Dome vault itself.
+  for (const d of ["invariants", "specs", "gotchas"]) knownPluralDirs.add(d);
+
+  // Track which extension page-types are actually used (for the "unused
+  // extensions" check).
+  const usedExtensionTypes = new Set<string>();
+  const declaredExtensionTypes = new Set<string>(
+    vault.pageTypes.extensions.map(e => typeof e === "string" ? e : e.name)
+  );
+
+  // Walk every wiki page once and run all per-page checks together.
+  for await (const { subdir, rel } of walkWikiPages(vault)) {
+    // Track which extension types are used.
+    if (declaredExtensionTypes.has(expectedPageTypeForDir(subdir))) {
+      usedExtensionTypes.add(expectedPageTypeForDir(subdir));
+    }
+
+    const out = await vault.tools.readDocument({ path: rel });
+    if (!out.result.ok) continue;
+    const doc = out.result.value;
+
+    // CHECK 1 (existing): frontmatter type matches directory.
+    const expectedType = expectedPageTypeForDir(subdir);
+    if (doc.frontmatter.type && doc.frontmatter.type !== expectedType) {
+      violations.push(`${rel}: frontmatter type=${doc.frontmatter.type} does not match directory ${subdir}`);
+    }
+
+    // CHECK 2 (new): short-form wikilinks (violates WIKILINKS_ARE_FULLPATH).
+    // CHECK 3 (new): full-path wikilinks pointing to missing files.
+    const links = parseWikilinks(doc.body);
+    for (const link of links) {
+      if (!link.isFullPath) {
+        violations.push(`${rel}: short-form wikilink "${link.target}" (WIKILINKS_ARE_FULLPATH)`);
+      } else {
+        // Treat the target as a path relative to vault root; add .md if missing.
+        const targetPath = link.target.endsWith(".md") ? link.target : `${link.target}.md`;
+        const absTarget = join(vault.path, targetPath);
+        if (!existsSync(absTarget)) {
+          violations.push(`${rel}: unresolved wikilink "${link.target}"`);
+        }
+      }
+    }
+
+    // CHECK 4 (new): frontmatter fields outside the known per-type schema.
+    const docType = doc.frontmatter.type;
+    if (typeof docType === "string") {
+      const allowed = new Set<string>([
+        ...UNIVERSAL_FRONTMATTER_FIELDS,
+        ...(PER_TYPE_FRONTMATTER_FIELDS[docType] ?? []),
+      ]);
+      for (const key of Object.keys(doc.frontmatter)) {
+        if (!allowed.has(key)) {
+          violations.push(`${rel}: unknown frontmatter field "${key}" for type=${docType}`);
         }
       }
     }
   }
 
-  // rebuild-index
+  // CHECK 5 (new): unknown wiki subdirectories (not in page-types config).
+  if (existsSync(wikiRoot)) {
+    const subdirs = await readdir(wikiRoot, { withFileTypes: true });
+    for (const subdir of subdirs) {
+      if (!subdir.isDirectory()) continue;
+      if (!knownPluralDirs.has(subdir.name)) {
+        violations.push(`wiki/${subdir.name}/: unknown wiki subdirectory (not in page-types config)`);
+      }
+    }
+  }
+
+  // CHECK 6 (new): raw files modified after creation (heuristic for
+  // RAW_IS_IMMUTABLE violations that bypassed the Tool boundary).
+  const rawRoot = join(vault.path, "raw");
+  if (existsSync(rawRoot)) {
+    for await (const filePath of walkAllMd(rawRoot)) {
+      const st = await stat(filePath);
+      // birthtime is unreliable on Linux ext4 (returns 0); guard with > 0.
+      if (st.birthtimeMs > 0 && st.mtimeMs > st.birthtimeMs + 1000) {
+        const rel = filePath.slice(vault.path.length + 1);
+        violations.push(`${rel}: raw file modified after creation (RAW_IS_IMMUTABLE; mtime>${(st.mtimeMs - st.birthtimeMs).toFixed(0)}ms past ctime)`);
+      }
+    }
+  }
+
+  // CHECK 7 (new): log.md timestamps must be monotonically non-decreasing.
+  const logPath = join(vault.path, "log.md");
+  if (existsSync(logPath)) {
+    const logText = await Bun.file(logPath).text();
+    const tsRe = /^## \[([^\]]+)\]/gm;
+    let prev: string | null = null;
+    let lineNo = 0;
+    for (const match of logText.matchAll(tsRe)) {
+      lineNo++;
+      const ts = match[1]!;
+      if (prev !== null && ts < prev) {
+        violations.push(`log.md: non-monotonic timestamp at entry #${lineNo}: ${ts} < ${prev}`);
+      }
+      prev = ts;
+    }
+  }
+
+  // CHECK 8 (new): unused page-type extensions (declared in page-types.yaml
+  // but no page actually uses them — best-effort hint, info-only).
+  for (const ext of declaredExtensionTypes) {
+    if (!usedExtensionTypes.has(ext)) {
+      info.push(`page-type extension "${ext}" declared but no page uses it`);
+    }
+  }
+
+  // --rebuild-index
   if (opts.rebuildIndex) {
     const dispatcher = makeDispatcher(vault.path);
-    if (existsSync(wikiRoot)) {
-      const subdirs = await readdir(wikiRoot, { withFileTypes: true });
-      for (const subdir of subdirs) {
-        if (!subdir.isDirectory()) continue;
-        const files = await readdir(join(wikiRoot, subdir.name), { withFileTypes: true });
-        for (const f of files) {
-          if (!f.isFile() || !f.name.endsWith(".md")) continue;
-          const rel = `wiki/${subdir.name}/${f.name}`;
-          const title = f.name.replace(/\.md$/, "");
-          await dispatcher.writeIndex({ path: rel, title });
-        }
-      }
+    for await (const { filename, rel } of walkWikiPages(vault)) {
+      const title = filename.replace(/\.md$/, "");
+      await dispatcher.writeIndex({ path: rel, title });
     }
   }
 
@@ -131,4 +253,20 @@ export async function domeDoctor(
   if (opts.recentActivity) info.push("--recent-activity: no-op in v0.5 (use `git log` against the vault)");
 
   return ok({ exitCode: violations.length === 0 ? 0 : 1, violations, info });
+}
+
+// Recursively walks .md files under `root`. Used by the raw-immutability check;
+// commit 9 will replace this with the centralized vault-fs walker.
+async function* walkAllMd(root: string): AsyncGenerator<string> {
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    const p = join(root, e.name);
+    if (e.isDirectory()) yield* walkAllMd(p);
+    else if (e.isFile() && e.name.endsWith(".md")) yield p;
+  }
 }
