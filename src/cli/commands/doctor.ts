@@ -279,7 +279,33 @@ export async function domeDoctor(
       info.push("review-queue: (inbox/review/ not present; SENSITIVE_GOES_TO_INBOX likely disabled)");
     }
   }
-  if (opts.showRawCitations) info.push("--show raw-citations: no-op in v0.5 (raw citations not yet indexed)");
+  if (opts.showRawCitations) {
+    // Walk wiki pages; for each `sources:` frontmatter entry whose link points
+    // under raw/, accumulate (raw target -> [wiki page paths]).
+    const citations: Map<string, string[]> = new Map();
+    for await (const { rel } of walkWikiPages(vault)) {
+      const out = await vault.tools.readDocument({ path: rel });
+      if (!out.result.ok) continue;
+      const sources = out.result.value.frontmatter.sources;
+      if (!Array.isArray(sources)) continue;
+      for (const s of sources) {
+        if (typeof s !== "string") continue;
+        const m = s.match(/^\[\[(raw\/[^\]]+)\]\]$/);
+        if (!m) continue;
+        const target = m[1]!;
+        const list = citations.get(target) ?? [];
+        list.push(rel);
+        citations.set(target, list);
+      }
+    }
+    if (citations.size === 0) {
+      info.push("raw-citation: (no wiki pages cite any raw/ source)");
+    } else {
+      for (const [target, citers] of [...citations.entries()].sort()) {
+        info.push(`raw-citation: ${target} <- [${citers.sort().join(", ")}]`);
+      }
+    }
+  }
   if (opts.recentActivityN !== undefined) {
     const limit = opts.recentActivityN ?? 50;
     const logPath2 = join(vault.path, "log.md");

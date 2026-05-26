@@ -47,6 +47,34 @@ describe("dome doctor flags (formerly no-op)", () => {
     }
   });
 
+  test("--show raw-citations groups wiki pages by the raw source they cite", async () => {
+    const v = await makeTestVault();
+    try {
+      await Bun.write(`${v.path}/raw/2026-05-25-alice-meeting.md`, "---\nid: raw_alice\n---\n");
+      const wikiFm = (sources: string) =>
+        `---\ntype: entity\ncreated: 2026-05-25\nupdated: 2026-05-25\nsources: ${sources}\n---\n# X\n`;
+      await Bun.write(
+        `${v.path}/wiki/entities/alice.md`,
+        wikiFm(`["[[raw/2026-05-25-alice-meeting]]"]`),
+      );
+      await Bun.write(
+        `${v.path}/wiki/entities/bob.md`,
+        wikiFm(`["[[raw/2026-05-25-alice-meeting]]"]`),
+      );
+
+      const r = await domeDoctor(v.path, { showRawCitations: true });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const citationLines = r.value.info.filter(l => l.startsWith("raw-citation:"));
+      const aliceLine = citationLines.find(l => l.includes("alice-meeting"));
+      expect(aliceLine).toBeDefined();
+      expect(aliceLine!).toContain("wiki/entities/alice.md");
+      expect(aliceLine!).toContain("wiki/entities/bob.md");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("--show review-queue lists files in inbox/review/", async () => {
     const v = await makeTestVault();
     try {
