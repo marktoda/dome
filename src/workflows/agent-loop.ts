@@ -77,9 +77,18 @@ export async function runWorkflow(
 
   const prompt = userMessage.length > 0 ? userMessage : "Begin.";
 
+  // WORKFLOWS_KNOW_VAULT_CONTEXT: every workflow's LLM call receives a
+  // prologue naming vault.path. Tools are vault-bound at construction, but
+  // the LLM itself has no other channel to learn which directory it's
+  // operating on. Without this, self-driving workflows whose prompts
+  // reference "the directory" or "the vault" had to receive the path
+  // through the user message — and migrate didn't, which made it ask the
+  // user for a path that the CLI had already passed.
+  const system = `${buildVaultPrologue(vault)}\n\n${def.body}`;
+
   const result = await generateText({
     model,
-    system: def.body,
+    system,
     prompt,
     tools,
     stopWhen: stepCountIs(maxSteps),
@@ -169,4 +178,19 @@ function subjectFromUserMessage(userMessage: string): string {
  */
 export function buildAiSdkTools(vault: Vault, allowedToolNames: ReadonlyArray<string>): ToolSet {
   return filterAiTools(projectAiSdk(vault), allowedToolNames);
+}
+
+/**
+ * Prologue prepended to every workflow's system prompt so the LLM knows
+ * which vault it's operating on. The shape is intentionally minimal: one
+ * fact (the path) the model can repeat back when its prompt body says
+ * things like "convert the directory" or "walk the vault." Tests assert
+ * the prologue's presence (see WORKFLOWS_KNOW_VAULT_CONTEXT).
+ */
+export function buildVaultPrologue(vault: Vault): string {
+  return [
+    `# Current vault`,
+    ``,
+    `You are operating on the Dome vault at \`${vault.path}\`.`,
+  ].join("\n");
 }

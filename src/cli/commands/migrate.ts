@@ -61,5 +61,12 @@ export async function domeMigrate(
   } catch (e: unknown) {
     return err({ kind: "validation", message: (e as Error).message });
   }
-  return runWorkflowAtPath(vaultPath, WorkflowName.Migrate, apply ? "--apply" : "", opts);
+  // User message describes the TASK (apply vs plan-only); the prologue
+  // injected by runWorkflow carries the CONTEXT (vault.path). Keeping the
+  // two channels separate also makes the per-workflow commit subject
+  // (derived via subjectFromUserMessage) meaningful instead of "--apply".
+  const userMessage = apply
+    ? "Migrate the vault to Dome shape. Execute the migration plan."
+    : "Migrate the vault to Dome shape. Write the migration plan; do not execute.";
+  return runWorkflowAtPath(vaultPath, WorkflowName.Migrate, userMessage, opts);
 }

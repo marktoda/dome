@@ -28,6 +28,29 @@ function makeNoopMockModel() {
   });
 }
 
+// Read system text and joined user text from a captured doGenerate call.
+// User content is an array of parts (text / image / tool-result); we keep
+// only the text parts so assertions can use substring matches.
+function readMessages(call: { prompt: ReadonlyArray<{ role: string; content: unknown }> }): {
+  system: string;
+  user: string;
+} {
+  const sysMsg = call.prompt.find((m) => m.role === "system");
+  const userMsg = call.prompt.find((m) => m.role === "user");
+  const system = sysMsg && typeof sysMsg.content === "string" ? sysMsg.content : "";
+  let user = "";
+  if (userMsg && Array.isArray(userMsg.content)) {
+    user = userMsg.content
+      .filter(
+        (p): p is { type: "text"; text: string } =>
+          typeof p === "object" && p !== null && (p as { type: string }).type === "text",
+      )
+      .map((p) => p.text)
+      .join("");
+  }
+  return { system, user };
+}
+
 describe("dome migrate bootstraps .dome/ before opening", () => {
   test("scaffolds a non-Dome markdown directory and reaches the migrate workflow", async () => {
     const base = await mkdtemp(join(tmpdir(), "dome-migrate-bootstrap-"));
@@ -60,6 +83,56 @@ describe("dome migrate bootstraps .dome/ before opening", () => {
     expect(res.ok).toBe(false);
     if (!res.ok) {
       expect(res.error.kind).toBe("validation");
+    }
+  });
+
+  // Regression test for the bug where `dome migrate <path>` hit the LLM
+  // with userMessage = "" (or "--apply") AND a system prompt that
+  // referenced `<path>` as an unsubstituted placeholder. The agent had no
+  // way to know which directory it was converting and dutifully asked the
+  // user, completing in one step. This test pins the contract:
+  //
+  // - system prompt contains vault.path via the vault prologue
+  //   (WORKFLOWS_KNOW_VAULT_CONTEXT)
+  // - user message describes the task ("apply" vs "plan only") so
+  //   subjectFromUserMessage produces a meaningful commit subject AND the
+  //   LLM gets a clean kickoff turn rather than the synthetic "Begin."
+  test("LLM receives vault.path in system prompt and a task description in the user message (dry-run)", async () => {
+    const base = await mkdtemp(join(tmpdir(), "dome-migrate-msg-"));
+    const vaultPath = join(base, "vault");
+    try {
+      await mkdir(vaultPath, { recursive: true });
+      const mock = makeNoopMockModel();
+
+      const res = await domeMigrate(vaultPath, false, { model: mock, skipCommit: true });
+      expect(res.ok).toBe(true);
+
+      expect(mock.doGenerateCalls.length).toBeGreaterThanOrEqual(1);
+      const { system, user } = readMessages(mock.doGenerateCalls[0]!);
+
+      expect(system).toContain(vaultPath);
+      expect(user.toLowerCase()).toContain("plan");
+      expect(user.toLowerCase()).not.toContain("--apply");
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("--apply branch surfaces an execute-the-plan task in the user message", async () => {
+    const base = await mkdtemp(join(tmpdir(), "dome-migrate-apply-"));
+    const vaultPath = join(base, "vault");
+    try {
+      await mkdir(vaultPath, { recursive: true });
+      const mock = makeNoopMockModel();
+
+      const res = await domeMigrate(vaultPath, true, { model: mock, skipCommit: true });
+      expect(res.ok).toBe(true);
+
+      const { system, user } = readMessages(mock.doGenerateCalls[0]!);
+      expect(system).toContain(vaultPath);
+      expect(user.toLowerCase()).toContain("execute");
+    } finally {
+      await rm(base, { recursive: true, force: true });
     }
   });
 });

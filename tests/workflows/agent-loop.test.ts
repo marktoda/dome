@@ -100,6 +100,33 @@ describe("runWorkflow", () => {
     }
   });
 
+  // WORKFLOWS_KNOW_VAULT_CONTEXT: every workflow's system prompt is
+  // prepended with a prologue naming vault.path so the LLM knows which
+  // directory it's operating on. Without this, prompts that say "convert
+  // the directory" (migrate) or "walk the vault" (lint) have no anchor
+  // for which vault they mean, and self-driving workflows ask the user
+  // for context that was already passed via CLI args.
+  test("prepends a vault prologue naming vault.path to the system prompt", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault failed to open");
+      const mock = makeNoopMockModel();
+      await runWorkflow(res.value, WorkflowName.Lint, "", { model: mock });
+
+      const call = mock.doGenerateCalls[0]!;
+      const systemMsg = call.prompt.find((m) => m.role === "system");
+      expect(systemMsg).toBeDefined();
+      const systemText = systemMsg!.role === "system" ? systemMsg!.content : "";
+      // Prologue carries vault.path so every workflow knows its target.
+      expect(systemText).toContain(v.path);
+      // Workflow body still follows the prologue.
+      expect(systemText).toContain("Lint");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
   test("substitutes a synthetic kickoff for empty userMessage (API rejects empty content blocks)", async () => {
     const v = await makeTestVault();
     try {

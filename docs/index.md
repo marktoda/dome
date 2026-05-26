@@ -32,6 +32,7 @@ Axioms (non-disable-able), shipped defaults (opt-out), and opt-in invariants. Ti
 - [[wiki/invariants/SENSITIVE_GOES_TO_INBOX]] — *(opt-in)* Sensitive content routes via writeDocument to inbox/review/.
 - [[wiki/invariants/VAULT_IS_GIT_REPO]] — *(axiom)* Every Dome vault is a git repository.
 - [[wiki/invariants/WIKILINKS_ARE_FULLPATH]] — *(shipped default)* [[wiki/entities/x]] not [[x]].
+- [[wiki/invariants/WORKFLOWS_KNOW_VAULT_CONTEXT]] — *(axiom)* Every workflow's system prompt is prepended with a vault prologue naming vault.path.
 
 ## Matrices
 
