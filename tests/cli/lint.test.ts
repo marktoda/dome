@@ -108,9 +108,13 @@ describe("dome lint two-mode invocation", () => {
       const mock = makeNoopMockModel();
       const res = await domeLint(target, { model: mock, skipCommit: true }, [""]);
       expect(res.ok).toBe(false);
-      if (!res.ok) {
-        expect(res.error.kind).toBe("validation");
+      if (!res.ok && res.error.kind === "validation") {
+        // Narrow to the validation variant so `.message` is in scope —
+        // the CliError union includes shapes like `invariant-violated`
+        // that carry `detail` instead of `message`.
         expect(res.error.message.toLowerCase()).toContain("non-empty");
+      } else if (!res.ok) {
+        throw new Error(`expected validation error, got: ${res.error.kind}`);
       }
       // No workflow dispatch happened — the mock model was never called.
       expect(mock.doGenerateCalls.length).toBe(0);
