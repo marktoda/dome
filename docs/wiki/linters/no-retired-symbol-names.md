@@ -29,7 +29,19 @@ target_version: v0.5.1
 
 The allow-list grows when future renames or retirements land; each entry carries its replacement and the retirement event for the audit trail.
 
-**Programmatic detection:** A test that walks `docs/wiki/**/*.md` and selected `docs/cohesive/*.md` (handoff docs; not reviews/brainstorms/ledgers), greps each file for any literal in the retired-names allow-list, and reports the file + line for every match. Substrate-discovery and review files are excluded because they are append-only history that documents the substrate's own evolution; archival-marked handoffs (e.g., `docs/cohesive/IMPLEMENTATION_HANDOFF.md`'s archival-banner section) are excluded from the doc-side scan but their banner text is asserted present so the exclusion is structurally justified.
+**Programmatic detection:** A test that walks `docs/wiki/**/*.md` and selected `docs/cohesive/*.md` (handoff docs; not reviews/brainstorms/ledgers), greps each file for any literal in the retired-names allow-list, and reports the file + line for every match.
+
+The exclusion set:
+
+- `docs/cohesive/reviews/**` — append-only review history that documents the rename's trajectory.
+- `docs/cohesive/brainstorms/**` — append-only design history that may carry pre-rename terminology.
+- `docs/cohesive/delta-ledgers/**` — append-only audit trail; ledger preambles legitimately cite both the retired and replacement names when describing a rename.
+- `docs/cohesive/substrate-discovery/**` — discovery snapshots from before a rename land here.
+- **`docs/wiki/linters/no-retired-symbol-names.md`** itself — this doc is the canonical home of the allow-list and necessarily names every retired symbol; the lockstep skips the linter spec rather than maintaining a parallel const elsewhere.
+- **`docs/index.md` §"Linters"** — the substrate catalog's one-line summary of this linter cites the allow-list members categorically; the scanner skips the §"Linters" subsection of `docs/index.md` while still scanning the other sections.
+- Archival-marked handoffs (e.g., `docs/cohesive/IMPLEMENTATION_HANDOFF.md`'s archival-banner section) — the banner text is asserted present so the exclusion is structurally justified.
+
+The exclusion set is itself substrate. Adding a new excluded path requires updating this list, the test's exclusion list, and an entry in the test's frontmatter-cross-reference comment so a future contributor reading either surface sees both.
 
 A second arm of the same test asserts that none of the retired-names appears as a public export from any `@dome/sdk` entrypoint — `grep "export.*ConsumerSurface" src/**/index.ts` returns zero matches.
 

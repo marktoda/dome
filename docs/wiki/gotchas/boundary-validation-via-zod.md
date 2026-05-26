@@ -5,7 +5,7 @@ updated: 2026-05-26
 sources: ["[[cohesive/reviews/2026-05-26-dome-v0.5-to-v1-readiness-architecture-review]]"]
 severity: medium
 coverage: off-matrix
-enforced_at: src/tools/schemas.ts
+enforced_at: src/hooks/yaml-loader.ts
 first_observed: 2026-05-26
 ---
 

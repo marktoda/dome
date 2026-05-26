@@ -13,7 +13,7 @@ This spec is normative for the Dome SDK's public API. The SDK is a TypeScript pa
 
 ### Vault
 
-A Vault is a directory + config + registry. One `Vault` instance per process per vault path. Constructed by `openVault(path: string)`. The instance:
+A Vault is a directory + config + registry. One `Vault` instance per process per vault path. Constructed by `openVault(path: string): Promise<Result<Vault, ToolError>>` — the factory returns a `Result` so failure modes (non-git directory; missing `.dome/`; corrupted config) surface as typed errors at the boundary rather than throwing; consumers unwrap with `if (!r.ok) handle(r.error)`. The instance, once unwrapped:
 
 - Knows its `path` (absolute directory).
 - Loads `.dome/page-types.yaml` and `.dome/config.yaml`.
@@ -51,7 +51,7 @@ This is the [[wiki/invariants/HOOK_DISPATCH_IS_VAULT_BOUND]] axiom. Structural e
 A Vault is opened, used, drained, and closed in one process lifetime. There is no Vault server in v0.5; the process IS the vault runtime.
 
 ```
-openVault(path) → Vault
+openVault(path) → Result<Vault, ToolError>   (unwrap to Vault)
    │
    │   in-process use: vault.tools.*, vault.dispatchEvents(...), workflows, watchers
    │
@@ -450,7 +450,7 @@ This is the **anti-concept list**: things future contributors might be tempted t
 - **Language**: TypeScript 5.x
 - **Runtime**: Bun 1.x. The SDK uses Bun's native APIs where they're cleaner (file watcher, test runner, bundler). It does not depend on Node-only modules.
 - **Distribution**: `bun publish` to npm as `@dome/sdk` (placeholder name). Single package with **four entrypoints**:
-  - `@dome/sdk` — **core**. Vault, Document, the seven Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const, and the protocol-agnostic **`AbstractSurface`** + `buildAbstractSurface(vault)` + `PromptDescriptor` + `ResourceDescriptor`. No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
+  - `@dome/sdk` — **core**. Vault, Document, the seven Tools, Hook (registry + dispatcher + context), reconcile, watcher, privileged-writer seam (`vault.rebuildIndex`), types, the `INVARIANTS` const, and the protocol-agnostic **`AbstractSurface`** + `buildAbstractSurface(vault)` + `buildInstructions(vault)` + `PromptDescriptor` + `ResourceDescriptor`. (`buildInstructions(vault): Promise<string>` is the cold-start instructions composer the AbstractSurface threads through to its `instructions` field; it is also exported directly for consumers that need the composed string without the full surface — see [[wiki/specs/prompts-and-workflows]] §"Prompt loading lifecycle" and [[wiki/invariants/WORKFLOWS_KNOW_VAULT_CONTEXT]].) No LLM, no MCP, no Commander. Bundled deps: `isomorphic-git`, `chokidar`, `zod`, `gray-matter`, `p-queue`, `yaml`, `zod-to-json-schema`.
   - `@dome/sdk/workflows` — **LLM-driven surface**. `runWorkflow`, `WorkflowRegistry`, `PromptLoader`, `projectAiSdk(vault)`, the eval suite primitives. Bundled deps: `@ai-sdk/anthropic`, `ai`. A consumer importing nothing from this entrypoint pays for none of those deps.
   - `@dome/sdk/mcp` — **MCP server surface**. `DomeMcpServer`, `renderMcp(surface)`, `McpSurface` type, `ToolAdapter` / `McpPromptAdapter` / `ResourceAdapter` types, and the MCP-shaped request handlers. Bundled deps: `@modelcontextprotocol/sdk`. Consumes `AbstractSurface` from core.
   - `@dome/sdk/cli` — **CLI shell**. `runCli`, the seven `dome*` command functions, `CliError`, `renderCliError`, `DoctorFlag`. The `bin/dome` script and any consumer that wants to embed the CLI in its own process imports from here. Bundled deps: `commander`. The CLI internally imports from `@dome/sdk/workflows` for the LLM-driven commands (`lint`, `migrate`, `export-context`) and from `@dome/sdk/mcp` for `dome serve`.

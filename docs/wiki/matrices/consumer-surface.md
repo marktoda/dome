@@ -19,7 +19,7 @@ The matrix also realizes the two-layer aggregation introduced in [[wiki/specs/sd
 
 ## Entrypoint legend
 
-- `core` — `@dome/sdk` (the package root: `src/index.ts`). No LLM, no MCP. Carries `AbstractSurface`, `buildAbstractSurface(vault)`, `PromptDescriptor`, `ResourceDescriptor`.
+- `core` — `@dome/sdk` (the package root: `src/index.ts`). No LLM, no MCP. Carries `AbstractSurface`, `buildAbstractSurface(vault)`, `buildInstructions(vault)`, `PromptDescriptor`, `ResourceDescriptor`.
 - `workflows` — `@dome/sdk/workflows`. Carries `@ai-sdk/anthropic` + `ai`.
 - `mcp` — `@dome/sdk/mcp`. Carries `@modelcontextprotocol/sdk`. Carries `renderMcp(surface)`, `McpSurface`, `ToolAdapter`, `McpPromptAdapter`, `ResourceAdapter`, `DomeMcpServer`.
 - `cli` — `@dome/sdk/cli`. Carries `commander`.
