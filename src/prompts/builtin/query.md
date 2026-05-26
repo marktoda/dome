@@ -7,6 +7,7 @@ description: Answer a question from the vault with citations.
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Query
 

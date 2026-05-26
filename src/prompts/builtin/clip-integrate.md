@@ -7,6 +7,7 @@ description: Integrate a web clip — summarize, source-page, cross-reference. (
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Clip Integrate
 

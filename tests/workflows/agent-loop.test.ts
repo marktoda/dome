@@ -173,12 +173,11 @@ describe("runWorkflow", () => {
     }
   });
 
-  // WORKFLOWS_KNOW_VAULT_CONTEXT structural seam: instead of a code-driven
-  // preamble registry (the v0.5.0 mechanism), the situational context lives
-  // in two SDK partials (`preamble-vault-identity.md`, `preamble-rendering-surface.md`)
-  // included at the top of `system-base.md`. The `{{vault.path}}` substitution
-  // in PromptLoader is what makes the identity partial vault-specific.
-  test("system-base.md includes both situational preambles via {{include}} slots", async () => {
+  // WORKFLOWS_KNOW_VAULT_CONTEXT structural seam: situational context lives
+  // in SDK partials composed via `{{include}}`, replacing the v0.5.0
+  // code-driven preamble registry. The split between system-base and
+  // per-workflow inclusion is load-bearing — see the test below.
+  test("system-base.md includes vault-identity (universal) but NOT rendering-surface (workflow-only)", async () => {
     const v = await makeTestVault();
     try {
       const res = await openVault(v.path);
@@ -186,13 +185,38 @@ describe("runWorkflow", () => {
       const loader = new PromptLoader(res.value);
       const base = await loader.load("system-base");
       expect(base).not.toBeNull();
-      // Both situational preambles are inlined into the resolved body.
-      expect(base!.body).toContain(v.path); // vault-identity (via {{vault.path}})
-      expect(base!.body.toLowerCase()).toContain("non-interactive"); // rendering-surface
+      // vault-identity IS in system-base — universal across every surface
+      // that loads system-base (workflow runs AND MCP `instructions`).
+      expect(base!.body).toContain(v.path);
+      // rendering-surface is NOT in system-base. Otherwise MCP `instructions`
+      // (delivered to interactive Claude Code sessions) would carry
+      // "non-interactive single-turn" framing that misleads the client.
+      // Workflow prompts include rendering-surface directly; see the
+      // per-workflow assertion in tests/prompts/extension-points.test.ts.
+      expect(base!.body.toLowerCase()).not.toContain("non-interactive");
+      expect(base!.body).not.toContain("# Rendering surface");
       // The directives themselves should have resolved, not appear as raw text.
       expect(base!.body).not.toContain("{{include: preamble-vault-identity.md}}");
-      expect(base!.body).not.toContain("{{include: preamble-rendering-surface.md}}");
       expect(base!.body).not.toContain("{{vault.path}}");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  // The corollary: a workflow's resolved body MUST carry rendering-surface
+  // (since workflow runs are non-interactive and the LLM needs that framing).
+  test("resolved workflow body carries the rendering-surface preamble (via per-workflow include)", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault failed to open");
+      const loader = new PromptLoader(res.value);
+      for (const name of ["ingest", "query", "lint"] as const) {
+        const p = await loader.load(name);
+        expect(p).not.toBeNull();
+        expect(p!.body.toLowerCase()).toContain("non-interactive");
+        expect(p!.body).toContain("# Rendering surface");
+      }
     } finally {
       await v.cleanup();
     }

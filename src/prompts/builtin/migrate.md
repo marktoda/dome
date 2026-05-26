@@ -7,6 +7,7 @@ description: Convert an existing markdown vault to Dome shape.
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Migrate
 

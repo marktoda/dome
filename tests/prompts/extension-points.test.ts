@@ -43,11 +43,22 @@ describe("vault augmentation slots", () => {
     }
   });
 
-  test("system-base.md declares the preamble extension points (vault-identity, rendering-surface)", async () => {
+  test("system-base.md declares the vault-identity preamble — universal across surfaces", async () => {
     const path = join(import.meta.dir, "..", "..", "src", "prompts", "builtin", "system-base.md");
     const body = await readFile(path, "utf8");
     expect(body).toContain("{{include: preamble-vault-identity.md}}");
-    expect(body).toContain("{{include: preamble-rendering-surface.md}}");
+    // rendering-surface is workflow-only — NOT in system-base, because system-base
+    // is also consumed by interactive surfaces (MCP `instructions`, `dome.system_prompt`)
+    // where "non-interactive single-turn" framing would mislead the client.
+    expect(body).not.toContain("{{include: preamble-rendering-surface.md}}");
+  });
+
+  test("every shipped workflow prompt includes the rendering-surface preamble — workflow runs only", async () => {
+    for (const name of WORKFLOW_NAMES) {
+      const path = join(import.meta.dir, "..", "..", "src", "prompts", "builtin", `${name}.md`);
+      const body = await readFile(path, "utf8");
+      expect(body).toContain("{{include: preamble-rendering-surface.md}}");
+    }
   });
 
   test("vault-prologue partial appears in resolved workflow prompts when present", async () => {
@@ -206,5 +217,93 @@ describe("vault augmentation slots", () => {
         await v.cleanup();
       }
     });
+  });
+
+  // Substrate: docs/wiki/specs/prompts-and-workflows.md §"Slot ordering in the
+  // resolved prompt". The composition order is load-bearing — accidentally
+  // swapping (e.g.) the augment and epilogue would silently change LLM
+  // behavior since "final-position reminders" stop being final-position.
+  test("resolved workflow body composes slots in the documented order", async () => {
+    const v = await makeTestVault();
+    try {
+      await mkdir(join(v.path, ".dome", "prompts"), { recursive: true });
+      await writeFile(
+        join(v.path, ".dome", "prompts", "vault-prologue.md"),
+        "VAULT-PROLOGUE-SENTINEL\n"
+      );
+      await writeFile(
+        join(v.path, ".dome", "prompts", "query-augment.md"),
+        "QUERY-AUGMENT-SENTINEL\n"
+      );
+      await writeFile(
+        join(v.path, ".dome", "prompts", "query-epilogue.md"),
+        "QUERY-EPILOGUE-SENTINEL\n"
+      );
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault open failed");
+      const loader = new PromptLoader(res.value);
+      const p = await loader.load("query");
+      expect(p).not.toBeNull();
+      const body = p!.body;
+
+      const idVaultIdentity = body.indexOf("# Current vault");
+      const idSystemBase = body.indexOf("# Dome — Wiki Maintainer");
+      const idPrologue = body.indexOf("VAULT-PROLOGUE-SENTINEL");
+      const idRendering = body.indexOf("# Rendering surface");
+      const idWorkflowBody = body.indexOf("# Query");
+      const idAugment = body.indexOf("QUERY-AUGMENT-SENTINEL");
+      const idEpilogue = body.indexOf("QUERY-EPILOGUE-SENTINEL");
+
+      // Every section is present.
+      for (const [name, idx] of Object.entries({
+        idVaultIdentity, idSystemBase, idPrologue, idRendering,
+        idWorkflowBody, idAugment, idEpilogue,
+      })) {
+        expect(idx).toBeGreaterThanOrEqual(0);
+      }
+
+      // Documented order (top to bottom of the resolved body):
+      //   preamble-vault-identity  (from system-base.md top)
+      //   system-base body         (the wiki-maintainer ethos)
+      //   vault-prologue           (from system-base.md bottom)
+      //   preamble-rendering-surface (from the workflow file, after system-base include)
+      //   workflow body            (task-specific behavior)
+      //   <name>-augment           (after workflow body)
+      //   <name>-epilogue          (final-position)
+      expect(idVaultIdentity).toBeLessThan(idSystemBase);
+      expect(idSystemBase).toBeLessThan(idPrologue);
+      expect(idPrologue).toBeLessThan(idRendering);
+      expect(idRendering).toBeLessThan(idWorkflowBody);
+      expect(idWorkflowBody).toBeLessThan(idAugment);
+      expect(idAugment).toBeLessThan(idEpilogue);
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  // The override mechanism applies to SDK-shipped partials too (preambles,
+  // system-base, vault-prologue). A vault that wants different framing can
+  // drop a same-named file under .dome/prompts/ and the loader's
+  // vault-local-first resolution picks it up.
+  test("vault-local override of an SDK-shipped preamble wins", async () => {
+    const v = await makeTestVault();
+    try {
+      await mkdir(join(v.path, ".dome", "prompts"), { recursive: true });
+      await writeFile(
+        join(v.path, ".dome", "prompts", "preamble-vault-identity.md"),
+        "# Custom identity\n\nThis vault is the family-history project.\n"
+      );
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault open failed");
+      const loader = new PromptLoader(res.value);
+      const base = await loader.load("system-base");
+      expect(base).not.toBeNull();
+      // The vault's override is inlined.
+      expect(base!.body).toContain("family-history project");
+      // The SDK default's signature phrase doesn't appear.
+      expect(base!.body).not.toContain("You are operating on the Dome vault at");
+    } finally {
+      await v.cleanup();
+    }
   });
 });

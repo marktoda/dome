@@ -7,6 +7,7 @@ description: Process a voice transcript with cleanup. (opt-in)
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Voice Ingest
 

@@ -92,9 +92,9 @@ A workflow's system prompt is composed by `PromptLoader` from a stack of named *
 
 | Slot name | Position | Scope | Filled by SDK by default? | Use it for |
 |---|---|---|---|---|
-| `preamble-vault-identity.md` | Top of `system-base.md` | Every workflow | ✅ Yes — uses `{{vault.path}}` | Naming the vault the LLM is operating on (the situational anchor for "the directory"/"the vault" phrases in prompt bodies) |
-| `preamble-rendering-surface.md` | Top of `system-base.md` | Every workflow | ✅ Yes | Telling the LLM its reply is the workflow's terminal output, not a chat turn |
-| `vault-prologue.md` | Bottom of `system-base.md` | Every workflow | ❌ No — vault-fillable | Vault-wide vocabulary, naming conventions, cross-references the agent should always know |
+| `preamble-vault-identity.md` | Top of `system-base.md` | **Every surface** that loads system-base — workflow runs AND MCP `instructions` / `dome.system_prompt` | ✅ Yes — uses `{{vault.path}}` | Naming the vault the LLM is operating on. Universal because both workflow runs and interactive MCP sessions need to know which vault is in scope. |
+| `preamble-rendering-surface.md` | After `{{include: system-base.md}}` in each shipped workflow prompt | **Workflow runs only** (not MCP session orientation) | ✅ Yes | Telling the LLM its reply is the workflow's terminal output, not a chat turn. *Workflow-only on purpose*: MCP `instructions` is delivered to interactive Claude Code sessions, and "non-interactive single-turn" framing would mislead an interactive client. |
+| `vault-prologue.md` | Bottom of `system-base.md` | Every surface that loads system-base | ❌ No — vault-fillable | Vault-wide vocabulary, naming conventions, cross-references the agent should always know |
 | `<workflow-name>-augment.md` | After the workflow body's main behavior | One workflow | ❌ No — vault-fillable | Workflow-specific extensions — e.g., time-aware retrieval rules added to `query`, task-routing rules added to `ingest` |
 | `<workflow-name>-epilogue.md` | End of the workflow prompt (final position) | One workflow | ❌ No — vault-fillable | Final-position reminders — gotchas, style notes, sensitivity rules the agent should re-encounter just before producing output |
 
@@ -130,10 +130,10 @@ The slot partials are the additive surface; the filename-override mechanism is t
 For any workflow `W`, the resolved system prompt looks like:
 
 ```
-[preamble-vault-identity.md]      ← top of system-base.md
-[preamble-rendering-surface.md]
+[preamble-vault-identity.md]      ← top of system-base.md (universal)
 [system-base.md body — invariants, ethos]
-[vault-prologue.md]               ← bottom of system-base.md
+[vault-prologue.md]               ← bottom of system-base.md (universal, vault-fillable)
+[preamble-rendering-surface.md]   ← in each workflow.md, after the system-base include (workflow-only)
 
 [workflow W's body — task-specific behavior]
 
@@ -141,7 +141,9 @@ For any workflow `W`, the resolved system prompt looks like:
 [W-epilogue.md]                   ← final position
 ```
 
-Sections separated by blank lines so the model sees clean markdown structure. Empty (unfilled) slots collapse without leaving artifacts.
+For MCP-side surfaces that load system-base directly (`buildInstructions` for the `instructions` payload; `buildPromptAdapters` for `dome.system_prompt`), the resolved body stops at the `vault-prologue.md` line — `preamble-rendering-surface.md` is *not* included because those surfaces are interactive and the workflow-only framing would mislead the client.
+
+Sections are separated by blank lines so the model sees clean markdown structure. Empty (unfilled) slots collapse without leaving artifacts.
 
 ## Override layering
 

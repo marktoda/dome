@@ -7,6 +7,7 @@ description: Detect drift in propose mode; apply a named finding on confirmation
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Lint
 

@@ -31,4 +31,40 @@ describe("MCP prompt adapters", () => {
       await v.cleanup();
     }
   });
+
+  // dome.system_prompt is the interactive-session orientation prompt the
+  // harness loads at session start. dome.workflow.* are the non-interactive
+  // workflow prompts. The rendering-surface preamble belongs only on the
+  // workflow side; pinning the split here prevents `system-base.md` from
+  // silently regaining the workflow-only preamble.
+  test("dome.system_prompt carries vault-identity but NOT the workflow-only rendering-surface", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault open failed");
+      const adapters = await buildPromptAdapters(res.value);
+      const sysPrompt = adapters.find(a => a.name === "dome.system_prompt");
+      expect(sysPrompt).toBeDefined();
+      expect(sysPrompt!.body).toContain(v.path); // vault-identity present
+      expect(sysPrompt!.body.toLowerCase()).not.toContain("non-interactive"); // rendering-surface absent
+      expect(sysPrompt!.body).not.toContain("# Rendering surface");
+    } finally {
+      await v.cleanup();
+    }
+  });
+
+  test("dome.workflow.* prompts DO carry the rendering-surface preamble (non-interactive context)", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault open failed");
+      const adapters = await buildPromptAdapters(res.value);
+      const ingest = adapters.find(a => a.name === "dome.workflow.ingest");
+      expect(ingest).toBeDefined();
+      expect(ingest!.body.toLowerCase()).toContain("non-interactive");
+      expect(ingest!.body).toContain("# Rendering surface");
+    } finally {
+      await v.cleanup();
+    }
+  });
 });

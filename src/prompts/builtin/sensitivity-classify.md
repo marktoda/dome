@@ -7,6 +7,7 @@ description: Classify content sensitivity; route to inbox/review/ if sensitive. 
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Sensitivity Classify
 

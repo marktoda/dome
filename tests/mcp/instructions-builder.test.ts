@@ -90,4 +90,26 @@ extensions:
       await v.cleanup();
     }
   });
+
+  // The MCP `instructions` payload is delivered to interactive Claude Code
+  // sessions at server initialize. The rendering-surface preamble's framing
+  // ("non-interactive single-turn workflow invocation") is workflow-only;
+  // including it here would tell an interactive client that it has no
+  // conversational follow-up channel — actively wrong. This test pins the
+  // structural seam: rendering-surface stays in per-workflow includes, not
+  // in `system-base.md`.
+  test("does NOT carry the workflow-only rendering-surface preamble (interactive context)", async () => {
+    const v = await makeTestVault();
+    try {
+      const res = await openVault(v.path);
+      if (!res.ok) throw new Error("vault open failed");
+      const out = await buildInstructions(res.value);
+      expect(out.toLowerCase()).not.toContain("non-interactive");
+      expect(out).not.toContain("# Rendering surface");
+      // Vault identity SHOULD be present — universal across surfaces.
+      expect(out).toContain(v.path);
+    } finally {
+      await v.cleanup();
+    }
+  });
 });

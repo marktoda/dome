@@ -7,6 +7,7 @@ description: External research; produce a source page; propose related updates. 
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Research
 

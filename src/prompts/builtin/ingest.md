@@ -7,6 +7,7 @@ description: Process a new raw source into wiki updates.
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Ingest
 

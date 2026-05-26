@@ -7,6 +7,7 @@ description: Produce a markdown context-packet for cross-AI handoff.
 ---
 
 {{include: system-base.md}}
+{{include: preamble-rendering-surface.md}}
 
 # Export Context
 
