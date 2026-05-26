@@ -37,6 +37,12 @@ export interface DoctorOpts {
    * docs/wiki/gotchas/daemon-off-while-vault-mutating.md.
    */
   timeSinceReconcile?: boolean;
+  /**
+   * When set, regenerate AGENTS.md templated sections from current config
+   * while preserving the user-prose section. Per
+   * docs/wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE.md.
+   */
+  repair?: boolean;
 }
 
 // Known event-kind prefixes per docs/wiki/specs/hooks.md §"Event grammar".
@@ -381,6 +387,22 @@ export async function domeDoctor(
       for (const e of tail) {
         info.push(`recent: [${e.ts}] ${e.verb} | ${e.subject}`);
       }
+    }
+  }
+
+  if (opts.repair) {
+    const { buildAgentsMdTemplated, mergeAgentsMd, buildInitialAgentsMd } = await import("../../agents-md");
+    const agentsPath = join(vault.path, "AGENTS.md");
+    const newTemplated = buildAgentsMdTemplated(vault.config, vault.pageTypes, [...WORKFLOW_NAMES]);
+    if (existsSync(agentsPath)) {
+      const existing = await Bun.file(agentsPath).text();
+      const merged = mergeAgentsMd(existing, newTemplated);
+      await Bun.write(agentsPath, merged);
+      info.push("--repair: AGENTS.md templated sections regenerated (user-prose preserved)");
+    } else {
+      const fresh = buildInitialAgentsMd(vault.config, vault.pageTypes, [...WORKFLOW_NAMES]);
+      await Bun.write(agentsPath, fresh);
+      info.push("--repair: AGENTS.md created (was missing)");
     }
   }
 
