@@ -6,11 +6,30 @@
 
 import git from "isomorphic-git";
 import fs from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { existsSync } from "node:fs";
 
+/**
+ * True iff `path` sits inside a git working tree. Walks up from `path` looking
+ * for `.git/` — matches git's own discovery semantics. Supports both:
+ *   - Vault is its own git repo (`.git/` at vault root) — the typical user case
+ *   - Vault is a subdirectory of an outer git repo (`.git/` is an ancestor) —
+ *     the dogfood case where `docs/` lives inside the SDK repo
+ * Returns the discovered git-root path, or null if none exists at or above
+ * `path`. The boolean form is `(await findGitRoot(path)) !== null`.
+ */
+export async function findGitRoot(path: string): Promise<string | null> {
+  let current = resolve(path);
+  for (;;) {
+    if (existsSync(join(current, ".git"))) return current;
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
 export async function isGitRepo(path: string): Promise<boolean> {
-  return existsSync(join(path, ".git"));
+  return (await findGitRoot(path)) !== null;
 }
 
 export async function initRepo(path: string, branch = "main"): Promise<void> {
