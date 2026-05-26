@@ -13,6 +13,7 @@ import { WorkflowRegistry } from "../prompts/registry";
 import type { WorkflowName } from "./workflow-name";
 import { commitWorkflow } from "../workflow-commit";
 import { MUTATING_TOOL_NAMES, filterAiTools } from "../tools/registry";
+import { projectAiSdk } from "./project-ai-sdk";
 
 export const DEFAULT_MODEL = "claude-opus-4-7";
 export const DEFAULT_MAX_STEPS = 50;
@@ -68,7 +69,7 @@ export async function runWorkflow(
   const def = await registry.get(workflowName);
   if (!def) throw new Error(`workflow not found: ${workflowName}`);
 
-  const tools = filterAiTools(vault.aiTools, def.frontmatter.tools);
+  const tools = filterAiTools(projectAiSdk(vault), def.frontmatter.tools);
   const modelArg = opts.model ?? DEFAULT_MODEL;
   const model: LanguageModel = typeof modelArg === "string" ? anthropic(modelArg) : modelArg;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
@@ -160,10 +161,11 @@ function subjectFromUserMessage(userMessage: string): string {
  * Build the AI SDK tool set for a workflow, filtered to the tools the
  * workflow declares in its frontmatter `tools:` list. Exposed for tests.
  *
- * Now a one-liner over `vault.aiTools` (the registry-bound canonical set):
- * adding an 8th Tool to `src/tools/registry.ts` makes it available here for
- * free.
+ * Calls projectAiSdk(vault) per invocation rather than reading
+ * vault.aiTools (which was removed in Phase B to make
+ * CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY structurally true). Adding an 8th
+ * Tool to src/tools/registry.ts makes it available here for free.
  */
 export function buildAiSdkTools(vault: Vault, allowedToolNames: ReadonlyArray<string>): ToolSet {
-  return filterAiTools(vault.aiTools, allowedToolNames);
+  return filterAiTools(projectAiSdk(vault), allowedToolNames);
 }
