@@ -16,6 +16,11 @@ import type { Result, ToolError } from "../types";
 import { TOOL_NAMES, MCP_TOOL_NAMES, TOOL_REGISTRY, type ToolName, bindTools } from "../tools/registry";
 import { makePrivilegedWriter } from "../privileged-writer";
 
+// The MCP adapter reads tool input schemas directly from TOOL_REGISTRY
+// (which carries the Zod schemas without any AI-SDK dependency). This
+// keeps the adapter inside @dome/sdk/mcp clean even though the registry
+// itself stays AI-SDK-free.
+
 export interface ToolAdapter {
   /** MCP-protocol name (snake_case, `dome.*` prefix). */
   name: string;
@@ -46,18 +51,14 @@ export interface ToolAdapter {
  */
 export function buildToolAdapters(vault: Vault): ToolAdapter[] {
   const writer = makePrivilegedWriter(vault.path);
-  const { aiTools, parsers } = bindTools(vault, writer);
+  const { parsers } = bindTools(vault, writer);
   return TOOL_NAMES.map((name: ToolName) => {
     const entry = TOOL_REGISTRY[name];
-    const aiTool = aiTools[name];
-    if (aiTool === undefined || aiTool.inputSchema === undefined) {
-      throw new Error(`registry is missing AI tool or inputSchema for "${name}"`);
-    }
     const parser = parsers[name];
     return {
       name: MCP_TOOL_NAMES[name],
       description: entry.description,
-      inputSchema: aiTool.inputSchema as z.ZodType,
+      inputSchema: entry.schema as z.ZodType,
       handler: async (input: unknown) => (await parser(input)).result,
     };
   });

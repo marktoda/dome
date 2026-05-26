@@ -67,11 +67,11 @@ export { projectEffectToEvents, projectEffectsToEvents } from "./event-projectio
 
 // Canonical Tool registry — single source of truth for the seven Tools.
 // Plugin and harness authors that want to enumerate or extend the Tool
-// surface consume these.
+// surface consume these. AI-SDK-shaped projections (`filterAiTools`,
+// `projectAiSdk`) live in @dome/sdk/workflows.
 export {
   TOOL_NAMES,
   MCP_TOOL_NAMES,
   MUTATING_TOOL_NAMES,
-  filterAiTools,
   type ToolName,
 } from "./tools/registry";

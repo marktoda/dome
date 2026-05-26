@@ -10,15 +10,14 @@
 
 import type { ToolSet } from "ai";
 import type { Vault } from "../vault";
-import { bindTools } from "../tools/registry";
+import { bindAiSdkTools } from "../tools/ai-sdk-binding";
 import { makePrivilegedWriter } from "../privileged-writer";
 
 export function projectAiSdk(vault: Vault): ToolSet {
-  // bindTools needs a PrivilegedWriter; reconstruct one (cheap factory)
+  // bindAiSdkTools needs a PrivilegedWriter; reconstruct one (cheap factory)
   // to avoid leaking the privileged writer through the public Vault
-  // surface. The Tools returned by bindTools are AI SDK Tool<> shapes;
-  // their execute() handlers close over the writer.
+  // surface. The Tools returned are AI SDK Tool<> shapes whose execute()
+  // handlers close over the writer.
   const writer = makePrivilegedWriter(vault.path);
-  const { aiTools } = bindTools(vault, writer);
-  return aiTools;
+  return bindAiSdkTools(vault, writer);
 }

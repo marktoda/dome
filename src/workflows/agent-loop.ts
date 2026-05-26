@@ -12,7 +12,8 @@ import type { Vault } from "../vault";
 import { WorkflowRegistry } from "../prompts/registry";
 import type { WorkflowName } from "./workflow-name";
 import { commitWorkflow } from "../workflow-commit";
-import { MUTATING_TOOL_NAMES, filterAiTools } from "../tools/registry";
+import { MUTATING_TOOL_NAMES } from "../tools/registry";
+import { filterAiTools } from "../tools/ai-sdk-binding";
 import { projectAiSdk } from "./project-ai-sdk";
 
 export const DEFAULT_MODEL = "claude-opus-4-7";

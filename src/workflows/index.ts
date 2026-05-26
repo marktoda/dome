@@ -11,6 +11,7 @@ export { WorkflowName, WORKFLOW_NAMES, isWorkflowName } from "./workflow-name";
 export { WorkflowTier, WORKFLOW_TIERS } from "./workflow-tier";
 
 export { projectAiSdk } from "./project-ai-sdk";
+export { bindAiSdkTools, filterAiTools } from "../tools/ai-sdk-binding";
 
 // Re-exported from src/prompts/ — workflows entrypoint hosts the prompt
 // registry + loader because both are workflow-runner inputs.
