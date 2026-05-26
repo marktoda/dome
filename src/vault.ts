@@ -262,7 +262,18 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     tools,
     aiTools,
     toolParsers,
-    drainHooks: () => hookDispatcher.drain(),
+    // drainHooks waits for both the dispatcher's async queue AND any
+    // in-flight quarantine-persistence writes. The latter is load-bearing
+    // because dome serve quarantining a handler on its final event needs
+    // the .dome/state/quarantined.json write to land before the process
+    // exits — otherwise dome doctor on the next CLI invocation sees an
+    // empty quarantine and the failing handler re-fires. The contract
+    // ("quarantine survives across processes") in hooks.md §"Execution
+    // model" Failure model depends on both drains completing.
+    drainHooks: async () => {
+      await hookDispatcher.drain();
+      await registry.flushPersist();
+    },
     dispatchEvents,
     rebuildIndex,
   };
