@@ -6,6 +6,34 @@ import { domeMigrate } from "./commands/migrate";
 import { domeLint } from "./commands/lint";
 import { domeExportContext } from "./commands/export-context";
 import { domeServe } from "./commands/serve";
+import { formatMissingApiKey } from "./api-key-guard";
+import type { ToolError } from "../types";
+
+/**
+ * Render a ToolError as a one-line stderr message. Special-cases the kinds
+ * the user is most likely to encounter at the CLI surface; everything else
+ * falls back to JSON so the structured shape is still visible.
+ */
+function renderToolError(error: ToolError): string {
+  if (error.kind === "missing-api-key") return formatMissingApiKey(error);
+  if (error.kind === "vault-not-git-repo") {
+    return `Not a git repository: ${error.path}. Run 'git init' or use 'dome migrate' on an existing markdown vault.`;
+  }
+  if (error.kind === "config-invalid") {
+    return `Vault config error: ${error.message}. Is this a Dome vault? Run 'dome init <path>' to bootstrap.`;
+  }
+  if (error.kind === "already-exists") {
+    return `Already exists: ${error.path}`;
+  }
+  if (error.kind === "not-found") {
+    return `Not found: ${error.path}`;
+  }
+  if (error.kind === "validation") return error.message;
+  // Fall back to JSON for the less-common, more-structured kinds (invariant
+  // violations, concurrent-write-conflict, dispatcher-owned-path, …) so the
+  // user can see the full payload.
+  return JSON.stringify(error);
+}
 
 // --------------------------------------------------------------------------
 // Exit codes
@@ -128,7 +156,7 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .action(async (path: string) => {
       const r = await domeInit(path);
-      if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
+      if (!r.ok) { console.error(renderToolError(r.error)); outcome.code = ExitCode.Failure; return; }
       console.log(`Initialized Dome vault at ${r.value.path} (sha ${r.value.sha.slice(0, 7)})`);
     });
 
@@ -152,7 +180,7 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .action(async (path: string, opts: { apply?: boolean }) => {
       const r = await domeMigrate(path, opts.apply === true, {});
-      if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
+      if (!r.ok) { console.error(renderToolError(r.error)); outcome.code = ExitCode.Failure; return; }
       if (r.value.text.length > 0) console.log(r.value.text);
       console.error(`migrate complete: ${r.value.steps} step(s)`);
     });
@@ -183,7 +211,7 @@ function buildProgram(outcome: RunOutcome): Command {
       // transport's read loop on a Node event-loop handle, which keeps the
       // process alive until stdin closes.
       const r = await domeServe(path, { connectStdio: true });
-      if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
+      if (!r.ok) { console.error(renderToolError(r.error)); outcome.code = ExitCode.Failure; return; }
       // serveStdio has connected the transport. Log to stderr so the JSON-RPC
       // channel on stdout stays clean; log to stdout would corrupt the
       // protocol on the first message.
@@ -216,7 +244,7 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .action(async () => {
       const r = await domeReconcile(process.cwd());
-      if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
+      if (!r.ok) { console.error(renderToolError(r.error)); outcome.code = ExitCode.Failure; return; }
       const v = r.value;
       console.log(`reconcile complete: ${v.inboxProcessed} inbox, ${v.changedFiles} changed, ${v.scheduledFired} scheduled`);
     });
@@ -240,7 +268,7 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .action(async () => {
       const r = await domeLint(process.cwd(), {});
-      if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
+      if (!r.ok) { console.error(renderToolError(r.error)); outcome.code = ExitCode.Failure; return; }
       if (r.value.text.length > 0) console.log(r.value.text);
       console.error(`lint complete: ${r.value.steps} step(s)`);
     });
@@ -264,7 +292,7 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .action(async (topic: string) => {
       const r = await domeExportContext(process.cwd(), topic, {});
-      if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
+      if (!r.ok) { console.error(renderToolError(r.error)); outcome.code = ExitCode.Failure; return; }
       if (r.value.text.length > 0) console.log(r.value.text);
       console.error(`export-context complete: ${r.value.steps} step(s)`);
     });
@@ -307,7 +335,7 @@ function buildProgram(outcome: RunOutcome): Command {
     )
     .action(async (cliOpts: DoctorCliOpts) => {
       const r = await domeDoctor(process.cwd(), toDoctorOpts(cliOpts));
-      if (!r.ok) { console.error(JSON.stringify(r.error)); outcome.code = ExitCode.Failure; return; }
+      if (!r.ok) { console.error(renderToolError(r.error)); outcome.code = ExitCode.Failure; return; }
       for (const line of r.value.info) console.log(line);
       if (r.value.violations.length === 0) {
         console.log("doctor: clean");

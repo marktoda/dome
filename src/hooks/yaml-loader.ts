@@ -50,10 +50,29 @@ export type VaultForWorkflow = Parameters<
 >[0];
 
 /**
+ * Optional override for the runWorkflow function the loader invokes from each
+ * registered handler. Tests pass a stub here to capture invocations without
+ * touching the LLM; production code (openVault) leaves it undefined, and the
+ * loader lazy-imports the real runWorkflow (avoiding a circular dep with
+ * `workflows/agent-loop.ts`).
+ *
+ * This shape is the test seam: previously the test suite used Bun's
+ * `mock.module` to stub agent-loop globally, which polluted later-loaded
+ * tests in the same process. An explicit injector is locality-friendly and
+ * doesn't bleed across files.
+ */
+export type RunWorkflowFn = (
+  vault: VaultForWorkflow,
+  workflowName: WorkflowName,
+  userMessage: string,
+) => Promise<unknown>;
+
+/**
  * Read every .yaml in <vault>/.dome/hooks/ and register a hook for each one.
  * The handler captures `vault` by closure and invokes `runWorkflow` with the
  * named workflow when the event fires. Lazy-imports `runWorkflow` to avoid
- * circular deps with `workflows/agent-loop.ts`.
+ * circular deps with `workflows/agent-loop.ts`; tests pass `opts.runWorkflow`
+ * directly to stub out the LLM round-trip.
  *
  * Filenames whose YAML fails to parse are surfaced via `onLoadError`. The
  * loader does not throw; bad YAML simply doesn't register, the rest do.
@@ -61,7 +80,10 @@ export type VaultForWorkflow = Parameters<
 export async function loadDeclarativeHooks(
   vault: VaultForWorkflow,
   registry: HookRegistry,
-  opts: { onLoadError?: (file: string, error: string) => void } = {},
+  opts: {
+    onLoadError?: (file: string, error: string) => void;
+    runWorkflow?: RunWorkflowFn;
+  } = {},
 ): Promise<void> {
   const hooksDir = join(vault.path, ".dome", "hooks");
   if (!existsSync(hooksDir)) return;
@@ -84,7 +106,7 @@ export async function loadDeclarativeHooks(
       source: "vault-local",
       async: parsed.async,
       idempotent: parsed.idempotent,
-      handler: makeHandler(vault, parsed),
+      handler: makeHandler(vault, parsed, opts.runWorkflow),
     });
   }
 }
@@ -121,20 +143,25 @@ function parseDeclarativeHook(filename: string, text: string): ParsedDeclarative
   return parsed;
 }
 
-function makeHandler(vault: VaultForWorkflow, parsed: ParsedDeclarativeHook): HookHandler {
+function makeHandler(
+  vault: VaultForWorkflow,
+  parsed: ParsedDeclarativeHook,
+  injectedRunWorkflow: RunWorkflowFn | undefined,
+): HookHandler {
   return async (event: HookEvent, _ctx: HookContext) => {
     if (parsed.pathPattern !== undefined) {
       const path = typeof event.path === "string" ? event.path : "";
       if (!matchPathPattern(parsed.pathPattern, path)) return;
     }
-    // Lazy-import runWorkflow to avoid the circular dep
-    // (this module imported eagerly by vault.ts; agent-loop.ts depends on
-    // WorkflowRegistry which depends on Vault).
-    const { runWorkflow } = await import("../workflows/agent-loop");
+    // Use the injected runWorkflow (tests) or lazy-import the real one
+    // (production). Lazy-import avoids the circular dep — this module is
+    // imported eagerly by vault.ts; agent-loop.ts depends on WorkflowRegistry
+    // which depends on Vault.
+    const run = injectedRunWorkflow ?? (await import("../workflows/agent-loop")).runWorkflow;
     const eventPath = typeof event.path === "string" ? event.path : "(none)";
     const userMessage =
       `An ${event.kind} event was observed at path ${eventPath}. Process it per your workflow.`;
-    await runWorkflow(vault, parsed.workflow, userMessage);
+    await run(vault, parsed.workflow, userMessage);
   };
 }
 
