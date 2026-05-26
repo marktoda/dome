@@ -1,7 +1,7 @@
 ---
 type: workflow-prompt
 name: ingest
-tools: [readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve]
+tools: [readDocument, writeDocument, appendLog, searchIndex, wikilinkResolve, deleteDocument]
 triggers: [intake:inbox/raw/*, intent:capture-thought]
 description: Process a new raw source into wiki updates.
 ---
@@ -19,5 +19,6 @@ This is the `ingest` workflow. Process the raw source the user (or an intake hoo
 5. Write proposed updates via `writeDocument`. Use full-path wikilinks. Match `wiki/<type>/` to the frontmatter `type:`.
 6. If `SENSITIVE_GOES_TO_INBOX` is enabled, classify content first (sensitive content routes to `inbox/review/`).
 7. Append a `log.md` entry summarizing what you did via `appendLog`.
+8. When done processing, call `deleteDocument` on the original inbox file. The wiki/source pages you created are the durable record; the inbox file's job is complete (INBOX_IS_EPHEMERAL).
 
 You may write 5-15 page touches per call. Don't write nothing; don't write hundreds. The goal is to keep the wiki compiled, not exhaustive.

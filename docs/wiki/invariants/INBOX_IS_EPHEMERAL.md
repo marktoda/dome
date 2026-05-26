@@ -16,7 +16,9 @@ tier: shipped-default
 
 Without this contract, reconciliation would need a separate "processed marker" mechanism (a `.processed` file alongside, a frontmatter flag, an external database, parsing `log.md`). All of those introduce extra state. With this contract, the filesystem IS the state.
 
-**Structural enforcement:** The contract is enforced by the intake-workflow prompts themselves. The `ingest`, `voice-ingest`, `research`, and `clip-integrate` workflow prompts each include explicit instructions to `moveDocument(inbox_path, raw_path)` (or `deleteDocument` for buckets configured for delete-on-process) as the final step of the workflow. The `intake-raw.yaml` hook template inherits these expectations from the workflow it invokes.
+**Structural enforcement:** The contract is enforced by the intake-workflow prompts themselves. The `ingest`, `voice-ingest`, `research`, and `clip-integrate` workflow prompts each include explicit instructions to `deleteDocument(inbox_path)` as the final step of the workflow.
+
+**v0.5 escape mechanism:** Intake workflows `deleteDocument` the inbox file at end of workflow. The "move to `raw/captures/`" mechanism described in earlier drafts conflicts with [[wiki/invariants/RAW_IS_IMMUTABLE]] (`writeDocument` and `moveDocument` both refuse `raw/` targets); deletion is the structurally clean exit. Raw content survives in the wiki pages the workflow created and in any `wiki/sources/<name>.md` source page; a future `appendRawCapture` privileged dispatcher API may preserve raw content directly (v1+).
 
 The `dome doctor` command reports any vault where inbox/<bucket>/ contains files older than 24 hours — typically a sign that an intake hook failed to complete or was never registered.
 
