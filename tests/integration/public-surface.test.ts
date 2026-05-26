@@ -28,11 +28,18 @@ describe("public surface — Stage 1 contract", () => {
     expect(typeof deleteDocument).toBe("function");
   });
 
-  test("12 named invariants are enumerated in INVARIANTS const", () => {
-    expect(Object.keys(INVARIANTS).length).toBe(12);
+  test("the INVARIANTS const enumerates the canonical named invariants by membership (not count)", () => {
+    // Per docs/wiki/gotchas/substrate-count-drift.md, inline counts in tests
+    // drift as the substrate grows. Check membership of the canonical axioms
+    // instead — adding a new axiom doesn't require a test edit.
     expect(INVARIANTS.RAW_IS_IMMUTABLE).toBe("RAW_IS_IMMUTABLE");
     expect(INVARIANTS.INDEX_AND_LOG_ARE_DISPATCHER_OWNED).toBe("INDEX_AND_LOG_ARE_DISPATCHER_OWNED");
     expect(INVARIANTS.VAULT_IS_GIT_REPO).toBe("VAULT_IS_GIT_REPO");
+    expect(INVARIANTS.CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY).toBe("CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY");
+    // Sanity: there are at least 13 entries (the seven Phase A invariants plus
+    // the six axioms; lower bound only). For the actual count, see the
+    // canonical list at docs/wiki/invariants/.
+    expect(Object.keys(INVARIANTS).length).toBeGreaterThanOrEqual(13);
   });
 
   test("end-to-end: open, write a page, read it back", async () => {
