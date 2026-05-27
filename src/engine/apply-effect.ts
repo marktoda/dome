@@ -60,6 +60,7 @@ import type {
 import { diagnosticEffect } from "../core/effect";
 import type { Capability, ProcessorPhase } from "../core/processor";
 import { enforceCapability } from "./capability-broker";
+import { firstPatchPath } from "./patch-parse";
 
 // ----- ApplyEffectSinks -----------------------------------------------------
 
@@ -167,6 +168,28 @@ export type ApplyEffectResult = {
   readonly outcome: "applied" | "downgraded" | "denied" | "rejected-by-phase";
   readonly appliedEffect: Effect | null;
   readonly diagnostics: ReadonlyArray<DiagnosticEffect>;
+  /**
+   * The structured capability-use record for the run ledger. Populated for
+   * every effect kind the broker actually enforces against a named
+   * capability — `patch` (capability=`patch.auto` | `patch.propose`,
+   * resource=touched path), `fact` (capability=`graph.write`,
+   * resource=predicate namespace), `question` (capability=`graph.write`,
+   * resource=null), `external` (capability=`external:<name>`,
+   * resource=effect.capability).
+   *
+   * Undefined for effect kinds the broker passes through without enforcement
+   * (`diagnostic`, `view`, `job` in v1 — see `enforceCapability`) and for
+   * `rejected-by-phase` outcomes (the broker was never consulted, so no
+   * capability dimension exists). The engine's adoption loop forwards
+   * populated records to `recordCapabilityUse` per
+   * [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] §"Structural
+   * enforcement" §2.
+   */
+  readonly capabilityUse?: {
+    readonly capability: string;
+    readonly resource: string | null;
+    readonly outcome: "allowed" | "downgraded" | "denied";
+  };
 };
 
 // ----- noopSinks ------------------------------------------------------------
@@ -225,6 +248,7 @@ export async function applyEffect(opts: {
       outcome: "denied",
       appliedEffect: null,
       diagnostics: Object.freeze([verdict.diagnostic]),
+      ...maybeCapabilityUse(opts.effect, "denied"),
     });
   }
   const routed: Effect =
@@ -237,11 +261,91 @@ export async function applyEffect(opts: {
   // 3. Route to the matching sink. Exhaustive on Effect.kind.
   await routeToSink(routed, opts);
 
+  const outcome: "downgraded" | "allowed" =
+    verdict.kind === "downgrade" ? "downgraded" : "allowed";
+  // The capability dimension is described in terms of the ORIGINAL effect
+  // (the broker enforced against the processor's emission, not the
+  // downgraded shape). For a `patch.auto` → `patch.propose` downgrade, the
+  // ledger row records `capability: "patch.auto"` with `outcome:
+  // "downgraded"` — that's the surface a "this processor tried to auto-
+  // apply but lacked the grant" audit query needs.
   return frozen({
     outcome: verdict.kind === "downgrade" ? "downgraded" : "applied",
     appliedEffect: routed,
     diagnostics: verdictDiagnostics,
+    ...maybeCapabilityUse(opts.effect, outcome),
   });
+}
+
+// ----- capability-use extraction -------------------------------------------
+
+/**
+ * Build the structured `capabilityUse` record for the ledger from the
+ * (effect, outcome) pair. Returns `{}` (no `capabilityUse` field) for effect
+ * kinds the broker passes through without enforcement (`diagnostic`,
+ * `view`, `job` — see `enforceCapability`); the run-ledger surface records
+ * one row per *enforced* attempt, not per dispatch.
+ *
+ * The `capability` string uses the canonical `<kind>` form (e.g.,
+ * `"patch.auto"`, `"graph.write"`, `"external:slack.post"`) consistent with
+ * `capabilities.md` §"Canonical capability strings" and the example values
+ * in `run-ledger.md` §"Tables — capability_uses".
+ *
+ * The spread-merge pattern `{ ...maybeCapabilityUse(...) }` at call sites
+ * is intentional under `exactOptionalPropertyTypes`: returning `{}`
+ * produces an object without the `capabilityUse` key (rather than one with
+ * `capabilityUse: undefined`), which the type's `field?: T` shape demands.
+ */
+function maybeCapabilityUse(
+  effect: Effect,
+  outcome: "allowed" | "downgraded" | "denied",
+): { capabilityUse?: { readonly capability: string; readonly resource: string | null; readonly outcome: "allowed" | "downgraded" | "denied" } } {
+  switch (effect.kind) {
+    case "patch": {
+      const capability = effect.mode === "auto" ? "patch.auto" : "patch.propose";
+      const resource = firstPatchPath(effect.patch);
+      return { capabilityUse: Object.freeze({ capability, resource, outcome }) };
+    }
+    case "fact": {
+      // Mirrors the broker's namespace extraction; keeping a single
+      // one-liner here avoids cross-file coupling to a private broker
+      // helper. Returns null when the predicate has no dot (the broker
+      // also denies that case — outcome will be "denied").
+      const lastDot = effect.predicate.lastIndexOf(".");
+      const resource = lastDot > 0 ? effect.predicate.slice(0, lastDot) : null;
+      return {
+        capabilityUse: Object.freeze({
+          capability: "graph.write",
+          resource,
+          outcome,
+        }),
+      };
+    }
+    case "question":
+      return {
+        capabilityUse: Object.freeze({
+          capability: "graph.write",
+          resource: null,
+          outcome,
+        }),
+      };
+    case "external":
+      return {
+        capabilityUse: Object.freeze({
+          capability: `external:${effect.capability}`,
+          resource: effect.capability,
+          outcome,
+        }),
+      };
+    case "diagnostic":
+    case "job":
+    case "view":
+      // Broker passes these through without enforcement in v1 — no
+      // capability dimension to record.
+      return {};
+  }
+  const _exhaustive: never = effect;
+  return _exhaustive;
 }
 
 // ----- phase compatibility --------------------------------------------------

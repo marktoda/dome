@@ -52,9 +52,13 @@
 //     `./capability-broker` indirectly via `./apply-effect`,
 //     `./apply-effect`, `./closure-commit`, `./runner-contract` for the
 //     outbound `AdoptionPhaseRunner` type), pure types from `../core/`,
-//     the run-id primitive from `../run-context`, the adopted-ref
-//     read/write chokepoint from `../adopted-ref`, the git boundary from
-//     `../git`, and the `Vault` type from `../vault`.
+//     the adopted-ref read/write chokepoint from `../adopted-ref`, the
+//     git boundary from `../git`, the run-ledger handle + capability-use
+//     accessor from `../ledger/` (Phase 6 — optional, threaded only when
+//     the caller wires a ledger), and the `Vault` type from `../vault`.
+//     Note: `../run-context.makeRunContext` was previously imported to
+//     mint per-effect run ids; the runtime now owns run-id allocation and
+//     surfaces it on `RunnerResult.runId`, removing that dependency here.
 //   - The applied-paths bookkeeping uses a `Set<string>` (insertion-order
 //     iteration for the closure commit's touchedPaths argument is fine —
 //     `makeClosureCommit` does not require sort order).
@@ -68,7 +72,9 @@ import type {
 import { commitOid, type CommitOid } from "../core/source-ref";
 import { setAdoptedRef, ZERO_SHA } from "../adopted-ref";
 import { currentBranch, currentSha } from "../git";
-import { makeRunContext } from "../run-context";
+import type { LedgerDb } from "../ledger/db";
+import { recordCapabilityUse } from "../ledger/capability-uses";
+import type { RunId } from "../ledger/runs";
 import type { Vault } from "../vault";
 import { compileRange } from "./compile-range";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
@@ -135,8 +141,23 @@ export async function adopt(opts: {
   readonly sinks: ApplyEffectSinks;
   readonly forceAdvance?: boolean;
   readonly maxIterations?: number;
+  /**
+   * Optional run-ledger handle. When present, the loop writes one
+   * `capability_uses` row per `applyEffect` invocation that produced a
+   * structured `capabilityUse` record (per
+   * [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]] §"Structural
+   * enforcement" §2). The run-ledger lifecycle itself (queued / running /
+   * succeeded / failed) is owned by `src/processors/runtime.ts` — the
+   * runtime allocates the run id and surfaces it on `RunnerResult.runId`,
+   * which is what the engine uses to join the capability-use rows.
+   *
+   * Optional during the Phase 6 transition: callers that pass a runtime
+   * without a ledger pass no ledger here either, and the loop runs as in
+   * Phase 5 (no ledger writes). Phase 7+ wires both end-to-end.
+   */
+  readonly ledger?: LedgerDb;
 }): Promise<AdoptionResult> {
-  const { vault, proposal, runAdoptionProcessors, sinks } = opts;
+  const { vault, proposal, runAdoptionProcessors, sinks, ledger } = opts;
   const maxIterations = opts.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const forceAdvance = opts.forceAdvance ?? false;
 
@@ -210,14 +231,8 @@ export async function adopt(opts: {
     // NOT count as an auto-patch for fixed-point purposes).
     const effectsThisIteration: Effect[] = [];
 
-    for (const { processorId, declared, granted, effects } of runnerResults) {
+    for (const { runId, processorId, declared, granted, effects } of runnerResults) {
       for (const effect of effects) {
-        const runId = makeRunContext({
-          extensionId: processorId,
-          base: adopted,
-          sourceHead,
-        }).runId;
-
         const applied = await applyEffect({
           effect,
           processorId,
@@ -228,6 +243,24 @@ export async function adopt(opts: {
           granted,
           sinks,
         });
+
+        // Ledger: capability-use rows per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
+        // §"Structural enforcement" §2. The broker's structured verdict
+        // surfaces on `applied.capabilityUse` (populated for enforced
+        // effect kinds — patch / fact / question / external; undefined
+        // for diagnostic / view / job and for `rejected-by-phase` outcomes
+        // where the broker was never consulted). Written here, with the
+        // runtime-allocated `runId` joining the row to the ledger's
+        // `runs.id`.
+        if (ledger !== undefined && applied.capabilityUse !== undefined) {
+          recordCapabilityUse(ledger, {
+            runId: runId as RunId,
+            capability: applied.capabilityUse.capability,
+            resource: applied.capabilityUse.resource,
+            outcome: applied.capabilityUse.outcome,
+            recordedAt: new Date(),
+          });
+        }
 
         // Broker-emitted diagnostics: deny / downgrade-surprise / phase-
         // mismatch. These ride on `applied.diagnostics` regardless of

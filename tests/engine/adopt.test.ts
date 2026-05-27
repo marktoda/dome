@@ -97,6 +97,7 @@ describe("adopt fixed-point loop", () => {
     });
     const runner: AdoptionPhaseRunner = async () => [
       {
+        runId: "run_test_blocker",
         processorId: "test.blocker",
         declared: [],
         granted: [],
@@ -140,6 +141,7 @@ describe("adopt fixed-point loop", () => {
     const auto = { kind: "patch.auto" as const, paths: ["wiki/**"] };
     const runner: AdoptionPhaseRunner = async () => [
       {
+        runId: "run_test_diverger",
         processorId: "test.diverger",
         declared: [auto],
         granted: [auto],

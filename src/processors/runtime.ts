@@ -49,11 +49,19 @@
 //     Capability + Snapshot + TreeOid types), `../core/source-ref`
 //     (CommitOid), `../engine/runner-contract` (AdoptionPhaseRunner +
 //     RunnerResult — the neutral home for the engine's outbound runner
-//     contract that this runtime implements), `./registry`
-//     (ProcessorRegistry), `./triggers` (matchTriggers + TriggerMatch),
-//     `./context` (makeProcessorContext + ProcessorContextInput),
-//     `../run-context` (makeRunContext). No filesystem, git, or sqlite
-//     imports — the `resolveTree` injection point is what bridges to git.
+//     contract that this runtime implements), `../ledger/db` (LedgerDb
+//     handle type — the Phase 6 ledger-lifecycle seam), `../ledger/runs`
+//     (insertQueued / markRunning / markSucceeded / markFailed / newRunId
+//     + RunId & TriggerKind types — the per-run ledger writes pinned by
+//     EVERY_PROCESSOR_RUN_IS_LEDGERED), `./registry` (ProcessorRegistry),
+//     `./triggers` (matchTriggers + TriggerMatch), `./context`
+//     (makeProcessorContext + ProcessorContextInput), `../run-context`
+//     (makeRunContext — the no-ledger fallback for runner-result runId).
+//     `node:crypto` for the `hashEffect` content hash. No filesystem
+//     imports — the `resolveTree` injection point bridges to git; the
+//     ledger handle's SQLite I/O is owned by `src/ledger/`.
+
+import { createHash } from "node:crypto";
 
 import type { DiagnosticEffect, Effect } from "../core/effect";
 import { diagnosticEffect } from "../core/effect";
@@ -68,6 +76,16 @@ import type {
   AdoptionPhaseRunner,
   RunnerResult,
 } from "../engine/runner-contract";
+import type { LedgerDb } from "../ledger/db";
+import {
+  insertQueued,
+  markFailed,
+  markRunning,
+  markSucceeded,
+  newRunId,
+  type RunId,
+  type TriggerKind,
+} from "../ledger/runs";
 import type { ProcessorRegistry } from "./registry";
 import { matchTriggers, type TriggerMatch } from "./triggers";
 import {
@@ -130,6 +148,23 @@ export type BuildRuntimeOptions = {
   readonly resolveGrants: (processorId: string) => ReadonlyArray<Capability>;
   readonly extensionIdFor: (processorId: string) => string;
   readonly resolveTree: (commit: CommitOid) => Promise<TreeOid>;
+  /**
+   * Optional run-ledger handle. When present, every dispatched processor
+   * lands one row in `runs` per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
+   * §"Structural enforcement": `insertQueued` + `markRunning` before
+   * `processor.run()`; `markSucceeded` (with effect hashes) or `markFailed`
+   * (with the thrown error message) after.
+   *
+   * Optional during the Phase 6 transition: existing call sites
+   * (`tests/processors/runtime.test.ts`, the to-be-wired `src/vault.ts`)
+   * continue to operate without a ledger; Phase 7+ wires the live handle
+   * end-to-end. When absent, no ledger writes occur and the runner-result
+   * `runId` falls back to a `makeRunContext`-synthesized placeholder so
+   * downstream `applyEffect` capability-use recording still has a slot
+   * (the engine's adoption loop skips ledger writes if the ledger itself
+   * is absent at its own seam).
+   */
+  readonly ledger?: LedgerDb;
 };
 
 // ----- buildRuntime ---------------------------------------------------------
@@ -157,6 +192,7 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
     resolveGrants,
     extensionIdFor,
     resolveTree,
+    ledger,
   } = opts;
 
   const adoptionRunner: AdoptionPhaseRunner = async (input) => {
@@ -181,11 +217,42 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       const declared = processor.capabilities;
       const granted = resolveGrants(processor.id);
       const extensionId = extensionIdFor(processor.id);
-      const runId = makeRunContext({
-        extensionId,
-        base: input.proposal.base,
-        sourceHead: input.proposal.head,
-      }).runId;
+
+      // Allocate the run id. When a ledger is wired we use the ledger's
+      // `newRunId` so the id is the same one stored in the row; when no
+      // ledger is wired we fall back to the `makeRunContext`-synthesized
+      // form (identical shape — both produce `run_<unix-ms>_<6-char-rand>`).
+      // Either way, downstream `applyEffect` calls see a populated runId.
+      const startedAt = new Date();
+      const runId: string =
+        ledger !== undefined
+          ? newRunId(startedAt)
+          : makeRunContext({
+              extensionId,
+              base: input.proposal.base,
+              sourceHead: input.proposal.head,
+            }).runId;
+
+      // Ledger lifecycle: queued + running, both synchronously before the
+      // processor runs. Per [[wiki/invariants/EVERY_PROCESSOR_RUN_IS_LEDGERED]]
+      // §"Structural enforcement" §1. The first matched trigger drives the
+      // `trigger_kind` + `trigger_payload_json` columns — capturing every
+      // matched trigger in the payload preserves the audit detail (a future
+      // schema can promote multiple triggers to a structured column).
+      if (ledger !== undefined) {
+        insertQueued(ledger, {
+          id: runId as RunId,
+          proposalId: input.proposal.id,
+          processorId: processor.id,
+          processorVersion: processor.version,
+          phase: "adoption",
+          inputCommit: input.candidate,
+          triggerKind: triggerKindOf(matches),
+          triggerPayload: triggerPayloadOf(matches),
+          startedAt,
+        });
+        markRunning(ledger, runId as RunId, startedAt);
+      }
 
       const ctxInput: ProcessorContextInput<AdoptionRunInput> = {
         snapshot,
@@ -201,14 +268,55 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
       };
       const ctx = makeProcessorContext(ctxInput);
 
-      const effects = await runOneProcessor(processor.run, ctx, processor.id);
+      const runOutcome = await runOneProcessor(
+        processor.run,
+        ctx,
+        processor.id,
+      );
+
+      // Ledger lifecycle: terminal mark. `markSucceeded` / `markFailed`
+      // both filter by `status = 'running'` (per `src/ledger/runs.ts`) so
+      // an aborted-elsewhere row is a no-op. The `effect_hashes_json`
+      // column carries the sha256 of every emitted effect, even the
+      // synthesized `processor-threw` diagnostic — the audit trail
+      // captures what the engine actually saw.
+      if (ledger !== undefined) {
+        const finishedAt = new Date();
+        const durationMs = finishedAt.getTime() - startedAt.getTime();
+        if (runOutcome.error === null) {
+          markSucceeded(ledger, {
+            id: runId as RunId,
+            effectHashes: runOutcome.effects.map(hashEffect),
+            // Phase 6 does not wire `modelInvoke` cost tracking; the
+            // `cost_usd` column stays null until a future phase plumbs the
+            // model-invocation accounting through `ProcessorContext`.
+            costUsd: null,
+            durationMs,
+            // `output_commit` is the closure-commit OID, computed *after*
+            // every adoption-iteration's effects have been routed (see
+            // `src/engine/adopt.ts`'s `makeClosureCommit` call). A
+            // per-run update from the engine's adoption loop is deferred —
+            // for Phase 6 the column stays null on the success path.
+            outputCommit: null,
+            finishedAt,
+          });
+        } else {
+          markFailed(ledger, {
+            id: runId as RunId,
+            error: runOutcome.error,
+            durationMs,
+            finishedAt,
+          });
+        }
+      }
 
       results.push(
         Object.freeze({
+          runId,
           processorId: processor.id,
           declared,
           granted,
-          effects,
+          effects: runOutcome.effects,
         }),
       );
     }
@@ -222,11 +330,27 @@ export function buildRuntime(opts: BuildRuntimeOptions): ProcessorRuntime {
 // ----- internals ------------------------------------------------------------
 
 /**
+ * The result of one `processor.run()` dispatch. `effects` is the (possibly
+ * synthesized) effect list returned to the adoption loop; `error` is `null`
+ * on the success path and the error message on the failure path. The
+ * separation lets the ledger lifecycle write the correct terminal state
+ * (`markSucceeded` vs `markFailed`) while preserving the synthesized
+ * `processor-threw` DiagnosticEffect for the engine loop's existing
+ * "non-blocking diagnostic" behavior.
+ */
+type RunOutcome = {
+  readonly effects: ReadonlyArray<Effect>;
+  readonly error: string | null;
+};
+
+/**
  * Invoke a processor's `run` method with try/catch insulation. A thrown
  * exception (including async rejection) is synthesized into a single
  * `DiagnosticEffect` with `code: "processor-threw"` and severity `error`
  * (non-blocking — a single misbehaving processor should not refuse
- * adoption; the operator surface is the run ledger + telemetry).
+ * adoption; the operator surface is the run ledger + telemetry). The
+ * returned `error` field carries the thrown message so the caller's
+ * ledger-lifecycle writer can land `status: "failed"` with `error` set.
  *
  * The processor's static `TInput` is its own concern; the runtime stores
  * processors as `Processor<unknown>` (per registry.ts §"Type-erased at
@@ -239,18 +363,91 @@ async function runOneProcessor(
   run: (ctx: ProcessorContext<unknown>) => Promise<ReadonlyArray<Effect>>,
   ctx: ProcessorContext<AdoptionRunInput>,
   processorId: string,
-): Promise<ReadonlyArray<Effect>> {
+): Promise<RunOutcome> {
   try {
     const effects = await run(ctx as ProcessorContext<unknown>);
-    return Object.freeze([...effects]);
+    return { effects: Object.freeze([...effects]), error: null };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const message = errorMessage(e);
     const synthesized: DiagnosticEffect = diagnosticEffect({
       severity: "error",
       code: "processor-threw",
       message: `Processor ${processorId} threw during adoption-phase run: ${message}`,
       sourceRefs: [],
     });
-    return Object.freeze([synthesized]);
+    return { effects: Object.freeze([synthesized]), error: message };
   }
+}
+
+/**
+ * Stable, deterministic content hash for an Effect — `sha256(JSON.stringify(e))`,
+ * hex-encoded. The hash lands in `runs.effect_hashes_json` so a future audit
+ * surface can dedupe / diff effects across runs without storing the effect
+ * payloads themselves.
+ *
+ * `JSON.stringify` ordering matches the construction order of the effect
+ * literal — processors emit effects via the `*Effect()` constructor helpers
+ * in `src/core/effect.ts`, which build object literals with a deterministic
+ * key order. The hash is therefore stable across runs of the same effect.
+ */
+function hashEffect(effect: Effect): string {
+  return createHash("sha256").update(JSON.stringify(effect)).digest("hex");
+}
+
+/**
+ * Stringify an arbitrary thrown value for the ledger's `error` column.
+ * Mirrors the helper in `src/projections/db.ts` / `src/outbox/db.ts` —
+ * `Error` → `.message`; raw string → itself; otherwise JSON-stringify with
+ * a `String(e)` last-resort fallback for non-serializable values.
+ */
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
+/**
+ * Extract the `trigger_kind` column value from the matched-triggers list.
+ * The runtime guarantees `matches.length > 0` at the call site (only firing
+ * processors enter the ledger lifecycle), so reading `matches[0]` is safe;
+ * `noUncheckedIndexedAccess` requires the `=== undefined` guard for the
+ * type narrowing.
+ *
+ * A processor whose triggers fire from multiple kinds in one iteration is
+ * uncommon in v1 — most adoption-phase processors declare a single
+ * `{ kind: "signal" }` or `{ kind: "path" }` trigger. The first-match
+ * convention keeps the column scalar; the full `trigger_payload_json`
+ * carries the per-trigger detail for forensics.
+ */
+function triggerKindOf(matches: ReadonlyArray<TriggerMatch>): TriggerKind {
+  const first = matches[0];
+  if (first === undefined) {
+    // Defensive: the caller guards `matches.length === 0` before invoking
+    // this helper. Reaching here is a programmer error — surface loudly.
+    throw new Error("runtime: triggerKindOf called with empty matches");
+  }
+  return first.trigger.kind;
+}
+
+/**
+ * Capture the matched-trigger detail as the `trigger_payload_json` column
+ * value (per-trigger kind + matched signal events). The full match list is
+ * stored, not just the first match — a future audit surface can replay the
+ * exact fan-in that caused the run.
+ *
+ * The matched events are the (signal, path) pairs that fired the trigger;
+ * they're the input the processor saw, modulo the runtime's
+ * `ProcessorContext` envelope construction.
+ */
+function triggerPayloadOf(
+  matches: ReadonlyArray<TriggerMatch>,
+): ReadonlyArray<{ readonly trigger: TriggerMatch["trigger"]; readonly matchedSignals: TriggerMatch["matchedSignals"] }> {
+  return matches.map((m) => ({
+    trigger: m.trigger,
+    matchedSignals: m.matchedSignals,
+  }));
 }

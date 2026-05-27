@@ -62,8 +62,20 @@ export type AdoptionPhaseRunner = (input: {
  * iteration. The loop iterates `effects` and routes each through
  * `applyEffect` with the per-processor `(declared, granted)` so the broker
  * decision is correctly scoped.
+ *
+ * `runId` is the ledger run id allocated by the runtime when it dispatched
+ * the processor. The engine threads it through `applyEffect` so the broker
+ * records capability uses against the correct row — joining the
+ * `capability_uses` and `runs` tables on this key (per
+ * [[wiki/specs/run-ledger]] §"Tables — capability_uses"). When the runtime
+ * is built without a ledger (the Phase 6 transitional state — see
+ * `src/processors/runtime.ts`'s `BuildRuntimeOptions.ledger` slot), the
+ * runtime synthesizes a placeholder id via `makeRunContext` so the engine
+ * keeps its single-source-of-truth contract; nothing is recorded in that
+ * case, but the type slot stays populated.
  */
 export type RunnerResult = {
+  readonly runId: string;
   readonly processorId: string;
   readonly declared: ReadonlyArray<Capability>;
   readonly granted: ReadonlyArray<Capability>;
