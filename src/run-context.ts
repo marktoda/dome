@@ -2,9 +2,9 @@
 // Consumed by `commitWorkflow` (the engine-commit chokepoint today) and by
 // future Phase 4 closure-pass / patch-mediated extension-effect callers.
 //
-// Lives in its own file (rather than inside `src/adoption.ts`) because the
+// Lives in its own file (rather than inside `src/engine/adopt.ts`) because the
 // per-commit RunContext primitive has a different change surface than the
-// once-per-sync state machine in `adoption.ts`. See
+// once-per-sync state machine in `engine/adopt.ts`. See
 // docs/wiki/specs/adoption.md §"Engine commit trailers".
 
 import { randomBytes } from "node:crypto";
@@ -39,7 +39,7 @@ export const ZERO_SHA = "0000000000000000000000000000000000000000";
 /**
  * The well-known `Dome-Extension` value for engine-driven commits that
  * don't originate from a named workflow or bundle — closure-pass commits
- * made directly by `src/adoption.ts`'s close step.
+ * made directly by `src/engine/adopt.ts`'s close step.
  */
 export const ENGINE_EXTENSION_ID = "engine";
 

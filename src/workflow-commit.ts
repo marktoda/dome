@@ -29,10 +29,10 @@ export interface WorkflowCommitInput {
  * Tool effects to the working tree prior to this call.
  *
  * Refuses (throws) when `runContext` is missing — the structural fence
- * against trailer-less engine commits. The single legitimate caller of
- * `commitWorkflow` today is `runWorkflow`; future callers (closure-pass
- * commits in `src/adoption.ts`'s close step, Phase 4+'s patch-mediated
- * extension effects) construct their RunContext explicitly.
+ * against trailer-less engine commits. The legitimate caller is
+ * `src/engine/closure-commit.ts` (the adoption-loop close step).
+ * Future patch-mediated extension-effect callers will construct their
+ * RunContext explicitly.
  */
 export async function commitWorkflow(vault: EngineVault, input: WorkflowCommitInput): Promise<string> {
   if (!vault.config.git.auto_commit_workflows) {

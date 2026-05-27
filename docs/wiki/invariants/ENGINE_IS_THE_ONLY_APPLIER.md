@@ -18,7 +18,7 @@ tier: axiom
 
 1. **Exhaustive routing.** `src/engine/apply-effect.ts` carries a `switch (effect.kind)` over the seven Effect kinds. TypeScript's `never`-type exhaustiveness check fires on any unrouted kind. Adding an 8th Effect without updating the switch fails compilation.
 2. **No mutation imports outside the engine.** The semantic linter `engine-is-sole-applier` ([[wiki/linters/engine-is-sole-applier]]) greps `src/` for imports of `node:fs`, `bun:sqlite`, `isomorphic-git`'s commit/write functions, and the outbox handler interfaces — outside `src/engine/`, `src/projections/`, and `src/ledger/`, these imports fail the lint.
-3. **The engine's writer is module-private.** `src/engine/writer.ts` is not exported from any package entrypoint. Code outside `src/engine/` cannot reach it.
+3. **The engine's sinks are constructed inside the engine layer.** `buildSqliteSinks` (in `src/projections/sinks.ts`) is composed by `src/engine/vault-runtime.ts`'s `openVaultRuntime`; the seven-callback `ApplyEffectSinks` shape is consumed only by `src/engine/apply-effect.ts`'s `applyEffect`. Code outside `src/engine/` + `src/projections/` + `src/outbox/` + `src/ledger/` does not reach the writer-shaped surfaces.
 4. **The capability broker is invoked from one place.** `enforceCapability` is called from `apply-effect.ts` and nowhere else; greppable via `tests/integration/capability-enforcement.test.ts`'s import-graph check.
 
 **Counter-example:** A garden-phase processor uses dynamic import (`await import("node:fs")`) to bypass the static linter. The processor calls `fs.writeFile` — but the file written is in the working tree, *not* in the candidate tree the engine built from the adopted commit. The write is invisible to the current Proposal's adoption (which reads from the candidate); it surfaces on the next watcher cycle as `vault.out-of-band-edit`, becoming a new Proposal. So the bypass doesn't corrupt adopted state; it just produces a confusing second Proposal. The semantic linter is upgraded to flag dynamic imports of mutation modules in v1.1+.
@@ -27,23 +27,17 @@ tier: axiom
 
 ## Implementation status
 
-**As of Phase 1+2 (engine layer landed; v0.5 Tools surface still live):**
-
-The engine chokepoint exists structurally; the *only-applier* property is forward-looking because the v0.5 Tools / privileged-writer mutation paths still ship.
+**As of the v1 cut (Phases 1–10 complete):**
 
 - Structurally true now:
-  - **Exhaustive routing** — `src/engine/apply-effect.ts:routeToSink` switches on `Effect.kind` with a `never`-typed `_exhaustive` catch-all. Adding an 8th Effect without a route fails compilation today.
+  - **Exhaustive routing** — `src/engine/apply-effect.ts:routeToSink` switches on `Effect.kind` with a `never`-typed `_exhaustive` catch-all. Adding an 8th Effect without a route fails compilation.
   - **One enforcement-broker call site** — `enforceCapability` (from `src/engine/capability-broker.ts`) is invoked only from `apply-effect.ts:applyEffect`. The broker module is not imported anywhere else under `src/`.
   - **Sink injection shape is fixed** — `ApplyEffectSinks` enumerates the seven sink callbacks; the router is a pure dispatcher that owns no I/O of its own.
+  - **Mutation modules confined to engine + storage layers.** Phase 7b retired `src/tools/`, `src/privileged-writer.ts`, `src/vault-dispatcher.ts`, and the other v0.5 mutation paths. The only modules under `src/` that import `bun:sqlite` are `src/{projections,outbox,ledger}/`; the only module that imports `isomorphic-git`'s commit/write functions is `src/git.ts`, consumed by `src/engine/closure-commit.ts`.
 
-- Forward-looking (lands in later phases):
-  - **`src/engine/writer.ts` does not yet exist.** The invariant's bullet 3 references a module-private writer that ships with the Phase 4 projection-store wiring (the file lands when the real sinks replace `noopSinks()`).
-  - **The semantic linters `engine-is-sole-applier` and `no-direct-mutation-outside-engine`** ([[wiki/linters/engine-is-sole-applier]], [[wiki/linters/no-direct-mutation-outside-engine]]) are reviewable specs but not yet CI checks. They ship in Phase 10 cleanup. Until then, the boundary is reviewer-enforced.
-  - **Mutation imports outside `src/engine/` still exist by design.** `src/tools/`, `src/privileged-writer.ts`, `src/workflow-commit.ts`, and others reach `Bun.write`, `node:fs`, and `isomorphic-git` directly — these are the v0.5 paths Phase 7 retires. The lint that catches them is meaningful only after those modules are deleted.
-  - **The integration test `tests/integration/engine-is-sole-applier.test.ts`** ships when the engine sinks are wired (Phase 4) and the Tools surface is retired (Phase 7); running it earlier would flag every legitimate v0.5 mutation path.
-  - **The v1.1+ dynamic-import linter upgrade** (counter-example mitigation) is post-v1.
-
-Until Phase 4 + Phase 7, "engine is the only applier" is the v1 contract the substrate pins; the live v0.5 mutation paths coexist as the actual write surface.
+- Forward-looking (v1.x):
+  - **The semantic linters `engine-is-sole-applier` and `no-direct-mutation-outside-engine`** ([[wiki/linters/engine-is-sole-applier]], [[wiki/linters/no-direct-mutation-outside-engine]]) are reviewable specs but not yet CI checks. The boundary is currently held by the type system (`ApplyEffectSinks` shape) and the deletion of v0.5 modules; the lints would catch future regressions.
+  - **The v1.1+ dynamic-import linter upgrade** (counter-example mitigation against `await import("node:fs")` bypasses) is post-v1.
 
 **Related:**
 - [[wiki/specs/effects]] §"The Effect union" — the exhaustive switch

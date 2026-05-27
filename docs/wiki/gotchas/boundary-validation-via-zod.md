@@ -6,7 +6,6 @@ sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 severity: medium
 coverage: off-matrix
 enforced_at: src/extensions/loader.ts
-enforced_at_status: deferred  # v0.5 path retired; v1 enforcement TBD in later phase
 first_observed: 2026-05-27
 ---
 

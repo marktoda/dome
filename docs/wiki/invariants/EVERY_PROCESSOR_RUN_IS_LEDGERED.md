@@ -16,7 +16,7 @@ tier: shipped-default
 
 **Structural enforcement:**
 
-1. **The engine begins a RunRecord on every processor dispatch.** `src/engine/runtime.ts` writes `INSERT INTO runs (status: 'queued', ...)` before calling `processor.run()`. Updates to `status: 'running'` at the start of `run()`, and to terminal status at the end.
+1. **The engine begins a RunRecord on every processor dispatch.** `src/processors/runtime.ts`'s `adoptionRunner` calls `insertQueued` (via `src/ledger/runs.ts`) before invoking `processor.run()`, then transitions through `markRunning` → terminal state (`markSucceeded` / `markFailed`).
 2. **The applier writes `capability_uses` rows per effect.** Joined to the RunRecord by `run_id`.
 3. **Failed processor runs still complete the ledger row.** A `try/catch` around `processor.run()` writes `status: 'failed'`, `error: <message>`, before rethrowing — so the failure is durably observable.
 4. **Orphan runs are detected.** Engine crashes between `status: 'running'` and the terminal update leave rows with `status: 'running'` and no `finished_at`. `dome doctor --show orphan-runs` lists them; `dome doctor --orphan-runs --fail` transitions them to `failed` after the user confirms.

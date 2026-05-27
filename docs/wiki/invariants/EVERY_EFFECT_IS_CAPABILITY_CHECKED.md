@@ -42,24 +42,19 @@ The dynamic `import()` runs the linked test file's describe/test blocks; a regre
 
 ## Implementation status
 
-**As of Phase 1+3 (engine layer + processor runtime landed; end-to-end invocation path forward-looking):**
-
-The enforcement function exists, the runner exists, and the structural fence between them is wired — but no caller yet drives a processor through the runner in production. The chokepoint is real; what flows through it in shipped code paths isn't.
+**As of the v1 cut (Phases 1–10 complete):**
 
 - Structurally true now:
-  - **One enforcement function, one call site.** `src/engine/capability-broker.ts:enforceCapability` is invoked exactly once from `src/engine/apply-effect.ts:applyEffect` and from nowhere else in `src/`. The verdict shape (`allow | downgrade | deny`) is closed and the applier branches on it (`apply-effect.ts:222-235`).
-  - **Verdict branching matches the spec.** `allow` routes the original effect, `downgrade` routes `verdict.rewrittenEffect` (e.g., PatchEffect `auto → propose`), `deny` returns `outcome: "denied"` with the broker's deny diagnostic — all three paths exist in code today.
-  - **The Capability union is closed** (`src/core/processor.ts`: `Read | PatchPropose | PatchAuto | OwnsRegion | OwnsPath | GraphWrite | ModelInvoke | External`). The bundle-manifest loader's per-field Zod schemas validate declarations at registration boundary.
-  - **The `AdoptionPhaseRunner` contract is satisfied.** `src/processors/runtime.ts:buildRuntime` walks the registry, matches triggers, invokes processors, and feeds the returned Effects into `applyEffect` — which is the only call site that invokes the broker. The structural fence (runner → applyEffect → broker) is statically wired by the type contract.
+  - **One enforcement function, one call site.** `src/engine/capability-broker.ts:enforceCapability` is invoked exactly once from `src/engine/apply-effect.ts:applyEffect` and from nowhere else in `src/`. The verdict shape (`allow | downgrade | deny`) is closed and the applier branches on it.
+  - **Verdict branching matches the spec.** `allow` routes the original effect, `downgrade` routes `verdict.rewrittenEffect`, `deny` returns `outcome: "denied"` with the broker's deny diagnostic.
+  - **The Capability union is closed** in `src/core/processor.ts`. The bundle-manifest loader's Zod schemas in `src/extensions/manifest-schema.ts` validate declarations at registration boundary.
+  - **The end-to-end runtime path is wired.** `submitProposal` (`src/engine/submit-proposal.ts`) opens the runtime via `openVaultRuntime`, calls `adopt()`, which invokes the runtime's `adoptionRunner`, which feeds returned Effects through `applyEffect` — the broker's only caller. Every Effect a processor emits passes through the broker.
+  - **Capability-use rows land in the ledger.** `src/engine/adopt.ts` calls `recordCapabilityUse` after each `applyEffect` returns a structured `capabilityUse` field. The `capability_uses` table joins back to `runs` by `run_id`.
+  - **Phase × kind compatibility check** runs upstream of the broker (`isPhaseCompatible` in `apply-effect.ts`); incompatible pairs produce a `phase-mismatch` diagnostic before the broker is consulted.
 
-- Forward-looking (lands in later phases):
-  - **The runner is dormant — no production caller exercises it yet.** Nothing outside `src/processors/` imports `buildRuntime`. The end-to-end invocation path (`vault.submitProposal(...)` → engine → runner → broker → sink) lands in Phase 7, when `submitProposal` is exported and `src/vault.ts` is rewired off `vault.tools`. Until that wiring lands, the broker fires only from Phase 2 unit tests and the runner's own tests; no shipped caller drives a processor through it.
-  - **`CapabilityUse` ledger rows** depend on `src/ledger/` (Phase 8). The `capability_uses` table and the per-effect ledger write are part of the run-ledger implementation, not the Phase 2 router.
-  - **Registration-time refusal of `model.invoke` on adoption-phase processors** (bullet 4) requires the bundle loader's per-processor manifest validator (Phase 6); the Capability schemas exist but the cross-field check at load time ships with the validator.
-  - **The capability broker is currently a Phase 2 placeholder** per the brainstorm phasing — Phase 5 tightens it (full per-tier semantics, downgrade-surprise diagnostics in canonical shape, model.invoke quota tracking).
-  - **`tests/integration/capability-enforcement.test.ts`** (the Effect-kind × Capability-tier matrix) ships when Phase 5 lands; the lockstep stub at `tests/invariants/every-effect-is-capability-checked.test.ts` is reviewable substrate now.
-
-The chokepoint and the runner are both built and structurally connected; the *runtime coverage* claim ("every Effect a Processor emits in production passes through the broker") becomes true once Phase 7 wires `submitProposal` to the runner.
+- Forward-looking (v1.x):
+  - **Registration-time refusal of `model.invoke` on adoption-phase processors** — the Capability schemas exist and the phase × trigger matrix is checked at manifest-parse time, but the phase × capability cross-field check (e.g., "adoption phase MUST NOT declare `model.invoke`") is a v1.1 tightening.
+  - **`model.invoke` quota tracking** — `cost_usd` is a ledger column today; the `modelInvoke` wrapper that aggregates LLM token-cost across a run lands in v1.1.
 
 **Related:**
 - [[wiki/specs/capabilities]]

@@ -13,7 +13,7 @@
 // constructor functions (`clientProposal`, `agentProposal`, `gardenProposal`,
 // `manualProposal`, `importProposal`) are the only paths to a valid Proposal.
 //
-// Per [[wiki/invariants/CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY]], this entrypoint
+// Per [[wiki/invariants/ENGINE_HAS_NO_LLM_OR_MCP_DEPENDENCY]], this entrypoint
 // does NOT depend on any LLM SDK, MCP transport, or HTTP framework.
 
 // ----- Core types: Result + ToolError ---------------------------------------
