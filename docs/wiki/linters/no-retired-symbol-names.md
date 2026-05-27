@@ -15,7 +15,7 @@ target_version: v0.5.1
 
 **What it checks:** Every normative doc under `docs/wiki/` and every cohesive-substrate doc under `docs/cohesive/` (excluding `docs/cohesive/reviews/`, `docs/cohesive/brainstorms/`, `docs/cohesive/delta-ledgers/`, and `docs/cohesive/substrate-discovery/` — historical persisted-file content that documents the rename trajectory itself) names no symbol in the retired-names allow-list.
 
-**The retired-names allow-list** is a typed const exported from `src/types.ts` alongside `INVARIANTS`. As of v0.5.1:
+**The retired-names allow-list** ships as a typed const at `src/retired-symbols.ts` exporting `RETIRED_SYMBOLS` (alongside `INVARIANTS` in `src/types.ts` as the sibling typed-const pattern). The lockstep test (`tests/integration/no-retired-symbol-names-in-specs.test.ts`) imports the const and walks the docs surface; this doc is excluded from the scan per the exclusion set below. The current entries:
 
 | Retired symbol | Replaced by | Retired at |
 |---|---|---|
