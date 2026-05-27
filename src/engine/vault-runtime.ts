@@ -1,10 +1,16 @@
 // vault-runtime: the composed v1 runtime handle.
 //
 // One `VaultRuntime` opens the three operational databases — projection,
-// outbox, and run-ledger — and builds the `ProcessorRuntime` against the
-// caller-supplied `ProcessorRegistry`. The handle is consumed by
+// outbox, and run-ledger — and builds the `ProcessorRuntime` against
+// either a caller-supplied `ProcessorRegistry` or a bundle-loader-derived
+// registry built by walking `bundlesRoot/`. The handle is consumed by
 // `submitProposal` (in `./submit-proposal.ts`); a single VaultRuntime can
 // serve many `submitProposal` calls without re-opening sqlite per call.
+//
+// Phase 8 added the auto-load construction shape: `openVaultRuntime` now
+// accepts either the pre-built-registry opts (used by tests and advanced
+// consumers) or the `bundlesRoot:` opts (the canonical entry shape for v1
+// vaults — `<vault>/.dome/extensions/` or `assets/extensions/`).
 //
 // This file replaces — for v1-engine consumers — the v0.5 `src/vault.ts`'s
 // `openVault()`. The old `openVault` stays in place for Phase 7a (existing
@@ -61,7 +67,17 @@ import {
   buildRuntime,
   type ProcessorRuntime,
 } from "../processors/runtime";
-import type { ProcessorRegistry } from "../processors/registry";
+import {
+  buildRegistry,
+  type ProcessorRegistry,
+  type RegistryError,
+} from "../processors/registry";
+import {
+  flattenBundleProcessors,
+  loadBundles,
+  type LoadBundlesError,
+  type LoadedBundle,
+} from "../extensions/loader";
 
 // ----- Public types ---------------------------------------------------------
 
@@ -87,7 +103,13 @@ export type VaultRuntime = {
   readonly close: () => Promise<void>;
 };
 
-export type OpenVaultRuntimeOpts = {
+/**
+ * The pre-built-registry shape: the caller has already loaded bundles
+ * (or hand-constructed processors), built the registry, and computed the
+ * `(extensions, processorVersions)` lists for the projection cache key.
+ * The runtime composes against these directly.
+ */
+export type OpenVaultRuntimeWithRegistryOpts = {
   /**
    * Absolute filesystem path to the vault root. The three databases land
    * at `<vaultPath>/.dome/state/{projection,outbox,runs}.db`.
@@ -121,48 +143,103 @@ export type OpenVaultRuntimeOpts = {
 };
 
 /**
+ * The auto-load shape: the caller points at a `bundlesRoot/` directory
+ * and the runtime walks it, loads + validates each bundle's manifest,
+ * dynamic-imports each declared processor module, builds the registry,
+ * and derives `(extensions, processorVersions)` from the loaded bundles.
+ *
+ * This is the canonical entry shape for v1 vaults — `bundlesRoot` is
+ * typically `<vault>/.dome/extensions/` (per
+ * [[wiki/specs/sdk-surface]] §"Extension bundles") or `assets/extensions/`
+ * (for SDK-shipped first-party bundles in tests / dev).
+ */
+export type OpenVaultRuntimeWithBundlesOpts = {
+  readonly vaultPath: string;
+  /**
+   * Directory containing one subdirectory per bundle. Each subdirectory
+   * holds a `manifest.yaml` (or `manifest.json`) plus a `processors/`
+   * directory with the declared processor modules.
+   */
+  readonly bundlesRoot: string;
+};
+
+/**
+ * Union of the two construction shapes. Discriminated structurally: the
+ * `registry`-bearing variant takes a pre-built `ProcessorRegistry`; the
+ * `bundlesRoot`-bearing variant takes a filesystem path and lets the
+ * runtime load bundles itself.
+ */
+export type OpenVaultRuntimeOpts =
+  | OpenVaultRuntimeWithRegistryOpts
+  | OpenVaultRuntimeWithBundlesOpts;
+
+/**
  * The closed set of `openVaultRuntime` failures. Each variant carries the
- * underlying cause string from the failing DB-open call so the caller can
- * surface an actionable error.
+ * underlying cause from the failing call so the caller can surface an
+ * actionable error.
+ *
+ *   - `projection-db-open-failed`, `outbox-db-open-failed`,
+ *     `ledger-db-open-failed`: the three DB-open seams.
+ *   - `bundle-load-failed`: the bundle loader rejected the bundlesRoot
+ *     (root missing, manifest invalid, processor import failure, etc.).
+ *     Carries the nested `LoadBundlesError` for the operator's diagnostic.
+ *   - `registry-build-failed`: the loaded processor set failed
+ *     `buildRegistry`'s structural checks (duplicate id, empty triggers,
+ *     invalid phase). Carries the nested `RegistryError`.
  */
 export type OpenVaultRuntimeError =
   | { readonly kind: "projection-db-open-failed"; readonly cause: string }
   | { readonly kind: "outbox-db-open-failed"; readonly cause: string }
-  | { readonly kind: "ledger-db-open-failed"; readonly cause: string };
+  | { readonly kind: "ledger-db-open-failed"; readonly cause: string }
+  | { readonly kind: "bundle-load-failed"; readonly cause: LoadBundlesError }
+  | { readonly kind: "registry-build-failed"; readonly cause: RegistryError };
 
 // ----- openVaultRuntime -----------------------------------------------------
 
 /**
  * Open the three operational databases under `<vaultPath>/.dome/state/`
- * and build a `ProcessorRuntime` against `opts.registry`. Returns a
+ * and build a `ProcessorRuntime` against the resolved registry. Returns a
  * `VaultRuntime` handle the caller passes to `submitProposal`.
  *
- * On any DB-open failure, every already-opened DB is closed before the
- * error is returned — no leaked handles on the error path.
+ * Two construction shapes are supported (see `OpenVaultRuntimeOpts`):
+ *
+ *   - Pre-built registry shape: caller supplies `registry`, `extensions`,
+ *     `processorVersions` — used by tests + advanced consumers that hand-
+ *     compose their processor set.
+ *   - Auto-load shape: caller supplies `bundlesRoot` — the runtime walks
+ *     it, loads + validates each bundle's manifest, dynamic-imports
+ *     declared processor modules, builds the registry, and derives the
+ *     projection-cache-key lists from the loaded bundles. This is the
+ *     canonical entry shape for v1 vaults.
+ *
+ * On any DB-open / bundle-load / registry-build failure, every already-
+ * opened DB is closed before the error is returned — no leaked handles on
+ * the error path.
  *
  * Phase 7a placeholders (documented in the file banner; this comment
  * lists the wired seams the function injects):
  *   - `resolveGrants` := identity-on-declared (grant set = declared set).
  *   - `extensionIdFor` := identity (`processorId` is treated as the
  *     extension id).
- *   - `resolveTree` := throwing placeholder; only invoked when an
- *     adoption-phase processor reads through `ctx.snapshot`, which the
- *     Phase 7a smoke test does not trigger.
- *
- * @param opts.vaultPath          Absolute vault root.
- * @param opts.registry           The processor registry the runtime walks.
- * @param opts.extensions         Installed bundles (for projection cache key).
- * @param opts.processorVersions  Loaded processors (for projection cache key).
+ *   - `resolveTree` := the live git boundary (`../git`'s `readTree`).
  */
 export async function openVaultRuntime(
   opts: OpenVaultRuntimeOpts,
 ): Promise<Result<VaultRuntime, OpenVaultRuntimeError>> {
-  // 1. Projection DB.
+  // 1. Resolve the registry + projection-cache-key lists from the opts
+  //    shape. Bundle-load failures and registry-build failures surface as
+  //    structured `OpenVaultRuntimeError` variants before any DB opens —
+  //    no need to clean up handles on these paths.
+  const resolved = await resolveRegistryFromOpts(opts);
+  if (!resolved.ok) return err(resolved.error);
+  const { registry, extensions, processorVersions } = resolved.value;
+
+  // 2. Projection DB.
   const projectionPath = join(opts.vaultPath, ".dome", "state", "projection.db");
   const projectionResult = await openProjectionDb({
     path: projectionPath,
-    extensionSet: opts.extensions,
-    processorVersions: opts.processorVersions,
+    extensionSet: extensions,
+    processorVersions,
   });
   if (!projectionResult.ok) {
     return err({
@@ -172,7 +249,7 @@ export async function openVaultRuntime(
   }
   const projectionDb = projectionResult.value.db;
 
-  // 2. Outbox DB. Close the projection on failure to avoid a handle leak.
+  // 3. Outbox DB. Close the projection on failure to avoid a handle leak.
   const outboxPath = join(opts.vaultPath, ".dome", "state", "outbox.db");
   const outboxResult = await openOutboxDb({ path: outboxPath });
   if (!outboxResult.ok) {
@@ -184,7 +261,7 @@ export async function openVaultRuntime(
   }
   const outboxDb = outboxResult.value.db;
 
-  // 3. Ledger DB. Close the prior two on failure.
+  // 4. Ledger DB. Close the prior two on failure.
   const ledgerPath = join(opts.vaultPath, ".dome", "state", "runs.db");
   const ledgerResult = await openLedgerDb({ path: ledgerPath });
   if (!ledgerResult.ok) {
@@ -197,13 +274,13 @@ export async function openVaultRuntime(
   }
   const ledgerDb = ledgerResult.value.db;
 
-  // 4. Build the ProcessorRuntime. The three injections cover the
+  // 5. Build the ProcessorRuntime. The three injections cover the
   //    Phase 7a seams — see file banner. `resolveTree` is wired against
   //    the live git boundary so the runtime's per-iteration
   //    `Snapshot` construction doesn't trip on a throw placeholder.
   const processorRuntime = buildRuntime({
-    registry: opts.registry,
-    resolveGrants: defaultResolveGrants(opts.registry),
+    registry,
+    resolveGrants: defaultResolveGrants(registry),
     extensionIdFor: defaultExtensionIdFor,
     resolveTree: makeResolveTree(opts.vaultPath),
     ledger: ledgerDb,
@@ -225,6 +302,93 @@ export async function openVaultRuntime(
   });
 
   return ok(runtime);
+}
+
+// ----- Registry resolution --------------------------------------------------
+
+/**
+ * Internal shape returned by `resolveRegistryFromOpts`: the three pieces
+ * the downstream DB-open + runtime-build steps consume, regardless of
+ * which `OpenVaultRuntimeOpts` shape produced them.
+ */
+type ResolvedRegistry = {
+  readonly registry: ProcessorRegistry;
+  readonly extensions: ReadonlyArray<{
+    readonly name: string;
+    readonly version: string;
+  }>;
+  readonly processorVersions: ReadonlyArray<{
+    readonly id: string;
+    readonly version: string;
+  }>;
+};
+
+/**
+ * Discriminate the input shape and produce the (registry, extensions,
+ * processorVersions) triple. Pre-built shapes flow through unchanged; the
+ * `bundlesRoot` shape runs the loader → buildRegistry pipeline and
+ * derives the two cache-key lists from the loaded bundles.
+ *
+ * Discrimination is by `"registry" in opts`. Both `OpenVaultRuntimeOpts`
+ * variants carry `vaultPath`; the registry-variant additionally carries
+ * `registry`, the bundles-variant additionally carries `bundlesRoot`. The
+ * narrowing is type-safe under the union.
+ */
+async function resolveRegistryFromOpts(
+  opts: OpenVaultRuntimeOpts,
+): Promise<Result<ResolvedRegistry, OpenVaultRuntimeError>> {
+  if ("registry" in opts) {
+    return ok({
+      registry: opts.registry,
+      extensions: opts.extensions,
+      processorVersions: opts.processorVersions,
+    });
+  }
+
+  // Auto-load path: walk `bundlesRoot`, then compose.
+  const bundlesResult = await loadBundles({ bundlesRoot: opts.bundlesRoot });
+  if (!bundlesResult.ok) {
+    return err({ kind: "bundle-load-failed", cause: bundlesResult.error });
+  }
+  const bundles = bundlesResult.value;
+
+  const processors = flattenBundleProcessors(bundles);
+  const registryResult = buildRegistry(processors);
+  if (!registryResult.ok) {
+    return err({
+      kind: "registry-build-failed",
+      cause: registryResult.error,
+    });
+  }
+
+  return ok({
+    registry: registryResult.value,
+    extensions: deriveExtensionList(bundles),
+    processorVersions: deriveProcessorVersionList(processors),
+  });
+}
+
+/**
+ * Derive the `(name, version)` list `openProjectionDb` hashes for its
+ * cache key. The `name` field maps to the bundle's manifest `id` — the
+ * projection-cache-key contract uses the structural name of the
+ * installed extension, which is the bundle id.
+ */
+function deriveExtensionList(
+  bundles: ReadonlyArray<LoadedBundle>,
+): ReadonlyArray<{ readonly name: string; readonly version: string }> {
+  return bundles.map((b) => ({ name: b.id, version: b.version }));
+}
+
+/**
+ * Derive the `(id, version)` list `openProjectionDb` hashes for the
+ * per-processor cache-key invalidation seam per
+ * [[wiki/gotchas/processor-version-drift]].
+ */
+function deriveProcessorVersionList(
+  processors: ReadonlyArray<{ readonly id: string; readonly version: string }>,
+): ReadonlyArray<{ readonly id: string; readonly version: string }> {
+  return processors.map((p) => ({ id: p.id, version: p.version }));
 }
 
 // ----- Phase 7a placeholder injections --------------------------------------

@@ -82,9 +82,30 @@ export {
   openVaultRuntime,
   type VaultRuntime,
   type OpenVaultRuntimeOpts,
+  type OpenVaultRuntimeWithRegistryOpts,
+  type OpenVaultRuntimeWithBundlesOpts,
   type OpenVaultRuntimeError,
 } from "./engine/vault-runtime";
 export type { EngineVault } from "./engine/vault-shape";
+
+// ----- Extension bundle loader ---------------------------------------------
+
+export {
+  loadBundles,
+  flattenBundleProcessors,
+  type LoadedBundle,
+  type LoadBundlesOpts,
+  type LoadBundlesError,
+} from "./extensions/loader";
+export {
+  parseManifest,
+  ManifestSchema,
+  ProcessorDeclarationSchema,
+  type Manifest,
+  type ProcessorDeclaration,
+  type ManifestError,
+  type TriggerKind,
+} from "./extensions/manifest-schema";
 
 // ----- Engine commit-trailer chokepoint -------------------------------------
 //
