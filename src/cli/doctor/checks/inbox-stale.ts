@@ -9,6 +9,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import type { Vault } from "../../../vault";
+import { INTAKE_EXCLUDED_BUCKETS } from "../../../shipped-defaults";
 import type { CheckResult } from "./types";
 
 export async function checkInboxStale(vault: Vault): Promise<CheckResult> {
@@ -24,7 +25,7 @@ export async function checkInboxStale(vault: Vault): Promise<CheckResult> {
       if (!bucket.isDirectory()) continue;
       // inbox/review/ is a lint-report destination, not an intake — exclude
       // unconditionally per INBOX_IS_EPHEMERAL.md.
-      if (bucket.name === "review") continue;
+      if (INTAKE_EXCLUDED_BUCKETS.has(bucket.name)) continue;
       const bucketDir = join(inboxRoot, bucket.name);
       const files = await readdir(bucketDir, { withFileTypes: true });
       for (const f of files) {
