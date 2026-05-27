@@ -123,6 +123,11 @@ extensions:
       coverage: matrix | off-matrix | deferred
       enforced_at: <path>            # required when coverage == off-matrix
       enforced_at_status: deferred   # optional; signals the path is planned-not-shipped
+  - name: linter
+    frontmatter_extras:
+      tier: axiom | shipped-default | opt-in | deferred
+      target_version: <version-string, e.g., "v0.5.1">
+      status: shipped | planned | deferred
 ```
 
 The `coverage:` field on gotcha pages drives the `tests/integration/gotcha-coverage.test.ts` lockstep test (parallel to AC3 for invariants). Three values, all lowercase:
@@ -132,6 +137,8 @@ The `coverage:` field on gotcha pages drives the `tests/integration/gotcha-cover
 - **`deferred`** — a per-gotcha test should land at `tests/gotchas/<slug>.test.ts` but hasn't yet. The lockstep test surfaces these as warnings rather than failures; promote to `matrix` (with a real test) when the test ships, or to `off-matrix` (with an `enforced_at:`) when structural mitigation lands at another seam.
 
 **`enforced_at_status:` field** *(optional, off-matrix gotchas only)*. When a gotcha's structural mitigation is planned but not yet shipped — e.g., a v0.5.1 lockstep test that the gotcha's mitigation depends on — the gotcha may carry `enforced_at:` pointing at the *future* path of the mitigation alongside `enforced_at_status: deferred`. The lockstep test treats `enforced_at_status: deferred` gotchas as warnings (not failures) until the named path exists; once the path lands, `dome doctor` either silently promotes the status or surfaces a one-line "deferred mitigation now exists; remove `enforced_at_status: deferred`" pointer. This semantic mirrors `coverage: deferred` for the gotcha's own test file, applied to the enforcement-anchor path. Omitting `enforced_at_status` (the modal case) means the named path must exist at lockstep-test time.
+
+**`linter` extension type** *(docs/wiki/linters/<slug>.md)*. Linter specs declare convention-with-grep rules that may or may not have shipped lockstep tests. The `tier:` field declares the active-enablement intent (matching the invariant tier vocabulary); `target_version:` names when the lockstep ships if not yet (e.g., `v0.5.1`); `status:` is one of `shipped` (lockstep is live), `planned` (lockstep is named but not yet shipped — the doc is convention-with-grep until then), or `deferred` (no lockstep planned; the doc is documentation-only). A linter doc declaring `status: shipped` without a corresponding test file is a substrate violation; a future `dome doctor` check or `tests/integration/linter-coverage.test.ts` would catch this.
 
 A gotcha doc without a `coverage:` field is a frontmatter-validation soft warning (per the rule below); the lockstep test treats it as missing data and the gotcha's lockstep status is undefined until the field lands. An `off-matrix` gotcha doc without an `enforced_at:` field is a frontmatter-validation hard warning — the lockstep test cannot verify the "mitigation exercised elsewhere" claim without the path pin, and an unverifiable claim is reviewer-memory rather than structure.
 
