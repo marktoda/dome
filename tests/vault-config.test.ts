@@ -51,3 +51,51 @@ describe("loadVaultConfig", () => {
     }
   });
 });
+
+describe("loadVaultConfig with extension bundles", () => {
+  test("merges bundle page-types into PageTypesConfig.extensions", async () => {
+    const root = await makeTempDir("vault-config-bundle-");
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      await writeFile(join(root, ".dome", "config.yaml"), shippedConfigYaml());
+
+      const bundleDir = join(root, ".dome/extensions/hello-world");
+      await mkdir(bundleDir, { recursive: true });
+      await writeFile(join(bundleDir, "manifest.yaml"), "name: hello-world\nversion: 1.0.0\n");
+      await writeFile(join(bundleDir, "page-types.yaml"), "extensions:\n  - name: hello\n");
+
+      const r = await loadVaultConfig(root);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        const names = r.value.pageTypes.extensions.map((e) =>
+          typeof e === "string" ? e : e.name,
+        );
+        expect(names).toContain("hello");
+      }
+    } finally {
+      await removeTempDir(root);
+    }
+  });
+
+  test("rejects cross-bundle page-type collision", async () => {
+    const root = await makeTempDir("vault-config-bundle-");
+    try {
+      await mkdir(join(root, ".dome"), { recursive: true });
+      await writeFile(join(root, ".dome", "config.yaml"), shippedConfigYaml());
+
+      for (const bn of ["a-bundle", "b-bundle"]) {
+        const dir = join(root, ".dome/extensions", bn);
+        await mkdir(dir, { recursive: true });
+        await writeFile(join(dir, "manifest.yaml"), `name: ${bn}\nversion: 1.0.0\n`);
+        await writeFile(join(dir, "page-types.yaml"), "extensions:\n  - name: shared\n");
+      }
+      const r = await loadVaultConfig(root);
+      expect(r.ok).toBe(false);
+      if (!r.ok && r.error.kind === "bundle-load-failure") {
+        expect(r.error.detail).toBe("page-type-collision");
+      }
+    } finally {
+      await removeTempDir(root);
+    }
+  });
+});

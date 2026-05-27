@@ -11,6 +11,7 @@ import type { BoundToolSurface, HookEvent } from "./hooks/hook-context";
 import { loadVaultConfig } from "./vault-config";
 import { buildBuiltinHookRegistry } from "./vault-hooks";
 import { wireDispatcher, type VaultRef } from "./vault-dispatcher";
+import type { ExtensionBundle } from "./extensions";
 
 export interface VaultConfig {
   invariants: Record<string, "enabled" | "disabled">;
@@ -45,6 +46,14 @@ export interface Vault {
   readonly path: string;
   readonly config: VaultConfig;
   readonly pageTypes: PageTypesConfig;
+  /**
+   * Extension bundles loaded from `<vault>/.dome/extensions/<bundle>/`.
+   * Empty array when no bundles are installed. Downstream consumers
+   * (loadDeclarativeHooks, PromptLoader, runCli) read this to wire
+   * bundle-contributed hooks, workflows, and CLI commands.
+   * See docs/wiki/specs/sdk-surface.md §"Extension bundles".
+   */
+  readonly bundles: readonly ExtensionBundle[];
   readonly tools: BoundToolSurface;
   /**
    * Wait for all async hooks dispatched so far AND any in-flight quarantine
@@ -151,7 +160,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
 
   const configResult = await loadVaultConfig(root);
   if (!configResult.ok) return configResult;
-  const { config, pageTypes } = configResult.value;
+  const { config, pageTypes, bundles } = configResult.value;
 
   // PrivilegedWriter is INTERNAL — not exposed on Vault and not exported
   // from src/index.ts (the structural enforcement layer for
@@ -190,7 +199,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
   // @dome/sdk/mcp) — this is what makes CORE_HAS_NO_LLM_OR_MCP_DEPENDENCY
   // structurally true: openVault no longer needs to import `ai` to
   // construct aiTools eagerly.
-  const partial = { path: root, config, pageTypes, dispatchEvents } as Vault;
+  const partial = { path: root, config, pageTypes, bundles, dispatchEvents } as Vault;
   const { tools } = bindTools(partial, privilegedWriter);
 
   // Walk wiki/ and rewrite index.md from scratch via the privileged writer.
@@ -211,6 +220,7 @@ export async function openVault(path: string): Promise<Result<Vault, ToolError>>
     path: root,
     config,
     pageTypes,
+    bundles,
     tools,
     drainHooks,
     dispatchEvents,

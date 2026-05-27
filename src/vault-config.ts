@@ -26,10 +26,12 @@ import { ok, err, type Result, type ToolError } from "./types";
 import { SHIPPED_VAULT_CONFIG, SHIPPED_PAGE_TYPES } from "./shipped-defaults";
 import type { VaultConfig, PageTypesConfig } from "./vault";
 import { VaultConfigSchema, PageTypesConfigSchema } from "./vault-schemas";
+import { loadExtensionBundles, type ExtensionBundle } from "./extensions";
 
 export interface LoadedVaultConfig {
   config: VaultConfig;
   pageTypes: PageTypesConfig;
+  bundles: readonly ExtensionBundle[];
 }
 
 /**
@@ -113,5 +115,64 @@ export async function loadVaultConfig(root: string): Promise<Result<LoadedVaultC
     // page-types.yaml is optional — silent fallback for missing file.
   }
 
-  return ok({ config, pageTypes });
+  // Extension bundles — scan `<root>/.dome/extensions/<bundle>/` and merge
+  // each bundle's `page-types.yaml extensions:` into PageTypesConfig.extensions
+  // with collision detection. Fail-loud per
+  // docs/wiki/gotchas/extension-bundle-load-order.md.
+  const bundlesResult = await loadExtensionBundles(root);
+  if (!bundlesResult.ok) return bundlesResult;
+  const bundles = bundlesResult.value;
+
+  const merged: Array<string | { name: string; frontmatter_extras?: Record<string, unknown> }> = [
+    ...pageTypes.extensions,
+  ];
+  const seenNames = new Set<string>(
+    merged.map((e) => (typeof e === "string" ? e : e.name)),
+  );
+  const provenance = new Map<string, string>();
+
+  for (const bundle of bundles) {
+    if (bundle.pageTypesPath === null) continue;
+    let bundleText: string;
+    try {
+      bundleText = await readFile(bundle.pageTypesPath, "utf8");
+    } catch (e) {
+      return err({
+        kind: "bundle-load-failure",
+        detail: "manifest-invalid",
+        message: `bundle '${bundle.name}': cannot read page-types.yaml: ${String(e)}`,
+      });
+    }
+    let parsed: { extensions?: ReadonlyArray<unknown> } | null;
+    try {
+      parsed = parseYaml(bundleText) as { extensions?: ReadonlyArray<unknown> } | null;
+    } catch (e) {
+      return err({
+        kind: "bundle-load-failure",
+        detail: "manifest-invalid",
+        message: `bundle '${bundle.name}': failed to parse page-types.yaml: ${String(e)}`,
+      });
+    }
+    for (const ext of parsed?.extensions ?? []) {
+      const extName = typeof ext === "string" ? ext : (ext as { name: string }).name;
+      if (seenNames.has(extName)) {
+        const otherSource = provenance.get(extName) ?? "vault-local .dome/page-types.yaml";
+        return err({
+          kind: "bundle-load-failure",
+          detail: "page-type-collision",
+          message: `bundle '${bundle.name}' declares page type '${extName}'; already declared by ${otherSource}`,
+        });
+      }
+      seenNames.add(extName);
+      provenance.set(extName, `bundle '${bundle.name}'`);
+      merged.push(ext as string | { name: string; frontmatter_extras?: Record<string, unknown> });
+    }
+  }
+
+  const mergedPageTypes: PageTypesConfig = {
+    defaults: pageTypes.defaults,
+    extensions: merged,
+  };
+
+  return ok({ config, pageTypes: mergedPageTypes, bundles });
 }
