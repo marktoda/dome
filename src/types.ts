@@ -54,7 +54,19 @@ export type ToolError =
   | { kind: "already-exists"; path: string }
   | { kind: "validation"; message: string }
   | { kind: "vault-not-git-repo"; path: string }
-  | { kind: "config-invalid"; message: string };
+  | { kind: "config-invalid"; message: string }
+  | {
+      readonly kind: "bundle-load-failure";
+      readonly detail:
+        | "manifest-missing"
+        | "manifest-invalid"
+        | "name-mismatch"
+        | "page-type-collision"
+        | "workflow-invalid"
+        | "hook-invalid"
+        | "cli-collision";
+      readonly message: string;
+    };
 
 // ----- Creation reason ----------------------------------------------------
 
