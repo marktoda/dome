@@ -28,6 +28,7 @@ import type { HookRegistry } from "./hook-registry";
 import type { Vault } from "../vault";
 import { WORKFLOW_NAMES, type WorkflowName } from "../workflows/workflow-name";
 import { ok, err, type Result } from "../types";
+import type { ExtensionBundle } from "../extensions";
 
 /**
  * Zod schema for the declarative-hook YAML shape. Lives next to the parser
@@ -141,6 +142,39 @@ export async function loadDeclarativeHooks(
       idempotent: parsed.idempotent,
       handler: makeHandler(vault, parsed, opts.runWorkflow),
     });
+  }
+
+  // Bundle-contributed hooks. Each bundle's hooks/*.yaml registers with ID
+  // `<bundle>:<filename-stem>` to prevent cross-bundle collision per
+  // docs/wiki/gotchas/extension-bundle-load-order.md. Bundles are vault-local
+  // in v0.5 — source="vault-local" preserves the partitioning the dispatcher
+  // already uses for vault-shipped vs. SDK-shipped hooks.
+  const bundles: ReadonlyArray<ExtensionBundle> = vault.bundles ?? [];
+  for (const bundle of bundles) {
+    for (const hookPath of bundle.hookPaths) {
+      let text: string;
+      try {
+        text = await readFile(hookPath, "utf8");
+      } catch (e: unknown) {
+        opts.onLoadError?.(hookPath, (e as Error).message);
+        continue;
+      }
+      const filename = hookPath.split("/").pop() ?? "unknown.yaml";
+      const result = parseDeclarativeHook(text, `${bundle.name}/hooks/${filename}`);
+      if (!result.ok) {
+        opts.onLoadError?.(`${bundle.name}/${filename}`, result.error.message);
+        continue;
+      }
+      const parsed = toRegistryEntry(result.value, filename);
+      registry.register({
+        id: `${bundle.name}:${parsed.id}`,
+        pattern: parsed.pattern,
+        source: "vault-local",
+        async: parsed.async,
+        idempotent: parsed.idempotent,
+        handler: makeHandler(vault, parsed, opts.runWorkflow),
+      });
+    }
   }
 }
 
