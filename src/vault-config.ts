@@ -66,16 +66,22 @@ export async function loadVaultConfig(root: string): Promise<Result<LoadedVaultC
     });
   }
   const parsed = cfgParsed.data;
+  // Build the merged config field-by-field rather than via blanket spread —
+  // Zod's `.optional()` produces `field?: T | undefined` shapes, and a
+  // straight spread of `parsed.hooks` would propagate `undefined` values
+  // for `max_causation_depth` / `inbox_stale_age_hours` and break the
+  // non-optional `VaultConfig` interface. Each numeric/boolean leaf falls
+  // back to the shipped default explicitly.
   config = {
-    ...SHIPPED_VAULT_CONFIG,
-    ...parsed,
     invariants: { ...SHIPPED_VAULT_CONFIG.invariants, ...(parsed.invariants ?? {}) },
     hooks: {
-      ...SHIPPED_VAULT_CONFIG.hooks,
-      ...(parsed.hooks ?? {}),
       builtin: { ...SHIPPED_VAULT_CONFIG.hooks.builtin, ...(parsed.hooks?.builtin ?? {}) },
+      max_causation_depth: parsed.hooks?.max_causation_depth ?? SHIPPED_VAULT_CONFIG.hooks.max_causation_depth,
+      inbox_stale_age_hours: parsed.hooks?.inbox_stale_age_hours ?? SHIPPED_VAULT_CONFIG.hooks.inbox_stale_age_hours,
     },
-    git: { ...SHIPPED_VAULT_CONFIG.git, ...(parsed.git ?? {}) },
+    git: {
+      auto_commit_workflows: parsed.git?.auto_commit_workflows ?? SHIPPED_VAULT_CONFIG.git.auto_commit_workflows,
+    },
   };
 
   // page-types.yaml — optional. A missing file is silent fallback (always
