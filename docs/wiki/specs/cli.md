@@ -1,357 +1,212 @@
 ---
 type: spec
-created: 2026-05-25
-updated: 2026-05-26
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]", "[[cohesive/brainstorms/2026-05-26-dome-compiler-reframe]]"]
+created: 2026-05-27
+updated: 2026-05-27
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
 # CLI
 
-This spec is normative for the `dome` command-line interface in v0.5. The CLI is **the primary explicit-operation surface across every consumer shell** — the way both the user (from any terminal) and an agentic harness (via shell-execution: Claude Code's `Bash`, Cursor's equivalent, etc.) invoke named structured operations against a vault. It is also the home for the things neither a chat-shaped harness nor a markdown-shaped browser does well: setup, migration, hook reconciliation, scheduled hygiene, diagnostics, cross-AI context export.
+This spec is normative for Dome's command-line interface. The CLI is **one protocol adapter** over [[wiki/specs/sdk-surface]] §"AbstractSurface" — argv routes to Submit, Recall, or a view-phase command processor.
 
-The CLI is intentionally small. **Eleven commands** in the shipped SDK; extension bundles can contribute additional bundle-conditional commands per [[wiki/specs/sdk-surface]] §"Extension bundles" (e.g., the first-party `dailies` bundle contributes `dome migrate-dailies` when installed). Each shipped command maps to a concrete user action; commands that would map to "chat-with-the-brain" or "browse-the-vault" do not exist (use a harness or Obsidian respectively). A glanceable summary (`dome stats`) is neither — it's a snapshot of structural state.
-
-## `dome init <path>`
-
-Bootstrap a new vault at `<path>`. Minimal and general-purpose — no profiles, no opt-in features activated beyond the shipped-default tier.
-
-```bash
-dome init ~/vaults/research
-```
-
-Creates:
-
-- The directory tree: `raw/`, `notes/`, `wiki/{entities,concepts,sources,syntheses}/`, `inbox/raw/` (the shipped-default capture bucket), `inbox/review/` (the shipped-default lint-report destination per [[wiki/specs/vault-layout]]), `.dome/{prompts,hooks,state}/`.
-- `.dome/page-types.yaml` with the four default types.
-- `.dome/config.yaml` with shipped defaults enabled and opt-in features disabled.
-- `.dome/hooks/intake-raw.yaml` — the shipped-default intake hook that processes `inbox/raw/*` via the `ingest` workflow.
-- `.gitignore` — excludes `.dome/state/` (per-machine operational state).
-- `index.md` and `log.md` (with one bootstrap entry).
-- `AGENTS.md` at vault root — the vault-owned, cross-harness convention file. **Canonical orientation surface for agentic harnesses per [[wiki/invariants/AGENTS_MD_IS_ORIENTATION_SURFACE]].** Carries cold-start orientation as templated content: the vault's conventions (page-type-by-directory, wikilinks-fullpath, etc.), the enabled invariant set, the declared page types, the shipped + active workflow names, and a user-editable `## Vault notes` section delimited by HTML comments so `dome doctor --repair` can re-template the scaffolding without touching user prose. Vault-owned: `dome init` writes the initial file; `dome doctor --repair` regenerates the templated sections from current `.dome/config.yaml` + enabled-invariant set + declared page types; user-prose sections are preserved across all `--repair` runs. For harnesses that also mount the MCP server, the MCP `instructions` payload carries an equivalent system-rule render at mount time (see [[wiki/specs/mcp-surface]] §"Session model") as a secondary delivery channel — `AGENTS.md` is canonical, MCP `instructions` mirrors it.
-- `CLAUDE.md` at vault root — a thin one-line shim pointing at `AGENTS.md`. Exists only because Claude Code's auto-load convention currently prefers `CLAUDE.md`; removable once `AGENTS.md` auto-load is universal across harnesses.
-- **Initializes a git repository** and makes the initial commit (per [[wiki/invariants/VAULT_IS_GIT_REPO]]). The commit message: `chore: initialize Dome vault`. The user starts with a clean working tree and a vault that's immediately ready for use.
-
-Refuses if `<path>` already contains `.dome/` (use `dome migrate` for existing Dome vaults) OR `.git/` with prior history that wasn't created by `dome init` (the user should `dome migrate` instead to inherit their existing history cleanly).
-
-Activating opt-in intake features beyond `intake-raw` (voice intake, research intake, clip intake) is manual after init: copy hook templates from the SDK's `hooks/templates/` into `.dome/hooks/` and create any additional `inbox/<bucket>/` directories. A future "packs" mechanism may layer convenience over this; v0.5 keeps activation explicit.
-
-## `dome migrate <path>`
-
-Convert an existing markdown vault (Obsidian / Foam / plain markdown / a previous-version Dome vault) to current Dome shape.
-
-```bash
-dome migrate ~/vaults/work
-```
-
-The migration is **a workflow** (`migrate` is a named workflow prompt; see [[wiki/specs/prompts-and-workflows]]). The headless agent loop:
-
-1. Scans the directory; identifies probable categories (raw vs wiki vs notes).
-2. Detects existing typed-page layout if present.
-3. Proposes a migration plan: which files move, which frontmatter to add, which invariants would be violated and how to fix.
-4. Writes the proposal to `<path>/.dome/migration-plan.md` for user review.
-5. On user confirmation (`dome migrate <path> --apply`), executes the plan via Dome's Tools — every move and frontmatter add is logged.
-
-This is the v0.5 sleeper feature: the on-ramp that lets users (the author first, others later) bring an existing vault into Dome without a forklift rewrite. Mass-market v1+ depends on this being good.
-
-## `dome serve --vault <path>`
-
-Start the compiler daemon (watcher + reconcile + scheduled-hook clock; optionally also the MCP server) for `<path>`. The daemon is the active layer of the compiler boundary per [[VISION]] §"Two surface patterns" — it catches native writes from consumer shells, fires hooks reactively, and processes scheduled-hook intervals.
-
-```bash
-dome serve --vault ~/vaults/work          # stdio, default
-dome serve --vault ~/vaults/work --port 7777   # HTTP/SSE (v0.5.1+)
-```
-
-The serve command, in order:
-
-1. Opens the vault, loads the registry.
-2. **Runs `dome sync` automatically** to catch up on any events missed while serve wasn't running (pending inbox files, out-of-band edits, missed scheduled events, uncommitted-state recovery via `git status`) and advance `refs/dome/adopted/<branch>` to current HEAD on clean completion. See `dome sync` below.
-3. Starts the file watcher on `inbox/*/` directories and `wiki/*/` (for out-of-band-edit detection); declarative-hook intakes fire on file writes; reactive hooks (`auto-update-index`, `auto-cross-reference`, watcher-driven `appendLog`) fire on each change.
-4. Starts the clock source for scheduled hooks.
-5. Starts the MCP server (when MCP is configured for the vault — see [[wiki/specs/mcp-surface]] §"Status in v0.5"). MCP is the optional protocol-server overlay; the daemon's primary work (steps 3–4) does not depend on it.
-6. Runs until killed.
-
-If the auto-sync at step 2 fails (e.g., vault is mid-merge — see [[wiki/gotchas/dirty-git-state-at-reconcile]] — or adopted ref has diverged — see [[wiki/gotchas/adopted-ref-divergence]]), serve refuses to start with a clear error.
-
-**Deployment.** The canonical pattern is to run `dome serve` as a launchd / systemd service: continuous compilation, the watcher catching every native write in real time, scheduled hooks firing on their intervals. Claude Code (or any other agentic harness) interacts with the vault via the four surfaces of the compiler-boundary contract (AGENTS.md + CLI + daemon + sync) per [[wiki/specs/harnesses]] §"The compiler-boundary contract"; it does not spawn the daemon itself. For harnesses that mount the optional MCP server, the harness can configure `dome serve` to launch as a child process — see [[wiki/specs/harnesses]] §"Claude Code" for the MCP-mount configuration example. v0.5 documents the launchd / systemd setup pattern; v1+ may ship a service installer.
-
-## `dome status`
-
-Read-only summary of the vault's adoption state. Surfaces `branch` / `HEAD` / `refs/dome/adopted/<branch>` / pending commits / dirty-tree state. See [[wiki/specs/adoption]] §"`dome status`" for the full specification.
-
-```bash
-cd ~/vaults/work && dome status
-cd ~/vaults/work && dome status --json
-```
-
-The text-mode output:
+## The CLI surface
 
 ```text
-branch:   main
-HEAD:     41a98c2bba39b4b1a8bcd6f9d8b2c4a3e5f6a7b8
-adopted:  9c1e002dccda2a51df8e9c10a5cd8c14f5a08a2b (3 commits behind HEAD)
-pending:  3 commits to adopt
-dirty:    2 modified, 1 untracked
+dome init [path]                Initialize a new vault.
+dome submit [--patch <file>] [--source-kind <k>]
+                                Construct and submit a Proposal.
+dome sync [--force-advance]     Catch-up: construct Proposal from working-tree HEAD; adopt.
+dome status [--json]            Read-only adoption snapshot.
+dome query <text> [--filter ...] [--require-evidence]
+                                FTS + structured query against adopted state.
+dome lint [--apply <id>] [--report-only]
+                                Run dome.lint; write report; optionally apply a finding.
+dome rebuild                    Wipe and rebuild projection store from adopted commit.
+dome stats                      Vault size / processor counts / ledger summary.
+dome doctor [--repair] [--show <subject>] [--<flag>]
+                                Diagnostic and maintenance command.
+dome serve [--vault <path>]     Run the compiler daemon (watcher + scheduled processors).
+dome export-context <topic>     Render a portable context packet for cross-AI handoff.
+dome migrate                    Upgrade vault for newer SDK schema.
+dome run-processor <id> [--args ...]
+                                Invoke a specific command-triggered processor by id.
 ```
 
-`--json` emits a structured object suitable for cross-tool consumption (`{ branch, head, adopted, pendingCommits, dirty, diverged }`). When adopted is uninitialized (the freshly-init'd v0.5+phase1+phase3 case), `adopted` is `null` and `pendingCommits` is `null`. When adopted has diverged from HEAD's ancestry (per [[wiki/gotchas/adopted-ref-divergence]]), `diverged` is `true`.
+The CLI is the user-facing primary surface in v1. Every command above maps to one of:
 
-Read-only; never mutates. Exit code 0 on success; 1 if the vault open fails; 2 on usage error.
+- **Submit:** `dome submit`, `dome sync` — write paths through `AbstractSurface.submit`.
+- **Recall:** `dome query`, `dome status` — read paths through `AbstractSurface.query` / `getAdoptionStatus`.
+- **View-phase commands:** `dome lint`, `dome stats`, `dome export-context` — command-triggered view-phase processors invoked via `AbstractSurface.commands`.
+- **Engine control:** `dome rebuild`, `dome doctor`, `dome serve` — engine + diagnostic operations exposed only on the CLI surface.
+- **Lifecycle:** `dome init`, `dome migrate` — vault construction and schema upgrade, exposed only on the CLI.
 
-## `dome sync`
+The `dome reconcile` deprecated alias from v0.5+phase1+phase3 is **retired in v1.** Callers see "unknown command" and a pointer to `dome sync`.
 
-Run the adoption state machine: compile `adopted..HEAD`, fire hooks, advance `refs/dome/adopted/<branch>` atomically on clean completion. See [[wiki/specs/adoption]] §"`dome sync`" for the full specification.
+## Per-command specs
 
-```bash
-cd ~/vaults/work && dome sync
-cd ~/vaults/work && dome sync --force-advance   # accept divergent HEAD after manual confirmation
+### `dome init [path]`
+
+Creates a new Dome vault at `<path>` (defaults to `.`):
+
+1. Initializes a git repository if one doesn't exist.
+2. Creates the directory scaffold: `wiki/`, `raw/`, `inbox/raw/`, `notes/`, `.dome/`.
+3. Writes `AGENTS.md` and `CLAUDE.md` at vault root.
+4. Writes `.dome/config.yaml` and `.dome/page-types.yaml` from shipped defaults.
+5. Copies `assets/extensions/dome.*` bundles into `.dome/extensions/`.
+6. Creates initial `log.md` and `index.md` (empty projections).
+7. Runs an initial `dome sync` to adopt the initial commit and produce `refs/dome/adopted/main`.
+
+Exit codes: 0 on success; 1 if directory exists with a vault (`config.yaml` present); 2 on usage error.
+
+### `dome submit [--patch <file>] [--source-kind <k>] [--metadata-title <s>] [--metadata-reason <s>]`
+
+See [[wiki/specs/adoption]] §"`dome submit`".
+
+### `dome sync [--force-advance]`
+
+See [[wiki/specs/adoption]] §"`dome sync`".
+
+### `dome status [--json]`
+
+See [[wiki/specs/adoption]] §"`dome status`".
+
+### `dome query <text> [--filter category=<c>] [--filter type=<t>] [--require-evidence] [--json]`
+
+Runs `AbstractSurface.query` with the supplied text and filters. Output (text mode):
+
+```text
+dome query: 4 matches for "platform ownership"
+
+1. wiki/syntheses/platform-team-ownership.md (high relevance)
+   "Atlas owns runtime; platform owns infrastructure boundaries..."
+   sourceRef: wiki/syntheses/platform-team-ownership.md:14-22 @ 41a98c2
+
+2. wiki/dailies/2026-05-23.md
+   "Discussed platform ownership with Danny..."
+   sourceRef: wiki/dailies/2026-05-23.md:48-52 @ 41a98c2
+
+(further matches truncated; --limit to show all)
 ```
 
-Five-step composition (in order):
+`--json` emits structured `QueryResult`. `--require-evidence` filters to results carrying SourceRefs.
 
-1. Identify source range (`adopted..HEAD` for the current branch; initialize the adopted ref at HEAD if absent).
-2. Diagnose preconditions (dirty git state, divergence; refuse unless `--force-advance` is set for the divergence case).
-3. Reconcile — run the existing three-phase machinery (inbox → git-diff → scheduled). Hooks fire; engine-driven writes commit via `commitWorkflow` with Dome-* trailers (per [[wiki/invariants/ENGINE_COMMITS_CARRY_DOME_TRAILERS]]).
-4. Drain hooks — wait for the async queue to settle.
-5. Adopt — atomically advance `refs/dome/adopted/<branch>` to current HEAD; emit `engine.adoption.advanced`.
+### `dome lint [--apply <id>] [--report-only]`
 
-When a blocking diagnostic stops the sync, the output names it ("dome sync: blocked — vault is in a dirty git state (mid-merge); resolve before syncing") and the engine emits `engine.adoption.blocked`. The adopted ref is unchanged.
+Runs the `dome.lint` view-phase processor against the adopted snapshot. The processor walks the wiki, emits DiagnosticEffect for each finding, writes a structured report to `inbox/review/lint-report-YYYY-MM-DD.md` with stable finding ids (H1, H2, M1, etc.).
 
-Exit codes: 0 on success (including no-op success: adopted already at HEAD); 1 on blocking diagnostic or sync-time error; 2 on usage error.
+`--apply <id>` invokes `dome.lint` in apply-mode for the named finding: re-resolve the finding's PatchEffect against current state, submit as a Proposal. The finding's annotation in the report flips to `Applied: <commit-oid>` or `Apply-failed: <reason>`.
 
-## `dome reconcile` *(deprecated alias for `dome sync`)*
+`--report-only` skips finding application even if `--apply` is passed; useful for inspecting what would happen.
 
-Preserved for back-compat with v0.5 cron entries, test fixtures, and harness invocations. Invoking `dome reconcile` prints a one-line deprecation notice on stderr (`dome reconcile is deprecated; use dome sync`) and then runs `dome sync` against the current vault. See [[wiki/specs/adoption]] §"Relationship to `dome reconcile`".
+Exit codes: 0 on success (whether findings were found or not); 1 on apply failure; 2 on usage error.
 
-```bash
-cd ~/vaults/work && dome reconcile      # equivalent to `dome sync`; prints deprecation notice
+### `dome rebuild`
+
+Wipes `<vault>/.dome/state/projection.db` and rebuilds from the adopted commit per [[wiki/specs/projection-store]] §"Rebuild path". The run ledger (`runs.db`) and outbox (`outbox.db`) are preserved. Output:
+
+```text
+dome rebuild: rebuilding projection.db from adopted commit 41a98c2...
+  walking wiki/... 234 pages
+  walking raw/... 187 captures
+  re-running adoption-phase processors... 9 processors
+  re-running garden-phase fact-emitters... 4 processors
+  done (8.3s; projection.db now 3.2 MB)
 ```
 
-The three-phase composition (inbox / git-diff / scheduled) is inherited from `dome sync` and unchanged. The only differences from `dome sync` are (a) the deprecation notice on stderr, (b) the legacy exit-code shape (matching `dome reconcile`'s pre-rewrite behavior; same exit codes as `dome sync` in practice). A future v1.x rewrite may retire `dome reconcile` entirely; v0.5+phase1+phase3 keeps the alias.
+Exit codes: 0 on success; 1 on rebuild failure (engine error); 2 on usage error.
 
-Refuses to run if the vault is mid-merge, mid-rebase, or mid-cherry-pick — same guard as `dome sync` per [[wiki/gotchas/dirty-git-state-at-reconcile]].
+### `dome stats`
 
-## `dome lint`
+Renders summary statistics:
 
-Run the `lint` workflow against the vault. Two modes: **propose** (default) writes a report of detected drift; **apply** (`--apply <id>`) executes a single named recommendation from the most recent report. The shape parallels `dome migrate` — propose first, apply on confirmation — and uses the same Tool surface as migrate (`writeDocument`, `moveDocument`, `deleteDocument`) so a lint finding can rewrite a page, rename an entity, or retire an orphan as the recommendation dictates.
-
-### Propose mode (default)
-
-```bash
-cd ~/vaults/work && dome lint
+```text
+vault: /Users/mark/vaults/work
+  branch:   main
+  adopted:  41a98c2 (current)
+  pages:    1,247 wiki / 412 raw / 87 notes / 14 inbox-pending
+  log:      8,143 entries
+  ledger:   13,847 runs (last 30d: 412; last 7d: 89)
+  outbox:   2 pending, 0 failed
+  bundles:  9 (dome.markdown, dome.index, dome.log, dome.links, dome.intake, dome.daily, dome.lint, dome.search, dome.migrate)
+  invariants: <linked count from canonical INVARIANTS const>
 ```
 
-Invokes the `lint` workflow prompt via the headless agent loop:
+The `<linked count>` is rendered from `src/types.ts` `INVARIANTS` at run time — not inlined as a literal.
 
-1. Reads the wiki and index.
-2. Detects: orphan pages, stale claims, missing cross-references, contradictions, schema-violating frontmatter, out-of-band direct edits.
-3. Writes a structured report. Each finding carries a **stable id** (`<severity-letter><index>`: `H1`, `H2`, `M1`, `L1`; severities `H`igh / `M`edium / `L`ow), an optional `(advisory)` tag for findings that require human judgment the workflow cannot execute on its own (apply mode refuses these — see below), a one-line title, an Evidence paragraph with `path:line` references, and a Recommendation paragraph concrete enough that a re-invocation of this workflow can execute it without re-deriving intent.
-4. Writes the report to `inbox/review/lint-report-YYYY-MM-DD.md` (the `inbox/review/` directory is shipped-default per [[wiki/specs/vault-layout]] — created by `dome init`). Repeat runs on the same date append a `Pass N` section to the existing file rather than overwriting — same-day re-runs produce a longitudinal log.
-5. Exits 0 if no findings above the configured severity threshold; nonzero otherwise.
+### `dome doctor [--repair] [--show <subject>] [--flag ...]`
 
-The user reviews the report in Obsidian (or any markdown editor) and decides which findings to apply.
+Diagnostic and maintenance command. Subjects under `--show`:
 
-### Apply mode (`--apply <id>`)
+- `runs` — recent processor runs.
+- `cost` — per-processor LLM spend.
+- `outbox` — pending / failed external actions.
+- `diagnostics` — current blocking and warning diagnostics.
+- `questions` — open user questions.
+- `orphan-runs` — runs stuck in "running" state.
+- `recent-activity` — log.md tail.
+- `recent-hook-cycles` (retired in v1; `recent-processor-divergence` replaces it).
+- `recent-processor-divergence` — recent fixed-point cap-hits.
 
-```bash
-cd ~/vaults/work && dome lint --apply H1
-cd ~/vaults/work && dome lint --apply H1 --apply H2   # multiple ids, applied in order
-```
+Flags:
 
-Re-invokes the `lint` workflow with the named finding id(s) as its user message:
+- `--repair` — regenerate AGENTS.md templated sections; re-copy first-party bundles from SDK; rebuild log.md from ledger.
+- `--rebuild-index` — equivalent to `dome rebuild` for index.md only.
+- `--drain-processors` — wait for the garden-phase queue to settle.
+- `--reset-quarantined-processors` — clear `.dome/state/quarantined.json` after debugging a quarantined processor.
+- `--outbox-replay <key>` — re-attempt a failed outbox entry by idempotency key.
+- `--outbox-abandon <key>` — mark a failed outbox entry as abandoned (won't retry).
+- `--time-since-reconcile` — read `.dome/state/last-reconcile-mtime.txt`; report drift age.
+- `--check-all` — run every validation check; aggregate violations.
 
-1. Locates the most recent lint report under `inbox/review/lint-report-*.md` (lexically newest filename — reports are dated).
-2. Finds the finding whose id matches `<id>` (most-recent `Pass N` section wins if the same id appears in multiple passes).
-3. Executes the recommendation via Dome's Tools (`writeDocument`, `moveDocument`, or `deleteDocument` as the recommendation requires). Every mutation is logged per [[wiki/invariants/EVERY_WRITE_IS_LOGGED]].
-4. Appends an `**Applied:** YYYY-MM-DDTHH:MM:SSZ` annotation (bold-marked, ISO-8601 UTC) to the originating finding's entry in the report (idempotent: a re-apply against an already-applied finding refuses with exit nonzero rather than mutating twice). On failure, the annotation is `**Apply-failed:** YYYY-MM-DDTHH:MM:SSZ — <reason>` (same bold/timestamp shape; reason follows after an em-dash).
-5. Exits 0 on success; nonzero if (a) the finding id is absent from the most recent report, (b) the recommendation cannot be safely executed (target moved out of band, conflicting newer state), (c) the report itself is missing, or (d) the finding is marked `(advisory)` and requires human judgment outside the workflow's scope. Failed applies record an `Apply-failed: <reason>` annotation on the finding before exiting.
+### `dome serve [--vault <path>] [--port <n>] [--mcp]`
 
-When multiple ids are passed (`--apply H1 --apply H2`), apply proceeds through the list independently; a per-id failure does not abort the remaining ids. The CLI exits nonzero if any id failed, with a per-id summary on stderr naming each id's outcome (applied / failed / refused).
+Runs the compiler daemon. Composition:
 
-Refuses to run if the vault is mid-merge / mid-rebase — same guard as `dome sync` per [[wiki/gotchas/dirty-git-state-at-reconcile]]. Applied findings produce ordinary git-tracked writes; `git revert` is the universal undo.
+1. `openVault(path)` constructs the Vault.
+2. Starts the working-tree watcher (chokidar over `<vault>/wiki/`, `raw/`, `notes/`, `inbox/`).
+3. Starts the scheduled-trigger dispatcher (consults `projection_store.schedule_cursors`).
+4. On each watcher event, constructs a Proposal and routes to `vault.submitProposal()`. Adoption runs; effects route per `apply-effect.ts`.
+5. On each scheduled cron tick, fires the matching garden-phase processors.
+6. If `--mcp` is passed, also starts the MCP server (per [[wiki/specs/mcp-surface]]).
 
-### Periodic operation
+Stays running until SIGINT / SIGTERM; on shutdown, `vault.close()` drains processors and releases handles.
 
-Propose mode is designed to be cron'd weekly (per the workflow's `clock:weekly` trigger in [[wiki/specs/prompts-and-workflows]]). Apply mode is interactive: a user reviews each report and selectively applies findings. Scheduled apply is intentionally not supported in v0.5 — fixes that mutate the vault should pass through a human.
+### `dome export-context <topic>`
 
-## `dome doctor`
+Renders a portable context packet (markdown) summarizing what the vault knows about `<topic>`. Used for cross-AI handoff (e.g., paste into ChatGPT to give it the relevant context from your Dome vault). Composes adopted-state reads + FTS query + Fact lookups; the output is a single markdown document.
 
-Diagnose the vault's structural health.
+### `dome migrate`
 
-```bash
-cd ~/vaults/work && dome doctor
-```
+Upgrades a vault between SDK schema versions. The migration is idempotent — running it on an already-current vault is a no-op. Specific migrations are encoded as command-triggered processors in `dome.migrate`; the CLI command dispatches them in order.
 
-Unlike `dome lint` (semantic / agent-driven), `dome doctor` is deterministic: it walks the vault and reports structural violations:
+### `dome run-processor <id> [--args <json>]`
 
-- Pages whose `type:` frontmatter doesn't match their directory.
-- Pages with frontmatter fields not in the page-type schema.
-- Wikilinks that don't resolve.
-- Wikilinks not in full-path form.
-- Pages in `wiki/<unknown-subdir>/`.
-- Raw files modified after creation (suggests something bypassed `RAW_IS_IMMUTABLE`).
-- `log.md` non-monotonic timestamps.
-- `.dome/page-types.yaml` declares extensions not used; or pages use types not declared.
-- Inbox files older than `hooks.inbox_stale_age_hours` (see [[wiki/invariants/INBOX_IS_EPHEMERAL]]) — `inbox/review/` is excluded because `review/` is a destination, not an intake.
-
-Exit 0 if clean; nonzero with a report otherwise. Suggests fixes; doesn't apply them. Run after `dome migrate` to verify; run before opening to a new harness to verify upstream changes didn't drift.
-
-**Flags:**
-
-- `--rebuild-index` — calls `dispatcher.writeIndex` directly to regenerate the full `index.md` from the wiki/ contents. Used when `auto-update-index` is disabled (so the index has gone stale) or when the user wants a from-scratch rebuild. The dispatcher's privileged API is the only mutation path for `index.md` per [[wiki/invariants/INDEX_AND_LOG_ARE_DISPATCHER_OWNED]]; `writeDocument` refuses `index.md` unconditionally.
-- `--show review-queue` — list pending items in `inbox/review/` (lint reports awaiting human review per [[wiki/specs/cli]] §"`dome lint`").
-- `--time-since-reconcile` — report how long it's been since `dome sync` (formerly `dome reconcile`) last ran successfully. Reads from `.dome/state/last-reconcile-mtime.txt` mtime when present; falls back to the legacy `.dome/state/last-reconciled-sha.txt` mtime for vaults migrating from v0.5 pre-phase1+phase3 (per [[wiki/specs/adoption]] §"Migration from v0.5"). Surfaces drift age so the user knows whether `dome serve` is keeping up. See [[wiki/gotchas/daemon-off-while-vault-mutating]].
-- `--show raw-citations` — list which wiki pages cite each raw source (derived from `sources:` frontmatter on wiki pages; not a stored index).
-- `--show workflows` — list the resolved workflow set (shipped defaults + plugin + vault-local overrides), with their bound tool subsets and triggers.
-- `--show events` — list the resolved event taxonomy (Effect-derived + lifecycle), including plugin-registered events.
-- `--show recent-hook-cycles` — list recent `hook.cycle-detected` events with their full causation chains. Useful for diagnosing hook design errors.
-- `--recent-activity [N]` — list the last `N` writes by tool and target (default 50). Useful for spotting prompt-regression drift after a model upgrade or prompt edit.
-- `--drain-hooks` — block until the async hook queue drains, then exit. Useful when the user wants to read post-hook state immediately (e.g., right after a write, before a query).
-- `--reset-quarantined-hooks` — clear the hook-quarantine list. Handlers are quarantined after three consecutive failures per [[wiki/specs/hooks]] §"Execution model"; use this flag after fixing a misbehaving hook to bring it back into rotation. Operates on `.dome/state/quarantined.json` (see [[wiki/specs/vault-layout]] §"Derived operational state under `.dome/`") — that file is the authoritative quarantine record across CLI invocations, since `dome doctor` and `dome serve` don't share a process.
-
-## `dome stats`
-
-Print a visually appealing, read-only dashboard summarizing the vault's structure and activity. No LLM; deterministic; safe to run anywhere `dome doctor` is safe.
-
-```bash
-dome stats                # colored dashboard to stdout (default)
-dome stats --json         # JSON to stdout, no colors
-dome stats --vault <path> # override CWD vault detection
-```
-
-The dashboard shows:
-
-- **Page counts** by type — entities, concepts, specs, invariants, matrices, syntheses, gotchas, and any custom page-type extensions declared in `.dome/page-types.yaml`.
-- **Wikilink graph health** — total link count and orphan count (full-path links whose target file doesn't exist).
-- **Raw files** — count and total bytes.
-- **Log activity** — total entries and age of the most recent entry (`Nm ago` / `Nh ago` / `Nd ago`).
-- **Top hubs** — the 3 most-linked-to pages.
-- **Git** — vault age in days, total commits, distinct contributor count.
-
-`--json` emits the same data as a structured object whose shape (`VaultStats`) is the stable serialization contract for cross-tool consumption.
-
-When the vault sits inside a larger git repo (the dogfood case), git stats reflect the outer repo's history. v1 documents this; a future `--commit-scope <vault|repo>` flag could specialize.
-
-Exit code is 0 on success, 1 if vault open fails, 2 on usage error. A future `dome stats graph` subcommand will add a knowledge-graph visualization; v1 ships only the dashboard.
-
-## `dome run-hook <id>`
-
-Manually invoke a registered hook by ID. Synthesizes a `hook.manual.invoked` event with the hook's ID + caller-supplied payload in the event body; the dispatcher matches the event against the named hook and runs its handler.
-
-```bash
-dome run-hook compile-daily --event.path=wiki/dailies/2026-05-26.md
-dome run-hook dailies:create-daily       # force-fire the dailies bundle's scheduled creator now
-dome run-hook auto-update-index --event.path=wiki/entities/danny.md
-```
-
-Useful for:
-
-- **Backfill** — fire a schedule-driven hook outside its cron interval (e.g., create a daily for a missed past date by passing the date in the event payload).
-- **Dogfood** — exercise a newly-installed hook without waiting for its natural trigger.
-- **Integration testing** — synthesize known-input events against the dispatcher to verify hook behavior.
-
-**Flags:**
-
-- `--event.path=<path>` — set the event's `path` payload field. Required for hooks that filter on `path_pattern`.
-- `--event.payload-json=<json>` — set the event's full payload as a JSON object (merged with `--event.path` if both are passed; `--event.path` takes precedence on key collision).
-- `--vault <path>` — override CWD vault detection.
-
-Refuses if the named hook is not registered (lists available hook IDs in the error). Refuses if the hook is quarantined per [[wiki/specs/hooks]] §"Execution model" (suggests `dome doctor --reset-quarantined-hooks`). Refuses if the vault is mid-merge / mid-rebase per [[wiki/gotchas/dirty-git-state-at-reconcile]].
-
-Exit codes: 0 if the hook fires and its handler completes successfully; 2 on usage error (unknown hook, quarantined hook, malformed payload JSON); nonzero on handler failure (the failure is also logged to `log.md` per the standard hook-failure path).
-
-Manually-invoked hooks are NOT subject to the idempotency contract's reconcile-skip semantic — they fire regardless of the hook's `idempotent:` declaration. The user invoking `dome run-hook` is asserting "I want this to run now"; suppressing the fire because the hook is non-idempotent would defeat the command's purpose. Use with care on hooks with external side effects.
-
-## `dome export-context <topic>`
-
-Produce a markdown context-packet for cross-AI handoff.
-
-```bash
-cd ~/vaults/work && dome export-context "platform team ownership"
-```
-
-Invokes the `export-context` workflow:
-
-- Identifies relevant pages by topic.
-- Reads their content.
-- Composes a markdown blob with sections (entities involved, current synthesis, open questions, related decisions, source trail).
-- Writes to stdout (pipeable) or to a named file with `--out <path>`.
-
-This is the antidote to pinned-thread chaos: paste the output into ChatGPT / Cursor / a new Claude Code session and resume thinking with full context. Particularly useful when switching AI tools mid-task.
-
-## What's not a CLI command
-
-| Action | Why no CLI | Use this instead |
-|---|---|---|
-| `dome capture <text>` | Quick capture IS just a write to `inbox/raw/<ts>.md`; the intake hook does the rest. No special Dome command needed. | `echo "$THOUGHT" > $VAULT/inbox/raw/$(date -u +%Y%m%d-%H%M%S).md` |
-| `dome chat` | Chat surface lives in the harness (Claude Code). Dome is the layer beneath. | `claude` (in a vault directory with Dome MCP configured) |
-| `dome browse` | Browsing markdown is what Obsidian / vim / any editor does well. | Obsidian on the vault path |
-| `dome query <q>` | Query lives in a chat harness. CLI version would just shell out to the same workflow. | Ask in your harness |
-| `dome import-obsidian` | Subsumed by `dome migrate` (auto-detects Obsidian structure) | `dome migrate` |
-| `dome backup` | Vault is git-backed; backup is `git push`. | `cd $VAULT && git push` |
+Direct invocation of a processor by id. Used for testing and for processors that don't have a dedicated CLI command. The id is `<bundle>:<processor-id>`; the `--args` payload is the processor's `ProcessorContext.input`. The processor runs in its declared phase; only command-triggered processors are invokable this way (signal/path/schedule processors fire via the engine).
 
 ## Adding a new command
 
-Adding a twelfth shipped `dome <foo>` command is **five file edits**, paralleling the "Adding an 8th Tool is two file edits" recipe at [[wiki/specs/sdk-surface]] §"Tool catalog is one declarative array":
+The "Adding a new command" recipe parallels [[wiki/specs/sdk-surface]] §"Adding a processor" — CLI commands are command-triggered view-phase processors. Four file edits:
 
-1. **Implement `domeFoo(path, opts): Promise<Result<FooReturn, CliError>>`** at `src/cli/commands/foo.ts`. Workflow-driven commands invoke `runWorkflowAtPath` from `@dome/sdk/workflows`; deterministic commands consume `vault.tools.*` directly. The signature shape mirrors the existing eleven `domeX` exports.
+1. **The processor file** at `assets/extensions/<bundle>/processors/<command-name>.ts` exporting a Processor with `phase: "view"` and `triggers: [{ kind: "command", name: "<command-name>" }]`.
+2. **The manifest entry** in the bundle's `manifest.yaml` declaring the processor.
+3. **A Commander binding** in `src/cli/cli.ts` (`program.command("<name>")...action(...)`) that routes to `AbstractSurface.commands[<name>].invoke(args)`.
+4. **An end-to-end test** at `tests/integration/cli-<command>.test.ts` exercising the CLI invocation against a fixture vault.
 
-2. **Wire the Commander arm** in `src/cli/cli.ts` `buildProgram` — `program.command("foo").description(...).option(...).action(async (...) => { ... domeFoo(path, opts) ... })`. If the command is workflow-driven, gate it with `requireApiKey()` before the action body runs (the `@dome/sdk/cli` pre-flight pattern at `src/cli/api-key-guard.ts`).
+The CLI Commander layer is the thin protocol adapter; the work happens in the processor. Adding a command that does *not* need a dedicated `dome <name>` Commander binding is three edits — register the processor; invoke via `dome run-processor <bundle>:<id>` or `dome run-command <name>` (MCP) or the AbstractSurface API directly.
 
-3. **Re-export `domeFoo`** from `src/cli/index.ts`. The `cli-shell-shape` lockstep test (`tests/integration/cli-shell-shape.test.ts`) enumerates implementations in `src/cli/commands/` and asserts each is re-exported from `src/cli/index.ts` — a missed export fails the test.
+The substrate scaffold catches missing pieces:
+- `tests/integration/cli-shell-shape.test.ts` enumerates command-triggered processors in `assets/extensions/dome.*/processors/` and asserts each has either a Commander binding in `cli.ts` or a documented `dome run-processor` invocation in `cli.md`.
 
-4. **Update this spec.** Add a `## dome foo` section above with the input contract, exit behavior, and example invocation; update the command-count summary in the §"CLI" intro and the §"Implementation note" command-mapping table.
+## Why the CLI surface is rich (not minimal)
 
-5. **Add an end-to-end test** at `tests/integration/end-to-end.test.ts` covering one happy path.
+The CLI is the primary v1 surface for agentic harnesses. Every operation the harness might want to invoke explicitly — `submit`, `query`, `lint`, `stats`, `doctor` — is a named CLI command, not a generic dispatch path. The structural payoff: a harness's AGENTS.md teaches "here are the named operations; invoke `dome <name>`"; the agent reaches for them like it reaches for `git status` or `npm test`. Rich, named, well-documented CLI commands match the agentic-harness mental model better than a single generic dispatcher.
 
-`CliError = ToolError | MissingApiKeyError` is the typed error surface — extend it (not `ToolError`) when a new command introduces a consumer-shell-specific error kind. Pre-flight failures belong on `CliError`; Tool failures belong on `ToolError`. The pass-3 architecture review's §"Adding a CLI command" recipe is the canonical source for this surface; if a future command needs a sixth file edit, this section grows to enumerate it explicitly.
-
-### Bundle-contributed commands
-
-Extension bundles contribute CLI commands via `<vault>/.dome/extensions/<bundle>/cli/<command>.ts` per [[wiki/specs/sdk-surface]] §"Extension bundles". Bundle-contributed commands are **bundle-conditional** — they exist only when the bundle is loaded. The shipped SDK CLI surface stays stable at the count named in the §"CLI" intro; bundles grow the runtime surface independently.
-
-A bundle-contributed command follows the same `domeFoo(path, opts) → Result<FooReturn, CliError>` signature as shipped commands. The bundle loader registers each `<bundle>/cli/*.ts` into the `runCli` command set after vault-local `.dome/cli/*.ts` files; collisions across bundles or with shipped commands abort the load with a `bundle-load-failure` per [[wiki/gotchas/extension-bundle-load-order]]. The first-party `dailies` bundle's `migrate-dailies` command is the canonical example.
-
-Bundle commands appear in `dome --help` output after the SDK's shipped commands; the help text reads from each bundle's CLI file's `description` export. The lockstep test at `tests/integration/extension-bundles-load.test.ts` includes a CLI-command-registration assertion against the test fixture's bundle.
-
-## Implementation note
-
-CLI commands implement to a single pattern: parse args, open the vault, dispatch to either (a) a Tool sequence (deterministic: `init`, `doctor`, `serve`, `sync`, `reconcile`, `status`, `stats`, `run-hook`) or (b) a workflow via the headless agent loop (LLM-driven: `migrate`, `lint`, `export-context`). The CLI itself is < 800 LOC; most of the work lives in the workflows and Tools.
-
-### The shared `--apply` idiom
-
-Workflow-driven commands that produce proposals (a migration plan, a lint report) share the `--apply` flag as the user's confirmation gesture — *"you previously proposed something; now execute it."* The type varies with the granularity of the proposal:
-
-- `dome migrate --apply` — boolean. The migration plan is a single artifact; `--apply` executes it whole.
-- `dome lint --apply <id>` — repeatable string. Lint reports carry per-finding ids (`H1`, `M2`, ...); `--apply <id>` targets one, repeatable for multi-id.
-
-The shared flag name signals shared semantics (propose-then-apply); the divergent type signals divergent granularity (whole-plan vs per-finding). A future per-step targeting on migrate (or `--apply --all` on lint) is the moment to revisit naming; for v0.5, the consistent vocabulary across workflow commands is worth more than perfectly-disjoint flag names.
-
-### Errors at the consumer-shell boundary
-
-Core `ToolError` (in `src/types.ts`) enumerates failures the eight Tools and `openVault` can produce. Consumer shells layer their own pre-flights on top: the CLI has `MissingApiKeyError` (raised when `ANTHROPIC_API_KEY` is unset before an LLM-driven command runs), and exposes the union as `CliError = ToolError | MissingApiKeyError`. `renderCliError` is the default one-line stderr formatter; other consumer shells (Electron, web, voice — v1+) can reuse it or supply their own. Keeping shell pre-flights out of core `ToolError` preserves the SDK-vs-consumer boundary: a shell with no env vars (mobile, web) doesn't carry an error kind it can't produce.
-
-The 11 shipped commands map cleanly to user actions:
-
-| Command | Kind | When the user reaches for it |
-|---|---|---|
-| `dome init` | deterministic | First setup of a new vault |
-| `dome migrate` | workflow | Adopting Dome for an existing markdown vault |
-| `dome serve` | deterministic (with auto-sync at startup) | Running the compiler daemon (watcher + sync + hooks; optional MCP server) — typically a launchd / systemd service |
-| `dome status` | deterministic | Read-only adoption snapshot (branch / HEAD / adopted / pending / dirty) |
-| `dome sync` | deterministic | Adoption pass: reconcile, then atomically advance `refs/dome/adopted/<branch>` on clean completion |
-| `dome reconcile` | deterministic (*deprecated alias for `dome sync`*) | Back-compat for v0.5 cron entries, test fixtures, and harness invocations |
-| `dome lint` | workflow | Periodic vault hygiene (weekly cron or manual); apply via `dome lint --apply <id>` |
-| `dome stats` | deterministic | Glanceable snapshot of structural state (page count, hubs, log activity, contributors) |
-| `dome doctor` | deterministic | Diagnostic structural check (no LLM) |
-| `dome run-hook` | deterministic | Manually fire a registered hook (backfill, dogfood, integration test) |
-| `dome export-context` | workflow | Cross-AI handoff (paste context into ChatGPT / Cursor / etc.) |
-
-Bundle-conditional commands (present when the named bundle is loaded) include `dome migrate-dailies` (from the `dailies` bundle); see [[wiki/matrices/extension-bundle-shape]] for the full catalog.
+The MCP server (per [[wiki/specs/mcp-surface]]) is the alternative for harnesses that prefer typed routing; the same operations are reachable through `dome.submit`, `dome.query`, `dome.run_command`. Either surface works; the CLI is the v1 default.
 
 ## Related
 
-- [[wiki/specs/sdk-surface]] — the Tools the CLI dispatches against.
-- [[wiki/specs/mcp-surface]] — the optional MCP protocol-server overlay `dome serve` launches when MCP is configured.
-- [[wiki/specs/prompts-and-workflows]] — workflows invoked by `migrate`, `lint`, `export-context`.
-- [[wiki/specs/harnesses]] — the compiler-boundary contract (AGENTS.md + CLI + daemon + reconcile) agentic harnesses interact with.
+- [[wiki/specs/sdk-surface]] §"Consumer surfaces" — the AbstractSurface this adapter renders.
+- [[wiki/specs/harnesses]] — when the CLI vs MCP earns its keep.
+- [[wiki/specs/adoption]] — what `dome submit` / `dome sync` / `dome status` consult.
+- [[wiki/specs/processors]] — view-phase command processors.
+- [[wiki/matrices/protocol-adapter]] — CLI as one row in the adapter map.

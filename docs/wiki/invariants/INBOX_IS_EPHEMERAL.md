@@ -1,54 +1,34 @@
 ---
 type: invariant
-created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+created: 2026-05-27
+updated: 2026-05-27
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]"]
 tier: shipped-default
 ---
 
 # INBOX_IS_EPHEMERAL
 
-**Tier:** Shipped default — enabled in every vault that has any intake configured; can be disabled per-bucket via `.dome/config.yaml` for buckets where the user wants persistent inbox files.
+**Tier:** Shipped default — enabled by default; per-bucket disable in `<vault>/.dome/config.yaml` is deferred to v1.1+.
 
-**Statement:** Files under `inbox/<bucket>/` are *pending* by virtue of their presence. When an intake hook completes processing a file, the hook MUST move or delete the file so it no longer appears under `inbox/<bucket>/`. The default behavior for shipped intakes is to **move** the file to `raw/<source-type>/<filename>` (preserving the captured content as an immutable raw source per [[wiki/invariants/RAW_IS_IMMUTABLE]]).
+**Statement:** Files in `<vault>/inbox/<bucket>/` (excluding `inbox/review/`, the lint-report destination) are expected to be moved or deleted by the bucket's intake processor within `engine.inbox_stale_age_hours` (default 168 = 7 days) of creation. Files lingering past the threshold are surfaced as DiagnosticEffect by the `dome.intake` adoption-phase processor on every sync.
 
-**Why:** This is what makes the reconciliation model trivial. The presence of a file in `inbox/<bucket>/` IS the durability signal — "this file has not been processed." After processing, the file leaves the inbox. `dome sync` walks inbox/ on startup and fires `document.written.inbox.<bucket>` events for every file still there, knowing they're either freshly captured or stranded from a previous crash. Either way, processing them is correct.
+**Why:** The inbox-as-drop-zone pattern (a phone widget writes raw markdown to `inbox/raw/`; a share-sheet writes to `inbox/clip/`; the `dome.intake` garden-phase processor compiles them into wiki updates) only works if files don't accumulate. Persistent inbox files indicate either: (a) the intake processor is broken or quarantined; (b) the LLM failed to compile a low-confidence capture and the user needs to triage; (c) the bucket is wrong for the captured content. All three deserve visibility.
 
-Without this contract, reconciliation would need a separate "processed marker" mechanism (a `.processed` file alongside, a frontmatter flag, an external database, parsing `log.md`). All of those introduce extra state. With this contract, the filesystem IS the state.
+**Structural enforcement:**
 
-**Structural enforcement:** Two layers, complementary.
+1. **`dome.intake.inbox-stale-check`** is an adoption-phase processor that walks `inbox/<bucket>/*` (excluding `inbox/review/` and `inbox/processed/`) on every sync and emits a `DiagnosticEffect { severity: "warning", code: "inbox.stale" }` for each file older than `engine.inbox_stale_age_hours`.
+2. **`dome lint` includes inbox-stale findings.** A lint report names every stale file with a finding id; `dome lint --apply <id>` invokes the user-selected disposition (re-attempt compile via `dome.intake`, archive to `inbox/processed/`, delete).
+3. **Garden-phase `dome.intake.extract-capture`** archives successfully-processed captures to `inbox/processed/` automatically — the "expected to move out" half of the contract.
+4. **`dome doctor --inbox-stale`** surfaces the stale set on demand.
 
-1. **Workflow-prompt instruction (primary).** The intake-workflow prompts themselves carry the contract: the `ingest`, `voice-ingest`, `research`, and `clip-integrate` workflow prompts each include explicit instructions to `deleteDocument(inbox_path)` as the final step of the workflow.
+The threshold lives in `<vault>/.dome/config.yaml` as `engine.inbox_stale_age_hours` (an integer). Set arbitrarily high to disable the check effectively. Per-bucket thresholds (e.g., `inbox/voice/` stale at 1 hour vs `inbox/research/` stale at 30 days) are a v1.1+ feature.
 
-2. **`dome doctor` structural fallback (secondary).** Because the primary layer is prompt-enforced (not Tool-boundary-enforced — see [[wiki/matrices/tool-invariant-enforcement]] §"`INBOX_IS_EPHEMERAL` — workflow-enforced (off-matrix)"), it is vulnerable to prompt regression. `dome doctor` walks `inbox/<bucket>/` for every bucket except those in the `INTAKE_EXCLUDED_BUCKETS` set exported from `src/shipped-defaults.ts` (currently just `review/`, because `review/` is a destination for `dome lint` reports, not an intake — see [[wiki/specs/hooks]] §"`inbox/review/` — lint-report destination") and emits a violation for every file whose `mtime` is older than `hooks.inbox_stale_age_hours` in `.dome/config.yaml` (default 24h). A vault that intentionally wants long-lived inbox files raises `hooks.inbox_stale_age_hours` arbitrarily high; a dedicated per-bucket disable is deferred to v0.5.1+ (see §"Per-bucket disable" below).
+**Counter-example:** The `dome.intake` extract-capture processor is quarantined because it crashed on a malformed input. New captures land in `inbox/raw/` and accumulate. After 7 days, the adoption-phase inbox-stale-check fires a warning diagnostic for each lingering file. The user runs `dome doctor --inbox-stale`, sees the list, runs `dome doctor --reset-quarantined-processors` to un-quarantine `dome.intake`, then `dome sync` to re-process the backlog.
 
-The `INTAKE_EXCLUDED_BUCKETS` const is the single source of truth for "which buckets under `inbox/` are destinations, not intakes." Adding a new lint-report-style destination bucket (e.g., `inbox/reports/` in a future release) is a one-line addition to the set; every intake-walking site (`dome doctor`, future reconcile filters) consumes the const and inherits the exclusion automatically.
-
-**v0.5 escape mechanism:** Intake workflows `deleteDocument` the inbox file at end of workflow. The "move to `raw/captures/`" mechanism described in earlier drafts conflicts with [[wiki/invariants/RAW_IS_IMMUTABLE]] (`writeDocument` and `moveDocument` both refuse `raw/` targets); deletion is the structurally clean exit. Raw content survives in the wiki pages the workflow created and in any `wiki/sources/<name>.md` source page; a future `appendRawCapture` privileged dispatcher API may preserve raw content directly (v1+).
-
-The doctor check above is what catches a stranded inbox file — typically a sign that an intake hook failed to complete or was never registered.
-
-**Counter-example:** A user writes a plugin that processes `inbox/clip/` files but doesn't move them out. After processing, the files remain in `inbox/clip/`. On the next `dome sync` run, the system fires the intake events again, the plugin re-processes — and depending on its idempotency story, may produce duplicate wiki updates. The fix: the plugin must move or delete the inbox file as part of its workflow contract.
-
-**Per-bucket disable (deferred to v0.5.1+):** A future v0.5.1+ mechanism may let a vault disable the doctor check for a specific bucket — useful for an "always-on review queue" UX where capture files stay visible in `inbox/<bucket>/` until explicitly resolved. The intended config shape is:
-
-```yaml
-# .dome/config.yaml (planned, not implemented in v0.5)
-inbox:
-  buckets:
-    review:
-      ephemeral: false   # inbox/review/ items stay until explicitly resolved
-```
-
-The v0.5 mechanism for the same use case is to raise `hooks.inbox_stale_age_hours` arbitrarily high in `.dome/config.yaml`. The dedicated `inbox.buckets.<name>.ephemeral` knob lands when a shipped intake genuinely needs it; `inbox/review/` itself is already excluded from the doctor walk unconditionally (because `review/` is a destination, not an intake) and does not need the per-bucket knob.
-
-**Test guarantee:** `tests/invariants/inbox-is-ephemeral.test.ts` — two layers of tests:
-
-1. **Workflow-prompt layer:** asserts each shipped intake workflow (`ingest`, `voice-ingest`, `research`, `clip-integrate`) binds `deleteDocument` in its `tools:` frontmatter list AND its prompt body instructs deletion of the inbox file.
-2. **Doctor-fallback layer:** writes a fixture inbox file with a backdated `mtime` past the configured threshold; asserts `dome doctor` emits a violation. Also asserts `inbox/review/` files are excluded from the check regardless of age, since `review/` is the `dome lint` report destination, not an intake bucket.
+**Test guarantee:** `tests/invariants/inbox-is-ephemeral.test.ts` — initializes a fixture vault with one fresh and one 8-day-old file under `inbox/raw/`; runs `dome sync`; asserts the diagnostic table contains one `inbox.stale` entry for the old file and none for the fresh.
 
 **Related:**
-- [[wiki/specs/hooks]] §"Intake patterns — shipped-default and opt-in" and §"Durability and reconciliation"
-- [[wiki/specs/cli]] §"dome sync"
-- [[wiki/invariants/RAW_IS_IMMUTABLE]]
-- [[wiki/gotchas/hook-non-idempotent]]
+- [[wiki/specs/vault-layout]] §"`inbox/`"
+- [[wiki/specs/processors]] §"First-party processors"
+- [[wiki/specs/effects]] §"DiagnosticEffect"
+- [[wiki/gotchas/scheduled-hook-idempotency]] — at-most-once-per-sync clamp applies to the stale check

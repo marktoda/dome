@@ -1,192 +1,164 @@
 ---
 type: spec
-created: 2026-05-25
-updated: 2026-05-25
-sources: ["[[raw/original-architecture]]", "[[cohesive/brainstorms/2026-05-25-dome-vision]]"]
+created: 2026-05-27
+updated: 2026-05-27
+sources: ["[[cohesive/brainstorms/2026-05-27-dome-v1-engine-model]]", "[[v1]]"]
 ---
 
 # Page schema
 
-This spec is normative for the frontmatter contract on Dome pages. `writeDocument` validates frontmatter against this schema and rejects malformed input. The schema is intentionally minimal — required fields capture provenance and identity; optional fields are open for extension.
+This spec is normative for the frontmatter contract Dome enforces on markdown pages. Each page type carries required and optional frontmatter fields; the `dome.markdown` adoption-phase processor validates them on every Proposal.
 
-## Universal frontmatter (every wiki page)
+## Universal frontmatter
 
-Every page under `wiki/` carries this frontmatter:
+Every markdown page in a Dome vault carries:
 
 ```yaml
 ---
-type: entity | concept | source | synthesis | <extension-type>
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-sources: ["[[wikilink]]", ...]
+type: <singular page-type name>   # required; matches the directory under wiki/
+created: <ISO-8601 date>          # required; the page's creation timestamp
+updated: <ISO-8601 date>          # required; updated on every committed change
+sources: [<wikilink>, ...]        # optional; explicit provenance citations
 ---
 ```
 
-- `type` — must match the page's directory: `wiki/entities/x.md` has `type: entity`. The frontmatter and directory are redundant by design — either alone is sufficient, but both are required (the directory is the canonical truth per [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]]; the frontmatter is a self-documenting redundancy).
-- `created` — ISO date. Set on first write; never modified.
-- `updated` — ISO date. Set on every write (the writing Tool maintains it).
-- `sources` — array of wikilinks to `raw/` files, `notes/` files, or `wiki/sources/` pages. May be empty for entirely-synthesized pages. Captures provenance.
+The four universal fields are required by `dome.markdown.frontmatter-required` — a missing field produces a blocking diagnostic at adoption time.
 
-## Page-type-specific extensions
+### Type field
 
-Different types may carry optional additional fields:
+`type:` is the **singular** form of the page's directory. A page at `wiki/entities/danny.md` carries `type: entity`. The plural directory name and the singular type are reconciled via the `pluralOf` / `singularOf` helpers in `src/page-type.ts`.
 
-### entity
+For pages outside `wiki/` (raw captures, daily notes that live in `wiki/dailies/`, etc.):
+- `raw/voice/<id>.md` → `type: voice-capture` (the raw bucket convention).
+- `wiki/dailies/2026-05-27.md` → `type: daily` (the dome.daily bundle's type).
+
+Type validation against the declared page types is the `dome.markdown.type-known` diagnostic — adoption blocks on an unknown type.
+
+### Created / updated
+
+`created:` is set once at page creation by the writer (processor, user, or scaffold). `updated:` is set on every committed change. The `dome.markdown` adoption-phase processor updates `updated:` automatically when a patch touches the body or other frontmatter — the user does not maintain it.
+
+### Sources
+
+`sources:` is optional but recommended. Carries a list of wikilinks pointing to evidence — typically raw captures (`[[raw/voice/2026-05-27-danny.md]]`) or other wiki pages. `dome.markdown.broken-sources` emits a warning on unresolvable sources at adoption.
+
+## Default page types
+
+The SDK ships four default types:
+
+### Entity (`wiki/entities/`)
 
 ```yaml
 ---
 type: entity
-created: ...
-updated: ...
-sources: [...]
-aliases: ["alternative name", ...]   # optional; aliases the entity is also known by
-tags: ["tag1", "tag2"]               # optional; freeform classification
+created: 2026-05-15
+updated: 2026-05-27
+sources: ["[[raw/voice/2026-05-15-meeting.md]]"]
+aliases: ["Danny T.", "DT"]              # optional; for fuzzy-resolve
+last_interaction: 2026-05-27             # optional; bumped by dome.intake
 ---
 ```
 
-### concept
+Entities are people, products, teams, projects, organizations — anything Dome treats as a named entity worth a backlinkable page.
+
+### Concept (`wiki/concepts/`)
 
 ```yaml
 ---
 type: concept
-created: ...
-updated: ...
-sources: [...]
-aliases: [...]                       # optional
-tags: [...]                          # optional
-status: emerging | stable | retired  # optional; tracks concept maturity
+created: 2026-05-15
+updated: 2026-05-27
+sources: ["[[wiki/dailies/2026-05-15]]"]
+tags: ["architecture", "platform-ownership"]   # optional
 ---
 ```
 
-### source
+Concepts are ideas, threads, themes — durable claims spanning multiple captures.
+
+### Source (`wiki/sources/`)
 
 ```yaml
 ---
 type: source
-created: ...
-updated: ...
-sources: ["[[raw/...]]"]             # the raw source this summarizes; usually exactly one
-url: "https://..."                   # optional; original URL if from web
-author: "..."                        # optional
-external: true                       # marks claims as external research, not user belief
+created: 2026-05-15
+updated: 2026-05-15
+sources: []
+url: "https://..."             # required for source pages
+author: "Andrej Karpathy"      # optional
+published: 2025-11-01          # optional
 ---
 ```
 
-The `external: true` flag is load-bearing for research provenance — see [[wiki/specs/sdk-surface]] §"Why this design" (prompts as contract) and the brainstorm's note on belief-vs-claim conflation.
+Sources are external citations Dome considers durable references — papers, articles, books, gists.
 
-### synthesis
+### Synthesis (`wiki/syntheses/`)
 
 ```yaml
 ---
 type: synthesis
-created: ...
-updated: ...
-sources: [...]                       # what was synthesized; often multiple
-status: draft | review | settled     # optional; synthesis maturity
-supersedes: ["[[wikilink]]"]         # optional; prior synthesis this replaces
+created: 2026-05-20
+updated: 2026-05-27
+sources: ["[[wiki/concepts/platform-ownership]]", "[[wiki/entities/danny-tan]]"]
+status: "active" | "superseded" | "draft"     # optional; for synthesis lifecycle
 ---
 ```
 
-### raw
+Syntheses are higher-order claims built from other pages — positioning documents, build plans, strategic threads.
 
-Raw files carry a different frontmatter shape (they are user inputs, not Dome pages):
+## Extension types (from bundles)
 
-```yaml
----
-id: raw_YYYY-MM-DD_HHMM_<slug>
-source_type: voice | meeting | clip | upload | research | design-seed | manual
-status: pending | processed | preserved
-sensitivity: normal | sensitive | private
----
-```
+Extension bundles contribute additional page types via their `page-types.yaml`. The first-party bundles contribute:
 
-Raw files are immutable after creation per [[wiki/invariants/RAW_IS_IMMUTABLE]] — there are no exceptions. Reverse references from raws to wiki pages are not stored; they are computed on demand via `dome doctor --show raw-citations` by scanning wiki page frontmatter `sources:` fields.
+| Type | Bundle | Directory |
+|---|---|---|
+| `daily` | `dome.daily` | `wiki/dailies/` |
+| `weekly` | `dome.daily` | `wiki/weeklies/` |
 
-### Extension types
-
-A vault's `.dome/page-types.yaml` may declare additional types directly (vault-local), AND extension bundles under `<vault>/.dome/extensions/<bundle>/page-types.yaml` may declare additional types whose entries the bundle loader merges into the vault's `PageTypesConfig.extensions` at `openVault` time. The merge is keyed by `name:`; a collision between a vault-local declaration and a bundle's declaration (or between two bundles) is a `bundle-load-failure` per [[wiki/gotchas/extension-bundle-load-order]]. The two declaration paths produce equivalent runtime entries — the only difference is provenance (`source: "vault"` vs `source: "extension:<bundle>"` is tracked internally for diagnostic surfacing but does not change frontmatter validation behavior).
-
-Each extension type may optionally declare its own frontmatter schema in the same YAML:
+Each declared extension type may carry `frontmatter_extras:` — required or optional fields beyond the universal four. The `dome.daily` daily type, for example, requires:
 
 ```yaml
-extensions:
-  - name: spec
-    frontmatter_extras:
-      status: draft | review | normative
-  - name: invariant
-    frontmatter_extras:
-      severity: required | recommended
-  - name: matrix
-    frontmatter_extras: {}
-  - name: gotcha
-    frontmatter_extras:
-      first_observed: <date>
-      severity: low | medium | high
-      coverage: matrix | off-matrix | deferred
-      enforced_at: <path>            # required when coverage == off-matrix
-      enforced_at_status: deferred   # optional; signals the path is planned-not-shipped
-  - name: linter
-    frontmatter_extras:
-      tier: axiom | shipped-default | opt-in | deferred
-      target_version: <version-string, e.g., "v0.5.1">
-      status: shipped | planned | deferred
-```
-
-The `coverage:` field on gotcha pages drives the `tests/integration/gotcha-coverage.test.ts` lockstep test (parallel to AC3 for invariants). Three values, all lowercase:
-
-- **`matrix`** — there is a regression test at `tests/gotchas/<slug>.test.ts` whose filename slug-matches the gotcha doc. The lockstep test asserts the file exists.
-- **`off-matrix`** — the gotcha's structural mitigation is exercised by a test elsewhere (or is a documented scar with no behavioral regression test). The accompanying `enforced_at:` frontmatter field names the canonical test file (e.g., `tests/integration/bundle-deps.test.ts` for `transitive-llm-dependency`; `src/eval/replay.ts` for `agent-prompt-regression`). The lockstep test asserts the named file exists; a gotcha that is genuinely a documented scar with no behavioral test (e.g., `ai-sdk-tool-variance`'s `Tool<>` cast) names the source file the scar lives in (`src/tools/registry.ts`) so the lockstep is still anchored to a real path.
-- **`deferred`** — a per-gotcha test should land at `tests/gotchas/<slug>.test.ts` but hasn't yet. The lockstep test surfaces these as warnings rather than failures; promote to `matrix` (with a real test) when the test ships, or to `off-matrix` (with an `enforced_at:`) when structural mitigation lands at another seam.
-
-**`enforced_at_status:` field** *(optional, off-matrix gotchas only)*. When a gotcha's structural mitigation is planned but not yet shipped — e.g., a v0.5.1 lockstep test that the gotcha's mitigation depends on — the gotcha may carry `enforced_at:` pointing at the *future* path of the mitigation alongside `enforced_at_status: deferred`. The lockstep test treats `enforced_at_status: deferred` gotchas as warnings (not failures) until the named path exists; once the path lands, `dome doctor` either silently promotes the status or surfaces a one-line "deferred mitigation now exists; remove `enforced_at_status: deferred`" pointer. This semantic mirrors `coverage: deferred` for the gotcha's own test file, applied to the enforcement-anchor path. Omitting `enforced_at_status` (the modal case) means the named path must exist at lockstep-test time.
-
-**`linter` extension type** *(docs/wiki/linters/<slug>.md)*. Linter specs declare convention-with-grep rules that may or may not have shipped lockstep tests. The `tier:` field declares the active-enablement intent (matching the invariant tier vocabulary); `target_version:` names when the lockstep ships if not yet (e.g., `v0.5.1`); `status:` is one of `shipped` (lockstep is live), `planned` (lockstep is named but not yet shipped — the doc is convention-with-grep until then), or `deferred` (no lockstep planned; the doc is documentation-only). A linter doc declaring `status: shipped` without a corresponding test file is a substrate violation; a future `dome doctor` check or `tests/integration/linter-coverage.test.ts` would catch this.
-
-**`daily` and `weekly` extension types** *(Phase 1 dailies bundle)*. The first-party `dailies` extension bundle (per [[wiki/specs/sdk-surface]] §"Extension bundles" and [[wiki/matrices/extension-bundle-shape]]) contributes two page types when loaded into a vault:
-
-```yaml
-# Contributed by .dome/extensions/dailies/page-types.yaml
 extensions:
   - name: daily
     frontmatter_extras:
-      date: <YYYY-MM-DD>             # required; the calendar date of the daily
-      prev: <wikilink-or-null>        # required; previous daily for navigation
-      next: <wikilink-or-null>        # required; next daily for navigation
-      tags: <string-array>            # optional; freeform
-  - name: weekly
-    frontmatter_extras:
-      week: <YYYY-W##>                # required; ISO week identifier
-      dailies: <wikilink-array>       # required; the seven (or fewer) daily pages this week aggregates
-      tags: <string-array>            # optional
+      recurrence: required    # frontmatter must carry recurrence: <YYYY-MM-DD>
+      prev: optional          # backlink to previous daily
+      next: optional          # backlink to next daily
 ```
 
-Daily and weekly pages land in `wiki/dailies/<YYYY-MM-DD>.md` and `wiki/weeklies/<YYYY-W##>.md` respectively. The `date:` / `week:` frontmatter is the canonical truth (re-derivable from the filename, but explicit for grep + Obsidian-Templater compatibility). Open `- [ ]` task lines in dailies follow Obsidian Tasks plugin syntax (`- [ ] #task ... ⏫ ✅ YYYY-MM-DD`), respected unchanged by Dome's tools — see [[wiki/matrices/extension-bundle-shape]] §"`dailies`" for the bundle's full contribution catalog.
+The `dome.markdown` processor validates `frontmatter_extras` per type — a `daily` page without `recurrence:` produces a blocking diagnostic.
 
-A gotcha doc without a `coverage:` field is a frontmatter-validation soft warning (per the rule below); the lockstep test treats it as missing data and the gotcha's lockstep status is undefined until the field lands. An `off-matrix` gotcha doc without an `enforced_at:` field is a frontmatter-validation hard warning — the lockstep test cannot verify the "mitigation exercised elsewhere" claim without the path pin, and an unverifiable claim is reviewer-memory rather than structure.
+## Vault-local extension types
 
-`writeDocument` validates the type-specific frontmatter for extension types against this declaration. Unknown fields trigger a soft warning (logged to `log.md`) but not a rejection — pages can carry vault-specific metadata that the SDK doesn't validate.
+A vault may declare additional page types in `<vault>/.dome/page-types.yaml extensions:`:
 
-## Body conventions
+```yaml
+extensions:
+  - name: recipe                          # vault-local type
+    frontmatter_extras:
+      cuisine: required
+      servings: required
+```
 
-The body of a page (after the frontmatter `---` close) is markdown. Conventions:
+The corresponding `wiki/recipes/` directory is the page-type's home; pages there carry `type: recipe`.
 
-- First-level header `# Title` is the page's display title.
-- Wikilinks use full path: `[[wiki/entities/danny]]` not `[[danny]]`. See [[wiki/invariants/WIKILINKS_ARE_FULLPATH]].
-- Sections are open; common sections include `## Current synthesis`, `## Important observations`, `## Open questions`, `## Related`, `## See also`.
-- Page-creation reason is captured at the *Tool call site*, not in the body — see [[wiki/invariants/PAGE_CREATION_REQUIRES_RECURRENCE]].
+## Frontmatter parsing
 
-## Schema evolution
+Parsed via `gray-matter` at the boundary. The result is a `Record<string, unknown>` on the `Document` value; processors that need specific fields read them through the Document's accessors.
 
-When a page type's frontmatter schema changes:
+Boundary validation per [[wiki/gotchas/boundary-validation-via-zod]]: the frontmatter Record gets Zod-validated against the page type's declared schema at adoption time. Validation errors become DiagnosticEffect (severity `block` for missing required fields; severity `warning` for unknown extra fields).
 
-1. The change is declared in `.dome/page-types.yaml` extensions block.
-2. Existing pages are not migrated automatically. `dome doctor` reports pages that don't match current schema.
-3. A migration command (`dome migrate-schema`) is reserved for future work; v0.5 leaves migration to the user.
+## Why this design
+
+Three properties make page schemas substrate-friendly:
+
+1. **The four-universal-field requirement is uniform.** Every page, every type, every bundle — the same four fields. Processors that walk `wiki/` can assume the universals.
+2. **Extension types are first-class.** Adding a new page type is one entry in `page-types.yaml extensions:` plus an optional `frontmatter_extras:` block. Bundle-contributed and vault-local types use the same mechanism.
+3. **Validation lives in one processor.** `dome.markdown` is the page-schema enforcer. Other processors don't validate frontmatter; they consume already-validated `Document` values.
 
 ## Related
 
-- [[wiki/specs/vault-layout]] — directory structure.
-- [[wiki/specs/sdk-surface]] — `writeDocument` Tool.
-- [[wiki/invariants/PAGE_TYPE_BY_DIRECTORY]] — type is the directory.
-- [[wiki/invariants/WIKILINKS_ARE_FULLPATH]] — wikilink convention.
-- [[wiki/invariants/PAGE_CREATION_REQUIRES_RECURRENCE]] — new pages need a reason.
+- [[wiki/specs/sdk-surface]] §"Extension bundles" — how bundles contribute types.
+- [[wiki/specs/vault-layout]] — directory mapping.
+- [[wiki/specs/processors]] — `dome.markdown` is the adoption-phase validator.
+- [[wiki/specs/effects]] §"DiagnosticEffect" — validation failures become diagnostics.
+- [[wiki/gotchas/boundary-validation-via-zod]] — the Zod boundary at frontmatter parse.
