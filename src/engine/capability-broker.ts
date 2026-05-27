@@ -56,6 +56,7 @@ import type {
 } from "../core/effect";
 import { diagnosticEffect, patchEffect } from "../core/effect";
 import type { Capability } from "../core/processor";
+import { firstPatchPath } from "./patch-parse";
 
 // ----- EnforcementResult ----------------------------------------------------
 
@@ -166,7 +167,7 @@ function enforcePatch(
   declared: ReadonlyArray<Capability>,
   granted: ReadonlyArray<Capability>,
 ): EnforcementResult {
-  const path = extractRepresentativePath(effect.patch);
+  const path = firstPatchPath(effect.patch);
   if (path === null) {
     return deny(
       diagnosticEffect({
@@ -403,19 +404,29 @@ function pathIsOwnedByThirdParty(
 /**
  * Path-glob match using Bun's built-in glob matcher. Per
  * docs/wiki/matrices/effect-x-capability.md §"Capability lookup
- * performance" the SDK uses `new Bun.Glob(pattern).match(path)`; v1 calls
- * the matcher directly (the future bundle loader will cache compiled Glob
- * instances per pattern).
+ * performance" the SDK uses `new Bun.Glob(pattern).match(path)`; compiled
+ * Glob instances are memoized in `globCache` below (no eviction — the
+ * pattern set is bounded by the loaded bundle set, ~tens to low hundreds
+ * in practice).
  *
  * The matcher is tolerant of empty patterns (returns false) and empty
  * paths (returns false). Path strings are POSIX-style vault-relative.
  */
+// Module-private compiled-Glob cache. No eviction — pattern set is bounded
+// by the loaded bundle set; ~tens to low hundreds in practice.
+const globCache = new Map<string, Bun.Glob>();
+
 function globMatch(pattern: string, path: string): boolean {
   if (pattern.length === 0 || path.length === 0) return false;
   // Exact-string fast path — avoids constructing a Glob for the common
   // case of a literal path in an `owns.path` grant.
   if (pattern === path) return true;
-  return new Bun.Glob(pattern).match(path);
+  let glob = globCache.get(pattern);
+  if (glob === undefined) {
+    glob = new Bun.Glob(pattern);
+    globCache.set(pattern, glob);
+  }
+  return glob.match(path);
 }
 
 // ----- Namespace helpers ----------------------------------------------------
@@ -479,39 +490,3 @@ function namespaceCovers(declaredNs: string, predicateNs: string): boolean {
   return predicateNs.startsWith(`${stripped}.`);
 }
 
-// ----- Patch path extraction (v1 limitation) -------------------------------
-
-/**
- * Extract a single representative path from a unified-diff patch text.
- * v1 limitation per the file banner: returns the first non-empty header
- * line beginning with `+++` or `---`, stripped of the leading marker, the
- * tab/space separator, and any `a/` or `b/` directory prefix git emits.
- *
- * Returns `null` if no recognizable header is found. Lines like
- * `--- /dev/null` (file creation) and `+++ /dev/null` (file deletion) are
- * skipped; the broker continues scanning until a real path is found.
- */
-function extractRepresentativePath(patch: string): string | null {
-  // Split on `\n`; tolerate `\r\n` by trimming trailing `\r` per line.
-  const lines = patch.split("\n");
-  for (const rawLine of lines) {
-    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-    if (line.length === 0) continue;
-    const isMinus = line.startsWith("--- ");
-    const isPlus = line.startsWith("+++ ");
-    if (!isMinus && !isPlus) continue;
-    const rest = line.slice(4).trim();
-    if (rest.length === 0) continue;
-    if (rest === "/dev/null") continue;
-    // Strip `a/` (in `---` headers) or `b/` (in `+++` headers) prefix git
-    // conventionally emits. Don't strip arbitrary single-char prefixes —
-    // only the two git uses.
-    const stripped =
-      (isMinus && rest.startsWith("a/")) || (isPlus && rest.startsWith("b/"))
-        ? rest.slice(2)
-        : rest;
-    if (stripped.length === 0) continue;
-    return stripped;
-  }
-  return null;
-}

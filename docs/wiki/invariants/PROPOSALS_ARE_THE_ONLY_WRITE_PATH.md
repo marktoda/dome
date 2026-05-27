@@ -25,6 +25,26 @@ tier: axiom
 
 **Test guarantee:** `tests/invariants/proposals-are-the-only-write-path.test.ts` — for each shipped-default processor, asserts the processor's `run()` returns Effects without performing direct mutations (verified by typecheck + by running the processor against a read-only filesystem mock that throws on any write attempt).
 
+## Implementation status
+
+**As of Phase 1+2 (engine layer landed; v0.5 Tools surface still live):**
+
+This invariant is **forward-looking**: the v1 substrate it pins lands when the v0.5 Tools surface retires in Phase 7. The engine-side scaffolding to support it is already in place; the structural fences that close the bypass paths ship in later phases.
+
+- Structurally true now:
+  - `src/core/effect.ts` exhaustive 7-kind Effect union (closed; the only legal write-side payload shape a processor can emit).
+  - `src/engine/apply-effect.ts:applyEffect` is the sole router for Effects, and its `routeToSink` is an exhaustive switch on `Effect.kind` with a `never`-typed catch-all — adding an 8th effect kind without a route fails compilation.
+  - `src/engine/capability-broker.ts:enforceCapability` is the single enforcement function and is called only from `apply-effect.ts` (verified by inspection; an off-matrix import-graph test ships in Phase 8 alongside the run ledger).
+
+- Forward-looking (lands in later phases):
+  - **`submitProposal` does not yet exist.** No symbol matches `function submitProposal` or `export ... submitProposal` anywhere under `src/`. The Proposal type lives in `src/core/proposal.ts`, but the public entrypoint that constructs and enqueues Proposals lands with the Phase 3 processor runtime (the AdoptionPhaseRunner that calls the broker) and is exported in Phase 7 when the surface goes public.
+  - **`src/index.ts` still re-exports v0.5 mutation surfaces.** Today the file exports `writeDocument`, `moveDocument`, `deleteDocument`, `appendLog` (from `src/tools/`), plus the privileged-writer `IndexEntry` type. These are the live mutation paths used by callers. Phase 7 retires `src/tools/` + `src/privileged-writer.ts` entirely, removes these exports, and adds `submitProposal` as the only write-side export.
+  - **The semantic linter `no-direct-mutation-outside-engine`** ([[wiki/linters/no-direct-mutation-outside-engine]]) is a reviewable spec but not yet a CI check. It ships as one of the four named linters in Phase 10 cleanup.
+  - **The capability broker's `engine-bypass-attempt` crash** depends on the AdoptionPhaseRunner being the only path that invokes processors — wired in Phase 3.
+  - **`tests/invariants/proposals-are-the-only-write-path.test.ts`** ships once `submitProposal` exists (Phase 3) and the shipped-default processors are migrated into bundle form (Phase 6).
+
+Until Phase 7, the engine layer coexists with the live v0.5 Tools API; the invariant is the v1 end-state contract, not a property the running code currently satisfies.
+
 **Related:**
 - [[wiki/specs/proposals]]
 - [[wiki/specs/adoption]]

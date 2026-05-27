@@ -65,7 +65,7 @@ import type {
   AdoptionResult,
   Proposal,
 } from "../core/proposal";
-import type { CommitOid } from "../core/source-ref";
+import { commitOid, type CommitOid } from "../core/source-ref";
 import { setAdoptedRef, ZERO_SHA } from "../adopted-ref";
 import { currentBranch, currentSha } from "../git";
 import { makeRunContext } from "../run-context";
@@ -73,6 +73,7 @@ import type { Vault } from "../vault";
 import { compileRange, type SignalEvent } from "./compile-range";
 import { applyEffect, type ApplyEffectSinks } from "./apply-effect";
 import { makeClosureCommit } from "./closure-commit";
+import { parsePatchPaths } from "./patch-parse";
 
 // ----- DEFAULT_MAX_ITERATIONS -----------------------------------------------
 
@@ -183,7 +184,7 @@ export async function adopt(opts: {
   // across iterations (the loop only writes to candidate, not to HEAD's
   // user-history).
   const sourceHeadSha = await currentSha(vault.path);
-  const sourceHead: CommitOid = sourceHeadSha ?? ZERO_SHA;
+  const sourceHead: CommitOid = commitOid(sourceHeadSha ?? ZERO_SHA);
 
   // The branch we'll advance the adopted ref on. `setAdoptedRef` requires a
   // branch name; a detached HEAD has none and cannot use the adopted-ref
@@ -287,7 +288,7 @@ export async function adopt(opts: {
             allDiagnostics.push(applied.appliedEffect);
           }
           if (applied.appliedEffect.kind === "patch") {
-            for (const path of pathsFromPatch(applied.appliedEffect.patch)) {
+            for (const path of parsePatchPaths(applied.appliedEffect.patch)) {
               touchedPaths.add(path);
             }
           }
@@ -328,7 +329,7 @@ export async function adopt(opts: {
     // commit and the next iteration will see no new auto-patches and
     // converge naturally.
     const nextCandidate = await currentSha(vault.path);
-    if (nextCandidate !== null) candidate = nextCandidate;
+    if (nextCandidate !== null) candidate = commitOid(nextCandidate);
   }
 
   // Divergence check: if we exited the loop without breaking, we hit the
@@ -461,46 +462,5 @@ function hasBlockingDiagnostic(
     if (d.severity === "block") return true;
   }
   return false;
-}
-
-/**
- * Parse the unified-diff text for `+++ b/<path>` and `--- a/<path>` headers
- * and return the deduplicated set of vault-relative paths the patch
- * touches. v1 loose parsing — sufficient for the closure-commit's
- * `touchedPaths` argument (which is used as the list of files to `git add`
- * before the commit, not for semantic intent). Mirrors the representative-
- * path extraction in `capability-broker.ts` but enumerates every header
- * rather than returning the first match.
- *
- * Skips `/dev/null` sentinels (file creation `---` and file deletion `+++`
- * lines) and strips `a/` / `b/` directory prefixes git emits.
- *
- * Returns an array (not a Set) for caller convenience; the array preserves
- * first-occurrence order so the closure commit's touched-paths argument is
- * deterministic across runs against the same patch.
- */
-function pathsFromPatch(patch: string): ReadonlyArray<string> {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  const lines = patch.split("\n");
-  for (const rawLine of lines) {
-    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-    if (line.length === 0) continue;
-    const isMinus = line.startsWith("--- ");
-    const isPlus = line.startsWith("+++ ");
-    if (!isMinus && !isPlus) continue;
-    const rest = line.slice(4).trim();
-    if (rest.length === 0) continue;
-    if (rest === "/dev/null") continue;
-    const stripped =
-      (isMinus && rest.startsWith("a/")) || (isPlus && rest.startsWith("b/"))
-        ? rest.slice(2)
-        : rest;
-    if (stripped.length === 0) continue;
-    if (seen.has(stripped)) continue;
-    seen.add(stripped);
-    result.push(stripped);
-  }
-  return result;
 }
 

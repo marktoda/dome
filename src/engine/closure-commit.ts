@@ -31,7 +31,7 @@
 //     engine-commit chokepoint per ENGINE_COMMITS_CARRY_DOME_TRAILERS).
 //   - JSDoc on the public function only; the file banner carries the prose.
 
-import type { CommitOid } from "../core/source-ref";
+import { commitOid, type CommitOid } from "../core/source-ref";
 import { ENGINE_EXTENSION_ID, makeRunContext } from "../run-context";
 import type { Vault } from "../vault";
 import { commitWorkflow } from "../workflow-commit";
@@ -106,5 +106,5 @@ export async function makeClosureCommit(opts: {
     return null;
   }
 
-  return sha;
+  return commitOid(sha);
 }

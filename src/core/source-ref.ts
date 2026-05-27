@@ -11,12 +11,18 @@
 import { z } from "zod";
 
 // ----- Branded OID aliases --------------------------------------------------
+//
+// Structurally branded so a raw `string` cannot accidentally flow into a slot
+// expecting a CommitOid/BlobOid. Use the `commitOid()` / `blobOid()` value
+// helpers below to brand an arbitrary string (e.g., a `currentSha()` return).
+// v1 enforces only non-empty; future tightening can validate 40-char hex
+// inside the helpers without touching the call sites.
 
 /** A 40-char hex SHA-1 identifying a git commit object. */
-export type CommitOid = string;
+export type CommitOid = string & { readonly __brand: "CommitOid" };
 
 /** A 40-char hex SHA-1 identifying a git blob object. */
-export type BlobOid = string;
+export type BlobOid = string & { readonly __brand: "BlobOid" };
 
 // ----- TextRange ------------------------------------------------------------
 
@@ -98,4 +104,22 @@ export function sourceRef(input: SourceRef): SourceRef {
   if (input.range !== undefined) ref.range = input.range;
   if (input.stableId !== undefined) ref.stableId = input.stableId;
   return Object.freeze(ref);
+}
+
+// ----- OID brand helpers ----------------------------------------------------
+//
+// The branded OID types above are pure type-level brands; these value helpers
+// are the single-call-site way to inject a raw `string` (e.g., a `currentSha()`
+// return, a git-boundary path string) into a CommitOid / BlobOid slot. v1
+// performs no validation beyond the type system; a future tightening can
+// validate 40-char hex inside these helpers without touching call sites.
+
+/** Brand a raw string as a CommitOid. v1 enforces only non-empty via the type system. */
+export function commitOid(s: string): CommitOid {
+  return s as CommitOid;
+}
+
+/** Brand a raw string as a BlobOid. */
+export function blobOid(s: string): BlobOid {
+  return s as BlobOid;
 }

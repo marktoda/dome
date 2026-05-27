@@ -25,6 +25,26 @@ tier: axiom
 
 **Test guarantee:** `tests/invariants/engine-is-the-only-applier.test.ts` (off-matrix; delegates to `tests/integration/engine-is-sole-applier.test.ts`) — walks the SDK's import graph and asserts no module outside the engine + projections + ledger directories imports mutation modules.
 
+## Implementation status
+
+**As of Phase 1+2 (engine layer landed; v0.5 Tools surface still live):**
+
+The engine chokepoint exists structurally; the *only-applier* property is forward-looking because the v0.5 Tools / privileged-writer mutation paths still ship.
+
+- Structurally true now:
+  - **Exhaustive routing** — `src/engine/apply-effect.ts:routeToSink` switches on `Effect.kind` with a `never`-typed `_exhaustive` catch-all. Adding an 8th Effect without a route fails compilation today.
+  - **One enforcement-broker call site** — `enforceCapability` (from `src/engine/capability-broker.ts`) is invoked only from `apply-effect.ts:applyEffect`. The broker module is not imported anywhere else under `src/`.
+  - **Sink injection shape is fixed** — `ApplyEffectSinks` enumerates the seven sink callbacks; the router is a pure dispatcher that owns no I/O of its own.
+
+- Forward-looking (lands in later phases):
+  - **`src/engine/writer.ts` does not yet exist.** The invariant's bullet 3 references a module-private writer that ships with the Phase 4 projection-store wiring (the file lands when the real sinks replace `noopSinks()`).
+  - **The semantic linters `engine-is-sole-applier` and `no-direct-mutation-outside-engine`** ([[wiki/linters/engine-is-sole-applier]], [[wiki/linters/no-direct-mutation-outside-engine]]) are reviewable specs but not yet CI checks. They ship in Phase 10 cleanup. Until then, the boundary is reviewer-enforced.
+  - **Mutation imports outside `src/engine/` still exist by design.** `src/tools/`, `src/privileged-writer.ts`, `src/workflow-commit.ts`, and others reach `Bun.write`, `node:fs`, and `isomorphic-git` directly — these are the v0.5 paths Phase 7 retires. The lint that catches them is meaningful only after those modules are deleted.
+  - **The integration test `tests/integration/engine-is-sole-applier.test.ts`** ships when the engine sinks are wired (Phase 4) and the Tools surface is retired (Phase 7); running it earlier would flag every legitimate v0.5 mutation path.
+  - **The v1.1+ dynamic-import linter upgrade** (counter-example mitigation) is post-v1.
+
+Until Phase 4 + Phase 7, "engine is the only applier" is the v1 contract the substrate pins; the live v0.5 mutation paths coexist as the actual write surface.
+
 **Related:**
 - [[wiki/specs/effects]] §"The Effect union" — the exhaustive switch
 - [[wiki/specs/capabilities]] §"Enforcement chokepoint"

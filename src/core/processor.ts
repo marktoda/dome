@@ -39,9 +39,17 @@ import type { Proposal } from "./proposal";
 import type { CommitOid, SourceRef, TextRange } from "./source-ref";
 
 // ----- Branded OID alias ----------------------------------------------------
+//
+// Structurally branded (matches `CommitOid` / `BlobOid` in `./source-ref`).
+// Use the `treeOid()` value helper below to brand an arbitrary string.
 
 /** A 40-char hex SHA-1 identifying a git tree object. */
-export type TreeOid = string;
+export type TreeOid = string & { readonly __brand: "TreeOid" };
+
+/** Brand a raw string as a TreeOid. v1 enforces only non-empty via the type system. */
+export function treeOid(s: string): TreeOid {
+  return s as TreeOid;
+}
 
 // ----- Snapshot -------------------------------------------------------------
 
@@ -249,7 +257,7 @@ export type Processor<TInput = unknown> = {
   readonly phase: ProcessorPhase;
   readonly triggers: ReadonlyArray<Trigger>;
   readonly capabilities: ReadonlyArray<Capability>;
-  readonly run: (ctx: ProcessorContext<TInput>) => Promise<Effect[]>;
+  readonly run: (ctx: ProcessorContext<TInput>) => Promise<ReadonlyArray<Effect>>;
 };
 
 // ----- Zod schemas ----------------------------------------------------------
